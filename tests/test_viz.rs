@@ -3567,10 +3567,33 @@ fn viz_smart_metadata_pid_link() {
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
-    // the PID value is used verbatim as the href.
+    // an http(s) PID becomes a link, opened safely in a new tab.
     assert!(html.contains(
-        r#"<td class="qsv-viz-meta-k">PID:</td><td><a href="https://doi.org/10.1234/abc">https://doi.org/10.1234/abc</a></td>"#
+        r#"<td class="qsv-viz-meta-k">PID:</td><td><a href="https://doi.org/10.1234/abc" target="_blank" rel="noopener noreferrer">https://doi.org/10.1234/abc</a></td>"#
     ));
+}
+
+#[test]
+fn viz_smart_metadata_pid_rejects_dangerous_scheme() {
+    let wrk = Workdir::new("viz_smart_metadata_pid_rejects_dangerous_scheme");
+    wrk.create_from_string("data.csv", "amount,quarter\n1000,Q1\n2000,Q2\n3000,Q1\n");
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "data.csv",
+        "-o",
+        &out_html,
+        "--dataset-pid",
+        "javascript:alert(1)",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // a non-http(s) scheme is never turned into an href; the value still shows as plain text
+    // rather than being silently dropped.
+    assert!(!html.contains(r#"href="javascript:"#));
+    assert!(html.contains(r#"<td class="qsv-viz-meta-k">PID:</td><td>javascript:alert(1)</td>"#));
 }
 
 #[test]
@@ -6762,6 +6785,43 @@ fn viz_cdn_replaces_embedded_bundle() {
         assert!(
             html.contains(r#"<script src="https://cdn.plot.ly/"#),
             "{subcmd}: expected a plotly.js CDN tag"
+        );
+        // Subresource Integrity: without it a tampered CDN response is arbitrary script execution
+        // in every viewer of a published dashboard. Assert the attributes land on the plotly tag
+        // itself, not merely somewhere in the document.
+        let cdn_tag = html
+            .split(r#"<script src="https://cdn.plot.ly/"#)
+            .nth(1)
+            .and_then(|rest| rest.split_once("</script>"))
+            .map(|(tag, _)| tag.to_string())
+            .unwrap_or_default();
+        // a non-empty, well-formed digest — `sha384-` alone would satisfy a prefix check while
+        // the browser blocks the script. NOT the literal value: pinning it here would force a
+        // test edit on every plotly.rs bump, and the value itself is asserted at its source.
+        let digest = cdn_tag
+            .split_once(r#"integrity="sha384-"#)
+            .and_then(|(_, rest)| rest.split_once('"'))
+            .map(|(d, _)| d)
+            .unwrap_or_default();
+        assert_eq!(
+            digest.len(),
+            64,
+            "{subcmd}: sha384 digest should be 64 base64 chars, got {digest:?}"
+        );
+        assert!(
+            digest
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'='),
+            "{subcmd}: SRI digest is not base64: {digest:?}"
+        );
+        assert!(
+            cdn_tag.contains(r#"crossorigin="anonymous""#),
+            "{subcmd}: CDN tag is missing crossorigin: {cdn_tag}"
+        );
+        // the hash must be pinned to the version actually requested, else it blocks the script
+        assert!(
+            cdn_tag.contains(".min.js"),
+            "{subcmd}: unexpected CDN tag shape: {cdn_tag}"
         );
         // no inline bundle, in either its plain or its gzip+base64 form...
         assert_eq!(html.matches("plotly.js v").count(), 0, "{subcmd}");

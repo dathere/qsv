@@ -521,9 +521,10 @@ smart options:
                            Only affects `smart`.
     --dataset-pid <value>  A persistent identifier (PID) for the dataset - typically a full
                            URL such as a DOI (https://doi.org/10.1234/abc) or other citable
-                           link. When set, a clickable "PID" row is added to the metadata
-                           table at the top of the dashboard, using the value verbatim as the
-                           link target. HTML output only. Only affects `smart`.
+                           link. When set, a "PID" row is added to the metadata table at the
+                           top of the dashboard. http(s) and mailto values become a clickable
+                           link (opened in a new tab); any other scheme is shown as plain text
+                           rather than linked. HTML output only. Only affects `smart`.
     --bivariate            Add two pairwise-association overview panels driven by
                            `qsv moarstats --bivariate`: a normalized mutual information (NMI)
                            heatmap over every column pair (works for numeric AND categorical
@@ -692,6 +693,7 @@ use plotly::{
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
     violin::{MeanLine, SpanMode, ViolinBox, ViolinPoints},
 };
+use rayon::prelude::*;
 use serde::Deserialize;
 
 use crate::{
@@ -1219,6 +1221,14 @@ const CORR_LABEL_MAX_CHARS: usize = 16;
 const CORR_LABEL_PX_PER_CHAR: usize = 7;
 const CORR_INCELL_MAX_N: usize = 8;
 
+/// `viz heatmap --x/--y/--z` (pivot) cell-count safety cap. The pivot's `z` is a DENSE
+/// `y_cats × x_cats` matrix, so its cost is quadratic in the cardinality of the two key columns —
+/// two 50k-cardinality columns would be 2.5e9 cells (~20 GB). Every other multi-category builder
+/// here is bounded (`HIER_MAX_NODES`, `PARCATS_MAX_PATHS`, `CATEGORICAL_MAX_CARDINALITY`); this is
+/// the equivalent guard, checked before the matrix is allocated. 1M cells is ~8 MB of `f64` and
+/// already a very large heatmap to render.
+const HEATMAP_PIVOT_MAX_CELLS: usize = 1_000_000;
+
 /// `viz smart --bivariate` column-count safety cap. The association heatmap/top-relationships
 /// panels are built from moarstats' ALL-PAIRS bivariate sidecar (50 choose 2 = 1,225 pairs at the
 /// cap), so a wide dataset is skipped (with a warning suggesting `qsv moarstats --bivariate`
@@ -1476,6 +1486,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // GeoJSON choropleth panel, so the universal constraints are validated here — before dispatch —
     // rather than only on the command path. Otherwise the smart path would silently clamp
     // negatives, accept a non-finite NaN/inf, or ignore the --no-snap conflict. The "only
+    // --y-range is purely syntactic, so validate it HERE rather than in build_layout, which every
+    // cartesian chart reaches only after its trace builder has already streamed the whole input:
+    // `--y-range 5:1` on a large file otherwise aggregates for minutes before rejecting the flag.
+    // The later call sites keep parsing it (cheap, and infallible once this has passed).
+    if let Some(spec) = args.flag_y_range.as_deref() {
+        parse_y_range(spec)?;
+    }
+
     // applies to point-in-polygon binning" guard stays path-specific (build_choropleth_plot).
     if let Some(km) = args.flag_snap_max_dist {
         if args.flag_no_snap {
@@ -1492,6 +1510,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
+    // The parsed+sanitized --geojson document, loaded ONCE here and threaded into whichever
+    // plotting path consumes it (see `resolve_and_validate_geojson`).
+    let mut loaded_geojson: Option<serde_json::Value> = None;
     // Resolve --geojson (a direct path/URL, or a QSV_GEOJSON_SHORTCUTS alias) and validate it
     // up front — fail fast on a bad source, unknown shortcut, or unusable feature-id-key before
     // any plotting work. Only the choropleth & smart subcommands consume --geojson.
@@ -1503,7 +1524,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let feature_id_key_explicit = argv
             .iter()
             .any(|a| *a == "--feature-id-key" || a.starts_with("--feature-id-key="));
-        resolve_and_validate_geojson(&mut args, feature_id_key_explicit)?;
+        loaded_geojson = resolve_and_validate_geojson(&mut args, feature_id_key_explicit)?;
     }
 
     let out_format = match args.flag_output.as_deref() {
@@ -1549,7 +1570,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let _progress_guard = ProgressGuard(progress.clone());
 
     let (mut plot, smart_dims) = if args.cmd_smart {
-        match build_smart(&args, out_format, &progress, show_progress)? {
+        match build_smart(
+            &args,
+            out_format,
+            &progress,
+            show_progress,
+            loaded_geojson.as_ref(),
+        )? {
             // >8-panel HTML dashboards are assembled as an inline-div grid that bypasses the
             // single-`Plot` output path entirely.
             SmartRender::Inline(html) => {
@@ -1598,7 +1625,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             },
         }
     } else {
-        (Box::new(build_plot(&args, out_format, &progress)?), None)
+        (
+            Box::new(build_plot(&args, out_format, &progress, loaded_geojson)?),
+            None,
+        )
     };
 
     // make the interactive HTML re-fit its width to the window/container on resize; this
@@ -1684,7 +1714,12 @@ fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
 }
 
 /// Build a `Plot` for the requested chart subcommand.
-fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> CliResult<Plot> {
+fn build_plot(
+    args: &Args,
+    out_format: OutFormat,
+    progress: &ProgressBar,
+    geojson: Option<serde_json::Value>,
+) -> CliResult<Plot> {
     progress.set_message("Building chart…");
     // --color/--size are per-point marker encodings that apply to scatter and map only, and
     // need a single trace, so they can't be combined with --series (which splits into traces).
@@ -1787,7 +1822,7 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
     // choropleth fills whole regions on a `geo` (projection) or `map` (MapLibre) subplot — never
     // cartesian — so it owns its whole `Plot` like the maps above.
     if matches!(chart_kind(args), Chart::Choropleth) {
-        return build_choropleth_plot(args, out_format);
+        return build_choropleth_plot(args, out_format, geojson);
     }
     if matches!(chart_kind(args), Chart::Scatter3D) {
         return build_scatter3d_plot(args);
@@ -2059,10 +2094,14 @@ fn read_xy(args: &Args) -> CliResult<XyData> {
             Some(i) => cell_to_string(record.get(i)),
             None => String::new(),
         };
-        let entry = grouped.entry(series.clone()).or_insert_with(|| {
-            order.push(series);
-            (Vec::new(), Vec::new())
-        });
+        // probe before cloning: `entry` takes an owned key, so the plain form allocates a second
+        // String on EVERY row, not just when the group is new.
+        let entry = if let Some(e) = grouped.get_mut(&series) {
+            e
+        } else {
+            order.push(series.clone());
+            grouped.entry(series).or_insert((Vec::new(), Vec::new()))
+        };
         entry.0.push(x);
         entry.1.push(y);
     }
@@ -2154,7 +2193,7 @@ fn xy_groups_to_traces(
                 let bar_ids = bar_marker.is_some().then(|| xs.clone());
                 let mut t = Bar::new(xs, ys);
                 if !name.is_empty() {
-                    t = t.name(name);
+                    t = t.name(escape_hover(&name));
                 }
                 if let Some(m) = bar_marker {
                     t = t.marker(m);
@@ -2250,6 +2289,9 @@ fn read_xy_slider(
     // frame value -> series -> (xs, ys); insertion order tracked separately
     let mut frame_order: Vec<String> = Vec::new();
     let mut series_order: Vec<String> = Vec::new();
+    // membership index for `series_order`: a Vec::contains probe here is O(distinct series) on
+    // EVERY row, which degenerates badly on a high-cardinality --series column.
+    let mut series_seen: HashSet<String> = HashSet::new();
     let mut map: HashMap<String, HashMap<String, (Vec<String>, Vec<f64>)>> = HashMap::new();
 
     let mut record = csv::ByteRecord::new();
@@ -2268,7 +2310,7 @@ fn read_xy_slider(
             frame_order.push(frame.clone());
         }
         let fmap = map.entry(frame).or_default();
-        if !fmap.contains_key(&series) && !series_order.contains(&series) {
+        if !fmap.contains_key(&series) && series_seen.insert(series.clone()) {
             series_order.push(series.clone());
         }
         let entry = fmap
@@ -2284,6 +2326,15 @@ fn read_xy_slider(
     if frame_order.len() < 2 {
         return fail_incorrectusage_clierror!(
             "--slider needs at least 2 distinct values in the chosen column to animate; found 1."
+        );
+    }
+    if frame_order.len() > SLIDER_MAX_FRAMES {
+        return fail_incorrectusage_clierror!(
+            "--slider column has {} distinct values; the maximum is {SLIDER_MAX_FRAMES}.\nEvery \
+             frame embeds its own copy of the plotted data, so this would produce an unusably \
+             large file. Bucket the column first (e.g. `qsv datefmt` to a coarser grain, or `qsv \
+             apply`), or pick a lower-cardinality --slider column.",
+            frame_order.len()
         );
     }
 
@@ -2337,7 +2388,10 @@ fn read_xy_slider(
             }
             for x in &txs {
                 // categorical x union in first-seen order (used to pin a non-numeric axis)
-                if x_seen.insert(x.clone()) {
+                // contains-then-insert: `HashSet::insert` takes an owned key, so cloning
+                // unconditionally allocates on every hit as well as every miss.
+                if !x_seen.contains(x) {
+                    x_seen.insert(x.clone());
                     x_union.push(x.clone());
                 }
                 if all_x_numeric {
@@ -2407,7 +2461,7 @@ fn read_xy_slider(
 /// value, and a layout carrying pinned axis ranges, a scrub `Slider` and a Play/Pause menu.
 fn build_slider_xy_plot(args: &Args, kind: Chart, slider_col: &SelectColumns) -> CliResult<Plot> {
     let agg = parse_agg(args.flag_agg.as_deref())?;
-    let data = read_xy_slider(args, slider_col, kind, agg)?;
+    let mut data = read_xy_slider(args, slider_col, kind, agg)?;
 
     let mut plot = Plot::new();
 
@@ -2445,8 +2499,13 @@ fn build_slider_xy_plot(args: &Args, kind: Chart, slider_col: &SelectColumns) ->
     }
 
     // one animation frame per slider value
-    for (fkey, groups) in data.frame_values.iter().zip(data.frames.iter()) {
-        let traces = xy_groups_to_traces(groups.clone(), kind, agg, false, bar_colors.as_ref());
+    // consume the frames rather than cloning each one: `xy_groups_to_traces` takes them by value,
+    // and `data.frames` is dead after this loop. Under --slider-cumulative each frame already
+    // holds a copy of every row from frames 0..=k, so cloning them all again doubled the peak.
+    // (Frame 0 was cloned once above for the base traces; that copy is genuinely needed.)
+    let frames = std::mem::take(&mut data.frames);
+    for (fkey, groups) in data.frame_values.iter().zip(frames) {
+        let traces = xy_groups_to_traces(groups, kind, agg, false, bar_colors.as_ref());
         let mut td = Traces::new();
         for t in traces {
             td.push(t);
@@ -2601,13 +2660,13 @@ fn scatter_trace(name: &str, xs: Vec<String>, ys: Vec<f64>, mode: Mode) -> Box<d
     if let Some(xn) = xn {
         let mut t = Scatter::new(xn, ys).mode(mode);
         if !name.is_empty() {
-            t = t.name(name);
+            t = t.name(escape_hover(name));
         }
         t
     } else {
         let mut t = Scatter::new(xs, ys).mode(mode);
         if !name.is_empty() {
-            t = t.name(name);
+            t = t.name(escape_hover(name));
         }
         t
     }
@@ -2914,6 +2973,22 @@ fn mercator_y(lat: f64) -> f64 {
     (1.0 - (std::f64::consts::FRAC_PI_4 + lat_rad / 2.0).tan().ln() / std::f64::consts::PI) / 2.0
 }
 
+/// Inverse of `mercator_y`: normalized Web-Mercator y (0 at the north edge, 1 at the south) back
+/// to a latitude in degrees.
+fn inverse_mercator_y(y: f64) -> f64 {
+    let t = (std::f64::consts::PI * (1.0 - 2.0 * y)).exp();
+    (2.0 * (t.atan() - std::f64::consts::FRAC_PI_4)).to_degrees()
+}
+
+/// The latitude that sits VISUALLY halfway between two latitudes on a Web-Mercator map. Mercator
+/// stretches poleward, so the geographic mean `(min + max) / 2` is not the middle of the drawn
+/// box: pairing it with a Mercator-fitted zoom leaves the box off-centre and pushes the poleward
+/// edge out of view. Both centre computations here fit their zoom with `fitbounds_zoom` (which
+/// measures the latitude span in Mercator y), so both must take their centre in the same space.
+fn mercator_lat_center(min_lat: f64, max_lat: f64) -> f64 {
+    inverse_mercator_y((mercator_y(min_lat) + mercator_y(max_lat)) / 2.0)
+}
+
 /// Aspect-aware Web-Mercator `fitBounds` zoom: fits the longitude and latitude spans SEPARATELY
 /// against the panel's pixel width/height and takes the tighter (smaller) zoom, so a wide-short map
 /// panel frames a square core box by its (binding) height and a wide full-extent box by its width —
@@ -2974,7 +3049,7 @@ fn map_center_zoom(
     sorted_lats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let min_lat = sorted_quantile(&sorted_lats, trim_frac);
     let max_lat = sorted_quantile(&sorted_lats, 1.0 - trim_frac);
-    let lat_center = (min_lat + max_lat) / 2.0;
+    let lat_center = mercator_lat_center(min_lat, max_lat);
 
     let (lon_center, lon_span) = lon_center_and_span(lons, trim_frac);
     let center = Center::new(lat_center, lon_center);
@@ -3199,7 +3274,9 @@ fn map_series_traces(
             let (la, lo, tx) = groups.remove(&name).unwrap_or_default();
             // hover names the series/category (and any --text label) beside the coordinates
             let hover = geo_series_hover(&name, &la, &lo, &tx);
-            let mut t = ScatterMap::new(la, lo).mode(Mode::Markers).name(name);
+            let mut t = ScatterMap::new(la, lo)
+                .mode(Mode::Markers)
+                .name(escape_hover(&name));
             t = t.hover_text_array(hover).hover_info(HoverInfo::Text);
             let trace: Box<dyn Trace> = t;
             trace
@@ -3485,7 +3562,9 @@ fn geo_series_traces(
             let (la, lo, tx) = groups.remove(&name).unwrap_or_default();
             // hover names the series/category (and any --text label) beside the coordinates
             let hover = geo_series_hover(&name, &la, &lo, &tx);
-            let mut t = ScatterGeo::new(la, lo).mode(Mode::Markers).name(name);
+            let mut t = ScatterGeo::new(la, lo)
+                .mode(Mode::Markers)
+                .name(escape_hover(&name));
             t = t.hover_text_array(hover).hover_info(HoverInfo::Text);
             let trace: Box<dyn Trace> = t;
             trace
@@ -3663,6 +3742,9 @@ fn read_geo_slider(args: &Args, slider_col: &SelectColumns) -> CliResult<GeoSlid
 
     let mut frame_order: Vec<String> = Vec::new();
     let mut series_order: Vec<String> = Vec::new();
+    // membership index for `series_order`: a Vec::contains probe here is O(distinct series) on
+    // EVERY row, which degenerates badly on a high-cardinality --series column.
+    let mut series_seen: HashSet<String> = HashSet::new();
     let mut map: HashMap<String, HashMap<String, (Vec<f64>, Vec<f64>, Vec<String>)>> =
         HashMap::new();
 
@@ -3687,7 +3769,7 @@ fn read_geo_slider(args: &Args, slider_col: &SelectColumns) -> CliResult<GeoSlid
             frame_order.push(frame.clone());
         }
         let fmap = map.entry(frame).or_default();
-        if !fmap.contains_key(&series) && !series_order.contains(&series) {
+        if !fmap.contains_key(&series) && series_seen.insert(series.clone()) {
             series_order.push(series.clone());
         }
         let entry = fmap
@@ -3708,6 +3790,15 @@ fn read_geo_slider(args: &Args, slider_col: &SelectColumns) -> CliResult<GeoSlid
     if frame_order.len() < 2 {
         return fail_incorrectusage_clierror!(
             "--slider needs at least 2 distinct values in the chosen column to animate; found 1."
+        );
+    }
+    if frame_order.len() > SLIDER_MAX_FRAMES {
+        return fail_incorrectusage_clierror!(
+            "--slider column has {} distinct values; the maximum is {SLIDER_MAX_FRAMES}.\nEvery \
+             frame embeds its own copy of the plotted data, so this would produce an unusably \
+             large file. Bucket the column first (e.g. `qsv datefmt` to a coarser grain, or `qsv \
+             apply`), or pick a lower-cardinality --slider column.",
+            frame_order.len()
         );
     }
 
@@ -3766,7 +3857,7 @@ fn geo_frame_traces(groups: &[(String, Vec<f64>, Vec<f64>, Vec<String>)]) -> Vec
                 .hover_text_array(hover)
                 .hover_info(HoverInfo::Text);
             if !name.is_empty() {
-                t = t.name(name.clone());
+                t = t.name(escape_hover(name));
             }
             let trace: Box<dyn Trace> = t;
             trace
@@ -3921,6 +4012,21 @@ fn ring_planar_area(ring: &serde_json::Value) -> f64 {
     if pts.len() < 3 {
         return 0.0;
     }
+    // `windows(2)` covers the closing edge only when the ring is already closed (last == first).
+    // GeoJSON rings SHOULD be closed but this codebase explicitly tolerates unclosed ones
+    // (geojson_rings_to_closed appends the first vertex when missing), and dropping the closing
+    // term makes the shoelace sum arbitrarily wrong for a ring offset from the origin — which can
+    // rank a hole above its exterior in repair_polygon_rings and hand plotly the inverted ring
+    // order that sanitize_geojson_for_render exists to prevent.
+    let mut closed;
+    let pts = if pts.first() == pts.last() {
+        &pts[..]
+    } else {
+        closed = Vec::with_capacity(pts.len() + 1);
+        closed.extend_from_slice(&pts);
+        closed.push(pts[0]);
+        &closed[..]
+    };
     let mut a = 0.0;
     for w in pts.windows(2) {
         let [(x0, y0), (x1, y1)] = w else {
@@ -4063,9 +4169,12 @@ fn lookup_geojson_shortcut(name: &str) -> CliResult<(String, Option<String>)> {
 /// Rewrites `args.flag_geojson` to the concrete path/URL and, when the value resolved via a
 /// shortcut that carries an `id`, adopts it as the feature-id-key unless the user explicitly
 /// passed `--feature-id-key` (see `feature_id_key_explicit`).
-fn resolve_and_validate_geojson(args: &mut Args, feature_id_key_explicit: bool) -> CliResult<()> {
+fn resolve_and_validate_geojson(
+    args: &mut Args,
+    feature_id_key_explicit: bool,
+) -> CliResult<Option<serde_json::Value>> {
     let Some(spec) = args.flag_geojson.clone() else {
-        return Ok(());
+        return Ok(None);
     };
 
     // Disambiguate: a direct source is an http(s) URL or an existing local file; anything else is
@@ -4088,7 +4197,7 @@ fn resolve_and_validate_geojson(args: &mut Args, feature_id_key_explicit: bool) 
 
     // Validate: fetch/read + FeatureCollection + the feature-id-key resolves on >=1 feature.
     let geojson = load_geojson(&resolved)?;
-    let fc = serde_json::from_value::<geojson::FeatureCollection>(geojson).map_err(|e| {
+    let fc = geojson::FeatureCollection::deserialize(&geojson).map_err(|e| {
         crate::CliError::Other(format!(
             "--geojson '{resolved}' is not a valid GeoJSON FeatureCollection: {e}"
         ))
@@ -4123,22 +4232,53 @@ fn resolve_and_validate_geojson(args: &mut Args, feature_id_key_explicit: bool) 
     }
 
     args.flag_geojson = Some(resolved);
-    Ok(())
+    // hand the parsed document back so the plotting paths reuse it instead of re-fetching and
+    // re-parsing: it was loaded 3x per standalone choropleth run (validation, binning, trace
+    // geometry) and 2-3x again under `viz smart`. Beyond the wasted HTTP GETs and parse time,
+    // a non-deterministic URL made those loads disagree — points binned against one fetch while
+    // the map drew another's geometry.
+    Ok(Some(geojson))
 }
 
 /// Load a GeoJSON FeatureCollection from a local file path or an http(s) URL into a JSON value.
 fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
     let bytes = if spec.starts_with("http://") || spec.starts_with("https://") {
-        let resp = reqwest::blocking::get(spec)
+        use std::io::Read as _;
+
+        // reqwest's default client has NO connect or read timeout, so a server that accepts the
+        // connection and then stalls hangs qsv indefinitely with no way out. Honors QSV_TIMEOUT.
+        let timeout = std::time::Duration::from_secs(
+            util::timeout_secs(GEOJSON_FETCH_TIMEOUT_SECS).map_err(crate::CliError::Other)?,
+        );
+        let client = reqwest::blocking::Client::builder()
+            .timeout(timeout)
+            .connect_timeout(timeout)
+            .build()
+            .map_err(|e| crate::CliError::Other(format!("Could not build HTTP client: {e}")))?;
+        let mut resp = client
+            .get(spec)
+            .send()
             .and_then(reqwest::blocking::Response::error_for_status)
             .map_err(|e| {
                 crate::CliError::Other(format!("Failed to fetch --geojson URL '{spec}': {e}"))
             })?;
-        resp.bytes()
+        // read through a bounded `take` rather than `bytes()`: an endless (or merely enormous)
+        // body would otherwise be buffered into memory unchecked. Read one byte past the cap so
+        // exceeding it is distinguishable from exactly reaching it.
+        let mut buf: Vec<u8> = Vec::new();
+        resp.by_ref()
+            .take(GEOJSON_MAX_BYTES as u64 + 1)
+            .read_to_end(&mut buf)
             .map_err(|e| {
                 crate::CliError::Other(format!("Failed to read --geojson body from '{spec}': {e}"))
-            })?
-            .to_vec()
+            })?;
+        if buf.len() > GEOJSON_MAX_BYTES {
+            return Err(crate::CliError::Other(format!(
+                "--geojson '{spec}' exceeds the {} MB download limit.",
+                GEOJSON_MAX_BYTES / 1_000_000
+            )));
+        }
+        buf
     } else {
         std::fs::read(spec).map_err(|e| {
             crate::CliError::Other(format!("Failed to read --geojson '{spec}': {e}"))
@@ -4184,10 +4324,28 @@ impl PipFeature {
     /// features are tested at the raw longitude only.
     fn candidate_lons(&self, lon: f64) -> [Option<f64>; 2] {
         if self.wraps_antimeridian {
-            [Some(lon), Some(lon + 360.0)]
-        } else {
-            [Some(lon), None]
+            return [Some(lon), Some(lon + 360.0)];
         }
+        // A feature can sit ADJACENT to the antimeridian without crossing it (e.g. spanning
+        // 179.5..180.0), in which case it carries no wrap flag — but a query just the other side
+        // of the seam is still only a fraction of a degree away going east, while the raw
+        // subtraction measures it as ~359.5 degrees the long way round. Distances are computed in
+        // raw degree space, so without a second probe such a point measures ~40,000 km, exceeds
+        // any snap cap, and is silently dropped as "outside every region".
+        //
+        // Only offer the alternate when the raw longitude gap already exceeds 180 degrees — i.e.
+        // the short way round is genuinely the other direction. That is exactly the seam case, so
+        // ordinary features pay one comparison and containment cannot gain a false positive (the
+        // shifted query only enters the feature's span when the true angular distance is small).
+        let (west, east) = (self.bbox[0], self.bbox[2]);
+        let alt = if lon < west - 180.0 {
+            Some(lon + 360.0)
+        } else if lon > east + 180.0 {
+            Some(lon - 360.0)
+        } else {
+            None
+        };
+        [Some(lon), alt]
     }
 }
 
@@ -4600,12 +4758,14 @@ fn build_pip_features(
     feature_id_key: &str,
     feature_name_key: Option<&str>,
 ) -> CliResult<Vec<PipFeature>> {
-    let fc =
-        serde_json::from_value::<geojson::FeatureCollection>(geojson.clone()).map_err(|e| {
-            crate::CliError::Other(format!(
-                "--geojson is not a valid GeoJSON FeatureCollection: {e}"
-            ))
-        })?;
+    // deserialize from a REFERENCE: `from_value` needs an owned `Value`, so it would deep-clone
+    // every feature, property map and coordinate array first — doubling peak memory on a large
+    // boundary file for no benefit. `&Value` implements `Deserializer`, so this borrows instead.
+    let fc = geojson::FeatureCollection::deserialize(geojson).map_err(|e| {
+        crate::CliError::Other(format!(
+            "--geojson is not a valid GeoJSON FeatureCollection: {e}"
+        ))
+    })?;
     // Resolve the name key once: an explicit --feature-name-key, else auto-detect by probing common
     // name properties on the FIRST feature (a heterogeneous collection whose first feature lacks
     // the property won't auto-detect — use --feature-name-key to force it).
@@ -5083,6 +5243,29 @@ fn pip_assign(
     let sy = KM_PER_DEG;
     let mut best_i = None;
     let mut best_d2 = f64::INFINITY;
+    // Seed the search with the feature whose BBOX is nearest, then let the loop below prune
+    // against that. `best_d2` otherwise starts at infinity, so the first feature in FILE ORDER is
+    // always fully edge-scanned no matter how far away it is, and pruning quality depends
+    // entirely on how the boundary file happens to be ordered. This pass is bbox arithmetic only
+    // (no vertices), so it costs O(features) cheap comparisons and typically reduces the full
+    // ring scans below from "every unpruned feature" to one or two. The result is unchanged:
+    // bbox_dist2 is a true lower bound, so pruning against a real distance can never discard a
+    // nearer feature.
+    let mut seed: Option<(usize, f64)> = None;
+    let mut seed_bbox_d2 = f64::INFINITY;
+    for (i, f) in features.iter().enumerate() {
+        for flon in f.candidate_lons(lon).into_iter().flatten() {
+            let b = bbox_dist2(&f.bbox, flon, lat, sx, sy);
+            if b < seed_bbox_d2 {
+                seed_bbox_d2 = b;
+                seed = Some((i, flon));
+            }
+        }
+    }
+    if let Some((i, flon)) = seed {
+        best_d2 = feature_dist2(&features[i], flon, lat, sx, sy);
+        best_i = Some(i);
+    }
     for (i, f) in features.iter().enumerate() {
         // probe the query at each of the feature's candidate longitudes so antimeridian-crossing
         // features (stored continuity-unwrapped past ±180°) measure distance consistently with
@@ -5154,7 +5337,14 @@ fn geojson_lat_lons(geojson: &serde_json::Value) -> (Vec<f64>, Vec<f64>) {
 /// switches to a MapLibre `ChoroplethMap` (GeoJSON-only). Region keys come from `--locations`, or
 /// — with `--geocode` — are derived from `--lat`/`--lon` (reverse) or a `--locations` name column
 /// (forward) by reusing qsv's geocode engine.
-fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
+fn build_choropleth_plot(
+    args: &Args,
+    out_format: OutFormat,
+    geojson: Option<serde_json::Value>,
+) -> CliResult<Plot> {
+    // loaded once by `resolve_and_validate_geojson`; every consumer below borrows it and the
+    // trace takes ownership last, so the document is fetched and parsed exactly once per run.
+    let mut loaded_geojson = geojson;
     // Point-in-polygon binning: lat/lon points + a custom --geojson, without --geocode. It colors
     // regions by the GeoJSON feature that CONTAINS each point, so it always uses the geojson-id
     // location mode regardless of any --location-mode default. --geocode (when also present) takes
@@ -5242,14 +5432,19 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
     // 4-tuple.
     let mut below_note: Option<String> = None;
     let (locations, z, measure_label, hover_text) = if pip {
-        let (locs, z, label, hover, note) =
-            choropleth_pip_locations(args, agg, snap, args.flag_snap_max_dist)?;
+        let (locs, z, label, hover, note) = choropleth_pip_locations(
+            args,
+            agg,
+            snap,
+            args.flag_snap_max_dist,
+            loaded_geojson.as_ref(),
+        )?;
         below_note = note;
         (locs, z, label, hover)
     } else if args.flag_geocode {
         choropleth_geocoded_locations(args, mode.clone(), agg)?
     } else {
-        choropleth_literal_locations(args, agg)?
+        choropleth_literal_locations(args, agg, loaded_geojson.as_ref())?
     };
 
     if locations.is_empty() {
@@ -5262,7 +5457,10 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
     let mut plot = Plot::new();
     if args.flag_map {
         // ChoroplethMap on the MapLibre `map` subplot (GeoJSON-only).
-        let geojson = load_geojson(args.flag_geojson.as_deref().unwrap())?;
+        let geojson = match loaded_geojson.take() {
+            Some(v) => v,
+            None => load_geojson(args.flag_geojson.as_deref().unwrap())?,
+        };
         // collect the GeoJSON extent BEFORE the value is moved into the trace below.
         let (g_lats, g_lons) = geojson_lat_lons(&geojson);
         let trace = ChoroplethMap::new(locations, z)
@@ -5337,7 +5535,10 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
                 .scope("usa");
         }
         if let Some(spec) = args.flag_geojson.as_deref() {
-            let geojson = load_geojson(spec)?;
+            let geojson = match loaded_geojson.take() {
+                Some(v) => v,
+                None => load_geojson(spec)?,
+            };
             // plotly only auto-scopes its BUILT-IN location modes (iso3 world / usa-states); a
             // custom GeoJSON has no built-in scope, so without framing its polygons sit tiny on the
             // default whole-world projection. Frame the projection to the GeoJSON extent, reusing
@@ -5418,6 +5619,7 @@ fn with_chart_note(layout: Layout, note: &str) -> Layout {
 fn choropleth_literal_locations(
     args: &Args,
     agg: Agg,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let loc_idx = resolve_one(args.flag_locations.as_ref(), &headers, nh, "locations")?;
@@ -5455,10 +5657,16 @@ fn choropleth_literal_locations(
     // the location id.
     let names = match args.flag_geojson.as_deref() {
         Some(spec) => {
-            let geojson = load_geojson(spec)?;
+            let owned;
+            let geojson = match loaded_geojson {
+                Some(v) => v,
+                None => {
+                    owned = load_geojson(spec)?;
+                    &owned
+                },
+            };
             let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
-            let features =
-                build_pip_features(&geojson, key, args.flag_feature_name_key.as_deref())?;
+            let features = build_pip_features(geojson, key, args.flag_feature_name_key.as_deref())?;
             aligned_region_names(&features, &locs)
         },
         None => None,
@@ -5483,6 +5691,7 @@ fn choropleth_pip_locations(
     agg: Agg,
     snap: bool,
     snap_max_km: Option<f64>,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>, Option<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
@@ -5497,9 +5706,16 @@ fn choropleth_pip_locations(
     };
 
     let feature_id_key = args.flag_feature_id_key.as_deref().unwrap_or("id");
-    let geojson = load_geojson(args.flag_geojson.as_deref().unwrap())?;
+    let owned;
+    let geojson = match loaded_geojson {
+        Some(v) => v,
+        None => {
+            owned = load_geojson(args.flag_geojson.as_deref().unwrap())?;
+            &owned
+        },
+    };
     let features = build_pip_features(
-        &geojson,
+        geojson,
         feature_id_key,
         args.flag_feature_name_key.as_deref(),
     )?;
@@ -5772,7 +5988,7 @@ fn scatter3d_series_traces(
             let (a, b, c) = groups.remove(&name).unwrap_or_default();
             let trace: Box<dyn Trace> = Scatter3D::new(a, b, c)
                 .mode(Mode::Markers)
-                .name(name)
+                .name(escape_hover(&name))
                 .hover_template(hover);
             trace
         })
@@ -5887,7 +6103,7 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
                 .color_array(colors)
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
                 .show_scale(true)
-                .color_bar(ColorBar::new().title(color_label));
+                .color_bar(ColorBar::new().title(escape_hover(&color_label)));
         }
         plot.add_trace(
             Scatter3D::new(xs, ys, zs)
@@ -5898,9 +6114,11 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
     }
 
     let scene = LayoutScene::new()
-        .x_axis(Axis::new().title(Title::with_text(x_title)))
-        .y_axis(Axis::new().title(Title::with_text(y_title)))
-        .z_axis(Axis::new().title(Title::with_text(z_title)));
+        // axis titles render plotly pseudo-HTML and these are raw CSV headers, same sink as the
+        // smart 3D panel
+        .x_axis(Axis::new().title(Title::with_text(escape_hover(&x_title))))
+        .y_axis(Axis::new().title(Title::with_text(escape_hover(&y_title))))
+        .z_axis(Axis::new().title(Title::with_text(escape_hover(&z_title))));
     let mut layout = Layout::new().scene(scene).show_legend(series_idx.is_some());
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
@@ -6529,7 +6747,16 @@ fn read_numeric_columns(
 ) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<usize>)> {
     use std::hash::{Hash, Hasher};
 
-    let mut raw: Vec<Vec<Option<f64>>> = vec![Vec::new(); candidates.len()];
+    // NaN is the missing sentinel rather than `Option<f64>`: `parse_f64` accepts only FINITE
+    // values, so NaN can never be a legitimate reading, and this halves the buffer from 16 to 8
+    // bytes per row per candidate — the dominant memory cost when `--cols` is omitted and every
+    // column is a candidate.
+    //
+    // Deliberately NOT sampled: deciding the majority-numeric keep-set from the first N rows
+    // would let us skip buffering the rest, but a column that reads as text early and numeric
+    // later would be dropped on evidence the full pass contradicts. The verdict has to see every
+    // row, and the reader is a single-pass stream (stdin included), so the values must be held.
+    let mut raw: Vec<Vec<f64>> = vec![Vec::new(); candidates.len()];
     let mut nonempty = vec![0_usize; candidates.len()];
     let mut parsed = vec![0_usize; candidates.len()];
     // distinct hashes of the raw bytes of numeric cells per candidate — populated only when we
@@ -6558,7 +6785,7 @@ fn read_numeric_columns(
                     }
                 }
             }
-            raw[k].push(v);
+            raw[k].push(v.unwrap_or(f64::NAN));
         }
     }
     // keep majority-numeric columns (drops text/ID/date columns from an all-columns default)
@@ -6598,13 +6825,13 @@ fn read_numeric_columns(
         .map(|&k| col_label(headers, candidates[k], nh))
         .collect();
     let n_rows = raw[0].len();
-    let kept: Vec<&Vec<Option<f64>>> = keep.iter().map(|&k| &raw[k]).collect();
+    let kept: Vec<&Vec<f64>> = keep.iter().map(|&k| &raw[k]).collect();
     let mut columns: Vec<Vec<f64>> = vec![Vec::new(); kept.len()];
     // transpose the kept columns, dropping any row where a kept column is non-numeric/empty
     for r in 0..n_rows {
-        if kept.iter().all(|col| col[r].is_some()) {
+        if kept.iter().all(|col| !col[r].is_nan()) {
             for (out, col) in columns.iter_mut().zip(&kept) {
-                out.push(col[r].expect("checked is_some above"));
+                out.push(col[r]);
             }
         }
     }
@@ -6736,10 +6963,48 @@ fn most_associated_third(matrix: &[Vec<f64>], i: usize, j: usize) -> Option<usiz
 fn pearson_matrix(columns: &[Vec<f64>]) -> Vec<Vec<f64>> {
     let n = columns.len();
     let mut m = vec![vec![f64::NAN; n]; n];
-    for i in 0..n {
-        m[i][i] = pearson(&columns[i], &columns[i]);
-        for j in (i + 1)..n {
-            let r = pearson(&columns[i], &columns[j]);
+    if n == 0 {
+        return m;
+    }
+    // Calling `pearson` per pair re-derived BOTH column means and both variances every time —
+    // ~5 passes per pair, with each column's statistics recomputed N times. Centre each column
+    // once (O(N * rows)), after which a pair is a single dot product. The centred values and the
+    // mul_add accumulation order match `pearson` exactly, so results are unchanged.
+    let len = columns.iter().map(Vec::len).min().unwrap_or(0);
+    if len < 2 {
+        return m;
+    }
+    let centered: Vec<(Vec<f64>, f64)> = columns
+        .iter()
+        .map(|c| {
+            let mean = c[..len].iter().sum::<f64>() / len as f64;
+            let cv: Vec<f64> = c[..len].iter().map(|v| v - mean).collect();
+            let var = cv.iter().fold(0.0, |acc, d| d.mul_add(*d, acc));
+            (cv, var.sqrt())
+        })
+        .collect();
+    let dot = |a: &[f64], b: &[f64]| -> f64 {
+        let mut cov = 0.0;
+        for k in 0..len {
+            cov = a[k].mul_add(b[k], cov);
+        }
+        cov
+    };
+    let corr = |i: usize, j: usize| -> f64 {
+        let den = centered[i].1 * centered[j].1;
+        if den == 0.0 || !den.is_finite() {
+            f64::NAN
+        } else {
+            (dot(&centered[i].0, &centered[j].0) / den).clamp(-1.0, 1.0)
+        }
+    };
+    // one row of the upper triangle per task; the matrix is filled symmetrically afterwards
+    let rows: Vec<(usize, Vec<(usize, f64)>)> = (0..n)
+        .into_par_iter()
+        .map(|i| (i, (i..n).map(|j| (j, corr(i, j))).collect()))
+        .collect();
+    for (i, cells) in rows {
+        for (j, r) in cells {
             m[i][j] = r;
             m[j][i] = r;
         }
@@ -7014,6 +7279,10 @@ fn build_heatmap_correlation(
         );
     }
     let matrix = pearson_matrix(&columns);
+    // uniquify: plotly keys heatmap axes by CATEGORY, so two identically-named columns (CSV
+    // headers are not required to be unique) collapse onto one axis slot and one set of cells is
+    // silently hidden. The `viz smart` correlation path already routes through this helper.
+    let labels = truncate_labels_unique(&labels, CORR_LABEL_MAX_CHARS);
     Ok((corr_heatmap_trace(labels, matrix, None, true), None, None))
 }
 
@@ -7050,6 +7319,19 @@ fn build_heatmap_pivot(args: &Args) -> CliResult<(Box<dyn Trace>, Option<String>
     }
     if x_cats.is_empty() || y_cats.is_empty() {
         return fail_clierror!("No data found for the heatmap pivot (is --z numeric?).");
+    }
+    // the `z` matrix below is DENSE, so its size is the PRODUCT of the two cardinalities: refuse
+    // before allocating rather than OOM-ing on two high-cardinality key columns.
+    let cell_count = x_cats.len().saturating_mul(y_cats.len());
+    if cell_count > HEATMAP_PIVOT_MAX_CELLS {
+        return fail_clierror!(
+            "Heatmap pivot too large: --x has {} distinct values and --y has {}, which is {} \
+             cells (max {HEATMAP_PIVOT_MAX_CELLS}).\nUse lower-cardinality --x/--y columns, or \
+             pre-filter/bin the data first.",
+            x_cats.len(),
+            y_cats.len(),
+            cell_count
+        );
     }
     // z matrix indexed [y][x]; missing cells are NaN (serialized as null -> rendered as a gap)
     let mut z: Vec<Vec<f64>> = vec![vec![f64::NAN; x_cats.len()]; y_cats.len()];
@@ -7384,7 +7666,7 @@ fn build_radar(args: &Args) -> CliResult<Vec<Box<dyn Trace>>> {
             .hover_text_array(hover)
             .hover_info(HoverInfo::Text);
         if !series.is_empty() {
-            t = t.name(series);
+            t = t.name(escape_hover(&series));
         }
         traces.push(t);
     }
@@ -8255,8 +8537,39 @@ fn plotly_js_only() -> String {
 /// Fallback plotly.js CDN tag, used only if `Plot::online_cdn_js` stops emitting a recognizable
 /// `cdn.plot.ly` script tag. Keep the version in sync with the crate's vendored
 /// `resource/plotly.min.js` (the bundle `plotly_js_only` would otherwise inline).
-const PLOTLY_CDN_FALLBACK: &str =
-    r#"<script src="https://cdn.plot.ly/plotly-3.6.0.min.js" charset="utf-8"></script>"#;
+const PLOTLY_CDN_FALLBACK: &str = concat!(
+    r#"<script src="https://cdn.plot.ly/plotly-"#,
+    "3.7.0",
+    r#".min.js" charset="utf-8" integrity=""#,
+    "sha384-l4G4qURPwALv583BKlynU/4LiUx0rk9jcTX58Aq+Jc+jgWb52zeH2geZkSS3UPPs",
+    r#"" crossorigin="anonymous"></script>"#
+);
+
+/// The plotly.js version this file's CDN integrity hash was computed for, and that hash.
+///
+/// Under `QSV_VIZ_CDN=1` the emitted page executes plotly.js straight from `cdn.plot.ly`, so
+/// without Subresource Integrity a compromised or tampered CDN response is arbitrary script
+/// execution in every viewer of a published dashboard. The URL is version-pinned and therefore
+/// immutable, which is what makes a baked hash safe.
+///
+/// Verified: the digest below is the sha384 of `https://cdn.plot.ly/plotly-3.7.0.min.js`, which is
+/// both the file `Plot::online_cdn_js` points at AND byte-identical to the `resource/plotly.min.js`
+/// this build inlines — so the CDN and embedded paths load the same plotly.js, and the embedded
+/// bundle is a local oracle for this digest (see `plotly_cdn_sri_matches_the_embedded_bundle`).
+///
+/// `plotly_cdn_only` applies the hash ONLY when the tag it slices out of `Plot::online_cdn_js`
+/// actually points at this version — after a plotly.rs bump the URL changes and an inherited
+/// stale hash would block the script instead of protecting it.
+/// To regenerate after a plotly.rs bump changes the CDN URL (there is no offline oracle for this
+/// — the vendored bundle is a different version, so the digest can only come from the CDN):
+///
+/// ```text
+/// curl -sSL -o /tmp/p.js https://cdn.plot.ly/plotly-<VERSION>.min.js
+/// echo "sha384-$(openssl dgst -sha384 -binary /tmp/p.js | openssl base64 -A)"
+/// ```
+const PLOTLY_CDN_VERSION: &str = "3.7.0";
+const PLOTLY_CDN_SRI: &str =
+    "sha384-l4G4qURPwALv583BKlynU/4LiUx0rk9jcTX58Aq+Jc+jgWb52zeH2geZkSS3UPPs";
 
 /// The plotly.js CDN `<script src>` tag, sliced out of `Plot::online_cdn_js` so the pinned
 /// version can never drift from the bundle we would otherwise embed.
@@ -8271,7 +8584,21 @@ fn plotly_cdn_only() -> String {
     if let Some(start) = full.find(OPEN)
         && let Some(end) = full[start..].find(CLOSE)
     {
-        return full[start..start + end + CLOSE.len()].to_string();
+        let tag = &full[start..start + end + CLOSE.len()];
+        // add integrity only when this really is the version the hash was computed for; a
+        // plotly.rs bump changes the URL, and a stale hash would block the script outright
+        let versioned = format!("plotly-{PLOTLY_CDN_VERSION}.min.js");
+        if tag.contains(&versioned)
+            && !tag.contains("integrity=")
+            && let Some(close_angle) = tag.rfind("></script>")
+        {
+            return format!(
+                "{} integrity=\"{PLOTLY_CDN_SRI}\" crossorigin=\"anonymous\"{}",
+                &tag[..close_angle],
+                &tag[close_angle..]
+            );
+        }
+        return tag.to_string();
     }
     // shape changed unexpectedly — fall back to our own pinned tag rather than emit the
     // MathJax tag (or nothing) and leave `Plotly` undefined.
@@ -8984,6 +9311,22 @@ fn log_safe_lower_fence(log_y: bool, fence: f64, q1: f64) -> f64 {
     if log_y && fence <= 0.0 { q1 } else { fence }
 }
 
+/// The raw-value counterpart of `log_safe_lower_fence` (issue #4219). `box_log_skew_fallback`
+/// grants a log value axis to a heavily right-skewed column that still holds a small share
+/// (<= 5%) of non-positive values, on the strength of `q1 > 0`. Where the box is PRECOMPUTED that
+/// is handled by clamping the lower whisker, but `BoxRaw`/`Violin` hand plotly the values
+/// themselves and let it derive the whisker/KDE — so a single `0` or negative value re-creates the
+/// exact log-undefined fence #4219 set out to eliminate, breaking the whole trace. Drop the
+/// unplottable values on a log axis (they are unshowable there regardless); on a linear axis the
+/// values are returned untouched.
+fn log_safe_values(log_y: bool, values: Vec<f64>) -> Vec<f64> {
+    if log_y {
+        values.into_iter().filter(|v| *v > 0.0).collect()
+    } else {
+        values
+    }
+}
+
 /// Whether a `MeasureByDim` bar panel's value (y) axis should be logarithmic under the resolved
 /// `--log-scale` mode, from its already-aggregated top-N bar values. A log axis can't place 0 or
 /// negative values, so EVERY shown bar must be strictly positive — a single dominant bar over a
@@ -9122,13 +9465,14 @@ fn aggregate(xs: Vec<String>, ys: Vec<f64>, agg: Agg) -> (Vec<String>, Vec<f64>)
     let mut order: Vec<String> = Vec::new();
     let mut acc: HashMap<String, (f64, f64)> = HashMap::new(); // x -> (running, count)
     for (x, y) in xs.into_iter().zip(ys) {
-        let e = acc.entry(x.clone()).or_insert_with(|| {
-            order.push(x);
-            match agg {
-                Agg::Min => (f64::INFINITY, 0.0),
-                Agg::Max => (f64::NEG_INFINITY, 0.0),
-                _ => (0.0, 0.0),
-            }
+        // probe first: the owned key is only needed when the category is new (see read_xy)
+        if !acc.contains_key(&x) {
+            order.push(x.clone());
+        }
+        let e = acc.entry(x).or_insert_with(|| match agg {
+            Agg::Min => (f64::INFINITY, 0.0),
+            Agg::Max => (f64::NEG_INFINITY, 0.0),
+            _ => (0.0, 0.0),
         });
         e.1 += 1.0;
         match agg {
@@ -9206,7 +9550,26 @@ fn measure_by_dim_panel(
 
     let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
     let mut record = csv::ByteRecord::new();
+    // the dimension keys depend only on the ROW, not on the measure, but the dimension loop is
+    // nested inside the measure loop — recomputing them per measure did up to
+    // MEASURE_BY_DIM_MAX_CANDIDATES^2 (16x16 = 256) key builds per row, two String allocations
+    // each, where n_d (16) suffice. Build them once per row and index by `di`.
+    let mut row_keys: Vec<String> = Vec::with_capacity(n_d);
     while rdr.read_byte_record(&mut record)? {
+        // only worth building when at least one measure parses on this row
+        if !measures.iter().any(|&i| parse_f64(record.get(i)).is_some()) {
+            continue;
+        }
+        row_keys.clear();
+        for &d_idx in &dims {
+            let raw = cell_to_string(record.get(d_idx));
+            let trimmed = raw.trim();
+            row_keys.push(if trimmed.is_empty() {
+                NULL_TEXT.to_string()
+            } else {
+                trimmed.to_string()
+            });
+        }
         for (mi, &m_idx) in measures.iter().enumerate() {
             let Some(y) = parse_f64(record.get(m_idx)) else {
                 continue;
@@ -9215,16 +9578,14 @@ fn measure_by_dim_panel(
             g.0 += y;
             g.1 += y * y;
             g.2 += 1;
-            for (di, &d_idx) in dims.iter().enumerate() {
-                let raw = cell_to_string(record.get(d_idx));
-                let key = if raw.trim().is_empty() {
-                    NULL_TEXT.to_string()
+            for (di, key) in row_keys.iter().enumerate() {
+                let g = &mut groups[mi * n_d + di];
+                if let Some(e) = g.get_mut(key) {
+                    e.0 += y;
+                    e.1 += 1;
                 } else {
-                    raw.trim().to_string()
-                };
-                let e = groups[mi * n_d + di].entry(key).or_insert((0.0, 0));
-                e.0 += y;
-                e.1 += 1;
+                    g.insert(key.clone(), (y, 1));
+                }
             }
         }
     }
@@ -10318,6 +10679,12 @@ struct Panel {
     /// RAW field name at classification time — the panel `name` can be decorated later
     /// (e.g. "foo (sampled)") and would no longer match the page's section ids.
     dict_info:       Option<(String, String)>,
+    /// Index into the `stats` slice of the column this panel charts, recorded at classification
+    /// time. `None` for overview panels that aren't tied to a single column. This is the ONLY
+    /// sound way to rejoin a panel to its stats row: `name` is decorated after construction
+    /// (shape hints, "(sampled)") and is a positional "col N" placeholder on headerless input,
+    /// so neither it nor `s.field` can carry the identity. See `build_kpi_row`.
+    stat_idx:        Option<usize>,
 }
 
 impl Panel {
@@ -10335,7 +10702,15 @@ impl Panel {
             geo_meta: None,
             geojson_overlay: None,
             dict_info: None,
+            stat_idx: None,
         }
+    }
+
+    /// Record which `stats` row this panel charts, so downstream consumers (the KPI row) can
+    /// rejoin panel → stats without depending on the display title.
+    fn with_stat_idx(mut self, stat_idx: usize) -> Self {
+        self.stat_idx = Some(stat_idx);
+        self
     }
 
     /// Set whether this panel's value axis is logarithmic (box panels, per `--log-scale`).
@@ -10387,7 +10762,9 @@ impl Panel {
                 MUTED_COLOR,
                 html_escape(sub)
             ),
-            None => format!("{}{icon_sfx}", self.name),
+            // escape here too, NOT at the source: `name` must stay plain (it also feeds trace
+            // names and stderr status messages), so both arms escape at this render sink.
+            None => format!("{}{icon_sfx}", html_escape(&self.name)),
         }
     }
 }
@@ -11105,7 +11482,18 @@ fn route_from_concept(concept: &str) -> Option<(Route, Option<Agg>)> {
             // census_tract even when describegpt defaulted its numeric `role` to `measure`.
             _ => (Route::Dimension, None),
         },
-        "time" => (Route::Temporal, None),
+        "time" => match leaf {
+            // a duration is a SPAN (a magnitude), not a point in time: it has no place on a time
+            // axis and can't be the time-series x column (`canonical_date_col` only accepts stats
+            // type Date/DateTime), so routing the whole `time` namespace to Temporal dropped
+            // duration columns from the dashboard entirely. describegpt deliberately keeps
+            // `role: measure` for durations (see is_temporal_content_type in
+            // cmd/describegpt/dictionary.rs, issue #4177), but concept outranks role here, so the
+            // leaf has to be special-cased. Mean, not Sum: summing "days to close" across records
+            // is meaningless in the way a total revenue is not.
+            "duration" => (Route::Measure, Some(Agg::Mean)),
+            _ => (Route::Temporal, None),
+        },
         "id" | "pii" => (Route::Skip, None),
         "org" | "category" | "nyc" => (Route::Dimension, None),
         "measure" => match leaf {
@@ -11280,27 +11668,66 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     if is_count {
         return false;
     }
-    const INTENSIVE: &[&str] = &[
+    // Matched as whole TOKENS, not substrings. A substring test here is actively wrong: "ratio"
+    // is a substring of the entire `-ration` word family, so `duration`, `generation`,
+    // `operation`, `registration` and `remuneration` all matched and were silently downgraded
+    // from Sum to Mean. (This is the same hazard the doc comment above already records for bare
+    // "rate".) Plural/derived forms are listed explicitly rather than inferred, so `indices` and
+    // `densities` work without a stemming rule that would reopen the substring problem.
+    const INTENSIVE_TOKENS: &[&str] = &[
         "temperature",
+        "temperatures",
         "celsius",
         "fahrenheit",
-        "\u{b0}c",
-        "\u{b0}f",
         "average",
+        "averages",
         "avg",
         "median",
+        "medians",
         "percent",
+        "percentage",
+        "percentages",
         "pct",
         "ratio",
+        "ratios",
         "index",
+        "indexes",
+        "indices",
         "score",
+        "scores",
         "elevation",
+        "elevations",
         "altitude",
+        "altitudes",
         "density",
-        "per capita",
-        "per_capita",
+        "densities",
+        // Durations and ages/tenures. A per-record SPAN is not additive the way an amount is:
+        // "Total Account Age (Days)" sums a per-customer state into a number that means nothing,
+        // and the same applies to elapsed/latency/runtime style measures. This also keeps the
+        // label heuristic consistent with `route_from_concept`, which already routes the
+        // `time.duration` concept to Mean rather than Sum.
+        //
+        // Token matching is load-bearing here: "age" is a SUBSTRING of agency, package, storage,
+        // usage, message, coverage and mileage, every one of which is additive. Matching these as
+        // substrings would repeat exactly the `ratio`-inside-`duration` bug fixed above.
+        "age",
+        "ages",
+        "tenure",
+        "seniority",
+        "duration",
+        "durations",
+        "elapsed",
+        "runtime",
+        "uptime",
+        "latency",
     ];
-    INTENSIVE.iter().any(|kw| hay.contains(kw))
+    // phrases and symbols can't survive tokenization (which splits on non-alphanumerics), so
+    // these stay substring tests — none of them is a substring of a common additive word.
+    const INTENSIVE_SUBSTRINGS: &[&str] = &["\u{b0}c", "\u{b0}f", "per capita", "per_capita"];
+    tokens
+        .iter()
+        .any(|t| INTENSIVE_TOKENS.contains(&t.as_str()))
+        || INTENSIVE_SUBSTRINGS.iter().any(|kw| hay.contains(kw))
 }
 
 /// Distill a column's `StatsData` + optional dictionary `row` into one charting verdict.
@@ -12057,6 +12484,20 @@ fn bullet_content(line: &str) -> &str {
 /// Literal runs are `html_escape`d; only whitelisted tags are emitted. Recurses into
 /// emphasis and link-text spans (each strictly shorter, so termination is guaranteed).
 fn md_inline(text: &str) -> String {
+    md_inline_depth(text, 0)
+}
+
+/// Depth-limited core of `md_inline`. Each emphasis span and each link label recurses one frame
+/// deeper, with no natural bound: dictionary text is LLM-generated and explicitly untrusted here,
+/// and a description of deeply nested `**...**` drove ~25k nested frames — enough to exhaust the
+/// main thread's stack and abort the process. Past the limit the remaining text is emitted as
+/// escaped literal characters, which is exactly how unmatched markers already degrade.
+const MD_INLINE_MAX_DEPTH: usize = 16;
+
+fn md_inline_depth(text: &str, depth: usize) -> String {
+    if depth >= MD_INLINE_MAX_DEPTH {
+        return html_escape(text);
+    }
     let b = text.as_bytes();
     let n = b.len();
     let mut out = String::new();
@@ -12081,7 +12522,7 @@ fn md_inline(text: &str) -> String {
                 i += 1;
             },
             b'[' => {
-                if let Some((html, consumed)) = try_parse_link(&text[i..]) {
+                if let Some((html, consumed)) = try_parse_link(&text[i..], depth) {
                     push_escaped(&mut out, &mut lit);
                     out.push_str(&html);
                     i += consumed;
@@ -12111,7 +12552,7 @@ fn md_inline(text: &str) -> String {
                         ("<em>", "</em>")
                     };
                     out.push_str(open);
-                    out.push_str(&md_inline(&text[i + mlen..end]));
+                    out.push_str(&md_inline_depth(&text[i + mlen..end], depth + 1));
                     out.push_str(close);
                     i = end + mlen;
                     continue;
@@ -12169,7 +12610,7 @@ fn find_closing(hay: &str, marker: &str, underscore: bool) -> Option<usize> {
     None
 }
 
-fn try_parse_link(s: &str) -> Option<(String, usize)> {
+fn try_parse_link(s: &str, depth: usize) -> Option<(String, usize)> {
     // s starts with '['.
     let close_br = 1 + s[1..].find(']')?;
     let rest = &s[close_br + 1..];
@@ -12179,7 +12620,7 @@ fn try_parse_link(s: &str) -> Option<(String, usize)> {
     let url_body = &rest[1..];
     let close_par = find_url_end(url_body)?;
     let consumed = close_br + 2 + close_par + 1;
-    let inner = md_inline(&s[1..close_br]);
+    let inner = md_inline_depth(&s[1..close_br], depth + 1);
     let url = &url_body[..close_par];
     if let Some(safe) = sanitize_url(url) {
         Some((
@@ -13936,6 +14377,15 @@ struct ScatterPairAnim {
 /// bucket is one slider step, so the count is capped for legibility (see `choose_anim_bucket`).
 const SMART_ANIM_MAX_FRAMES: usize = 30;
 
+/// Frame cap for the EXPLICIT `--slider` animations (`viz <xy>`/`viz geo`), as opposed to the
+/// `viz smart` animations that auto-coarsen to `SMART_ANIM_MAX_FRAMES`. One frame is built per
+/// distinct slider value and each embeds its own copy of the plotted data — under
+/// `--slider-cumulative` frame k re-copies every row from frames 0..=k, so total embedded data is
+/// O(rows x frames). Uncapped, a timestamp column with 100k distinct values is unbounded. This
+/// ceiling is deliberately generous (a year of daily frames fits); the user picked the column, so
+/// exceeding it errors with guidance rather than silently re-bucketing behind their back.
+const SLIDER_MAX_FRAMES: usize = 365;
+
 /// Choose the finest calendar bucket (Day → Week → Month) whose distinct-period count stays within
 /// `SMART_ANIM_MAX_FRAMES`, returning it with the sorted, de-duplicated distinct bucket keys.
 /// Shared by the animated readers and the curvature selector so every time animation
@@ -14200,6 +14650,25 @@ struct GeoAnim {
     bucket_labels: Vec<String>,
 }
 
+/// How many points an `AnimatedGeo` panel actually serializes, given each bucket's point count.
+///
+/// The renderer emits a base trace holding every point, then one CUMULATIVE frame per bucket
+/// (buckets `0..=k`), so a point in bucket `b` is repeated once per frame from `b` onward — the
+/// serialized total is `total + Σ_b len(b) * (nb - b)`, roughly `total * (nb + 1) / 2`, NOT the
+/// distinct-point count. Budgeting the point cap against the distinct count instead overshoots by
+/// that factor (30 buckets => ~15x).
+fn cumulative_embedded_points(buckets: &[Vec<f64>]) -> usize {
+    let nb = buckets.len();
+    let total: usize = buckets.iter().map(Vec::len).sum();
+    total.saturating_add(
+        buckets
+            .iter()
+            .enumerate()
+            .map(|(b, pts)| pts.len().saturating_mul(nb - b))
+            .sum::<usize>(),
+    )
+}
+
 /// Read dated lat/lon rows in one pass and partition them into calendar buckets for an animated,
 /// cumulative geographic reveal. Only fires for a continental/global extent (where `viz smart`
 /// draws a ScatterGeo projection, which animates natively) — a city-scale cloud returns `None`, so
@@ -14271,14 +14740,50 @@ fn read_geo_anim(
         bucket_lons[bi].push(*lon);
     }
 
-    // keep the grand total of embedded points bounded: stride each bucket's cloud when the total
-    // exceeds the cap (rarely hit at MAX_SMART_POINTS).
-    let total: usize = bucket_lats.iter().map(Vec::len).sum();
-    if total > *MAX_SMART_POINTS {
-        let stride = total.div_ceil(*MAX_SMART_POINTS);
-        for (la, lo) in bucket_lats.iter_mut().zip(bucket_lons.iter_mut()) {
-            *la = la.iter().copied().step_by(stride).collect();
-            *lo = lo.iter().copied().step_by(stride).collect();
+    // Keep the EMBEDDED point count bounded. The renderer emits one CUMULATIVE frame per bucket
+    // (buckets `0..=k`), plus a base trace holding every point, so the serialized total is NOT the
+    // distinct-point count: a point in bucket `b` is repeated once per frame from `b` onward.
+    // Budgeting against the distinct count instead would overshoot the cap by ~nb/2 (30 buckets =>
+    // ~15x), which is how a nominal 150k-point dashboard grew to tens of MB of HTML.
+    let embedded = cumulative_embedded_points(&bucket_lats);
+    if embedded > *MAX_SMART_POINTS {
+        // A uniform per-bucket stride does NOT shrink the total proportionally: `step_by` keeps
+        // the first element of every bucket, so a long sparse timeline (many buckets smaller than
+        // the stride) can stay above the cap no matter how large the stride gets. Re-measure and
+        // escalate until the cumulative embedded count is actually met, and stop if a round makes
+        // no further progress (every bucket down to its single kept point).
+        // Re-derive from the ORIGINALS each round so `stride` stays an absolute sampling rate;
+        // striding the already-strided buckets would compound unpredictably.
+        let (src_lats, src_lons) = (bucket_lats.clone(), bucket_lons.clone());
+        let mut stride = embedded.div_ceil(*MAX_SMART_POINTS).max(2);
+        loop {
+            for (i, (la, lo)) in bucket_lats
+                .iter_mut()
+                .zip(bucket_lons.iter_mut())
+                .enumerate()
+            {
+                *la = src_lats[i].iter().copied().step_by(stride).collect();
+                *lo = src_lons[i].iter().copied().step_by(stride).collect();
+            }
+            if cumulative_embedded_points(&bucket_lats) <= *MAX_SMART_POINTS
+                || bucket_lats.iter().all(|b| b.len() <= 1)
+            {
+                break;
+            }
+            stride = stride.saturating_mul(2);
+        }
+        // Striding cannot shrink a bucket below its single first point, so with enough buckets the
+        // cumulative count is irreducible: `choose_anim_bucket` falls back to Month, which on a
+        // decades-long timeline yields hundreds of frames whose repetition alone blows the budget.
+        // Decline the animation rather than emit a panel that ignores its own cap — the caller
+        // falls back to a static map, which shows the same points without the frame repetition.
+        if cumulative_embedded_points(&bucket_lats) > *MAX_SMART_POINTS {
+            viz_note(&format!(
+                "viz smart: skipped the animated map — {} time buckets would embed more than the \
+                 {} point budget even fully downsampled. Use a coarser date column to animate it.",
+                nb, *MAX_SMART_POINTS
+            ));
+            return Ok(None);
         }
     }
 
@@ -14452,7 +14957,10 @@ fn read_entity_bucket_agg(
     let x_range = padded_range(&xv);
     let y_range = padded_range(&yv);
     Ok(Some(EntityBucketAgg {
-        entities: surviving,
+        // `entities` is display-only downstream (legend name + hover), never a key again — the
+        // `acc` lookups above are done — so escape once here, matching the read-time escaping of
+        // the other hover-bound cell values. plotly renders both sinks as pseudo-HTML.
+        entities: surviving.iter().map(|e| escape_hover(e)).collect(),
         xs,
         ys,
         sizes,
@@ -14919,12 +15427,20 @@ fn build_smart_pip_choropleth_panel(
     snap: bool,
     snap_max_km: Option<f64>,
     coord_decimals: Option<u32>,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<Option<Panel>> {
     // an explicit --geojson is explicit intent: a missing file, bad GeoJSON, or wrong
     // --feature-id-key is a hard error, not a silently-dropped panel. `Ok(None)` is reserved for
     // valid inputs that simply don't yield enough regions (the <2 check below).
-    let geojson = load_geojson(geojson_spec)?;
-    let features = build_pip_features(&geojson, feature_id_key, feature_name_key)?;
+    let owned;
+    let geojson = match loaded_geojson {
+        Some(v) => v,
+        None => {
+            owned = load_geojson(geojson_spec)?;
+            &owned
+        },
+    };
+    let features = build_pip_features(geojson, feature_id_key, feature_name_key)?;
     let cap = resolve_snap_cap(snap_max_km, &features, coord_decimals);
     let mut order: Vec<String> = Vec::new();
     let mut counts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
@@ -14962,6 +15478,18 @@ fn build_smart_pip_choropleth_panel(
         }
     }
     if order.len() < 2 {
+        // Total mismatch is the one case worth reporting even though no panel renders: it is not
+        // "valid data that happens to yield <2 regions", it means the boundary file does not
+        // cover the points at all (wrong --geojson, or lat/lon swapped so everything lands in the
+        // ocean). Without this the run is completely silent — the boundary overlay still draws,
+        // so the dashboard shows outlined regions with no fill and no explanation.
+        if total > 0 && dropped == total {
+            viz_note(&format!(
+                "viz smart: none of the {total} points fell inside any --geojson region, so no \
+                 region panel was built. Check that the boundary file covers this data and that \
+                 --lat/--lon are not swapped."
+            ));
+        }
         return Ok(None);
     }
     // only report after we know a panel will actually render, so the note never describes a map the
@@ -15052,15 +15580,17 @@ fn build_smart_pip_choropleth_panel(
         && lon_span < SMART_CHOROPLETH_MIN_SPAN_DEG
         && lat_span < SMART_CHOROPLETH_MIN_SPAN_DEG;
 
+    // the panel embeds the geometry, so it needs an owned document here. This clone replaces
+    // what used to be a whole extra fetch+parse of the same file, and is the only copy made.
     let kind = if use_tiles {
         PanelKind::ChoroplethMap {
             locations: order,
             z,
-            geojson,
+            geojson: geojson.clone(),
             feature_id_key: feature_id_key.to_string(),
             hover_text,
             center_lon: (min_lon + max_lon) / 2.0,
-            center_lat: (min_lat + max_lat) / 2.0,
+            center_lat: mercator_lat_center(min_lat, max_lat),
             zoom: f64::from(fitbounds_zoom(
                 min_lat,
                 max_lat,
@@ -15075,7 +15605,7 @@ fn build_smart_pip_choropleth_panel(
             locations: order,
             z,
             location_mode: LocationMode::GeoJsonId,
-            geojson: Some(geojson),
+            geojson: Some(geojson.clone()),
             feature_id_key: Some(feature_id_key.to_string()),
             hover_text,
             measure_label: "count".to_string(),
@@ -15099,6 +15629,7 @@ fn match_region_code(
     raw: &str,
     feature_ids: &std::collections::HashSet<&str>,
     numeric_id_widths: &[usize],
+    lowercased_ids: &std::collections::HashMap<String, String>,
 ) -> Option<String> {
     let raw = raw.trim();
     if raw.is_empty() {
@@ -15122,7 +15653,11 @@ fn match_region_code(
             }
         }
     }
-    None
+    // Last resort: ASCII-case-insensitive. Alphabetic region codes routinely differ in case
+    // between a CSV column and the boundary file ("Ca"/"ca" vs STUSPS "CA"), which otherwise
+    // matched nothing at all and silently cost the panel. Canonicalize to the FEATURE's spelling
+    // so the returned key still indexes the GeoJSON.
+    lowercased_ids.get(&raw.to_ascii_lowercase()).cloned()
 }
 
 /// Build `viz smart` summary choropleth panel(s) keyed off a region-code DIMENSION column (e.g. a
@@ -15147,6 +15682,7 @@ fn build_smart_summary_choropleth_panels(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     col_sems: &[ColSemantics],
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<Option<(Vec<Panel>, usize)>> {
     // explicit intent: only build when the user supplied a --geojson boundary file.
     let Some(spec) = args.flag_geojson.as_deref() else {
@@ -15186,10 +15722,17 @@ fn build_smart_summary_choropleth_panels(
 
     // load + validate the boundary file once (already resolved/validated in `run`); build the
     // feature-id set the candidate columns are matched against.
-    let geojson = load_geojson(spec)?;
+    let owned;
+    let geojson = match loaded_geojson {
+        Some(v) => v,
+        None => {
+            owned = load_geojson(spec)?;
+            &owned
+        },
+    };
     let feature_id_key = args.flag_feature_id_key.as_deref().unwrap_or("id");
     let features = build_pip_features(
-        &geojson,
+        geojson,
         feature_id_key,
         args.flag_feature_name_key.as_deref(),
     )?;
@@ -15207,6 +15750,32 @@ fn build_smart_summary_choropleth_panels(
         w.sort_unstable();
         w.dedup();
         w
+    };
+    // lower-cased id -> canonical feature id, for the case-insensitive fallback in
+    // `match_region_code`. Built from the ORDERED feature list, not the HashSet: iterating the set
+    // would pick an arbitrary winner when two ids differ only by case, so the same input could
+    // aggregate under a different region between runs. A folded key that maps to more than one
+    // distinct id is genuinely ambiguous, so it is REMOVED rather than resolved — exact and
+    // zero-padded matching still run first, so this only forfeits the fuzzy fallback.
+    let lowercased_ids: std::collections::HashMap<String, String> = {
+        let mut m: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for f in &features {
+            let folded = f.id.to_ascii_lowercase();
+            match m.get(&folded) {
+                Some(existing) if *existing != f.id => {
+                    ambiguous.insert(folded);
+                },
+                Some(_) => {},
+                None => {
+                    m.insert(folded, f.id.clone());
+                },
+            }
+        }
+        for k in ambiguous {
+            m.remove(&k);
+        }
+        m
     };
 
     // optional measure column to color the second panel: prefer a MAP_MEASURE_CONCEPTS concept,
@@ -15250,7 +15819,8 @@ fn build_smart_summary_choropleth_panels(
             total_rows[ci] += 1;
             // key aggregates under the matched geojson feature id; an unmatched value still counts
             // toward total_rows so a poorly-overlapping column scores low.
-            let Some(k) = match_region_code(raw, &feature_ids, &numeric_id_widths) else {
+            let Some(k) = match_region_code(raw, &feature_ids, &numeric_id_widths, &lowercased_ids)
+            else {
                 continue;
             };
             matched_rows[ci] += 1;
@@ -15344,7 +15914,7 @@ fn build_smart_summary_choropleth_panels(
                 feature_id_key: feature_id_key.to_string(),
                 hover_text,
                 center_lon: (min_lon + max_lon) / 2.0,
-                center_lat: (min_lat + max_lat) / 2.0,
+                center_lat: mercator_lat_center(min_lat, max_lat),
                 zoom: f64::from(fitbounds_zoom(
                     min_lat,
                     max_lat,
@@ -15422,6 +15992,14 @@ fn build_smart_summary_choropleth_panels(
 /// Max `--geojson` features to label on a map overlay. Above this, the region boundaries are still
 /// drawn but the per-region text labels are suppressed to avoid a cluttered map.
 const GEOJSON_OVERLAY_LABEL_MAX: usize = 60;
+
+/// Remote `--geojson` fetch guards. reqwest's default blocking client has no timeout at all and
+/// `Response::bytes()` buffers the whole body unchecked, so a stalling server hangs qsv forever
+/// and an endless body drives it to OOM. The timeout is a `util::timeout_secs` default (so
+/// QSV_TIMEOUT overrides it); the size cap is a safety CEILING, not a target — real boundary
+/// files (e.g. census tracts) legitimately run to a few hundred MB.
+const GEOJSON_FETCH_TIMEOUT_SECS: u16 = 30;
+const GEOJSON_MAX_BYTES: usize = 512_000_000;
 
 /// Outline color for `--geojson` region boundaries overlaid on a smart map. A teal, distinct from
 /// the warm data points, the purple core-extent box, and the magenta full-extent box.
@@ -15576,9 +16154,17 @@ fn build_geojson_overlay(
     spec: &str,
     feature_id_key: &str,
     feature_name_key: Option<&str>,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> Option<GeoJsonOverlay> {
-    let geojson = load_geojson(spec).ok()?;
-    let features = build_pip_features(&geojson, feature_id_key, feature_name_key).ok()?;
+    let owned;
+    let geojson = match loaded_geojson {
+        Some(v) => v,
+        None => {
+            owned = load_geojson(spec).ok()?;
+            &owned
+        },
+    };
+    let features = build_pip_features(geojson, feature_id_key, feature_name_key).ok()?;
     if features.is_empty() {
         return None;
     }
@@ -15746,6 +16332,7 @@ fn build_map_panel(
     dict: Option<&DictData>,
     coord_hint: Option<(usize, usize)>,
     cluster_mode: ClusterMode,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize), usize)>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
@@ -15794,6 +16381,7 @@ fn build_map_panel(
     // raw bubble-size measure per in-range point, row-aligned with lats/lons; left empty unless a
     // map measure was found. A missing/non-numeric value is NaN (drawn at the smallest size).
     let mut sizes_raw: Vec<f64> = Vec::new();
+    let build_dataset_lines = id_idx.is_some() || !extra_idxs.is_empty();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let (Some(lat), Some(lon)) = (
@@ -15808,22 +16396,29 @@ fn build_map_panel(
             if let Some(si) = size_idx {
                 sizes_raw.push(parse_f64(record.get(si)).unwrap_or(f64::NAN));
             }
-            let cell = |i: usize| -> String {
-                record
-                    .get(i)
-                    .map(|b| String::from_utf8_lossy(b).into_owned())
-                    .unwrap_or_default()
-            };
-            let id_val = id_idx.map(&cell).unwrap_or_default();
-            let extra: Vec<(String, String)> = extra_idxs
-                .iter()
-                .zip(&extra_labels)
-                .map(|(&i, label)| (label.clone(), cell(i)))
-                .collect();
-            dataset_lines.push(format_map_dataset_line(
-                (!id_val.is_empty()).then_some(id_val.as_str()),
-                &extra,
-            ));
+            // with no identifier and no hover fields the formatted line is always empty, so
+            // building it allocates a Vec plus a String per row for a result that is discarded.
+            // The push still happens so `dataset_lines` stays index-aligned with lats/lons.
+            if build_dataset_lines {
+                let cell = |i: usize| -> String {
+                    record
+                        .get(i)
+                        .map(|b| String::from_utf8_lossy(b).into_owned())
+                        .unwrap_or_default()
+                };
+                let id_val = id_idx.map(&cell).unwrap_or_default();
+                let extra: Vec<(String, String)> = extra_idxs
+                    .iter()
+                    .zip(&extra_labels)
+                    .map(|(&i, label)| (label.clone(), cell(i)))
+                    .collect();
+                dataset_lines.push(format_map_dataset_line(
+                    (!id_val.is_empty()).then_some(id_val.as_str()),
+                    &extra,
+                ));
+            } else {
+                dataset_lines.push(String::new());
+            }
         }
     }
     if lats.is_empty() {
@@ -15896,10 +16491,12 @@ fn build_map_panel(
     } else {
         vec![f64::NAN; core_lats.len()]
     };
+    // move the lines in rather than cloning the whole set: `core_lines` is rebuilt from the
+    // downsampled result below, so the original vector is dead after this
     let core_packed: Vec<(f64, String, f64)> = core_lons
         .iter()
         .copied()
-        .zip(core_lines.iter().cloned())
+        .zip(core_lines)
         .zip(core_sizes_raw.iter().copied())
         .map(|((lo, line), sz)| (lo, line, sz))
         .collect();
@@ -16040,11 +16637,12 @@ fn build_map_panel(
             snap,
             args.flag_snap_max_dist,
             coord_decimals,
+            loaded_geojson,
         )?;
         // overlay the region boundaries + labels directly on the point map (best-effort; the panel
         // builder above already hard-errored on a bad --geojson). Independent of the choropleth's
         // 2-region minimum — even a single region is worth outlining on the map.
-        let overlay = build_geojson_overlay(spec, key, name_key);
+        let overlay = build_geojson_overlay(spec, key, name_key, loaded_geojson);
         (panel, overlay)
     } else {
         #[cfg(feature = "geocode")]
@@ -16152,6 +16750,8 @@ fn build_map_panel(
             value_log: false,
             interest: f64::INFINITY,
             dict_info: None,
+            // a map panel charts a lat/lon PAIR, not a single stats row
+            stat_idx: None,
             #[cfg(feature = "geocode")]
             geo_meta,
             geojson_overlay,
@@ -16312,7 +16912,7 @@ fn extent_marker_geo() -> Marker {
 /// `MAP_PANEL_ASSUMED_WIDTH_PX` is assumed; verify visually if the panel sizing changes.
 #[cfg(feature = "geocode")]
 fn extent_center_zoom_raw(e: &MapExtent) -> (f64, f64, u8) {
-    let lat_center = (e.min_lat + e.max_lat) / 2.0;
+    let lat_center = mercator_lat_center(e.min_lat, e.max_lat);
     let lon_center = (e.min_lon + e.max_lon) / 2.0;
     let zoom = fitbounds_zoom(
         e.min_lat,
@@ -16951,6 +17551,11 @@ fn kpi_number_format(value: f64) -> String {
         ".3~s".to_string()
     } else if value.fract() == 0.0 {
         ",.0f".to_string()
+    } else if a < 0.01 && a > 0.0 {
+        // ",.2f" renders anything under 0.005 as a flat "0.00" — a dictionary-tagged ratio with
+        // gauge_range [0, 0.01] and mean 0.0004 showed the headline "0.00" beside a needle
+        // sitting at 4% of its scale. Use significant digits instead of fixed decimals.
+        ".3~g".to_string()
     } else {
         ",.2f".to_string()
     }
@@ -17072,7 +17677,10 @@ fn build_kpi_row(
         ) {
             continue;
         }
-        let Some(s) = stats.iter().find(|s| s.field == p.name) else {
+        // join on the recorded stats index, NOT on `p.name` — classification decorates the title
+        // after construction (box shape hints, "(sampled)"), and on headerless input `name` is a
+        // positional "col N" while `s.field` is empty, so a name-based lookup silently misses.
+        let Some(s) = p.stat_idx.and_then(|i| stats.get(i)) else {
             continue;
         };
         if !matches!(s.r#type.as_str(), "Integer" | "Float") {
@@ -17081,6 +17689,9 @@ fn build_kpi_row(
         let row = dict.and_then(|d| d.rows.get(&s.field));
         let label = match row {
             Some(r) if !r.label.is_empty() => r.label.clone(),
+            // headerless input has an empty `field`, which would render a bare "Total " — fall
+            // back to the same positional name the panel itself uses.
+            _ if s.field.is_empty() => format!("col {}", p.stat_idx.map_or(0, |i| i + 1)),
             _ => s.field.clone(),
         };
         // A `gauge_range` describes a bounded per-record quantity (a 0–5 rating, a 0–1 ratio), so
@@ -17125,6 +17736,7 @@ fn build_smart(
     out_format: OutFormat,
     progress: &ProgressBar,
     show_progress: bool,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<SmartRender> {
     let mut args = args.clone();
 
@@ -17399,6 +18011,7 @@ fn build_smart(
             dict_data.as_ref(),
             coord_hint,
             cluster_mode,
+            loaded_geojson,
         )? {
             None => (None, None),
             Some((p, choro, cols, mappable_count)) => {
@@ -17437,6 +18050,7 @@ fn build_smart(
                         value_log: p.value_log,
                         interest: p.interest,
                         dict_info: p.dict_info,
+                        stat_idx: p.stat_idx,
                         #[cfg(feature = "geocode")]
                         geo_meta: p.geo_meta,
                         geojson_overlay: p.geojson_overlay,
@@ -17478,7 +18092,7 @@ fn build_smart(
     // build_map_panel emitted no choropleth companion (avoid two competing region fills), and never
     // for image output (choropleths are HTML-only, like the PIP companion above).
     let summary_choros = if choropleth_panel.is_none() && !out_format.is_image() {
-        build_smart_summary_choropleth_panels(args, &stats, &col_sems)?
+        build_smart_summary_choropleth_panels(args, &stats, &col_sems, loaded_geojson)?
     } else {
         None
     };
@@ -17701,7 +18315,8 @@ fn build_smart(
                         .with_subtitle(subtitle)
                         .with_dict_info(dict_info)
                         .with_value_log(value_log)
-                        .with_interest(interest),
+                        .with_interest(interest)
+                        .with_stat_idx(idx),
                 );
             },
             None => {
@@ -18837,13 +19452,22 @@ fn build_smart(
             "<tr><td class=\"qsv-viz-meta-k\">Compiled:</td><td>{}</td></tr>\n",
             chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
         ));
-        // PID: a clickable link, only when --dataset-pid is set. The value is used verbatim as the
-        // href (a full URL such as a DOI is expected); both href and text are escaped.
+        // PID: a clickable link, only when --dataset-pid is set. A full URL such as a DOI is
+        // expected. The TEXT is html-escaped and the HREF additionally goes through
+        // `sanitize_url` — html-escaping alone leaves `javascript:` intact, and this page may be
+        // generated by a service and viewed by someone other than whoever passed the flag. A
+        // rejected scheme still shows the value as plain text rather than dropping it silently.
         if let Some(pid) = args.flag_dataset_pid.as_deref() {
             let pid_esc = html_escape(pid);
+            let cell = match sanitize_url(pid) {
+                Some(href) => format!(
+                    "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{pid_esc}</a>",
+                    html_escape(&href)
+                ),
+                None => pid_esc,
+            };
             rows.push_str(&format!(
-                "<tr><td class=\"qsv-viz-meta-k\">PID:</td><td><a \
-                 href=\"{pid_esc}\">{pid_esc}</a></td></tr>\n"
+                "<tr><td class=\"qsv-viz-meta-k\">PID:</td><td>{cell}</td></tr>\n"
             ));
         }
         Some(format!("<table class=\"qsv-viz-meta\">\n{rows}</table>"))
@@ -19008,7 +19632,9 @@ fn panel_trace(
             // opt-in / heuristic raw box: plotly computes the quartiles + true Tukey whiskers from
             // the values and overlays the sample points per this panel's chosen --box-points mode
             log_y = panel.value_log;
-            let values = hist.get(idx).cloned().unwrap_or_default();
+            // plotly derives this box's whiskers from the values, so non-positive values must not
+            // reach it on a log axis (issue #4219 — see `log_safe_values`)
+            let values = log_safe_values(log_y, hist.get(idx).cloned().unwrap_or_default());
             let mut b = BoxPlot::new(values)
                 .name(panel.name.clone())
                 .quartile_method(QuartileMethod::Linear)
@@ -19032,7 +19658,9 @@ fn panel_trace(
             // it, with the sample points overlaid per this panel's resolved --box-points mode
             // (no overlay at all for sampled violins)
             log_y = panel.value_log;
-            let values = hist.get(idx).cloned().unwrap_or_default();
+            // plotly estimates the KDE + inner box from the values, so non-positive values must
+            // not reach it on a log axis (issue #4219 — see `log_safe_values`)
+            let values = log_safe_values(log_y, hist.get(idx).cloned().unwrap_or_default());
             let mut v = Violin::new(values)
                 .name(panel.name.clone())
                 .quartile_method(QuartileMethod::Linear)
@@ -19095,7 +19723,11 @@ fn panel_trace(
             // renders the box but drops the points.
             log_y = panel.value_log;
             let stats = outliers.get(idx);
-            let pts = stats.map(|o| o.outliers.clone()).unwrap_or_default();
+            // the precomputed whisker is clamped below, but these are raw VALUES handed to
+            // plotly — a column granted a log axis by box_log_skew_fallback can carry
+            // zero/negative outliers, which are log-undefined exactly like the BoxRaw/Violin
+            // case (issue #4219).
+            let pts = log_safe_values(log_y, stats.map(|o| o.outliers.clone()).unwrap_or_default());
             // clamp a non-positive lower whisker up to q1 on a log axis (issue #4219), else the
             // log-undefined fence breaks the box and only the outlier points survive
             let whisker_low =
@@ -20554,9 +21186,11 @@ fn smart_inline_panel_plot(
                 .hover_template(hover),
         );
         let scene = LayoutScene::new()
-            .x_axis(Axis::new().title(Title::with_text(x_label.clone())))
-            .y_axis(Axis::new().title(Title::with_text(y_label.clone())))
-            .z_axis(Axis::new().title(Title::with_text(z_label.clone())));
+            // axis titles render plotly pseudo-HTML just like hovers and panel titles, and
+            // these labels are raw CSV headers
+            .x_axis(Axis::new().title(Title::with_text(escape_hover(x_label))))
+            .y_axis(Axis::new().title(Title::with_text(escape_hover(y_label))))
+            .z_axis(Axis::new().title(Title::with_text(escape_hover(z_label))));
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
@@ -20909,12 +21543,20 @@ fn smart_inline_panel_plot(
             };
             Scatter::new(pxv, pyv)
                 .mode(Mode::Markers)
+                // already `escape_hover`d at read time; the legend renders markup but treats `%`
+                // literally, so it needs no further escaping here
                 .name(entities[e].clone())
                 .marker(Marker::new().size(size_px(sz)).opacity(MAP_POINT_OPACITY))
+                // a hovertemplate additionally parses `%{...}`, so every interpolated string needs
+                // its literal `%` doubled. The entity is already markup-escaped (do NOT escape it
+                // twice -> "&amp;amp;"); the three labels are raw column headers, so they take the
+                // full escape_template_pct(escape_hover(..)) composition.
                 .hover_template(format!(
-                    "{}<br>{x_label}: %{{x}}<br>{y_label}: %{{y}}<br>{size_label}: \
-                     {size_disp}<extra></extra>",
-                    entities[e]
+                    "{}<br>{}: %{{x}}<br>{}: %{{y}}<br>{}: {size_disp}<extra></extra>",
+                    escape_template_pct(&entities[e]),
+                    escape_template_pct(&escape_hover(x_label)),
+                    escape_template_pct(&escape_hover(y_label)),
+                    escape_template_pct(&escape_hover(size_label)),
                 ))
         };
         let mut plot = Plot::new();
@@ -20937,10 +21579,11 @@ fn smart_inline_panel_plot(
         }
         // pin axes globally so bubbles don't reframe as they move
         let x_axis = Axis::new()
-            .title(Title::with_text(x_label.clone()))
+            // axis titles are a plotly markup sink; these labels are raw CSV headers
+            .title(Title::with_text(escape_hover(x_label)))
             .range(vec![x_range.0, x_range.1]);
         let y_axis = Axis::new()
-            .title(Title::with_text(y_label.clone()))
+            .title(Title::with_text(escape_hover(y_label)))
             .range(vec![y_range.0, y_range.1]);
         let mut layout = Layout::new()
             .show_legend(true)
@@ -21033,10 +21676,11 @@ fn smart_inline_panel_plot(
         }
         // pin axes globally so the cloud doesn't reframe as points accumulate
         let x_axis = Axis::new()
-            .title(Title::with_text(x_label.clone()))
+            // axis titles are a plotly markup sink; these labels are raw CSV headers
+            .title(Title::with_text(escape_hover(x_label)))
             .range(vec![x_range.0, x_range.1]);
         let y_axis = Axis::new()
-            .title(Title::with_text(y_label.clone()))
+            .title(Title::with_text(escape_hover(y_label)))
             .range(vec![y_range.0, y_range.1]);
         let mut layout = Layout::new()
             .show_legend(false)
@@ -21674,7 +22318,14 @@ fn count_values(args: &Args, indices: &[usize], top_n: usize) -> CliResult<FreqM
                     continue;
                 }
                 if let Some(m) = maps.get_mut(&i) {
-                    *m.entry(cell.to_vec()).or_insert(0) += 1;
+                    // hot inner loop of the no-frequency-cache fallback: probe before
+                    // allocating, else every counted cell heap-allocates a key that is
+                    // immediately dropped.
+                    if let Some(c) = m.get_mut(cell) {
+                        *c += 1;
+                    } else {
+                        m.insert(cell.to_vec(), 1);
+                    }
                 }
             }
         }
@@ -21743,8 +22394,12 @@ fn accumulate_hierarchy_counts(
     let mut valid_values = 0_usize;
     let mut invalid_values = 0_usize;
     let mut record = csv::ByteRecord::new();
+    // reused across rows: the path is only cloned into the map on a genuine MISS, so a
+    // low-cardinality hierarchy (the common case) stops allocating almost entirely after the
+    // first few rows instead of building dims.len() Strings for every row.
+    let mut path: Vec<String> = Vec::with_capacity(dims.len());
     while rdr.read_byte_record(&mut record)? {
-        let mut path = Vec::with_capacity(dims.len());
+        path.clear();
         for &d in dims {
             let seg = match record.get(d) {
                 Some(cell) => {
@@ -21761,7 +22416,13 @@ fn accumulate_hierarchy_counts(
         }
         match value_idx {
             // count mode: every row contributes 1 to its leaf.
-            None => *leaves.entry(path).or_insert(0.0) += 1.0,
+            None => {
+                if let Some(v) = leaves.get_mut(path.as_slice()) {
+                    *v += 1.0;
+                } else {
+                    leaves.insert(path.clone(), 1.0);
+                }
+            },
             // value mode: sum a finite, non-negative measure. An empty cell is a benign missing
             // measure (skipped, no leaf created); a non-numeric / negative / non-finite cell can't
             // size an area/angle, so it's tallied and the pass errors afterwards. This avoids
@@ -21781,7 +22442,11 @@ fn accumulate_hierarchy_counts(
                 {
                     Some(v) if v.is_finite() && v >= 0.0 => {
                         valid_values += 1;
-                        *leaves.entry(path).or_insert(0.0) += v;
+                        if let Some(acc) = leaves.get_mut(path.as_slice()) {
+                            *acc += v;
+                        } else {
+                            leaves.insert(path.clone(), v);
+                        }
                     },
                     _ => invalid_values += 1,
                 }
@@ -21913,7 +22578,14 @@ fn hierarchy_arrays(
 
     // tree[parent_prefix][child_segment] = subtree total under that child.
     let mut tree: HashMap<Vec<String>, HashMap<String, f64>> = HashMap::new();
-    for (path, &v) in leaves {
+    // Roll up in a DETERMINISTIC order. Iterating `leaves` (a HashMap) directly makes the float
+    // accumulation order vary between processes — Rust seeds HashMap's hasher randomly — so the
+    // same input produced subtly different parent sums run to run (37616.58 vs 37616.579999999994
+    // for the same treemap). Harmless numerically, but it means every regeneration of a committed
+    // artifact churns, and it makes a chart's own output unreproducible.
+    let mut ordered: Vec<(&Vec<String>, f64)> = leaves.iter().map(|(p, &v)| (p, v)).collect();
+    ordered.sort_unstable_by(|a, b| a.0.cmp(b.0));
+    for (path, v) in ordered {
         if path.len() != depth {
             continue; // defensive: ignore malformed paths
         }
@@ -25573,6 +26245,618 @@ mod tests {
     }
 
     #[test]
+    fn is_intensive_measure_matches_tokens_not_substrings() {
+        // the -ration word family all CONTAIN "ratio"; a substring test silently downgraded these
+        // additive amounts from Sum to Mean, and also dropped them from the inequality overview.
+        // ("duration" belongs to this family too, but it is now intensive on its own merits as a
+        // time SPAN — see the span cases below — so it can no longer serve as a control here.)
+        for additive in [
+            "generation",
+            "operation",
+            "operations",
+            "registration",
+            "registrations",
+            "remuneration",
+            "corporations",
+            "migration",
+            "iteration",
+        ] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} is additive, must not be treated as intensive"
+            );
+        }
+        // genuinely intensive columns still match, including plural/derived forms
+        for intensive in [
+            "ratio",
+            "ratios",
+            "debt_to_equity_ratio",
+            "percent",
+            "percentage",
+            "pct_complete",
+            "avg_price",
+            "median_income",
+            "score",
+            "scores",
+            "review_score",
+            "index",
+            "indices",
+            "density",
+            "densities",
+            "elevation",
+            "temperature",
+        ] {
+            assert!(
+                is_intensive_measure(intensive, intensive),
+                "{intensive} should be intensive"
+            );
+        }
+        // durations/ages are spans, not amounts: summing them is meaningless
+        for span in [
+            "age",
+            "account_age_days",
+            "Account Age (Days)",
+            "tenure",
+            "duration",
+            "call_duration",
+            "elapsed",
+            "latency_ms",
+            "runtime",
+        ] {
+            assert!(
+                is_intensive_measure(span, span),
+                "{span} is a span/state, must not be summed"
+            );
+        }
+        // ...but "age" is a substring of these ADDITIVE words, so token matching must protect them
+        for additive in [
+            "agency",
+            "Agency Name",
+            "packages",
+            "storage",
+            "usage",
+            "message_count",
+            "coverage",
+            "mileage",
+            "garage",
+        ] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} merely contains 'age' and must stay additive"
+            );
+        }
+        // phrases/symbols stay substring-matched (they can't survive tokenization)
+        assert!(is_intensive_measure(
+            "income per capita",
+            "income_per_capita"
+        ));
+        assert!(is_intensive_measure("temp \u{b0}C", "temp_c"));
+        // the count guard still wins over an embedded intensive token
+        assert!(!is_intensive_measure(
+            "review score count",
+            "review_score_count"
+        ));
+    }
+
+    #[test]
+    fn route_from_concept_treats_duration_as_a_measure() {
+        // a duration is a span, not a point in time: routing it Temporal dropped it from the
+        // dashboard entirely (no distribution panel, and canonical_date_col won't take it either)
+        assert_eq!(
+            route_from_concept("time.duration"),
+            Some((Route::Measure, Some(Agg::Mean)))
+        );
+        // the rest of the `time` namespace is unchanged
+        assert_eq!(
+            route_from_concept("time.timestamp"),
+            Some((Route::Temporal, None))
+        );
+        assert_eq!(route_from_concept("time"), Some((Route::Temporal, None)));
+    }
+
+    #[test]
+    fn mercator_lat_center_is_the_visual_midpoint() {
+        // round-trip
+        for lat in [-80.0, -45.0, 0.0, 12.5, 45.0, 80.0] {
+            assert!(
+                (inverse_mercator_y(mercator_y(lat)) - lat).abs() < 1e-9,
+                "{lat}"
+            );
+        }
+        // at the equator Mercator is locally symmetric, so it agrees with the arithmetic mean
+        assert!((mercator_lat_center(-10.0, 10.0) - 0.0).abs() < 1e-9);
+        // poleward it does NOT: the visual centre sits north of the arithmetic mean, which is
+        // exactly why a Mercator-fitted zoom left the top of an arctic extent off-screen
+        let (lo, hi) = (66.0, 84.5);
+        let arithmetic = (lo + hi) / 2.0;
+        let visual = mercator_lat_center(lo, hi);
+        assert!(
+            visual > arithmetic + 0.5,
+            "visual={visual} arithmetic={arithmetic}"
+        );
+        // and it is genuinely equidistant in Mercator space
+        let (a, b, c) = (mercator_y(lo), mercator_y(visual), mercator_y(hi));
+        assert!(((a - b) - (b - c)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ring_planar_area_includes_the_closing_edge() {
+        let ring = |pts: &[[f64; 2]]| serde_json::json!(pts);
+        // a 10x10 square offset from the origin, written UNCLOSED: dropping the closing term
+        // makes the shoelace sum wildly wrong (it used to compute 950 instead of 100)
+        let unclosed = ring(&[
+            [100.0, 100.0],
+            [110.0, 100.0],
+            [110.0, 110.0],
+            [100.0, 110.0],
+        ]);
+        assert!((ring_planar_area(&unclosed) - 100.0).abs() < 1e-9);
+        // the already-closed spelling must give the same answer
+        let closed = ring(&[
+            [100.0, 100.0],
+            [110.0, 100.0],
+            [110.0, 110.0],
+            [100.0, 110.0],
+            [100.0, 100.0],
+        ]);
+        assert!((ring_planar_area(&closed) - ring_planar_area(&unclosed)).abs() < 1e-9);
+        // and an unclosed exterior must still out-rank a genuine hole, which is what
+        // repair_polygon_rings orders on
+        let hole = ring(&[
+            [102.0, 102.0],
+            [105.0, 102.0],
+            [105.0, 105.0],
+            [102.0, 105.0],
+        ]);
+        assert!(ring_planar_area(&unclosed) > ring_planar_area(&hole));
+        // degenerate rings stay zero
+        assert!((ring_planar_area(&ring(&[[0.0, 0.0], [1.0, 1.0]])) - 0.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn kpi_number_format_keeps_small_magnitudes_visible() {
+        // a ratio like 0.0004 rendered as a flat "0.00" next to a gauge needle at 4% of scale
+        assert_eq!(kpi_number_format(0.0004), ".3~g");
+        assert_eq!(kpi_number_format(-0.0004), ".3~g");
+        // the existing bands are untouched
+        assert_eq!(kpi_number_format(0.25), ",.2f");
+        assert_eq!(kpi_number_format(42.0), ",.0f");
+        assert_eq!(kpi_number_format(1_250_000.0), ".3~s");
+        // exact zero is a whole number, not a small magnitude
+        assert_eq!(kpi_number_format(0.0), ",.0f");
+    }
+
+    #[test]
+    fn match_region_code_falls_back_to_case_insensitive() {
+        let ids: std::collections::HashSet<&str> = ["CA", "NY", "06075"].into_iter().collect();
+        let widths = vec![5_usize];
+        let lower: std::collections::HashMap<String, String> = ids
+            .iter()
+            .map(|i| ((*i).to_ascii_lowercase(), (*i).to_string()))
+            .collect();
+        let m = |raw: &str| match_region_code(raw, &ids, &widths, &lower);
+        // exact still wins
+        assert_eq!(m("CA").as_deref(), Some("CA"));
+        // differently-cased alphabetic codes now match, canonicalized to the FEATURE's spelling
+        assert_eq!(m("ca").as_deref(), Some("CA"));
+        assert_eq!(m("Ca").as_deref(), Some("CA"));
+        // numeric zero-padding is unaffected and still preferred
+        assert_eq!(m("6075").as_deref(), Some("06075"));
+        // a genuine non-member still misses
+        assert!(m("ZZ").is_none());
+    }
+
+    #[test]
+    fn md_inline_caps_recursion_depth() {
+        // untrusted LLM dictionary text: deeply nested emphasis used to recurse without bound and
+        // could exhaust the stack. Past the cap the remainder is emitted as escaped literal text.
+        let deep = "*".repeat(4000) + "x" + &"*".repeat(4000);
+        let out = md_inline(&deep);
+        assert!(!out.is_empty());
+        // no raw markup escapes, whatever the nesting did
+        assert!(!out.contains("<script"));
+        // a pathological run of unmatched markers terminates and stays literal
+        let unmatched = "*".repeat(5000);
+        assert!(!md_inline(&unmatched).is_empty());
+        // ordinary emphasis still renders
+        assert!(md_inline("plain *em* text").contains("<em>"));
+        assert!(md_inline("plain **strong** text").contains("<strong>"));
+    }
+
+    #[test]
+    fn match_region_code_drops_ambiguous_case_folds() {
+        // two feature ids differing only by case make the folded key ambiguous: resolving it from
+        // HashSet iteration order would aggregate the same CSV value under a different region
+        // between runs, so the fuzzy fallback is forfeited instead (exact matching still works).
+        let ids: std::collections::HashSet<&str> = ["CA", "ca", "NY"].into_iter().collect();
+        let widths: Vec<usize> = Vec::new();
+        let mut lower: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for id in ["CA", "ca", "NY"] {
+            let f = id.to_ascii_lowercase();
+            match lower.get(&f) {
+                Some(e) if e != id => {
+                    ambiguous.insert(f);
+                },
+                Some(_) => {},
+                None => {
+                    lower.insert(f, id.to_string());
+                },
+            }
+        }
+        for k in ambiguous {
+            lower.remove(&k);
+        }
+        // exact matches are unaffected by the ambiguity
+        assert_eq!(
+            match_region_code("CA", &ids, &widths, &lower).as_deref(),
+            Some("CA")
+        );
+        assert_eq!(
+            match_region_code("ca", &ids, &widths, &lower).as_deref(),
+            Some("ca")
+        );
+        // but a case that matches NEITHER exactly has no deterministic answer, so none is given
+        assert!(match_region_code("Ca", &ids, &widths, &lower).is_none());
+        // an unambiguous id still folds
+        assert_eq!(
+            match_region_code("ny", &ids, &widths, &lower).as_deref(),
+            Some("NY")
+        );
+    }
+
+    #[test]
+    fn cumulative_embedded_points_budget_converges_on_sparse_buckets() {
+        // `step_by` keeps the first element of EVERY bucket, so with many near-empty buckets a
+        // single stride pass cannot reach the cap however large the stride is. This models that
+        // shape: 400 buckets of 1 point each embeds 400 + ~80k, far above a small cap.
+        let sparse: Vec<Vec<f64>> = (0..400).map(|_| vec![0.0; 1]).collect();
+        let embedded = cumulative_embedded_points(&sparse);
+        assert!(
+            embedded > 400,
+            "cumulative repetition dominates: {embedded}"
+        );
+        // striding cannot shrink single-point buckets at all, which is why the production loop
+        // stops on the all-buckets-<=1 condition rather than spinning — and why, past that point,
+        // it declines the animation instead of emitting a panel that ignores its own cap.
+        let strided: Vec<Vec<f64>> = sparse
+            .iter()
+            .map(|b| b.iter().copied().step_by(1000).collect())
+            .collect();
+        assert_eq!(
+            cumulative_embedded_points(&strided),
+            embedded,
+            "single-point buckets are irreducible by striding"
+        );
+        // enough single-point buckets exceed even the default budget on repetition alone
+        let many: Vec<Vec<f64>> = (0..700).map(|_| vec![0.0; 1]).collect();
+        assert!(cumulative_embedded_points(&many) > 150_000);
+    }
+
+    #[test]
+    fn pearson_matrix_matches_pairwise_pearson() {
+        // the precomputed/parallel form must agree with the per-pair reference exactly, including
+        // its NaN semantics for degenerate columns
+        let cols = vec![
+            vec![1.0, 2.0, 3.0, 4.0, 5.0],
+            vec![2.0, 4.1, 5.9, 8.2, 9.8], // near-linear
+            vec![5.0, 3.0, 4.0, 1.0, 2.0], // negatively related
+            vec![7.0, 7.0, 7.0, 7.0, 7.0], // constant -> undefined
+        ];
+        let m = pearson_matrix(&cols);
+        for i in 0..cols.len() {
+            for j in 0..cols.len() {
+                let want = pearson(&cols[i], &cols[j]);
+                let got = m[i][j];
+                assert_eq!(
+                    want.is_nan(),
+                    got.is_nan(),
+                    "NaN disagreement at ({i},{j}): want {want} got {got}"
+                );
+                if !want.is_nan() {
+                    assert!(
+                        (want - got).abs() < 1e-12,
+                        "({i},{j}): want {want} got {got}"
+                    );
+                }
+            }
+        }
+        // symmetry and the self-correlation diagonal
+        assert!((m[0][0] - 1.0).abs() < 1e-12);
+        assert!(m[3][3].is_nan(), "constant column diagonal must stay NaN");
+        assert!((m[0][2] - m[2][0]).abs() < 1e-12);
+        // degenerate shapes
+        assert!(pearson_matrix(&[]).is_empty());
+        let single = pearson_matrix(&[vec![1.0]]);
+        assert!(single[0][0].is_nan(), "n<2 observations is undefined");
+    }
+
+    #[test]
+    fn candidate_lons_probes_across_the_seam_for_adjacent_features() {
+        // a feature hugging the dateline WITHOUT crossing it carries no wrap flag, but a query
+        // just the other side is a fraction of a degree away going east — measured raw it reads
+        // as ~359.5 degrees and the point is dropped as "outside every region".
+        let near_seam = PipFeature {
+            id:                 "S".to_string(),
+            name:               None,
+            polygons:           Vec::new(),
+            bbox:               [179.5, -1.0, 180.0, 1.0],
+            wraps_antimeridian: false,
+        };
+        let lons: Vec<f64> = near_seam
+            .candidate_lons(-179.999)
+            .into_iter()
+            .flatten()
+            .collect();
+        assert!(
+            lons.iter().any(|l| (*l - 180.001).abs() < 1e-9),
+            "expected a +360 probe, got {lons:?}"
+        );
+        // an ordinary interior feature gets no second probe (it would only cost time)
+        let interior = PipFeature {
+            id:                 "I".to_string(),
+            name:               None,
+            polygons:           Vec::new(),
+            bbox:               [-75.0, 39.0, -74.0, 41.0],
+            wraps_antimeridian: false,
+        };
+        let lons: Vec<f64> = interior
+            .candidate_lons(-74.5)
+            .into_iter()
+            .flatten()
+            .collect();
+        assert_eq!(lons.len(), 1, "interior features need only the raw probe");
+        // ... and a query far to the EAST of a western feature probes -360
+        let lons: Vec<f64> = interior
+            .candidate_lons(179.0)
+            .into_iter()
+            .flatten()
+            .collect();
+        assert!(
+            lons.iter().any(|l| (*l - (-181.0)).abs() < 1e-9),
+            "expected a -360 probe, got {lons:?}"
+        );
+        // a genuinely wrapping feature keeps its existing both-representations behaviour
+        let wrapping = PipFeature {
+            id:                 "W".to_string(),
+            name:               None,
+            polygons:           Vec::new(),
+            bbox:               [179.5, -1.0, 180.5, 1.0],
+            wraps_antimeridian: true,
+        };
+        assert_eq!(
+            wrapping
+                .candidate_lons(-179.0)
+                .into_iter()
+                .flatten()
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn plotly_cdn_tag_carries_the_pinned_integrity_hash() {
+        // What is verifiable offline is the WIRING: that the emitted tag uses the pinned
+        // constants rather than some other value, and that the two CDN paths agree. Whether the
+        // digest is the true hash of the served file cannot be checked here — the only oracle is
+        // the CDN itself, and the vendored bundle is a different version — so that is verified at
+        // the constant (see the regeneration command on PLOTLY_CDN_VERSION).
+        let tag = plotly_cdn_only();
+        assert!(
+            tag.contains(&format!("plotly-{PLOTLY_CDN_VERSION}.min.js")),
+            "emitted tag is not the pinned version: {tag}"
+        );
+        assert!(
+            tag.contains(&format!("integrity=\"{PLOTLY_CDN_SRI}\"")),
+            "emitted tag does not carry the pinned digest: {tag}"
+        );
+        assert!(tag.contains(r#"crossorigin="anonymous""#), "{tag}");
+        // exactly one integrity attribute — the injection must not double-apply
+        assert_eq!(tag.matches("integrity=").count(), 1, "{tag}");
+
+        // the hand-written fallback must agree with the injected form on both values, else the
+        // fallback path would serve an unverified (or wrongly-verified) bundle
+        assert!(PLOTLY_CDN_FALLBACK.contains(&format!("plotly-{PLOTLY_CDN_VERSION}.min.js")));
+        assert!(PLOTLY_CDN_FALLBACK.contains(PLOTLY_CDN_SRI));
+        assert!(PLOTLY_CDN_FALLBACK.contains(r#"crossorigin="anonymous""#));
+
+        // shape of the digest itself: sha384 is 48 bytes -> 64 base64 chars
+        let payload = PLOTLY_CDN_SRI
+            .strip_prefix("sha384-")
+            .expect("SRI must declare its algorithm");
+        assert_eq!(payload.len(), 64, "sha384 digest length: {payload}");
+        assert!(
+            payload
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'='),
+            "digest is not base64: {payload}"
+        );
+    }
+
+    #[test]
+    fn plotly_cdn_sri_matches_the_embedded_bundle() {
+        use base64_simd::STANDARD as BASE64;
+        use sha2::{Digest, Sha384};
+
+        // The crate's vendored `resource/plotly.min.js` — the bundle this build INLINES — is
+        // byte-identical to the file the pinned CDN URL serves, so it is a genuine offline oracle
+        // for the integrity hash: this asserts the digest is the CORRECT one, not merely
+        // well-formed. Crucially it fails the moment a plotly.rs bump changes the embedded
+        // bundle without PLOTLY_CDN_SRI being regenerated, which is exactly the regression that
+        // would otherwise ship a hash the browser rejects.
+        let tag = plotly_js_only();
+        let body = tag
+            .find('>')
+            .map(|i| &tag[i + 1..])
+            .and_then(|rest| rest.strip_suffix("</script>"))
+            .expect("plotly_js_only should emit a single <script>...</script>");
+        let digest = BASE64.encode_to_string(Sha384::digest(body.as_bytes()));
+        assert_eq!(
+            format!("sha384-{digest}"),
+            PLOTLY_CDN_SRI,
+            "PLOTLY_CDN_SRI is stale: the embedded plotly.js bundle hashes to sha384-{digest}. \
+             Regenerate it (see the command on PLOTLY_CDN_VERSION) and update PLOTLY_CDN_VERSION \
+             to match the bundle."
+        );
+    }
+
+    #[test]
+    fn escape_template_pct_doubles_literal_percent() {
+        // a hovertemplate parses `%{...}`, so a literal `%` in an interpolated label must be
+        // doubled or plotly swallows the following text as a data token
+        assert_eq!(escape_template_pct("50% of total"), "50%% of total");
+        assert_eq!(escape_template_pct("Pct % complete"), "Pct %% complete");
+        // a value that already looks like a token is neutralized rather than honored
+        assert_eq!(escape_template_pct("%{x}"), "%%{x}");
+        // no-op on percent-free text
+        assert_eq!(escape_template_pct("plain label"), "plain label");
+        assert_eq!(escape_template_pct(""), "");
+    }
+
+    #[test]
+    fn escape_composition_is_once_per_sink() {
+        // the two helpers compose in one fixed order for template sinks (see the choropleth hover
+        // and the AnimatedBubble template); markup first, then `%`-doubling
+        let nasty = "R&D <b>50%</b>";
+        let composed = escape_template_pct(&escape_hover(nasty));
+        assert_eq!(composed, "R&amp;D &lt;b&gt;50%%&lt;/b&gt;");
+        // a legend name renders markup but does NOT parse `%`, so it takes escape_hover ALONE —
+        // `%`-doubling there would surface a literal "%%" to the reader
+        assert_eq!(escape_hover(nasty), "R&amp;D &lt;b&gt;50%&lt;/b&gt;");
+        // escaping twice is the bug this ordering guards against
+        assert_ne!(escape_hover(&escape_hover(nasty)), escape_hover(nasty));
+        assert!(escape_hover(&escape_hover(nasty)).contains("&amp;amp;"));
+    }
+
+    #[test]
+    fn panel_title_escapes_markup_with_and_without_subtitle() {
+        // a hostile column header must not reach plotly's markup renderer as live markup on
+        // EITHER branch — the no-subtitle branch is the default (no --dictionary) path
+        let hostile = "<a href=\"https://evil.example\">Revenue</a>";
+        let bare = Panel::new(
+            hostile.to_string(),
+            PanelKind::BoxRaw {
+                idx:    0,
+                points: BoxPoints::Outliers,
+            },
+        );
+        let title = bare.display_title();
+        assert!(
+            !title.contains("<a href"),
+            "raw anchor markup leaked into the panel title: {title}"
+        );
+        assert!(
+            title.contains("&lt;a href"),
+            "expected escaped markup: {title}"
+        );
+
+        // with a subtitle, the title line is still escaped and the subtitle keeps its own escaping
+        let with_sub = Panel::new(
+            hostile.to_string(),
+            PanelKind::BoxRaw {
+                idx:    0,
+                points: BoxPoints::Outliers,
+            },
+        )
+        .with_subtitle(Some("R&D <b>label</b>".to_string()));
+        let title = with_sub.display_title();
+        assert!(!title.contains("<a href"));
+        assert!(title.contains("&lt;a href"));
+        assert!(title.contains("R&amp;D &lt;b&gt;label&lt;/b&gt;"));
+        // the styling markup the title itself emits must survive as real markup
+        assert!(title.contains("<br><span style="));
+    }
+
+    #[test]
+    fn log_safe_values_drops_non_positive_only_on_log_axis() {
+        // issue #4219, raw-value half: `box_log_skew_fallback` grants a log axis to a skewed
+        // column that still holds a few zeros/negatives. BoxRaw/Violin hand these values to
+        // plotly, which derives the whisker/KDE from them — a single 0 re-creates the
+        // log-undefined fence and breaks the whole trace.
+        let vals = vec![-5.0, 0.0, 1.0, 10.0, 1000.0];
+        assert_eq!(
+            log_safe_values(true, vals.clone()),
+            vec![1.0, 10.0, 1000.0],
+            "log axis must not receive non-positive values"
+        );
+        // linear axis: untouched, including the non-positive tail
+        assert_eq!(log_safe_values(false, vals.clone()), vals);
+        // all-positive input is unchanged on either axis
+        let pos = vec![1.0, 2.0, 3.0];
+        assert_eq!(log_safe_values(true, pos.clone()), pos);
+        assert_eq!(log_safe_values(false, pos.clone()), pos);
+    }
+
+    #[test]
+    fn build_kpi_row_joins_on_stat_idx_not_decorated_title() {
+        // `build_smart` decorates a panel title AFTER construction ("amount (right-skewed)" from
+        // `box_shape_hint`, "(sampled)" for strided violins), so a name-based stats join silently
+        // missed and the KPI tile — often the whole KPI row — disappeared.
+        let stats = vec![crate::cmd::stats::StatsData {
+            field: "amount".to_string(),
+            r#type: "Float".to_string(),
+            sum: Some(5000.0),
+            mean: Some(10.0),
+            ..Default::default()
+        }];
+        let kind = || PanelKind::BoxStats {
+            q1:     1.0,
+            median: 2.0,
+            q3:     3.0,
+            lower:  Some(0.0),
+            upper:  Some(9.0),
+            mean:   Some(2.0),
+        };
+
+        // decorated title + recorded stat_idx => tile still built
+        let decorated =
+            vec![Panel::new("amount (right-skewed)".to_string(), kind()).with_stat_idx(0)];
+        let row = build_kpi_row(&stats, &decorated, None).expect("KPI row for decorated panel");
+        let PanelKind::KpiRow { tiles } = &row.kind else {
+            panic!("expected a KpiRow");
+        };
+        assert_eq!(tiles.len(), 1);
+        assert_eq!(tiles[0].label, "Total amount");
+        assert!((tiles[0].value - 5000.0).abs() < f64::EPSILON);
+
+        // headerless input: `name` is a positional placeholder and `s.field` is empty, so only the
+        // index can carry the identity
+        let headerless_stats = vec![crate::cmd::stats::StatsData {
+            field: String::new(),
+            ..stats[0].clone()
+        }];
+        let positional = vec![Panel::new("col 1".to_string(), kind()).with_stat_idx(0)];
+        assert!(
+            build_kpi_row(&headerless_stats, &positional, None).is_some(),
+            "headerless columns must still produce a KPI tile"
+        );
+
+        // negative control: an overview panel carries no stats row, so it contributes no tile
+        let overview = vec![Panel::new("amount".to_string(), kind())];
+        assert!(build_kpi_row(&stats, &overview, None).is_none());
+    }
+
+    #[test]
+    fn cumulative_embedded_points_counts_frame_repetition() {
+        // 3 buckets x 10 points: base trace (30) + frames holding 10, 20, 30 => 90
+        let buckets = vec![vec![0.0; 10], vec![0.0; 10], vec![0.0; 10]];
+        assert_eq!(cumulative_embedded_points(&buckets), 30 + 60);
+        // the distinct count (30) is what the old budget used — it undercounts by 3x here, and by
+        // ~nb/2 in general, which is how a 150k-point cap produced multi-MB panels
+        let distinct: usize = buckets.iter().map(Vec::len).sum();
+        assert!(cumulative_embedded_points(&buckets) > distinct * 2);
+
+        // front-loaded buckets are repeated the most
+        let front = vec![vec![0.0; 30], vec![0.0; 0], vec![0.0; 0]];
+        let back = vec![vec![0.0; 0], vec![0.0; 0], vec![0.0; 30]];
+        assert!(cumulative_embedded_points(&front) > cumulative_embedded_points(&back));
+
+        // degenerate inputs
+        assert_eq!(cumulative_embedded_points(&[]), 0);
+        assert_eq!(cumulative_embedded_points(&[vec![0.0; 5]]), 10);
+    }
+
+    #[test]
     fn panel_interest_prefers_informative_panels() {
         let boxkind = PanelKind::BoxStats {
             q1:     1.0,
@@ -26530,7 +27814,14 @@ mod tests {
         let lons = [-75.1, -74.9, -75.0];
         let (center, zoom) = map_center_zoom(&lats, &lons, 0.0, 1000.0, 600.0);
         let v = serde_json::to_value(&center).unwrap();
-        assert!((v["lat"].as_f64().unwrap() - 40.0).abs() < 1e-9);
+        // the centre latitude is the MERCATOR midpoint, not the arithmetic one: the zoom is
+        // fitted in Mercator y, so the centre has to be taken in the same space or the box is not
+        // actually centred in the viewport (visible as a clipped poleward edge on tall extents).
+        // Over a 0.2-degree cluster the two agree to ~1e-5, hence the loosened tolerance here plus
+        // the exact assertion below.
+        assert!((v["lat"].as_f64().unwrap() - 40.0).abs() < 1e-3);
+        assert!((v["lat"].as_f64().unwrap() - mercator_lat_center(39.9, 40.1)).abs() < 1e-12);
+        // longitude is linear in Mercator, so it stays the exact arithmetic midpoint
         assert!((v["lon"].as_f64().unwrap() - (-75.0)).abs() < 1e-9);
         // small span -> high zoom; large span -> low zoom. Use a genuinely wide (non-wrapping)
         // longitude range so this exercises the plain bounding-box path, not antimeridian wrap.
@@ -27185,6 +28476,7 @@ mod tests {
             true,
             Some(10.0),
             None,
+            None,
         )
         .unwrap()
         .expect("2 regions keep points, so a panel renders");
@@ -27200,6 +28492,7 @@ mod tests {
             &lons,
             true,
             Some(f64::INFINITY),
+            None,
             None,
         )
         .unwrap()
@@ -27219,6 +28512,7 @@ mod tests {
             &lons,
             false,
             Some(10.0),
+            None,
             None,
         )
         .unwrap()
@@ -27263,6 +28557,7 @@ mod tests {
             true,
             Some(10.0),
             None,
+            None,
         )
         .unwrap()
         .expect("2 regions keep points, so a panel renders");
@@ -27278,8 +28573,15 @@ mod tests {
                     (center_lon - (-74.0)).abs() < 1e-9,
                     "center_lon = {center_lon}"
                 );
+                // the centre latitude is the MERCATOR midpoint (the zoom is fitted in Mercator
+                // y, so the centre must be taken in the same space or the box is not actually
+                // centred). Over a 0.05-degree box that is ~5e-6 from the arithmetic mean.
                 assert!(
-                    (center_lat - 40.725).abs() < 1e-9,
+                    (center_lat - 40.725).abs() < 1e-4,
+                    "center_lat = {center_lat}"
+                );
+                assert!(
+                    (center_lat - mercator_lat_center(40.70, 40.75)).abs() < 1e-9,
                     "center_lat = {center_lat}"
                 );
                 // a ~0.1 deg metro box zooms in well past the world view, within the fit clamp.
@@ -27672,51 +28974,62 @@ mod tests {
             .into_iter()
             .collect();
         let widths = numeric_widths(&ids);
+        let lower_ids: std::collections::HashMap<String, String> = ids
+            .iter()
+            .map(|i| ((*i).to_ascii_lowercase(), (*i).to_string()))
+            .collect();
 
         // exact 5-digit match, with surrounding whitespace trimmed
         assert_eq!(
-            match_region_code(" 15129 ", &ids, &widths).as_deref(),
+            match_region_code(" 15129 ", &ids, &widths, &lower_ids).as_deref(),
             Some("15129")
         );
         // short all-digit code left-padded to 5 to match a zero-padded id
         assert_eq!(
-            match_region_code("7936", &ids, &widths).as_deref(),
+            match_region_code("7936", &ids, &widths, &lower_ids).as_deref(),
             Some("07936")
         );
         // non-numeric code matched verbatim
         assert_eq!(
-            match_region_code("BAKERSTOWN", &ids, &widths).as_deref(),
+            match_region_code("BAKERSTOWN", &ids, &widths, &lower_ids).as_deref(),
             Some("BAKERSTOWN")
         );
         // empty / whitespace-only -> no match
-        assert_eq!(match_region_code("   ", &ids, &widths), None);
+        assert_eq!(match_region_code("   ", &ids, &widths, &lower_ids), None);
         // a value absent from the boundary set -> no match (counts against overlap ratio)
-        assert_eq!(match_region_code("99999", &ids, &widths), None);
+        assert_eq!(match_region_code("99999", &ids, &widths, &lower_ids), None);
         // a short code whose padded form is absent -> no match (not blindly padded-and-kept)
-        assert_eq!(match_region_code("123", &ids, &widths), None);
+        assert_eq!(match_region_code("123", &ids, &widths, &lower_ids), None);
 
         // non-zip widths: the code is padded to whatever numeric feature-id widths exist, not a
         // hardcoded 5. State FIPS (2-wide) and county FIPS (3-wide) both resolve.
         let fips: std::collections::HashSet<&str> =
             ["01", "06", "003", "037", "42003"].into_iter().collect();
         let fips_widths = numeric_widths(&fips);
+        let lower_fips: std::collections::HashMap<String, String> = fips
+            .iter()
+            .map(|i| ((*i).to_ascii_lowercase(), (*i).to_string()))
+            .collect();
         // state FIPS 1 -> 01 (2-wide id)
         assert_eq!(
-            match_region_code("1", &fips, &fips_widths).as_deref(),
+            match_region_code("1", &fips, &fips_widths, &lower_fips).as_deref(),
             Some("01")
         );
         // county FIPS 3 -> 003 (3-wide id), preferring the shortest viable width first
         assert_eq!(
-            match_region_code("3", &fips, &fips_widths).as_deref(),
+            match_region_code("3", &fips, &fips_widths, &lower_fips).as_deref(),
             Some("003")
         );
         // already-wide numeric id matches exactly
         assert_eq!(
-            match_region_code("42003", &fips, &fips_widths).as_deref(),
+            match_region_code("42003", &fips, &fips_widths, &lower_fips).as_deref(),
             Some("42003")
         );
         // a width with no matching padded form -> no match
-        assert_eq!(match_region_code("9", &fips, &fips_widths), None);
+        assert_eq!(
+            match_region_code("9", &fips, &fips_widths, &lower_fips),
+            None
+        );
     }
 
     #[test]

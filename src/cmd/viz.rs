@@ -26612,7 +26612,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "profile")]
     #[test]
     fn plotly_cdn_sri_matches_the_embedded_bundle() {
         use base64_simd::STANDARD as BASE64;

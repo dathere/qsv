@@ -22559,7 +22559,14 @@ fn hierarchy_arrays(
 
     // tree[parent_prefix][child_segment] = subtree total under that child.
     let mut tree: HashMap<Vec<String>, HashMap<String, f64>> = HashMap::new();
-    for (path, &v) in leaves {
+    // Roll up in a DETERMINISTIC order. Iterating `leaves` (a HashMap) directly makes the float
+    // accumulation order vary between processes — Rust seeds HashMap's hasher randomly — so the
+    // same input produced subtly different parent sums run to run (37616.58 vs 37616.579999999994
+    // for the same treemap). Harmless numerically, but it means every regeneration of a committed
+    // artifact churns, and it makes a chart's own output unreproducible.
+    let mut ordered: Vec<(&Vec<String>, f64)> = leaves.iter().map(|(p, &v)| (p, v)).collect();
+    ordered.sort_unstable_by(|a, b| a.0.cmp(b.0));
+    for (path, v) in ordered {
         if path.len() != depth {
             continue; // defensive: ignore malformed paths
         }

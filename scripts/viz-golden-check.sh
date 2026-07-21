@@ -55,6 +55,10 @@ if [[ ! -x "$QSV" ]]; then
 fi
 
 mkdir -p "$OUT"
+# Canonicalize: each case runs qsv with cwd=examples/viz (so the fixture paths resolve), so a
+# relative --output would land under examples/viz/ while this shell's redirections land in the
+# invocation dir. Absolute keeps both in the same place.
+OUT="$(cd "$OUT" && pwd)"
 rc_total=0
 
 run_case() {

@@ -1219,6 +1219,14 @@ const CORR_LABEL_MAX_CHARS: usize = 16;
 const CORR_LABEL_PX_PER_CHAR: usize = 7;
 const CORR_INCELL_MAX_N: usize = 8;
 
+/// `viz heatmap --x/--y/--z` (pivot) cell-count safety cap. The pivot's `z` is a DENSE
+/// `y_cats × x_cats` matrix, so its cost is quadratic in the cardinality of the two key columns —
+/// two 50k-cardinality columns would be 2.5e9 cells (~20 GB). Every other multi-category builder
+/// here is bounded (`HIER_MAX_NODES`, `PARCATS_MAX_PATHS`, `CATEGORICAL_MAX_CARDINALITY`); this is
+/// the equivalent guard, checked before the matrix is allocated. 1M cells is ~8 MB of `f64` and
+/// already a very large heatmap to render.
+const HEATMAP_PIVOT_MAX_CELLS: usize = 1_000_000;
+
 /// `viz smart --bivariate` column-count safety cap. The association heatmap/top-relationships
 /// panels are built from moarstats' ALL-PAIRS bivariate sidecar (50 choose 2 = 1,225 pairs at the
 /// cap), so a wide dataset is skipped (with a warning suggesting `qsv moarstats --bivariate`
@@ -7051,6 +7059,19 @@ fn build_heatmap_pivot(args: &Args) -> CliResult<(Box<dyn Trace>, Option<String>
     if x_cats.is_empty() || y_cats.is_empty() {
         return fail_clierror!("No data found for the heatmap pivot (is --z numeric?).");
     }
+    // the `z` matrix below is DENSE, so its size is the PRODUCT of the two cardinalities: refuse
+    // before allocating rather than OOM-ing on two high-cardinality key columns.
+    let cell_count = x_cats.len().saturating_mul(y_cats.len());
+    if cell_count > HEATMAP_PIVOT_MAX_CELLS {
+        return fail_clierror!(
+            "Heatmap pivot too large: --x has {} distinct values and --y has {}, which is {} \
+             cells (max {HEATMAP_PIVOT_MAX_CELLS}).\nUse lower-cardinality --x/--y columns, or \
+             pre-filter/bin the data first.",
+            x_cats.len(),
+            y_cats.len(),
+            cell_count
+        );
+    }
     // z matrix indexed [y][x]; missing cells are NaN (serialized as null -> rendered as a gap)
     let mut z: Vec<Vec<f64>> = vec![vec![f64::NAN; x_cats.len()]; y_cats.len()];
     for ((yi, xi), (sum, cnt)) in cells {
@@ -8984,6 +9005,22 @@ fn log_safe_lower_fence(log_y: bool, fence: f64, q1: f64) -> f64 {
     if log_y && fence <= 0.0 { q1 } else { fence }
 }
 
+/// The raw-value counterpart of `log_safe_lower_fence` (issue #4219). `box_log_skew_fallback`
+/// grants a log value axis to a heavily right-skewed column that still holds a small share
+/// (<= 5%) of non-positive values, on the strength of `q1 > 0`. Where the box is PRECOMPUTED that
+/// is handled by clamping the lower whisker, but `BoxRaw`/`Violin` hand plotly the values
+/// themselves and let it derive the whisker/KDE — so a single `0` or negative value re-creates the
+/// exact log-undefined fence #4219 set out to eliminate, breaking the whole trace. Drop the
+/// unplottable values on a log axis (they are unshowable there regardless); on a linear axis the
+/// values are returned untouched.
+fn log_safe_values(log_y: bool, values: Vec<f64>) -> Vec<f64> {
+    if log_y {
+        values.into_iter().filter(|v| *v > 0.0).collect()
+    } else {
+        values
+    }
+}
+
 /// Whether a `MeasureByDim` bar panel's value (y) axis should be logarithmic under the resolved
 /// `--log-scale` mode, from its already-aggregated top-N bar values. A log axis can't place 0 or
 /// negative values, so EVERY shown bar must be strictly positive — a single dominant bar over a
@@ -10318,6 +10355,12 @@ struct Panel {
     /// RAW field name at classification time — the panel `name` can be decorated later
     /// (e.g. "foo (sampled)") and would no longer match the page's section ids.
     dict_info:       Option<(String, String)>,
+    /// Index into the `stats` slice of the column this panel charts, recorded at classification
+    /// time. `None` for overview panels that aren't tied to a single column. This is the ONLY
+    /// sound way to rejoin a panel to its stats row: `name` is decorated after construction
+    /// (shape hints, "(sampled)") and is a positional "col N" placeholder on headerless input,
+    /// so neither it nor `s.field` can carry the identity. See `build_kpi_row`.
+    stat_idx:        Option<usize>,
 }
 
 impl Panel {
@@ -10335,7 +10378,15 @@ impl Panel {
             geo_meta: None,
             geojson_overlay: None,
             dict_info: None,
+            stat_idx: None,
         }
+    }
+
+    /// Record which `stats` row this panel charts, so downstream consumers (the KPI row) can
+    /// rejoin panel → stats without depending on the display title.
+    fn with_stat_idx(mut self, stat_idx: usize) -> Self {
+        self.stat_idx = Some(stat_idx);
+        self
     }
 
     /// Set whether this panel's value axis is logarithmic (box panels, per `--log-scale`).
@@ -14200,6 +14251,25 @@ struct GeoAnim {
     bucket_labels: Vec<String>,
 }
 
+/// How many points an `AnimatedGeo` panel actually serializes, given each bucket's point count.
+///
+/// The renderer emits a base trace holding every point, then one CUMULATIVE frame per bucket
+/// (buckets `0..=k`), so a point in bucket `b` is repeated once per frame from `b` onward — the
+/// serialized total is `total + Σ_b len(b) * (nb - b)`, roughly `total * (nb + 1) / 2`, NOT the
+/// distinct-point count. Budgeting the point cap against the distinct count instead overshoots by
+/// that factor (30 buckets => ~15x).
+fn cumulative_embedded_points(buckets: &[Vec<f64>]) -> usize {
+    let nb = buckets.len();
+    let total: usize = buckets.iter().map(Vec::len).sum();
+    total.saturating_add(
+        buckets
+            .iter()
+            .enumerate()
+            .map(|(b, pts)| pts.len().saturating_mul(nb - b))
+            .sum::<usize>(),
+    )
+}
+
 /// Read dated lat/lon rows in one pass and partition them into calendar buckets for an animated,
 /// cumulative geographic reveal. Only fires for a continental/global extent (where `viz smart`
 /// draws a ScatterGeo projection, which animates natively) — a city-scale cloud returns `None`, so
@@ -14271,11 +14341,15 @@ fn read_geo_anim(
         bucket_lons[bi].push(*lon);
     }
 
-    // keep the grand total of embedded points bounded: stride each bucket's cloud when the total
-    // exceeds the cap (rarely hit at MAX_SMART_POINTS).
-    let total: usize = bucket_lats.iter().map(Vec::len).sum();
-    if total > *MAX_SMART_POINTS {
-        let stride = total.div_ceil(*MAX_SMART_POINTS);
+    // Keep the EMBEDDED point count bounded. The renderer emits one CUMULATIVE frame per bucket
+    // (buckets `0..=k`), plus a base trace holding every point, so the serialized total is NOT the
+    // distinct-point count: a point in bucket `b` is repeated once per frame from `b` onward.
+    // Budgeting against the distinct count instead would overshoot the cap by ~nb/2 (30 buckets =>
+    // ~15x), which is how a nominal 150k-point dashboard grew to tens of MB of HTML.
+    let embedded = cumulative_embedded_points(&bucket_lats);
+    if embedded > *MAX_SMART_POINTS {
+        // a uniform stride shrinks every bucket, and so the cumulative expansion, proportionally
+        let stride = embedded.div_ceil(*MAX_SMART_POINTS);
         for (la, lo) in bucket_lats.iter_mut().zip(bucket_lons.iter_mut()) {
             *la = la.iter().copied().step_by(stride).collect();
             *lo = lo.iter().copied().step_by(stride).collect();
@@ -16152,6 +16226,8 @@ fn build_map_panel(
             value_log: false,
             interest: f64::INFINITY,
             dict_info: None,
+            // a map panel charts a lat/lon PAIR, not a single stats row
+            stat_idx: None,
             #[cfg(feature = "geocode")]
             geo_meta,
             geojson_overlay,
@@ -17072,7 +17148,10 @@ fn build_kpi_row(
         ) {
             continue;
         }
-        let Some(s) = stats.iter().find(|s| s.field == p.name) else {
+        // join on the recorded stats index, NOT on `p.name` — classification decorates the title
+        // after construction (box shape hints, "(sampled)"), and on headerless input `name` is a
+        // positional "col N" while `s.field` is empty, so a name-based lookup silently misses.
+        let Some(s) = p.stat_idx.and_then(|i| stats.get(i)) else {
             continue;
         };
         if !matches!(s.r#type.as_str(), "Integer" | "Float") {
@@ -17437,6 +17516,7 @@ fn build_smart(
                         value_log: p.value_log,
                         interest: p.interest,
                         dict_info: p.dict_info,
+                        stat_idx: p.stat_idx,
                         #[cfg(feature = "geocode")]
                         geo_meta: p.geo_meta,
                         geojson_overlay: p.geojson_overlay,
@@ -17701,7 +17781,8 @@ fn build_smart(
                         .with_subtitle(subtitle)
                         .with_dict_info(dict_info)
                         .with_value_log(value_log)
-                        .with_interest(interest),
+                        .with_interest(interest)
+                        .with_stat_idx(idx),
                 );
             },
             None => {
@@ -19008,7 +19089,9 @@ fn panel_trace(
             // opt-in / heuristic raw box: plotly computes the quartiles + true Tukey whiskers from
             // the values and overlays the sample points per this panel's chosen --box-points mode
             log_y = panel.value_log;
-            let values = hist.get(idx).cloned().unwrap_or_default();
+            // plotly derives this box's whiskers from the values, so non-positive values must not
+            // reach it on a log axis (issue #4219 — see `log_safe_values`)
+            let values = log_safe_values(log_y, hist.get(idx).cloned().unwrap_or_default());
             let mut b = BoxPlot::new(values)
                 .name(panel.name.clone())
                 .quartile_method(QuartileMethod::Linear)
@@ -19032,7 +19115,9 @@ fn panel_trace(
             // it, with the sample points overlaid per this panel's resolved --box-points mode
             // (no overlay at all for sampled violins)
             log_y = panel.value_log;
-            let values = hist.get(idx).cloned().unwrap_or_default();
+            // plotly estimates the KDE + inner box from the values, so non-positive values must
+            // not reach it on a log axis (issue #4219 — see `log_safe_values`)
+            let values = log_safe_values(log_y, hist.get(idx).cloned().unwrap_or_default());
             let mut v = Violin::new(values)
                 .name(panel.name.clone())
                 .quartile_method(QuartileMethod::Linear)
@@ -25570,6 +25655,95 @@ mod tests {
             Some(0.0),
             Some(76_000_000.0)
         ));
+    }
+
+    #[test]
+    fn log_safe_values_drops_non_positive_only_on_log_axis() {
+        // issue #4219, raw-value half: `box_log_skew_fallback` grants a log axis to a skewed
+        // column that still holds a few zeros/negatives. BoxRaw/Violin hand these values to
+        // plotly, which derives the whisker/KDE from them — a single 0 re-creates the
+        // log-undefined fence and breaks the whole trace.
+        let vals = vec![-5.0, 0.0, 1.0, 10.0, 1000.0];
+        assert_eq!(
+            log_safe_values(true, vals.clone()),
+            vec![1.0, 10.0, 1000.0],
+            "log axis must not receive non-positive values"
+        );
+        // linear axis: untouched, including the non-positive tail
+        assert_eq!(log_safe_values(false, vals.clone()), vals);
+        // all-positive input is unchanged on either axis
+        let pos = vec![1.0, 2.0, 3.0];
+        assert_eq!(log_safe_values(true, pos.clone()), pos);
+        assert_eq!(log_safe_values(false, pos.clone()), pos);
+    }
+
+    #[test]
+    fn build_kpi_row_joins_on_stat_idx_not_decorated_title() {
+        // `build_smart` decorates a panel title AFTER construction ("amount (right-skewed)" from
+        // `box_shape_hint`, "(sampled)" for strided violins), so a name-based stats join silently
+        // missed and the KPI tile — often the whole KPI row — disappeared.
+        let stats = vec![crate::cmd::stats::StatsData {
+            field: "amount".to_string(),
+            r#type: "Float".to_string(),
+            sum: Some(5000.0),
+            mean: Some(10.0),
+            ..Default::default()
+        }];
+        let kind = || PanelKind::BoxStats {
+            q1:     1.0,
+            median: 2.0,
+            q3:     3.0,
+            lower:  Some(0.0),
+            upper:  Some(9.0),
+            mean:   Some(2.0),
+        };
+
+        // decorated title + recorded stat_idx => tile still built
+        let decorated =
+            vec![Panel::new("amount (right-skewed)".to_string(), kind()).with_stat_idx(0)];
+        let row = build_kpi_row(&stats, &decorated, None).expect("KPI row for decorated panel");
+        let PanelKind::KpiRow { tiles } = &row.kind else {
+            panic!("expected a KpiRow");
+        };
+        assert_eq!(tiles.len(), 1);
+        assert_eq!(tiles[0].label, "Total amount");
+        assert!((tiles[0].value - 5000.0).abs() < f64::EPSILON);
+
+        // headerless input: `name` is a positional placeholder and `s.field` is empty, so only the
+        // index can carry the identity
+        let headerless_stats = vec![crate::cmd::stats::StatsData {
+            field: String::new(),
+            ..stats[0].clone()
+        }];
+        let positional = vec![Panel::new("col 1".to_string(), kind()).with_stat_idx(0)];
+        assert!(
+            build_kpi_row(&headerless_stats, &positional, None).is_some(),
+            "headerless columns must still produce a KPI tile"
+        );
+
+        // negative control: an overview panel carries no stats row, so it contributes no tile
+        let overview = vec![Panel::new("amount".to_string(), kind())];
+        assert!(build_kpi_row(&stats, &overview, None).is_none());
+    }
+
+    #[test]
+    fn cumulative_embedded_points_counts_frame_repetition() {
+        // 3 buckets x 10 points: base trace (30) + frames holding 10, 20, 30 => 90
+        let buckets = vec![vec![0.0; 10], vec![0.0; 10], vec![0.0; 10]];
+        assert_eq!(cumulative_embedded_points(&buckets), 30 + 60);
+        // the distinct count (30) is what the old budget used — it undercounts by 3x here, and by
+        // ~nb/2 in general, which is how a 150k-point cap produced multi-MB panels
+        let distinct: usize = buckets.iter().map(Vec::len).sum();
+        assert!(cumulative_embedded_points(&buckets) > distinct * 2);
+
+        // front-loaded buckets are repeated the most
+        let front = vec![vec![0.0; 30], vec![0.0; 0], vec![0.0; 0]];
+        let back = vec![vec![0.0; 0], vec![0.0; 0], vec![0.0; 30]];
+        assert!(cumulative_embedded_points(&front) > cumulative_embedded_points(&back));
+
+        // degenerate inputs
+        assert_eq!(cumulative_embedded_points(&[]), 0);
+        assert_eq!(cumulative_embedded_points(&[vec![0.0; 5]]), 10);
     }
 
     #[test]

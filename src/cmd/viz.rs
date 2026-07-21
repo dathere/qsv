@@ -17728,16 +17728,22 @@ fn build_kpi_row(
     ))
 }
 
-/// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
-/// Classifies columns into panels, then renders either a single-`Plot` subplot grid (≤8 panels,
-/// or any image export) or a self-contained inline-div HTML page (>8 panels, HTML output).
-fn build_smart(
-    args: &Args,
-    out_format: OutFormat,
-    progress: &ProgressBar,
-    show_progress: bool,
-    loaded_geojson: Option<&serde_json::Value>,
-) -> CliResult<SmartRender> {
+/// Resolved inputs for `build_smart`, produced by `smart_prepare`.
+struct SmartPrep {
+    /// the caller's `Args` with `--bivariate`'s implications applied (it forces `--smarter`, and
+    /// infers a `--dictionary` when none was given).
+    args:                    Args,
+    /// the validated input path (never stdin).
+    input:                   String,
+    /// non-default parsing (`--no-headers` / `--delimiter`) forces the stats cache to regenerate.
+    force_stats_regen:       bool,
+    /// set only when THIS run's moarstats `--bivariate` subprocess wrote a fresh sidecar.
+    bivariate_sidecar_fresh: bool,
+}
+
+/// Validate `viz smart`'s input, apply `--bivariate`'s flag implications, and run the optional
+/// `--smarter` moarstats enrichment pass (which rewrites the stats sidecar `build_smart` reads).
+fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> CliResult<SmartPrep> {
     let mut args = args.clone();
 
     let Some(input) = args.arg_input.clone() else {
@@ -17749,6 +17755,23 @@ fn build_smart(
         return fail_incorrectusage_clierror!(
             "`viz smart` cannot read from stdin; pass a CSV/TSV file path."
         );
+    }
+    // A dictionary is keyed by COLUMN NAME (`dict.rows.get(&s.field)`), but under `--no-headers`
+    // the fields are positional (`0`, `1`, ...), so no entry can ever match: no semantic routing,
+    // no KPI tiles, no dict subtitles. Say so and drop the flag, rather than let it look applied.
+    // Dropping it matters beyond the notice — `--dictionary infer` would otherwise pay for a full
+    // (LLM-backed) describegpt pass whose every verdict is then discarded.
+    //
+    // A notice rather than an error, matching the dictionary loader's fail-to-stats philosophy:
+    // the dashboard still renders from stats alone (see
+    // `viz_smart_bivariate_soft_fails_with_no_headers`).
+    if args.flag_no_headers && args.flag_dictionary.is_some() {
+        viz_note(
+            "viz smart --dictionary: a data dictionary maps entries by column name, but \
+             --no-headers names columns positionally (0, 1, 2, ...), so no entry can match. \
+             Ignoring --dictionary and charting from statistics alone.",
+        );
+        args.flag_dictionary = None;
     }
 
     // `--bivariate` blows up combinatorially with wide datasets (50 choose 2 = 1,225 pairs at the
@@ -17789,7 +17812,8 @@ fn build_smart(
     if bivariate_enabled && args.flag_dictionary.is_none() {
         args.flag_dictionary = Some("infer".to_string());
     }
-    let args = &args;
+    // (the caller receives `args` by value; returning it is what freezes further mutation, the
+    // role the original inline code gave a `let args = &args;` rebinding here.)
 
     // Non-default parsing (--no-headers / custom --delimiter) forces the stats path to
     // regenerate. get_stats_records keys its `.stats.csv.data.jsonl` cache only by mtime + stat
@@ -17914,578 +17938,681 @@ fn build_smart(
         }
     }
 
-    let schema_args = util::SchemaArgs {
-        flag_enum_threshold:  0,
-        flag_ignore_case:     false,
-        flag_strict_dates:    false,
-        flag_strict_formats:  false,
-        flag_pattern_columns: SelectColumns::parse("").expect("empty selection is valid"),
-        flag_dates_whitelist: "sniff".to_string(),
-        flag_prefer_dmy:      false,
-        flag_force:           force_stats_regen,
-        flag_stdout:          false,
-        flag_jobs:            None,
-        flag_polars:          false,
-        flag_no_headers:      args.flag_no_headers,
-        flag_delimiter:       args.flag_delimiter,
-        arg_input:            Some(input),
-        flag_memcheck:        false,
-        flag_output:          None,
-    };
+    Ok(SmartPrep {
+        args,
+        input,
+        force_stats_regen,
+        bivariate_sidecar_fresh,
+    })
+}
 
-    // Keep the spinner live: get_stats_records reuses the cache or runs `qsv stats` as a
-    // captured subprocess, so nothing here writes to the terminal to clash with the bar.
-    progress.set_message("Loading statistics…");
-    let (_headers, mut stats) =
-        util::get_stats_records(&schema_args, util::StatsMode::ProfileSchema)?;
-    if stats.is_empty() {
-        return fail_clierror!(
-            "Could not compute statistics for `viz smart`. The input must be a regular CSV/TSV \
-             file (not stdin or a compressed/special format)."
-        );
-    }
+/// Per-panel data gathered once the panel set is final, consumed by the render dispatch.
+struct SmartPanelData {
+    freq:          FreqMap,
+    raw_values:    HashMap<usize, Vec<f64>>,
+    outlier_stats: HashMap<usize, OutlierStats>,
+    title_text:    String,
+    dict_page:     Option<String>,
+    metadata_html: Option<String>,
+}
 
-    // Plain `viz smart` (no `--smarter`): the stats cache has `skewness` but not the moarstats-only
-    // `kurtosis`/`bimodality_coefficient`, so a bimodal column would render as a box plot that
-    // hides its peaks. Compute Sarle's bimodality coefficient in one streaming pass so
-    // `classify_measure` can upgrade such a column to a histogram WITHOUT requiring
-    // `--smarter`. No-op (and no pass) when moarstats already enriched the cache or no column
-    // qualifies. Soft-fail to a box plot.
-    if let Err(e) = enrich_bimodality(args, &mut stats) {
-        viz_note(&format!(
-            "viz smart: bimodality detection failed ({e}); bimodal columns may render as box \
-             plots. Use --smarter for moarstats-based enrichment."
-        ));
-    }
+/// Shared working set threaded through `build_smart`'s phases.
+///
+/// `build_smart` accumulates a large, interdependent set of locals (the stats/dictionary inputs,
+/// the growing `panels` vector, the deferred diagnostics). Holding them in one value lets the
+/// phases below be methods at a readable arity, instead of free functions taking 15-20 positional
+/// parameters — which would move the complexity into the signatures rather than remove it.
+struct SmartCtx<'a> {
+    args:       &'a Args,
+    out_format: OutFormat,
+    progress:   &'a ProgressBar,
 
-    // Optional describegpt Data Dictionary (--dictionary): per-column semantic verdicts (concept ->
-    // role -> content_type -> stats) that override the statistical guess for the cases they speak
-    // to. When --dictionary is absent, dict_data is None and every column's route resolves to
-    // Defer, so classification is identical to today's stats-only behavior.
-    // Keep the spinner live during describegpt (the slowest phase): its output is captured by
-    // run_qsv_cmd, and load_dictionary_semantics suspends the bar only around its own messages.
-    progress.set_message("Inferring data dictionary…");
-    let (dict_data, dict_json_text) = match load_dictionary_semantics(args)? {
-        Some((data, json_text)) => (Some(data), Some(json_text)),
-        None => (None, None),
-    };
-    let col_sems: Vec<ColSemantics> = stats
-        .iter()
-        .map(|s| derive_semantics(s, dict_data.as_ref().and_then(|d| d.rows.get(&s.field))))
-        .collect();
+    stats:          Vec<crate::cmd::stats::StatsData>,
+    col_sems:       Vec<ColSemantics>,
+    dict_data:      Option<DictData>,
+    dict_json_text: Option<String>,
+    twin_suppress:  std::collections::HashSet<usize>,
 
-    // De-duplicate code/label twins (subject + subject_code -> chart only "subject"). Gated on a
-    // dictionary being present so a stats-only dashboard is byte-identical; timezone twins and IDs
-    // are already de-duplicated by the Temporal/Skip routing above.
-    let twin_suppress = if dict_data.is_some() {
-        dimension_code_twins(&stats, &col_sems)
-    } else {
-        std::collections::HashSet::new()
-    };
+    /// the geographic overview panels, built up front and prepended last so they lead the
+    /// dashboard and survive the panel cap.
+    map_panel:         Option<(Panel, (usize, usize))>,
+    choropleth_panel:  Option<Panel>,
+    summary_choros:    Option<(Vec<Panel>, usize)>,
+    map_cols:          Option<(usize, usize)>,
+    summary_choro_col: Option<usize>,
 
-    // Build the geographic map panel up front (one data pass) so we can learn which lat/lon columns
-    // it ACTUALLY consumed. Those columns are charted on the map only — excluded from per-column
-    // distribution panels, the correlation matrix, and the time-series y so a map dashboard doesn't
-    // redundantly box/histogram its coordinates or plot e.g. latitude vs time.
-    //
-    // The map panel is built for BOTH HTML and static image output. The MapLibre tile basemap
-    // (ScatterMap/DensityMap) needs a live browser + network tiles, so it can't be statically
-    // exported — but the offline `ScatterGeo` projection basemap CAN (it's how the standalone
-    // `viz geo` command exports images). So for image output a local-extent `Map` panel is coerced
-    // to the `Geo` form, fit to the data's extent (see `geo_framing`). When build_map_panel returns
-    // None (no usable lat/lon pair), map_cols stays None and those columns are charted normally.
-    // (map_panel, choropleth_panel): the point map plus an optional geocode-derived per-country
-    // choropleth overview. The choropleth is non-cartesian and HTML-only, so it's dropped for image
-    // export; the point map is coerced from Map -> Geo for image export (only the offline
-    // ScatterGeo basemap can be statically exported).
-    let (map_panel, choropleth_panel) = {
-        // prefer dictionary geo.latitude/geo.longitude (handles non-standard coord names like
-        // `X Coordinate`/`Y Coordinate`), falling back to the header-name heuristic.
-        let coord_hint = dict_data.as_ref().and_then(|d| semantic_latlon(&stats, d));
-        let cluster_mode = parse_cluster_mode(&args.flag_cluster)?;
-        progress.set_message("Building map panel…");
-        match build_map_panel(
-            args,
-            &stats,
-            &col_sems,
-            dict_data.as_ref(),
-            coord_hint,
-            cluster_mode,
-            loaded_geojson,
-        )? {
-            None => (None, None),
-            Some((p, choro, cols, mappable_count)) => {
-                if out_format.is_image() {
-                    let kind = match p.kind {
-                        PanelKind::Map {
-                            lats,
-                            lons,
-                            outlier_lats,
-                            outlier_lons,
-                            hover_text,
-                            outlier_hover_text,
-                            sizes,
-                            ..
-                        } => PanelKind::Geo {
-                            lats,
-                            lons,
-                            outlier_lats,
-                            outlier_lons,
-                            hover_text,
-                            outlier_hover_text,
-                            sizes,
-                        },
-                        other => other,
-                    };
-                    let p = Panel {
-                        name: p.name,
-                        // the coerced Geo renders MARKERS, never a density heatmap, so the
-                        // sampling subtitle's "aggregating" verb (chosen by `sample_note` for
-                        // the HTML DensityMap render) must follow the actual render mode.
-                        subtitle: p.subtitle.map(|s| match s.strip_prefix("aggregating ") {
-                            Some(rest) => format!("showing {rest}"),
-                            None => s,
-                        }),
-                        kind,
-                        value_log: p.value_log,
-                        interest: p.interest,
-                        dict_info: p.dict_info,
-                        stat_idx: p.stat_idx,
-                        #[cfg(feature = "geocode")]
-                        geo_meta: p.geo_meta,
-                        geojson_overlay: p.geojson_overlay,
-                    };
-                    (Some((p, cols)), None)
-                } else {
-                    // HTML output: a local-extent density panel actually renders as a DensityMap
-                    // here (global extents are `Geo` markers, image export was coerced above), so
-                    // this is the point at which the heatmap/cluster note is truthful. Report
-                    // `mappable_count` (the full source count that drove the density decision), not
-                    // the panel's downsampled/outlier-excluded `lats`.
-                    if matches!(p.kind, PanelKind::Map { density: true, .. }) {
-                        viz_note(&format!(
-                            "viz smart: map has {mappable_count} mappable points (>= \
-                             --heatmap-density {}); drawing the core as a density heatmap with \
-                             per-point hover. Set --heatmap-density 0 (the default) to draw \
-                             interactive clustered markers instead.",
-                            args.flag_heatmap_density
-                        ));
-                    } else if matches!(p.kind, PanelKind::Map { cluster: true, .. }) {
-                        viz_note(&format!(
-                            "viz smart: map has {mappable_count} mappable points; the core opens \
-                             as individual points with a \"Clusters/Points\" toggle (click it to \
-                             collapse dense areas into native MapLibre count bubbles that expand \
-                             again on zoom-in). Set --cluster off to omit the toggle, or \
-                             --heatmap-density <n> to draw a density heatmap at or above <n> \
-                             points instead."
-                        ));
-                    }
-                    (Some((p, cols)), choro)
-                }
-            },
-        }
-    };
-    let map_cols = map_panel.as_ref().map(|(_, cols)| *cols);
+    /// set only when THIS run's moarstats `--bivariate` subprocess wrote a fresh sidecar; gates
+    /// the association/Sankey panels.
+    bivariate_sidecar_fresh: bool,
 
-    // region-code summary choropleth(s): drive per-region aggregates (count + median measure)
-    // directly from a geo dimension column (e.g. a zip column), independent of lat/lon. Only when
-    // build_map_panel emitted no choropleth companion (avoid two competing region fills), and never
-    // for image output (choropleths are HTML-only, like the PIP companion above).
-    let summary_choros = if choropleth_panel.is_none() && !out_format.is_image() {
-        build_smart_summary_choropleth_panels(args, &stats, &col_sems, loaded_geojson)?
-    } else {
-        None
-    };
-    let summary_choro_col = summary_choros.as_ref().map(|(_, c)| *c);
+    /// the source→target pair claimed by the directed-flow (Sankey) panel, if one was built —
+    /// keeps the 2-level hierarchy mutually exclusive with it.
+    sankey_pair:    Option<(usize, usize)>,
+    /// at most ONE animated panel is shown; precedence is T3 (bubble) > T2 (geo) > T1 (scatter).
+    bubble_panel:   Option<Panel>,
+    geo_anim_panel: Option<Panel>,
 
-    // a column consumed by the point map (lat/lon) OR by the summary choropleth (region key) is
-    // suppressed from the per-column distribution panels and the correlation/bivariate pools.
-    let is_map_col = |idx: usize| {
-        map_cols.is_some_and(|(la, lo)| idx == la || idx == lo) || summary_choro_col == Some(idx)
-    };
+    explicit_box_points: Option<BoxPoints>,
+    count_conf:          Config,
+    nrows:               Option<u64>,
+    log_scale:           LogScale,
+    violin_mode:         ViolinMode,
 
-    // Box-points handling for `viz smart`. A continuous-numeric column is normally a cache-only
-    // quartile box (no data re-scan). When points should be overlaid, it instead becomes a raw box
-    // (one extra batched pass, below) so plotly can draw true Tukey whiskers and the sample points.
-    // The overlay mode is the user's explicit `--box-points` when given, otherwise a size-based
-    // heuristic decides per the dataset's row count (see `smart_box_points`). The row count is
-    // pulled once from the stats/index cache, and only when the first box panel actually needs it.
-    let explicit_box_points: Option<BoxPoints> = match args.flag_box_points.as_deref() {
-        Some(s) => Some(parse_box_points(Some(s))?),
-        None => None,
-    };
-    let count_conf = Config::new(args.arg_input.as_ref())
-        .delimiter(args.flag_delimiter)
-        .no_headers_flag(args.flag_no_headers);
-    let mut nrows: Option<u64> = None;
-    // resolved here (not at render time) because box panels bake their value-axis log verdict
-    // into the Panel during classification below.
-    let log_scale = parse_log_scale(&args.flag_log_scale)?;
-    let violin_mode = parse_violin_mode(&args.flag_violin)?;
+    panels:  Vec<Panel>,
+    skipped: Vec<String>,
 
-    // `--dict-info` icons are HTML-gated at build time (image exports never grow them); the
-    // per-field lookups below and in the overview-panel builders share `dict_info_for_field`.
-    let dict_icons: Option<&DictData> = (args.flag_dict_info
-        && matches!(out_format, OutFormat::Html))
-    .then_some(dict_data.as_ref())
-    .flatten();
+    sentinel_suspects:   Vec<String>,
+    sentinel_hints:      Vec<String>,
+    nonnumeric_measures: Vec<String>,
 
-    // classify each column into a dashboard panel
-    let mut panels: Vec<Panel> = Vec::new();
-    let mut skipped: Vec<String> = Vec::new();
-    // Columns the dictionary declares a `measure` but stats typed `String`. `classify_measure`
-    // drops them for want of quartiles, which is correct but indistinguishable from an ID-like
-    // skip in the summary note below, so name them separately.
-    //
-    // Split by the stats min/max endpoints, which already discriminate the two causes without a
-    // rescan: a numeric column interrupted by a null sentinel has ONE parsing endpoint (e.g.
-    // min=`1`, max=`NULL` — letters sort after digits), while genuinely non-numeric content has
-    // neither (min=`10:00:00 AM`, max=`NULL`: a time column the LLM mis-roled). Reporting the
-    // second group as a sentinel problem would send the user hunting for a value that isn't there.
-    // (Zero-padded numeric codes parse at BOTH endpoints, but `guardrail` already routes them to
-    // Dimension, so they never reach here.)
-    let mut sentinel_suspects: Vec<String> = Vec::new();
-    let mut nonnumeric_measures: Vec<String> = Vec::new();
-    // Same endpoint signal, but for columns with NO dictionary verdict (`Route::Defer`),
-    // where `classify` dropped them as high-cardinality text. Without a dictionary calling
-    // the column a measure, one parsing endpoint is suggestive but NOT proof - an address
-    // column holding a cell `1` and a cell `Zoo` produces it too. So these are never
-    // diagnosed per-column; they only trigger a pointer to `qsv denull`, which decides
-    // exactly by scanning the values.
-    let mut sentinel_hints: Vec<String> = Vec::new();
-    for (idx, s) in stats.iter().enumerate() {
-        if is_map_col(idx) {
-            continue;
-        }
-        let sem = &col_sems[idx];
-        // the panel title is the raw field name (or a positional name when headerless); the
-        // dictionary's human label becomes a subtitle beneath it, dropped when it's empty or
-        // just echoes the header.
-        let name = if s.field.is_empty() {
-            format!("col {}", idx + 1)
-        } else {
-            s.field.clone()
+    /// set by `finalize_panels`: HTML output rendered as an inline-div grid rather than the typed
+    /// subplot grid.
+    inline: bool,
+}
+
+impl<'a> SmartCtx<'a> {
+    /// Load the dataset's statistics and optional data dictionary, derive per-column semantics,
+    /// and build the geographic panels up front (the map panel's resolved lat/lon pair decides
+    /// which columns the per-column phases must skip).
+    fn new(
+        prep: &'a SmartPrep,
+        out_format: OutFormat,
+        progress: &'a ProgressBar,
+        loaded_geojson: Option<&serde_json::Value>,
+    ) -> CliResult<Self> {
+        let args = &prep.args;
+
+        let schema_args = util::SchemaArgs {
+            flag_enum_threshold:  0,
+            flag_ignore_case:     false,
+            flag_strict_dates:    false,
+            flag_strict_formats:  false,
+            flag_pattern_columns: SelectColumns::parse("").expect("empty selection is valid"),
+            flag_dates_whitelist: "sniff".to_string(),
+            flag_prefer_dmy:      false,
+            flag_force:           prep.force_stats_regen,
+            flag_stdout:          false,
+            flag_jobs:            None,
+            flag_polars:          false,
+            flag_no_headers:      args.flag_no_headers,
+            flag_delimiter:       args.flag_delimiter,
+            arg_input:            Some(prep.input.clone()),
+            flag_memcheck:        false,
+            flag_output:          None,
         };
-        let subtitle = (!sem.label.is_empty() && !sem.label.eq_ignore_ascii_case(&name))
-            .then(|| sem.label.clone());
-        // --dict-info: the column's dictionary description + pre-computed anchor.
-        let dict_info = dict_info_for_field(dict_icons, &s.field);
-        // a code/key twin (e.g. subject_code beside subject) is redundant with its label sibling
-        if twin_suppress.contains(&idx) {
-            skipped.push(name);
-            continue;
-        }
-        // `map_cols` (the resolved lat/lon pair), NOT `is_map_col` — a summary choropleth keyed off
-        // a region CODE puts no coordinates on screen, so a projected coord is still worth
-        // charting.
-        match classify_with_semantics(idx, s, sem, map_cols.is_some()) {
-            Some(mut kind) => {
-                // a cache-only quartile box becomes a raw box (with an overlay mode) when the
-                // explicit flag or the size heuristic calls for points (<= SMART_BOX_OUTLIERS_MAX
-                // rows). Above that, a column that HAS Tukey outliers becomes a `BoxOutliers`
-                // (precomputed box + native outlier-point overlay via a single fence-filtered
-                // pass); a column with no outliers stays a cheap cache-only `BoxStats` (no pass).
-                if let PanelKind::BoxStats {
-                    q1,
-                    median,
-                    q3,
-                    lower,
-                    upper,
-                    mean,
-                } = kind
-                {
-                    let n =
-                        *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-                    // tier on the column's actual point count, not the dataset row count:
-                    // only the non-null values are collected, embedded and rendered, so a
-                    // mostly-null column shouldn't be denied an overlay tier (or the raw
-                    // pass) by rows it doesn't have.
-                    let n_points = n.saturating_sub(s.nullcount);
-                    // the violin verdict needs the panel's value-axis log verdict (a KDE and a
-                    // log axis mix poorly); it is recomputed cheaply below when the panel bakes
-                    // in `value_log`.
-                    let would_log = box_panel_logs(
-                        log_scale,
-                        s,
-                        parse_stat_f64(s.min.as_deref()),
-                        parse_stat_f64(s.max.as_deref()),
-                    );
-                    if let Some(points) = smart_box_points(explicit_box_points.as_ref(), n_points) {
-                        // the raw values will be collected in full — exact violin (the default
-                        // representation; see `wants_violin`) or raw box.
-                        kind = if wants_violin(violin_mode, s, would_log, n_points) {
-                            // the KDE silhouette already shows what a full point cloud would,
-                            // so the size-based `all` upgrade (valuable on a box, whose five
-                            // numbers hide the distribution) is redundant clutter on a violin:
-                            // only an explicit --box-points mode overlays more than the
-                            // outliers, which the KDE's smoothed tail can't show individually.
-                            let points = if explicit_box_points.is_some() {
-                                points
-                            } else {
-                                BoxPoints::Outliers
-                            };
-                            PanelKind::Violin {
-                                idx,
-                                points,
-                                sample_stride: 1,
-                            }
-                        } else {
-                            PanelKind::BoxRaw { idx, points }
-                        };
-                    } else if wants_violin(violin_mode, s, would_log, n_points) {
-                        // `smart_box_points` returned None for one of two reasons, and a violin
-                        // still renders in both: an explicit `--box-points none` only means "no
-                        // point overlay" (a violin's KDE doesn't need points; the cache-only
-                        // escape hatch for that flag is `--violin off`), or the column has too
-                        // many values to embed exactly — a violin doesn't need them all: draw
-                        // the KDE + inner box from a deterministic stride sample (at most
-                        // VIOLIN_SAMPLE_MAX values), with no point overlay either way (a
-                        // strided sample misses the true extremes, so sampled "outliers"
-                        // would mislead).
-                        #[allow(clippy::cast_possible_truncation)]
-                        let sample_stride = if n_points > SMART_BOX_OUTLIERS_MAX {
-                            n_points.div_ceil(*VIOLIN_SAMPLE_MAX).max(1) as usize
-                        } else {
-                            1
-                        };
-                        kind = PanelKind::Violin {
-                            idx,
-                            points: BoxPoints::False,
-                            sample_stride,
-                        };
-                    } else if explicit_box_points.is_none()
-                        && n_points > SMART_BOX_OUTLIERS_MAX
-                        && let Some((fence_low, fence_high)) = box_fences(s)
-                        && (lower.is_some_and(|lo| lo < fence_low)
-                            || upper.is_some_and(|hi| hi > fence_high))
-                    {
-                        // `lower`/`upper` are the column's observed min/max — outside the
-                        // Tukey fences means real outliers exist, so overlay them.
-                        kind = PanelKind::BoxOutliers {
-                            idx,
-                            q1,
-                            median,
-                            q3,
-                            mean,
-                            fence_low,
-                            fence_high,
-                        };
-                    }
-                }
-                // for box/histogram panels, append cache-derived shape hints (null/zero share,
-                // skew direction, outlier share, …) to the panel title when notable. Cache-only,
-                // no cost; when nothing is notable the hint is None and the title is unchanged.
-                let name = match &kind {
-                    PanelKind::BoxStats { .. }
-                    | PanelKind::BoxRaw { .. }
-                    | PanelKind::BoxOutliers { .. }
-                    | PanelKind::Violin { .. }
-                    | PanelKind::Histogram { .. } => match box_shape_hint(s) {
-                        Some(hint) => format!("{name} {hint}"),
-                        None => name,
-                    },
-                    _ => name,
-                };
-                // an honesty cue for violins drawn from a stride sample rather than every value
-                let name = if matches!(&kind, PanelKind::Violin { sample_stride, .. } if *sample_stride > 1)
-                {
-                    format!("{name} (sampled)")
-                } else {
-                    name
-                };
-                // box panels resolve their value-axis log verdict now, while the cached observed
-                // min/max are at hand (frequency bars decide from their counts at render time)
-                let value_log = match &kind {
-                    PanelKind::BoxStats { lower, upper, .. } => {
-                        box_panel_logs(log_scale, s, *lower, *upper)
-                    },
-                    PanelKind::BoxRaw { .. }
-                    | PanelKind::BoxOutliers { .. }
-                    | PanelKind::Violin { .. } => box_panel_logs(
-                        log_scale,
-                        s,
-                        parse_stat_f64(s.min.as_deref()),
-                        parse_stat_f64(s.max.as_deref()),
-                    ),
-                    _ => false,
-                };
-                let interest = panel_interest(s, &kind);
-                panels.push(
-                    Panel::new(name, kind)
-                        .with_subtitle(subtitle)
-                        .with_dict_info(dict_info)
-                        .with_value_log(value_log)
-                        .with_interest(interest)
-                        .with_stat_idx(idx),
-                );
-            },
-            None => {
-                if s.r#type == "String" {
-                    // exactly one parsing endpoint => a numeric range interrupted by a token
-                    let one_endpoint_parses = parse_stat_f64(s.min.as_deref()).is_some()
-                        != parse_stat_f64(s.max.as_deref()).is_some();
-                    match (sem.route, one_endpoint_parses) {
-                        (Route::Measure, true) => sentinel_suspects.push(name.clone()),
-                        (Route::Measure, false) => nonnumeric_measures.push(name.clone()),
-                        (Route::Defer, true) => sentinel_hints.push(name.clone()),
-                        _ => {},
-                    }
-                }
-                skipped.push(name);
-            },
-        }
-    }
 
-    // `--bivariate`: NMI-driven association heatmap + ranked top relationships, built from
-    // moarstats' bivariate sidecar (already produced by the `--smarter` block above, since
-    // `--bivariate` forces `--smarter`). Inserted here — BEFORE the correlation-heatmap block
-    // below — so that block's own `panels.insert(0, ..)` ends up on top: the LAST `insert(0, ..)`
-    // to run wins the front slot, so final visual order top-to-bottom is
-    // Correlation -> Association -> Top Relationships. (Inserting TopRelationships first, then
-    // AssocHeatmap, puts AssocHeatmap above TopRelationships within that pair.)
-    // the source→target dimension pair claimed by the directed-flow (Sankey) overview panel, if
-    // one is built below. Used to keep the 2-level treemap hierarchy mutually exclusive with it:
-    // a genuinely many-to-many pair is shown as a flow, not nested part-to-whole.
-    let mut sankey_pair: Option<(usize, usize)> = None;
-    if bivariate_sidecar_fresh {
-        let input = args.arg_input.as_deref().unwrap_or_default();
-        let (assoc_panel, top_panel) = bivariate_panels(args, input, &stats, &col_sems, is_map_col);
-        if let Some(panel) = top_panel {
-            panels.insert(0, panel);
-        }
-        if let Some(panel) = assoc_panel {
-            panels.insert(0, panel);
+        // Keep the spinner live: get_stats_records reuses the cache or runs `qsv stats` as a
+        // captured subprocess, so nothing here writes to the terminal to clash with the bar.
+        progress.set_message("Loading statistics…");
+        let (_headers, mut stats) =
+            util::get_stats_records(&schema_args, util::StatsMode::ProfileSchema)?;
+        if stats.is_empty() {
+            return fail_clierror!(
+                "Could not compute statistics for `viz smart`. The input must be a regular \
+                 CSV/TSV file (not stdin or a compressed/special format)."
+            );
         }
 
-        // directed-flow Sankey overview. Eligible dimensions are the same String freq-bar columns
-        // the hierarchy panel nests (so the two panels stay mutually exclusive on a shared pool).
-        // HTML-only: a Sankey is a domain-based trace that can't compose with the typed x/y grid
-        // used for static image export — so, like the hierarchy/3D/map panels, build it only for
-        // non-image output.
-        if !out_format.is_image() {
-            let sankey_eligible: std::collections::HashSet<usize> = panels
-                .iter()
-                .filter_map(|p| match p.kind {
-                    PanelKind::FreqBar { idx } => {
-                        let s = &stats[idx];
-                        (s.r#type == "String"
-                            && (SANKEY_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY)
-                                .contains(&s.cardinality))
-                        .then_some(idx)
-                    },
-                    _ => None,
-                })
-                .collect();
-            match sankey_panel(args, input, &stats, &col_sems, &sankey_eligible, is_map_col) {
-                Ok(Some((panel, pair))) => {
-                    sankey_pair = Some(pair);
-                    panels.insert(0, panel);
+        // Plain `viz smart` (no `--smarter`): the stats cache has `skewness` but not the
+        // moarstats-only `kurtosis`/`bimodality_coefficient`, so a bimodal column would
+        // render as a box plot that hides its peaks. Compute Sarle's bimodality coefficient
+        // in one streaming pass so `classify_measure` can upgrade such a column to a
+        // histogram WITHOUT requiring `--smarter`. No-op (and no pass) when moarstats
+        // already enriched the cache or no column qualifies. Soft-fail to a box plot.
+        if let Err(e) = enrich_bimodality(args, &mut stats) {
+            viz_note(&format!(
+                "viz smart: bimodality detection failed ({e}); bimodal columns may render as box \
+                 plots. Use --smarter for moarstats-based enrichment."
+            ));
+        }
+
+        // Optional describegpt Data Dictionary (--dictionary): per-column semantic verdicts
+        // (concept -> role -> content_type -> stats) that override the statistical guess
+        // for the cases they speak to. When --dictionary is absent, dict_data is None and
+        // every column's route resolves to Defer, so classification is identical to today's
+        // stats-only behavior. Keep the spinner live during describegpt (the slowest
+        // phase): its output is captured by run_qsv_cmd, and load_dictionary_semantics
+        // suspends the bar only around its own messages.
+        progress.set_message("Inferring data dictionary…");
+        let (dict_data, dict_json_text) = match load_dictionary_semantics(args)? {
+            Some((data, json_text)) => (Some(data), Some(json_text)),
+            None => (None, None),
+        };
+        let col_sems: Vec<ColSemantics> = stats
+            .iter()
+            .map(|s| derive_semantics(s, dict_data.as_ref().and_then(|d| d.rows.get(&s.field))))
+            .collect();
+
+        // De-duplicate code/label twins (subject + subject_code -> chart only "subject"). Gated on
+        // a dictionary being present so a stats-only dashboard is byte-identical; timezone
+        // twins and IDs are already de-duplicated by the Temporal/Skip routing above.
+        let twin_suppress = if dict_data.is_some() {
+            dimension_code_twins(&stats, &col_sems)
+        } else {
+            std::collections::HashSet::new()
+        };
+
+        // Build the geographic map panel up front (one data pass) so we can learn which lat/lon
+        // columns it ACTUALLY consumed. Those columns are charted on the map only —
+        // excluded from per-column distribution panels, the correlation matrix, and the
+        // time-series y so a map dashboard doesn't redundantly box/histogram its
+        // coordinates or plot e.g. latitude vs time.
+        //
+        // The map panel is built for BOTH HTML and static image output. The MapLibre tile basemap
+        // (ScatterMap/DensityMap) needs a live browser + network tiles, so it can't be statically
+        // exported — but the offline `ScatterGeo` projection basemap CAN (it's how the standalone
+        // `viz geo` command exports images). So for image output a local-extent `Map` panel is
+        // coerced to the `Geo` form, fit to the data's extent (see `geo_framing`). When
+        // build_map_panel returns None (no usable lat/lon pair), map_cols stays None and
+        // those columns are charted normally. (map_panel, choropleth_panel): the point map
+        // plus an optional geocode-derived per-country choropleth overview. The choropleth
+        // is non-cartesian and HTML-only, so it's dropped for image export; the point map
+        // is coerced from Map -> Geo for image export (only the offline ScatterGeo basemap
+        // can be statically exported).
+        let (map_panel, choropleth_panel) = {
+            // prefer dictionary geo.latitude/geo.longitude (handles non-standard coord names like
+            // `X Coordinate`/`Y Coordinate`), falling back to the header-name heuristic.
+            let coord_hint = dict_data.as_ref().and_then(|d| semantic_latlon(&stats, d));
+            let cluster_mode = parse_cluster_mode(&args.flag_cluster)?;
+            progress.set_message("Building map panel…");
+            match build_map_panel(
+                args,
+                &stats,
+                &col_sems,
+                dict_data.as_ref(),
+                coord_hint,
+                cluster_mode,
+                loaded_geojson,
+            )? {
+                None => (None, None),
+                Some((p, choro, cols, mappable_count)) => {
+                    if out_format.is_image() {
+                        let kind = match p.kind {
+                            PanelKind::Map {
+                                lats,
+                                lons,
+                                outlier_lats,
+                                outlier_lons,
+                                hover_text,
+                                outlier_hover_text,
+                                sizes,
+                                ..
+                            } => PanelKind::Geo {
+                                lats,
+                                lons,
+                                outlier_lats,
+                                outlier_lons,
+                                hover_text,
+                                outlier_hover_text,
+                                sizes,
+                            },
+                            other => other,
+                        };
+                        let p = Panel {
+                            name: p.name,
+                            // the coerced Geo renders MARKERS, never a density heatmap, so the
+                            // sampling subtitle's "aggregating" verb (chosen by `sample_note` for
+                            // the HTML DensityMap render) must follow the actual render mode.
+                            subtitle: p.subtitle.map(|s| match s.strip_prefix("aggregating ") {
+                                Some(rest) => format!("showing {rest}"),
+                                None => s,
+                            }),
+                            kind,
+                            value_log: p.value_log,
+                            interest: p.interest,
+                            dict_info: p.dict_info,
+                            stat_idx: p.stat_idx,
+                            #[cfg(feature = "geocode")]
+                            geo_meta: p.geo_meta,
+                            geojson_overlay: p.geojson_overlay,
+                        };
+                        (Some((p, cols)), None)
+                    } else {
+                        // HTML output: a local-extent density panel actually renders as a
+                        // DensityMap here (global extents are `Geo`
+                        // markers, image export was coerced above), so this
+                        // is the point at which the heatmap/cluster note is truthful. Report
+                        // `mappable_count` (the full source count that drove the density decision),
+                        // not the panel's downsampled/outlier-excluded
+                        // `lats`.
+                        if matches!(p.kind, PanelKind::Map { density: true, .. }) {
+                            viz_note(&format!(
+                                "viz smart: map has {mappable_count} mappable points (>= \
+                                 --heatmap-density {}); drawing the core as a density heatmap \
+                                 with per-point hover. Set --heatmap-density 0 (the default) to \
+                                 draw interactive clustered markers instead.",
+                                args.flag_heatmap_density
+                            ));
+                        } else if matches!(p.kind, PanelKind::Map { cluster: true, .. }) {
+                            viz_note(&format!(
+                                "viz smart: map has {mappable_count} mappable points; the core \
+                                 opens as individual points with a \"Clusters/Points\" toggle \
+                                 (click it to collapse dense areas into native MapLibre count \
+                                 bubbles that expand again on zoom-in). Set --cluster off to omit \
+                                 the toggle, or --heatmap-density <n> to draw a density heatmap \
+                                 at or above <n> points instead."
+                            ));
+                        }
+                        (Some((p, cols)), choro)
+                    }
                 },
-                Ok(None) => {},
-                Err(e) => viz_note(&format!(
-                    "viz smart: directed-flow (Sankey) panel skipped ({e})"
-                )),
             }
-        }
-    }
+        };
+        let map_cols = map_panel.as_ref().map(|(_, cols)| *cols);
 
-    // Animated panels (T2 geo, T3 bubble). At most ONE animated panel is shown; precedence is
-    // T3 (bubble) > T2 (geo) > T1 (scatter pair). geo_anim_panel is filled HERE — outside the
-    // numeric block, since T2 needs no numeric pair and a global dated-points dataset often has a
-    // single numeric (making the numeric block below a no-op) — while bubble_panel is filled INSIDE
-    // the numeric block (T3 needs a measure pair). The T1 insertion consults both, and the winner
-    // is inserted after the numeric block. Declared here so both are in scope across the block.
-    let mut geo_anim_panel: Option<Panel> = None;
-    let mut bubble_panel: Option<Panel> = None;
-    {
-        let mode = smart_slider_mode(args);
-        // respect `--slider off` and image output (animations are HTML-only), like T1
-        if !out_format.is_image()
-            && !matches!(mode, SmartSliderMode::Off)
-            && let (Some((lat_idx, lon_idx)), Some((date_idx, _))) = (
-                map_cols.or_else(|| latlon_indices(&stats)),
-                canonical_date_col(&stats, &col_sems),
-            )
-        {
-            // `auto` (default) only fires on a strong signal (>= 3 buckets); `on` lowers the bar
-            let min_frames = if matches!(mode, SmartSliderMode::On) {
-                2
-            } else {
-                3
-            };
-            let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-            if let Some(data) =
-                read_geo_anim(args, lat_idx, lon_idx, date_idx, prefer_dmy, min_frames)?
-            {
-                let frame_label = col_sems
-                    .get(date_idx)
-                    .map(|s| s.label.as_str())
-                    .filter(|l| !l.is_empty())
-                    .map_or_else(|| stats[date_idx].field.clone(), ToString::to_string);
-                geo_anim_panel = Some(Panel::new(
-                    "locations over time".to_string(),
-                    PanelKind::AnimatedGeo {
-                        bucket_lats: data.bucket_lats,
-                        bucket_lons: data.bucket_lons,
-                        bucket_labels: data.bucket_labels,
-                        frame_label,
-                    },
-                ));
-            }
-        }
-    }
+        // region-code summary choropleth(s): drive per-region aggregates (count + median measure)
+        // directly from a geo dimension column (e.g. a zip column), independent of lat/lon. Only
+        // when build_map_panel emitted no choropleth companion (avoid two competing region
+        // fills), and never for image output (choropleths are HTML-only, like the PIP
+        // companion above).
+        let summary_choros = if choropleth_panel.is_none() && !out_format.is_image() {
+            build_smart_summary_choropleth_panels(args, &stats, &col_sems, loaded_geojson)?
+        } else {
+            None
+        };
+        let summary_choro_col = summary_choros.as_ref().map(|(_, c)| *c);
 
-    // when 2+ continuous numeric columns exist, prepend a correlation-heatmap panel. This is
-    // the one panel that re-scans the data (a single extra pass), since Pearson correlations
-    // are not in the stats cache; it's prepended so it survives the panel cap below.
-    let numeric_indices: Vec<usize> = stats
-        .iter()
-        .enumerate()
-        .filter(|(i, s)| {
-            !is_map_col(*i)
-                // a dictionary-tagged dimension/geo/temporal/id numeric is NOT a continuous
-                // measure, so exclude it from the Pearson matrix (and thus from the corr drill-down
-                // and the implicit box-plot pool). A confirmed Measure, or an un-tagged (Defer)
-                // numeric, still qualifies — without a dictionary every column is Defer, exactly
-                // as before.
-                && matches!(col_sems[*i].route, Route::Defer | Route::Measure)
-                && matches!(s.r#type.as_str(), "Integer" | "Float")
-                && s.cardinality > 1
-                && !s.uniqueness_ratio.is_some_and(|r| r > 0.95)
+        // Box-points handling for `viz smart`. A continuous-numeric column is normally a cache-only
+        // quartile box (no data re-scan). When points should be overlaid, it instead becomes a raw
+        // box (one extra batched pass, below) so plotly can draw true Tukey whiskers and
+        // the sample points. The overlay mode is the user's explicit `--box-points` when
+        // given, otherwise a size-based heuristic decides per the dataset's row count (see
+        // `smart_box_points`). The row count is pulled once from the stats/index cache, and
+        // only when the first box panel actually needs it.
+        let explicit_box_points: Option<BoxPoints> = match args.flag_box_points.as_deref() {
+            Some(s) => Some(parse_box_points(Some(s))?),
+            None => None,
+        };
+        let count_conf = Config::new(args.arg_input.as_ref())
+            .delimiter(args.flag_delimiter)
+            .no_headers_flag(args.flag_no_headers);
+        let nrows: Option<u64> = None;
+        // resolved here (not at render time) because box panels bake their value-axis log verdict
+        // into the Panel during classification below.
+        let log_scale = parse_log_scale(&args.flag_log_scale)?;
+        let violin_mode = parse_violin_mode(&args.flag_violin)?;
+
+        Ok(SmartCtx {
+            args,
+            out_format,
+            progress,
+            stats,
+            col_sems,
+            dict_data,
+            dict_json_text,
+            twin_suppress,
+            map_panel,
+            choropleth_panel,
+            summary_choros,
+            map_cols,
+            summary_choro_col,
+            bivariate_sidecar_fresh: prep.bivariate_sidecar_fresh,
+            sankey_pair: None,
+            bubble_panel: None,
+            geo_anim_panel: None,
+            explicit_box_points,
+            count_conf,
+            nrows,
+            log_scale,
+            violin_mode,
+            panels: Vec::new(),
+            skipped: Vec::new(),
+            sentinel_suspects: Vec::new(),
+            sentinel_hints: Vec::new(),
+            nonnumeric_measures: Vec::new(),
+            inline: false,
         })
-        .map(|(i, _)| i)
-        .collect();
-    if numeric_indices.len() >= 2 {
-        progress.set_message("Computing correlations…");
-        let (mut rdr, headers, nh) = reader_and_headers(args)?;
-        let (labels, columns, kept_indices) =
-            read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices, false)?;
-        // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
-        if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
-            let matrix = pearson_matrix(&columns);
-            // the most strongly correlated pair drills into the heatmap's headline relationship,
-            // but only when it's at least moderately correlated (else it's a noise cloud). All the
-            // drill-downs below reuse the columns already read for the matrix (no extra data pass).
-            let pair =
-                strongest_pair(&matrix).filter(|&(_, _, r)| r.abs() >= SCATTER_PAIR_MIN_ABS_R);
+    }
 
-            // Animated relationship-over-time drill-down (T1), DECOUPLED from the strongest pair.
-            // The strongest pair is usually the most tautological (a near-line whose 2-D shape
-            // can't evolve), so animating it adds nothing over a static time-colored
-            // scatter. Instead pick the pair whose per-time-bucket centroid path BENDS
-            // the most — a genuinely evolving 2-D relationship
-            // (`select_drifting_pair`) — and animate that. HTML only; needs a canonical
-            // date column; `--slider off` suppresses. Computed BEFORE the correlation
-            // heatmap consumes `labels`/`matrix`; returns the selected (i, j) plus the built Panel
-            // so the static drill-down below can de-dupe when they coincide.
-            let anim_sel: Option<(usize, usize, Panel)> = 'anim: {
-                let mode = smart_slider_mode(args);
-                if out_format.is_image() || matches!(mode, SmartSliderMode::Off) {
-                    break 'anim None;
+    /// The dataset's row count, pulled once from the stats/index cache and memoized — the lazy
+    /// fetch shared by the box-points heuristic, the metadata table and the panel builders.
+    fn row_count(&mut self) -> u64 {
+        // field-precise destructuring: `nrows` is borrowed mutably while `count_conf` is read.
+        let Self {
+            nrows, count_conf, ..
+        } = self;
+        *nrows.get_or_insert_with(|| util::count_rows(count_conf).unwrap_or(0))
+    }
+
+    /// A column consumed by the point map (lat/lon) OR by the summary choropleth (region key) is
+    /// suppressed from the per-column distribution panels and the correlation/bivariate pools.
+    fn is_map_col(&self, idx: usize) -> bool {
+        self.map_cols.is_some_and(|(la, lo)| idx == la || idx == lo)
+            || self.summary_choro_col == Some(idx)
+    }
+
+    /// `--dict-info` icons are HTML-gated at build time (image exports never grow them); the
+    /// per-field lookups share `dict_info_for_field`.
+    fn dict_icons(&self) -> Option<&DictData> {
+        (self.args.flag_dict_info && matches!(self.out_format, OutFormat::Html))
+            .then_some(self.dict_data.as_ref())
+            .flatten()
+    }
+
+    /// Under `--dict-info`, the geographic overview panels anchor their info icon on the driving
+    /// coordinate column's dictionary entry (lat first) — the natural place a map reader looks for
+    /// the coordinates' provenance and caveats.
+    fn geo_dict_info(&self) -> Option<(String, String)> {
+        self.map_cols.and_then(|(la, lo)| {
+            dict_info_for_field(self.dict_icons(), &self.stats[la].field)
+                .or_else(|| dict_info_for_field(self.dict_icons(), &self.stats[lo].field))
+        })
+    }
+
+    /// Classify each column into a dashboard panel, accumulating the panel set, the skipped-column
+    /// list, and the three deferred sentinel/measure diagnostics.
+    ///
+    /// Destructures the context up front so the loop can push to `panels` while iterating `stats`
+    /// and still reach the lazy `nrows` row-count -- disjoint field borrows the borrow checker
+    /// accepts, where `&mut self` method calls would not.
+    fn classify_columns(&mut self) {
+        let Self {
+            args,
+            out_format,
+            stats,
+            col_sems,
+            dict_data,
+            twin_suppress,
+            map_cols,
+            summary_choro_col,
+            explicit_box_points,
+            count_conf,
+            nrows,
+            log_scale,
+            violin_mode,
+            panels,
+            skipped,
+            sentinel_suspects,
+            sentinel_hints,
+            nonnumeric_measures,
+            ..
+        } = self;
+        let (args, out_format, log_scale, violin_mode) =
+            (*args, *out_format, *log_scale, *violin_mode);
+        let (map_cols, summary_choro_col) = (*map_cols, *summary_choro_col);
+        // the same two derived values `SmartCtx::is_map_col` / `dict_icons` compute; recreated as
+        // locals here because `self` is destructured for the duration of the loop.
+        let is_map_col = |idx: usize| {
+            map_cols.is_some_and(|(la, lo)| idx == la || idx == lo)
+                || summary_choro_col == Some(idx)
+        };
+        let dict_icons: Option<&DictData> = (args.flag_dict_info
+            && matches!(out_format, OutFormat::Html))
+        .then_some(dict_data.as_ref())
+        .flatten();
+
+        for (idx, s) in stats.iter().enumerate() {
+            if is_map_col(idx) {
+                continue;
+            }
+            let sem = &col_sems[idx];
+            // the panel title is the raw field name (or a positional name when headerless); the
+            // dictionary's human label becomes a subtitle beneath it, dropped when it's empty or
+            // just echoes the header.
+            let name = if s.field.is_empty() {
+                format!("col {}", idx + 1)
+            } else {
+                s.field.clone()
+            };
+            let subtitle = (!sem.label.is_empty() && !sem.label.eq_ignore_ascii_case(&name))
+                .then(|| sem.label.clone());
+            // --dict-info: the column's dictionary description + pre-computed anchor.
+            let dict_info = dict_info_for_field(dict_icons, &s.field);
+            // a code/key twin (e.g. subject_code beside subject) is redundant with its label
+            // sibling
+            if twin_suppress.contains(&idx) {
+                skipped.push(name);
+                continue;
+            }
+            // `map_cols` (the resolved lat/lon pair), NOT `is_map_col` — a summary choropleth keyed
+            // off a region CODE puts no coordinates on screen, so a projected coord is
+            // still worth charting.
+            match classify_with_semantics(idx, s, sem, map_cols.is_some()) {
+                Some(mut kind) => {
+                    // a cache-only quartile box becomes a raw box (with an overlay mode) when the
+                    // explicit flag or the size heuristic calls for points (<=
+                    // SMART_BOX_OUTLIERS_MAX rows). Above that, a column that
+                    // HAS Tukey outliers becomes a `BoxOutliers` (precomputed
+                    // box + native outlier-point overlay via a single fence-filtered
+                    // pass); a column with no outliers stays a cheap cache-only `BoxStats` (no
+                    // pass).
+                    if let PanelKind::BoxStats {
+                        q1,
+                        median,
+                        q3,
+                        lower,
+                        upper,
+                        mean,
+                    } = kind
+                    {
+                        let n =
+                            *nrows.get_or_insert_with(|| util::count_rows(count_conf).unwrap_or(0));
+                        // tier on the column's actual point count, not the dataset row count:
+                        // only the non-null values are collected, embedded and rendered, so a
+                        // mostly-null column shouldn't be denied an overlay tier (or the raw
+                        // pass) by rows it doesn't have.
+                        let n_points = n.saturating_sub(s.nullcount);
+                        // the violin verdict needs the panel's value-axis log verdict (a KDE and a
+                        // log axis mix poorly); it is recomputed cheaply below when the panel bakes
+                        // in `value_log`.
+                        let would_log = box_panel_logs(
+                            log_scale,
+                            s,
+                            parse_stat_f64(s.min.as_deref()),
+                            parse_stat_f64(s.max.as_deref()),
+                        );
+                        if let Some(points) =
+                            smart_box_points(explicit_box_points.as_ref(), n_points)
+                        {
+                            // the raw values will be collected in full — exact violin (the default
+                            // representation; see `wants_violin`) or raw box.
+                            kind = if wants_violin(violin_mode, s, would_log, n_points) {
+                                // the KDE silhouette already shows what a full point cloud would,
+                                // so the size-based `all` upgrade (valuable on a box, whose five
+                                // numbers hide the distribution) is redundant clutter on a violin:
+                                // only an explicit --box-points mode overlays more than the
+                                // outliers, which the KDE's smoothed tail can't show individually.
+                                let points = if explicit_box_points.is_some() {
+                                    points
+                                } else {
+                                    BoxPoints::Outliers
+                                };
+                                PanelKind::Violin {
+                                    idx,
+                                    points,
+                                    sample_stride: 1,
+                                }
+                            } else {
+                                PanelKind::BoxRaw { idx, points }
+                            };
+                        } else if wants_violin(violin_mode, s, would_log, n_points) {
+                            // `smart_box_points` returned None for one of two reasons, and a violin
+                            // still renders in both: an explicit `--box-points none` only means "no
+                            // point overlay" (a violin's KDE doesn't need points; the cache-only
+                            // escape hatch for that flag is `--violin off`), or the column has too
+                            // many values to embed exactly — a violin doesn't need them all: draw
+                            // the KDE + inner box from a deterministic stride sample (at most
+                            // VIOLIN_SAMPLE_MAX values), with no point overlay either way (a
+                            // strided sample misses the true extremes, so sampled "outliers"
+                            // would mislead).
+                            #[allow(clippy::cast_possible_truncation)]
+                            let sample_stride = if n_points > SMART_BOX_OUTLIERS_MAX {
+                                n_points.div_ceil(*VIOLIN_SAMPLE_MAX).max(1) as usize
+                            } else {
+                                1
+                            };
+                            kind = PanelKind::Violin {
+                                idx,
+                                points: BoxPoints::False,
+                                sample_stride,
+                            };
+                        } else if explicit_box_points.is_none()
+                            && n_points > SMART_BOX_OUTLIERS_MAX
+                            && let Some((fence_low, fence_high)) = box_fences(s)
+                            && (lower.is_some_and(|lo| lo < fence_low)
+                                || upper.is_some_and(|hi| hi > fence_high))
+                        {
+                            // `lower`/`upper` are the column's observed min/max — outside the
+                            // Tukey fences means real outliers exist, so overlay them.
+                            kind = PanelKind::BoxOutliers {
+                                idx,
+                                q1,
+                                median,
+                                q3,
+                                mean,
+                                fence_low,
+                                fence_high,
+                            };
+                        }
+                    }
+                    // for box/histogram panels, append cache-derived shape hints (null/zero share,
+                    // skew direction, outlier share, …) to the panel title when notable.
+                    // Cache-only, no cost; when nothing is notable the hint is
+                    // None and the title is unchanged.
+                    let name = match &kind {
+                        PanelKind::BoxStats { .. }
+                        | PanelKind::BoxRaw { .. }
+                        | PanelKind::BoxOutliers { .. }
+                        | PanelKind::Violin { .. }
+                        | PanelKind::Histogram { .. } => match box_shape_hint(s) {
+                            Some(hint) => format!("{name} {hint}"),
+                            None => name,
+                        },
+                        _ => name,
+                    };
+                    // an honesty cue for violins drawn from a stride sample rather than every value
+                    let name = if matches!(&kind, PanelKind::Violin { sample_stride, .. } if *sample_stride > 1)
+                    {
+                        format!("{name} (sampled)")
+                    } else {
+                        name
+                    };
+                    // box panels resolve their value-axis log verdict now, while the cached
+                    // observed min/max are at hand (frequency bars decide from
+                    // their counts at render time)
+                    let value_log = match &kind {
+                        PanelKind::BoxStats { lower, upper, .. } => {
+                            box_panel_logs(log_scale, s, *lower, *upper)
+                        },
+                        PanelKind::BoxRaw { .. }
+                        | PanelKind::BoxOutliers { .. }
+                        | PanelKind::Violin { .. } => box_panel_logs(
+                            log_scale,
+                            s,
+                            parse_stat_f64(s.min.as_deref()),
+                            parse_stat_f64(s.max.as_deref()),
+                        ),
+                        _ => false,
+                    };
+                    let interest = panel_interest(s, &kind);
+                    panels.push(
+                        Panel::new(name, kind)
+                            .with_subtitle(subtitle)
+                            .with_dict_info(dict_info)
+                            .with_value_log(value_log)
+                            .with_interest(interest)
+                            .with_stat_idx(idx),
+                    );
+                },
+                None => {
+                    if s.r#type == "String" {
+                        // exactly one parsing endpoint => a numeric range interrupted by a token
+                        let one_endpoint_parses = parse_stat_f64(s.min.as_deref()).is_some()
+                            != parse_stat_f64(s.max.as_deref()).is_some();
+                        match (sem.route, one_endpoint_parses) {
+                            (Route::Measure, true) => sentinel_suspects.push(name.clone()),
+                            (Route::Measure, false) => nonnumeric_measures.push(name.clone()),
+                            (Route::Defer, true) => sentinel_hints.push(name.clone()),
+                            _ => {},
+                        }
+                    }
+                    skipped.push(name);
+                },
+            }
+        }
+    }
+
+    /// Build the relationship panels: the `--bivariate` association/Sankey set, the animated
+    /// panels (T2 geo, T3 bubble), and the correlation heatmap with its scatter/contour/3D
+    /// drill-downs.
+    fn add_relationship_panels(&mut self) -> CliResult<()> {
+        // `--bivariate`: NMI-driven association heatmap + ranked top relationships, built from
+        // moarstats' bivariate sidecar (already produced by the `--smarter` block above, since
+        // `--bivariate` forces `--smarter`). Inserted here — BEFORE the correlation-heatmap block
+        // below — so that block's own `panels.insert(0, ..)` ends up on top: the LAST
+        // `insert(0, ..)` to run wins the front slot, so final visual order top-to-bottom is
+        // Correlation -> Association -> Top Relationships. (Inserting TopRelationships first, then
+        // AssocHeatmap, puts AssocHeatmap above TopRelationships within that pair.)
+        if self.bivariate_sidecar_fresh {
+            let input = self.args.arg_input.as_deref().unwrap_or_default();
+            let (assoc_panel, top_panel) =
+                bivariate_panels(self.args, input, &self.stats, &self.col_sems, |i| {
+                    self.is_map_col(i)
+                });
+            if let Some(panel) = top_panel {
+                self.panels.insert(0, panel);
+            }
+            if let Some(panel) = assoc_panel {
+                self.panels.insert(0, panel);
+            }
+
+            // directed-flow Sankey overview. Eligible dimensions are the same String freq-bar
+            // columns the hierarchy panel nests (so the two panels stay mutually exclusive on a
+            // shared pool). HTML-only: a Sankey is a domain-based trace that can't compose with the
+            // typed x/y grid used for static image export — so, like the hierarchy/3D/map panels,
+            // build it only for non-image output.
+            if !self.out_format.is_image() {
+                let sankey_eligible: std::collections::HashSet<usize> = self
+                    .panels
+                    .iter()
+                    .filter_map(|p| match p.kind {
+                        PanelKind::FreqBar { idx } => {
+                            let s = &self.stats[idx];
+                            (s.r#type == "String"
+                                && (SANKEY_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY)
+                                    .contains(&s.cardinality))
+                            .then_some(idx)
+                        },
+                        _ => None,
+                    })
+                    .collect();
+                let built = sankey_panel(
+                    self.args,
+                    input,
+                    &self.stats,
+                    &self.col_sems,
+                    &sankey_eligible,
+                    |i| self.is_map_col(i),
+                );
+                match built {
+                    Ok(Some((panel, pair))) => {
+                        self.sankey_pair = Some(pair);
+                        self.panels.insert(0, panel);
+                    },
+                    Ok(None) => {},
+                    Err(e) => viz_note(&format!(
+                        "viz smart: directed-flow (Sankey) panel skipped ({e})"
+                    )),
                 }
-                let Some((date_idx, _)) = canonical_date_col(&stats, &col_sems) else {
-                    break 'anim None;
-                };
+            }
+        }
+
+        // Animated panels (T2 geo, T3 bubble). At most ONE animated panel is shown; precedence is
+        // T3 (bubble) > T2 (geo) > T1 (scatter pair). `geo_anim_panel` is filled HERE — outside the
+        // numeric block, since T2 needs no numeric pair and a global dated-points dataset often has
+        // a single numeric (making the numeric block below a no-op) — while `bubble_panel` is
+        // filled INSIDE the numeric block (T3 needs a measure pair). The T1 insertion consults
+        // both, and the winner is inserted by `add_overview_panels`.
+        {
+            let mode = smart_slider_mode(self.args);
+            // respect `--slider off` and image output (animations are HTML-only), like T1
+            if !self.out_format.is_image()
+                && !matches!(mode, SmartSliderMode::Off)
+                && let (Some((lat_idx, lon_idx)), Some((date_idx, _))) = (
+                    self.map_cols.or_else(|| latlon_indices(&self.stats)),
+                    canonical_date_col(&self.stats, &self.col_sems),
+                )
+            {
                 // `auto` (default) only fires on a strong signal (>= 3 buckets); `on` lowers the
                 // bar
                 let min_frames = if matches!(mode, SmartSliderMode::On) {
@@ -18494,161 +18621,128 @@ fn build_smart(
                     3
                 };
                 let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-                let Some(bucket_means) =
-                    read_bucketed_means(args, &kept_indices, date_idx, prefer_dmy, min_frames)?
-                else {
-                    break 'anim None;
-                };
-                let Some((i, j, r)) = select_drifting_pair(&matrix, &columns, &bucket_means) else {
-                    break 'anim None;
-                };
-                // large-N contours aren't animatable (a scatter would overplot into a solid mass)
-                if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
-                    break 'anim None;
-                }
-                let Some(data) = read_scatter_pair_anim(
-                    args,
-                    kept_indices[i],
-                    kept_indices[j],
-                    date_idx,
-                    prefer_dmy,
-                    min_frames,
-                )?
-                else {
-                    break 'anim None;
-                };
-                let frame_label = col_sems
-                    .get(date_idx)
-                    .map(|s| s.label.as_str())
-                    .filter(|l| !l.is_empty())
-                    .map_or_else(|| col_label(&headers, date_idx, nh), ToString::to_string);
-                let rho = spearman_rho(&columns[i], &columns[j]);
-                let rel = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
-                    format!(
-                        "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
-                        labels[i], labels[j]
-                    )
-                } else {
-                    format!("{} vs {} (r={r:.2})", labels[i], labels[j])
-                };
-                let panel = Panel::new(
-                    format!("{rel} over time"),
-                    PanelKind::AnimatedScatterPair {
-                        xs: data.xs,
-                        ys: data.ys,
-                        bucket: data.bucket,
-                        bucket_labels: data.bucket_labels,
-                        x_label: labels[i].clone(),
-                        y_label: labels[j].clone(),
-                        frame_label,
-                        x_range: data.x_range,
-                        y_range: data.y_range,
-                    },
-                );
-                Some((i, j, panel))
-            };
-            let anim_ij = anim_sel.as_ref().map(|&(i, j, _)| (i, j));
-
-            // T3 (Gapminder bubble): fill bubble_panel INSIDE the numeric block (it needs a measure
-            // pair) and BEFORE the T1 insertion, so the arbitration T3 > T1 can be applied.
-            // `matrix` is still alive here (consumed by `mask_to_lower_triangle` only
-            // at the CorrHeatmap insert below). Requires a low-cardinality categorical
-            // entity, a measure pair (the strongest pair in the [0.5, 0.9) |r| band —
-            // strong enough to relate, not a tautological near-line — else the first
-            // two numerics), a canonical date, and — via `read_entity_bucket_agg`'s
-            // strict cell/entity gates — enough non-sparse per-(entity,bucket) support
-            // (this is what rejects sparse zone-per-month datasets).
-            {
-                let mode = smart_slider_mode(args);
-                if bubble_panel.is_none()
-                    && !out_format.is_image()
-                    && !matches!(mode, SmartSliderMode::Off)
-                    && let Some((date_idx, _)) = canonical_date_col(&stats, &col_sems)
-                {
-                    let n =
-                        *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-                    // first (lowest-idx) eligible categorical dimension is the bubble entity
-                    let entity = eligible_categorical_dims(&panels, &stats, &col_sems, n)
-                        .into_iter()
-                        .min_by_key(|&(idx, ..)| idx);
-                    // measure pair: the strongest pair in [SCATTER_PAIR_MIN_ABS_R, 0.9), else the
-                    // first two numerics
-                    let measure_pair = strongest_pair(&matrix)
-                        .filter(|&(_, _, r)| (SCATTER_PAIR_MIN_ABS_R..0.9).contains(&r.abs()))
-                        .map(|(i, j, _)| (i, j))
-                        .or(Some((0, 1)));
-                    if let (Some((e_idx, _, entity_label)), Some((i, j))) = (entity, measure_pair) {
-                        let min_frames = if matches!(mode, SmartSliderMode::On) {
-                            2
-                        } else {
-                            3
-                        };
-                        // bubble SIZE = Gapminder's third data variable: the leftover numeric least
-                        // redundant with the (x,y) pair (so size adds new information, not a
-                        // near-copy of an axis). `None` for a 2-numeric dataset — the reader then
-                        // falls back to the per-cell row count and the label stays "records".
-                        let size_k = least_redundant_third(&matrix, i, j);
-                        let size_idx = size_k.map(|k| kept_indices[k]);
-                        let size_label = size_k
-                            .map(|k| labels[k].clone())
-                            .unwrap_or_else(|| "records".to_string());
-                        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-                        if let Some(data) = read_entity_bucket_agg(
-                            args,
-                            e_idx,
-                            kept_indices[i],
-                            kept_indices[j],
-                            size_idx,
-                            date_idx,
-                            prefer_dmy,
-                            min_frames,
-                            3,
-                        )? {
-                            let (x_label, y_label) = (labels[i].clone(), labels[j].clone());
-                            let frame_label = col_sems
-                                .get(date_idx)
-                                .map(|s| s.label.as_str())
-                                .filter(|l| !l.is_empty())
-                                .map_or_else(|| stats[date_idx].field.clone(), ToString::to_string);
-                            bubble_panel = Some(Panel::new(
-                                format!("{y_label} vs {x_label} by {entity_label} over time"),
-                                PanelKind::AnimatedBubble {
-                                    entities: data.entities,
-                                    xs: data.xs,
-                                    ys: data.ys,
-                                    sizes: data.sizes,
-                                    bucket_labels: data.bucket_labels,
-                                    x_label,
-                                    y_label,
-                                    size_label,
-                                    frame_label,
-                                    x_range: data.x_range,
-                                    y_range: data.y_range,
-                                },
-                            ));
-                        }
-                    }
+                if let Some(data) = read_geo_anim(
+                    self.args, lat_idx, lon_idx, date_idx, prefer_dmy, min_frames,
+                )? {
+                    let frame_label = self
+                        .col_sems
+                        .get(date_idx)
+                        .map(|s| s.label.as_str())
+                        .filter(|l| !l.is_empty())
+                        .map_or_else(|| self.stats[date_idx].field.clone(), ToString::to_string);
+                    self.geo_anim_panel = Some(Panel::new(
+                        "locations over time".to_string(),
+                        PanelKind::AnimatedGeo {
+                            bucket_lats: data.bucket_lats,
+                            bucket_lons: data.bucket_lons,
+                            bucket_labels: data.bucket_labels,
+                            frame_label,
+                        },
+                    ));
                 }
             }
+        }
 
-            // Static pair drill-down beside the heatmap: the STRONGEST correlated pair as a 2D
-            // density contour for large datasets (a scatter would overplot into a solid mass, and
-            // the contour embeds only a fixed grid) or a static bubble scatter. The title carries
-            // Pearson r, plus Spearman rho when the two diverge enough to mean the relationship is
-            // monotonic-but-curved (nonlinear) — so the reader doesn't take the single r as proof
-            // of a linear relationship. Suppressed when the animated drill-down above
-            // already covers the very same pair (a moderate strongest pair that also
-            // drifts), so we don't show both a static and an animated scatter of one
-            // relationship — but ONLY when that animated pair (T1) will actually be
-            // inserted. If a higher-priority bubble (T3) or geo (T2) animation won
-            // arbitration, T1 is discarded, so suppressing the static pair too would drop
-            // the strongest-pair drill-down entirely.
-            let t1_wins = bubble_panel.is_none() && geo_anim_panel.is_none();
-            let pair_panel = pair
-                .filter(|&(i, j, _)| !(t1_wins && anim_ij == Some((i, j))))
-                .and_then(|(i, j, r)| {
+        // when 2+ continuous numeric columns exist, prepend a correlation-heatmap panel. This is
+        // the one panel that re-scans the data (a single extra pass), since Pearson correlations
+        // are not in the stats cache; it's prepended so it survives the panel cap below.
+        let numeric_indices: Vec<usize> = self
+            .stats
+            .iter()
+            .enumerate()
+            .filter(|(i, s)| {
+                !self.is_map_col(*i)
+                // a dictionary-tagged dimension/geo/temporal/id numeric is NOT a continuous
+                // measure, so exclude it from the Pearson matrix (and thus from the corr drill-down
+                // and the implicit box-plot pool). A confirmed Measure, or an un-tagged (Defer)
+                // numeric, still qualifies — without a dictionary every column is Defer, exactly
+                // as before.
+                && matches!(self.col_sems[*i].route, Route::Defer | Route::Measure)
+                && matches!(s.r#type.as_str(), "Integer" | "Float")
+                && s.cardinality > 1
+                && !s.uniqueness_ratio.is_some_and(|r| r > 0.95)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if numeric_indices.len() >= 2 {
+            self.progress.set_message("Computing correlations…");
+            let (mut rdr, headers, nh) = reader_and_headers(self.args)?;
+            let (labels, columns, kept_indices) =
+                read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices, false)?;
+            // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
+            if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
+                let matrix = pearson_matrix(&columns);
+                // the most strongly correlated pair drills into the heatmap's headline
+                // relationship, but only when it's at least moderately correlated (else it's a
+                // noise cloud). All the drill-downs below reuse the columns already read for the
+                // matrix (no extra data pass).
+                let pair =
+                    strongest_pair(&matrix).filter(|&(_, _, r)| r.abs() >= SCATTER_PAIR_MIN_ABS_R);
+
+                // Animated relationship-over-time drill-down (T1), DECOUPLED from the strongest
+                // pair. The strongest pair is usually the most tautological (a near-line whose 2-D
+                // shape can't evolve), so animating it adds nothing over a static time-colored
+                // scatter. Instead pick the pair whose per-time-bucket centroid path BENDS
+                // the most — a genuinely evolving 2-D relationship
+                // (`select_drifting_pair`) — and animate that. HTML only; needs a canonical
+                // date column; `--slider off` suppresses. Computed BEFORE the correlation
+                // heatmap consumes `labels`/`matrix`; returns the selected (i, j) plus the built
+                // Panel so the static drill-down below can de-dupe when they coincide.
+                let anim_sel: Option<(usize, usize, Panel)> = 'anim: {
+                    let mode = smart_slider_mode(self.args);
+                    if self.out_format.is_image() || matches!(mode, SmartSliderMode::Off) {
+                        break 'anim None;
+                    }
+                    let Some((date_idx, _)) = canonical_date_col(&self.stats, &self.col_sems)
+                    else {
+                        break 'anim None;
+                    };
+                    // `auto` (default) only fires on a strong signal (>= 3 buckets); `on` lowers
+                    // the bar
+                    let min_frames = if matches!(mode, SmartSliderMode::On) {
+                        2
+                    } else {
+                        3
+                    };
+                    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                    let Some(bucket_means) = read_bucketed_means(
+                        self.args,
+                        &kept_indices,
+                        date_idx,
+                        prefer_dmy,
+                        min_frames,
+                    )?
+                    else {
+                        break 'anim None;
+                    };
+                    let Some((i, j, r)) = select_drifting_pair(&matrix, &columns, &bucket_means)
+                    else {
+                        break 'anim None;
+                    };
+                    // large-N contours aren't animatable (a scatter would overplot into a solid
+                    // mass)
+                    if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
+                        break 'anim None;
+                    }
+                    let Some(data) = read_scatter_pair_anim(
+                        self.args,
+                        kept_indices[i],
+                        kept_indices[j],
+                        date_idx,
+                        prefer_dmy,
+                        min_frames,
+                    )?
+                    else {
+                        break 'anim None;
+                    };
+                    let frame_label = self
+                        .col_sems
+                        .get(date_idx)
+                        .map(|s| s.label.as_str())
+                        .filter(|l| !l.is_empty())
+                        .map_or_else(|| col_label(&headers, date_idx, nh), ToString::to_string);
                     let rho = spearman_rho(&columns[i], &columns[j]);
-                    let name = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
+                    let rel = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
                         format!(
                             "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
                             labels[i], labels[j]
@@ -18656,887 +18750,1153 @@ fn build_smart(
                     } else {
                         format!("{} vs {} (r={r:.2})", labels[i], labels[j])
                     };
-                    if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
-                        let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
-                        Some(Panel::new(name, PanelKind::ContourPair { x, y, z }))
-                    } else {
-                        let (xs, ys) = downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
-                        // Drop a DEGENERATE scatter (essentially no 2-D spread — e.g. a heavily
-                        // zero-skewed measure collapses every point onto one axis): it would render
-                        // as an empty box, so omit the panel entirely. A merely sparse-but-
-                        // informative scatter is kept and just gets a compact height (see
-                        // `panel_render_height`).
-                        if scatter_fill_stats(&xs, &ys).degenerate {
-                            return None;
-                        }
-                        // Encode a third numeric (the axis MOST associated with the pair, so size
-                        // shows a real gradient — the complement of the least-redundant axis
-                        // `Scatter3D` picks) as marker size: a 3-variable bubble
-                        // view that, unlike the HTML-only 3D panel, also survives
-                        // static image export. Aligned to xs/ys because
-                        // `downsample_pair` picks the same row indices for the same (n, cap).
-                        let (name, sizes, size_label) = match most_associated_third(&matrix, i, j) {
-                            Some(k) => {
-                                let (_, sizes) =
-                                    downsample_pair(&columns[i], &columns[k], *MAX_SMART_POINTS);
-                                (
-                                    format!("{name} \u{b7} size: {}", labels[k]),
-                                    Some(sizes),
-                                    Some(labels[k].clone()),
-                                )
-                            },
-                            None => (name, None, None),
-                        };
-                        Some(Panel::new(
-                            name,
-                            PanelKind::ScatterPair {
-                                xs,
-                                ys,
-                                sizes,
-                                x_label: labels[i].clone(),
-                                y_label: labels[j].clone(),
-                                size_label,
-                            },
-                        ))
-                    }
-                });
-
-            // 3D drill-down: with 3+ numeric columns, a Scatter3D of the strongest pair plus a
-            // third axis chosen to be the LEAST redundant with that pair (minimizing
-            // max(|r_ik|, |r_jk|)), so the cloud genuinely uses all three dimensions instead of
-            // collapsing onto the pair's plane. Skipped entirely when the strongest pair is itself
-            // near-collinear (|r| >= SMART_3D_COLLINEAR_MAX_ABS_R): two near-identical axes can't
-            // form a non-degenerate 3D, and the 2D pair drill-down already shows that relationship.
-            // A 3D scene can't share the typed x/y subplot grid, so it's built ONLY for HTML output
-            // (which uses the inline render path, like the map panel). Static image export goes
-            // through the typed grid, where a 3D panel would hit `panel_trace`'s unreachable arm.
-            let scatter3d_panel = pair
-                .filter(|&(_, _, r)| r.abs() < SMART_3D_COLLINEAR_MAX_ABS_R)
-                .filter(|_| columns.len() >= 3 && !out_format.is_image())
-                .and_then(|(i, j, _)| {
-                    let third = least_redundant_third(&matrix, i, j);
-                    third.map(|k| {
-                        // both downsamples share (n, cap) so they pick the same row indices ->
-                        // aligned
-                        let (xs, ys) = downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
-                        let (_, zs) = downsample_pair(&columns[i], &columns[k], *MAX_SMART_POINTS);
-                        Panel::new(
-                            format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
-                            PanelKind::Scatter3D {
-                                xs,
-                                ys,
-                                zs,
-                                labels: (labels[i].clone(), labels[j].clone(), labels[k].clone()),
-                            },
-                        )
-                    })
-                });
-
-            // Show only the lower triangle: a correlation matrix mirrors across the diagonal (and
-            // the diagonal is a trivial 1.0), so masking the upper half + diagonal drops redundant
-            // cells. `matrix` was already consumed by `strongest_pair`/the 3D third-axis pick above
-            // (which need the full square), so masking here only affects the rendered panel.
-            panels.insert(
-                0,
-                Panel::new(
-                    "Correlation".to_string(),
-                    PanelKind::CorrHeatmap {
-                        labels,
-                        matrix: mask_to_lower_triangle(matrix),
-                    },
-                ),
-            );
-            // place the drill-down panels right after the heatmap: the animated relationship-over-
-            // time scatter (when a drifting pair was found) leads, then the static strongest-pair
-            // drill-down (suppressed above if it is the same pair), then the 3D scatter.
-            // ARBITRATION (§5): at most one animated panel; T3 (bubble) > T2 (geo) > T1. The T1
-            // scatter-pair animation is inserted only when neither T3 nor T2 won (the static
-            // pair/3D drill-downs still show, keyed off `anim_ij`, as before).
-            let anim_panel = if bubble_panel.is_none() && geo_anim_panel.is_none() {
-                anim_sel.map(|(_, _, panel)| panel)
-            } else {
-                None
-            };
-            let mut at = 1;
-            if let Some(panel) = anim_panel {
-                panels.insert(at, panel);
-                at += 1;
-            }
-            if let Some(panel) = pair_panel {
-                panels.insert(at, panel);
-                at += 1;
-            }
-            if let Some(panel) = scatter3d_panel {
-                panels.insert(at, panel);
-            }
-        }
-    }
-
-    // ARBITRATION (§5): insert the single winning animated panel — T3 (bubble) first, else T2
-    // (geo) — as a leading overview row. Prepending here (before the measure-by-dim / grouped-
-    // violin / hierarchy `insert(0, ..)` overview panels below) lands it among the correlation
-    // drill-downs, just like the T1 slot it supersedes.
-    if let Some(winner) = bubble_panel.or(geo_anim_panel) {
-        panels.insert(0, winner);
-    }
-
-    // prepend a "measure by dimension" bar when a low-cardinality categorical dimension strongly
-    // explains one of the numeric measures (correlation ratio η² above the gate) — e.g. mean amount
-    // by region. The panel builder does one extra data pass to compute η² and the per-group
-    // aggregates.
-    //
-    // Measure candidates are computed separately from `numeric_indices` (the correlation list): a
-    // genuine per-row measure like revenue/amount is often near-unique, and the correlation list
-    // drops near-unique columns to keep IDs out of the matrix. Here we exclude near-unique columns
-    // ONLY for untagged (`Defer`) stats-only columns (the same ID-safety heuristic); a column the
-    // dictionary explicitly routes as `Measure` qualifies regardless of uniqueness — mirroring the
-    // time-series panel, which deliberately allows near-unique measures.
-    let measure_indices: Vec<usize> = stats
-        .iter()
-        .enumerate()
-        .filter(|(i, s)| {
-            let route = col_sems[*i].route;
-            !is_map_col(*i)
-                && matches!(route, Route::Defer | Route::Measure)
-                && matches!(s.r#type.as_str(), "Integer" | "Float")
-                && s.cardinality > 1
-                && (route == Route::Measure || !s.uniqueness_ratio.is_some_and(|r| r > 0.95))
-        })
-        .map(|(i, _)| i)
-        .collect();
-    let dim_indices: Vec<usize> = stats
-        .iter()
-        .enumerate()
-        .filter(|(i, s)| {
-            !is_map_col(*i)
-                && !twin_suppress.contains(i)
-                && matches!(col_sems[*i].route, Route::Defer | Route::Dimension)
-                && s.r#type.as_str() == "String"
-                && s.cardinality >= 2
-                && s.cardinality <= CATEGORICAL_MAX_CARDINALITY
-        })
-        .map(|(i, _)| i)
-        .collect();
-    if !measure_indices.is_empty() && !dim_indices.is_empty() {
-        let top_n = args.flag_limit.max(1);
-        match measure_by_dim_panel(
-            args,
-            &stats,
-            &col_sems,
-            &measure_indices,
-            &dim_indices,
-            top_n,
-        ) {
-            Ok(Some(panel)) => panels.insert(0, panel),
-            Ok(None) => {},
-            Err(e) => {
-                viz_note(&format!(
-                    "viz smart: measure-by-dimension panel skipped ({e})"
-                ));
-            },
-        }
-    }
-
-    // prepend a grouped-violin panel — the distribution of the primary measure split by the
-    // coarsest categorical dimension (one violin per category) — whenever a categorical dimension
-    // and a numeric measure both exist. Inserted here (after the measure-by-dim bar, before the
-    // hierarchy) so the final top-to-bottom order is hierarchy → grouped-violin → measure-by-dim:
-    // part-to-whole counts, then distribution-by-category, then the aggregate. A plain cartesian
-    // Violin::new_xy, so (unlike the hierarchy) it composes with the typed grid and static export.
-    if let Some(&m_idx) = measure_indices.first()
-        && !dim_indices.is_empty()
-    {
-        let top_n = args.flag_limit.max(1);
-        // the measure's non-null count drives the collection stride so the pass never buffers more
-        // than ~VIOLIN_SAMPLE_MAX values (the same per-violin budget as the single-column violin,
-        // which tiers on `n - nullcount`). Row count is pulled once from the stats/index cache
-        // (shared with the box-points heuristic's lazy fetch).
-        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-        let measure_nonnull = n.saturating_sub(stats[m_idx].nullcount);
-        match grouped_violin_panel(
-            args,
-            &stats,
-            &col_sems,
-            &measure_indices,
-            &dim_indices,
-            top_n,
-            violin_mode,
-            measure_nonnull,
-            explicit_box_points.as_ref(),
-        ) {
-            Ok(Some(panel)) => panels.insert(0, panel),
-            Ok(None) => {},
-            Err(e) => {
-                viz_note(&format!("viz smart: grouped-violin panel skipped ({e})"));
-            },
-        }
-    }
-
-    // prepend Lorenz inequality curves: for the most unequal ADDITIVE measures (highest cached
-    // Gini — populated only under --smarter), add the plot whose geometry IS the Gini: cumulative
-    // population share vs cumulative value share, against the equality diagonal. Capped at
-    // LORENZ_MAX_PANELS so a wide finance table can't spawn a full-width panel (and a data pass)
-    // per column. Near-unique measures are deliberately allowed — a whole-dollar income or integer
-    // population column is often near-unique yet is the flagship inequality case (`classify` skips
-    // near-unique integers as IDs, so the Lorenz filter runs independently to surface them).
-    // ID/code columns are instead kept out by name: `is_inequality_candidate` excludes
-    // intensive- AND identifier-named columns on the stats-only path (the high-Gini gate alone
-    // would not).
-    {
-        let mut lorenz_candidates: Vec<(usize, f64)> = stats
-            .iter()
-            .enumerate()
-            .filter(|(i, s)| {
-                !is_map_col(*i)
-                    && matches!(col_sems[*i].route, Route::Defer | Route::Measure)
-                    && matches!(s.r#type.as_str(), "Integer" | "Float")
-                    && s.cardinality > 1
-                    && is_inequality_candidate(&col_sems[*i], s)
-            })
-            .map(|(i, s)| (i, s.gini_coefficient.unwrap_or_default()))
-            .collect();
-        // strongest inequality first, then keep at most LORENZ_MAX_PANELS
-        lorenz_candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
-        let dropped = lorenz_candidates.len().saturating_sub(LORENZ_MAX_PANELS);
-        lorenz_candidates.truncate(LORENZ_MAX_PANELS);
-        if dropped > 0 {
-            viz_note(&format!(
-                "viz smart: {dropped} additional high-inequality measure(s) not shown as Lorenz \
-                 curves (cap {LORENZ_MAX_PANELS})"
-            ));
-        }
-        // insert weakest-first so the strongest inequality ends up topmost among them
-        for (idx, gini) in lorenz_candidates.into_iter().rev() {
-            match build_lorenz_panel(args, &col_sems, idx, gini) {
-                Ok(Some(panel)) => panels.insert(0, panel),
-                Ok(None) => {},
-                Err(e) => viz_note(&format!("viz smart: Lorenz panel skipped ({e})")),
-            }
-        }
-    }
-
-    // prepend a parallel-categories (parcats) overview when 3-4 associated low-cardinality
-    // categorical dimensions exist. Reserved for 3-4 dims: 2-dim relationships are shown as a
-    // directed Sankey, and the hierarchy panel below is suppressed on any dimension set parcats
-    // claims (a ribbon flow conveys the same 3-4-way relationship without implying a part-to-whole
-    // nesting). HTML-only, like the hierarchy/Sankey panels.
-    // An explicit `--hierarchy-style treemap|sunburst|icicle` is a deliberate request for the
-    // part-to-whole hierarchy panel, so it suppresses parcats entirely (the user chose the nested
-    // view) and, below, bypasses the hierarchy's independence/Sankey screens.
-    let explicit_hierarchy_style = matches!(
-        args.flag_hierarchy_style
-            .as_deref()
-            .map(str::to_ascii_lowercase)
-            .as_deref(),
-        Some("treemap" | "sunburst" | "icicle")
-    );
-    let mut parcats_dims: Option<Vec<usize>> = None;
-    if !out_format.is_image() && !explicit_hierarchy_style {
-        // eligible dims = the same non-degenerate String freq-bar columns the hierarchy panel nests
-        // (see `eligible_categorical_dims`), so the two panels stay mutually exclusive on a shared
-        // pool and neither flows a near-constant (mostly-empty / single-value) column.
-        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-        let parcats_eligible = eligible_categorical_dims(&panels, &stats, &col_sems, n);
-        match parcats_panel(args, parcats_eligible) {
-            Ok(Some((panel, dim_idxs))) => {
-                parcats_dims = Some(dim_idxs);
-                panels.insert(0, panel);
-            },
-            Ok(None) => {},
-            Err(e) => viz_note(&format!(
-                "viz smart: parallel-categories (parcats) panel skipped ({e})"
-            )),
-        }
-    }
-
-    // prepend a categorical part-to-whole hierarchy (treemap/sunburst) when 2+ low-cardinality
-    // dimensions exist. HTML-only: like Scatter3D/Map, a domain-based trace can't compose with the
-    // typed x/y subplot grid, so it forces the inline render path. The chosen dimensions also keep
-    // their individual frequency-bar panels — the hierarchy is a cross-dimensional overview, not a
-    // replacement. The chart type is auto-selected by depth (treemap for shallow, sunburst for
-    // deep) unless --hierarchy-style forces one. Prepended so it survives the panel cap.
-    if !out_format.is_image() {
-        // eligible dims = genuine categorical (String) freq-bar columns with enough distinct
-        // values to be worth nesting (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).
-        // Restricting to String type excludes numeric codes (low-card Integer/Float also become
-        // freq bars) and booleans, which make poor — and surprising — hierarchy levels. Sort
-        // ascending by cardinality so the coarsest grouping is the outermost level/ring.
-        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-        let mut dims = eligible_categorical_dims(&panels, &stats, &col_sems, n);
-        if dims.len() >= HIER_MIN_DIMS {
-            dims.sort_by_key(|&(idx, card, _)| (card, idx));
-            dims.truncate(HIER_MAX_DEPTH);
-            let depth = dims.len();
-            let style = resolve_hierarchy_style(args.flag_hierarchy_style.as_deref(), depth)?;
-            let dim_idxs: Vec<usize> = dims.iter().map(|&(idx, ..)| idx).collect();
-            let title = dims
-                .iter()
-                .map(|(.., name)| name.as_str())
-                .collect::<Vec<_>>()
-                .join(" › ");
-            // An explicit `--hierarchy-style treemap|sunburst` is a deliberate request that
-            // bypasses both the independence screen and the Sankey mutual-exclusion below
-            // (computed once above, before the parcats panel).
-            let explicit_style = explicit_hierarchy_style;
-            // Mutual exclusivity with the directed-flow Sankey panel: a 2-level treemap of exactly
-            // the pair already drawn as a Sankey is redundant, so skip it (the flow view conveys
-            // that many-to-many relationship better). Deeper 3-level sunbursts are unaffected.
-            // Checked BEFORE the hierarchy's own data pass so the pass is never wasted.
-            let sankey_owns_pair = depth == 2
-                && !explicit_style
-                && sankey_pair.is_some_and(|(a, b)| dim_idxs.contains(&a) && dim_idxs.contains(&b));
-            // Mutual exclusivity with the parallel-categories (parcats) panel: parcats owns 3-4
-            // associated dimensions, so if it already claimed these columns, skip the hierarchy —
-            // the ribbon flow shows the same relationship without implying part-to-whole nesting.
-            let parcats_owns = !explicit_style
-                && parcats_dims
-                    .as_ref()
-                    .is_some_and(|pd| dim_idxs.iter().all(|i| pd.contains(i)));
-            if parcats_owns {
-                viz_note(&format!(
-                    "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
-                     already shown as a parallel-categories (parcats) panel."
-                ));
-            } else if sankey_owns_pair {
-                viz_note(&format!(
-                    "viz smart: skipping the '{title}' hierarchy panel — its two dimensions are \
-                     already shown as a directed-flow (Sankey) panel, which conveys their \
-                     many-to-many relationship better."
-                ));
-            } else {
-                // Don't AUTO-nest statistically independent dimensions: a treemap/sunburst of
-                // independent categoricals just replicates each level's marginal at every branch,
-                // conveying nothing the separate frequency bars don't already show more legibly.
-                // The association is read off the joint counts already in hand (no re-scan).
-                let leaves = collect_hierarchy_counts(args, &dim_idxs, None)?;
-                let assoc = max_pairwise_cramers_v(&leaves, depth);
-                if !explicit_style && assoc < HIER_MIN_ASSOCIATION_CRAMERS_V {
-                    viz_note(&format!(
-                        "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
-                         statistically independent (max Cramér's V={assoc:.2} < \
-                         {HIER_MIN_ASSOCIATION_CRAMERS_V:.2}); the per-column frequency bars \
-                         convey the same information. Use --hierarchy-style \
-                         treemap|sunburst|icicle to force it."
-                    ));
-                } else if let Some((labels, parents, values, ids)) =
-                    hierarchy_arrays(&leaves, depth, HIER_TOP_N_PER_LEVEL, HIER_MAX_NODES, "All")
-                {
-                    panels.insert(
-                        0,
-                        Panel::new(
-                            title,
-                            PanelKind::Hierarchy {
-                                style,
-                                labels,
-                                parents,
-                                values,
-                                ids,
-                            },
-                        ),
+                    let panel = Panel::new(
+                        format!("{rel} over time"),
+                        PanelKind::AnimatedScatterPair {
+                            xs: data.xs,
+                            ys: data.ys,
+                            bucket: data.bucket,
+                            bucket_labels: data.bucket_labels,
+                            x_label: labels[i].clone(),
+                            y_label: labels[j].clone(),
+                            frame_label,
+                            x_range: data.x_range,
+                            y_range: data.y_range,
+                        },
                     );
+                    Some((i, j, panel))
+                };
+                let anim_ij = anim_sel.as_ref().map(|&(i, j, _)| (i, j));
+
+                // T3 (Gapminder bubble): fill bubble_panel INSIDE the numeric block (it needs a
+                // measure pair) and BEFORE the T1 insertion, so the arbitration T3 > T1 can be
+                // applied. `matrix` is still alive here (consumed by `mask_to_lower_triangle` only
+                // at the CorrHeatmap insert below). Requires a low-cardinality categorical
+                // entity, a measure pair (the strongest pair in the [0.5, 0.9) |r| band —
+                // strong enough to relate, not a tautological near-line — else the first
+                // two numerics), a canonical date, and — via `read_entity_bucket_agg`'s
+                // strict cell/entity gates — enough non-sparse per-(entity,bucket) support
+                // (this is what rejects sparse zone-per-month datasets).
+                {
+                    let mode = smart_slider_mode(self.args);
+                    if self.bubble_panel.is_none()
+                        && !self.out_format.is_image()
+                        && !matches!(mode, SmartSliderMode::Off)
+                        && let Some((date_idx, _)) = canonical_date_col(&self.stats, &self.col_sems)
+                    {
+                        let n = self.row_count();
+                        // first (lowest-idx) eligible categorical dimension is the bubble entity
+                        let entity =
+                            eligible_categorical_dims(&self.panels, &self.stats, &self.col_sems, n)
+                                .into_iter()
+                                .min_by_key(|&(idx, ..)| idx);
+                        // measure pair: the strongest pair in [SCATTER_PAIR_MIN_ABS_R, 0.9), else
+                        // the first two numerics
+                        let measure_pair = strongest_pair(&matrix)
+                            .filter(|&(_, _, r)| (SCATTER_PAIR_MIN_ABS_R..0.9).contains(&r.abs()))
+                            .map(|(i, j, _)| (i, j))
+                            .or(Some((0, 1)));
+                        if let (Some((e_idx, _, entity_label)), Some((i, j))) =
+                            (entity, measure_pair)
+                        {
+                            let min_frames = if matches!(mode, SmartSliderMode::On) {
+                                2
+                            } else {
+                                3
+                            };
+                            // bubble SIZE = Gapminder's third data variable: the leftover numeric
+                            // least redundant with the (x,y) pair (so size adds new information,
+                            // not a near-copy of an axis). `None` for a 2-numeric dataset — the
+                            // reader then falls back to the per-cell row count and the label stays
+                            // "records".
+                            let size_k = least_redundant_third(&matrix, i, j);
+                            let size_idx = size_k.map(|k| kept_indices[k]);
+                            let size_label = size_k
+                                .map(|k| labels[k].clone())
+                                .unwrap_or_else(|| "records".to_string());
+                            let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                            if let Some(data) = read_entity_bucket_agg(
+                                self.args,
+                                e_idx,
+                                kept_indices[i],
+                                kept_indices[j],
+                                size_idx,
+                                date_idx,
+                                prefer_dmy,
+                                min_frames,
+                                3,
+                            )? {
+                                let (x_label, y_label) = (labels[i].clone(), labels[j].clone());
+                                let frame_label = self
+                                    .col_sems
+                                    .get(date_idx)
+                                    .map(|s| s.label.as_str())
+                                    .filter(|l| !l.is_empty())
+                                    .map_or_else(
+                                        || self.stats[date_idx].field.clone(),
+                                        ToString::to_string,
+                                    );
+                                self.bubble_panel = Some(Panel::new(
+                                    format!("{y_label} vs {x_label} by {entity_label} over time"),
+                                    PanelKind::AnimatedBubble {
+                                        entities: data.entities,
+                                        xs: data.xs,
+                                        ys: data.ys,
+                                        sizes: data.sizes,
+                                        bucket_labels: data.bucket_labels,
+                                        x_label,
+                                        y_label,
+                                        size_label,
+                                        frame_label,
+                                        x_range: data.x_range,
+                                        y_range: data.y_range,
+                                    },
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                // Static pair drill-down beside the heatmap: the STRONGEST correlated pair as a 2D
+                // density contour for large datasets (a scatter would overplot into a solid mass,
+                // and the contour embeds only a fixed grid) or a static bubble scatter. The title
+                // carries Pearson r, plus Spearman rho when the two diverge enough to mean the
+                // relationship is monotonic-but-curved (nonlinear) — so the reader doesn't take the
+                // single r as proof of a linear relationship. Suppressed when the animated
+                // drill-down above already covers the very same pair (a moderate strongest pair
+                // that also drifts), so we don't show both a static and an animated scatter of one
+                // relationship — but ONLY when that animated pair (T1) will actually be
+                // inserted. If a higher-priority bubble (T3) or geo (T2) animation won
+                // arbitration, T1 is discarded, so suppressing the static pair too would drop
+                // the strongest-pair drill-down entirely.
+                let t1_wins = self.bubble_panel.is_none() && self.geo_anim_panel.is_none();
+                let pair_panel = pair
+                    .filter(|&(i, j, _)| !(t1_wins && anim_ij == Some((i, j))))
+                    .and_then(|(i, j, r)| {
+                        let rho = spearman_rho(&columns[i], &columns[j]);
+                        let name = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
+                            format!(
+                                "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
+                                labels[i], labels[j]
+                            )
+                        } else {
+                            format!("{} vs {} (r={r:.2})", labels[i], labels[j])
+                        };
+                        if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
+                            let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
+                            Some(Panel::new(name, PanelKind::ContourPair { x, y, z }))
+                        } else {
+                            let (xs, ys) =
+                                downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
+                            // Drop a DEGENERATE scatter (essentially no 2-D spread — e.g. a heavily
+                            // zero-skewed measure collapses every point onto one axis): it would
+                            // render as an empty box, so omit the panel entirely. A merely sparse-
+                            // but-informative scatter is kept and just gets a compact height (see
+                            // `panel_render_height`).
+                            if scatter_fill_stats(&xs, &ys).degenerate {
+                                return None;
+                            }
+                            // Encode a third numeric (the axis MOST associated with the pair, so
+                            // size shows a real gradient — the complement of the least-redundant
+                            // axis `Scatter3D` picks) as marker size: a 3-variable bubble
+                            // view that, unlike the HTML-only 3D panel, also survives
+                            // static image export. Aligned to xs/ys because
+                            // `downsample_pair` picks the same row indices for the same (n, cap).
+                            let (name, sizes, size_label) =
+                                match most_associated_third(&matrix, i, j) {
+                                    Some(k) => {
+                                        let (_, sizes) = downsample_pair(
+                                            &columns[i],
+                                            &columns[k],
+                                            *MAX_SMART_POINTS,
+                                        );
+                                        (
+                                            format!("{name} \u{b7} size: {}", labels[k]),
+                                            Some(sizes),
+                                            Some(labels[k].clone()),
+                                        )
+                                    },
+                                    None => (name, None, None),
+                                };
+                            Some(Panel::new(
+                                name,
+                                PanelKind::ScatterPair {
+                                    xs,
+                                    ys,
+                                    sizes,
+                                    x_label: labels[i].clone(),
+                                    y_label: labels[j].clone(),
+                                    size_label,
+                                },
+                            ))
+                        }
+                    });
+
+                // 3D drill-down: with 3+ numeric columns, a Scatter3D of the strongest pair plus a
+                // third axis chosen to be the LEAST redundant with that pair (minimizing
+                // max(|r_ik|, |r_jk|)), so the cloud genuinely uses all three dimensions instead of
+                // collapsing onto the pair's plane. Skipped entirely when the strongest pair is
+                // itself near-collinear (|r| >= SMART_3D_COLLINEAR_MAX_ABS_R): two near-identical
+                // axes can't form a non-degenerate 3D, and the 2D pair drill-down already shows
+                // that relationship. A 3D scene can't share the typed x/y subplot grid, so it's
+                // built ONLY for HTML output (which uses the inline render path, like the map
+                // panel). Static image export goes through the typed grid, where a 3D panel would
+                // hit `panel_trace`'s unreachable arm.
+                let scatter3d_panel = pair
+                    .filter(|&(_, _, r)| r.abs() < SMART_3D_COLLINEAR_MAX_ABS_R)
+                    .filter(|_| columns.len() >= 3 && !self.out_format.is_image())
+                    .and_then(|(i, j, _)| {
+                        let third = least_redundant_third(&matrix, i, j);
+                        third.map(|k| {
+                            // both downsamples share (n, cap) so they pick the same row indices ->
+                            // aligned
+                            let (xs, ys) =
+                                downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
+                            let (_, zs) =
+                                downsample_pair(&columns[i], &columns[k], *MAX_SMART_POINTS);
+                            Panel::new(
+                                format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
+                                PanelKind::Scatter3D {
+                                    xs,
+                                    ys,
+                                    zs,
+                                    labels: (
+                                        labels[i].clone(),
+                                        labels[j].clone(),
+                                        labels[k].clone(),
+                                    ),
+                                },
+                            )
+                        })
+                    });
+
+                // Show only the lower triangle: a correlation matrix mirrors across the diagonal
+                // (and the diagonal is a trivial 1.0), so masking the upper half + diagonal drops
+                // redundant cells. `matrix` was already consumed by `strongest_pair`/the 3D
+                // third-axis pick above (which need the full square), so masking here only affects
+                // the rendered panel.
+                self.panels.insert(
+                    0,
+                    Panel::new(
+                        "Correlation".to_string(),
+                        PanelKind::CorrHeatmap {
+                            labels,
+                            matrix: mask_to_lower_triangle(matrix),
+                        },
+                    ),
+                );
+                // place the drill-down panels right after the heatmap: the animated
+                // relationship-over-time scatter (when a drifting pair was found) leads, then the
+                // static strongest-pair drill-down (suppressed above if it is the same pair), then
+                // the 3D scatter.
+                // ARBITRATION (§5): at most one animated panel; T3 (bubble) > T2 (geo) > T1. The T1
+                // scatter-pair animation is inserted only when neither T3 nor T2 won (the static
+                // pair/3D drill-downs still show, keyed off `anim_ij`, as before).
+                let anim_panel = if self.bubble_panel.is_none() && self.geo_anim_panel.is_none() {
+                    anim_sel.map(|(_, _, panel)| panel)
+                } else {
+                    None
+                };
+                let mut at = 1;
+                if let Some(panel) = anim_panel {
+                    self.panels.insert(at, panel);
+                    at += 1;
+                }
+                if let Some(panel) = pair_panel {
+                    self.panels.insert(at, panel);
+                    at += 1;
+                }
+                if let Some(panel) = scatter3d_panel {
+                    self.panels.insert(at, panel);
                 }
             }
         }
+        Ok(())
     }
 
-    // prepend a time-series trend panel when the data has a date/datetime column and a
-    // continuous numeric column. Like the correlation panel, it does one extra data pass and
-    // is prepended so it survives the panel cap.
-    // mirror the DMY preference stats used to infer dates: `viz smart` builds stats with
-    // flag_prefer_dmy = false, and stats itself ORs in QSV_PREFER_DMY (see `cmd::stats`), so the
-    // effective preference is the env flag. Parse dates the same way here so DMY-formatted dates
-    // are ordered correctly rather than misparsed/dropped.
-    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-    let grain = dict_data.as_ref().and_then(|d| d.grain.as_deref());
-    if let Some(panel) = build_timeseries_panel(
-        args, &stats, prefer_dmy, map_cols, &col_sems, grain, dict_icons,
-    )? {
-        panels.insert(0, panel);
-    }
-
-    // prepend a cyclic-seasonality polar panel (volume by hour-of-day / weekday / month) when a
-    // date column has periodicity worth showing. Polar is non-cartesian (like Scatter3D/map),
-    // so it can't be statically exported — build it for HTML only.
-    if !out_format.is_image()
-        && let Some(panel) =
-            build_cyclic_panel(args, &stats, prefer_dmy, map_cols, &col_sems, dict_icons)?
-    {
-        panels.insert(0, panel);
-    }
-
-    // prepend the geographic overview panels (built up front, above) so they lead the dashboard and
-    // survive the panel cap. Insert the per-country choropleth first, then the point map at index
-    // 0, yielding [map, choropleth, ...] — the point map for spatial detail, the choropleth
-    // beside it for the per-jurisdiction aggregate.
-    // Under --dict-info, the geographic overview panels anchor their info icon on the driving
-    // coordinate column's dictionary entry (lat first) — the natural place a map reader looks
-    // for the coordinates' provenance and caveats.
-    let geo_dict_info = || {
-        map_cols.and_then(|(la, lo)| {
-            dict_info_for_field(dict_icons, &stats[la].field)
-                .or_else(|| dict_info_for_field(dict_icons, &stats[lo].field))
-        })
-    };
-    if let Some(mut panel) = choropleth_panel {
-        panel.dict_info = geo_dict_info();
-        panels.insert(0, panel);
-    } else if let Some((sc_panels, region_idx)) = summary_choros {
-        // the region-code summary choropleth(s) replace the (absent) lat/lon choropleth companion.
-        // No coordinate column drives them, so anchor --dict-info on the region key column instead
-        // of geo_dict_info() (which is None here). Insert in reverse so the leading dashboard order
-        // is [count, median, …].
-        let info = dict_info_for_field(dict_icons, &stats[region_idx].field);
-        for mut panel in sc_panels.into_iter().rev() {
-            panel.dict_info = info.clone();
-            panels.insert(0, panel);
+    /// Prepend the cross-column overview panels: the winning animated panel, measure-by-dimension,
+    /// grouped violin, Lorenz curves, parcats, hierarchy, time-series, cyclic profile, and finally
+    /// the geographic panels. Each is `insert(0, ..)`-ed, so the LAST one inserted leads the
+    /// dashboard — the order of these blocks IS the final top-to-bottom order.
+    fn add_overview_panels(&mut self) -> CliResult<()> {
+        // ARBITRATION (§5): insert the single winning animated panel — T3 (bubble) first, else T2
+        // (geo) — as a leading overview row. Prepending here (before the measure-by-dim / grouped-
+        // violin / hierarchy `insert(0, ..)` overview panels below) lands it among the correlation
+        // drill-downs, just like the T1 slot it supersedes.
+        if let Some(winner) = self.bubble_panel.take().or(self.geo_anim_panel.take()) {
+            self.panels.insert(0, winner);
         }
-    }
-    if let Some((mut panel, _)) = map_panel {
-        panel.dict_info = geo_dict_info();
-        panels.insert(0, panel);
+
+        // prepend a "measure by dimension" bar when a low-cardinality categorical dimension
+        // strongly explains one of the numeric measures (correlation ratio η² above the gate) —
+        // e.g. mean amount by region. The panel builder does one extra data pass to compute η² and
+        // the per-group aggregates.
+        //
+        // Measure candidates are computed separately from `numeric_indices` (the correlation list):
+        // a genuine per-row measure like revenue/amount is often near-unique, and the correlation
+        // list drops near-unique columns to keep IDs out of the matrix. Here we exclude near-unique
+        // columns ONLY for untagged (`Defer`) stats-only columns (the same ID-safety heuristic); a
+        // column the dictionary explicitly routes as `Measure` qualifies regardless of uniqueness —
+        // mirroring the time-series panel, which deliberately allows near-unique measures.
+        let measure_indices: Vec<usize> = self
+            .stats
+            .iter()
+            .enumerate()
+            .filter(|(i, s)| {
+                let route = self.col_sems[*i].route;
+                !self.is_map_col(*i)
+                    && matches!(route, Route::Defer | Route::Measure)
+                    && matches!(s.r#type.as_str(), "Integer" | "Float")
+                    && s.cardinality > 1
+                    && (route == Route::Measure || !s.uniqueness_ratio.is_some_and(|r| r > 0.95))
+            })
+            .map(|(i, _)| i)
+            .collect();
+        let dim_indices: Vec<usize> = self
+            .stats
+            .iter()
+            .enumerate()
+            .filter(|(i, s)| {
+                !self.is_map_col(*i)
+                    && !self.twin_suppress.contains(i)
+                    && matches!(self.col_sems[*i].route, Route::Defer | Route::Dimension)
+                    && s.r#type.as_str() == "String"
+                    && s.cardinality >= 2
+                    && s.cardinality <= CATEGORICAL_MAX_CARDINALITY
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if !measure_indices.is_empty() && !dim_indices.is_empty() {
+            let top_n = self.args.flag_limit.max(1);
+            // bound the immutable borrows of `self` to this statement so the insert below can take
+            // `&mut self.panels`
+            let built = measure_by_dim_panel(
+                self.args,
+                &self.stats,
+                &self.col_sems,
+                &measure_indices,
+                &dim_indices,
+                top_n,
+            );
+            match built {
+                Ok(Some(panel)) => self.panels.insert(0, panel),
+                Ok(None) => {},
+                Err(e) => {
+                    viz_note(&format!(
+                        "viz smart: measure-by-dimension panel skipped ({e})"
+                    ));
+                },
+            }
+        }
+
+        // prepend a grouped-violin panel — the distribution of the primary measure split by the
+        // coarsest categorical dimension (one violin per category) — whenever a categorical
+        // dimension and a numeric measure both exist. Inserted here (after the measure-by-dim bar,
+        // before the hierarchy) so the final top-to-bottom order is hierarchy → grouped-violin →
+        // measure-by-dim: part-to-whole counts, then distribution-by-category, then the aggregate.
+        // A plain cartesian Violin::new_xy, so (unlike the hierarchy) it composes with the typed
+        // grid and static export.
+        if let Some(&m_idx) = measure_indices.first()
+            && !dim_indices.is_empty()
+        {
+            let top_n = self.args.flag_limit.max(1);
+            // the measure's non-null count drives the collection stride so the pass never buffers
+            // more than ~VIOLIN_SAMPLE_MAX values (the same per-violin budget as the single-column
+            // violin, which tiers on `n - nullcount`). Row count is pulled once from the
+            // stats/index cache (shared with the box-points heuristic's lazy fetch).
+            let n = self.row_count();
+            let measure_nonnull = n.saturating_sub(self.stats[m_idx].nullcount);
+            let built = grouped_violin_panel(
+                self.args,
+                &self.stats,
+                &self.col_sems,
+                &measure_indices,
+                &dim_indices,
+                top_n,
+                self.violin_mode,
+                measure_nonnull,
+                self.explicit_box_points.as_ref(),
+            );
+            match built {
+                Ok(Some(panel)) => self.panels.insert(0, panel),
+                Ok(None) => {},
+                Err(e) => {
+                    viz_note(&format!("viz smart: grouped-violin panel skipped ({e})"));
+                },
+            }
+        }
+
+        // prepend Lorenz inequality curves: for the most unequal ADDITIVE measures (highest cached
+        // Gini — populated only under --smarter), add the plot whose geometry IS the Gini:
+        // cumulative population share vs cumulative value share, against the equality diagonal.
+        // Capped at LORENZ_MAX_PANELS so a wide finance table can't spawn a full-width panel (and a
+        // data pass) per column. Near-unique measures are deliberately allowed — a whole-dollar
+        // income or integer population column is often near-unique yet is the flagship inequality
+        // case (`classify` skips near-unique integers as IDs, so the Lorenz filter runs
+        // independently to surface them). ID/code columns are instead kept out by name:
+        // `is_inequality_candidate` excludes intensive- AND identifier-named columns on the
+        // stats-only path (the high-Gini gate alone would not).
+        {
+            let mut lorenz_candidates: Vec<(usize, f64)> = self
+                .stats
+                .iter()
+                .enumerate()
+                .filter(|(i, s)| {
+                    !self.is_map_col(*i)
+                        && matches!(self.col_sems[*i].route, Route::Defer | Route::Measure)
+                        && matches!(s.r#type.as_str(), "Integer" | "Float")
+                        && s.cardinality > 1
+                        && is_inequality_candidate(&self.col_sems[*i], s)
+                })
+                .map(|(i, s)| (i, s.gini_coefficient.unwrap_or_default()))
+                .collect();
+            // strongest inequality first, then keep at most LORENZ_MAX_PANELS
+            lorenz_candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
+            let dropped = lorenz_candidates.len().saturating_sub(LORENZ_MAX_PANELS);
+            lorenz_candidates.truncate(LORENZ_MAX_PANELS);
+            if dropped > 0 {
+                viz_note(&format!(
+                    "viz smart: {dropped} additional high-inequality measure(s) not shown as \
+                     Lorenz curves (cap {LORENZ_MAX_PANELS})"
+                ));
+            }
+            // insert weakest-first so the strongest inequality ends up topmost among them
+            for (idx, gini) in lorenz_candidates.into_iter().rev() {
+                let built = build_lorenz_panel(self.args, &self.col_sems, idx, gini);
+                match built {
+                    Ok(Some(panel)) => self.panels.insert(0, panel),
+                    Ok(None) => {},
+                    Err(e) => viz_note(&format!("viz smart: Lorenz panel skipped ({e})")),
+                }
+            }
+        }
+
+        // prepend a parallel-categories (parcats) overview when 3-4 associated low-cardinality
+        // categorical dimensions exist. Reserved for 3-4 dims: 2-dim relationships are shown as a
+        // directed Sankey, and the hierarchy panel below is suppressed on any dimension set parcats
+        // claims (a ribbon flow conveys the same 3-4-way relationship without implying a
+        // part-to-whole nesting). HTML-only, like the hierarchy/Sankey panels.
+        // An explicit `--hierarchy-style treemap|sunburst|icicle` is a deliberate request for the
+        // part-to-whole hierarchy panel, so it suppresses parcats entirely (the user chose the
+        // nested view) and, below, bypasses the hierarchy's independence/Sankey screens.
+        let explicit_hierarchy_style = matches!(
+            self.args
+                .flag_hierarchy_style
+                .as_deref()
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some("treemap" | "sunburst" | "icicle")
+        );
+        let mut parcats_dims: Option<Vec<usize>> = None;
+        if !self.out_format.is_image() && !explicit_hierarchy_style {
+            // eligible dims = the same non-degenerate String freq-bar columns the hierarchy panel
+            // nests (see `eligible_categorical_dims`), so the two panels stay mutually exclusive on
+            // a shared pool and neither flows a near-constant (mostly-empty / single-value) column.
+            let n = self.row_count();
+            let parcats_eligible =
+                eligible_categorical_dims(&self.panels, &self.stats, &self.col_sems, n);
+            let built = parcats_panel(self.args, parcats_eligible);
+            match built {
+                Ok(Some((panel, dim_idxs))) => {
+                    parcats_dims = Some(dim_idxs);
+                    self.panels.insert(0, panel);
+                },
+                Ok(None) => {},
+                Err(e) => viz_note(&format!(
+                    "viz smart: parallel-categories (parcats) panel skipped ({e})"
+                )),
+            }
+        }
+
+        // prepend a categorical part-to-whole hierarchy (treemap/sunburst) when 2+ low-cardinality
+        // dimensions exist. HTML-only: like Scatter3D/Map, a domain-based trace can't compose with
+        // the typed x/y subplot grid, so it forces the inline render path. The chosen dimensions
+        // also keep their individual frequency-bar panels — the hierarchy is a cross-dimensional
+        // overview, not a replacement. The chart type is auto-selected by depth (treemap for
+        // shallow, sunburst for deep) unless --hierarchy-style forces one. Prepended so it survives
+        // the panel cap.
+        if !self.out_format.is_image() {
+            // eligible dims = genuine categorical (String) freq-bar columns with enough distinct
+            // values to be worth nesting (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).
+            // Restricting to String type excludes numeric codes (low-card Integer/Float also become
+            // freq bars) and booleans, which make poor — and surprising — hierarchy levels. Sort
+            // ascending by cardinality so the coarsest grouping is the outermost level/ring.
+            let n = self.row_count();
+            let mut dims = eligible_categorical_dims(&self.panels, &self.stats, &self.col_sems, n);
+            if dims.len() >= HIER_MIN_DIMS {
+                dims.sort_by_key(|&(idx, card, _)| (card, idx));
+                dims.truncate(HIER_MAX_DEPTH);
+                let depth = dims.len();
+                let style =
+                    resolve_hierarchy_style(self.args.flag_hierarchy_style.as_deref(), depth)?;
+                let dim_idxs: Vec<usize> = dims.iter().map(|&(idx, ..)| idx).collect();
+                let title = dims
+                    .iter()
+                    .map(|(.., name)| name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" › ");
+                // An explicit `--hierarchy-style treemap|sunburst` is a deliberate request that
+                // bypasses both the independence screen and the Sankey mutual-exclusion below
+                // (computed once above, before the parcats panel).
+                let explicit_style = explicit_hierarchy_style;
+                // Mutual exclusivity with the directed-flow Sankey panel: a 2-level treemap of
+                // exactly the pair already drawn as a Sankey is redundant, so skip it (the flow
+                // view conveys that many-to-many relationship better). Deeper 3-level sunbursts are
+                // unaffected. Checked BEFORE the hierarchy's own data pass so the pass is never
+                // wasted.
+                let sankey_owns_pair = depth == 2
+                    && !explicit_style
+                    && self
+                        .sankey_pair
+                        .is_some_and(|(a, b)| dim_idxs.contains(&a) && dim_idxs.contains(&b));
+                // Mutual exclusivity with the parallel-categories (parcats) panel: parcats owns 3-4
+                // associated dimensions, so if it already claimed these columns, skip the
+                // hierarchy — the ribbon flow shows the same relationship without implying
+                // part-to-whole nesting.
+                let parcats_owns = !explicit_style
+                    && parcats_dims
+                        .as_ref()
+                        .is_some_and(|pd| dim_idxs.iter().all(|i| pd.contains(i)));
+                if parcats_owns {
+                    viz_note(&format!(
+                        "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
+                         already shown as a parallel-categories (parcats) panel."
+                    ));
+                } else if sankey_owns_pair {
+                    viz_note(&format!(
+                        "viz smart: skipping the '{title}' hierarchy panel — its two dimensions \
+                         are already shown as a directed-flow (Sankey) panel, which conveys their \
+                         many-to-many relationship better."
+                    ));
+                } else {
+                    // Don't AUTO-nest statistically independent dimensions: a treemap/sunburst of
+                    // independent categoricals just replicates each level's marginal at every
+                    // branch, conveying nothing the separate frequency bars don't already show more
+                    // legibly. The association is read off the joint counts already in hand (no
+                    // re-scan).
+                    let leaves = collect_hierarchy_counts(self.args, &dim_idxs, None)?;
+                    let assoc = max_pairwise_cramers_v(&leaves, depth);
+                    if !explicit_style && assoc < HIER_MIN_ASSOCIATION_CRAMERS_V {
+                        viz_note(&format!(
+                            "viz smart: skipping the '{title}' hierarchy panel — its dimensions \
+                             are statistically independent (max Cramér's V={assoc:.2} < \
+                             {HIER_MIN_ASSOCIATION_CRAMERS_V:.2}); the per-column frequency bars \
+                             convey the same information. Use --hierarchy-style \
+                             treemap|sunburst|icicle to force it."
+                        ));
+                    } else if let Some((labels, parents, values, ids)) = hierarchy_arrays(
+                        &leaves,
+                        depth,
+                        HIER_TOP_N_PER_LEVEL,
+                        HIER_MAX_NODES,
+                        "All",
+                    ) {
+                        self.panels.insert(
+                            0,
+                            Panel::new(
+                                title,
+                                PanelKind::Hierarchy {
+                                    style,
+                                    labels,
+                                    parents,
+                                    values,
+                                    ids,
+                                },
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+
+        // prepend a time-series trend panel when the data has a date/datetime column and a
+        // continuous numeric column. Like the correlation panel, it does one extra data pass and
+        // is prepended so it survives the panel cap.
+        // mirror the DMY preference stats used to infer dates: `viz smart` builds stats with
+        // flag_prefer_dmy = false, and stats itself ORs in QSV_PREFER_DMY (see `cmd::stats`), so
+        // the effective preference is the env flag. Parse dates the same way here so
+        // DMY-formatted dates are ordered correctly rather than misparsed/dropped.
+        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+        let built = {
+            let grain = self.dict_data.as_ref().and_then(|d| d.grain.as_deref());
+            build_timeseries_panel(
+                self.args,
+                &self.stats,
+                prefer_dmy,
+                self.map_cols,
+                &self.col_sems,
+                grain,
+                self.dict_icons(),
+            )?
+        };
+        if let Some(panel) = built {
+            self.panels.insert(0, panel);
+        }
+
+        // prepend a cyclic-seasonality polar panel (volume by hour-of-day / weekday / month) when a
+        // date column has periodicity worth showing. Polar is non-cartesian (like Scatter3D/map),
+        // so it can't be statically exported — build it for HTML only.
+        if !self.out_format.is_image() {
+            let built = build_cyclic_panel(
+                self.args,
+                &self.stats,
+                prefer_dmy,
+                self.map_cols,
+                &self.col_sems,
+                self.dict_icons(),
+            )?;
+            if let Some(panel) = built {
+                self.panels.insert(0, panel);
+            }
+        }
+
+        // prepend the geographic overview panels (built up front, above) so they lead the dashboard
+        // and survive the panel cap. Insert the per-country choropleth first, then the point map at
+        // index 0, yielding [map, choropleth, ...] — the point map for spatial detail, the
+        // choropleth beside it for the per-jurisdiction aggregate.
+        if let Some(mut panel) = self.choropleth_panel.take() {
+            panel.dict_info = self.geo_dict_info();
+            self.panels.insert(0, panel);
+        } else if let Some((sc_panels, region_idx)) = self.summary_choros.take() {
+            // the region-code summary choropleth(s) replace the (absent) lat/lon choropleth
+            // companion. No coordinate column drives them, so anchor --dict-info on the region key
+            // column instead of geo_dict_info() (which is None here). Insert in reverse so the
+            // leading dashboard order is [count, median, …].
+            let info = dict_info_for_field(self.dict_icons(), &self.stats[region_idx].field);
+            for mut panel in sc_panels.into_iter().rev() {
+                panel.dict_info = info.clone();
+                self.panels.insert(0, panel);
+            }
+        }
+        if let Some((mut panel, _)) = self.map_panel.take() {
+            panel.dict_info = self.geo_dict_info();
+            self.panels.insert(0, panel);
+        }
+        Ok(())
     }
 
-    // decide the rendering path. Up to MAX_SUBPLOTS panels always use the typed subplot grid
-    // (the only form that supports static image export). For HTML output, more than that
-    // switches to an inline-div grid (up to MAX_PANELS_INLINE). Image export can't assemble
-    // multiple plots, so it stays capped at MAX_SUBPLOTS (with a warning if more were eligible).
-    //
-    // `--max-charts 0` (the default) means "auto": fit as many panels as the data warrants —
-    // every eligible column for HTML (bounded by MAX_PANELS_INLINE), or MAX_SUBPLOTS for image
-    // export. An explicit `--max-charts N` caps the panel count to N instead.
-    let is_html = matches!(out_format, OutFormat::Html);
+    /// Decide the render path, apply the `--max-charts` interest ranking, and emit the deferred
+    /// per-column diagnostics. Errors when no chartable column survived.
+    fn finalize_panels(&mut self) -> CliResult<()> {
+        // decide the rendering path. Up to MAX_SUBPLOTS panels always use the typed subplot grid
+        // (the only form that supports static image export). For HTML output, more than that
+        // switches to an inline-div grid (up to MAX_PANELS_INLINE). Image export can't assemble
+        // multiple plots, so it stays capped at MAX_SUBPLOTS (with a warning if more were
+        // eligible).
+        //
+        // `--max-charts 0` (the default) means "auto": fit as many panels as the data warrants —
+        // every eligible column for HTML (bounded by MAX_PANELS_INLINE), or MAX_SUBPLOTS for image
+        // export. An explicit `--max-charts N` caps the panel count to N instead.
+        let is_html = matches!(self.out_format, OutFormat::Html);
 
-    // non-cartesian panels (map subplot, geo projection, or 3D scatter) can't share the typed x/y
-    // subplot grid, so any of them forces the inline render path. All are HTML-only (never built
-    // for image export above).
-    let has_noncartesian = panels.iter().any(|p| {
-        matches!(
-            p.kind,
-            PanelKind::Map { .. }
-                | PanelKind::Geo { .. }
-                | PanelKind::Choropleth { .. }
-                | PanelKind::ChoroplethMap { .. }
-                | PanelKind::Scatter3D { .. }
-                | PanelKind::CyclicProfile { .. }
-                | PanelKind::Hierarchy { .. }
-                | PanelKind::Sankey { .. }
-                | PanelKind::Parcats { .. }
+        // non-cartesian panels (map subplot, geo projection, or 3D scatter) can't share the typed
+        // x/y subplot grid, so any of them forces the inline render path. All are HTML-only (never
+        // built for image export above).
+        let has_noncartesian = self.panels.iter().any(|p| {
+            matches!(
+                p.kind,
+                PanelKind::Map { .. }
+                    | PanelKind::Geo { .. }
+                    | PanelKind::Choropleth { .. }
+                    | PanelKind::ChoroplethMap { .. }
+                    | PanelKind::Scatter3D { .. }
+                    | PanelKind::CyclicProfile { .. }
+                    | PanelKind::Hierarchy { .. }
+                    | PanelKind::Sankey { .. }
+                    | PanelKind::Parcats { .. }
+                    | PanelKind::AnimatedScatterPair { .. }
+                    | PanelKind::AnimatedGeo { .. }
+                    | PanelKind::AnimatedBubble { .. }
+            )
+        });
+
+        let eligible = self.panels.len();
+        // default (--max-charts 0) draws every eligible panel up to MAX_PANELS_INLINE, for both
+        // HTML and static image export. Static export of >MAX_SUBPLOTS panels is rendered via
+        // raw-JSON domain-positioned axes (see render_smart_grid_json), so it's no longer capped
+        // at 8.
+        let requested = if self.args.flag_max_charts == 0 {
+            MAX_PANELS_INLINE
+        } else {
+            self.args.flag_max_charts
+        };
+        let want = requested.min(eligible);
+        // HTML with >MAX_SUBPLOTS panels (or any non-cartesian panel) uses the inline-div grid.
+        // Static image export always uses a single composition (typed grid for ≤MAX_SUBPLOTS, raw
+        // JSON beyond), so it never takes the inline path; non-cartesian panels stay HTML-only.
+        self.inline = is_html && (want > MAX_SUBPLOTS || has_noncartesian);
+
+        let max_panels = requested.min(MAX_PANELS_INLINE);
+
+        if self.panels.len() > max_panels {
+            // rank by interestingness rather than dropping the rightmost columns: overview panels
+            // (correlation, map, time-series, …) carry infinite interest so they always survive;
+            // per-column panels keep the stats-driven `panel_interest` score computed at
+            // classification time. Survivors are re-emitted in their original display order, so
+            // panel ordering — and everything when nothing overflows — is unchanged; only WHICH
+            // panels survive changes. Ties fall back to document order (also the pre-ranking
+            // behavior when every score ties).
+            let mut order: Vec<usize> = (0..self.panels.len()).collect();
+            order.sort_by(|&a, &b| {
+                self.panels[b]
+                    .interest
+                    .partial_cmp(&self.panels[a].interest)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.cmp(&b))
+            });
+            order.truncate(max_panels);
+            let keep: std::collections::HashSet<usize> = order.into_iter().collect();
+            let mut kept: Vec<Panel> = Vec::with_capacity(max_panels);
+            for (i, p) in self.panels.drain(..).enumerate() {
+                if keep.contains(&i) {
+                    kept.push(p);
+                } else {
+                    self.skipped.push(p.name);
+                }
+            }
+            self.panels = kept;
+        }
+
+        if !self.sentinel_suspects.is_empty() {
+            viz_note(&format!(
+                "viz smart: {} column(s) declared a `measure` in the data dictionary were typed \
+                 String by stats, so they have no quartiles to chart: {}. Their values span a \
+                 numeric range interrupted by a non-numeric token, most often a null sentinel (a \
+                 literal \"NULL\", \"N/A\", ...). Confirm with `qsv denull -s {}`.",
+                self.sentinel_suspects.len(),
+                self.sentinel_suspects.join(", "),
+                self.sentinel_suspects.join(",")
+            ));
+        }
+        if !self.sentinel_hints.is_empty() {
+            viz_note(&format!(
+                "viz smart: {} skipped column(s) may be numeric data held back by a non-numeric \
+                 token such as a literal \"NULL\": {}. `qsv denull` decides by scanning the \
+                 values.",
+                self.sentinel_hints.len(),
+                self.sentinel_hints.join(", ")
+            ));
+        }
+        if !self.nonnumeric_measures.is_empty() {
+            viz_note(&format!(
+                "viz smart: {} column(s) declared a `measure` in the data dictionary hold \
+                 non-numeric content and were skipped: {}. Their dictionary role/concept looks \
+                 wrong for the column's actual content.",
+                self.nonnumeric_measures.len(),
+                self.nonnumeric_measures.join(", ")
+            ));
+        }
+        if self.panels.is_empty() {
+            // The diagnostics above ran FIRST on purpose. When every column is skipped there is
+            // no dashboard, and a bare "no chartable columns" told the user nothing about the
+            // most likely cause - a null sentinel holding every numeric column back.
+            let denull_hint = if self.sentinel_suspects.is_empty() && self.sentinel_hints.is_empty()
+            {
+                String::new()
+            } else {
+                " Some skipped columns look like numeric data held back by a non-numeric token; \
+                 run `qsv denull` on this file."
+                    .to_string()
+            };
+            return fail_clierror!(
+                "No chartable columns found for `viz smart` (all columns were empty or too \
+                 high-cardinality to summarize).{denull_hint}"
+            );
+        }
+        if !self.skipped.is_empty() {
+            viz_note(&format!(
+                "viz smart: charting {} column(s); skipped {}: {}",
+                self.panels.len(),
+                self.skipped.len(),
+                self.skipped.join(", ")
+            ));
+        }
+
+        // a jittered all-points overlay reads fine at 2-panel size but turns to noise at
+        // postage-stamp cell size: in a dense grid (counted AFTER the --max-charts trim, so it
+        // reflects what actually renders), demote the size-based `all` box overlay to
+        // outliers-only. An explicit --box-points mode is the user's call and is never demoted;
+        // violin panels already default to outliers (their KDE shows the distribution).
+        if self.explicit_box_points.is_none() && self.panels.len() > SMART_ALL_POINTS_MAX_PANELS {
+            for p in &mut self.panels {
+                if let PanelKind::BoxRaw { points, .. } = &mut p.kind
+                    && matches!(points, BoxPoints::All)
+                {
+                    *points = BoxPoints::Outliers;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Gather the per-panel data the renderers need: frequency counts, raw/outlier values, the
+    /// dashboard title, and the optional dictionary page + metadata table.
+    fn gather_panel_data(&mut self) -> CliResult<SmartPanelData> {
+        // gather frequency counts for the bar panels in a single pass
+        let bar_indices: Vec<usize> = self
+            .panels
+            .iter()
+            .filter_map(|p| match p.kind {
+                PanelKind::FreqBar { idx } => Some(idx),
+                PanelKind::KpiRow { .. }
+                | PanelKind::BoxStats { .. }
+                | PanelKind::BoxRaw { .. }
+                | PanelKind::BoxOutliers { .. }
+                | PanelKind::Violin { .. }
+                | PanelKind::GroupedViolin { .. }
+                | PanelKind::CorrHeatmap { .. }
+                | PanelKind::AssocHeatmap { .. }
+                | PanelKind::TopRelationships { .. }
+                | PanelKind::TimeSeries { .. }
                 | PanelKind::AnimatedScatterPair { .. }
                 | PanelKind::AnimatedGeo { .. }
                 | PanelKind::AnimatedBubble { .. }
-        )
-    });
-
-    let eligible = panels.len();
-    // default (--max-charts 0) draws every eligible panel up to MAX_PANELS_INLINE, for both HTML
-    // and static image export. Static export of >MAX_SUBPLOTS panels is rendered via raw-JSON
-    // domain-positioned axes (see render_smart_grid_json), so it's no longer capped at 8.
-    let requested = if args.flag_max_charts == 0 {
-        MAX_PANELS_INLINE
-    } else {
-        args.flag_max_charts
-    };
-    let want = requested.min(eligible);
-    // HTML with >MAX_SUBPLOTS panels (or any non-cartesian panel) uses the inline-div grid.
-    // Static image export always uses a single composition (typed grid for ≤MAX_SUBPLOTS, raw
-    // JSON beyond), so it never takes the inline path; non-cartesian panels stay HTML-only.
-    let inline = is_html && (want > MAX_SUBPLOTS || has_noncartesian);
-
-    let max_panels = requested.min(MAX_PANELS_INLINE);
-
-    if panels.len() > max_panels {
-        // rank by interestingness rather than dropping the rightmost columns: overview panels
-        // (correlation, map, time-series, …) carry infinite interest so they always survive;
-        // per-column panels keep the stats-driven `panel_interest` score computed at
-        // classification time. Survivors are re-emitted in their original display order, so
-        // panel ordering — and everything when nothing overflows — is unchanged; only WHICH
-        // panels survive changes. Ties fall back to document order (also the pre-ranking
-        // behavior when every score ties).
-        let mut order: Vec<usize> = (0..panels.len()).collect();
-        order.sort_by(|&a, &b| {
-            panels[b]
-                .interest
-                .partial_cmp(&panels[a].interest)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.cmp(&b))
-        });
-        order.truncate(max_panels);
-        let keep: std::collections::HashSet<usize> = order.into_iter().collect();
-        let mut kept: Vec<Panel> = Vec::with_capacity(max_panels);
-        for (i, p) in panels.drain(..).enumerate() {
-            if keep.contains(&i) {
-                kept.push(p);
-            } else {
-                skipped.push(p.name);
-            }
-        }
-        panels = kept;
-    }
-
-    if !sentinel_suspects.is_empty() {
-        viz_note(&format!(
-            "viz smart: {} column(s) declared a `measure` in the data dictionary were typed \
-             String by stats, so they have no quartiles to chart: {}. Their values span a numeric \
-             range interrupted by a non-numeric token, most often a null sentinel (a literal \
-             \"NULL\", \"N/A\", ...). Confirm with `qsv denull -s {}`.",
-            sentinel_suspects.len(),
-            sentinel_suspects.join(", "),
-            sentinel_suspects.join(",")
-        ));
-    }
-    if !sentinel_hints.is_empty() {
-        viz_note(&format!(
-            "viz smart: {} skipped column(s) may be numeric data held back by a non-numeric token \
-             such as a literal \"NULL\": {}. `qsv denull` decides by scanning the values.",
-            sentinel_hints.len(),
-            sentinel_hints.join(", ")
-        ));
-    }
-    if !nonnumeric_measures.is_empty() {
-        viz_note(&format!(
-            "viz smart: {} column(s) declared a `measure` in the data dictionary hold non-numeric \
-             content and were skipped: {}. Their dictionary role/concept looks wrong for the \
-             column's actual content.",
-            nonnumeric_measures.len(),
-            nonnumeric_measures.join(", ")
-        ));
-    }
-    if panels.is_empty() {
-        // The diagnostics above ran FIRST on purpose. When every column is skipped there is
-        // no dashboard, and a bare "no chartable columns" told the user nothing about the
-        // most likely cause - a null sentinel holding every numeric column back.
-        let denull_hint = if sentinel_suspects.is_empty() && sentinel_hints.is_empty() {
-            String::new()
-        } else {
-            " Some skipped columns look like numeric data held back by a non-numeric token; run \
-             `qsv denull` on this file."
-                .to_string()
-        };
-        return fail_clierror!(
-            "No chartable columns found for `viz smart` (all columns were empty or too \
-             high-cardinality to summarize).{denull_hint}"
-        );
-    }
-    if !skipped.is_empty() {
-        viz_note(&format!(
-            "viz smart: charting {} column(s); skipped {}: {}",
-            panels.len(),
-            skipped.len(),
-            skipped.join(", ")
-        ));
-    }
-
-    // a jittered all-points overlay reads fine at 2-panel size but turns to noise at
-    // postage-stamp cell size: in a dense grid (counted AFTER the --max-charts trim, so it
-    // reflects what actually renders), demote the size-based `all` box overlay to
-    // outliers-only. An explicit --box-points mode is the user's call and is never demoted;
-    // violin panels already default to outliers (their KDE shows the distribution).
-    if explicit_box_points.is_none() && panels.len() > SMART_ALL_POINTS_MAX_PANELS {
-        for p in &mut panels {
-            if let PanelKind::BoxRaw { points, .. } = &mut p.kind
-                && matches!(points, BoxPoints::All)
-            {
-                *points = BoxPoints::Outliers;
-            }
-        }
-    }
-
-    // gather frequency counts for the bar panels in a single pass
-    let bar_indices: Vec<usize> = panels
-        .iter()
-        .filter_map(|p| match p.kind {
-            PanelKind::FreqBar { idx } => Some(idx),
-            PanelKind::KpiRow { .. }
-            | PanelKind::BoxStats { .. }
-            | PanelKind::BoxRaw { .. }
-            | PanelKind::BoxOutliers { .. }
-            | PanelKind::Violin { .. }
-            | PanelKind::GroupedViolin { .. }
-            | PanelKind::CorrHeatmap { .. }
-            | PanelKind::AssocHeatmap { .. }
-            | PanelKind::TopRelationships { .. }
-            | PanelKind::TimeSeries { .. }
-            | PanelKind::AnimatedScatterPair { .. }
-            | PanelKind::AnimatedGeo { .. }
-            | PanelKind::AnimatedBubble { .. }
-            | PanelKind::ScatterPair { .. }
-            | PanelKind::Lorenz { .. }
-            | PanelKind::ContourPair { .. }
-            | PanelKind::Scatter3D { .. }
-            | PanelKind::Histogram { .. }
-            | PanelKind::MeasureByDim { .. }
-            | PanelKind::CyclicProfile { .. }
-            | PanelKind::Map { .. }
-            | PanelKind::Geo { .. }
-            | PanelKind::Choropleth { .. }
-            | PanelKind::ChoroplethMap { .. }
-            | PanelKind::Hierarchy { .. }
-            | PanelKind::Sankey { .. }
-            | PanelKind::Parcats { .. } => None,
-        })
-        .collect();
-    let top_n = args.flag_limit.max(1);
-    if !bar_indices.is_empty() {
-        progress.set_message("Computing frequencies…");
-    }
-    let freq = if bar_indices.is_empty() {
-        HashMap::new()
-    } else {
-        // Prefer a pre-existing `frequency` cache (no data pass); fall back to a
-        // single-pass recompute when it's absent/stale/incompatible.
-        match freq_from_cache(args, &stats, &bar_indices, top_n) {
-            Some(cached) => cached,
-            None => count_values(args, &bar_indices, top_n)?,
-        }
-    };
-
-    // dominant-category title hint: when one real category holds nearly all the rows, the bar
-    // chart is one tall bar — say so in the title so the panel reads at a glance. Appended here
-    // (not at classification) because it needs the finalized per-bar counts.
-    for p in &mut panels {
-        if let PanelKind::FreqBar { idx } = p.kind
-            && let Some(bars) = freq.get(&idx)
-            && let Some(hint) = dominant_category_hint(bars, || {
-                // exact row count, shared with the box-points heuristic's lazy fetch above and
-                // only computed when a panel's drawn share already clears the threshold
-                *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0))
+                | PanelKind::ScatterPair { .. }
+                | PanelKind::Lorenz { .. }
+                | PanelKind::ContourPair { .. }
+                | PanelKind::Scatter3D { .. }
+                | PanelKind::Histogram { .. }
+                | PanelKind::MeasureByDim { .. }
+                | PanelKind::CyclicProfile { .. }
+                | PanelKind::Map { .. }
+                | PanelKind::Geo { .. }
+                | PanelKind::Choropleth { .. }
+                | PanelKind::ChoroplethMap { .. }
+                | PanelKind::Hierarchy { .. }
+                | PanelKind::Sankey { .. }
+                | PanelKind::Parcats { .. } => None,
             })
-        {
-            p.name = format!("{} {hint}", p.name);
+            .collect();
+        let top_n = self.args.flag_limit.max(1);
+        if !bar_indices.is_empty() {
+            self.progress.set_message("Computing frequencies…");
         }
-    }
+        let freq = if bar_indices.is_empty() {
+            HashMap::new()
+        } else {
+            // Prefer a pre-existing `frequency` cache (no data pass); fall back to a
+            // single-pass recompute when it's absent/stale/incompatible.
+            match freq_from_cache(self.args, &self.stats, &bar_indices, top_n) {
+                Some(cached) => cached,
+                None => count_values(self.args, &bar_indices, top_n)?,
+            }
+        };
 
-    // gather raw values for the panels that need them — histogram panels (moarstats-flagged
-    // bimodal columns), raw box panels and violin panels — in a single batched pass. Taken only
-    // when at least one such panel exists. Sampled violins carry a per-column stride so the
-    // pass keeps every stride-th non-null value (bounding both memory and the embedded HTML).
-    let raw_indices: Vec<usize> = panels
-        .iter()
-        .filter_map(|p| match p.kind {
-            PanelKind::Histogram { idx }
-            | PanelKind::BoxRaw { idx, .. }
-            | PanelKind::Violin { idx, .. } => Some(idx),
-            _ => None,
-        })
-        .collect();
-    let raw_strides: HashMap<usize, usize> = panels
-        .iter()
-        .filter_map(|p| match p.kind {
-            PanelKind::Violin {
-                idx, sample_stride, ..
-            } if sample_stride > 1 => Some((idx, sample_stride)),
-            _ => None,
-        })
-        .collect();
-    // large box panels that have outliers: collect ONLY their out-of-fence values, keyed by the
-    // Tukey fences resolved during classification (folded into the same pass as `raw_indices`).
-    let fence_bounds: HashMap<usize, (f64, f64)> = panels
-        .iter()
-        .filter_map(|p| match p.kind {
-            PanelKind::BoxOutliers {
-                idx,
-                fence_low,
-                fence_high,
+        // dominant-category title hint: when one real category holds nearly all the rows, the bar
+        // chart is one tall bar — say so in the title so the panel reads at a glance. Appended here
+        // (not at classification) because it needs the finalized per-bar counts.
+        {
+            // field-precise destructuring: the title loop mutates `panels` while the hint's lazy
+            // row-count callback needs `nrows`/`count_conf` (so `self.row_count()` can't be used).
+            let Self {
+                panels,
+                nrows,
+                count_conf,
                 ..
-            } => Some((idx, (fence_low, fence_high))),
-            _ => None,
-        })
-        .collect();
-    let (raw_values, outlier_stats) = if raw_indices.is_empty() && fence_bounds.is_empty() {
-        (HashMap::new(), HashMap::new())
-    } else {
-        progress.set_message("Preparing panel data…");
-        collect_smart_values(args, &raw_indices, &raw_strides, &fence_bounds)?
-    };
-
-    // dashboard title: the user's --title, else the dataset's file name
-    let title_text = args.flag_title.clone().unwrap_or_else(|| {
-        let dataset = std::path::Path::new(args.arg_input.as_deref().unwrap_or("data"))
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("data");
-        format!("{dataset} \u{2014} data overview")
-    });
-
-    // --dict-info: render the embedded Data Dictionary page when a usable dictionary is present
-    // and the output is HTML; soft no-op (with a note) otherwise, matching the dictionary
-    // loader's fail-to-stats philosophy.
-    let dict_page: Option<String> = if !args.flag_dict_info {
-        None
-    } else if !matches!(out_format, OutFormat::Html) {
-        viz_note("viz smart --dict-info: only applies to HTML output; ignored for image export.");
-        None
-    } else if let (Some(dict), Some(json_text)) = (dict_data.as_ref(), dict_json_text.as_deref()) {
-        match serde_json::from_str::<serde_json::Value>(json_text) {
-            Ok(dict_json) => {
-                // section order = the dataset's header order (dictionary-only columns follow)
-                let column_order: Vec<String> = stats.iter().map(|s| s.field.clone()).collect();
-                // "View chart" targets: only the inline path emits per-panel `data-qsv-dict`
-                // cells, and only for panels that survived the cap — the typed grid is one
-                // plot with nothing to scroll to, so its dictionary renders no such links.
-                let view_chart_anchors: std::collections::HashSet<String> = if inline {
-                    panels
-                        .iter()
-                        .filter_map(|p| p.dict_info.as_ref().map(|(a, _)| a.clone()))
-                        .collect()
-                } else {
-                    std::collections::HashSet::new()
-                };
-                Some(render_dict_page_html(
-                    &dict_json,
-                    json_text,
-                    dict,
-                    &title_text,
-                    &column_order,
-                    &view_chart_anchors,
-                ))
-            },
-            // unreachable in practice: dict_data only parses from valid JSON
-            Err(_) => None,
+            } = self;
+            for p in panels.iter_mut() {
+                if let PanelKind::FreqBar { idx } = p.kind
+                    && let Some(bars) = freq.get(&idx)
+                    && let Some(hint) = dominant_category_hint(bars, || {
+                        // exact row count, shared with the box-points heuristic's lazy fetch above
+                        // and only computed when a panel's drawn share already clears the threshold
+                        *nrows.get_or_insert_with(|| util::count_rows(count_conf).unwrap_or(0))
+                    })
+                {
+                    p.name = format!("{} {hint}", p.name);
+                }
+            }
         }
-    } else {
-        viz_note(
-            "viz smart --dict-info: no usable data dictionary (see --dictionary); showing the \
-             dashboard without dictionary info.",
-        );
-        None
-    };
 
-    // top-of-dashboard metadata table (HTML output only, mirroring --dict-info's HTML-only scope).
-    // Rows/Columns/Compiled always render, so the table always has >=3 rows; Description and PID
-    // are conditional. Image-export paths carry no table (would require Plotly-layout annotations).
-    let metadata_html: Option<String> = if matches!(out_format, OutFormat::Html) {
-        let mut rows = String::new();
-        // Description: first paragraph of the dictionary's dataset-level description, only when
-        // --dict-info is set and a non-empty description exists.
-        if args.flag_dict_info
-            && let Some(desc) = dict_data
-                .as_ref()
-                .and_then(|d| d.dataset_description.as_deref())
+        // gather raw values for the panels that need them — histogram panels (moarstats-flagged
+        // bimodal columns), raw box panels and violin panels — in a single batched pass. Taken only
+        // when at least one such panel exists. Sampled violins carry a per-column stride so the
+        // pass keeps every stride-th non-null value (bounding both memory and the embedded HTML).
+        let raw_indices: Vec<usize> = self
+            .panels
+            .iter()
+            .filter_map(|p| match p.kind {
+                PanelKind::Histogram { idx }
+                | PanelKind::BoxRaw { idx, .. }
+                | PanelKind::Violin { idx, .. } => Some(idx),
+                _ => None,
+            })
+            .collect();
+        let raw_strides: HashMap<usize, usize> = self
+            .panels
+            .iter()
+            .filter_map(|p| match p.kind {
+                PanelKind::Violin {
+                    idx, sample_stride, ..
+                } if sample_stride > 1 => Some((idx, sample_stride)),
+                _ => None,
+            })
+            .collect();
+        // large box panels that have outliers: collect ONLY their out-of-fence values, keyed by the
+        // Tukey fences resolved during classification (folded into the same pass as `raw_indices`).
+        let fence_bounds: HashMap<usize, (f64, f64)> = self
+            .panels
+            .iter()
+            .filter_map(|p| match p.kind {
+                PanelKind::BoxOutliers {
+                    idx,
+                    fence_low,
+                    fence_high,
+                    ..
+                } => Some((idx, (fence_low, fence_high))),
+                _ => None,
+            })
+            .collect();
+        let (raw_values, outlier_stats) = if raw_indices.is_empty() && fence_bounds.is_empty() {
+            (HashMap::new(), HashMap::new())
+        } else {
+            self.progress.set_message("Preparing panel data…");
+            collect_smart_values(self.args, &raw_indices, &raw_strides, &fence_bounds)?
+        };
+
+        // dashboard title: the user's --title, else the dataset's file name
+        let title_text = self.args.flag_title.clone().unwrap_or_else(|| {
+            let dataset = std::path::Path::new(self.args.arg_input.as_deref().unwrap_or("data"))
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("data");
+            format!("{dataset} \u{2014} data overview")
+        });
+
+        // --dict-info: render the embedded Data Dictionary page when a usable dictionary is present
+        // and the output is HTML; soft no-op (with a note) otherwise, matching the dictionary
+        // loader's fail-to-stats philosophy.
+        let dict_page: Option<String> = if !self.args.flag_dict_info {
+            None
+        } else if !matches!(self.out_format, OutFormat::Html) {
+            viz_note(
+                "viz smart --dict-info: only applies to HTML output; ignored for image export.",
+            );
+            None
+        } else if let (Some(dict), Some(json_text)) =
+            (self.dict_data.as_ref(), self.dict_json_text.as_deref())
         {
-            let first_para = first_description_paragraph(desc);
-            if !first_para.is_empty() {
+            match serde_json::from_str::<serde_json::Value>(json_text) {
+                Ok(dict_json) => {
+                    // section order = the dataset's header order (dictionary-only columns follow)
+                    let column_order: Vec<String> =
+                        self.stats.iter().map(|s| s.field.clone()).collect();
+                    // "View chart" targets: only the inline path emits per-panel `data-qsv-dict`
+                    // cells, and only for panels that survived the cap — the typed grid is one
+                    // plot with nothing to scroll to, so its dictionary renders no such links.
+                    let view_chart_anchors: std::collections::HashSet<String> = if self.inline {
+                        self.panels
+                            .iter()
+                            .filter_map(|p| p.dict_info.as_ref().map(|(a, _)| a.clone()))
+                            .collect()
+                    } else {
+                        std::collections::HashSet::new()
+                    };
+                    Some(render_dict_page_html(
+                        &dict_json,
+                        json_text,
+                        dict,
+                        &title_text,
+                        &column_order,
+                        &view_chart_anchors,
+                    ))
+                },
+                // unreachable in practice: dict_data only parses from valid JSON
+                Err(_) => None,
+            }
+        } else {
+            viz_note(
+                "viz smart --dict-info: no usable data dictionary (see --dictionary); showing the \
+                 dashboard without dictionary info.",
+            );
+            None
+        };
+
+        // top-of-dashboard metadata table (HTML output only, mirroring --dict-info's HTML-only
+        // scope). Rows/Columns/Compiled always render, so the table always has >=3 rows;
+        // Description and PID are conditional. Image-export paths carry no table (would require
+        // Plotly-layout annotations).
+        let metadata_html: Option<String> = if matches!(self.out_format, OutFormat::Html) {
+            let mut rows = String::new();
+            // Description: first paragraph of the dictionary's dataset-level description, only when
+            // --dict-info is set and a non-empty description exists.
+            if self.args.flag_dict_info
+                && let Some(desc) = self
+                    .dict_data
+                    .as_ref()
+                    .and_then(|d| d.dataset_description.as_deref())
+            {
+                let first_para = first_description_paragraph(desc);
+                if !first_para.is_empty() {
+                    rows.push_str(&format!(
+                        "<tr><td class=\"qsv-viz-meta-k\">Description:</td><td>{}</td></tr>\n",
+                        html_escape(&first_para)
+                    ));
+                }
+            }
+            // Rows: reuse the lazily-computed dataset row count.
+            let n = self.row_count();
+            rows.push_str(&format!(
+                "<tr><td class=\"qsv-viz-meta-k\">Rows:</td><td>{}</td></tr>\n",
+                HumanCount(n)
+            ));
+            // Columns
+            rows.push_str(&format!(
+                "<tr><td class=\"qsv-viz-meta-k\">Columns:</td><td>{}</td></tr>\n",
+                HumanCount(self.stats.len() as u64)
+            ));
+            // Completeness: share of non-empty cells across the whole dataset. A quiet header stat
+            // rather than a KPI gauge — it's near 100% for most datasets, so a permanent gauge tile
+            // just crowded the overview row.
+            let ncols = self.stats.len();
+            if n > 0 && ncols > 0 {
+                let total_cells = n as f64 * ncols as f64;
+                let total_null: f64 = self.stats.iter().map(|s| s.nullcount as f64).sum();
+                let completeness = (1.0 - total_null / total_cells).clamp(0.0, 1.0);
                 rows.push_str(&format!(
-                    "<tr><td class=\"qsv-viz-meta-k\">Description:</td><td>{}</td></tr>\n",
-                    html_escape(&first_para)
+                    "<tr><td class=\"qsv-viz-meta-k\">Completeness:</td><td>{:.1}%</td></tr>\n",
+                    completeness * 100.0
                 ));
             }
-        }
-        // Rows: reuse the lazily-computed dataset row count.
-        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-        rows.push_str(&format!(
-            "<tr><td class=\"qsv-viz-meta-k\">Rows:</td><td>{}</td></tr>\n",
-            HumanCount(n)
-        ));
-        // Columns
-        rows.push_str(&format!(
-            "<tr><td class=\"qsv-viz-meta-k\">Columns:</td><td>{}</td></tr>\n",
-            HumanCount(stats.len() as u64)
-        ));
-        // Completeness: share of non-empty cells across the whole dataset. A quiet header stat
-        // rather than a KPI gauge — it's near 100% for most datasets, so a permanent gauge tile
-        // just crowded the overview row.
-        let ncols = stats.len();
-        if n > 0 && ncols > 0 {
-            let total_cells = n as f64 * ncols as f64;
-            let total_null: f64 = stats.iter().map(|s| s.nullcount as f64).sum();
-            let completeness = (1.0 - total_null / total_cells).clamp(0.0, 1.0);
+            // Compiled: dashboard build timestamp (makes smart HTML output non-deterministic by
+            // design).
             rows.push_str(&format!(
-                "<tr><td class=\"qsv-viz-meta-k\">Completeness:</td><td>{:.1}%</td></tr>\n",
-                completeness * 100.0
+                "<tr><td class=\"qsv-viz-meta-k\">Compiled:</td><td>{}</td></tr>\n",
+                chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
             ));
-        }
-        // Compiled: dashboard build timestamp (makes smart HTML output non-deterministic by
-        // design).
-        rows.push_str(&format!(
-            "<tr><td class=\"qsv-viz-meta-k\">Compiled:</td><td>{}</td></tr>\n",
-            chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
-        ));
-        // PID: a clickable link, only when --dataset-pid is set. A full URL such as a DOI is
-        // expected. The TEXT is html-escaped and the HREF additionally goes through
-        // `sanitize_url` — html-escaping alone leaves `javascript:` intact, and this page may be
-        // generated by a service and viewed by someone other than whoever passed the flag. A
-        // rejected scheme still shows the value as plain text rather than dropping it silently.
-        if let Some(pid) = args.flag_dataset_pid.as_deref() {
-            let pid_esc = html_escape(pid);
-            let cell = match sanitize_url(pid) {
-                Some(href) => format!(
-                    "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{pid_esc}</a>",
-                    html_escape(&href)
-                ),
-                None => pid_esc,
-            };
-            rows.push_str(&format!(
-                "<tr><td class=\"qsv-viz-meta-k\">PID:</td><td>{cell}</td></tr>\n"
-            ));
-        }
-        Some(format!("<table class=\"qsv-viz-meta\">\n{rows}</table>"))
-    } else {
-        None
-    };
+            // PID: a clickable link, only when --dataset-pid is set. A full URL such as a DOI is
+            // expected. The TEXT is html-escaped and the HREF additionally goes through
+            // `sanitize_url` — html-escaping alone leaves `javascript:` intact, and this page may
+            // be generated by a service and viewed by someone other than whoever passed the flag. A
+            // rejected scheme still shows the value as plain text rather than dropping it silently.
+            if let Some(pid) = self.args.flag_dataset_pid.as_deref() {
+                let pid_esc = html_escape(pid);
+                let cell = match sanitize_url(pid) {
+                    Some(href) => format!(
+                        "<a href=\"{}\" target=\"_blank\" rel=\"noopener \
+                         noreferrer\">{pid_esc}</a>",
+                        html_escape(&href)
+                    ),
+                    None => pid_esc,
+                };
+                rows.push_str(&format!(
+                    "<tr><td class=\"qsv-viz-meta-k\">PID:</td><td>{cell}</td></tr>\n"
+                ));
+            }
+            Some(format!("<table class=\"qsv-viz-meta\">\n{rows}</table>"))
+        } else {
+            None
+        };
 
-    // a Geo panel in image mode must use the raw-JSON grid: it injects a domain-positioned `geo`
-    // subplot, which the typed `Layout` (a single `.geo()`, no per-cell domain) can't express.
-    let has_geo_image = out_format.is_image()
-        && panels
-            .iter()
-            .any(|p| matches!(p.kind, PanelKind::Geo { .. }));
-
-    // Leading KPI overview row, prepended LAST (after every panel-count-dependent decision — the
-    // `--max-charts` ranking, the "charting N columns" note, the box-overlay demotion, and the
-    // render-path choice) so it stays invisible to them and simply lands at index 0, on top of the
-    // dashboard. HTML only: Indicator tiles are domain-positioned and never enter a static image.
-    if !out_format.is_image()
-        && let Some(panel) = build_kpi_row(&stats, &panels, dict_data.as_ref())
-    {
-        panels.insert(0, panel);
-    }
-
-    progress.set_message("Rendering dashboard…");
-    if inline {
-        Ok(SmartRender::Inline(render_smart_inline(
-            args,
-            &panels,
-            &freq,
-            &raw_values,
-            &outlier_stats,
-            &title_text,
-            log_scale,
-            dict_page.as_deref(),
-            metadata_html.as_deref(),
-        )))
-    } else if panels
-        .iter()
-        .filter(|p| !matches!(p.kind, PanelKind::KpiRow { .. }))
-        .count()
-        > MAX_SUBPLOTS
-        || has_geo_image
-    {
-        // static image export of >MAX_SUBPLOTS panels (or any panel count with a geo subplot):
-        // plotly's typed Layout only has xaxis1..xaxis8 and a single typed `geo`, so assemble the
-        // grid as raw JSON with domain-positioned xaxis9+ and (for geo panels) geo/geo2+ subplots.
-        render_smart_grid_json(
-            args,
-            &panels,
-            &freq,
-            &raw_values,
-            &outlier_stats,
-            &title_text,
-            log_scale,
-        )
-    } else {
-        render_smart_grid(
-            args,
-            &panels,
-            &freq,
-            &raw_values,
-            &outlier_stats,
-            &title_text,
-            log_scale,
+        Ok(SmartPanelData {
+            freq,
+            raw_values,
+            outlier_stats,
+            title_text,
             dict_page,
             metadata_html,
-        )
+        })
     }
+
+    /// Prepend the KPI overview row and dispatch to the render path chosen by `finalize_panels`.
+    fn render(mut self, data: SmartPanelData) -> CliResult<SmartRender> {
+        let SmartPanelData {
+            freq,
+            raw_values,
+            outlier_stats,
+            title_text,
+            dict_page,
+            metadata_html,
+        } = data;
+
+        // a Geo panel in image mode must use the raw-JSON grid: it injects a domain-positioned
+        // `geo` subplot, which the typed `Layout` (a single `.geo()`, no per-cell domain) can't
+        // express.
+        let has_geo_image = self.out_format.is_image()
+            && self
+                .panels
+                .iter()
+                .any(|p| matches!(p.kind, PanelKind::Geo { .. }));
+
+        // Leading KPI overview row, prepended LAST (after every panel-count-dependent decision —
+        // the `--max-charts` ranking, the "charting N columns" note, the box-overlay demotion, and
+        // the render-path choice) so it stays invisible to them and simply lands at index 0, on top
+        // of the dashboard. HTML only: Indicator tiles are domain-positioned and never enter a
+        // static image.
+        if !self.out_format.is_image()
+            && let Some(panel) = build_kpi_row(&self.stats, &self.panels, self.dict_data.as_ref())
+        {
+            self.panels.insert(0, panel);
+        }
+
+        self.progress.set_message("Rendering dashboard…");
+        if self.inline {
+            Ok(SmartRender::Inline(render_smart_inline(
+                self.args,
+                &self.panels,
+                &freq,
+                &raw_values,
+                &outlier_stats,
+                &title_text,
+                self.log_scale,
+                dict_page.as_deref(),
+                metadata_html.as_deref(),
+            )))
+        } else if self
+            .panels
+            .iter()
+            .filter(|p| !matches!(p.kind, PanelKind::KpiRow { .. }))
+            .count()
+            > MAX_SUBPLOTS
+            || has_geo_image
+        {
+            // static image export of >MAX_SUBPLOTS panels (or any panel count with a geo subplot):
+            // plotly's typed Layout only has xaxis1..xaxis8 and a single typed `geo`, so assemble
+            // the grid as raw JSON with domain-positioned xaxis9+ and (for geo panels) geo/geo2+
+            // subplots.
+            render_smart_grid_json(
+                self.args,
+                &self.panels,
+                &freq,
+                &raw_values,
+                &outlier_stats,
+                &title_text,
+                self.log_scale,
+            )
+        } else {
+            render_smart_grid(
+                self.args,
+                &self.panels,
+                &freq,
+                &raw_values,
+                &outlier_stats,
+                &title_text,
+                self.log_scale,
+                dict_page,
+                metadata_html,
+            )
+        }
+    }
+}
+
+/// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
+/// Classifies columns into panels, then renders either a single-`Plot` subplot grid (≤8 panels,
+/// or any image export) or a self-contained inline-div HTML page (>8 panels, HTML output).
+fn build_smart(
+    args: &Args,
+    out_format: OutFormat,
+    progress: &ProgressBar,
+    show_progress: bool,
+    loaded_geojson: Option<&serde_json::Value>,
+) -> CliResult<SmartRender> {
+    let prep = smart_prepare(args, progress, show_progress)?;
+    let mut ctx = SmartCtx::new(&prep, out_format, progress, loaded_geojson)?;
+    ctx.classify_columns();
+    ctx.add_relationship_panels()?;
+    ctx.add_overview_panels()?;
+    ctx.finalize_panels()?;
+    let panel_data = ctx.gather_panel_data()?;
+    ctx.render(panel_data)
 }
 
 /// The equality-diagonal reference line for a `Lorenz` panel: a muted, dotted (0,0)→(1,1) line the

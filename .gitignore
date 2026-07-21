@@ -40,6 +40,9 @@ perf.data*
 tests/resources/profile/golden/*.stats.csv
 tests/resources/profile/golden/*.stats.csv.*
 !tests/resources/profile/dcat-init-context.json
+# viz golden-check fixture (scripts/viz-golden-check.sh); no examples/viz fixture
+# exercises the cyclic-seasonality panel
+!scripts/viz_golden_cyclic_events.csv
 *.log
 *.log.gz
 *.bak

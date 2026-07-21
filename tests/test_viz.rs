@@ -11015,3 +11015,50 @@ fn viz_smart_direct_read_is_unaffected_by_a_prior_symlink_no_headers_run() {
          direct read accepts; html: {after}"
     );
 }
+
+#[test]
+fn viz_smart_notes_and_drops_dictionary_with_no_headers() {
+    // A dictionary is keyed by column NAME, but --no-headers names columns positionally, so no
+    // entry can ever match. Rather than let the flag look applied (and, for `--dictionary infer`,
+    // pay for an LLM pass whose verdicts are all discarded), viz says so and charts from stats
+    // alone -- the dashboard still renders.
+    let wrk = Workdir::new("viz_smart_notes_and_drops_dictionary_with_no_headers");
+    let mut csv = String::from("region,amount\n");
+    for (i, region) in ["north", "south", "east"]
+        .iter()
+        .cycle()
+        .take(30)
+        .enumerate()
+    {
+        csv.push_str(&format!("{region},{}\n", 10 + (i * 7) % 53));
+    }
+    wrk.create_from_string("d.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields":[{"name":"amount","concept":"measure.amount"}]}"#,
+    );
+
+    let out = wrk.path("d.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "d.csv",
+        "--no-headers",
+        "--dictionary",
+        "dict.json",
+        "-o",
+        &out,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("no entry can match"),
+        "expected a notice explaining the dictionary cannot apply; got: {stderr}"
+    );
+    let html = wrk.read_to_string("d.html").unwrap();
+    assert!(
+        html.contains("Plotly.newPlot"),
+        "the dashboard must still render from statistics alone; html: {html}"
+    );
+}

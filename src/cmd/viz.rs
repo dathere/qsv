@@ -6013,14 +6013,18 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
         ) else {
             continue;
         };
-        let color = match color_idx {
+        // --color/--size only need to parse when they are actually RENDERED. In series mode the
+        // marker encodings are discarded below (one trace per series, uniform markers), so
+        // dropping rows for an unparseable encoding silently deleted data for no benefit — a
+        // half-empty --size column halved the visible points and changed nothing else.
+        let color = match color_idx.filter(|_| series_idx.is_none()) {
             Some(i) => match parse_f64(record.get(i)) {
                 Some(v) => Some(v),
                 None => continue,
             },
             None => None,
         };
-        let size = match size_idx {
+        let size = match size_idx.filter(|_| series_idx.is_none()) {
             Some(i) => match parse_f64(record.get(i)) {
                 Some(v) => Some(v),
                 None => continue,
@@ -12351,6 +12355,20 @@ fn bullet_content(line: &str) -> &str {
 /// Literal runs are `html_escape`d; only whitelisted tags are emitted. Recurses into
 /// emphasis and link-text spans (each strictly shorter, so termination is guaranteed).
 fn md_inline(text: &str) -> String {
+    md_inline_depth(text, 0)
+}
+
+/// Depth-limited core of `md_inline`. Each emphasis span and each link label recurses one frame
+/// deeper, with no natural bound: dictionary text is LLM-generated and explicitly untrusted here,
+/// and a description of deeply nested `**...**` drove ~25k nested frames — enough to exhaust the
+/// main thread's stack and abort the process. Past the limit the remaining text is emitted as
+/// escaped literal characters, which is exactly how unmatched markers already degrade.
+const MD_INLINE_MAX_DEPTH: usize = 16;
+
+fn md_inline_depth(text: &str, depth: usize) -> String {
+    if depth >= MD_INLINE_MAX_DEPTH {
+        return html_escape(text);
+    }
     let b = text.as_bytes();
     let n = b.len();
     let mut out = String::new();
@@ -12375,7 +12393,7 @@ fn md_inline(text: &str) -> String {
                 i += 1;
             },
             b'[' => {
-                if let Some((html, consumed)) = try_parse_link(&text[i..]) {
+                if let Some((html, consumed)) = try_parse_link(&text[i..], depth) {
                     push_escaped(&mut out, &mut lit);
                     out.push_str(&html);
                     i += consumed;
@@ -12405,7 +12423,7 @@ fn md_inline(text: &str) -> String {
                         ("<em>", "</em>")
                     };
                     out.push_str(open);
-                    out.push_str(&md_inline(&text[i + mlen..end]));
+                    out.push_str(&md_inline_depth(&text[i + mlen..end], depth + 1));
                     out.push_str(close);
                     i = end + mlen;
                     continue;
@@ -12463,7 +12481,7 @@ fn find_closing(hay: &str, marker: &str, underscore: bool) -> Option<usize> {
     None
 }
 
-fn try_parse_link(s: &str) -> Option<(String, usize)> {
+fn try_parse_link(s: &str, depth: usize) -> Option<(String, usize)> {
     // s starts with '['.
     let close_br = 1 + s[1..].find(']')?;
     let rest = &s[close_br + 1..];
@@ -12473,7 +12491,7 @@ fn try_parse_link(s: &str) -> Option<(String, usize)> {
     let url_body = &rest[1..];
     let close_par = find_url_end(url_body)?;
     let consumed = close_br + 2 + close_par + 1;
-    let inner = md_inline(&s[1..close_br]);
+    let inner = md_inline_depth(&s[1..close_br], depth + 1);
     let url = &url_body[..close_par];
     if let Some(safe) = sanitize_url(url) {
         Some((
@@ -26169,6 +26187,23 @@ mod tests {
         assert_eq!(m("6075").as_deref(), Some("06075"));
         // a genuine non-member still misses
         assert!(m("ZZ").is_none());
+    }
+
+    #[test]
+    fn md_inline_caps_recursion_depth() {
+        // untrusted LLM dictionary text: deeply nested emphasis used to recurse without bound and
+        // could exhaust the stack. Past the cap the remainder is emitted as escaped literal text.
+        let deep = "*".repeat(4000) + "x" + &"*".repeat(4000);
+        let out = md_inline(&deep);
+        assert!(!out.is_empty());
+        // no raw markup escapes, whatever the nesting did
+        assert!(!out.contains("<script"));
+        // a pathological run of unmatched markers terminates and stays literal
+        let unmatched = "*".repeat(5000);
+        assert!(!md_inline(&unmatched).is_empty());
+        // ordinary emphasis still renders
+        assert!(md_inline("plain *em* text").contains("<em>"));
+        assert!(md_inline("plain **strong** text").contains("<strong>"));
     }
 
     #[test]

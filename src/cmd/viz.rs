@@ -2318,6 +2318,15 @@ fn read_xy_slider(
             "--slider needs at least 2 distinct values in the chosen column to animate; found 1."
         );
     }
+    if frame_order.len() > SLIDER_MAX_FRAMES {
+        return fail_incorrectusage_clierror!(
+            "--slider column has {} distinct values; the maximum is {SLIDER_MAX_FRAMES}.\nEvery \
+             frame embeds its own copy of the plotted data, so this would produce an unusably \
+             large file. Bucket the column first (e.g. `qsv datefmt` to a coarser grain, or `qsv \
+             apply`), or pick a lower-cardinality --slider column.",
+            frame_order.len()
+        );
+    }
 
     // animation order: numeric when every frame value parses as finite, else lexical
     if frame_order.iter().all(|f| parse_finite_f64(f).is_some()) {
@@ -2442,7 +2451,7 @@ fn read_xy_slider(
 /// value, and a layout carrying pinned axis ranges, a scrub `Slider` and a Play/Pause menu.
 fn build_slider_xy_plot(args: &Args, kind: Chart, slider_col: &SelectColumns) -> CliResult<Plot> {
     let agg = parse_agg(args.flag_agg.as_deref())?;
-    let data = read_xy_slider(args, slider_col, kind, agg)?;
+    let mut data = read_xy_slider(args, slider_col, kind, agg)?;
 
     let mut plot = Plot::new();
 
@@ -2480,8 +2489,13 @@ fn build_slider_xy_plot(args: &Args, kind: Chart, slider_col: &SelectColumns) ->
     }
 
     // one animation frame per slider value
-    for (fkey, groups) in data.frame_values.iter().zip(data.frames.iter()) {
-        let traces = xy_groups_to_traces(groups.clone(), kind, agg, false, bar_colors.as_ref());
+    // consume the frames rather than cloning each one: `xy_groups_to_traces` takes them by value,
+    // and `data.frames` is dead after this loop. Under --slider-cumulative each frame already
+    // holds a copy of every row from frames 0..=k, so cloning them all again doubled the peak.
+    // (Frame 0 was cloned once above for the base traces; that copy is genuinely needed.)
+    let frames = std::mem::take(&mut data.frames);
+    for (fkey, groups) in data.frame_values.iter().zip(frames) {
+        let traces = xy_groups_to_traces(groups, kind, agg, false, bar_colors.as_ref());
         let mut td = Traces::new();
         for t in traces {
             td.push(t);
@@ -3766,6 +3780,15 @@ fn read_geo_slider(args: &Args, slider_col: &SelectColumns) -> CliResult<GeoSlid
     if frame_order.len() < 2 {
         return fail_incorrectusage_clierror!(
             "--slider needs at least 2 distinct values in the chosen column to animate; found 1."
+        );
+    }
+    if frame_order.len() > SLIDER_MAX_FRAMES {
+        return fail_incorrectusage_clierror!(
+            "--slider column has {} distinct values; the maximum is {SLIDER_MAX_FRAMES}.\nEvery \
+             frame embeds its own copy of the plotted data, so this would produce an unusably \
+             large file. Bucket the column first (e.g. `qsv datefmt` to a coarser grain, or `qsv \
+             apply`), or pick a lower-cardinality --slider column.",
+            frame_order.len()
         );
     }
 
@@ -5177,6 +5200,29 @@ fn pip_assign(
     let sy = KM_PER_DEG;
     let mut best_i = None;
     let mut best_d2 = f64::INFINITY;
+    // Seed the search with the feature whose BBOX is nearest, then let the loop below prune
+    // against that. `best_d2` otherwise starts at infinity, so the first feature in FILE ORDER is
+    // always fully edge-scanned no matter how far away it is, and pruning quality depends
+    // entirely on how the boundary file happens to be ordered. This pass is bbox arithmetic only
+    // (no vertices), so it costs O(features) cheap comparisons and typically reduces the full
+    // ring scans below from "every unpruned feature" to one or two. The result is unchanged:
+    // bbox_dist2 is a true lower bound, so pruning against a real distance can never discard a
+    // nearer feature.
+    let mut seed: Option<(usize, f64)> = None;
+    let mut seed_bbox_d2 = f64::INFINITY;
+    for (i, f) in features.iter().enumerate() {
+        for flon in f.candidate_lons(lon).into_iter().flatten() {
+            let b = bbox_dist2(&f.bbox, flon, lat, sx, sy);
+            if b < seed_bbox_d2 {
+                seed_bbox_d2 = b;
+                seed = Some((i, flon));
+            }
+        }
+    }
+    if let Some((i, flon)) = seed {
+        best_d2 = feature_dist2(&features[i], flon, lat, sx, sy);
+        best_i = Some(i);
+    }
     for (i, f) in features.iter().enumerate() {
         // probe the query at each of the feature's candidate longitudes so antimeridian-crossing
         // features (stored continuity-unwrapped past ±180°) measure distance consistently with
@@ -14156,6 +14202,15 @@ struct ScatterPairAnim {
 /// Max animation frames / slider steps for `viz smart` time animations: each distinct calendar
 /// bucket is one slider step, so the count is capped for legibility (see `choose_anim_bucket`).
 const SMART_ANIM_MAX_FRAMES: usize = 30;
+
+/// Frame cap for the EXPLICIT `--slider` animations (`viz <xy>`/`viz geo`), as opposed to the
+/// `viz smart` animations that auto-coarsen to `SMART_ANIM_MAX_FRAMES`. One frame is built per
+/// distinct slider value and each embeds its own copy of the plotted data — under
+/// `--slider-cumulative` frame k re-copies every row from frames 0..=k, so total embedded data is
+/// O(rows x frames). Uncapped, a timestamp column with 100k distinct values is unbounded. This
+/// ceiling is deliberately generous (a year of daily frames fits); the user picked the column, so
+/// exceeding it errors with guidance rather than silently re-bucketing behind their back.
+const SLIDER_MAX_FRAMES: usize = 365;
 
 /// Choose the finest calendar bucket (Day → Week → Month) whose distinct-period count stays within
 /// `SMART_ANIM_MAX_FRAMES`, returning it with the sorted, de-duplicated distinct bucket keys.

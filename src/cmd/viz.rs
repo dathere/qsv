@@ -11701,6 +11701,25 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
         "altitudes",
         "density",
         "densities",
+        // Durations and ages/tenures. A per-record SPAN is not additive the way an amount is:
+        // "Total Account Age (Days)" sums a per-customer state into a number that means nothing,
+        // and the same applies to elapsed/latency/runtime style measures. This also keeps the
+        // label heuristic consistent with `route_from_concept`, which already routes the
+        // `time.duration` concept to Mean rather than Sum.
+        //
+        // Token matching is load-bearing here: "age" is a SUBSTRING of agency, package, storage,
+        // usage, message, coverage and mileage, every one of which is additive. Matching these as
+        // substrings would repeat exactly the `ratio`-inside-`duration` bug fixed above.
+        "age",
+        "ages",
+        "tenure",
+        "seniority",
+        "duration",
+        "durations",
+        "elapsed",
+        "runtime",
+        "uptime",
+        "latency",
     ];
     // phrases and symbols can't survive tokenization (which splits on non-alphanumerics), so
     // these stay substring tests — none of them is a substring of a common additive word.
@@ -26228,9 +26247,10 @@ mod tests {
     #[test]
     fn is_intensive_measure_matches_tokens_not_substrings() {
         // the -ration word family all CONTAIN "ratio"; a substring test silently downgraded these
-        // additive amounts from Sum to Mean, and also dropped them from the inequality overview
+        // additive amounts from Sum to Mean, and also dropped them from the inequality overview.
+        // ("duration" belongs to this family too, but it is now intensive on its own merits as a
+        // time SPAN — see the span cases below — so it can no longer serve as a control here.)
         for additive in [
-            "duration",
             "generation",
             "operation",
             "operations",
@@ -26269,6 +26289,40 @@ mod tests {
             assert!(
                 is_intensive_measure(intensive, intensive),
                 "{intensive} should be intensive"
+            );
+        }
+        // durations/ages are spans, not amounts: summing them is meaningless
+        for span in [
+            "age",
+            "account_age_days",
+            "Account Age (Days)",
+            "tenure",
+            "duration",
+            "call_duration",
+            "elapsed",
+            "latency_ms",
+            "runtime",
+        ] {
+            assert!(
+                is_intensive_measure(span, span),
+                "{span} is a span/state, must not be summed"
+            );
+        }
+        // ...but "age" is a substring of these ADDITIVE words, so token matching must protect them
+        for additive in [
+            "agency",
+            "Agency Name",
+            "packages",
+            "storage",
+            "usage",
+            "message_count",
+            "coverage",
+            "mileage",
+            "garage",
+        ] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} merely contains 'age' and must stay additive"
             );
         }
         // phrases/symbols stay substring-matched (they can't survive tokenization)

@@ -2084,10 +2084,14 @@ fn read_xy(args: &Args) -> CliResult<XyData> {
             Some(i) => cell_to_string(record.get(i)),
             None => String::new(),
         };
-        let entry = grouped.entry(series.clone()).or_insert_with(|| {
-            order.push(series);
-            (Vec::new(), Vec::new())
-        });
+        // probe before cloning: `entry` takes an owned key, so the plain form allocates a second
+        // String on EVERY row, not just when the group is new.
+        let entry = if let Some(e) = grouped.get_mut(&series) {
+            e
+        } else {
+            order.push(series.clone());
+            grouped.entry(series).or_insert((Vec::new(), Vec::new()))
+        };
         entry.0.push(x);
         entry.1.push(y);
     }
@@ -2275,6 +2279,9 @@ fn read_xy_slider(
     // frame value -> series -> (xs, ys); insertion order tracked separately
     let mut frame_order: Vec<String> = Vec::new();
     let mut series_order: Vec<String> = Vec::new();
+    // membership index for `series_order`: a Vec::contains probe here is O(distinct series) on
+    // EVERY row, which degenerates badly on a high-cardinality --series column.
+    let mut series_seen: HashSet<String> = HashSet::new();
     let mut map: HashMap<String, HashMap<String, (Vec<String>, Vec<f64>)>> = HashMap::new();
 
     let mut record = csv::ByteRecord::new();
@@ -2293,7 +2300,7 @@ fn read_xy_slider(
             frame_order.push(frame.clone());
         }
         let fmap = map.entry(frame).or_default();
-        if !fmap.contains_key(&series) && !series_order.contains(&series) {
+        if !fmap.contains_key(&series) && series_seen.insert(series.clone()) {
             series_order.push(series.clone());
         }
         let entry = fmap
@@ -2362,7 +2369,10 @@ fn read_xy_slider(
             }
             for x in &txs {
                 // categorical x union in first-seen order (used to pin a non-numeric axis)
-                if x_seen.insert(x.clone()) {
+                // contains-then-insert: `HashSet::insert` takes an owned key, so cloning
+                // unconditionally allocates on every hit as well as every miss.
+                if !x_seen.contains(x) {
+                    x_seen.insert(x.clone());
                     x_union.push(x.clone());
                 }
                 if all_x_numeric {
@@ -3708,6 +3718,9 @@ fn read_geo_slider(args: &Args, slider_col: &SelectColumns) -> CliResult<GeoSlid
 
     let mut frame_order: Vec<String> = Vec::new();
     let mut series_order: Vec<String> = Vec::new();
+    // membership index for `series_order`: a Vec::contains probe here is O(distinct series) on
+    // EVERY row, which degenerates badly on a high-cardinality --series column.
+    let mut series_seen: HashSet<String> = HashSet::new();
     let mut map: HashMap<String, HashMap<String, (Vec<f64>, Vec<f64>, Vec<String>)>> =
         HashMap::new();
 
@@ -3732,7 +3745,7 @@ fn read_geo_slider(args: &Args, slider_col: &SelectColumns) -> CliResult<GeoSlid
             frame_order.push(frame.clone());
         }
         let fmap = map.entry(frame).or_default();
-        if !fmap.contains_key(&series) && !series_order.contains(&series) {
+        if !fmap.contains_key(&series) && series_seen.insert(series.clone()) {
             series_order.push(series.clone());
         }
         let entry = fmap
@@ -9265,13 +9278,14 @@ fn aggregate(xs: Vec<String>, ys: Vec<f64>, agg: Agg) -> (Vec<String>, Vec<f64>)
     let mut order: Vec<String> = Vec::new();
     let mut acc: HashMap<String, (f64, f64)> = HashMap::new(); // x -> (running, count)
     for (x, y) in xs.into_iter().zip(ys) {
-        let e = acc.entry(x.clone()).or_insert_with(|| {
-            order.push(x);
-            match agg {
-                Agg::Min => (f64::INFINITY, 0.0),
-                Agg::Max => (f64::NEG_INFINITY, 0.0),
-                _ => (0.0, 0.0),
-            }
+        // probe first: the owned key is only needed when the category is new (see read_xy)
+        if !acc.contains_key(&x) {
+            order.push(x.clone());
+        }
+        let e = acc.entry(x).or_insert_with(|| match agg {
+            Agg::Min => (f64::INFINITY, 0.0),
+            Agg::Max => (f64::NEG_INFINITY, 0.0),
+            _ => (0.0, 0.0),
         });
         e.1 += 1.0;
         match agg {
@@ -9349,7 +9363,26 @@ fn measure_by_dim_panel(
 
     let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
     let mut record = csv::ByteRecord::new();
+    // the dimension keys depend only on the ROW, not on the measure, but the dimension loop is
+    // nested inside the measure loop — recomputing them per measure did up to
+    // MEASURE_BY_DIM_MAX_CANDIDATES^2 (16x16 = 256) key builds per row, two String allocations
+    // each, where n_d (16) suffice. Build them once per row and index by `di`.
+    let mut row_keys: Vec<String> = Vec::with_capacity(n_d);
     while rdr.read_byte_record(&mut record)? {
+        // only worth building when at least one measure parses on this row
+        if !measures.iter().any(|&i| parse_f64(record.get(i)).is_some()) {
+            continue;
+        }
+        row_keys.clear();
+        for &d_idx in &dims {
+            let raw = cell_to_string(record.get(d_idx));
+            let trimmed = raw.trim();
+            row_keys.push(if trimmed.is_empty() {
+                NULL_TEXT.to_string()
+            } else {
+                trimmed.to_string()
+            });
+        }
         for (mi, &m_idx) in measures.iter().enumerate() {
             let Some(y) = parse_f64(record.get(m_idx)) else {
                 continue;
@@ -9358,16 +9391,14 @@ fn measure_by_dim_panel(
             g.0 += y;
             g.1 += y * y;
             g.2 += 1;
-            for (di, &d_idx) in dims.iter().enumerate() {
-                let raw = cell_to_string(record.get(d_idx));
-                let key = if raw.trim().is_empty() {
-                    NULL_TEXT.to_string()
+            for (di, key) in row_keys.iter().enumerate() {
+                let g = &mut groups[mi * n_d + di];
+                if let Some(e) = g.get_mut(key) {
+                    e.0 += y;
+                    e.1 += 1;
                 } else {
-                    raw.trim().to_string()
-                };
-                let e = groups[mi * n_d + di].entry(key).or_insert((0.0, 0));
-                e.0 += y;
-                e.1 += 1;
+                    g.insert(key.clone(), (y, 1));
+                }
             }
         }
     }
@@ -21959,7 +21990,14 @@ fn count_values(args: &Args, indices: &[usize], top_n: usize) -> CliResult<FreqM
                     continue;
                 }
                 if let Some(m) = maps.get_mut(&i) {
-                    *m.entry(cell.to_vec()).or_insert(0) += 1;
+                    // hot inner loop of the no-frequency-cache fallback: probe before
+                    // allocating, else every counted cell heap-allocates a key that is
+                    // immediately dropped.
+                    if let Some(c) = m.get_mut(cell) {
+                        *c += 1;
+                    } else {
+                        m.insert(cell.to_vec(), 1);
+                    }
                 }
             }
         }

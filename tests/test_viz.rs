@@ -6786,6 +6786,28 @@ fn viz_cdn_replaces_embedded_bundle() {
             html.contains(r#"<script src="https://cdn.plot.ly/"#),
             "{subcmd}: expected a plotly.js CDN tag"
         );
+        // Subresource Integrity: without it a tampered CDN response is arbitrary script execution
+        // in every viewer of a published dashboard. Assert the attributes land on the plotly tag
+        // itself, not merely somewhere in the document.
+        let cdn_tag = html
+            .split(r#"<script src="https://cdn.plot.ly/"#)
+            .nth(1)
+            .and_then(|rest| rest.split_once("</script>"))
+            .map(|(tag, _)| tag.to_string())
+            .unwrap_or_default();
+        assert!(
+            cdn_tag.contains(r#"integrity="sha384-"#),
+            "{subcmd}: CDN tag is missing its SRI hash: {cdn_tag}"
+        );
+        assert!(
+            cdn_tag.contains(r#"crossorigin="anonymous""#),
+            "{subcmd}: CDN tag is missing crossorigin: {cdn_tag}"
+        );
+        // the hash must be pinned to the version actually requested, else it blocks the script
+        assert!(
+            cdn_tag.contains(".min.js"),
+            "{subcmd}: unexpected CDN tag shape: {cdn_tag}"
+        );
         // no inline bundle, in either its plain or its gzip+base64 form...
         assert_eq!(html.matches("plotly.js v").count(), 0, "{subcmd}");
         assert_eq!(html.matches("id=\"qsv-plotly-gz\"").count(), 0, "{subcmd}");

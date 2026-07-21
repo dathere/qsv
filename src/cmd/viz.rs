@@ -16374,22 +16374,29 @@ fn build_map_panel(
             if let Some(si) = size_idx {
                 sizes_raw.push(parse_f64(record.get(si)).unwrap_or(f64::NAN));
             }
-            let cell = |i: usize| -> String {
-                record
-                    .get(i)
-                    .map(|b| String::from_utf8_lossy(b).into_owned())
-                    .unwrap_or_default()
-            };
-            let id_val = id_idx.map(&cell).unwrap_or_default();
-            let extra: Vec<(String, String)> = extra_idxs
-                .iter()
-                .zip(&extra_labels)
-                .map(|(&i, label)| (label.clone(), cell(i)))
-                .collect();
-            dataset_lines.push(format_map_dataset_line(
-                (!id_val.is_empty()).then_some(id_val.as_str()),
-                &extra,
-            ));
+            // with no identifier and no hover fields the formatted line is always empty, so
+            // building it allocates a Vec plus a String per row for a result that is discarded.
+            // The push still happens so `dataset_lines` stays index-aligned with lats/lons.
+            if build_dataset_lines {
+                let cell = |i: usize| -> String {
+                    record
+                        .get(i)
+                        .map(|b| String::from_utf8_lossy(b).into_owned())
+                        .unwrap_or_default()
+                };
+                let id_val = id_idx.map(&cell).unwrap_or_default();
+                let extra: Vec<(String, String)> = extra_idxs
+                    .iter()
+                    .zip(&extra_labels)
+                    .map(|(&i, label)| (label.clone(), cell(i)))
+                    .collect();
+                dataset_lines.push(format_map_dataset_line(
+                    (!id_val.is_empty()).then_some(id_val.as_str()),
+                    &extra,
+                ));
+            } else {
+                dataset_lines.push(String::new());
+            }
         }
     }
     if lats.is_empty() {

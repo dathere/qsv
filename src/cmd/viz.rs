@@ -17728,16 +17728,22 @@ fn build_kpi_row(
     ))
 }
 
-/// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
-/// Classifies columns into panels, then renders either a single-`Plot` subplot grid (≤8 panels,
-/// or any image export) or a self-contained inline-div HTML page (>8 panels, HTML output).
-fn build_smart(
-    args: &Args,
-    out_format: OutFormat,
-    progress: &ProgressBar,
-    show_progress: bool,
-    loaded_geojson: Option<&serde_json::Value>,
-) -> CliResult<SmartRender> {
+/// Resolved inputs for `build_smart`, produced by `smart_prepare`.
+struct SmartPrep {
+    /// the caller's `Args` with `--bivariate`'s implications applied (it forces `--smarter`, and
+    /// infers a `--dictionary` when none was given).
+    args:                    Args,
+    /// the validated input path (never stdin).
+    input:                   String,
+    /// non-default parsing (`--no-headers` / `--delimiter`) forces the stats cache to regenerate.
+    force_stats_regen:       bool,
+    /// set only when THIS run's moarstats `--bivariate` subprocess wrote a fresh sidecar.
+    bivariate_sidecar_fresh: bool,
+}
+
+/// Validate `viz smart`'s input, apply `--bivariate`'s flag implications, and run the optional
+/// `--smarter` moarstats enrichment pass (which rewrites the stats sidecar `build_smart` reads).
+fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> CliResult<SmartPrep> {
     let mut args = args.clone();
 
     let Some(input) = args.arg_input.clone() else {
@@ -17789,7 +17795,8 @@ fn build_smart(
     if bivariate_enabled && args.flag_dictionary.is_none() {
         args.flag_dictionary = Some("infer".to_string());
     }
-    let args = &args;
+    // (the caller receives `args` by value; returning it is what freezes further mutation, the
+    // role the original inline code gave a `let args = &args;` rebinding here.)
 
     // Non-default parsing (--no-headers / custom --delimiter) forces the stats path to
     // regenerate. get_stats_records keys its `.stats.csv.data.jsonl` cache only by mtime + stat
@@ -17913,6 +17920,32 @@ fn build_smart(
             }
         }
     }
+
+    Ok(SmartPrep {
+        args,
+        input,
+        force_stats_regen,
+        bivariate_sidecar_fresh,
+    })
+}
+
+/// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
+/// Classifies columns into panels, then renders either a single-`Plot` subplot grid (≤8 panels,
+/// or any image export) or a self-contained inline-div HTML page (>8 panels, HTML output).
+fn build_smart(
+    args: &Args,
+    out_format: OutFormat,
+    progress: &ProgressBar,
+    show_progress: bool,
+    loaded_geojson: Option<&serde_json::Value>,
+) -> CliResult<SmartRender> {
+    let SmartPrep {
+        args,
+        input,
+        force_stats_regen,
+        bivariate_sidecar_fresh,
+    } = smart_prepare(args, progress, show_progress)?;
+    let args = &args;
 
     let schema_args = util::SchemaArgs {
         flag_enum_threshold:  0,

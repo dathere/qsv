@@ -17964,6 +17964,10 @@ struct SmartCtx<'a> {
     map_cols:          Option<(usize, usize)>,
     summary_choro_col: Option<usize>,
 
+    /// set only when THIS run's moarstats `--bivariate` subprocess wrote a fresh sidecar; gates
+    /// the association/Sankey panels.
+    bivariate_sidecar_fresh: bool,
+
     /// the source→target pair claimed by the directed-flow (Sankey) panel, if one was built —
     /// keeps the 2-level hierarchy mutually exclusive with it.
     sankey_pair:    Option<(usize, usize)>,
@@ -18023,6 +18027,488 @@ impl SmartCtx<'_> {
             dict_info_for_field(self.dict_icons(), &self.stats[la].field)
                 .or_else(|| dict_info_for_field(self.dict_icons(), &self.stats[lo].field))
         })
+    }
+
+    /// Build the relationship panels: the `--bivariate` association/Sankey set, the animated
+    /// panels (T2 geo, T3 bubble), and the correlation heatmap with its scatter/contour/3D
+    /// drill-downs.
+    fn add_relationship_panels(&mut self) -> CliResult<()> {
+        // `--bivariate`: NMI-driven association heatmap + ranked top relationships, built from
+        // moarstats' bivariate sidecar (already produced by the `--smarter` block above, since
+        // `--bivariate` forces `--smarter`). Inserted here — BEFORE the correlation-heatmap block
+        // below — so that block's own `panels.insert(0, ..)` ends up on top: the LAST
+        // `insert(0, ..)` to run wins the front slot, so final visual order top-to-bottom is
+        // Correlation -> Association -> Top Relationships. (Inserting TopRelationships first, then
+        // AssocHeatmap, puts AssocHeatmap above TopRelationships within that pair.)
+        if self.bivariate_sidecar_fresh {
+            let input = self.args.arg_input.as_deref().unwrap_or_default();
+            let (assoc_panel, top_panel) =
+                bivariate_panels(self.args, input, &self.stats, &self.col_sems, |i| {
+                    self.is_map_col(i)
+                });
+            if let Some(panel) = top_panel {
+                self.panels.insert(0, panel);
+            }
+            if let Some(panel) = assoc_panel {
+                self.panels.insert(0, panel);
+            }
+
+            // directed-flow Sankey overview. Eligible dimensions are the same String freq-bar
+            // columns the hierarchy panel nests (so the two panels stay mutually exclusive on a
+            // shared pool). HTML-only: a Sankey is a domain-based trace that can't compose with the
+            // typed x/y grid used for static image export — so, like the hierarchy/3D/map panels,
+            // build it only for non-image output.
+            if !self.out_format.is_image() {
+                let sankey_eligible: std::collections::HashSet<usize> = self
+                    .panels
+                    .iter()
+                    .filter_map(|p| match p.kind {
+                        PanelKind::FreqBar { idx } => {
+                            let s = &self.stats[idx];
+                            (s.r#type == "String"
+                                && (SANKEY_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY)
+                                    .contains(&s.cardinality))
+                            .then_some(idx)
+                        },
+                        _ => None,
+                    })
+                    .collect();
+                let built = sankey_panel(
+                    self.args,
+                    input,
+                    &self.stats,
+                    &self.col_sems,
+                    &sankey_eligible,
+                    |i| self.is_map_col(i),
+                );
+                match built {
+                    Ok(Some((panel, pair))) => {
+                        self.sankey_pair = Some(pair);
+                        self.panels.insert(0, panel);
+                    },
+                    Ok(None) => {},
+                    Err(e) => viz_note(&format!(
+                        "viz smart: directed-flow (Sankey) panel skipped ({e})"
+                    )),
+                }
+            }
+        }
+
+        // Animated panels (T2 geo, T3 bubble). At most ONE animated panel is shown; precedence is
+        // T3 (bubble) > T2 (geo) > T1 (scatter pair). `geo_anim_panel` is filled HERE — outside the
+        // numeric block, since T2 needs no numeric pair and a global dated-points dataset often has
+        // a single numeric (making the numeric block below a no-op) — while `bubble_panel` is
+        // filled INSIDE the numeric block (T3 needs a measure pair). The T1 insertion consults
+        // both, and the winner is inserted by `add_overview_panels`.
+        {
+            let mode = smart_slider_mode(self.args);
+            // respect `--slider off` and image output (animations are HTML-only), like T1
+            if !self.out_format.is_image()
+                && !matches!(mode, SmartSliderMode::Off)
+                && let (Some((lat_idx, lon_idx)), Some((date_idx, _))) = (
+                    self.map_cols.or_else(|| latlon_indices(&self.stats)),
+                    canonical_date_col(&self.stats, &self.col_sems),
+                )
+            {
+                // `auto` (default) only fires on a strong signal (>= 3 buckets); `on` lowers the
+                // bar
+                let min_frames = if matches!(mode, SmartSliderMode::On) {
+                    2
+                } else {
+                    3
+                };
+                let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                if let Some(data) = read_geo_anim(
+                    self.args, lat_idx, lon_idx, date_idx, prefer_dmy, min_frames,
+                )? {
+                    let frame_label = self
+                        .col_sems
+                        .get(date_idx)
+                        .map(|s| s.label.as_str())
+                        .filter(|l| !l.is_empty())
+                        .map_or_else(|| self.stats[date_idx].field.clone(), ToString::to_string);
+                    self.geo_anim_panel = Some(Panel::new(
+                        "locations over time".to_string(),
+                        PanelKind::AnimatedGeo {
+                            bucket_lats: data.bucket_lats,
+                            bucket_lons: data.bucket_lons,
+                            bucket_labels: data.bucket_labels,
+                            frame_label,
+                        },
+                    ));
+                }
+            }
+        }
+
+        // when 2+ continuous numeric columns exist, prepend a correlation-heatmap panel. This is
+        // the one panel that re-scans the data (a single extra pass), since Pearson correlations
+        // are not in the stats cache; it's prepended so it survives the panel cap below.
+        let numeric_indices: Vec<usize> = self
+            .stats
+            .iter()
+            .enumerate()
+            .filter(|(i, s)| {
+                !self.is_map_col(*i)
+                // a dictionary-tagged dimension/geo/temporal/id numeric is NOT a continuous
+                // measure, so exclude it from the Pearson matrix (and thus from the corr drill-down
+                // and the implicit box-plot pool). A confirmed Measure, or an un-tagged (Defer)
+                // numeric, still qualifies — without a dictionary every column is Defer, exactly
+                // as before.
+                && matches!(self.col_sems[*i].route, Route::Defer | Route::Measure)
+                && matches!(s.r#type.as_str(), "Integer" | "Float")
+                && s.cardinality > 1
+                && !s.uniqueness_ratio.is_some_and(|r| r > 0.95)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if numeric_indices.len() >= 2 {
+            self.progress.set_message("Computing correlations…");
+            let (mut rdr, headers, nh) = reader_and_headers(self.args)?;
+            let (labels, columns, kept_indices) =
+                read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices, false)?;
+            // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
+            if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
+                let matrix = pearson_matrix(&columns);
+                // the most strongly correlated pair drills into the heatmap's headline
+                // relationship, but only when it's at least moderately correlated (else it's a
+                // noise cloud). All the drill-downs below reuse the columns already read for the
+                // matrix (no extra data pass).
+                let pair =
+                    strongest_pair(&matrix).filter(|&(_, _, r)| r.abs() >= SCATTER_PAIR_MIN_ABS_R);
+
+                // Animated relationship-over-time drill-down (T1), DECOUPLED from the strongest
+                // pair. The strongest pair is usually the most tautological (a near-line whose 2-D
+                // shape can't evolve), so animating it adds nothing over a static time-colored
+                // scatter. Instead pick the pair whose per-time-bucket centroid path BENDS
+                // the most — a genuinely evolving 2-D relationship
+                // (`select_drifting_pair`) — and animate that. HTML only; needs a canonical
+                // date column; `--slider off` suppresses. Computed BEFORE the correlation
+                // heatmap consumes `labels`/`matrix`; returns the selected (i, j) plus the built
+                // Panel so the static drill-down below can de-dupe when they coincide.
+                let anim_sel: Option<(usize, usize, Panel)> = 'anim: {
+                    let mode = smart_slider_mode(self.args);
+                    if self.out_format.is_image() || matches!(mode, SmartSliderMode::Off) {
+                        break 'anim None;
+                    }
+                    let Some((date_idx, _)) = canonical_date_col(&self.stats, &self.col_sems)
+                    else {
+                        break 'anim None;
+                    };
+                    // `auto` (default) only fires on a strong signal (>= 3 buckets); `on` lowers
+                    // the bar
+                    let min_frames = if matches!(mode, SmartSliderMode::On) {
+                        2
+                    } else {
+                        3
+                    };
+                    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                    let Some(bucket_means) = read_bucketed_means(
+                        self.args,
+                        &kept_indices,
+                        date_idx,
+                        prefer_dmy,
+                        min_frames,
+                    )?
+                    else {
+                        break 'anim None;
+                    };
+                    let Some((i, j, r)) = select_drifting_pair(&matrix, &columns, &bucket_means)
+                    else {
+                        break 'anim None;
+                    };
+                    // large-N contours aren't animatable (a scatter would overplot into a solid
+                    // mass)
+                    if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
+                        break 'anim None;
+                    }
+                    let Some(data) = read_scatter_pair_anim(
+                        self.args,
+                        kept_indices[i],
+                        kept_indices[j],
+                        date_idx,
+                        prefer_dmy,
+                        min_frames,
+                    )?
+                    else {
+                        break 'anim None;
+                    };
+                    let frame_label = self
+                        .col_sems
+                        .get(date_idx)
+                        .map(|s| s.label.as_str())
+                        .filter(|l| !l.is_empty())
+                        .map_or_else(|| col_label(&headers, date_idx, nh), ToString::to_string);
+                    let rho = spearman_rho(&columns[i], &columns[j]);
+                    let rel = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
+                        format!(
+                            "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
+                            labels[i], labels[j]
+                        )
+                    } else {
+                        format!("{} vs {} (r={r:.2})", labels[i], labels[j])
+                    };
+                    let panel = Panel::new(
+                        format!("{rel} over time"),
+                        PanelKind::AnimatedScatterPair {
+                            xs: data.xs,
+                            ys: data.ys,
+                            bucket: data.bucket,
+                            bucket_labels: data.bucket_labels,
+                            x_label: labels[i].clone(),
+                            y_label: labels[j].clone(),
+                            frame_label,
+                            x_range: data.x_range,
+                            y_range: data.y_range,
+                        },
+                    );
+                    Some((i, j, panel))
+                };
+                let anim_ij = anim_sel.as_ref().map(|&(i, j, _)| (i, j));
+
+                // T3 (Gapminder bubble): fill bubble_panel INSIDE the numeric block (it needs a
+                // measure pair) and BEFORE the T1 insertion, so the arbitration T3 > T1 can be
+                // applied. `matrix` is still alive here (consumed by `mask_to_lower_triangle` only
+                // at the CorrHeatmap insert below). Requires a low-cardinality categorical
+                // entity, a measure pair (the strongest pair in the [0.5, 0.9) |r| band —
+                // strong enough to relate, not a tautological near-line — else the first
+                // two numerics), a canonical date, and — via `read_entity_bucket_agg`'s
+                // strict cell/entity gates — enough non-sparse per-(entity,bucket) support
+                // (this is what rejects sparse zone-per-month datasets).
+                {
+                    let mode = smart_slider_mode(self.args);
+                    if self.bubble_panel.is_none()
+                        && !self.out_format.is_image()
+                        && !matches!(mode, SmartSliderMode::Off)
+                        && let Some((date_idx, _)) = canonical_date_col(&self.stats, &self.col_sems)
+                    {
+                        let n = self.row_count();
+                        // first (lowest-idx) eligible categorical dimension is the bubble entity
+                        let entity =
+                            eligible_categorical_dims(&self.panels, &self.stats, &self.col_sems, n)
+                                .into_iter()
+                                .min_by_key(|&(idx, ..)| idx);
+                        // measure pair: the strongest pair in [SCATTER_PAIR_MIN_ABS_R, 0.9), else
+                        // the first two numerics
+                        let measure_pair = strongest_pair(&matrix)
+                            .filter(|&(_, _, r)| (SCATTER_PAIR_MIN_ABS_R..0.9).contains(&r.abs()))
+                            .map(|(i, j, _)| (i, j))
+                            .or(Some((0, 1)));
+                        if let (Some((e_idx, _, entity_label)), Some((i, j))) =
+                            (entity, measure_pair)
+                        {
+                            let min_frames = if matches!(mode, SmartSliderMode::On) {
+                                2
+                            } else {
+                                3
+                            };
+                            // bubble SIZE = Gapminder's third data variable: the leftover numeric
+                            // least redundant with the (x,y) pair (so size adds new information,
+                            // not a near-copy of an axis). `None` for a 2-numeric dataset — the
+                            // reader then falls back to the per-cell row count and the label stays
+                            // "records".
+                            let size_k = least_redundant_third(&matrix, i, j);
+                            let size_idx = size_k.map(|k| kept_indices[k]);
+                            let size_label = size_k
+                                .map(|k| labels[k].clone())
+                                .unwrap_or_else(|| "records".to_string());
+                            let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                            if let Some(data) = read_entity_bucket_agg(
+                                self.args,
+                                e_idx,
+                                kept_indices[i],
+                                kept_indices[j],
+                                size_idx,
+                                date_idx,
+                                prefer_dmy,
+                                min_frames,
+                                3,
+                            )? {
+                                let (x_label, y_label) = (labels[i].clone(), labels[j].clone());
+                                let frame_label = self
+                                    .col_sems
+                                    .get(date_idx)
+                                    .map(|s| s.label.as_str())
+                                    .filter(|l| !l.is_empty())
+                                    .map_or_else(
+                                        || self.stats[date_idx].field.clone(),
+                                        ToString::to_string,
+                                    );
+                                self.bubble_panel = Some(Panel::new(
+                                    format!("{y_label} vs {x_label} by {entity_label} over time"),
+                                    PanelKind::AnimatedBubble {
+                                        entities: data.entities,
+                                        xs: data.xs,
+                                        ys: data.ys,
+                                        sizes: data.sizes,
+                                        bucket_labels: data.bucket_labels,
+                                        x_label,
+                                        y_label,
+                                        size_label,
+                                        frame_label,
+                                        x_range: data.x_range,
+                                        y_range: data.y_range,
+                                    },
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                // Static pair drill-down beside the heatmap: the STRONGEST correlated pair as a 2D
+                // density contour for large datasets (a scatter would overplot into a solid mass,
+                // and the contour embeds only a fixed grid) or a static bubble scatter. The title
+                // carries Pearson r, plus Spearman rho when the two diverge enough to mean the
+                // relationship is monotonic-but-curved (nonlinear) — so the reader doesn't take the
+                // single r as proof of a linear relationship. Suppressed when the animated
+                // drill-down above already covers the very same pair (a moderate strongest pair
+                // that also drifts), so we don't show both a static and an animated scatter of one
+                // relationship — but ONLY when that animated pair (T1) will actually be
+                // inserted. If a higher-priority bubble (T3) or geo (T2) animation won
+                // arbitration, T1 is discarded, so suppressing the static pair too would drop
+                // the strongest-pair drill-down entirely.
+                let t1_wins = self.bubble_panel.is_none() && self.geo_anim_panel.is_none();
+                let pair_panel = pair
+                    .filter(|&(i, j, _)| !(t1_wins && anim_ij == Some((i, j))))
+                    .and_then(|(i, j, r)| {
+                        let rho = spearman_rho(&columns[i], &columns[j]);
+                        let name = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
+                            format!(
+                                "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
+                                labels[i], labels[j]
+                            )
+                        } else {
+                            format!("{} vs {} (r={r:.2})", labels[i], labels[j])
+                        };
+                        if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
+                            let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
+                            Some(Panel::new(name, PanelKind::ContourPair { x, y, z }))
+                        } else {
+                            let (xs, ys) =
+                                downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
+                            // Drop a DEGENERATE scatter (essentially no 2-D spread — e.g. a heavily
+                            // zero-skewed measure collapses every point onto one axis): it would
+                            // render as an empty box, so omit the panel entirely. A merely sparse-
+                            // but-informative scatter is kept and just gets a compact height (see
+                            // `panel_render_height`).
+                            if scatter_fill_stats(&xs, &ys).degenerate {
+                                return None;
+                            }
+                            // Encode a third numeric (the axis MOST associated with the pair, so
+                            // size shows a real gradient — the complement of the least-redundant
+                            // axis `Scatter3D` picks) as marker size: a 3-variable bubble
+                            // view that, unlike the HTML-only 3D panel, also survives
+                            // static image export. Aligned to xs/ys because
+                            // `downsample_pair` picks the same row indices for the same (n, cap).
+                            let (name, sizes, size_label) =
+                                match most_associated_third(&matrix, i, j) {
+                                    Some(k) => {
+                                        let (_, sizes) = downsample_pair(
+                                            &columns[i],
+                                            &columns[k],
+                                            *MAX_SMART_POINTS,
+                                        );
+                                        (
+                                            format!("{name} \u{b7} size: {}", labels[k]),
+                                            Some(sizes),
+                                            Some(labels[k].clone()),
+                                        )
+                                    },
+                                    None => (name, None, None),
+                                };
+                            Some(Panel::new(
+                                name,
+                                PanelKind::ScatterPair {
+                                    xs,
+                                    ys,
+                                    sizes,
+                                    x_label: labels[i].clone(),
+                                    y_label: labels[j].clone(),
+                                    size_label,
+                                },
+                            ))
+                        }
+                    });
+
+                // 3D drill-down: with 3+ numeric columns, a Scatter3D of the strongest pair plus a
+                // third axis chosen to be the LEAST redundant with that pair (minimizing
+                // max(|r_ik|, |r_jk|)), so the cloud genuinely uses all three dimensions instead of
+                // collapsing onto the pair's plane. Skipped entirely when the strongest pair is
+                // itself near-collinear (|r| >= SMART_3D_COLLINEAR_MAX_ABS_R): two near-identical
+                // axes can't form a non-degenerate 3D, and the 2D pair drill-down already shows
+                // that relationship. A 3D scene can't share the typed x/y subplot grid, so it's
+                // built ONLY for HTML output (which uses the inline render path, like the map
+                // panel). Static image export goes through the typed grid, where a 3D panel would
+                // hit `panel_trace`'s unreachable arm.
+                let scatter3d_panel = pair
+                    .filter(|&(_, _, r)| r.abs() < SMART_3D_COLLINEAR_MAX_ABS_R)
+                    .filter(|_| columns.len() >= 3 && !self.out_format.is_image())
+                    .and_then(|(i, j, _)| {
+                        let third = least_redundant_third(&matrix, i, j);
+                        third.map(|k| {
+                            // both downsamples share (n, cap) so they pick the same row indices ->
+                            // aligned
+                            let (xs, ys) =
+                                downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
+                            let (_, zs) =
+                                downsample_pair(&columns[i], &columns[k], *MAX_SMART_POINTS);
+                            Panel::new(
+                                format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
+                                PanelKind::Scatter3D {
+                                    xs,
+                                    ys,
+                                    zs,
+                                    labels: (
+                                        labels[i].clone(),
+                                        labels[j].clone(),
+                                        labels[k].clone(),
+                                    ),
+                                },
+                            )
+                        })
+                    });
+
+                // Show only the lower triangle: a correlation matrix mirrors across the diagonal
+                // (and the diagonal is a trivial 1.0), so masking the upper half + diagonal drops
+                // redundant cells. `matrix` was already consumed by `strongest_pair`/the 3D
+                // third-axis pick above (which need the full square), so masking here only affects
+                // the rendered panel.
+                self.panels.insert(
+                    0,
+                    Panel::new(
+                        "Correlation".to_string(),
+                        PanelKind::CorrHeatmap {
+                            labels,
+                            matrix: mask_to_lower_triangle(matrix),
+                        },
+                    ),
+                );
+                // place the drill-down panels right after the heatmap: the animated
+                // relationship-over-time scatter (when a drifting pair was found) leads, then the
+                // static strongest-pair drill-down (suppressed above if it is the same pair), then
+                // the 3D scatter.
+                // ARBITRATION (§5): at most one animated panel; T3 (bubble) > T2 (geo) > T1. The T1
+                // scatter-pair animation is inserted only when neither T3 nor T2 won (the static
+                // pair/3D drill-downs still show, keyed off `anim_ij`, as before).
+                let anim_panel = if self.bubble_panel.is_none() && self.geo_anim_panel.is_none() {
+                    anim_sel.map(|(_, _, panel)| panel)
+                } else {
+                    None
+                };
+                let mut at = 1;
+                if let Some(panel) = anim_panel {
+                    self.panels.insert(at, panel);
+                    at += 1;
+                }
+                if let Some(panel) = pair_panel {
+                    self.panels.insert(at, panel);
+                    at += 1;
+                }
+                if let Some(panel) = scatter3d_panel {
+                    self.panels.insert(at, panel);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Prepend the cross-column overview panels: the winning animated panel, measure-by-dimension,
@@ -19330,442 +19816,6 @@ fn build_smart(
         }
     }
 
-    // `--bivariate`: NMI-driven association heatmap + ranked top relationships, built from
-    // moarstats' bivariate sidecar (already produced by the `--smarter` block above, since
-    // `--bivariate` forces `--smarter`). Inserted here — BEFORE the correlation-heatmap block
-    // below — so that block's own `panels.insert(0, ..)` ends up on top: the LAST `insert(0, ..)`
-    // to run wins the front slot, so final visual order top-to-bottom is
-    // Correlation -> Association -> Top Relationships. (Inserting TopRelationships first, then
-    // AssocHeatmap, puts AssocHeatmap above TopRelationships within that pair.)
-    // the source→target dimension pair claimed by the directed-flow (Sankey) overview panel, if
-    // one is built below. Used to keep the 2-level treemap hierarchy mutually exclusive with it:
-    // a genuinely many-to-many pair is shown as a flow, not nested part-to-whole.
-    let mut sankey_pair: Option<(usize, usize)> = None;
-    if bivariate_sidecar_fresh {
-        let input = args.arg_input.as_deref().unwrap_or_default();
-        let (assoc_panel, top_panel) = bivariate_panels(args, input, &stats, &col_sems, is_map_col);
-        if let Some(panel) = top_panel {
-            panels.insert(0, panel);
-        }
-        if let Some(panel) = assoc_panel {
-            panels.insert(0, panel);
-        }
-
-        // directed-flow Sankey overview. Eligible dimensions are the same String freq-bar columns
-        // the hierarchy panel nests (so the two panels stay mutually exclusive on a shared pool).
-        // HTML-only: a Sankey is a domain-based trace that can't compose with the typed x/y grid
-        // used for static image export — so, like the hierarchy/3D/map panels, build it only for
-        // non-image output.
-        if !out_format.is_image() {
-            let sankey_eligible: std::collections::HashSet<usize> = panels
-                .iter()
-                .filter_map(|p| match p.kind {
-                    PanelKind::FreqBar { idx } => {
-                        let s = &stats[idx];
-                        (s.r#type == "String"
-                            && (SANKEY_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY)
-                                .contains(&s.cardinality))
-                        .then_some(idx)
-                    },
-                    _ => None,
-                })
-                .collect();
-            match sankey_panel(args, input, &stats, &col_sems, &sankey_eligible, is_map_col) {
-                Ok(Some((panel, pair))) => {
-                    sankey_pair = Some(pair);
-                    panels.insert(0, panel);
-                },
-                Ok(None) => {},
-                Err(e) => viz_note(&format!(
-                    "viz smart: directed-flow (Sankey) panel skipped ({e})"
-                )),
-            }
-        }
-    }
-
-    // Animated panels (T2 geo, T3 bubble). At most ONE animated panel is shown; precedence is
-    // T3 (bubble) > T2 (geo) > T1 (scatter pair). geo_anim_panel is filled HERE — outside the
-    // numeric block, since T2 needs no numeric pair and a global dated-points dataset often has a
-    // single numeric (making the numeric block below a no-op) — while bubble_panel is filled INSIDE
-    // the numeric block (T3 needs a measure pair). The T1 insertion consults both, and the winner
-    // is inserted after the numeric block. Declared here so both are in scope across the block.
-    let mut geo_anim_panel: Option<Panel> = None;
-    let mut bubble_panel: Option<Panel> = None;
-    {
-        let mode = smart_slider_mode(args);
-        // respect `--slider off` and image output (animations are HTML-only), like T1
-        if !out_format.is_image()
-            && !matches!(mode, SmartSliderMode::Off)
-            && let (Some((lat_idx, lon_idx)), Some((date_idx, _))) = (
-                map_cols.or_else(|| latlon_indices(&stats)),
-                canonical_date_col(&stats, &col_sems),
-            )
-        {
-            // `auto` (default) only fires on a strong signal (>= 3 buckets); `on` lowers the bar
-            let min_frames = if matches!(mode, SmartSliderMode::On) {
-                2
-            } else {
-                3
-            };
-            let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-            if let Some(data) =
-                read_geo_anim(args, lat_idx, lon_idx, date_idx, prefer_dmy, min_frames)?
-            {
-                let frame_label = col_sems
-                    .get(date_idx)
-                    .map(|s| s.label.as_str())
-                    .filter(|l| !l.is_empty())
-                    .map_or_else(|| stats[date_idx].field.clone(), ToString::to_string);
-                geo_anim_panel = Some(Panel::new(
-                    "locations over time".to_string(),
-                    PanelKind::AnimatedGeo {
-                        bucket_lats: data.bucket_lats,
-                        bucket_lons: data.bucket_lons,
-                        bucket_labels: data.bucket_labels,
-                        frame_label,
-                    },
-                ));
-            }
-        }
-    }
-
-    // when 2+ continuous numeric columns exist, prepend a correlation-heatmap panel. This is
-    // the one panel that re-scans the data (a single extra pass), since Pearson correlations
-    // are not in the stats cache; it's prepended so it survives the panel cap below.
-    let numeric_indices: Vec<usize> = stats
-        .iter()
-        .enumerate()
-        .filter(|(i, s)| {
-            !is_map_col(*i)
-                // a dictionary-tagged dimension/geo/temporal/id numeric is NOT a continuous
-                // measure, so exclude it from the Pearson matrix (and thus from the corr drill-down
-                // and the implicit box-plot pool). A confirmed Measure, or an un-tagged (Defer)
-                // numeric, still qualifies — without a dictionary every column is Defer, exactly
-                // as before.
-                && matches!(col_sems[*i].route, Route::Defer | Route::Measure)
-                && matches!(s.r#type.as_str(), "Integer" | "Float")
-                && s.cardinality > 1
-                && !s.uniqueness_ratio.is_some_and(|r| r > 0.95)
-        })
-        .map(|(i, _)| i)
-        .collect();
-    if numeric_indices.len() >= 2 {
-        progress.set_message("Computing correlations…");
-        let (mut rdr, headers, nh) = reader_and_headers(args)?;
-        let (labels, columns, kept_indices) =
-            read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices, false)?;
-        // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
-        if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
-            let matrix = pearson_matrix(&columns);
-            // the most strongly correlated pair drills into the heatmap's headline relationship,
-            // but only when it's at least moderately correlated (else it's a noise cloud). All the
-            // drill-downs below reuse the columns already read for the matrix (no extra data pass).
-            let pair =
-                strongest_pair(&matrix).filter(|&(_, _, r)| r.abs() >= SCATTER_PAIR_MIN_ABS_R);
-
-            // Animated relationship-over-time drill-down (T1), DECOUPLED from the strongest pair.
-            // The strongest pair is usually the most tautological (a near-line whose 2-D shape
-            // can't evolve), so animating it adds nothing over a static time-colored
-            // scatter. Instead pick the pair whose per-time-bucket centroid path BENDS
-            // the most — a genuinely evolving 2-D relationship
-            // (`select_drifting_pair`) — and animate that. HTML only; needs a canonical
-            // date column; `--slider off` suppresses. Computed BEFORE the correlation
-            // heatmap consumes `labels`/`matrix`; returns the selected (i, j) plus the built Panel
-            // so the static drill-down below can de-dupe when they coincide.
-            let anim_sel: Option<(usize, usize, Panel)> = 'anim: {
-                let mode = smart_slider_mode(args);
-                if out_format.is_image() || matches!(mode, SmartSliderMode::Off) {
-                    break 'anim None;
-                }
-                let Some((date_idx, _)) = canonical_date_col(&stats, &col_sems) else {
-                    break 'anim None;
-                };
-                // `auto` (default) only fires on a strong signal (>= 3 buckets); `on` lowers the
-                // bar
-                let min_frames = if matches!(mode, SmartSliderMode::On) {
-                    2
-                } else {
-                    3
-                };
-                let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-                let Some(bucket_means) =
-                    read_bucketed_means(args, &kept_indices, date_idx, prefer_dmy, min_frames)?
-                else {
-                    break 'anim None;
-                };
-                let Some((i, j, r)) = select_drifting_pair(&matrix, &columns, &bucket_means) else {
-                    break 'anim None;
-                };
-                // large-N contours aren't animatable (a scatter would overplot into a solid mass)
-                if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
-                    break 'anim None;
-                }
-                let Some(data) = read_scatter_pair_anim(
-                    args,
-                    kept_indices[i],
-                    kept_indices[j],
-                    date_idx,
-                    prefer_dmy,
-                    min_frames,
-                )?
-                else {
-                    break 'anim None;
-                };
-                let frame_label = col_sems
-                    .get(date_idx)
-                    .map(|s| s.label.as_str())
-                    .filter(|l| !l.is_empty())
-                    .map_or_else(|| col_label(&headers, date_idx, nh), ToString::to_string);
-                let rho = spearman_rho(&columns[i], &columns[j]);
-                let rel = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
-                    format!(
-                        "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
-                        labels[i], labels[j]
-                    )
-                } else {
-                    format!("{} vs {} (r={r:.2})", labels[i], labels[j])
-                };
-                let panel = Panel::new(
-                    format!("{rel} over time"),
-                    PanelKind::AnimatedScatterPair {
-                        xs: data.xs,
-                        ys: data.ys,
-                        bucket: data.bucket,
-                        bucket_labels: data.bucket_labels,
-                        x_label: labels[i].clone(),
-                        y_label: labels[j].clone(),
-                        frame_label,
-                        x_range: data.x_range,
-                        y_range: data.y_range,
-                    },
-                );
-                Some((i, j, panel))
-            };
-            let anim_ij = anim_sel.as_ref().map(|&(i, j, _)| (i, j));
-
-            // T3 (Gapminder bubble): fill bubble_panel INSIDE the numeric block (it needs a measure
-            // pair) and BEFORE the T1 insertion, so the arbitration T3 > T1 can be applied.
-            // `matrix` is still alive here (consumed by `mask_to_lower_triangle` only
-            // at the CorrHeatmap insert below). Requires a low-cardinality categorical
-            // entity, a measure pair (the strongest pair in the [0.5, 0.9) |r| band —
-            // strong enough to relate, not a tautological near-line — else the first
-            // two numerics), a canonical date, and — via `read_entity_bucket_agg`'s
-            // strict cell/entity gates — enough non-sparse per-(entity,bucket) support
-            // (this is what rejects sparse zone-per-month datasets).
-            {
-                let mode = smart_slider_mode(args);
-                if bubble_panel.is_none()
-                    && !out_format.is_image()
-                    && !matches!(mode, SmartSliderMode::Off)
-                    && let Some((date_idx, _)) = canonical_date_col(&stats, &col_sems)
-                {
-                    let n =
-                        *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-                    // first (lowest-idx) eligible categorical dimension is the bubble entity
-                    let entity = eligible_categorical_dims(&panels, &stats, &col_sems, n)
-                        .into_iter()
-                        .min_by_key(|&(idx, ..)| idx);
-                    // measure pair: the strongest pair in [SCATTER_PAIR_MIN_ABS_R, 0.9), else the
-                    // first two numerics
-                    let measure_pair = strongest_pair(&matrix)
-                        .filter(|&(_, _, r)| (SCATTER_PAIR_MIN_ABS_R..0.9).contains(&r.abs()))
-                        .map(|(i, j, _)| (i, j))
-                        .or(Some((0, 1)));
-                    if let (Some((e_idx, _, entity_label)), Some((i, j))) = (entity, measure_pair) {
-                        let min_frames = if matches!(mode, SmartSliderMode::On) {
-                            2
-                        } else {
-                            3
-                        };
-                        // bubble SIZE = Gapminder's third data variable: the leftover numeric least
-                        // redundant with the (x,y) pair (so size adds new information, not a
-                        // near-copy of an axis). `None` for a 2-numeric dataset — the reader then
-                        // falls back to the per-cell row count and the label stays "records".
-                        let size_k = least_redundant_third(&matrix, i, j);
-                        let size_idx = size_k.map(|k| kept_indices[k]);
-                        let size_label = size_k
-                            .map(|k| labels[k].clone())
-                            .unwrap_or_else(|| "records".to_string());
-                        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-                        if let Some(data) = read_entity_bucket_agg(
-                            args,
-                            e_idx,
-                            kept_indices[i],
-                            kept_indices[j],
-                            size_idx,
-                            date_idx,
-                            prefer_dmy,
-                            min_frames,
-                            3,
-                        )? {
-                            let (x_label, y_label) = (labels[i].clone(), labels[j].clone());
-                            let frame_label = col_sems
-                                .get(date_idx)
-                                .map(|s| s.label.as_str())
-                                .filter(|l| !l.is_empty())
-                                .map_or_else(|| stats[date_idx].field.clone(), ToString::to_string);
-                            bubble_panel = Some(Panel::new(
-                                format!("{y_label} vs {x_label} by {entity_label} over time"),
-                                PanelKind::AnimatedBubble {
-                                    entities: data.entities,
-                                    xs: data.xs,
-                                    ys: data.ys,
-                                    sizes: data.sizes,
-                                    bucket_labels: data.bucket_labels,
-                                    x_label,
-                                    y_label,
-                                    size_label,
-                                    frame_label,
-                                    x_range: data.x_range,
-                                    y_range: data.y_range,
-                                },
-                            ));
-                        }
-                    }
-                }
-            }
-
-            // Static pair drill-down beside the heatmap: the STRONGEST correlated pair as a 2D
-            // density contour for large datasets (a scatter would overplot into a solid mass, and
-            // the contour embeds only a fixed grid) or a static bubble scatter. The title carries
-            // Pearson r, plus Spearman rho when the two diverge enough to mean the relationship is
-            // monotonic-but-curved (nonlinear) — so the reader doesn't take the single r as proof
-            // of a linear relationship. Suppressed when the animated drill-down above
-            // already covers the very same pair (a moderate strongest pair that also
-            // drifts), so we don't show both a static and an animated scatter of one
-            // relationship — but ONLY when that animated pair (T1) will actually be
-            // inserted. If a higher-priority bubble (T3) or geo (T2) animation won
-            // arbitration, T1 is discarded, so suppressing the static pair too would drop
-            // the strongest-pair drill-down entirely.
-            let t1_wins = bubble_panel.is_none() && geo_anim_panel.is_none();
-            let pair_panel = pair
-                .filter(|&(i, j, _)| !(t1_wins && anim_ij == Some((i, j))))
-                .and_then(|(i, j, r)| {
-                    let rho = spearman_rho(&columns[i], &columns[j]);
-                    let name = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
-                        format!(
-                            "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
-                            labels[i], labels[j]
-                        )
-                    } else {
-                        format!("{} vs {} (r={r:.2})", labels[i], labels[j])
-                    };
-                    if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
-                        let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
-                        Some(Panel::new(name, PanelKind::ContourPair { x, y, z }))
-                    } else {
-                        let (xs, ys) = downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
-                        // Drop a DEGENERATE scatter (essentially no 2-D spread — e.g. a heavily
-                        // zero-skewed measure collapses every point onto one axis): it would render
-                        // as an empty box, so omit the panel entirely. A merely sparse-but-
-                        // informative scatter is kept and just gets a compact height (see
-                        // `panel_render_height`).
-                        if scatter_fill_stats(&xs, &ys).degenerate {
-                            return None;
-                        }
-                        // Encode a third numeric (the axis MOST associated with the pair, so size
-                        // shows a real gradient — the complement of the least-redundant axis
-                        // `Scatter3D` picks) as marker size: a 3-variable bubble
-                        // view that, unlike the HTML-only 3D panel, also survives
-                        // static image export. Aligned to xs/ys because
-                        // `downsample_pair` picks the same row indices for the same (n, cap).
-                        let (name, sizes, size_label) = match most_associated_third(&matrix, i, j) {
-                            Some(k) => {
-                                let (_, sizes) =
-                                    downsample_pair(&columns[i], &columns[k], *MAX_SMART_POINTS);
-                                (
-                                    format!("{name} \u{b7} size: {}", labels[k]),
-                                    Some(sizes),
-                                    Some(labels[k].clone()),
-                                )
-                            },
-                            None => (name, None, None),
-                        };
-                        Some(Panel::new(
-                            name,
-                            PanelKind::ScatterPair {
-                                xs,
-                                ys,
-                                sizes,
-                                x_label: labels[i].clone(),
-                                y_label: labels[j].clone(),
-                                size_label,
-                            },
-                        ))
-                    }
-                });
-
-            // 3D drill-down: with 3+ numeric columns, a Scatter3D of the strongest pair plus a
-            // third axis chosen to be the LEAST redundant with that pair (minimizing
-            // max(|r_ik|, |r_jk|)), so the cloud genuinely uses all three dimensions instead of
-            // collapsing onto the pair's plane. Skipped entirely when the strongest pair is itself
-            // near-collinear (|r| >= SMART_3D_COLLINEAR_MAX_ABS_R): two near-identical axes can't
-            // form a non-degenerate 3D, and the 2D pair drill-down already shows that relationship.
-            // A 3D scene can't share the typed x/y subplot grid, so it's built ONLY for HTML output
-            // (which uses the inline render path, like the map panel). Static image export goes
-            // through the typed grid, where a 3D panel would hit `panel_trace`'s unreachable arm.
-            let scatter3d_panel = pair
-                .filter(|&(_, _, r)| r.abs() < SMART_3D_COLLINEAR_MAX_ABS_R)
-                .filter(|_| columns.len() >= 3 && !out_format.is_image())
-                .and_then(|(i, j, _)| {
-                    let third = least_redundant_third(&matrix, i, j);
-                    third.map(|k| {
-                        // both downsamples share (n, cap) so they pick the same row indices ->
-                        // aligned
-                        let (xs, ys) = downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
-                        let (_, zs) = downsample_pair(&columns[i], &columns[k], *MAX_SMART_POINTS);
-                        Panel::new(
-                            format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
-                            PanelKind::Scatter3D {
-                                xs,
-                                ys,
-                                zs,
-                                labels: (labels[i].clone(), labels[j].clone(), labels[k].clone()),
-                            },
-                        )
-                    })
-                });
-
-            // Show only the lower triangle: a correlation matrix mirrors across the diagonal (and
-            // the diagonal is a trivial 1.0), so masking the upper half + diagonal drops redundant
-            // cells. `matrix` was already consumed by `strongest_pair`/the 3D third-axis pick above
-            // (which need the full square), so masking here only affects the rendered panel.
-            panels.insert(
-                0,
-                Panel::new(
-                    "Correlation".to_string(),
-                    PanelKind::CorrHeatmap {
-                        labels,
-                        matrix: mask_to_lower_triangle(matrix),
-                    },
-                ),
-            );
-            // place the drill-down panels right after the heatmap: the animated relationship-over-
-            // time scatter (when a drifting pair was found) leads, then the static strongest-pair
-            // drill-down (suppressed above if it is the same pair), then the 3D scatter.
-            // ARBITRATION (§5): at most one animated panel; T3 (bubble) > T2 (geo) > T1. The T1
-            // scatter-pair animation is inserted only when neither T3 nor T2 won (the static
-            // pair/3D drill-downs still show, keyed off `anim_ij`, as before).
-            let anim_panel = if bubble_panel.is_none() && geo_anim_panel.is_none() {
-                anim_sel.map(|(_, _, panel)| panel)
-            } else {
-                None
-            };
-            let mut at = 1;
-            if let Some(panel) = anim_panel {
-                panels.insert(at, panel);
-                at += 1;
-            }
-            if let Some(panel) = pair_panel {
-                panels.insert(at, panel);
-                at += 1;
-            }
-            if let Some(panel) = scatter3d_panel {
-                panels.insert(at, panel);
-            }
-        }
-    }
-
     let mut ctx = SmartCtx {
         args,
         out_format,
@@ -19780,9 +19830,10 @@ fn build_smart(
         summary_choros,
         map_cols,
         summary_choro_col,
-        sankey_pair,
-        bubble_panel,
-        geo_anim_panel,
+        bivariate_sidecar_fresh,
+        sankey_pair: None,
+        bubble_panel: None,
+        geo_anim_panel: None,
         explicit_box_points,
         count_conf,
         nrows,
@@ -19795,6 +19846,7 @@ fn build_smart(
         nonnumeric_measures,
         inline: false,
     };
+    ctx.add_relationship_panels()?;
     ctx.add_overview_panels()?;
     ctx.finalize_panels()?;
     let panel_data = ctx.gather_panel_data()?;

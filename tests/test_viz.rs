@@ -10828,3 +10828,88 @@ fn viz_smart_plain_adds_no_lorenz_without_smarter() {
         "plain viz smart (no --smarter) must not add a Lorenz panel; html: {html}"
     );
 }
+
+/// A dataset `viz smart` can actually profile: a low-cardinality dimension with repeated values
+/// (so it earns a frequency bar) plus a numeric measure with a spread (so it earns a box panel).
+fn cache_opts_csv() -> String {
+    let mut s = String::from("region,amount\n");
+    for (i, region) in ["north", "south", "east"]
+        .iter()
+        .cycle()
+        .take(30)
+        .enumerate()
+    {
+        s.push_str(&format!("{region},{}\n", 10 + (i * 7) % 53));
+    }
+    s
+}
+
+#[test]
+fn viz_smart_headered_run_is_unaffected_by_a_prior_no_headers_run() {
+    // REGRESSION: the stats cache is located by input path and validated by mtime, but was NOT
+    // keyed by parsing options. `viz smart` forces the cache to regenerate under non-default
+    // parsing (so a headered cache is never misread as headerless) -- but that force REWROTE the
+    // shared sidecar, so the next HEADERED run happily reused a headerless cache: field names
+    // became positional ("0", "1"), the header row was counted as data, and panels keyed off
+    // column names (e.g. the KPI row) silently vanished.
+    let wrk = Workdir::new("viz_smart_headered_run_is_unaffected_by_a_prior_no_headers_run");
+    wrk.create_from_string("d.csv", &cache_opts_csv());
+
+    let render = |name: &str| {
+        let out = wrk.path(name).to_string_lossy().to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "d.csv", "-o", &out]);
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string(name).unwrap()
+    };
+
+    // baseline: a headered run against a clean cache
+    let before = render("a.html");
+    assert!(
+        before.contains("region"),
+        "baseline dashboard should name the real columns; html: {before}"
+    );
+
+    // poison: a --no-headers run rewrites the shared stats cache with positional field names
+    let out_b = wrk.path("b.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "--no-headers", "-o", &out_b]);
+    wrk.assert_success(&mut cmd);
+
+    // the identical headered command must still see the real headers
+    let after = render("c.html");
+    assert!(
+        after.contains("region"),
+        "a prior --no-headers run must not leave a cache that renames columns positionally; html: \
+         {after}"
+    );
+}
+
+#[test]
+fn viz_smart_headered_run_is_unaffected_by_a_prior_custom_delimiter_run() {
+    // Same root cause as above, via the other half of the force-regen condition. This one was
+    // worse than wrong output: a wrong-delimiter run cached a SINGLE fused column, and the next
+    // plain run then failed outright ("Could not compute statistics") on a perfectly valid file
+    // until the sidecar was deleted by hand.
+    let wrk = Workdir::new("viz_smart_headered_run_is_unaffected_by_a_prior_custom_delimiter_run");
+    wrk.create_from_string("d.csv", &cache_opts_csv());
+
+    // poison with a delimiter the file does not use, so the whole row parses as one column
+    let out_a = wrk.path("a.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "--delimiter", ";", "-o", &out_a]);
+    // may or may not produce a usable dashboard; what matters is the cache it leaves behind
+    let _ = cmd.output();
+
+    let out_b = wrk.path("b.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "-o", &out_b]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("b.html").unwrap();
+    assert!(
+        html.contains("region"),
+        "a prior --delimiter run must not leave a cache that breaks the default-parsing run; \
+         html: {html}"
+    );
+}

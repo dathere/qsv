@@ -6084,7 +6084,7 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
                 .color_array(colors)
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
                 .show_scale(true)
-                .color_bar(ColorBar::new().title(color_label));
+                .color_bar(ColorBar::new().title(escape_hover(&color_label)));
         }
         plot.add_trace(
             Scatter3D::new(xs, ys, zs)
@@ -6095,9 +6095,11 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
     }
 
     let scene = LayoutScene::new()
-        .x_axis(Axis::new().title(Title::with_text(x_title)))
-        .y_axis(Axis::new().title(Title::with_text(y_title)))
-        .z_axis(Axis::new().title(Title::with_text(z_title)));
+        // axis titles render plotly pseudo-HTML and these are raw CSV headers, same sink as the
+        // smart 3D panel
+        .x_axis(Axis::new().title(Title::with_text(escape_hover(&x_title))))
+        .y_axis(Axis::new().title(Title::with_text(escape_hover(&y_title))))
+        .z_axis(Axis::new().title(Title::with_text(escape_hover(&z_title))));
     let mut layout = Layout::new().scene(scene).show_legend(series_idx.is_some());
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
@@ -14639,6 +14641,19 @@ fn read_geo_anim(
                 break;
             }
             stride = stride.saturating_mul(2);
+        }
+        // Striding cannot shrink a bucket below its single first point, so with enough buckets the
+        // cumulative count is irreducible: `choose_anim_bucket` falls back to Month, which on a
+        // decades-long timeline yields hundreds of frames whose repetition alone blows the budget.
+        // Decline the animation rather than emit a panel that ignores its own cap — the caller
+        // falls back to a static map, which shows the same points without the frame repetition.
+        if cumulative_embedded_points(&bucket_lats) > *MAX_SMART_POINTS {
+            viz_note(&format!(
+                "viz smart: skipped the animated map — {} time buckets would embed more than the \
+                 {} point budget even fully downsampled. Use a coarser date column to animate it.",
+                nb, *MAX_SMART_POINTS
+            ));
+            return Ok(None);
         }
     }
 
@@ -26306,7 +26321,8 @@ mod tests {
             "cumulative repetition dominates: {embedded}"
         );
         // striding cannot shrink single-point buckets at all, which is why the production loop
-        // also has to stop on the all-buckets-<=1 condition rather than spinning
+        // stops on the all-buckets-<=1 condition rather than spinning — and why, past that point,
+        // it declines the animation instead of emitting a panel that ignores its own cap.
         let strided: Vec<Vec<f64>> = sparse
             .iter()
             .map(|b| b.iter().copied().step_by(1000).collect())
@@ -26316,6 +26332,9 @@ mod tests {
             embedded,
             "single-point buckets are irreducible by striding"
         );
+        // enough single-point buckets exceed even the default budget on repetition alone
+        let many: Vec<Vec<f64>> = (0..700).map(|_| vec![0.0; 1]).collect();
+        assert!(cumulative_embedded_points(&many) > 150_000);
     }
 
     #[test]

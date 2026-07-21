@@ -2939,6 +2939,22 @@ fn mercator_y(lat: f64) -> f64 {
     (1.0 - (std::f64::consts::FRAC_PI_4 + lat_rad / 2.0).tan().ln() / std::f64::consts::PI) / 2.0
 }
 
+/// Inverse of `mercator_y`: normalized Web-Mercator y (0 at the north edge, 1 at the south) back
+/// to a latitude in degrees.
+fn inverse_mercator_y(y: f64) -> f64 {
+    let t = (std::f64::consts::PI * (1.0 - 2.0 * y)).exp();
+    (2.0 * (t.atan() - std::f64::consts::FRAC_PI_4)).to_degrees()
+}
+
+/// The latitude that sits VISUALLY halfway between two latitudes on a Web-Mercator map. Mercator
+/// stretches poleward, so the geographic mean `(min + max) / 2` is not the middle of the drawn
+/// box: pairing it with a Mercator-fitted zoom leaves the box off-centre and pushes the poleward
+/// edge out of view. Both centre computations here fit their zoom with `fitbounds_zoom` (which
+/// measures the latitude span in Mercator y), so both must take their centre in the same space.
+fn mercator_lat_center(min_lat: f64, max_lat: f64) -> f64 {
+    inverse_mercator_y((mercator_y(min_lat) + mercator_y(max_lat)) / 2.0)
+}
+
 /// Aspect-aware Web-Mercator `fitBounds` zoom: fits the longitude and latitude spans SEPARATELY
 /// against the panel's pixel width/height and takes the tighter (smaller) zoom, so a wide-short map
 /// panel frames a square core box by its (binding) height and a wide full-extent box by its width —
@@ -2999,7 +3015,7 @@ fn map_center_zoom(
     sorted_lats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let min_lat = sorted_quantile(&sorted_lats, trim_frac);
     let max_lat = sorted_quantile(&sorted_lats, 1.0 - trim_frac);
-    let lat_center = (min_lat + max_lat) / 2.0;
+    let lat_center = mercator_lat_center(min_lat, max_lat);
 
     let (lon_center, lon_span) = lon_center_and_span(lons, trim_frac);
     let center = Center::new(lat_center, lon_center);
@@ -11248,7 +11264,18 @@ fn route_from_concept(concept: &str) -> Option<(Route, Option<Agg>)> {
             // census_tract even when describegpt defaulted its numeric `role` to `measure`.
             _ => (Route::Dimension, None),
         },
-        "time" => (Route::Temporal, None),
+        "time" => match leaf {
+            // a duration is a SPAN (a magnitude), not a point in time: it has no place on a time
+            // axis and can't be the time-series x column (`canonical_date_col` only accepts stats
+            // type Date/DateTime), so routing the whole `time` namespace to Temporal dropped
+            // duration columns from the dashboard entirely. describegpt deliberately keeps
+            // `role: measure` for durations (see is_temporal_content_type in
+            // cmd/describegpt/dictionary.rs, issue #4177), but concept outranks role here, so the
+            // leaf has to be special-cased. Mean, not Sum: summing "days to close" across records
+            // is meaningless in the way a total revenue is not.
+            "duration" => (Route::Measure, Some(Agg::Mean)),
+            _ => (Route::Temporal, None),
+        },
         "id" | "pii" => (Route::Skip, None),
         "org" | "category" | "nyc" => (Route::Dimension, None),
         "measure" => match leaf {
@@ -11423,27 +11450,47 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     if is_count {
         return false;
     }
-    const INTENSIVE: &[&str] = &[
+    // Matched as whole TOKENS, not substrings. A substring test here is actively wrong: "ratio"
+    // is a substring of the entire `-ration` word family, so `duration`, `generation`,
+    // `operation`, `registration` and `remuneration` all matched and were silently downgraded
+    // from Sum to Mean. (This is the same hazard the doc comment above already records for bare
+    // "rate".) Plural/derived forms are listed explicitly rather than inferred, so `indices` and
+    // `densities` work without a stemming rule that would reopen the substring problem.
+    const INTENSIVE_TOKENS: &[&str] = &[
         "temperature",
+        "temperatures",
         "celsius",
         "fahrenheit",
-        "\u{b0}c",
-        "\u{b0}f",
         "average",
+        "averages",
         "avg",
         "median",
+        "medians",
         "percent",
+        "percentage",
+        "percentages",
         "pct",
         "ratio",
+        "ratios",
         "index",
+        "indexes",
+        "indices",
         "score",
+        "scores",
         "elevation",
+        "elevations",
         "altitude",
+        "altitudes",
         "density",
-        "per capita",
-        "per_capita",
+        "densities",
     ];
-    INTENSIVE.iter().any(|kw| hay.contains(kw))
+    // phrases and symbols can't survive tokenization (which splits on non-alphanumerics), so
+    // these stay substring tests — none of them is a substring of a common additive word.
+    const INTENSIVE_SUBSTRINGS: &[&str] = &["\u{b0}c", "\u{b0}f", "per capita", "per_capita"];
+    tokens
+        .iter()
+        .any(|t| INTENSIVE_TOKENS.contains(&t.as_str()))
+        || INTENSIVE_SUBSTRINGS.iter().any(|kw| hay.contains(kw))
 }
 
 /// Distill a column's `StatsData` + optional dictionary `row` into one charting verdict.
@@ -15139,6 +15186,18 @@ fn build_smart_pip_choropleth_panel(
         }
     }
     if order.len() < 2 {
+        // Total mismatch is the one case worth reporting even though no panel renders: it is not
+        // "valid data that happens to yield <2 regions", it means the boundary file does not
+        // cover the points at all (wrong --geojson, or lat/lon swapped so everything lands in the
+        // ocean). Without this the run is completely silent — the boundary overlay still draws,
+        // so the dashboard shows outlined regions with no fill and no explanation.
+        if total > 0 && dropped == total {
+            viz_note(&format!(
+                "viz smart: none of the {total} points fell inside any --geojson region, so no \
+                 region panel was built. Check that the boundary file covers this data and that \
+                 --lat/--lon are not swapped."
+            ));
+        }
         return Ok(None);
     }
     // only report after we know a panel will actually render, so the note never describes a map the
@@ -16519,7 +16578,7 @@ fn extent_marker_geo() -> Marker {
 /// `MAP_PANEL_ASSUMED_WIDTH_PX` is assumed; verify visually if the panel sizing changes.
 #[cfg(feature = "geocode")]
 fn extent_center_zoom_raw(e: &MapExtent) -> (f64, f64, u8) {
-    let lat_center = (e.min_lat + e.max_lat) / 2.0;
+    let lat_center = mercator_lat_center(e.min_lat, e.max_lat);
     let lon_center = (e.min_lon + e.max_lon) / 2.0;
     let zoom = fitbounds_zoom(
         e.min_lat,
@@ -25799,6 +25858,106 @@ mod tests {
     }
 
     #[test]
+    fn is_intensive_measure_matches_tokens_not_substrings() {
+        // the -ration word family all CONTAIN "ratio"; a substring test silently downgraded these
+        // additive amounts from Sum to Mean, and also dropped them from the inequality overview
+        for additive in [
+            "duration",
+            "generation",
+            "operation",
+            "operations",
+            "registration",
+            "registrations",
+            "remuneration",
+            "corporations",
+            "migration",
+            "iteration",
+        ] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} is additive, must not be treated as intensive"
+            );
+        }
+        // genuinely intensive columns still match, including plural/derived forms
+        for intensive in [
+            "ratio",
+            "ratios",
+            "debt_to_equity_ratio",
+            "percent",
+            "percentage",
+            "pct_complete",
+            "avg_price",
+            "median_income",
+            "score",
+            "scores",
+            "review_score",
+            "index",
+            "indices",
+            "density",
+            "densities",
+            "elevation",
+            "temperature",
+        ] {
+            assert!(
+                is_intensive_measure(intensive, intensive),
+                "{intensive} should be intensive"
+            );
+        }
+        // phrases/symbols stay substring-matched (they can't survive tokenization)
+        assert!(is_intensive_measure(
+            "income per capita",
+            "income_per_capita"
+        ));
+        assert!(is_intensive_measure("temp \u{b0}C", "temp_c"));
+        // the count guard still wins over an embedded intensive token
+        assert!(!is_intensive_measure(
+            "review score count",
+            "review_score_count"
+        ));
+    }
+
+    #[test]
+    fn route_from_concept_treats_duration_as_a_measure() {
+        // a duration is a span, not a point in time: routing it Temporal dropped it from the
+        // dashboard entirely (no distribution panel, and canonical_date_col won't take it either)
+        assert_eq!(
+            route_from_concept("time.duration"),
+            Some((Route::Measure, Some(Agg::Mean)))
+        );
+        // the rest of the `time` namespace is unchanged
+        assert_eq!(
+            route_from_concept("time.timestamp"),
+            Some((Route::Temporal, None))
+        );
+        assert_eq!(route_from_concept("time"), Some((Route::Temporal, None)));
+    }
+
+    #[test]
+    fn mercator_lat_center_is_the_visual_midpoint() {
+        // round-trip
+        for lat in [-80.0, -45.0, 0.0, 12.5, 45.0, 80.0] {
+            assert!(
+                (inverse_mercator_y(mercator_y(lat)) - lat).abs() < 1e-9,
+                "{lat}"
+            );
+        }
+        // at the equator Mercator is locally symmetric, so it agrees with the arithmetic mean
+        assert!((mercator_lat_center(-10.0, 10.0) - 0.0).abs() < 1e-9);
+        // poleward it does NOT: the visual centre sits north of the arithmetic mean, which is
+        // exactly why a Mercator-fitted zoom left the top of an arctic extent off-screen
+        let (lo, hi) = (66.0, 84.5);
+        let arithmetic = (lo + hi) / 2.0;
+        let visual = mercator_lat_center(lo, hi);
+        assert!(
+            visual > arithmetic + 0.5,
+            "visual={visual} arithmetic={arithmetic}"
+        );
+        // and it is genuinely equidistant in Mercator space
+        let (a, b, c) = (mercator_y(lo), mercator_y(visual), mercator_y(hi));
+        assert!(((a - b) - (b - c)).abs() < 1e-9);
+    }
+
+    #[test]
     fn escape_template_pct_doubles_literal_percent() {
         // a hovertemplate parses `%{...}`, so a literal `%` in an interpolated label must be
         // doubled or plotly swallows the following text as a data token
@@ -26912,7 +27071,14 @@ mod tests {
         let lons = [-75.1, -74.9, -75.0];
         let (center, zoom) = map_center_zoom(&lats, &lons, 0.0, 1000.0, 600.0);
         let v = serde_json::to_value(&center).unwrap();
-        assert!((v["lat"].as_f64().unwrap() - 40.0).abs() < 1e-9);
+        // the centre latitude is the MERCATOR midpoint, not the arithmetic one: the zoom is
+        // fitted in Mercator y, so the centre has to be taken in the same space or the box is not
+        // actually centred in the viewport (visible as a clipped poleward edge on tall extents).
+        // Over a 0.2-degree cluster the two agree to ~1e-5, hence the loosened tolerance here plus
+        // the exact assertion below.
+        assert!((v["lat"].as_f64().unwrap() - 40.0).abs() < 1e-3);
+        assert!((v["lat"].as_f64().unwrap() - mercator_lat_center(39.9, 40.1)).abs() < 1e-12);
+        // longitude is linear in Mercator, so it stays the exact arithmetic midpoint
         assert!((v["lon"].as_f64().unwrap() - (-75.0)).abs() < 1e-9);
         // small span -> high zoom; large span -> low zoom. Use a genuinely wide (non-wrapping)
         // longitude range so this exercises the plain bounding-box path, not antimeridian wrap.

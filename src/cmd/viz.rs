@@ -1500,6 +1500,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
+    // The parsed+sanitized --geojson document, loaded ONCE here and threaded into whichever
+    // plotting path consumes it (see `resolve_and_validate_geojson`).
+    let mut loaded_geojson: Option<serde_json::Value> = None;
     // Resolve --geojson (a direct path/URL, or a QSV_GEOJSON_SHORTCUTS alias) and validate it
     // up front — fail fast on a bad source, unknown shortcut, or unusable feature-id-key before
     // any plotting work. Only the choropleth & smart subcommands consume --geojson.
@@ -1511,7 +1514,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let feature_id_key_explicit = argv
             .iter()
             .any(|a| *a == "--feature-id-key" || a.starts_with("--feature-id-key="));
-        resolve_and_validate_geojson(&mut args, feature_id_key_explicit)?;
+        loaded_geojson = resolve_and_validate_geojson(&mut args, feature_id_key_explicit)?;
     }
 
     let out_format = match args.flag_output.as_deref() {
@@ -1557,7 +1560,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let _progress_guard = ProgressGuard(progress.clone());
 
     let (mut plot, smart_dims) = if args.cmd_smart {
-        match build_smart(&args, out_format, &progress, show_progress)? {
+        match build_smart(
+            &args,
+            out_format,
+            &progress,
+            show_progress,
+            loaded_geojson.as_ref(),
+        )? {
             // >8-panel HTML dashboards are assembled as an inline-div grid that bypasses the
             // single-`Plot` output path entirely.
             SmartRender::Inline(html) => {
@@ -1606,7 +1615,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             },
         }
     } else {
-        (Box::new(build_plot(&args, out_format, &progress)?), None)
+        (
+            Box::new(build_plot(&args, out_format, &progress, loaded_geojson)?),
+            None,
+        )
     };
 
     // make the interactive HTML re-fit its width to the window/container on resize; this
@@ -1692,7 +1704,12 @@ fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
 }
 
 /// Build a `Plot` for the requested chart subcommand.
-fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> CliResult<Plot> {
+fn build_plot(
+    args: &Args,
+    out_format: OutFormat,
+    progress: &ProgressBar,
+    geojson: Option<serde_json::Value>,
+) -> CliResult<Plot> {
     progress.set_message("Building chart…");
     // --color/--size are per-point marker encodings that apply to scatter and map only, and
     // need a single trace, so they can't be combined with --series (which splits into traces).
@@ -1795,7 +1812,7 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
     // choropleth fills whole regions on a `geo` (projection) or `map` (MapLibre) subplot — never
     // cartesian — so it owns its whole `Plot` like the maps above.
     if matches!(chart_kind(args), Chart::Choropleth) {
-        return build_choropleth_plot(args, out_format);
+        return build_choropleth_plot(args, out_format, geojson);
     }
     if matches!(chart_kind(args), Chart::Scatter3D) {
         return build_scatter3d_plot(args);
@@ -4075,9 +4092,12 @@ fn lookup_geojson_shortcut(name: &str) -> CliResult<(String, Option<String>)> {
 /// Rewrites `args.flag_geojson` to the concrete path/URL and, when the value resolved via a
 /// shortcut that carries an `id`, adopts it as the feature-id-key unless the user explicitly
 /// passed `--feature-id-key` (see `feature_id_key_explicit`).
-fn resolve_and_validate_geojson(args: &mut Args, feature_id_key_explicit: bool) -> CliResult<()> {
+fn resolve_and_validate_geojson(
+    args: &mut Args,
+    feature_id_key_explicit: bool,
+) -> CliResult<Option<serde_json::Value>> {
     let Some(spec) = args.flag_geojson.clone() else {
-        return Ok(());
+        return Ok(None);
     };
 
     // Disambiguate: a direct source is an http(s) URL or an existing local file; anything else is
@@ -4100,7 +4120,7 @@ fn resolve_and_validate_geojson(args: &mut Args, feature_id_key_explicit: bool) 
 
     // Validate: fetch/read + FeatureCollection + the feature-id-key resolves on >=1 feature.
     let geojson = load_geojson(&resolved)?;
-    let fc = serde_json::from_value::<geojson::FeatureCollection>(geojson).map_err(|e| {
+    let fc = geojson::FeatureCollection::deserialize(&geojson).map_err(|e| {
         crate::CliError::Other(format!(
             "--geojson '{resolved}' is not a valid GeoJSON FeatureCollection: {e}"
         ))
@@ -4135,7 +4155,12 @@ fn resolve_and_validate_geojson(args: &mut Args, feature_id_key_explicit: bool) 
     }
 
     args.flag_geojson = Some(resolved);
-    Ok(())
+    // hand the parsed document back so the plotting paths reuse it instead of re-fetching and
+    // re-parsing: it was loaded 3x per standalone choropleth run (validation, binning, trace
+    // geometry) and 2-3x again under `viz smart`. Beyond the wasted HTTP GETs and parse time,
+    // a non-deterministic URL made those loads disagree — points binned against one fetch while
+    // the map drew another's geometry.
+    Ok(Some(geojson))
 }
 
 /// Load a GeoJSON FeatureCollection from a local file path or an http(s) URL into a JSON value.
@@ -5194,7 +5219,14 @@ fn geojson_lat_lons(geojson: &serde_json::Value) -> (Vec<f64>, Vec<f64>) {
 /// switches to a MapLibre `ChoroplethMap` (GeoJSON-only). Region keys come from `--locations`, or
 /// — with `--geocode` — are derived from `--lat`/`--lon` (reverse) or a `--locations` name column
 /// (forward) by reusing qsv's geocode engine.
-fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
+fn build_choropleth_plot(
+    args: &Args,
+    out_format: OutFormat,
+    geojson: Option<serde_json::Value>,
+) -> CliResult<Plot> {
+    // loaded once by `resolve_and_validate_geojson`; every consumer below borrows it and the
+    // trace takes ownership last, so the document is fetched and parsed exactly once per run.
+    let mut loaded_geojson = geojson;
     // Point-in-polygon binning: lat/lon points + a custom --geojson, without --geocode. It colors
     // regions by the GeoJSON feature that CONTAINS each point, so it always uses the geojson-id
     // location mode regardless of any --location-mode default. --geocode (when also present) takes
@@ -5282,14 +5314,19 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
     // 4-tuple.
     let mut below_note: Option<String> = None;
     let (locations, z, measure_label, hover_text) = if pip {
-        let (locs, z, label, hover, note) =
-            choropleth_pip_locations(args, agg, snap, args.flag_snap_max_dist)?;
+        let (locs, z, label, hover, note) = choropleth_pip_locations(
+            args,
+            agg,
+            snap,
+            args.flag_snap_max_dist,
+            loaded_geojson.as_ref(),
+        )?;
         below_note = note;
         (locs, z, label, hover)
     } else if args.flag_geocode {
         choropleth_geocoded_locations(args, mode.clone(), agg)?
     } else {
-        choropleth_literal_locations(args, agg)?
+        choropleth_literal_locations(args, agg, loaded_geojson.as_ref())?
     };
 
     if locations.is_empty() {
@@ -5302,7 +5339,10 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
     let mut plot = Plot::new();
     if args.flag_map {
         // ChoroplethMap on the MapLibre `map` subplot (GeoJSON-only).
-        let geojson = load_geojson(args.flag_geojson.as_deref().unwrap())?;
+        let geojson = match loaded_geojson.take() {
+            Some(v) => v,
+            None => load_geojson(args.flag_geojson.as_deref().unwrap())?,
+        };
         // collect the GeoJSON extent BEFORE the value is moved into the trace below.
         let (g_lats, g_lons) = geojson_lat_lons(&geojson);
         let trace = ChoroplethMap::new(locations, z)
@@ -5377,7 +5417,10 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
                 .scope("usa");
         }
         if let Some(spec) = args.flag_geojson.as_deref() {
-            let geojson = load_geojson(spec)?;
+            let geojson = match loaded_geojson.take() {
+                Some(v) => v,
+                None => load_geojson(spec)?,
+            };
             // plotly only auto-scopes its BUILT-IN location modes (iso3 world / usa-states); a
             // custom GeoJSON has no built-in scope, so without framing its polygons sit tiny on the
             // default whole-world projection. Frame the projection to the GeoJSON extent, reusing
@@ -5458,6 +5501,7 @@ fn with_chart_note(layout: Layout, note: &str) -> Layout {
 fn choropleth_literal_locations(
     args: &Args,
     agg: Agg,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let loc_idx = resolve_one(args.flag_locations.as_ref(), &headers, nh, "locations")?;
@@ -5495,10 +5539,16 @@ fn choropleth_literal_locations(
     // the location id.
     let names = match args.flag_geojson.as_deref() {
         Some(spec) => {
-            let geojson = load_geojson(spec)?;
+            let owned;
+            let geojson = match loaded_geojson {
+                Some(v) => v,
+                None => {
+                    owned = load_geojson(spec)?;
+                    &owned
+                },
+            };
             let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
-            let features =
-                build_pip_features(&geojson, key, args.flag_feature_name_key.as_deref())?;
+            let features = build_pip_features(geojson, key, args.flag_feature_name_key.as_deref())?;
             aligned_region_names(&features, &locs)
         },
         None => None,
@@ -5523,6 +5573,7 @@ fn choropleth_pip_locations(
     agg: Agg,
     snap: bool,
     snap_max_km: Option<f64>,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>, Option<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
@@ -5537,9 +5588,16 @@ fn choropleth_pip_locations(
     };
 
     let feature_id_key = args.flag_feature_id_key.as_deref().unwrap_or("id");
-    let geojson = load_geojson(args.flag_geojson.as_deref().unwrap())?;
+    let owned;
+    let geojson = match loaded_geojson {
+        Some(v) => v,
+        None => {
+            owned = load_geojson(args.flag_geojson.as_deref().unwrap())?;
+            &owned
+        },
+    };
     let features = build_pip_features(
-        &geojson,
+        geojson,
         feature_id_key,
         args.flag_feature_name_key.as_deref(),
     )?;
@@ -15030,12 +15088,20 @@ fn build_smart_pip_choropleth_panel(
     snap: bool,
     snap_max_km: Option<f64>,
     coord_decimals: Option<u32>,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<Option<Panel>> {
     // an explicit --geojson is explicit intent: a missing file, bad GeoJSON, or wrong
     // --feature-id-key is a hard error, not a silently-dropped panel. `Ok(None)` is reserved for
     // valid inputs that simply don't yield enough regions (the <2 check below).
-    let geojson = load_geojson(geojson_spec)?;
-    let features = build_pip_features(&geojson, feature_id_key, feature_name_key)?;
+    let owned;
+    let geojson = match loaded_geojson {
+        Some(v) => v,
+        None => {
+            owned = load_geojson(geojson_spec)?;
+            &owned
+        },
+    };
+    let features = build_pip_features(geojson, feature_id_key, feature_name_key)?;
     let cap = resolve_snap_cap(snap_max_km, &features, coord_decimals);
     let mut order: Vec<String> = Vec::new();
     let mut counts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
@@ -15163,11 +15229,13 @@ fn build_smart_pip_choropleth_panel(
         && lon_span < SMART_CHOROPLETH_MIN_SPAN_DEG
         && lat_span < SMART_CHOROPLETH_MIN_SPAN_DEG;
 
+    // the panel embeds the geometry, so it needs an owned document here. This clone replaces
+    // what used to be a whole extra fetch+parse of the same file, and is the only copy made.
     let kind = if use_tiles {
         PanelKind::ChoroplethMap {
             locations: order,
             z,
-            geojson,
+            geojson: geojson.clone(),
             feature_id_key: feature_id_key.to_string(),
             hover_text,
             center_lon: (min_lon + max_lon) / 2.0,
@@ -15186,7 +15254,7 @@ fn build_smart_pip_choropleth_panel(
             locations: order,
             z,
             location_mode: LocationMode::GeoJsonId,
-            geojson: Some(geojson),
+            geojson: Some(geojson.clone()),
             feature_id_key: Some(feature_id_key.to_string()),
             hover_text,
             measure_label: "count".to_string(),
@@ -15258,6 +15326,7 @@ fn build_smart_summary_choropleth_panels(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     col_sems: &[ColSemantics],
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<Option<(Vec<Panel>, usize)>> {
     // explicit intent: only build when the user supplied a --geojson boundary file.
     let Some(spec) = args.flag_geojson.as_deref() else {
@@ -15297,10 +15366,17 @@ fn build_smart_summary_choropleth_panels(
 
     // load + validate the boundary file once (already resolved/validated in `run`); build the
     // feature-id set the candidate columns are matched against.
-    let geojson = load_geojson(spec)?;
+    let owned;
+    let geojson = match loaded_geojson {
+        Some(v) => v,
+        None => {
+            owned = load_geojson(spec)?;
+            &owned
+        },
+    };
     let feature_id_key = args.flag_feature_id_key.as_deref().unwrap_or("id");
     let features = build_pip_features(
-        &geojson,
+        geojson,
         feature_id_key,
         args.flag_feature_name_key.as_deref(),
     )?;
@@ -15695,9 +15771,17 @@ fn build_geojson_overlay(
     spec: &str,
     feature_id_key: &str,
     feature_name_key: Option<&str>,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> Option<GeoJsonOverlay> {
-    let geojson = load_geojson(spec).ok()?;
-    let features = build_pip_features(&geojson, feature_id_key, feature_name_key).ok()?;
+    let owned;
+    let geojson = match loaded_geojson {
+        Some(v) => v,
+        None => {
+            owned = load_geojson(spec).ok()?;
+            &owned
+        },
+    };
+    let features = build_pip_features(geojson, feature_id_key, feature_name_key).ok()?;
     if features.is_empty() {
         return None;
     }
@@ -15865,6 +15949,7 @@ fn build_map_panel(
     dict: Option<&DictData>,
     coord_hint: Option<(usize, usize)>,
     cluster_mode: ClusterMode,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize), usize)>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
@@ -16159,11 +16244,12 @@ fn build_map_panel(
             snap,
             args.flag_snap_max_dist,
             coord_decimals,
+            loaded_geojson,
         )?;
         // overlay the region boundaries + labels directly on the point map (best-effort; the panel
         // builder above already hard-errored on a bad --geojson). Independent of the choropleth's
         // 2-region minimum — even a single region is worth outlining on the map.
-        let overlay = build_geojson_overlay(spec, key, name_key);
+        let overlay = build_geojson_overlay(spec, key, name_key, loaded_geojson);
         (panel, overlay)
     } else {
         #[cfg(feature = "geocode")]
@@ -17249,6 +17335,7 @@ fn build_smart(
     out_format: OutFormat,
     progress: &ProgressBar,
     show_progress: bool,
+    loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<SmartRender> {
     let mut args = args.clone();
 
@@ -17523,6 +17610,7 @@ fn build_smart(
             dict_data.as_ref(),
             coord_hint,
             cluster_mode,
+            loaded_geojson,
         )? {
             None => (None, None),
             Some((p, choro, cols, mappable_count)) => {
@@ -17603,7 +17691,7 @@ fn build_smart(
     // build_map_panel emitted no choropleth companion (avoid two competing region fills), and never
     // for image output (choropleths are HTML-only, like the PIP companion above).
     let summary_choros = if choropleth_panel.is_none() && !out_format.is_image() {
-        build_smart_summary_choropleth_panels(args, &stats, &col_sems)?
+        build_smart_summary_choropleth_panels(args, &stats, &col_sems, loaded_geojson)?
     } else {
         None
     };
@@ -27479,6 +27567,7 @@ mod tests {
             true,
             Some(10.0),
             None,
+            None,
         )
         .unwrap()
         .expect("2 regions keep points, so a panel renders");
@@ -27494,6 +27583,7 @@ mod tests {
             &lons,
             true,
             Some(f64::INFINITY),
+            None,
             None,
         )
         .unwrap()
@@ -27513,6 +27603,7 @@ mod tests {
             &lons,
             false,
             Some(10.0),
+            None,
             None,
         )
         .unwrap()
@@ -27556,6 +27647,7 @@ mod tests {
             &lons,
             true,
             Some(10.0),
+            None,
             None,
         )
         .unwrap()

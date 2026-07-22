@@ -10468,6 +10468,16 @@ fn viz_smart_dict_info_bundles_sidecars_without_leaking_local_paths() {
         !wrk.path("codes.viz-frequency.csv").exists(),
         "the charted-frequency CSV is a bundled download, not a file written to disk"
     );
+    // the stats run above also wrote a fresh `codes.stats.csv`, but viz never reads it, so it
+    // cannot be shown to be the stats behind this dashboard and must not be offered
+    assert!(
+        wrk.path("codes.stats.csv").exists(),
+        "precondition: the stats run wrote a human-readable stats CSV"
+    );
+    assert!(
+        !html.contains(r#"download="codes.stats.csv""#),
+        "the unverifiable .stats.csv is never offered"
+    );
 
     // THE guarantee: the work directory's absolute path appears nowhere in the page — not in the
     // markup, and not inside any base64 payload.

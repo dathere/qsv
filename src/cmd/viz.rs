@@ -517,8 +517,11 @@ smart options:
                            back to the panels, plus a row of download buttons: the
                            dictionary itself as JSON Schema, the frequency counts the
                            dashboard actually charted, and every generated sidecar this run
-                           used (the stats cache and its metadata, the frequency cache when
+                           read (the stats cache and its metadata, the frequency cache when
                            it was reused, and the bivariate stats CSV when freshly written).
+                           A sidecar qsv wrote but viz never read - the human-readable
+                           <stem>.stats.csv - is NOT offered, since nothing can show it
+                           describes the same computation the dashboard used.
                            Every file is BUNDLED into the HTML, so anyone you send the
                            dashboard to can download them with no access to your machine;
                            absolute local paths are stripped from the embedded metadata so
@@ -10019,6 +10022,29 @@ fn read_sidecar(
     })
 }
 
+/// The path the STATS cache is keyed on for `input`, mirroring `util::get_stats_records`.
+///
+/// Almost always the input itself, but a `dc:<name>` disk-cache handle is resolved to its
+/// materialized CSV first — `get_stats_records` does exactly that before locating
+/// `.stats.csv.data.jsonl`, so deriving the sidecar paths from the literal `"dc:name"` string
+/// would miss the cache the dashboard actually read. A resolution failure falls back to the raw
+/// input (which simply won't canonicalize, offering no stats downloads) rather than failing the
+/// dashboard over a download link.
+///
+/// Deliberately NOT applied to the frequency cache or the bivariate CSV: those are keyed on the
+/// raw input by their own consumers (`read_frequency_cache_view`, `bivariate_sidecar_fresh`), and
+/// resolving them here would point at a different file than the one that was actually read.
+fn resolve_stats_input_path(input: &str) -> String {
+    #[cfg(feature = "get")]
+    if let Some(dc_name) = input.strip_prefix("dc:") {
+        return match crate::diskcache::resolve_dc_path(dc_name) {
+            Ok(p) => p.to_string_lossy().into_owned(),
+            Err(_) => input.to_string(),
+        };
+    }
+    input.to_string()
+}
+
 /// The generated sidecars this `viz smart` run ACTUALLY consumed, for the `--dict-info` Data
 /// Dictionary page's download row. Never speculative: a sidecar that merely exists on disk but was
 /// not used (a stale bivariate CSV from a prior run, a frequency cache rejected as
@@ -10027,7 +10053,8 @@ fn read_sidecar(
 ///
 /// Each path is derived exactly the way its CONSUMER derives it — do not "simplify" this by
 /// canonicalizing once up front:
-/// - the stats trio is keyed off the canonicalized input (`util::get_stats_records`);
+/// - the stats pair is keyed off the canonicalized input, `dc:`-resolved first
+///   (`util::get_stats_records`, via `resolve_stats_input_path`);
 /// - the frequency cache goes through `frequency::frequency_cache_path`, which canonicalizes
 ///   internally the same way `read_frequency_cache_view` does;
 /// - the bivariate CSV is keyed off the RAW input's file stem (`bivariate_csv_path`), which is also
@@ -10051,14 +10078,18 @@ fn collect_sidecar_downloads(
     };
     let input_path = std::path::Path::new(input);
 
-    // stats trio: anchored on the canonical path, like get_stats_records. `.stats.csv.data.jsonl`
-    // is what viz reads; `.stats.csv.json` records the parsing options it was built with; the
-    // human-readable `.stats.csv` only exists when `qsv stats`/`--smarter` wrote one, and is
-    // offered only when it is no older than the source (an older one describes stale data).
-    if let Ok(canonical) = input_path.canonicalize() {
-        let src_mtime = std::fs::metadata(&canonical)
-            .and_then(|m| m.modified())
-            .ok();
+    // stats pair: anchored on the canonical path, like get_stats_records — including its `dc:`
+    // resolution, so a disk-cache handle whose materialized CSV *does* have a stats cache still
+    // gets its downloads. `.stats.csv.data.jsonl` is what viz reads; `.stats.csv.json` records the
+    // parsing options it was built with.
+    //
+    // The human-readable `.stats.csv` is deliberately NOT offered. viz never reads it, so it can't
+    // be shown to be the stats behind this dashboard: an explicit `qsv stats --select … -o
+    // <stem>.stats.csv` leaves a file that is newer than the source yet describes a different
+    // computation than the cache viz actually used, and no mtime test can tell the two apart. The
+    // same numbers ride in `.stats.csv.data.jsonl`, which viz demonstrably did read.
+    let stats_anchor = resolve_stats_input_path(input);
+    if let Ok(canonical) = std::path::Path::new(&stats_anchor).canonicalize() {
         for (ext, short, redact) in [
             ("stats.csv.data.jsonl", "stats", SidecarRedaction::None),
             ("stats.csv.json", "stats meta", SidecarRedaction::JsonObject),
@@ -10066,21 +10097,6 @@ fn collect_sidecar_downloads(
             if let Some(sc) = read_sidecar(&canonical.with_extension(ext), short, redact) {
                 out.push(sc);
             }
-        }
-        let stats_csv = canonical.with_extension("stats.csv");
-        let stats_csv_current = match (
-            std::fs::metadata(&stats_csv)
-                .and_then(|m| m.modified())
-                .ok(),
-            src_mtime,
-        ) {
-            (Some(cache), Some(src)) => cache >= src,
-            _ => false,
-        };
-        if stats_csv_current
-            && let Some(sc) = read_sidecar(&stats_csv, "stats csv", SidecarRedaction::None)
-        {
-            out.push(sc);
         }
     }
 
@@ -10101,7 +10117,9 @@ fn collect_sidecar_downloads(
     // to disk), so unlike the cache above it is always available — whether the bars came from a
     // cache hit or a full recompute — and it is exactly what the reader sees in the panels,
     // aggregate `(NULL)`/`Other (N)` buckets included, already capped at --limit.
-    if let Some(sc) = charted_frequency_csv(input_path, stats, freq) {
+    // named off the stats anchor, so a `dc:` handle yields `<cached name>.viz-frequency.csv`
+    // rather than a download named after the literal `dc:` string.
+    if let Some(sc) = charted_frequency_csv(std::path::Path::new(&stats_anchor), stats, freq) {
         out.push(sc);
     }
 
@@ -26256,11 +26274,12 @@ mod tests {
             "a cache that WAS read and a freshly-written bivariate CSV are offered: {got:?}"
         );
 
-        // `.stats.csv` is offered only when it is no older than the source: an older one
-        // describes data that has since changed.
+        // `.stats.csv` is NEVER offered, however fresh. viz doesn't read it, so it can't be shown
+        // to be the stats behind this dashboard — an explicit `qsv stats --select … -o
+        // <stem>.stats.csv` leaves a file newer than the source that describes a different
+        // computation than the cache viz used, and no mtime test separates the two.
         let stats_csv = dir.join("accounts.stats.csv");
         std::fs::write(&stats_csv, "field,type\n").unwrap();
-        filetime::set_file_mtime(&stats_csv, filetime::FileTime::from_unix_time(1, 0)).unwrap();
         assert!(
             !names(collect_sidecar_downloads(
                 Some(&input_str),
@@ -26270,19 +26289,7 @@ mod tests {
                 false
             ))
             .contains(&"accounts.stats.csv".to_string()),
-            "a .stats.csv older than the source is not offered"
-        );
-        std::fs::write(&stats_csv, "field,type\n").unwrap();
-        assert!(
-            names(collect_sidecar_downloads(
-                Some(&input_str),
-                &[],
-                &FreqMap::new(),
-                false,
-                false
-            ))
-            .contains(&"accounts.stats.csv".to_string()),
-            "a current .stats.csv is offered"
+            "the unverifiable .stats.csv is never offered"
         );
 
         // over-cap sidecars are skipped rather than slurped into the page

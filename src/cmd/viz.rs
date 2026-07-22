@@ -10022,29 +10022,6 @@ fn read_sidecar(
     })
 }
 
-/// The path the STATS cache is keyed on for `input`, mirroring `util::get_stats_records`.
-///
-/// Almost always the input itself, but a `dc:<name>` disk-cache handle is resolved to its
-/// materialized CSV first — `get_stats_records` does exactly that before locating
-/// `.stats.csv.data.jsonl`, so deriving the sidecar paths from the literal `"dc:name"` string
-/// would miss the cache the dashboard actually read. A resolution failure falls back to the raw
-/// input (which simply won't canonicalize, offering no stats downloads) rather than failing the
-/// dashboard over a download link.
-///
-/// Deliberately NOT applied to the frequency cache or the bivariate CSV: those are keyed on the
-/// raw input by their own consumers (`read_frequency_cache_view`, `bivariate_sidecar_fresh`), and
-/// resolving them here would point at a different file than the one that was actually read.
-fn resolve_stats_input_path(input: &str) -> String {
-    #[cfg(feature = "get")]
-    if let Some(dc_name) = input.strip_prefix("dc:") {
-        return match crate::diskcache::resolve_dc_path(dc_name) {
-            Ok(p) => p.to_string_lossy().into_owned(),
-            Err(_) => input.to_string(),
-        };
-    }
-    input.to_string()
-}
-
 /// The generated sidecars this `viz smart` run ACTUALLY consumed, for the `--dict-info` Data
 /// Dictionary page's download row. Never speculative: a sidecar that merely exists on disk but was
 /// not used (a stale bivariate CSV from a prior run, a frequency cache rejected as
@@ -10053,43 +10030,43 @@ fn resolve_stats_input_path(input: &str) -> String {
 ///
 /// Each path is derived exactly the way its CONSUMER derives it — do not "simplify" this by
 /// canonicalizing once up front:
-/// - the stats pair is keyed off the canonicalized input, `dc:`-resolved first
-///   (`util::get_stats_records`, via `resolve_stats_input_path`);
+/// - the stats pair is keyed off `stats_anchor`, the path the run ALREADY resolved (see below),
+///   canonicalized like `util::get_stats_records` does;
 /// - the frequency cache goes through `frequency::frequency_cache_path`, which canonicalizes
 ///   internally the same way `read_frequency_cache_view` does;
 /// - the bivariate CSV is keyed off the RAW input's file stem (`bivariate_csv_path`), which is also
 ///   what `bivariate_sidecar_fresh` was computed against.
 ///
+/// `stats_anchor` MUST be a path the run resolved during its data phase — in practice
+/// `count_conf.path`, which `Config::new` already `dc:`-resolved. Do NOT re-resolve a `dc:` handle
+/// here: `diskcache::resolve_dc_path` auto-refreshes a stale entry (a network fetch that can
+/// materialize a DIFFERENT CSV), so a fresh resolution at page-assembly time could hand back a
+/// cache entry newer than the one the dashboard was built from — the exact divergence this
+/// function exists to prevent, on top of doing surprise network I/O while writing out a page.
+///
 /// For stdin the on-disk sidecars don't exist at all, but the charted-frequency CSV is generated in
 /// memory and is still offered.
 fn collect_sidecar_downloads(
     input: Option<&str>,
+    stats_anchor: Option<&std::path::Path>,
     stats: &[crate::cmd::stats::StatsData],
     freq: &FreqMap,
     freq_cache_used: bool,
     bivariate_fresh: bool,
 ) -> Vec<SidecarDownload> {
     let mut out = Vec::new();
-    let Some(input) = input.filter(|i| *i != "-") else {
-        if let Some(sc) = charted_frequency_csv(std::path::Path::new("data"), stats, freq) {
-            out.push(sc);
-        }
-        return out;
-    };
-    let input_path = std::path::Path::new(input);
 
-    // stats pair: anchored on the canonical path, like get_stats_records — including its `dc:`
-    // resolution, so a disk-cache handle whose materialized CSV *does* have a stats cache still
-    // gets its downloads. `.stats.csv.data.jsonl` is what viz reads; `.stats.csv.json` records the
-    // parsing options it was built with.
+    // stats pair: `.stats.csv.data.jsonl` is what viz reads; `.stats.csv.json` records the parsing
+    // options it was built with.
     //
     // The human-readable `.stats.csv` is deliberately NOT offered. viz never reads it, so it can't
     // be shown to be the stats behind this dashboard: an explicit `qsv stats --select … -o
     // <stem>.stats.csv` leaves a file that is newer than the source yet describes a different
     // computation than the cache viz actually used, and no mtime test can tell the two apart. The
     // same numbers ride in `.stats.csv.data.jsonl`, which viz demonstrably did read.
-    let stats_anchor = resolve_stats_input_path(input);
-    if let Ok(canonical) = std::path::Path::new(&stats_anchor).canonicalize() {
+    if let Some(anchor) = stats_anchor
+        && let Ok(canonical) = anchor.canonicalize()
+    {
         for (ext, short, redact) in [
             ("stats.csv.data.jsonl", "stats", SidecarRedaction::None),
             ("stats.csv.json", "stats meta", SidecarRedaction::JsonObject),
@@ -10104,8 +10081,9 @@ fn collect_sidecar_downloads(
     // absent/stale/option-incompatible cache silently falls back to a full recompute pass — so
     // existence alone is not proof of use.
     if freq_cache_used
+        && let Some(input) = input.filter(|i| *i != "-")
         && let Some(sc) = read_sidecar(
-            &crate::cmd::frequency::frequency_cache_path(input_path),
+            &crate::cmd::frequency::frequency_cache_path(std::path::Path::new(input)),
             "freq",
             SidecarRedaction::JsonlFirstLine,
         )
@@ -10116,15 +10094,20 @@ fn collect_sidecar_downloads(
     // the frequency counts the dashboard actually CHARTED. Generated in memory (nothing is written
     // to disk), so unlike the cache above it is always available — whether the bars came from a
     // cache hit or a full recompute — and it is exactly what the reader sees in the panels,
-    // aggregate `(NULL)`/`Other (N)` buckets included, already capped at --limit.
-    // named off the stats anchor, so a `dc:` handle yields `<cached name>.viz-frequency.csv`
-    // rather than a download named after the literal `dc:` string.
-    if let Some(sc) = charted_frequency_csv(std::path::Path::new(&stats_anchor), stats, freq) {
+    // aggregate `(NULL)`/`Other (N)` buckets included, already capped at --limit. Named off the
+    // stats anchor, so a `dc:` handle yields `<cached name>.viz-frequency.csv` rather than a
+    // download named after the literal `dc:` string.
+    if let Some(sc) = charted_frequency_csv(
+        stats_anchor.unwrap_or_else(|| std::path::Path::new("data")),
+        stats,
+        freq,
+    ) {
         out.push(sc);
     }
 
     // bivariate: only when THIS run's moarstats subprocess provably wrote it.
     if bivariate_fresh
+        && let Some(input) = input.filter(|i| *i != "-")
         && let Some(sc) = read_sidecar(
             &bivariate_csv_path(input),
             "bivariate",
@@ -20072,8 +20055,13 @@ impl<'a> SmartCtx<'a> {
                     // downloads for the generated sidecars this run actually consumed, offered
                     // beside the "Export JSONSchema" link so a reader of the standalone HTML can
                     // pull down the inputs the dashboard was built from.
+                    // `count_conf.path` is the input path this run already resolved when the data
+                    // config was built (Config::new does the `dc:` resolution), so the stats
+                    // sidecars are located off the SAME file the dashboard was built from — never
+                    // a re-resolution here, which could refresh a stale `dc:` entry mid-render.
                     let sidecars = collect_sidecar_downloads(
                         self.args.arg_input.as_deref(),
+                        self.count_conf.path.as_deref(),
                         &self.stats,
                         &freq,
                         freq_cache_used,
@@ -26210,8 +26198,10 @@ mod tests {
         use std::io::Write;
 
         // stdin has no ON-DISK sidecars; with no frequency panel either, nothing is offered
-        assert!(collect_sidecar_downloads(None, &[], &FreqMap::new(), true, true).is_empty());
-        assert!(collect_sidecar_downloads(Some("-"), &[], &FreqMap::new(), true, true).is_empty());
+        assert!(collect_sidecar_downloads(None, None, &[], &FreqMap::new(), true, true).is_empty());
+        assert!(
+            collect_sidecar_downloads(Some("-"), None, &[], &FreqMap::new(), true, true).is_empty()
+        );
 
         let dir = std::env::temp_dir().join("qsv_viz_sidecar_dl_test");
         let _ = std::fs::remove_dir_all(&dir);
@@ -26222,8 +26212,15 @@ mod tests {
 
         // no sidecars on disk yet -> nothing offered even with both gates open
         assert!(
-            collect_sidecar_downloads(Some(&input_str), &[], &FreqMap::new(), true, true)
-                .is_empty()
+            collect_sidecar_downloads(
+                Some(&input_str),
+                Some(&input),
+                &[],
+                &FreqMap::new(),
+                true,
+                true
+            )
+            .is_empty()
         );
 
         // the stats cache + its metadata are offered on existence (viz always reads them)
@@ -26246,6 +26243,7 @@ mod tests {
             |v: Vec<SidecarDownload>| -> Vec<String> { v.into_iter().map(|s| s.fname).collect() };
         let got = names(collect_sidecar_downloads(
             Some(&input_str),
+            Some(&input),
             &[],
             &FreqMap::new(),
             false,
@@ -26263,6 +26261,7 @@ mod tests {
         // opening both gates picks them up
         let got = names(collect_sidecar_downloads(
             Some(&input_str),
+            Some(&input),
             &[],
             &FreqMap::new(),
             true,
@@ -26283,6 +26282,7 @@ mod tests {
         assert!(
             !names(collect_sidecar_downloads(
                 Some(&input_str),
+                Some(&input),
                 &[],
                 &FreqMap::new(),
                 false,
@@ -26303,6 +26303,7 @@ mod tests {
         assert!(
             !names(collect_sidecar_downloads(
                 Some(&input_str),
+                Some(&input),
                 &[],
                 &FreqMap::new(),
                 false,
@@ -26310,6 +26311,54 @@ mod tests {
             ))
             .contains(&"accounts.stats.csv.data.jsonl".to_string()),
             "a sidecar over the embed cap is skipped"
+        );
+
+        // The stats sidecars follow `stats_anchor` — the path the RUN already resolved — not the
+        // raw input string. That separation is what lets a `dc:` handle use the CSV
+        // `Config::new` materialized without this function re-resolving it (a re-resolve can
+        // refresh a stale entry and silently swap in a different file mid-render).
+        let other = dir.join("resolved.csv");
+        std::fs::write(&other, "a,b\n1,2\n").unwrap();
+        std::fs::write(
+            dir.join("resolved.stats.csv.data.jsonl"),
+            "{\"field\":\"a\"}\n",
+        )
+        .unwrap();
+        // a real frequency panel, so the charted-frequency download is actually produced and its
+        // filename can be checked
+        let anchor_stats = [crate::cmd::stats::StatsData {
+            field: "a".to_string(),
+            ..Default::default()
+        }];
+        let mut anchor_freq = FreqMap::new();
+        anchor_freq.insert(
+            0,
+            vec![FreqBar {
+                x_key: "x".to_string(),
+                label: "x".to_string(),
+                count: 1,
+                kind:  FreqBarKind::Category,
+            }],
+        );
+        let got = names(collect_sidecar_downloads(
+            Some("dc:accounts"),
+            Some(&other),
+            &anchor_stats,
+            &anchor_freq,
+            false,
+            false,
+        ));
+        assert!(
+            got.contains(&"resolved.stats.csv.data.jsonl".to_string()),
+            "stats sidecars come from the anchor the run resolved: {got:?}"
+        );
+        assert!(
+            !got.iter().any(|n| n.starts_with("accounts.stats")),
+            "the raw input string never locates the stats sidecars: {got:?}"
+        );
+        assert!(
+            got.contains(&"resolved.viz-frequency.csv".to_string()),
+            "the charted-frequency download is named off the anchor, never the dc: string: {got:?}"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

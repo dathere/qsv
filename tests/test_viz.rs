@@ -3740,6 +3740,13 @@ fn viz_smart_cyclic_seasonality_panel() {
         "expected an hour-of-day cyclic panel"
     );
     assert!(html.contains(r#""type":"scatterpolar""#));
+    // a polar subplot paints its angular tick labels OUTSIDE its plot area, so the panel carries
+    // taller top/bottom margins than the other inline panels — otherwise the 12 o'clock label
+    // collides with the title and the 6 o'clock one is clipped by the panel edge.
+    assert!(
+        html.contains(r#""margin":{"l":20,"r":20,"t":64,"b":44,"pad":4}"#),
+        "polar panel should reserve extra top/bottom margin for its angular tick labels"
+    );
 }
 
 #[test]
@@ -6313,6 +6320,18 @@ fn viz_smart_truncates_long_bar_labels() {
     // that truncate to the same label stay distinct (not collapsed onto one bar).
     assert!(html.contains(long_a));
     assert!(html.contains(long_b));
+    // plotly's default category hover echoes the TRUNCATED ticktext, so the bar carries the
+    // full names as `hovertext` and a template that renders them
+    // (bars are ordered by count desc then label asc, so long_b precedes long_a here)
+    assert!(
+        html.contains(&format!(r#""hovertext":["{long_b}","{long_a}"]"#)),
+        "freq bars should carry the full category names as hovertext"
+    );
+    // plotly unicode-escapes the template's angle brackets, so match the escaped form
+    assert!(
+        html.contains(r#""hovertemplate":"%{hovertext}\u003cbr\u003ecount: %{y:,}"#),
+        "freq bars should render the full name + count in the hover"
+    );
 }
 
 #[test]
@@ -10423,6 +10442,60 @@ fn viz_smart_dict_info_grid_path() {
     assert!(
         !html.contains("qsv-dict-viewchart\" data-anchor"),
         "grid-path dictionary must not render View chart links"
+    );
+}
+
+// The Examples row annotates each example with its occurrence count from
+// `x-qsv.example_counts`, comma-grouped for readability. Driven by the `examples` array, so
+// describegpt's "Other…" aggregation-bucket sentinel (kept in example_counts but filtered out
+// of a numeric column's examples) must NOT leak in; a column without example_counts falls back
+// to bare values.
+#[test]
+fn viz_smart_dict_info_example_counts() {
+    let wrk = Workdir::new("viz_smart_dict_info_example_counts");
+    dict_info_codes_csv(&wrk);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "description": "Example-count rendering fixture.",
+      "properties": {
+        "census_tract": { "type": ["integer","null"], "title": "Census Tract",
+          "description": "The 2020 census tract containing the incident.",
+          "examples": [12, 7],
+          "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "geo.census_tract",
+                     "cardinality": 40, "null_count": 0,
+                     "example_counts": "Other… [1500]\n12 [1234]\n7 [56]" } },
+        "status": { "type": "string", "title": "Case Status",
+          "description": "Lifecycle state of the service request.",
+          "examples": ["Open", "Closed", "Pending"],
+          "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+      }
+    }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dict-info", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // counts appended and comma-grouped, in the examples array's order
+    assert!(
+        html.contains("<dt>Examples</dt><dd>12 (1,234), 7 (56)</dd>"),
+        "annotated Examples row missing"
+    );
+    // the "Other…" bucket rides only in example_counts - it must not become an example
+    assert!(
+        !html.contains("Other…"),
+        "example_counts aggregation bucket leaked into the Examples row"
+    );
+    // no example_counts for this column -> bare values, exactly as before
+    assert!(
+        html.contains("<dt>Examples</dt><dd>Open, Closed, Pending</dd>"),
+        "unannotated fallback Examples row missing"
     );
 }
 

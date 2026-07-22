@@ -698,8 +698,10 @@ FIGURES = [
      "<i>Borough</i> × <i>Park Borough</i> (n=10,000) and "
      "<i>Due Date</i> × <i>Resolution Action Updated Date</i> (NMI=0.9996, n=3,467). "
      "<code>--dict-info</code> adds a per-panel info icon and a slide-over <b>Data Dictionary</b> "
-     "drawer sourced from the same committed schema, with an <b>Export&nbsp;JSONSchema</b> download "
-     "that saves the dictionary verbatim. The run stays fully "
+     "drawer sourced from the same committed schema, topped by a <b>download row</b> that bundles "
+     "the dictionary as JSON Schema, the frequency counts the panels actually charted, and the "
+     "stats &amp; bivariate sidecars this run was built from &mdash; every file carried inside the "
+     "HTML, so anyone you send the dashboard to can save them. The run stays fully "
      "<b>deterministic</b> and offline: because the dictionary is committed, <code>--bivariate</code> "
      "never triggers a live <code>--dictionary infer</code> pass.",
      True, ["smart", "nyc_311.csv", "--smarter", "--bivariate", "--dict-info",
@@ -729,7 +731,9 @@ FIGURES = [
      "<code>LicenseType</code>/<code>Breed</code>/<code>Color</code> frequency bars and, via "
      "<code>--bivariate</code>, an <b>NMI association heatmap</b> (Breed ↔ Color) plus a ranked "
      "Top&nbsp;Relationships panel. <code>--dict-info</code> adds a per-panel info icon and a "
-     "slide-over <b>Data Dictionary</b> drawer sourced from the same curated schema. Fully "
+     "slide-over <b>Data Dictionary</b> drawer sourced from the same curated schema, topped by a "
+     "<b>download row</b> bundling the dictionary, the charted frequency counts and the stats &amp; "
+     "bivariate sidecars into the HTML itself. Fully "
      "deterministic — no LLM needed (the curated dictionary is reviewed and committed, exactly "
      "like an <code>--dictionary infer</code> pass would produce).",
      True, ["smart", "allegheny_dog_licenses.csv", "--smarter", "--bivariate", "--dict-info",

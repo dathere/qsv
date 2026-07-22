@@ -168,6 +168,19 @@ Examples:
   # Well-formed rows go to data.csv.valid; ragged rows go to data.csv.invalid.
   qsv validate --split-ragged data.csv
 
+  # Skip '#'-prefixed comment lines while quarantining ragged rows.
+  # validate has no parser-config options of its own, but it honors the global
+  # QSV_COMMENT_CHAR environment variable in BOTH validation modes. Commented lines
+  # (including a commented header) are skipped - they are NOT written to the .valid file.
+  QSV_COMMENT_CHAR='#' qsv validate --split-ragged data.tsv
+
+  # For CSV dialects validate cannot express (custom quote/escape characters,
+  # preamble/epilogue lines, non-UTF-8 encodings), normalize with `qsv input` FIRST,
+  # then validate the normalized output. Note that `qsv input` aborts on ragged rows,
+  # so this ordering only works on files that are not ragged.
+  qsv input --quote "'" --escape '\' --comment '#' data.tsv -o normalized.csv
+  qsv validate normalized.csv
+
   # Validate a TSV file against a JSON Schema
   qsv validate data.tsv schema.json
 

@@ -11133,12 +11133,16 @@ fn viz_axis_and_colorbar_titles_escape_markup_headers_but_not_flags() {
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
+    // every assertion below is anchored to the distinctive evil host rather than to a bare
+    // `<a href=`, so unrelated document chrome or an uncompressed embedded plotly bundle can
+    // neither satisfy the positive nor trip the negatives.
     assert!(
-        html.contains(r"\u0026lt;a href="),
+        html.contains(r#"\u0026lt;a href=\"https://evil.example\"\u0026gt;Amount"#),
         "the colorbar title must be escaped, not rendered as a live link"
     );
     assert!(
-        !html.contains(r"\u003ca href=") && !html.contains("<a href="),
+        !html.contains(r#"\u003ca href=\"https://evil.example"#)
+            && !html.contains(r#"<a href="https://evil.example"#),
         "raw markup header leaked into the colorbar title"
     );
 }

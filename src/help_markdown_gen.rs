@@ -1456,6 +1456,52 @@ fn titlecase_hyphenated(w: &str) -> String {
         .join("-")
 }
 
+/// Strip leading `NAME=value` environment-variable assignments from a command line,
+/// returning the remainder.
+///
+/// `QSV_COMMENT_CHAR='#' qsv validate data.csv` returns `qsv validate data.csv`, so
+/// env-prefixed examples are still recognized as commands. Returns the line unchanged
+/// when it doesn't start with an assignment.
+fn strip_env_var_prefixes(line: &str) -> &str {
+    let mut rest = line;
+    loop {
+        let Some(eq_pos) = rest.find('=') else {
+            break;
+        };
+        let name = &rest[..eq_pos];
+        if name.is_empty()
+            || name.starts_with(|c: char| c.is_ascii_digit())
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        {
+            break;
+        }
+
+        // scan the value, honoring quotes, up to the first unquoted whitespace
+        let mut quote: Option<char> = None;
+        let mut value_end = rest.len();
+        for (offset, c) in rest[eq_pos + 1..].char_indices() {
+            match quote {
+                Some(q) if c == q => quote = None,
+                Some(_) => {},
+                None if c == '\'' || c == '"' => quote = Some(c),
+                None if c.is_whitespace() => {
+                    value_end = eq_pos + 1 + offset;
+                    break;
+                },
+                None => {},
+            }
+        }
+        if value_end == rest.len() || quote.is_some() {
+            // no command follows the assignment (or the value is unterminated)
+            break;
+        }
+        rest = rest[value_end..].trim_start();
+    }
+    rest
+}
+
 /// Format examples section into markdown
 fn format_examples(lines: &[String]) -> String {
     let mut md = String::new();
@@ -1627,12 +1673,14 @@ fn format_examples(lines: &[String]) -> String {
             }
         }
 
-        // Command lines: $ qsv ..., qsv ..., or piped commands containing qsv
+        // Command lines: $ qsv ..., qsv ..., piped commands containing qsv
         // (e.g. "cat in.csv | qsv split ..." or "$ cat in.csv | qsv split ...")
-        if trimmed.starts_with("$ qsv")
-            || trimmed.starts_with("qsv ")
-            || (trimmed.contains("| qsv ") || trimmed.contains("|qsv "))
-            || (trimmed.starts_with("$ ") && trimmed.contains("qsv "))
+        // or env-var-prefixed commands (e.g. "QSV_COMMENT_CHAR='#' qsv validate ...")
+        let cmd_body = strip_env_var_prefixes(trimmed);
+        if cmd_body.starts_with("$ qsv")
+            || cmd_body.starts_with("qsv ")
+            || (cmd_body.contains("| qsv ") || cmd_body.contains("|qsv "))
+            || (cmd_body.starts_with("$ ") && cmd_body.contains("qsv "))
         {
             if !in_code_block {
                 md.push_str("```console\n");
@@ -2694,6 +2742,47 @@ mod tests {
         assert!(
             md.contains("qsv describegpt data.csv\n```"),
             "qsv command should close the code block, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_format_examples_inline_env_var_prefix() {
+        let input = lines(&[
+            "# Skip comment lines while quarantining ragged rows",
+            "QSV_COMMENT_CHAR='#' qsv validate --split-ragged data.tsv",
+        ]);
+        let md = format_examples(&input);
+        assert!(
+            md.contains(
+                "```console\nQSV_COMMENT_CHAR='#' qsv validate --split-ragged data.tsv\n```"
+            ),
+            "Inline env-var prefix should be inside a console block, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_strip_env_var_prefixes() {
+        assert_eq!(
+            strip_env_var_prefixes("QSV_COMMENT_CHAR='#' qsv validate data.csv"),
+            "qsv validate data.csv"
+        );
+        assert_eq!(
+            strip_env_var_prefixes("A=1 B=\"two words\" qsv stats data.csv"),
+            "qsv stats data.csv"
+        );
+        // not env assignments - leave untouched
+        assert_eq!(
+            strip_env_var_prefixes("qsv sqlp data.csv \"select a = 1\""),
+            "qsv sqlp data.csv \"select a = 1\""
+        );
+        assert_eq!(
+            strip_env_var_prefixes("lowercase=1 qsv x"),
+            "lowercase=1 qsv x"
+        );
+        // assignment with no command following
+        assert_eq!(
+            strip_env_var_prefixes("QSV_COMMENT_CHAR='#'"),
+            "QSV_COMMENT_CHAR='#'"
         );
     }
 

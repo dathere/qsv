@@ -2522,10 +2522,12 @@ fn build_slider_xy_plot(args: &Args, kind: Chart, slider_col: &SelectColumns) ->
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
     }
+    // same sink as `build_layout`: the fallback is a raw CSV header, so it is escaped; an explicit
+    // --x-title is operator-supplied and stays raw.
     let mut x = Axis::new().title(Title::with_text(
         args.flag_x_title
             .clone()
-            .unwrap_or_else(|| data.x_label.clone()),
+            .unwrap_or_else(|| escape_hover(&data.x_label)),
     ));
     if let Some((lo, hi)) = data.x_range {
         x = x.range(vec![lo, hi]);
@@ -2542,7 +2544,7 @@ fn build_slider_xy_plot(args: &Args, kind: Chart, slider_col: &SelectColumns) ->
     let mut y = Axis::new().title(Title::with_text(
         args.flag_y_title
             .clone()
-            .unwrap_or_else(|| data.y_label.clone()),
+            .unwrap_or_else(|| escape_hover(&data.y_label)),
     ));
     // an explicit --y-range wins over the pinned global range
     let (ylo, yhi) = if let Some(r) = &args.flag_y_range {
@@ -2770,7 +2772,9 @@ fn build_scatter_encoded(args: &Args) -> CliResult<(Vec<Box<dyn Trace>>, String,
             .color_array(colors)
             .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
             .show_scale(true)
-            .color_bar(ColorBar::new().title(color_label.clone().unwrap_or_default()));
+            .color_bar(
+                ColorBar::new().title(color_label.as_deref().map(escape_hover).unwrap_or_default()),
+            );
     }
 
     let trace = scatter_with_marker(xs, ys, marker, hover);
@@ -3470,7 +3474,10 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
                 .color_array(colors)
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
                 .show_scale(true)
-                .color_bar(ColorBar::new().title(color_label.unwrap_or_default()));
+                .color_bar(
+                    ColorBar::new()
+                        .title(color_label.as_deref().map(escape_hover).unwrap_or_default()),
+                );
         }
         plot.add_trace(scatter_map_with_marker(lats, lons, marker, hover));
     }
@@ -3701,7 +3708,10 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
                 .color_array(colors)
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
                 .show_scale(true)
-                .color_bar(ColorBar::new().title(color_label.unwrap_or_default()));
+                .color_bar(
+                    ColorBar::new()
+                        .title(color_label.as_deref().map(escape_hover).unwrap_or_default()),
+                );
         }
         plot.add_trace(scatter_geo_with_marker(lats, lons, marker, hover));
     }
@@ -5468,7 +5478,7 @@ fn build_choropleth_plot(
             .feature_id_key(args.flag_feature_id_key.as_deref().unwrap_or("id"))
             .color_scale(ColorScale::Palette(palette))
             .show_scale(true)
-            .color_bar(ColorBar::new().title(measure_label))
+            .color_bar(ColorBar::new().title(escape_hover(&measure_label)))
             .marker(
                 ChoroplethMarker::new()
                     .line(Line::new().width(0.5))
@@ -5509,7 +5519,7 @@ fn build_choropleth_plot(
             .location_mode(mode)
             .color_scale(ColorScale::Palette(palette))
             .show_scale(true)
-            .color_bar(ColorBar::new().title(measure_label))
+            .color_bar(ColorBar::new().title(escape_hover(&measure_label)))
             .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
             .hover_text_array(hover_text)
             .hover_info(HoverInfo::Text);
@@ -8815,7 +8825,13 @@ fn build_layout(
     // x-axis: title (explicit flag, else resolved column label) and/or an optional range-slider
     // navigator strip. Emit the axis when either is set so --rangeslider works even without a
     // title.
-    let x_title = args.flag_x_title.clone().or(default_x);
+    // The FALLBACK is a raw CSV header and axis titles render plotly pseudo-HTML, so it is escaped
+    // like every other data-derived axis title (scatter3d 6119, animated bubble 21943). An explicit
+    // --x-title/--y-title is operator-supplied and stays raw, matching --title above.
+    let x_title = args
+        .flag_x_title
+        .clone()
+        .or_else(|| default_x.as_deref().map(escape_hover));
     if x_title.is_some() || args.flag_rangeslider {
         let mut x = Axis::new();
         if let Some(t) = x_title {
@@ -8828,7 +8844,10 @@ fn build_layout(
     }
     // y-axis: title (flag or column label) and/or an explicit --y-range. Only emit the axis
     // when at least one is set, so the default (autoranging, untitled) case is untouched.
-    let y_title = args.flag_y_title.clone().or(default_y);
+    let y_title = args
+        .flag_y_title
+        .clone()
+        .or_else(|| default_y.as_deref().map(escape_hover));
     if y_title.is_some() || args.flag_y_range.is_some() {
         let mut y = Axis::new();
         if let Some(t) = y_title {
@@ -21403,7 +21422,7 @@ fn smart_inline_panel_plot(
                 .feature_id_key(feature_id_key.clone())
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
                 .show_scale(true)
-                .color_bar(ColorBar::new().title(measure_label.clone()))
+                .color_bar(ColorBar::new().title(escape_hover(measure_label)))
                 .marker(
                     ChoroplethMarker::new()
                         .line(Line::new().width(0.5))
@@ -21469,7 +21488,7 @@ fn smart_inline_panel_plot(
             .location_mode(location_mode.clone())
             .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
             .show_scale(true)
-            .color_bar(ColorBar::new().title(measure_label.clone()))
+            .color_bar(ColorBar::new().title(escape_hover(measure_label)))
             .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
             .hover_text_array(hover_text.clone())
             .hover_info(HoverInfo::Text);

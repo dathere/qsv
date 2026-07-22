@@ -11062,3 +11062,83 @@ fn viz_smart_notes_and_drops_dictionary_with_no_headers() {
         "the dashboard must still render from statistics alone; html: {html}"
     );
 }
+
+// Axis titles go through plotly's pseudo-HTML text renderer, so a CSV header containing markup
+// would render as live markup (a `<a href>` link, a `<b>` bold, a `<span style>` — the same
+// spoofing sink already closed for the panel title and the 3D/animated-bubble axis titles).
+// The standalone chart paths (`build_layout`, and the --slider layout) resolved their axis title
+// from the raw header, so they were the twins that kept the sink open.
+// An explicit --x-title/--y-title is operator-supplied and deliberately stays raw, like --title.
+#[test]
+fn viz_axis_and_colorbar_titles_escape_markup_headers_but_not_flags() {
+    let wrk = Workdir::new("viz_axis_and_colorbar_titles_escape_markup_headers_but_not_flags");
+    wrk.create_from_string(
+        "evil.csv",
+        "<b>Region</b>,<a href=\"https://evil.example\">Amount</a>\nnorth,10\nsouth,20\n",
+    );
+    let x = "<b>Region</b>";
+    let y = "<a href=\"https://evil.example\">Amount</a>";
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["bar", "evil.csv", "--x", x, "--y", y]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // `escape_hover` turns the header into `&lt;b&gt;...`, then plotly's serializer additionally
+    // \u-escapes the `&`, so the axis title reaches the page as literal text -- never a tag.
+    assert!(
+        html.contains(r"\u0026lt;b\u0026gt;Region\u0026lt;/b\u0026gt;"),
+        "the x-axis title must be escaped, not rendered as markup"
+    );
+    assert!(
+        html.contains(r"\u0026lt;a href="),
+        "the y-axis title must be escaped, not rendered as a live link"
+    );
+    // the unescaped header must not survive in either serialized form
+    assert!(
+        !html.contains(r"\u003cb\u003eRegion") && !html.contains("<b>Region"),
+        "raw markup header leaked into an axis title"
+    );
+
+    // an explicit --x-title is operator-supplied and deliberately stays raw, like --title
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "bar",
+        "evil.csv",
+        "--x",
+        x,
+        "--y",
+        y,
+        "--x-title",
+        "<b>Mine</b>",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r"\u003cb\u003eMine\u003c/b\u003e"),
+        "an explicit --x-title is operator-supplied and must not be escaped"
+    );
+
+    // colorbar titles are the same plotly markup sink, resolved from the same raw headers. The
+    // scatter builder already escaped this very variable for the HOVER text while passing it raw
+    // to the colorbar, so it drew a live link as the scale title.
+    wrk.create_from_string(
+        "cb.csv",
+        "x,y,<a href=\"https://evil.example\">Amount</a>\n1,2,3\n4,5,6\n",
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args(["scatter", "cb.csv", "--x", "x", "--y", "y", "--color", y]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r"\u0026lt;a href="),
+        "the colorbar title must be escaped, not rendered as a live link"
+    );
+    assert!(
+        !html.contains(r"\u003ca href=") && !html.contains("<a href="),
+        "raw markup header leaked into the colorbar title"
+    );
+}

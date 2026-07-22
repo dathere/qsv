@@ -10037,12 +10037,13 @@ fn read_sidecar(
 /// - the bivariate CSV is keyed off the RAW input's file stem (`bivariate_csv_path`), which is also
 ///   what `bivariate_sidecar_fresh` was computed against.
 ///
-/// `stats_anchor` MUST be a path the run resolved during its data phase — in practice
-/// `count_conf.path`, which `Config::new` already `dc:`-resolved. Do NOT re-resolve a `dc:` handle
-/// here: `diskcache::resolve_dc_path` auto-refreshes a stale entry (a network fetch that can
-/// materialize a DIFFERENT CSV), so a fresh resolution at page-assembly time could hand back a
-/// cache entry newer than the one the dashboard was built from — the exact divergence this
-/// function exists to prevent, on top of doing surprise network I/O while writing out a page.
+/// `stats_anchor` MUST be the very path the stats were loaded from — in practice
+/// `SmartPrep::stats_input`, the string handed to `get_stats_records`, whose `dc:` handle was
+/// resolved once in `smart_prepare`. Do NOT resolve a `dc:` handle here, and do not substitute
+/// another config's path: `diskcache::resolve_dc_path` auto-refreshes a stale entry (a network
+/// fetch that can materialize a DIFFERENT CSV), so any second resolution can disagree with the
+/// one the stats came from — the exact divergence this function exists to prevent, on top of
+/// doing surprise network I/O while writing out a page.
 ///
 /// For stdin the on-disk sidecars don't exist at all, but the charted-frequency CSV is generated in
 /// memory and is still offered.
@@ -18089,6 +18090,9 @@ struct SmartPrep {
     args:                    Args,
     /// the validated input path (never stdin).
     input:                   String,
+    /// the path the STATS cache is keyed on: `input`, with a `dc:` handle resolved ONCE here so
+    /// the stats load and the `--dict-info` download row can't drift onto different files.
+    stats_input:             String,
     /// non-default parsing (`--no-headers` / `--delimiter`) forces the stats cache to regenerate.
     force_stats_regen:       bool,
     /// set only when THIS run's moarstats `--bivariate` subprocess wrote a fresh sidecar.
@@ -18293,11 +18297,37 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
     }
 
     Ok(SmartPrep {
+        // resolved HERE, once, so the stats load and the `--dict-info` download row are anchored
+        // on the same file by construction rather than by two resolutions happening to agree
+        stats_input: resolve_stats_input_path(&input),
         args,
         input,
         force_stats_regen,
         bivariate_sidecar_fresh,
     })
+}
+
+/// Resolve a `dc:<name>` disk-cache handle to the materialized CSV the stats cache is keyed on,
+/// mirroring `util::get_stats_records`. A no-op for every ordinary path.
+///
+/// Call this EXACTLY ONCE per run, in the data phase (`smart_prepare`), and reuse the result:
+/// `diskcache::resolve_dc_path` auto-refreshes a stale entry — a network fetch that can
+/// materialize a DIFFERENT CSV — so two resolutions within one run can disagree. Feeding the
+/// result to BOTH `get_stats_records` (which then has no `dc:` prefix left to re-resolve) and the
+/// `--dict-info` stats anchor is what makes the offered sidecars provably the ones the dashboard's
+/// stats came from.
+///
+/// A resolution failure falls back to the raw input, which simply won't canonicalize later — no
+/// stats downloads, rather than a failed dashboard.
+fn resolve_stats_input_path(input: &str) -> String {
+    #[cfg(feature = "get")]
+    if let Some(dc_name) = input.strip_prefix("dc:") {
+        return match crate::diskcache::resolve_dc_path(dc_name) {
+            Ok(p) => p.to_string_lossy().into_owned(),
+            Err(_) => input.to_string(),
+        };
+    }
+    input.to_string()
 }
 
 /// Per-panel data gathered once the panel set is final, consumed by the render dispatch.
@@ -18348,6 +18378,9 @@ struct SmartCtx<'a> {
 
     explicit_box_points: Option<BoxPoints>,
     count_conf:          Config,
+    /// the path the stats cache was loaded from — `dc:` resolved ONCE in `smart_prepare`, so the
+    /// `--dict-info` download row anchors on exactly the file `get_stats_records` read.
+    stats_input:         String,
     nrows:               Option<u64>,
     log_scale:           LogScale,
     violin_mode:         ViolinMode,
@@ -18390,7 +18423,7 @@ impl<'a> SmartCtx<'a> {
             flag_polars:          false,
             flag_no_headers:      args.flag_no_headers,
             flag_delimiter:       args.flag_delimiter,
-            arg_input:            Some(prep.input.clone()),
+            arg_input:            Some(prep.stats_input.clone()),
             flag_memcheck:        false,
             flag_output:          None,
         };
@@ -18606,6 +18639,7 @@ impl<'a> SmartCtx<'a> {
             geo_anim_panel: None,
             explicit_box_points,
             count_conf,
+            stats_input: prep.stats_input.clone(),
             nrows,
             log_scale,
             violin_mode,
@@ -20055,13 +20089,13 @@ impl<'a> SmartCtx<'a> {
                     // downloads for the generated sidecars this run actually consumed, offered
                     // beside the "Export JSONSchema" link so a reader of the standalone HTML can
                     // pull down the inputs the dashboard was built from.
-                    // `count_conf.path` is the input path this run already resolved when the data
-                    // config was built (Config::new does the `dc:` resolution), so the stats
-                    // sidecars are located off the SAME file the dashboard was built from — never
-                    // a re-resolution here, which could refresh a stale `dc:` entry mid-render.
+                    // `stats_input` is the exact string handed to `get_stats_records`, resolved
+                    // once in `smart_prepare`. Anchoring on it means the offered stats sidecars
+                    // are the ones the dashboard's statistics were actually read from — not a
+                    // second `dc:` resolution that could have refreshed a stale entry in between.
                     let sidecars = collect_sidecar_downloads(
                         self.args.arg_input.as_deref(),
-                        self.count_conf.path.as_deref(),
+                        Some(std::path::Path::new(&self.stats_input)),
                         &self.stats,
                         &freq,
                         freq_cache_used,

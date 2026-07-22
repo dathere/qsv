@@ -593,6 +593,14 @@ pub(super) struct DictionaryEntry {
     pub(super) examples:        String,                   /* Format: "val1 [cnt1]\nval2 [cnt2]…"
                                                            * or
                                                            * "<ALL_UNIQUE>" */
+    /// `examples` without the `--truncate-str` truncation (bucket "…" suffixes and the
+    /// `<ALL_UNIQUE>` sentinel are identical in both). Truncation exists to bound the LLM
+    /// prompt, so it still governs `examples` — which feeds the prompt and the CSV/JSON/
+    /// semantic-md dictionaries — while the machine-facing JSON Schema output emits these
+    /// exact values. `#[serde(default)]` keeps older cached dictionaries (written before this
+    /// field existed) deserializable; an empty value falls back to `examples`.
+    #[serde(default)]
+    pub(super) examples_full:   String,
     /// Structured counterpart to `examples`, retaining per-value percentage and rank.
     /// `#[serde(default)]` keeps older cached dictionaries (written before this field
     /// existed) deserializable.
@@ -909,16 +917,21 @@ pub(super) fn generate_code_based_dictionary(
             String::new()
         };
 
-        let (examples, freq_details) = if field_frequencies
+        let (examples, examples_full, freq_details) = if field_frequencies
             .iter()
             .any(|f| (f.percentage - 100.0).abs() < 0.0001)
         {
-            ("<ALL_UNIQUE>".to_string(), Vec::new())
+            (
+                "<ALL_UNIQUE>".to_string(),
+                "<ALL_UNIQUE>".to_string(),
+                Vec::new(),
+            )
         } else {
             let mut sorted_freqs = field_frequencies.clone();
             sorted_freqs.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
 
             let mut top_n: Vec<String> = Vec::new();
+            let mut top_n_full: Vec<String> = Vec::new();
             let mut details: Vec<FreqDetail> = Vec::new();
             for f in sorted_freqs.iter().take(num_examples as usize) {
                 // For frequency bucket entries (rank == 0.0), strip the redundant
@@ -940,9 +953,14 @@ pub(super) fn generate_code_based_dictionary(
                     s.push('…');
                     s
                 } else {
-                    raw_value
+                    raw_value.clone()
                 };
                 top_n.push(format!("{} [{}]", v, f.count));
+                // untruncated counterpart — the bucket "…" suffix above is already applied, so
+                // only the `truncate_str` step is skipped. Consumed by the JSON Schema output
+                // (machine-facing, and what `viz --dict-info` renders); the prompt and the
+                // CSV/JSON/semantic-md dictionaries keep the truncated `examples`.
+                top_n_full.push(format!("{raw_value} [{}]", f.count));
                 details.push(FreqDetail {
                     value:      v,
                     count:      f.count,
@@ -951,7 +969,7 @@ pub(super) fn generate_code_based_dictionary(
                 });
             }
 
-            (top_n.join("\n"), details)
+            (top_n.join("\n"), top_n_full.join("\n"), details)
         };
 
         let mut entry_addl_cols = IndexMap::new();
@@ -1042,6 +1060,7 @@ pub(super) fn generate_code_based_dictionary(
             null_count: stats_record.nullcount,
             addl_cols: entry_addl_cols,
             examples,
+            examples_full,
             freq_details,
             is_unique_id: is_all_unique,
             concept,
@@ -2018,6 +2037,7 @@ mod tests {
             null_count:      0,
             addl_cols:       IndexMap::new(),
             examples:        String::new(),
+            examples_full:   String::new(),
             freq_details:    Vec::new(),
             is_unique_id:    false,
             concept:         String::new(),

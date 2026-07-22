@@ -29,10 +29,10 @@
       "title": "License Type",
       "description": "The specific classification of the dog license (e.g., lifetime, senior).",
       "examples": [
-        "Dog Lifetime Spayed Femal…",
-        "Dog Lifetime Neutered Mal…",
+        "Dog Lifetime Spayed Female",
+        "Dog Lifetime Neutered Male",
         "Dog Lifetime Male",
-        "Dog Senior Lifetime Spaye…",
+        "Dog Senior Lifetime Spayed Female",
         "Dog Lifetime Female"
       ],
       "x-qsv": {
@@ -42,7 +42,7 @@
         "content_type": "category",
         "role": "dimension",
         "concept": "category.type",
-        "example_counts": "Dog Lifetime Spayed Femal… [16350]\nDog Lifetime Neutered Mal… [15279]\nDog Lifetime Male [3717]\nDog Senior Lifetime Spaye… [3658]\nDog Lifetime Female [3039]"
+        "example_counts": "Dog Lifetime Spayed Female [16350]\nDog Lifetime Neutered Male [15279]\nDog Lifetime Male [3717]\nDog Senior Lifetime Spayed Female [3658]\nDog Lifetime Female [3039]"
       }
     },
     "Breed": {

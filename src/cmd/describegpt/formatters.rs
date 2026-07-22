@@ -343,9 +343,9 @@ fn build_property_schema(
     // `value_matches_json_type` filter drops those so they can't leak into a
     // numeric/boolean property's `examples` array and fail validation against
     // that property's subschema.
-    if !entry.examples.is_empty() && entry.examples != "<ALL_UNIQUE>" {
-        let example_vals: Vec<Value> = entry
-            .examples
+    let schema_examples = schema_examples(entry);
+    if !schema_examples.is_empty() && schema_examples != "<ALL_UNIQUE>" {
+        let example_vals: Vec<Value> = schema_examples
             .split('\n')
             .filter_map(|line| {
                 let bare = strip_count_suffix(line);
@@ -481,14 +481,15 @@ fn build_x_qsv(
             ),
         );
     }
-    if !entry.examples.is_empty() {
+    let examples = schema_examples(entry);
+    if !examples.is_empty() {
         // Reformat date values to the inferred format (gated on
         // infer_content_type) so the weighted example_counts stay consistent
         // with the formatted `examples` array and x-qsv min/max above.
         let example_counts = if infer_content_type {
-            super::dictionary::format_date_examples(&entry.content_type, &entry.examples)
+            super::dictionary::format_date_examples(&entry.content_type, examples)
         } else {
-            entry.examples.clone()
+            examples.to_string()
         };
         x_qsv.insert("example_counts".to_string(), Value::String(example_counts));
     }
@@ -573,6 +574,19 @@ fn value_matches_json_type(value: &Value, json_type: &str) -> bool {
         "string" => value.is_string(),
         "null" => value.is_null(),
         _ => true,
+    }
+}
+
+/// The example values the JSON Schema output emits: the untruncated `examples_full` when
+/// present, else `examples`. `--truncate-str` bounds the LLM prompt (and the human-readable
+/// CSV/JSON/semantic-md dictionaries), but the schema is machine-facing — consumers like
+/// `qsv viz --dict-info` need the exact values — so it carries them in full. Older cached
+/// dictionaries have no `examples_full`, hence the fallback.
+fn schema_examples(entry: &DictionaryEntry) -> &str {
+    if entry.examples_full.is_empty() {
+        &entry.examples
+    } else {
+        &entry.examples_full
     }
 }
 
@@ -1098,6 +1112,7 @@ mod tests {
             null_count:      0,
             addl_cols:       Default::default(),
             examples:        "a [1]".to_string(),
+            examples_full:   String::new(),
             freq_details:    Vec::new(),
             is_unique_id:    false,
             concept:         String::new(),
@@ -1511,22 +1526,23 @@ mod tests {
         // and must be filtered so the property's `examples` array validates
         // against its own (`integer`/`null`) `type`.
         let entry = DictionaryEntry {
-            name:         "X Coordinate".to_string(),
-            r#type:       "Integer".to_string(),
-            label:        "X".to_string(),
-            description:  "Desc".to_string(),
-            content_type: String::new(),
-            min:          "100".to_string(),
-            max:          "999".to_string(),
-            cardinality:  500,
-            enumeration:  String::new(),
-            null_count:   10,
-            addl_cols:    Default::default(),
-            examples:     "Other… [900]\n(NULL)… [10]\n123 [5]\n456 [3]".to_string(),
-            freq_details: Vec::new(),
-            is_unique_id: false,
-            concept:      String::new(),
-            role:         String::new(),
+            name:          "X Coordinate".to_string(),
+            r#type:        "Integer".to_string(),
+            label:         "X".to_string(),
+            description:   "Desc".to_string(),
+            content_type:  String::new(),
+            min:           "100".to_string(),
+            max:           "999".to_string(),
+            cardinality:   500,
+            enumeration:   String::new(),
+            null_count:    10,
+            addl_cols:     Default::default(),
+            examples:      "Other… [900]\n(NULL)… [10]\n123 [5]\n456 [3]".to_string(),
+            examples_full: String::new(),
+            freq_details:  Vec::new(),
+            is_unique_id:  false,
+            concept:       String::new(),
+            role:          String::new(),
 
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
@@ -1583,6 +1599,57 @@ mod tests {
             "string examples must be preserved: {examples:?}"
         );
         assert!(examples.iter().all(serde_json::Value::is_string));
+    }
+
+    #[test]
+    fn jsonschema_emits_untruncated_examples() {
+        // `--truncate-str` bounds the prompt and the human-readable dictionary outputs; the
+        // machine-facing JSON Schema carries the full values (`examples_full`) in both the
+        // `examples` array and `x-qsv.example_counts`.
+        let mut entry = sample_entry("license", "");
+        entry.examples = "Dog Lifetime Spayed Femal… [16350]\nDog Lifetime Male [3717]".to_string();
+        entry.examples_full =
+            "Dog Lifetime Spayed Female [16350]\nDog Lifetime Male [3717]".to_string();
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&entry),
+            "test.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            None,
+        );
+        let prop = &schema["properties"]["license"];
+        assert_eq!(prop["examples"][0], "Dog Lifetime Spayed Female");
+        assert_eq!(
+            prop["x-qsv"]["example_counts"],
+            "Dog Lifetime Spayed Female [16350]\nDog Lifetime Male [3717]"
+        );
+
+        // the human-readable TSV dictionary keeps the truncated form
+        let tsv = format_dictionary_tsv(std::slice::from_ref(&entry), false);
+        assert!(tsv.contains("Dog Lifetime Spayed Femal…"));
+        assert!(!tsv.contains("Dog Lifetime Spayed Female"));
+
+        // a cached dictionary written before `examples_full` existed falls back to `examples`
+        entry.examples_full = String::new();
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&entry),
+            "test.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            None,
+        );
+        assert_eq!(
+            schema["properties"]["license"]["examples"][0],
+            "Dog Lifetime Spayed Femal…"
+        );
     }
 
     #[test]

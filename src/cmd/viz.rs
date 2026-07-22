@@ -445,7 +445,9 @@ smart options:
                            By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`.
     --no-other             Omit the "Other (N)" aggregate bar from frequency bar charts. It
                            collects the categories beyond --limit (N = how many distinct
-                           categories were rolled up) and is shown by default.
+                           categories were rolled up) and is shown by default. When just
+                           ONE category is left over, it is charted under its own name
+                           instead of as an opaque "Other (1)" bar.
     --smarter              Before building the dashboard, run `qsv moarstats --advanced`
                            to enrich the stats cache with distribution-shape statistics
                            (bimodality, entropy, skewness, outlier share, Gini). This unlocks
@@ -1097,6 +1099,14 @@ const MAP_ROW_HEIGHT_PX: usize = 540;
 /// it. Added to the panel height AND to the render-block bottom margin, so the map's usable draw
 /// height matches a static map (`MAP_ROW_HEIGHT_PX - 48 - 20`) and the controls occupy this band.
 const SLIDER_CONTROL_ALLOWANCE_PX: usize = 96;
+
+/// Upward shift (px, above the plot area) of an inline panel's `--dict-info` title annotation, so
+/// it lands in the top-margin band where a plain layout title would render.
+const DEFAULT_TITLE_Y_SHIFT: f64 = 8.0;
+/// The same shift for a cyclic-seasonality (polar) panel. Its angular tick labels are painted
+/// ~22px ABOVE the plot area — this plotly version's `LayoutPolar` has no `domain` to rein the ring
+/// in — so the title is lifted clear of them (paired with that panel's taller top margin).
+const POLAR_TITLE_Y_SHIFT: f64 = 30.0;
 
 /// Per-distinct-category vertical step (px) for a `Parcats` panel, and its clamp. Parcats height
 /// scales with the tallest dimension's distinct-category count so many categories aren't crammed
@@ -10596,18 +10606,22 @@ fn sankey_side_topn(
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.0.cmp(b.0))
     });
+    // when exactly one category would be collapsed, keep it instead: it occupies the same node
+    // slot as the `Other (1)` bucket would, and naming it is strictly more informative (mirrors
+    // `finalize_freq_bars`). `other_count` then falls to 0, i.e. the no-remainder path.
+    let keep_n = if entries.len() == SANKEY_TOP_N_PER_SIDE + 1 {
+        entries.len()
+    } else {
+        SANKEY_TOP_N_PER_SIDE
+    };
     let kept: Vec<String> = entries
         .iter()
-        .take(SANKEY_TOP_N_PER_SIDE)
+        .take(keep_n)
         .map(|(k, _)| (*k).clone())
         .collect();
     let kept_set: std::collections::HashSet<String> = kept.iter().cloned().collect();
     let other_count = entries.len().saturating_sub(kept.len());
-    let other_flow: f64 = entries
-        .iter()
-        .skip(SANKEY_TOP_N_PER_SIDE)
-        .map(|(_, v)| *v)
-        .sum();
+    let other_flow: f64 = entries.iter().skip(keep_n).map(|(_, v)| *v).sum();
     let other_label = (other_count > 0).then(|| format!("Other ({other_count})"));
     let other_frac = if grand > 0.0 { other_flow / grand } else { 0.0 };
     (kept, kept_set, other_label, other_frac)
@@ -13080,6 +13094,57 @@ fn render_dict_page_html(
         }
     }
 
+    // Index `x-qsv.example_counts` (describegpt's newline-separated "VALUE [count]" string) by
+    // bare value, so `disp_examples` can annotate each example with how often it occurs. Lines
+    // without a bracketed suffix - notably the `<ALL_UNIQUE>` sentinel - contribute no entry.
+    // `rfind` so values that themselves contain " [" aren't truncated mid-value.
+    fn example_count_map(raw: &str) -> std::collections::HashMap<&str, &str> {
+        raw.lines()
+            .filter_map(|line| {
+                let line = line.trim_end();
+                let idx = line.rfind(" [")?;
+                if !line.ends_with(']') {
+                    return None;
+                }
+                Some((line[..idx].trim(), &line[idx + 2..line.len() - 1]))
+            })
+            .collect()
+    }
+
+    // like `disp`, but annotates each example with its occurrence count when `counts` has one,
+    // comma-grouped for readability: `LABRADOR RETRIEVER (3,361)`. Values are matched by their
+    // rendered form - describegpt writes the same truncation ellipses and date reformatting into
+    // both the `examples` array and `example_counts` - and a miss falls back to the bare value.
+    //
+    // Deliberately driven by the `examples` array, NOT by `example_counts`: for numeric columns
+    // describegpt filters the non-numeric "Other…" aggregation-bucket sentinel out of `examples`
+    // but keeps it in `example_counts`, so sourcing from the latter would change WHICH entries
+    // show, not just add counts.
+    fn disp_examples(v: &Value, counts: &std::collections::HashMap<&str, &str>) -> String {
+        const MAX_LIST: usize = 12;
+        let Value::Array(a) = v else {
+            return disp(v);
+        };
+        let mut parts: Vec<String> = a
+            .iter()
+            .take(MAX_LIST)
+            .map(|e| {
+                let val = disp(e);
+                match counts.get(val.as_str()) {
+                    Some(c) if c.bytes().all(|b| b.is_ascii_digit()) => {
+                        format!("{val} ({})", group_thousands(c))
+                    },
+                    Some(c) => format!("{val} ({c})"),
+                    None => val,
+                }
+            })
+            .collect();
+        if a.len() > MAX_LIST {
+            parts.push(format!("… ({} total)", a.len()));
+        }
+        parts.join(", ")
+    }
+
     let props = dict_json.get("properties").and_then(Value::as_object);
     let legacy_fields = dict_json
         .get("Dictionary")
@@ -13177,7 +13242,11 @@ fn render_dict_page_html(
             meta.push(("Values", disp(v)));
         }
         if let Some(v) = get(&["examples"]) {
-            meta.push(("Examples", disp(v)));
+            let raw_counts = get_xq("example_counts")
+                .or_else(|| get(&["example_counts"]))
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            meta.push(("Examples", disp_examples(v, &example_count_map(raw_counts))));
         }
 
         let anchor = dict_anchor_id(col);
@@ -20554,9 +20623,15 @@ fn panel_trace(
             if let Some(shapes) = freq_bar_pattern_shapes(&bars, log_y) {
                 marker = marker.pattern(Pattern::new().shape_array(shapes));
             }
+            // The category axis shows TRUNCATED tick labels, and plotly's default hover reads
+            // that same tick text — so the hover carries each bar's FULL label explicitly.
+            // `label` (not `x_key`): the aggregate buckets' axis keys are sentinel-padded.
+            let hover_labels: Vec<String> = bars.iter().map(|b| escape_hover(&b.label)).collect();
             let mut bar = Bar::new(xs, ys)
                 .name(panel.name.clone())
                 .marker(marker)
+                .hover_text_array(hover_labels)
+                .hover_template("%{hovertext}<br>count: %{y:,}<extra></extra>")
                 // value labels above each bar, SI-formatted ("258k", "1.05M") to match
                 // the axis ticks
                 .text_template("%{y:.3s}")
@@ -20780,9 +20855,14 @@ fn panel_trace(
             if !log_y {
                 bar_max = Some(values.iter().copied().fold(0.0_f64, f64::max));
             }
+            // full category names in the hover — the axis ticks are truncated, and plotly's
+            // default hover would otherwise echo that truncated tick text
+            let hover_labels: Vec<String> = labels.iter().map(|l| escape_hover(l)).collect();
             let mut bar = Bar::new(labels.clone(), values.clone())
                 .name(panel.name.clone())
                 .marker(Marker::new().color(color))
+                .hover_text_array(hover_labels)
+                .hover_template("%{hovertext}<br>%{y:,}<extra></extra>")
                 // value labels above each bar, SI-formatted ("258k", "1.05M") to match the ticks
                 .text_template("%{y:.3s}")
                 .text_position(TextPosition::Outside)
@@ -21502,6 +21582,18 @@ fn inline_panel_title(
     themed: bool,
     extra: Vec<Annotation>,
 ) -> Layout {
+    inline_panel_title_shifted(layout, panel, themed, extra, DEFAULT_TITLE_Y_SHIFT)
+}
+
+/// `inline_panel_title` with an explicit title y-shift (px above the plot area), for panels whose
+/// subplot paints outside its plot area and would otherwise collide with the default title band.
+fn inline_panel_title_shifted(
+    layout: Layout,
+    panel: &Panel,
+    themed: bool,
+    extra: Vec<Annotation>,
+    y_shift: f64,
+) -> Layout {
     // The hover-revealed modebar defaults to a wide horizontal strip across the very band the
     // centered title (and its `--dict-info` ⓘ) occupies, so hovering a panel buried them; a
     // vertical strip down the right edge stays clear of the title band. Applied to every
@@ -21515,9 +21607,9 @@ fn inline_panel_title(
             let f = Font::new().size(16);
             if themed { f } else { f.family(FONT_FAMILY) }
         };
-        // y=1 + a small upward shift parks the title in the 48px top-margin band where the
-        // layout title would render; anchored bottom, so a subtitle line grows upward.
-        anns.push(panel_title_annotation(panel, 0.5, 1.0, font).y_shift(8.0));
+        // y=1 + a small upward shift parks the title in the top-margin band where the layout
+        // title would render; anchored bottom, so a subtitle line grows upward.
+        anns.push(panel_title_annotation(panel, 0.5, 1.0, font).y_shift(y_shift));
         layout
     } else {
         layout.title(Title::with_text(panel.display_title()))
@@ -21991,16 +22083,23 @@ fn smart_inline_panel_plot(
                 .name(panel.name.clone())
                 .hover_template("%{theta}<br>records: %{r:,.0f}<extra></extra>"),
         );
+        // A polar subplot draws its angular tick labels ("06h", "Mon", "Jan") OUTSIDE its plot
+        // area — ~22px past the top and bottom edges — and this plotly version's `LayoutPolar`
+        // exposes no `domain` to rein the ring in. So the panel's own margins do the work: a
+        // taller top band (with the title lifted to sit above the spill, see
+        // POLAR_TITLE_Y_SHIFT) keeps the title clear of the 12-o'clock label, and a taller
+        // bottom band keeps the 6-o'clock label from being clipped by the panel edge.
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
+            .margin(Margin::new().top(64).bottom(44).left(20).right(20).pad(4));
         if !themed {
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
                 .paper_background_color(PAPER_BG);
         }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
+        let layout =
+            inline_panel_title_shifted(layout, panel, themed, Vec::new(), POLAR_TITLE_Y_SHIFT);
         plot.set_layout(apply_theme(layout, theme));
         plot.set_configuration(Configuration::new().responsive(true));
         return plot;
@@ -22992,6 +23091,10 @@ fn dominant_category_hint(bars: &[FreqBar], row_count: impl FnOnce() -> u64) -> 
 /// and the rest are summarized as a single `Other (N)` bar where N = the count of distinct
 /// categories dropped. Both aggregate buckets are appended AFTER the real categories (`(NULL)`
 /// first, then `Other`) and can be suppressed with `no_nulls` / `no_other`.
+///
+/// Exception: when exactly ONE category is left over, it is charted as itself rather than as an
+/// `Other (1)` bar. The bar occupies the same slot and has the same height either way, so naming
+/// it is strictly more informative. `no_other` still wins — it means "no bar beyond `top_n`".
 fn finalize_freq_bars(
     counts: Vec<(String, u64)>,
     null_count: u64,
@@ -22999,11 +23102,16 @@ fn finalize_freq_bars(
     no_nulls: bool,
     no_other: bool,
 ) -> Vec<FreqBar> {
-    let other_unique = counts.len().saturating_sub(top_n);
-    let other_count: u64 = counts.iter().skip(top_n).map(|(_, c)| *c).sum();
+    let keep = if !no_other && counts.len() == top_n + 1 {
+        counts.len()
+    } else {
+        top_n
+    };
+    let other_unique = counts.len().saturating_sub(keep);
+    let other_count: u64 = counts.iter().skip(keep).map(|(_, c)| *c).sum();
     let mut bars: Vec<FreqBar> = counts
         .into_iter()
-        .take(top_n)
+        .take(keep)
         .map(|(label, count)| FreqBar {
             x_key: label.clone(),
             label,
@@ -23418,7 +23526,14 @@ fn hierarchy_arrays(
                 .then_with(|| a.0.cmp(b.0))
         });
 
-        let keep = top_n.min(ranked.len());
+        // when exactly one child would be dropped, keep it instead: it occupies the same tile as
+        // the `Other (1)` bucket would, and naming it is strictly more informative (mirrors
+        // `finalize_freq_bars`). It expands like any other kept child.
+        let keep = if ranked.len() == top_n + 1 {
+            ranked.len()
+        } else {
+            top_n.min(ranked.len())
+        };
         let mut other_value = 0.0;
         let mut other_drops = 0_usize;
         for (i, (seg, v)) in ranked.into_iter().enumerate() {
@@ -27091,6 +27206,36 @@ mod tests {
     }
 
     #[test]
+    fn finalize_freq_bars_names_lone_leftover_category() {
+        // 11 distinct categories with top_n=10: the single leftover ("k") is charted under its
+        // own name as a real category, NOT as an opaque "Other (1)" aggregate.
+        let counts: Vec<(String, u64)> = (0..11)
+            .map(|i| (((b'a' + i) as char).to_string(), (100 - i as u64)))
+            .collect();
+        let out = finalize_freq_bars(counts.clone(), 0, 10, false, false);
+        assert_eq!(out.len(), 11);
+        assert!(out.iter().all(|b| b.kind == FreqBarKind::Category));
+        assert_eq!(out[10].label, "k");
+        assert_eq!(out[10].x_key, "k"); // real key, no aggregate sentinel
+        assert_eq!(out[10].count, 90);
+        assert!(!out.iter().any(|b| b.label.starts_with("Other")));
+
+        // --no-other still means "no bar beyond top_n": the leftover is dropped, not promoted
+        let out = finalize_freq_bars(counts.clone(), 0, 10, false, true);
+        assert_eq!(out.len(), 10);
+        assert!(!out.iter().any(|b| b.label == "k"));
+
+        // two leftovers still roll up into the "Other (2)" aggregate
+        let mut counts12 = counts;
+        counts12.push(("l".to_string(), 89));
+        let out = finalize_freq_bars(counts12, 0, 10, false, false);
+        assert_eq!(out.len(), 11);
+        assert_eq!(out[10].label, "Other (2)");
+        assert_eq!(out[10].kind, FreqBarKind::Aggregate);
+        assert_eq!(out[10].count, 179);
+    }
+
+    #[test]
     fn finalize_freq_bars_omits_empty_buckets() {
         // no nulls and fewer distinct than top_n -> no aggregate bars even with flags off
         let counts = vec![("a".to_string(), 5_u64), ("b".to_string(), 3)];
@@ -29306,6 +29451,29 @@ mod tests {
     }
 
     #[test]
+    fn hierarchy_arrays_names_lone_dropped_child() {
+        // parent "R" has 3 children with top_n = 2: the single leftover ("c") is emitted under
+        // its own name rather than as an "Other (1)" tile, and still expands to its own child.
+        let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+        leaves.insert(vec!["R".into(), "a".into(), "a1".into()], 40.0);
+        leaves.insert(vec!["R".into(), "b".into(), "b1".into()], 30.0);
+        leaves.insert(vec!["R".into(), "c".into(), "c1".into()], 20.0);
+        leaves.insert(vec!["S".into(), "x".into(), "x1".into()], 5.0);
+
+        let (labels, _parents, values, _ids) =
+            hierarchy_arrays(&leaves, 3, 2, 200, "All").expect("hierarchy");
+
+        assert!(!labels.iter().any(|l| l.starts_with("Other")));
+        let c_pos = labels
+            .iter()
+            .position(|l| l == "c")
+            .expect("named leftover");
+        assert!((values[c_pos] - 20.0).abs() < 1e-9);
+        // the promoted child expanded like any other kept child
+        assert!(labels.iter().any(|l| l == "c1"));
+    }
+
+    #[test]
     fn hierarchy_arrays_degenerate_returns_none() {
         // a single chain (no node splits into 2+) isn't worth a panel.
         let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
@@ -29437,6 +29605,20 @@ mod tests {
         assert_eq!(kept.len(), 2);
         assert_eq!(other, None);
         assert_eq!(other_frac, 0.0);
+
+        // exactly one over the cap: the lone leftover keeps its own node instead of becoming an
+        // opaque "Other (1)" node.
+        let mut one_over: HashMap<String, f64> = HashMap::new();
+        let n = SANKEY_TOP_N_PER_SIDE + 1;
+        for i in 0..n {
+            one_over.insert(format!("c{i:02}"), (n - i) as f64);
+        }
+        let (kept, kept_set, other, other_frac) = sankey_side_topn(&one_over);
+        assert_eq!(kept.len(), n);
+        assert_eq!(kept_set.len(), n);
+        assert_eq!(other, None);
+        assert_eq!(other_frac, 0.0);
+        assert_eq!(kept[n - 1], format!("c{:02}", n - 1));
     }
 
     #[test]

@@ -103,11 +103,11 @@
       "title": "Agency Name",
       "description": "The full name of the government agency responsible for the request; combine with Agency Code to identify the reporting body.",
       "examples": [
-        "New York City Police Depa…",
-        "Department of Housing Pre…",
-        "Department of Transportat…",
+        "New York City Police Department",
+        "Department of Housing Preservation and Development",
+        "Department of Transportation",
         "Other…",
-        "Department of Environment…"
+        "Department of Environmental Protection"
       ],
       "x-qsv": {
         "qsv_type": "String",
@@ -116,7 +116,7 @@
         "content_type": "company_name",
         "role": "dimension",
         "concept": "org.agency",
-        "example_counts": "New York City Police Depa… [2636]\nDepartment of Housing Pre… [2524]\nDepartment of Transportat… [1336]\nOther… [1099]\nDepartment of Environment… [765]"
+        "example_counts": "New York City Police Department [2636]\nDepartment of Housing Preservation and Development [2524]\nDepartment of Transportation [1336]\nOther… [1099]\nDepartment of Environmental Protection [765]"
       }
     },
     "Complaint Type": {
@@ -177,7 +177,7 @@
         "RESIDENTIAL BUILDING",
         "(NULL)…",
         "Street/Sidewalk",
-        "Residential Building/Hous…",
+        "Residential Building/House",
         "Street"
       ],
       "x-qsv": {
@@ -187,7 +187,7 @@
         "content_type": "category",
         "role": "dimension",
         "concept": "category.type",
-        "example_counts": "RESIDENTIAL BUILDING [2503]\n(NULL)… [2422]\nStreet/Sidewalk [1418]\nResidential Building/Hous… [937]\nStreet [887]"
+        "example_counts": "RESIDENTIAL BUILDING [2503]\n(NULL)… [2422]\nStreet/Sidewalk [1418]\nResidential Building/House [937]\nStreet [887]"
       }
     },
     "Incident Zip": {
@@ -521,10 +521,10 @@
       "description": "A text-based summary of the outcome or actions taken to resolve the complaint.",
       "examples": [
         "Other…",
-        "The Police Department res…",
-        "The Department of Housing…",
-        "The Police Department res…",
-        "Service Request status fo…"
+        "The Police Department responded to the complaint and took action to fix the condition.",
+        "The Department of Housing Preservation and Development inspected the following conditions. No violations were issued. The complaint has been closed.",
+        "The Police Department responded to the complaint and took action to fix the condition.",
+        "Service Request status for this request is available on the Department of Transportation?s website. Please click the ?Learn More? link below."
       ],
       "x-qsv": {
         "qsv_type": "String",
@@ -533,7 +533,7 @@
         "content_type": "free_text",
         "role": "dimension",
         "concept": "unknown",
-        "example_counts": "Other… [5165]\nThe Police Department res… [882]\nThe Department of Housing… [694]\nThe Police Department res… [679]\nService Request status fo… [528]"
+        "example_counts": "Other… [5165]\nThe Police Department responded to the complaint and with the information available observed no evidence of the violation at that time. [882]\nThe Department of Housing Preservation and Development inspected the following conditions. No violations were issued. The complaint has been closed. [694]\nThe Police Department responded to the complaint and took action to fix the condition. [679]\nService Request status for this request is available on the Department of Transportation?s website. Please click the ?Learn More? link below. [528]"
       }
     },
     "Resolution Action Updated Date": {
@@ -837,7 +837,7 @@
         "Other",
         "Other…",
         "Intersection",
-        "LA GUARDIA AIRPORT, QUEEN…"
+        "LA GUARDIA AIRPORT, QUEENS (EAST ELMHURST) ,NY, 11369"
       ],
       "x-qsv": {
         "qsv_type": "String",
@@ -846,7 +846,7 @@
         "content_type": "street_address",
         "role": "dimension",
         "concept": "geo.street_address",
-        "example_counts": "(NULL)… [9921]\nOther [46]\nOther… [20]\nIntersection [2]\nLA GUARDIA AIRPORT, QUEEN… [2]"
+        "example_counts": "(NULL)… [9921]\nOther [46]\nOther… [20]\nIntersection [2]\nLA GUARDIA AIRPORT, QUEENS (EAST ELMHURST) ,NY, 11369 [2]"
       }
     },
     "Bridge Highway Name": {
@@ -932,7 +932,7 @@
         "Other…",
         "1-1-1265963747",
         "1-1-1740560266",
-        "108th St (Exit 21) - Gran…"
+        "108th St (Exit 21) - Grand Central Pkwy / Van Wyck Expwy / College Point Blvd (Exit 22 A-E)"
       ],
       "x-qsv": {
         "qsv_type": "String",
@@ -941,7 +941,7 @@
         "content_type": "free_text",
         "role": "dimension",
         "concept": "unknown",
-        "example_counts": "(NULL)… [9966]\nOther… [24]\n1-1-1265963747 [1]\n1-1-1740560266 [1]\n108th St (Exit 21) - Gran… [1]"
+        "example_counts": "(NULL)… [9966]\nOther… [24]\n1-1-1265963747 [1]\n1-1-1740560266 [1]\n108th St (Exit 21) - Grand Central Pkwy / Van Wyck Expwy / College Point Blvd (Exit 22 A-E) [1]"
       }
     },
     "Latitude": {
@@ -1002,9 +1002,9 @@
       "examples": [
         "Other…",
         "(NULL)…",
-        "(40.89187241649303, -73.8…",
+        "(40.89187241649303, -73.86016845296459)",
         "(40.1123853, -77.5195844)",
-        "(40.89238451539139, -73.8…"
+        "(40.89238451539139, -73.8592161325675)"
       ],
       "x-qsv": {
         "qsv_type": "String",
@@ -1013,7 +1013,7 @@
         "content_type": "free_text",
         "role": "dimension",
         "concept": "geo.coordinate_pair",
-        "example_counts": "Other… [7409]\n(NULL)… [2527]\n(40.89187241649303, -73.8… [14]\n(40.1123853, -77.5195844) [9]\n(40.89238451539139, -73.8… [9]"
+        "example_counts": "Other… [7409]\n(NULL)… [2527]\n(40.89187241649303, -73.86016845296459) [14]\n(40.1123853, -77.5195844) [9]\n(40.89238451539139, -73.8592161325675) [9]"
       }
     }
   },

@@ -10426,6 +10426,84 @@ fn viz_smart_dict_info_grid_path() {
     );
 }
 
+// --dict-info bundles the sidecars the dashboard was built from as base64 `data:` downloads,
+// so a recipient of the HTML gets the files without access to the author's machine — and,
+// precisely because the dashboard is made to be SHARED, no embedded byte may carry an absolute
+// local path. The stats metadata sidecars record `canonical_input_path`/`canonical_stats_path`
+// verbatim, so this asserts the end-to-end guarantee (the unit tests cover the redactor itself,
+// but only this catches a new sidecar wired up without redaction).
+#[test]
+fn viz_smart_dict_info_bundles_sidecars_without_leaking_local_paths() {
+    let wrk = Workdir::new("viz_smart_dict_info_bundles_sidecars_without_leaking_local_paths");
+    dict_info_codes_csv(&wrk);
+    wrk.create_from_string("dict.schema.json", dict_info_schema());
+
+    // populate the stats cache (and its `.stats.csv.json` metadata) for codes.csv
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--stats-jsonl", "--cardinality", "codes.csv"]);
+    wrk.output(&mut stats_cmd);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dict-info", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the download row exists, with the stats cache and the always-available charted-frequency
+    // CSV (generated in memory — it must NOT be written to disk)
+    assert!(
+        html.contains(r#"<div class="qsv-dict-downloads">"#),
+        "download row missing"
+    );
+    assert!(
+        html.contains(r#"download="codes.stats.csv.data.jsonl""#),
+        "stats cache download missing"
+    );
+    assert!(
+        html.contains(r#"download="codes.viz-frequency.csv""#),
+        "charted-frequency download missing"
+    );
+    assert!(
+        !wrk.path("codes.viz-frequency.csv").exists(),
+        "the charted-frequency CSV is a bundled download, not a file written to disk"
+    );
+    // the stats run above also wrote a fresh `codes.stats.csv`, but viz never reads it, so it
+    // cannot be shown to be the stats behind this dashboard and must not be offered
+    assert!(
+        wrk.path("codes.stats.csv").exists(),
+        "precondition: the stats run wrote a human-readable stats CSV"
+    );
+    assert!(
+        !html.contains(r#"download="codes.stats.csv""#),
+        "the unverifiable .stats.csv is never offered"
+    );
+
+    // THE guarantee: the work directory's absolute path appears nowhere in the page — not in the
+    // markup, and not inside any base64 payload.
+    let workdir = wrk.path("").to_string_lossy().into_owned();
+    let workdir = workdir.trim_end_matches(std::path::MAIN_SEPARATOR);
+    assert!(
+        !html.contains(workdir),
+        "the dashboard markup leaks the local path {workdir}"
+    );
+    let re = regex::Regex::new(r#"href="data:[^;]+;base64,([A-Za-z0-9+/=]+)""#).unwrap();
+    let mut checked = 0;
+    for cap in re.captures_iter(&html) {
+        let decoded = base64_simd::STANDARD.decode_to_vec(&cap[1]).unwrap();
+        let text = String::from_utf8_lossy(&decoded);
+        assert!(
+            !text.contains(workdir),
+            "an embedded sidecar leaks the local path {workdir}"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= 3,
+        "expected the schema + stats + charted-frequency downloads, found {checked}"
+    );
+}
+
 // --dict-info descriptions render Markdown (bold/bullets/links) as HTML in the embedded
 // Data Dictionary page, while raw HTML and unsafe URL schemes in the untrusted LLM text
 // stay escaped/neutralized so they can't break out of the `<script type="text/html">`

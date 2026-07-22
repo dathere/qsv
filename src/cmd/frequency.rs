@@ -482,6 +482,15 @@ pub(crate) struct FreqCacheColumn {
     pub null_count: u64,
 }
 
+/// The frequency JSONL cache path for `path`, for consumers outside the `frequency` command
+/// (currently `viz smart --dict-info`, which offers the cache it actually read as a download).
+/// Delegates to `Args::cache_path_for` so the path is derived EXACTLY as
+/// `read_frequency_cache_view` derives it — including its internal canonicalization, which is what
+/// makes `data.csv`, `./data.csv` and a symlink to it all resolve to the same cache file.
+pub(crate) fn frequency_cache_path(path: &std::path::Path) -> std::path::PathBuf {
+    Args::cache_path_for(path)
+}
+
 /// Read and validate a frequency JSONL cache for `path`, independent of any
 /// `frequency::Args`, for read-only reuse by other commands. Returns `None`
 /// when the cache is absent, stale (older than the source), or was generated

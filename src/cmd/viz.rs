@@ -514,7 +514,20 @@ smart options:
                            on load and can be dismissed with its close button or Esc. The
                            dictionary page carries a
                            role-tinted table of contents and per-column "View chart" links
-                           back to the panels. The drawer's popout button opens the same
+                           back to the panels, plus a row of download buttons: the
+                           dictionary itself as JSON Schema, the frequency counts the
+                           dashboard actually charted, and every generated sidecar this run
+                           read (the stats cache and its metadata, the frequency cache when
+                           it was reused, and the bivariate stats CSV when freshly written).
+                           A sidecar qsv wrote but viz never read - the human-readable
+                           <stem>.stats.csv - is NOT offered, since nothing can show it
+                           describes the same computation the dashboard used.
+                           Every file is BUNDLED into the HTML, so anyone you send the
+                           dashboard to can download them with no access to your machine;
+                           absolute local paths are stripped from the embedded metadata so
+                           sharing a dashboard doesn't disclose your directory layout.
+                           Sidecars over 4 MB are skipped with a note.
+                           The drawer's popout button opens the same
                            document in its own browser tab instead (needs a browser that
                            allows user-initiated pop-ups). HTML output only; ignored with a
                            note when no dictionary is available or when exporting an image.
@@ -9874,6 +9887,292 @@ fn dictionary_sidecar_path(input: &str) -> std::path::PathBuf {
     parent.join(format!("{fstem}.schema.json"))
 }
 
+/// Largest sidecar `collect_sidecar_downloads` will embed in the Data Dictionary page. The bytes
+/// ride as a base64 `data:` URI (4/3 inflation) inside the dashboard HTML, so an unbounded
+/// embed would balloon the file. Most sidecars are bounded by COLUMN count and stay tiny, but the
+/// `frequency` cache stores complete per-value data for every column and can reach hundreds of MB
+/// on a wide, high-cardinality dataset — hence the cap (and the size check BEFORE the read).
+const MAX_SIDECAR_EMBED_BYTES: u64 = 4 * 1024 * 1024;
+
+/// One generated sidecar offered as a download on the `--dict-info` Data Dictionary page.
+struct SidecarDownload {
+    /// The sidecar's own basename, used verbatim as the `download` attribute so several
+    /// downloads from one page never collide.
+    fname: String,
+    /// A one-word tag ("stats", "freq", …) shown INSTEAD of the filename in the drawer's fixed
+    /// button bar, where the full names don't fit. Without it every link there would collapse to
+    /// an identical ⤓ glyph and the reader couldn't tell them apart without hovering.
+    short: &'static str,
+    /// MIME type for the `data:` URI, by extension.
+    mime:  &'static str,
+    /// Verbatim file bytes.
+    bytes: Vec<u8>,
+}
+
+/// MIME type for a sidecar, by extension. Only the extensions qsv's own sidecars use.
+fn sidecar_mime(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("csv") => "text/csv",
+        Some("jsonl") => "application/x-ndjson",
+        _ => "application/json",
+    }
+}
+
+/// Sidecar metadata keys that hold an absolute local filesystem path. A dashboard is made to be
+/// SHARED, so embedding these verbatim would hand every recipient the author's directory layout
+/// (`/Users/jane/clients/acme/…`). `redact_sidecar_paths` rewrites each to its bare file name.
+const SIDECAR_PATH_KEYS: [&str; 3] = ["canonical_input_path", "canonical_stats_path", "arg_input"];
+
+/// Where a sidecar keeps the metadata object carrying `SIDECAR_PATH_KEYS`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SidecarRedaction {
+    /// No metadata object — the file is pure data (the stats CSV/JSONL, the bivariate CSV).
+    None,
+    /// The whole file is one JSON object (`.stats.csv.json`).
+    JsonObject,
+    /// JSONL whose FIRST line is the metadata object (`.freq.csv.data.jsonl`); the data lines
+    /// that follow are passed through untouched.
+    JsonlFirstLine,
+}
+
+/// Replace each `SIDECAR_PATH_KEYS` value in `obj` with its bare file name. Only string values are
+/// touched, and only the last path component is kept, so the embedded metadata still identifies
+/// WHICH file it describes without disclosing WHERE it lived.
+fn redact_path_keys(obj: &mut serde_json::Value) {
+    let Some(map) = obj.as_object_mut() else {
+        return;
+    };
+    for key in SIDECAR_PATH_KEYS {
+        if let Some(v) = map.get_mut(key)
+            && let Some(s) = v.as_str()
+            && let Some(base) = std::path::Path::new(s).file_name()
+        {
+            *v = serde_json::Value::String(base.to_string_lossy().into_owned());
+        }
+    }
+}
+
+/// Strip absolute local paths out of a sidecar's metadata before it is embedded in the shareable
+/// dashboard. Returns the bytes unchanged for `SidecarRedaction::None`, and also whenever the
+/// metadata can't be parsed — a sidecar we don't understand is left alone rather than mangled,
+/// since the download is a convenience and corrupting it would be worse than the leak it avoids
+/// (qsv writes these files, so an unparseable one means a hand-edit or a format change, not
+/// untrusted input).
+fn redact_sidecar_paths(bytes: Vec<u8>, kind: SidecarRedaction) -> Vec<u8> {
+    match kind {
+        SidecarRedaction::None => bytes,
+        SidecarRedaction::JsonObject => {
+            let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+                return bytes;
+            };
+            redact_path_keys(&mut v);
+            serde_json::to_vec_pretty(&v).unwrap_or(bytes)
+        },
+        SidecarRedaction::JsonlFirstLine => {
+            let Ok(text) = String::from_utf8(bytes.clone()) else {
+                return bytes;
+            };
+            let mut lines = text.splitn(2, '\n');
+            let Some(first) = lines.next() else {
+                return bytes;
+            };
+            let Ok(mut v) = serde_json::from_str::<serde_json::Value>(first) else {
+                return bytes;
+            };
+            redact_path_keys(&mut v);
+            let Ok(redacted) = serde_json::to_string(&v) else {
+                return bytes;
+            };
+            let mut out = redacted.into_bytes();
+            if let Some(rest) = lines.next() {
+                out.push(b'\n');
+                out.extend_from_slice(rest.as_bytes());
+            }
+            out
+        },
+    }
+}
+
+/// Read one sidecar for embedding, or `None` when it is absent, unreadable, or over
+/// `MAX_SIDECAR_EMBED_BYTES`. Every failure is a SOFT skip (matching the dictionary loader's
+/// fail-to-stats philosophy) — a missing download is never worth failing a dashboard over — but an
+/// over-cap skip emits a `viz_note` so the omission is never silent.
+fn read_sidecar(
+    path: &std::path::Path,
+    short: &'static str,
+    redact: SidecarRedaction,
+) -> Option<SidecarDownload> {
+    let len = std::fs::metadata(path).ok()?.len();
+    if len > MAX_SIDECAR_EMBED_BYTES {
+        viz_note(&format!(
+            "viz smart --dict-info: {} is {:.1} MB, over the {} MB embed limit; omitting its \
+             download link.",
+            path.display(),
+            len as f64 / (1024.0 * 1024.0),
+            MAX_SIDECAR_EMBED_BYTES / (1024 * 1024)
+        ));
+        return None;
+    }
+    let bytes = redact_sidecar_paths(std::fs::read(path).ok()?, redact);
+    Some(SidecarDownload {
+        fname: path.file_name()?.to_string_lossy().into_owned(),
+        short,
+        mime: sidecar_mime(path),
+        bytes,
+    })
+}
+
+/// The generated sidecars this `viz smart` run ACTUALLY consumed, for the `--dict-info` Data
+/// Dictionary page's download row. Never speculative: a sidecar that merely exists on disk but was
+/// not used (a stale bivariate CSV from a prior run, a frequency cache rejected as
+/// stale/incompatible) is deliberately NOT offered, since handing the reader a file the dashboard
+/// wasn't built from is worse than offering nothing.
+///
+/// Each path is derived exactly the way its CONSUMER derives it — do not "simplify" this by
+/// canonicalizing once up front:
+/// - the stats pair is keyed off `stats_anchor`, the path the run ALREADY resolved (see below),
+///   canonicalized like `util::get_stats_records` does;
+/// - the frequency cache goes through `frequency::frequency_cache_path`, which canonicalizes
+///   internally the same way `read_frequency_cache_view` does;
+/// - the bivariate CSV is keyed off the RAW input's file stem (`bivariate_csv_path`), which is also
+///   what `bivariate_sidecar_fresh` was computed against.
+///
+/// `stats_anchor` MUST be the very path the stats were loaded from — in practice
+/// `SmartPrep::stats_input`, the string handed to `get_stats_records`, whose `dc:` handle was
+/// resolved once in `smart_prepare`. Do NOT resolve a `dc:` handle here, and do not substitute
+/// another config's path: `diskcache::resolve_dc_path` auto-refreshes a stale entry (a network
+/// fetch that can materialize a DIFFERENT CSV), so any second resolution can disagree with the
+/// one the stats came from — the exact divergence this function exists to prevent, on top of
+/// doing surprise network I/O while writing out a page.
+///
+/// For stdin the on-disk sidecars don't exist at all, but the charted-frequency CSV is generated in
+/// memory and is still offered.
+fn collect_sidecar_downloads(
+    input: Option<&str>,
+    stats_anchor: Option<&std::path::Path>,
+    stats: &[crate::cmd::stats::StatsData],
+    freq: &FreqMap,
+    freq_cache_used: bool,
+    bivariate_fresh: bool,
+) -> Vec<SidecarDownload> {
+    let mut out = Vec::new();
+
+    // stats pair: `.stats.csv.data.jsonl` is what viz reads; `.stats.csv.json` records the parsing
+    // options it was built with.
+    //
+    // The human-readable `.stats.csv` is deliberately NOT offered. viz never reads it, so it can't
+    // be shown to be the stats behind this dashboard: an explicit `qsv stats --select … -o
+    // <stem>.stats.csv` leaves a file that is newer than the source yet describes a different
+    // computation than the cache viz actually used, and no mtime test can tell the two apart. The
+    // same numbers ride in `.stats.csv.data.jsonl`, which viz demonstrably did read.
+    if let Some(anchor) = stats_anchor
+        && let Ok(canonical) = anchor.canonicalize()
+    {
+        for (ext, short, redact) in [
+            ("stats.csv.data.jsonl", "stats", SidecarRedaction::None),
+            ("stats.csv.json", "stats meta", SidecarRedaction::JsonObject),
+        ] {
+            if let Some(sc) = read_sidecar(&canonical.with_extension(ext), short, redact) {
+                out.push(sc);
+            }
+        }
+    }
+
+    // frequency cache: offered ONLY when freq_from_cache actually hit. It is opportunistic — an
+    // absent/stale/option-incompatible cache silently falls back to a full recompute pass — so
+    // existence alone is not proof of use.
+    if freq_cache_used
+        && let Some(input) = input.filter(|i| *i != "-")
+        && let Some(sc) = read_sidecar(
+            &crate::cmd::frequency::frequency_cache_path(std::path::Path::new(input)),
+            "freq",
+            SidecarRedaction::JsonlFirstLine,
+        )
+    {
+        out.push(sc);
+    }
+
+    // the frequency counts the dashboard actually CHARTED. Generated in memory (nothing is written
+    // to disk), so unlike the cache above it is always available — whether the bars came from a
+    // cache hit or a full recompute — and it is exactly what the reader sees in the panels,
+    // aggregate `(NULL)`/`Other (N)` buckets included, already capped at --limit. Named off the
+    // stats anchor, so a `dc:` handle yields `<cached name>.viz-frequency.csv` rather than a
+    // download named after the literal `dc:` string.
+    if let Some(sc) = charted_frequency_csv(
+        stats_anchor.unwrap_or_else(|| std::path::Path::new("data")),
+        stats,
+        freq,
+    ) {
+        out.push(sc);
+    }
+
+    // bivariate: only when THIS run's moarstats subprocess provably wrote it.
+    if bivariate_fresh
+        && let Some(input) = input.filter(|i| *i != "-")
+        && let Some(sc) = read_sidecar(
+            &bivariate_csv_path(input),
+            "bivariate",
+            SidecarRedaction::None,
+        )
+    {
+        out.push(sc);
+    }
+
+    out
+}
+
+/// The frequency-bar counts this dashboard charted, as a CSV download (`<stem>.viz-frequency.csv`)
+/// built in memory — no file is written.
+///
+/// This is deliberately NOT the same thing as the `frequency` cache sidecar: the cache is the full
+/// per-value distribution of every column and only exists when `qsv frequency --frequency-jsonl`
+/// was run, whereas this is precisely what the panels show — only the charted columns, already
+/// truncated to `--limit`, with the synthetic `(NULL)` / `Other (N)` aggregate buckets included and
+/// flagged as such. Columns follow `stats` (the dataset's header order) and bars keep their
+/// plotted order, so the file reads in the same sequence as the dashboard.
+///
+/// Returns `None` when no frequency panel was drawn.
+fn charted_frequency_csv(
+    input_path: &std::path::Path,
+    stats: &[crate::cmd::stats::StatsData],
+    freq: &FreqMap,
+) -> Option<SidecarDownload> {
+    if freq.is_empty() {
+        return None;
+    }
+    let mut wtr = csv::Writer::from_writer(Vec::new());
+    wtr.write_record(["column", "value", "count", "bucket"])
+        .ok()?;
+    for (idx, s) in stats.iter().enumerate() {
+        let Some(bars) = freq.get(&idx) else {
+            continue;
+        };
+        for bar in bars {
+            wtr.write_record([
+                s.field.as_str(),
+                bar.label.as_str(),
+                &bar.count.to_string(),
+                if bar.kind == FreqBarKind::Aggregate {
+                    "aggregate"
+                } else {
+                    "category"
+                },
+            ])
+            .ok()?;
+        }
+    }
+    let bytes = wtr.into_inner().ok()?;
+    let stem = input_path
+        .file_stem()
+        .map_or_else(|| "data".to_string(), |s| s.to_string_lossy().into_owned());
+    Some(SidecarDownload {
+        fname: format!("{stem}.viz-frequency.csv"),
+        short: "charted freq",
+        mime: "text/csv",
+        bytes,
+    })
+}
+
 /// Build viz's phase-progress spinner. When `show`, it draws to stderr; indicatif hides it
 /// automatically when stderr isn't a terminal (piped/redirected/CI), so no manual TTY check is
 /// needed. When not shown, a hidden no-op bar keeps call sites branch-free.
@@ -12257,15 +12556,15 @@ function qsvDictDrawer() {
     var sel = '[data-qsv-dict="' + a.getAttribute("data-anchor") + '"]';
     if (!document.querySelector(sel)) a.style.display = "none";
   });
-  // move the inline "Export JSONSchema" link (a plain <a download>, no onclick) up into the
-  // fixed button bar so it stays visible while the content scrolls; CSS hides its text label
-  // there, leaving just the download glyph beside the ⧉/✕ icons.
-  var exportLink = content.querySelector(".qsv-dict-export");
-  if (exportLink) {
-    var btns = bar.querySelector(".qsv-dict-drawer-btns");
-    btns.insertBefore(exportLink, btns.firstChild);
-  }
+  // lift the whole download row (the "Export JSONSchema" link plus one per sidecar — all plain
+  // <a download>, no onclick) out of the scrolling content into its own fixed strip under the
+  // title bar, so it stays reachable however far the reader scrolls. It gets a strip of its own
+  // rather than a seat beside the ⧉/✕ icons because up to five links don't fit on that line.
+  // Moving the CONTAINER (not each anchor) is what keeps every link, not just the first; CSS then
+  // swaps each full filename for its one-word tag to fit the drawer's width.
+  var downloads = content.querySelector(".qsv-dict-downloads");
   drawer.appendChild(bar);
+  if (downloads) drawer.appendChild(downloads);
   drawer.appendChild(content);
   document.body.appendChild(drawer);
   bar.querySelector(".qsv-dict-hide").addEventListener("click", function (e) {
@@ -12741,6 +13040,7 @@ fn render_dict_page_html(
     dataset_title: &str,
     column_order: &[String],
     view_chart_anchors: &std::collections::HashSet<String>,
+    sidecars: &[SidecarDownload],
 ) -> String {
     use serde_json::Value;
 
@@ -12967,14 +13267,17 @@ fn render_dict_page_html(
         format!("<nav class=\"qsv-dict-toc\">\n{toc}</nav>\n")
     };
 
-    // "Export JSONSchema" — a script-free download of the verbatim dictionary, offered ONLY when
-    // the dictionary is a JSON Schema (top-level `properties`); legacy `fields` dicts aren't JSON
-    // Schema, so they get no button. The bytes ride as a base64 `data:` URI on a plain
-    // `<a download>`: base64 can't contain `</script>`, so it's safe inside the embedding
-    // `<script type="text/html">` template, and needs no JS (which this page can't carry). Authored
-    // inline here so the popped-out standalone tab gets it too; `qsvDictDrawer` relocates this same
-    // anchor into the drawer's fixed button bar (where its text label is hidden, leaving the
-    // glyph).
+    // The download row: "Export JSONSchema" plus one link per generated sidecar this run consumed.
+    //
+    // Every link is a script-free `<a download>` whose bytes ride as a base64 `data:` URI — base64
+    // can't contain `</script>`, so it's safe inside the embedding `<script type="text/html">`
+    // template, and needs no JS (which this page can't carry). Authored inline here so the
+    // popped-out standalone tab gets them too; `qsvDictDrawer` relocates the whole
+    // `.qsv-dict-downloads` container into the drawer's fixed button bar (where the text labels are
+    // hidden, leaving just the glyphs).
+    //
+    // The dictionary export itself is offered ONLY when the dictionary is a JSON Schema (top-level
+    // `properties`); legacy `fields` dicts aren't JSON Schema, so they get no button.
     let export_link = if props.is_some() {
         let b64 = base64_simd::STANDARD.encode_to_string(dict_json_text.as_bytes());
         // filename slug: lowercase alphanumerics, everything else -> single underscore, trimmed.
@@ -12998,10 +13301,36 @@ fn render_dict_page_html(
             "<a class=\"qsv-dict-export\" download=\"{fname}\" \
              href=\"data:application/json;base64,{b64}\" title=\"Download this Data Dictionary as \
              JSON Schema\">&#x2913; <span class=\"qsv-dict-export-label\">Export \
-             JSONSchema</span></a>\n"
+             JSONSchema</span><span class=\"qsv-dict-export-short\">schema</span></a>\n"
         )
     } else {
         String::new()
+    };
+
+    // one anchor per consumed sidecar, using the same script-free `<a download>` + base64 `data:`
+    // pattern. The `download` attribute is the sidecar's own basename (never the title slug), so
+    // several downloads from one page can't collide.
+    let mut sidecar_links = String::new();
+    for sc in sidecars {
+        let b64 = base64_simd::STANDARD.encode_to_string(&sc.bytes);
+        let fname = html_escape(&sc.fname);
+        sidecar_links.push_str(&format!(
+            "<a class=\"qsv-dict-export\" download=\"{fname}\" href=\"data:{};base64,{b64}\" \
+             title=\"Download {fname}, a sidecar this dashboard was built from\">&#x2913; <span \
+             class=\"qsv-dict-export-label\">{fname}</span><span \
+             class=\"qsv-dict-export-short\">{}</span></a>\n",
+            sc.mime,
+            html_escape(sc.short)
+        ));
+    }
+
+    // wrap the export + sidecar links in ONE container: it keeps them on a single wrapping row in
+    // the page, and gives `qsvDictDrawer` a single element to relocate into the drawer's button bar
+    // (a per-anchor move would leave all but the first behind).
+    let downloads = if export_link.is_empty() && sidecar_links.is_empty() {
+        String::new()
+    } else {
+        format!("<div class=\"qsv-dict-downloads\">\n{export_link}{sidecar_links}</div>\n")
     };
 
     // Fixed neutral light/dark palettes keyed on `qsv-dark` (set on the standalone page's body
@@ -13031,13 +13360,20 @@ fn render_dict_page_html(
   .qsv-dark .qsv-dict-back {{ color: #6ea8ff; }}
   .qsv-dict-dataset-desc {{ font-size: 14px; line-height: 1.5; }}
   .qsv-dict-grain {{ font-size: 13px; }}
-  .qsv-dict-export {{ display: inline-block; font-size: 12px; padding: 3px 11px; margin: 8px 0 4px; border: 1px solid rgba(128, 128, 128, 0.45); border-radius: 6px; color: inherit; text-decoration: none; }}
+  /* the download row: the JSONSchema export plus one link per sidecar this dashboard was built
+     from, wrapping onto as many lines as they need */
+  .qsv-dict-downloads {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }}
+  .qsv-dict-export {{ display: inline-block; font-size: 12px; padding: 3px 11px; border: 1px solid rgba(128, 128, 128, 0.45); border-radius: 6px; color: inherit; text-decoration: none; }}
   .qsv-dict-export:hover {{ background: rgba(128, 128, 128, 0.15); }}
-  /* in the drawer bar the anchor sits beside the ⧉/✕ icons: drop the button chrome, hide the
-     text label, and let `.qsv-dict-drawer-btns a` size it as a bare glyph */
-  .qsv-dict-drawer-btns .qsv-dict-export {{ padding: 0; margin: 0 0 0 14px; border: 0; border-radius: 0; font-size: 15px; }}
-  .qsv-dict-drawer-btns .qsv-dict-export:hover {{ background: transparent; }}
-  .qsv-dict-drawer-btns .qsv-dict-export-label {{ display: none; }}
+  /* the one-word tag is for the narrow drawer strip only; the page shows the full filename */
+  .qsv-dict-export-short {{ display: none; }}
+  /* in the drawer the row becomes a fixed strip under the title bar: full filenames give way to
+     the one-word tags (five of them fit on a line, five filenames don't), and the strip stays put
+     while the dictionary scrolls beneath it */
+  #qsv-dict-drawer > .qsv-dict-downloads {{ flex: none; padding: 8px 16px; margin: 0; gap: 6px 8px; border-bottom: 1px solid rgba(128, 128, 128, 0.35); }}
+  #qsv-dict-drawer > .qsv-dict-downloads .qsv-dict-export {{ padding: 2px 9px; white-space: nowrap; }}
+  #qsv-dict-drawer > .qsv-dict-downloads .qsv-dict-export-label {{ display: none; }}
+  #qsv-dict-drawer > .qsv-dict-downloads .qsv-dict-export-short {{ display: inline; }}
   .qsv-dict-toc {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 10px; }}
   .qsv-dict-chip {{ font-size: 12px; padding: 2px 10px; border: 1px solid rgba(128, 128, 128, 0.4); border-left: 4px solid #9ca3af; border-radius: 999px; color: inherit; text-decoration: none; }}
   .qsv-dict-chip:hover {{ background: rgba(128, 128, 128, 0.15); }}
@@ -13093,7 +13429,7 @@ fn render_dict_page_html(
 <a class="qsv-dict-back" href="#" onclick="var o=window.opener;if(o&&!o.closed){{try{{o.focus();}}catch(e){{}}}}window.close();return false">&#8592; Back to dashboard</a>
 <h1>Data Dictionary — {title}</h1>
 </header>
-{export_link}{intro}{toc_nav}{sections}{provenance}</div>
+{downloads}{intro}{toc_nav}{sections}{provenance}</div>
 </body>
 </html>"##
     )
@@ -17754,6 +18090,9 @@ struct SmartPrep {
     args:                    Args,
     /// the validated input path (never stdin).
     input:                   String,
+    /// the path the STATS cache is keyed on: `input`, with a `dc:` handle resolved ONCE here so
+    /// the stats load and the `--dict-info` download row can't drift onto different files.
+    stats_input:             String,
     /// non-default parsing (`--no-headers` / `--delimiter`) forces the stats cache to regenerate.
     force_stats_regen:       bool,
     /// set only when THIS run's moarstats `--bivariate` subprocess wrote a fresh sidecar.
@@ -17958,11 +18297,37 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
     }
 
     Ok(SmartPrep {
+        // resolved HERE, once, so the stats load and the `--dict-info` download row are anchored
+        // on the same file by construction rather than by two resolutions happening to agree
+        stats_input: resolve_stats_input_path(&input),
         args,
         input,
         force_stats_regen,
         bivariate_sidecar_fresh,
     })
+}
+
+/// Resolve a `dc:<name>` disk-cache handle to the materialized CSV the stats cache is keyed on,
+/// mirroring `util::get_stats_records`. A no-op for every ordinary path.
+///
+/// Call this EXACTLY ONCE per run, in the data phase (`smart_prepare`), and reuse the result:
+/// `diskcache::resolve_dc_path` auto-refreshes a stale entry — a network fetch that can
+/// materialize a DIFFERENT CSV — so two resolutions within one run can disagree. Feeding the
+/// result to BOTH `get_stats_records` (which then has no `dc:` prefix left to re-resolve) and the
+/// `--dict-info` stats anchor is what makes the offered sidecars provably the ones the dashboard's
+/// stats came from.
+///
+/// A resolution failure falls back to the raw input, which simply won't canonicalize later — no
+/// stats downloads, rather than a failed dashboard.
+fn resolve_stats_input_path(input: &str) -> String {
+    #[cfg(feature = "get")]
+    if let Some(dc_name) = input.strip_prefix("dc:") {
+        return match crate::diskcache::resolve_dc_path(dc_name) {
+            Ok(p) => p.to_string_lossy().into_owned(),
+            Err(_) => input.to_string(),
+        };
+    }
+    input.to_string()
 }
 
 /// Per-panel data gathered once the panel set is final, consumed by the render dispatch.
@@ -18013,6 +18378,9 @@ struct SmartCtx<'a> {
 
     explicit_box_points: Option<BoxPoints>,
     count_conf:          Config,
+    /// the path the stats cache was loaded from — `dc:` resolved ONCE in `smart_prepare`, so the
+    /// `--dict-info` download row anchors on exactly the file `get_stats_records` read.
+    stats_input:         String,
     nrows:               Option<u64>,
     log_scale:           LogScale,
     violin_mode:         ViolinMode,
@@ -18055,7 +18423,7 @@ impl<'a> SmartCtx<'a> {
             flag_polars:          false,
             flag_no_headers:      args.flag_no_headers,
             flag_delimiter:       args.flag_delimiter,
-            arg_input:            Some(prep.input.clone()),
+            arg_input:            Some(prep.stats_input.clone()),
             flag_memcheck:        false,
             flag_output:          None,
         };
@@ -18271,6 +18639,7 @@ impl<'a> SmartCtx<'a> {
             geo_anim_panel: None,
             explicit_box_points,
             count_conf,
+            stats_input: prep.stats_input.clone(),
             nrows,
             log_scale,
             violin_mode,
@@ -19590,13 +19959,19 @@ impl<'a> SmartCtx<'a> {
         if !bar_indices.is_empty() {
             self.progress.set_message("Computing frequencies…");
         }
+        // whether the frequency cache was actually READ (not merely present) — the `--dict-info`
+        // download row offers the cache only on a genuine hit.
+        let mut freq_cache_used = false;
         let freq = if bar_indices.is_empty() {
             HashMap::new()
         } else {
             // Prefer a pre-existing `frequency` cache (no data pass); fall back to a
             // single-pass recompute when it's absent/stale/incompatible.
             match freq_from_cache(self.args, &self.stats, &bar_indices, top_n) {
-                Some(cached) => cached,
+                Some(cached) => {
+                    freq_cache_used = true;
+                    cached
+                },
                 None => count_values(self.args, &bar_indices, top_n)?,
             }
         };
@@ -19711,6 +20086,21 @@ impl<'a> SmartCtx<'a> {
                     } else {
                         std::collections::HashSet::new()
                     };
+                    // downloads for the generated sidecars this run actually consumed, offered
+                    // beside the "Export JSONSchema" link so a reader of the standalone HTML can
+                    // pull down the inputs the dashboard was built from.
+                    // `stats_input` is the exact string handed to `get_stats_records`, resolved
+                    // once in `smart_prepare`. Anchoring on it means the offered stats sidecars
+                    // are the ones the dashboard's statistics were actually read from — not a
+                    // second `dc:` resolution that could have refreshed a stale entry in between.
+                    let sidecars = collect_sidecar_downloads(
+                        self.args.arg_input.as_deref(),
+                        Some(std::path::Path::new(&self.stats_input)),
+                        &self.stats,
+                        &freq,
+                        freq_cache_used,
+                        self.bivariate_sidecar_fresh,
+                    );
                     Some(render_dict_page_html(
                         &dict_json,
                         json_text,
@@ -19718,6 +20108,7 @@ impl<'a> SmartCtx<'a> {
                         &title_text,
                         &column_order,
                         &view_chart_anchors,
+                        &sidecars,
                     ))
                 },
                 // unreachable in practice: dict_data only parses from valid JSON
@@ -25564,6 +25955,7 @@ mod tests {
             "Accounts",
             &order,
             &std::collections::HashSet::new(),
+            &[],
         );
 
         // a JSON Schema dictionary (top-level `properties`) offers a script-free "Export
@@ -25642,6 +26034,7 @@ mod tests {
             "Accounts",
             &order,
             &std::collections::HashSet::new(),
+            &[],
         );
         // the stylesheet always carries `.qsv-dict-export` rules; assert on the ANCHOR markup
         // (and the data: URI) so we're checking the control, not the CSS.
@@ -25653,6 +26046,356 @@ mod tests {
             !html.contains("data:application/json;base64,"),
             "legacy fields dict embeds no schema download"
         );
+        assert!(
+            !html.contains(r#"class="qsv-dict-downloads""#),
+            "with neither an export nor a sidecar, no download row is emitted at all"
+        );
+    }
+
+    #[test]
+    fn render_dict_page_html_renders_a_download_row_per_sidecar() {
+        // Every consumed sidecar joins the JSONSchema export inside ONE `.qsv-dict-downloads`
+        // container — the container is what `qsvDictDrawer` relocates into the drawer's button
+        // bar, so links outside it (or a per-anchor move) would be dropped there.
+        let schema = r#"{ "properties": { "account_id": { "type": "integer" } } }"#;
+        let dict_json: serde_json::Value = serde_json::from_str(schema).unwrap();
+        let order = vec!["account_id".to_string()];
+        let sidecars = vec![
+            SidecarDownload {
+                fname: "accounts.stats.csv.data.jsonl".to_string(),
+                short: "stats",
+                mime:  "application/x-ndjson",
+                bytes: b"{\"field\":\"account_id\"}\n".to_vec(),
+            },
+            SidecarDownload {
+                fname: "accounts.stats.bivariate.csv".to_string(),
+                short: "bivariate",
+                mime:  "text/csv",
+                bytes: b"col1,col2,nmi\na,b,0.5\n".to_vec(),
+            },
+        ];
+        let html = render_dict_page_html(
+            &dict_json,
+            schema,
+            &DictData::default(),
+            "Accounts",
+            &order,
+            &std::collections::HashSet::new(),
+            &sidecars,
+        );
+
+        assert!(
+            html.contains(r#"<div class="qsv-dict-downloads">"#),
+            "the export + sidecar links share one container"
+        );
+        // one anchor for the schema export plus one per sidecar
+        assert_eq!(
+            html.matches(r#"class="qsv-dict-export""#).count(),
+            3,
+            "one anchor per download"
+        );
+        // `download` is the sidecar's OWN basename, never the title slug, so they can't collide
+        assert!(
+            html.contains(r#"download="accounts.stats.csv.data.jsonl""#)
+                && html.contains(r#"download="accounts.stats.bivariate.csv""#),
+            "each sidecar downloads under its own filename"
+        );
+        // each link also carries a one-word tag, shown INSTEAD of the filename in the drawer's
+        // narrow strip — without it several downloads there would be identical ⤓ glyphs
+        assert!(
+            html.contains(r#"<span class="qsv-dict-export-short">schema</span>"#)
+                && html.contains(r#"<span class="qsv-dict-export-short">stats</span>"#)
+                && html.contains(r#"<span class="qsv-dict-export-short">bivariate</span>"#),
+            "every download carries a distinguishing short tag"
+        );
+        // per-extension MIME on the data: URI
+        assert!(
+            html.contains("href=\"data:application/x-ndjson;base64,"),
+            "jsonl sidecar rides as NDJSON"
+        );
+        assert!(
+            html.contains("href=\"data:text/csv;base64,"),
+            "csv sidecar rides as text/csv"
+        );
+        // base64 payloads are round-trippable and complete
+        let b64 = base64_simd::STANDARD.encode_to_string(b"col1,col2,nmi\na,b,0.5\n");
+        assert!(html.contains(&b64), "bivariate bytes embedded verbatim");
+        // the page is embedded in a <script type="text/html"> template, so it must never carry a
+        // literal closing script tag — base64 can't produce one, but assert the invariant.
+        assert!(
+            !html.contains("</script>"),
+            "dictionary page stays script-tag-free"
+        );
+    }
+
+    #[test]
+    fn redact_sidecar_paths_strips_absolute_paths_from_metadata() {
+        // A dashboard is made to be SHARED, so the metadata sidecars must not carry the author's
+        // directory layout — but they must still say WHICH file they describe.
+        let obj = br#"{"arg_input":"/Users/jane/clients/acme/data.csv",
+            "canonical_input_path":"/Users/jane/clients/acme/data.csv",
+            "canonical_stats_path":"/Users/jane/clients/acme/data.stats.csv.json",
+            "record_count":10}"#;
+        let out = redact_sidecar_paths(obj.to_vec(), SidecarRedaction::JsonObject);
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["arg_input"], "data.csv");
+        assert_eq!(v["canonical_input_path"], "data.csv");
+        assert_eq!(v["canonical_stats_path"], "data.stats.csv.json");
+        assert_eq!(v["record_count"], 10, "non-path fields survive untouched");
+        assert!(
+            !String::from_utf8_lossy(&out).contains("/Users/jane"),
+            "no absolute path survives"
+        );
+
+        // JSONL: only the FIRST line is metadata; every data line passes through verbatim
+        let jsonl = b"{\"canonical_input_path\":\"/Users/jane/data.csv\",\"column_count\":2}\n\
+            {\"field\":\"a\",\"frequencies\":[]}\n{\"field\":\"b\",\"frequencies\":[]}\n";
+        let out = redact_sidecar_paths(jsonl.to_vec(), SidecarRedaction::JsonlFirstLine);
+        let text = String::from_utf8(out).unwrap();
+        let mut lines = text.lines();
+        let meta: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+        assert_eq!(meta["canonical_input_path"], "data.csv");
+        assert_eq!(meta["column_count"], 2);
+        assert_eq!(
+            lines.collect::<Vec<_>>(),
+            vec![
+                "{\"field\":\"a\",\"frequencies\":[]}",
+                "{\"field\":\"b\",\"frequencies\":[]}"
+            ],
+            "data lines are passed through byte-for-byte"
+        );
+
+        // pure-data sidecars and unparseable input are left exactly as they are — a download we
+        // don't understand is better untouched than mangled
+        let csv = b"col1,col2\na,b\n".to_vec();
+        assert_eq!(
+            redact_sidecar_paths(csv.clone(), SidecarRedaction::None),
+            csv
+        );
+        let junk = b"not json at all".to_vec();
+        assert_eq!(
+            redact_sidecar_paths(junk.clone(), SidecarRedaction::JsonObject),
+            junk
+        );
+    }
+
+    #[test]
+    fn charted_frequency_csv_captures_what_the_panels_show() {
+        // The charted-frequency download is what the READER SEES: only charted columns, in header
+        // order, bars in plotted order, aggregate buckets included and flagged.
+        let stats = |name: &str| crate::cmd::stats::StatsData {
+            field: name.to_string(),
+            ..Default::default()
+        };
+        let all = [stats("agency"), stats("uncharted"), stats("status")];
+        let bar = |label: &str, count: u64, kind: FreqBarKind| FreqBar {
+            x_key: label.to_string(),
+            label: label.to_string(),
+            count,
+            kind,
+        };
+        let mut freq = FreqMap::new();
+        freq.insert(
+            0,
+            vec![
+                bar("NYPD", 9, FreqBarKind::Category),
+                // a comma in a label must be quoted, not split the row
+                bar("HPD, Brooklyn", 4, FreqBarKind::Category),
+                bar("Other (3)", 2, FreqBarKind::Aggregate),
+            ],
+        );
+        freq.insert(2, vec![bar("Closed", 7, FreqBarKind::Category)]);
+
+        let sc = charted_frequency_csv(std::path::Path::new("/tmp/nyc.csv"), &all, &freq).unwrap();
+        assert_eq!(sc.fname, "nyc.viz-frequency.csv");
+        assert_eq!(sc.mime, "text/csv");
+        assert_eq!(
+            String::from_utf8(sc.bytes).unwrap(),
+            concat!(
+                "column,value,count,bucket\n",
+                "agency,NYPD,9,category\n",
+                "agency,\"HPD, Brooklyn\",4,category\n",
+                "agency,Other (3),2,aggregate\n",
+                "status,Closed,7,category\n"
+            ),
+            "header order kept, uncharted column skipped, aggregates flagged, commas quoted"
+        );
+
+        // no frequency panel -> no file at all
+        assert!(
+            charted_frequency_csv(std::path::Path::new("x.csv"), &all, &FreqMap::new()).is_none()
+        );
+    }
+
+    #[test]
+    fn collect_sidecar_downloads_only_offers_what_was_used() {
+        use std::io::Write;
+
+        // stdin has no ON-DISK sidecars; with no frequency panel either, nothing is offered
+        assert!(collect_sidecar_downloads(None, None, &[], &FreqMap::new(), true, true).is_empty());
+        assert!(
+            collect_sidecar_downloads(Some("-"), None, &[], &FreqMap::new(), true, true).is_empty()
+        );
+
+        let dir = std::env::temp_dir().join("qsv_viz_sidecar_dl_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("accounts.csv");
+        std::fs::write(&input, "account_id,revenue\n1,2\n").unwrap();
+        let input_str = input.to_string_lossy().into_owned();
+
+        // no sidecars on disk yet -> nothing offered even with both gates open
+        assert!(
+            collect_sidecar_downloads(
+                Some(&input_str),
+                Some(&input),
+                &[],
+                &FreqMap::new(),
+                true,
+                true
+            )
+            .is_empty()
+        );
+
+        // the stats cache + its metadata are offered on existence (viz always reads them)
+        std::fs::write(
+            dir.join("accounts.stats.csv.data.jsonl"),
+            "{\"field\":\"account_id\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("accounts.stats.csv.json"),
+            "{\"qsv_version\":\"0\"}",
+        )
+        .unwrap();
+        // ...but the frequency cache and bivariate CSV are gated on ACTUAL USE, not existence:
+        // both exist here, yet both gates are closed.
+        std::fs::write(dir.join("accounts.freq.csv.data.jsonl"), "{}\n").unwrap();
+        std::fs::write(dir.join("accounts.stats.bivariate.csv"), "col1,col2\na,b\n").unwrap();
+
+        let names =
+            |v: Vec<SidecarDownload>| -> Vec<String> { v.into_iter().map(|s| s.fname).collect() };
+        let got = names(collect_sidecar_downloads(
+            Some(&input_str),
+            Some(&input),
+            &[],
+            &FreqMap::new(),
+            false,
+            false,
+        ));
+        assert_eq!(
+            got,
+            vec![
+                "accounts.stats.csv.data.jsonl".to_string(),
+                "accounts.stats.csv.json".to_string()
+            ],
+            "an unused frequency cache / stale bivariate CSV is never offered"
+        );
+
+        // opening both gates picks them up
+        let got = names(collect_sidecar_downloads(
+            Some(&input_str),
+            Some(&input),
+            &[],
+            &FreqMap::new(),
+            true,
+            true,
+        ));
+        assert!(
+            got.contains(&"accounts.freq.csv.data.jsonl".to_string())
+                && got.contains(&"accounts.stats.bivariate.csv".to_string()),
+            "a cache that WAS read and a freshly-written bivariate CSV are offered: {got:?}"
+        );
+
+        // `.stats.csv` is NEVER offered, however fresh. viz doesn't read it, so it can't be shown
+        // to be the stats behind this dashboard — an explicit `qsv stats --select … -o
+        // <stem>.stats.csv` leaves a file newer than the source that describes a different
+        // computation than the cache viz used, and no mtime test separates the two.
+        let stats_csv = dir.join("accounts.stats.csv");
+        std::fs::write(&stats_csv, "field,type\n").unwrap();
+        assert!(
+            !names(collect_sidecar_downloads(
+                Some(&input_str),
+                Some(&input),
+                &[],
+                &FreqMap::new(),
+                false,
+                false
+            ))
+            .contains(&"accounts.stats.csv".to_string()),
+            "the unverifiable .stats.csv is never offered"
+        );
+
+        // over-cap sidecars are skipped rather than slurped into the page
+        let mut big = std::fs::File::create(dir.join("accounts.stats.csv.data.jsonl")).unwrap();
+        let chunk = vec![b'x'; 1024 * 1024];
+        for _ in 0..=(MAX_SIDECAR_EMBED_BYTES / (1024 * 1024)) {
+            big.write_all(&chunk).unwrap();
+        }
+        big.flush().unwrap();
+        drop(big);
+        assert!(
+            !names(collect_sidecar_downloads(
+                Some(&input_str),
+                Some(&input),
+                &[],
+                &FreqMap::new(),
+                false,
+                false
+            ))
+            .contains(&"accounts.stats.csv.data.jsonl".to_string()),
+            "a sidecar over the embed cap is skipped"
+        );
+
+        // The stats sidecars follow `stats_anchor` — the path the RUN already resolved — not the
+        // raw input string. That separation is what lets a `dc:` handle use the CSV
+        // `Config::new` materialized without this function re-resolving it (a re-resolve can
+        // refresh a stale entry and silently swap in a different file mid-render).
+        let other = dir.join("resolved.csv");
+        std::fs::write(&other, "a,b\n1,2\n").unwrap();
+        std::fs::write(
+            dir.join("resolved.stats.csv.data.jsonl"),
+            "{\"field\":\"a\"}\n",
+        )
+        .unwrap();
+        // a real frequency panel, so the charted-frequency download is actually produced and its
+        // filename can be checked
+        let anchor_stats = [crate::cmd::stats::StatsData {
+            field: "a".to_string(),
+            ..Default::default()
+        }];
+        let mut anchor_freq = FreqMap::new();
+        anchor_freq.insert(
+            0,
+            vec![FreqBar {
+                x_key: "x".to_string(),
+                label: "x".to_string(),
+                count: 1,
+                kind:  FreqBarKind::Category,
+            }],
+        );
+        let got = names(collect_sidecar_downloads(
+            Some("dc:accounts"),
+            Some(&other),
+            &anchor_stats,
+            &anchor_freq,
+            false,
+            false,
+        ));
+        assert!(
+            got.contains(&"resolved.stats.csv.data.jsonl".to_string()),
+            "stats sidecars come from the anchor the run resolved: {got:?}"
+        );
+        assert!(
+            !got.iter().any(|n| n.starts_with("accounts.stats")),
+            "the raw input string never locates the stats sidecars: {got:?}"
+        );
+        assert!(
+            got.contains(&"resolved.viz-frequency.csv".to_string()),
+            "the charted-frequency download is named off the anchor, never the dc: string: {got:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

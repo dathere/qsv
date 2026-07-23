@@ -430,9 +430,10 @@ smart options:
     --cluster <mode>       For the `viz smart` map panel: whether to offer an
                            in-map "Clusters/Points" toggle that collapses dense points
                            into native MapLibre count bubbles (which expand back
-                           into individual, hoverable points on zoom-in). The map
-                           always OPENS as individual points; the toggle switches
-                           clustering on. One of: auto, on, off. "auto" (the
+                           into individual, hoverable points on zoom-in). Hovering
+                           a bubble shows its point count; clicking it zooms to
+                           where that cluster breaks apart. The map always OPENS
+                           as individual points; the toggle switches clustering on. One of: auto, on, off. "auto" (the
                            default) offers the toggle for a plain-marker core (no
                            density heatmap, no bubble-size measure) once it
                            reaches 1,000 points. "on" offers it whenever the core
@@ -8056,6 +8057,9 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
           // plotly re-enables the MapLibre GL wheel-zoom handler on this newPlot, so re-assert the
           // inline/fullscreen scrollZoom state via the fullscreen script's published helper.
           if (window.__qsvRefitScrollZoom) window.__qsvRefitScrollZoom(gd);
+          // that newPlot also builds a NEW MapLibre instance, dropping the cluster label repaint
+          // and hover handlers with the old one — re-install them on the new map.
+          if (window.__qsvRefitClusterUi) window.__qsvRefitClusterUi(gd);
           // this newPlot re-render silently drops gd.on listeners — rebind the Data Dictionary
           // annotation hook (when that feature is on the page) once the re-render settles,
           // fulfilled OR rejected: the listeners are already gone either way.
@@ -8295,6 +8299,157 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
     setScrollZoom(gd, document.fullscreenElement === gd);
   }
   window.__qsvRefitScrollZoom = applyScrollZoom;
+  // ---- cluster bubbles: legible counts + hover ------------------------------------------------
+  // Two plotly gaps to close. (1) It builds the cluster COUNT layer with an EMPTY paint
+  // ({type:"symbol", paint:{}, layout:{"text-field":"{point_count_abbreviated}"}}), so MapLibre's
+  // default text-color (#000000) applies and no trace attribute exposes it. (2) `cluster.color`
+  // defaults to the trace's MARKER color — an identity color doing a magnitude job — so every
+  // bubble reads the same regardless of size, and black digits on it can land anywhere from
+  // 2.5:1 (white on the orange marker) to unreadable.
+  //
+  // So the bubbles are repainted on the GL instance as a proper SEQUENTIAL ramp keyed to
+  // point_count (light = few, dark = many), with the label ink picked per step by measured WCAG
+  // contrast — every pairing below clears 4.5:1 for the 12px count, worst case 6.59:1 light /
+  // 7.86:1 dark. The ramps are single-hue (blue), lightness-monotone, and each validates against
+  // its own basemap; the dark-basemap ramp is deliberately paler, since a step dark enough to
+  // vanish into a dark map fails the mark-vs-surface floor. A surface-colored ring keeps a bubble
+  // legible over a busy patch of basemap (park, water, motorway) where fill-vs-map contrast alone
+  // would not hold.
+  // NOTE: hex colors are single-quoted on purpose — a double-quote immediately followed by a hash
+  // would close this script's Rust raw-string delimiter.
+  var CLUSTER_INK = '#0b0b0b', CLUSTER_WHITE = '#ffffff';
+  var CLUSTER_STEPS = [10, 100, 1000];
+  var CLUSTER_SCHEME = {
+    light: {
+      fills: ['#86b6ef', '#5598e7', '#1c5cab', '#0d366b'],
+      texts: [CLUSTER_INK, CLUSTER_INK, CLUSTER_WHITE, CLUSTER_WHITE],
+      ring:  '#fafafa'
+    },
+    dark: {
+      fills: ['#cde2fb', '#9ec5f4', '#6da7ec', '#184f95'],
+      texts: [CLUSTER_INK, CLUSTER_INK, CLUSTER_INK, CLUSTER_WHITE],
+      ring:  '#121212'
+    }
+  };
+  // a MapLibre "step" expression over the cluster's point_count, so the ramp is evaluated per
+  // bubble by the GL layer itself (no per-feature bookkeeping on our side).
+  function clusterStepExpr(values) {
+    var e = ["step", ["get", "point_count"], values[0]];
+    for (var i = 0; i < CLUSTER_STEPS.length; i++) e.push(CLUSTER_STEPS[i], values[i + 1]);
+    return e;
+  }
+  // Layers are (re)created by plotly whenever `cluster.enabled` flips, so ids are looked up by
+  // suffix each time rather than cached. "-cluster" never matches "-cluster-count" (different
+  // trailing 8 chars), so the circle and count layers stay distinct.
+  function clusterLayerIds(map, suffix) {
+    var style;
+    try { style = map.getStyle(); } catch (e) { return []; }
+    var layers = (style && style.layers) || [];
+    return layers.filter(function (l) {
+      return l && typeof l.id === "string" && l.id.slice(-suffix.length) === suffix;
+    }).map(function (l) { return l.id; });
+  }
+  function paintClusters(map, isDark) {
+    var scheme = isDark ? CLUSTER_SCHEME.dark : CLUSTER_SCHEME.light;
+    clusterLayerIds(map, "-cluster").forEach(function (id) {
+      try {
+        map.setPaintProperty(id, "circle-color", clusterStepExpr(scheme.fills));
+        map.setPaintProperty(id, "circle-stroke-color", scheme.ring);
+        map.setPaintProperty(id, "circle-stroke-width", 1.5);
+      } catch (e) {}
+    });
+    clusterLayerIds(map, "-cluster-count").forEach(function (id) {
+      try { map.setPaintProperty(id, "text-color", clusterStepExpr(scheme.texts)); } catch (e) {}
+    });
+  }
+  // plotly gives cluster bubbles NO hover: it filters clustered features out of the hover-bearing
+  // circle layer (["!", ["has", "point_count"]]) and never registers the -cluster layers with its
+  // hover system. So supply our own tooltip — a plain positioned div in the map container (the
+  // maplibregl namespace is bundled but not published as a global, so Popup isn't reachable).
+  function clusterTip(map) {
+    if (map.__qsvClusterTip) return map.__qsvClusterTip;
+    var el = document.createElement("div");
+    el.style.cssText = "position:absolute;z-index:5;display:none;pointer-events:none;" +
+      "padding:3px 7px;border-radius:4px;white-space:nowrap;" +
+      "font:12px/1.35 Helvetica Neue, Helvetica, Arial, sans-serif;" +
+      "color:#fff;background:rgba(0,0,0,.78);box-shadow:0 1px 3px rgba(0,0,0,.3)";
+    try { map.getContainer().appendChild(el); } catch (e) { return null; }
+    map.__qsvClusterTip = el;
+    return el;
+  }
+  function installClusterUi(map, isDark) {
+    // keyed on the GL instance: a theme flip / fullscreen re-render builds a NEW map, which
+    // re-installs (picking up that render's basemap mode), while repeated calls against the same
+    // instance are no-ops.
+    if (map.__qsvClusterUi) return;
+    map.__qsvClusterUi = true;
+    paintClusters(map, isDark);
+    // the cluster layers only exist while clustering is ON, and the "Clusters/Points" toggle adds
+    // them after this first paint — styledata fires on that layer add, so re-assert there
+    // (idempotent).
+    try { map.on("styledata", function () { paintClusters(map, isDark); }); } catch (e) {}
+    var tip = clusterTip(map);
+    if (!tip) return;
+    function hide() {
+      tip.style.display = "none";
+      try { map.getCanvas().style.cursor = ""; } catch (e) {}
+    }
+    function clusterAt(pt) {
+      var ids = clusterLayerIds(map, "-cluster");
+      if (!ids.length) return null;
+      var hits;
+      try { hits = map.queryRenderedFeatures(pt, { layers: ids }); } catch (e) { return null; }
+      return (hits && hits[0]) || null;
+    }
+    map.on("mousemove", function (e) {
+      var f = clusterAt(e.point);
+      var n = f && f.properties && f.properties.point_count;
+      if (typeof n !== "number") { hide(); return; }
+      tip.textContent = n.toLocaleString() + (n === 1 ? " point" : " points") + " - click to zoom in";
+      tip.style.display = "block";
+      tip.style.left = (e.point.x + 12) + "px";
+      tip.style.top = (e.point.y + 12) + "px";
+      try { map.getCanvas().style.cursor = "pointer"; } catch (err) {}
+    });
+    map.on("mouseout", hide);
+    map.on("click", function (e) {
+      var f = clusterAt(e.point);
+      if (!f || !f.properties || typeof f.properties.cluster_id !== "number") return;
+      var src;
+      try { src = map.getSource(f.source); } catch (err) { return; }
+      if (!src || typeof src.getClusterExpansionZoom !== "function") return;
+      var center = f.geometry && f.geometry.coordinates;
+      var fly = function (z) {
+        if (typeof z !== "number" || !center) return;
+        hide();
+        try { map.easeTo({ center: center, zoom: z }); } catch (err) {}
+      };
+      // maplibre-gl returns a Promise in 3+ and takes a node-style callback in 2.x — support both.
+      try {
+        var p = src.getClusterExpansionZoom(f.properties.cluster_id, function (err, z) {
+          if (!err) fly(z);
+        });
+        if (p && p.then) p.then(fly, function () {});
+      } catch (err) {}
+    });
+  }
+  // Same bounded wait as applyScrollZoom: the GL map attaches a frame or two after the render.
+  function applyClusterUi(gd, tries) {
+    if (tries === undefined) tries = 20;
+    var fl = gd._fullLayout || {};
+    var keys = mapKeys(gd);
+    if (!keys.length) return;
+    var ready = keys.every(function (k) { var sp = fl[k] && fl[k]._subplot; return sp && sp.map; });
+    if (!ready && tries > 0) { setTimeout(function () { applyClusterUi(gd, tries - 1); }, 100); return; }
+    keys.forEach(function (k) {
+      var sp = fl[k] && fl[k]._subplot, m = sp && sp.map;
+      // read the basemap mode from the style this render actually used, so a runtime theme flip
+      // (which re-runs newPlot with the dark/light basemap) re-installs with the matching ramp.
+      var style = (gd.layout && gd.layout[k] && gd.layout[k].style) || (fl[k] && fl[k].style) || "";
+      if (m) installClusterUi(m, /dark/i.test(String(style)));
+    });
+  }
+  window.__qsvRefitClusterUi = applyClusterUi;
   // gl3d (3D scene) panels need a DIFFERENT fix than geo/map. plotly's WebGL canvas swallows the
   // wheel (preventDefault) on EVERY wheel event — even when the scene is created with
   // scrollZoom:false, which suppresses the zoom but NOT the preventDefault. So a scroll over a 3D
@@ -8343,6 +8498,9 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       // regardless of the render config, so a scroll over the map would otherwise pan/zoom it and
       // swallow the page scroll.
       applyScrollZoom(gd);
+      // cluster bubbles: repaint plotly's black-by-default count labels and add hover/click-to-zoom
+      // (see installClusterUi). No-op for non-map panels and for maps that never cluster.
+      applyClusterUi(gd);
       // gl3d panels: stop the WebGL canvas from eating the wheel inline so the page can scroll
       // (scrollZoom:false suppresses the zoom but not the canvas preventDefault; see above).
       installGl3dScrollFix(gd);
@@ -18644,9 +18802,10 @@ impl<'a> SmartCtx<'a> {
                                 "viz smart: map has {mappable_count} mappable points; the core \
                                  opens as individual points with a \"Clusters/Points\" toggle \
                                  (click it to collapse dense areas into native MapLibre count \
-                                 bubbles that expand again on zoom-in). Set --cluster off to omit \
-                                 the toggle, or --heatmap-density <n> to draw a density heatmap \
-                                 at or above <n> points instead."
+                                 bubbles that expand again on zoom-in). Hover a bubble for its \
+                                 point count, or click it to zoom to where it breaks apart. Set \
+                                 --cluster off to omit the toggle, or --heatmap-density <n> to \
+                                 draw a density heatmap at or above <n> points instead."
                             ));
                         }
                         (Some((p, cols)), choro)

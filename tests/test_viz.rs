@@ -4230,6 +4230,42 @@ fn viz_smart_map_clusters_dense_markers() {
     assert!(stderr.contains("Clusters") && stderr.contains("toggle"));
 }
 
+// A cluster-eligible map also ships the client-side cluster UI: plotly renders the count bubble
+// labels with an EMPTY paint (so MapLibre's default black text-color applies, unreadable on a dark
+// bubble) and gives the bubbles no hover at all, so viz repaints the `-cluster-count` layer and
+// installs its own hover/click-to-expand handlers on the GL instance.
+#[test]
+fn viz_smart_map_cluster_ui_script() {
+    let wrk = Workdir::new("viz_smart_map_cluster_ui_script");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv"]);
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the bubbles are repainted as a sequential ramp keyed to point_count, with the label ink
+    // picked per step for contrast (plotly exposes no cluster.textfont attribute at all)
+    assert!(
+        html.contains("-cluster-count") && html.contains("CLUSTER_SCHEME"),
+        "cluster bubbles should carry the contrast-validated ramp: {html}"
+    );
+    // both basemap ramps ship: the dark one is deliberately paler so a bubble still reads
+    assert!(
+        html.contains("#86b6ef") && html.contains("#cde2fb"),
+        "light and dark cluster ramps should both be present: {html}"
+    );
+    // a surface ring keeps a bubble legible over a busy patch of basemap
+    assert!(html.contains("circle-stroke-color"), "cluster ring missing: {html}");
+    // hover + click-to-expand handlers, and the re-install hook the theme toggle calls
+    assert!(html.contains("getClusterExpansionZoom"), "cluster click-to-expand missing: {html}");
+    assert!(html.contains("__qsvRefitClusterUi"), "cluster UI re-install hook missing: {html}");
+    // the note tells the reader the bubbles are interactive
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("Hover a bubble"), "stderr note should mention hover: {stderr}");
+}
+
 // Opting back into the density heatmap (`--heatmap-density` at/below the point count) suppresses
 // clustering — a heatmap has no markers to cluster, so the two are mutually exclusive.
 #[test]

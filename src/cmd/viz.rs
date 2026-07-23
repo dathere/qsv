@@ -8712,8 +8712,12 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
 #qsv-photo-box.qsv-photo-err img { min-width: 170px; min-height: 96px; }
 /* while a photo resolves through the cache/fetch, hold a neutral box (never a stale image) */
 #qsv-photo-box.qsv-photo-loading img { min-width: 170px; min-height: 96px; }
-/* keep the loading box near the enlarged size so the card doesn't jump small->big on load */
-#qsv-photo-box.qsv-photo-big.qsv-photo-loading img { min-width: 320px; min-height: 220px; }
+/* keep the loading box near the enlarged size so the card doesn't jump small->big on load, but
+   clamp to the viewport so it can't overflow on a narrow screen. min == max fixes the box: it
+   also CAPS the image once it decodes, so the img can't briefly grow to full enlarged height in
+   the frame between `img.src` being set and the load handler (which lifts this cap and re-places
+   in the same tick) - otherwise a tall enlarged image near a viewport edge flashes off-screen. */
+#qsv-photo-box.qsv-photo-big.qsv-photo-loading img { min-width: min(320px, 80vw); min-height: min(220px, 60vh); max-width: min(320px, 80vw); max-height: min(220px, 60vh); object-fit: contain; }
 #qsv-photo-box.qsv-photo-loading .qsv-photo-inner::after { content: "Loading\2026"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #888; font: 12px/1 sans-serif; pointer-events: none; }
 #qsv-photo-box button { position: absolute; background: rgba(0, 0, 0, 0.6); color: #ffffff; border: none; cursor: pointer; font: 600 13px/1 sans-serif; border-radius: 3px; padding: 4px 6px; }
 #qsv-photo-box button:hover { background: rgba(0, 0, 0, 0.85); }
@@ -8946,20 +8950,25 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
     b.classList.toggle("qsv-photo-multi", urls.length > 1);
     b.classList.add("open");
     applyBig();
-    place();
     // Bump the token so any in-flight resolve for a previous photo/point can detect it is stale.
     var url = urls[at], token = ++showToken;
     // A cached image paints instantly. Otherwise DROP the previous point's photo up front and
     // show a neutral "Loading…" box, so the card never displays a stale image at the new anchor
     // while the async cache/fetch runs. The load/error handlers clear the loading state.
+    // `place()` is called AFTER the size-determining state (loading box / cached src) is applied,
+    // so the card is clamped to the viewport at its actual size — otherwise an enlarged loading
+    // box could overflow the edge or cover the marker until the image loaded. The load handler
+    // re-places once the real image dimensions are known.
     var cached = mem.get(url);
     if (cached) {
       b.classList.remove("qsv-photo-loading");
       if (img.getAttribute("src") !== cached) img.src = cached;
+      place();
       return;
     }
     img.removeAttribute("src");
     b.classList.add("qsv-photo-loading");
+    place();
     resolveSrc(url).then(function (src) {
       if (token !== showToken) return;
       // `src || url` falls back to the raw URL when the host has no CORS or the fetch failed —

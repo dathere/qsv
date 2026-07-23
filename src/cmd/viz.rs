@@ -8706,6 +8706,9 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
 #qsv-photo-box img { display: block; max-width: 260px; max-height: 260px; border-radius: 3px; }
 /* a broken source collapses the <img> to nothing, so give the card a floor to caption */
 #qsv-photo-box.qsv-photo-err img { min-width: 170px; min-height: 96px; }
+/* while a photo resolves through the cache/fetch, hold a neutral box (never a stale image) */
+#qsv-photo-box.qsv-photo-loading img { min-width: 170px; min-height: 96px; }
+#qsv-photo-box.qsv-photo-loading .qsv-photo-inner::after { content: "Loading\2026"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #888; font: 12px/1 sans-serif; }
 #qsv-photo-box button { position: absolute; background: rgba(0, 0, 0, 0.6); color: #ffffff; border: none; cursor: pointer; font: 600 13px/1 sans-serif; border-radius: 3px; padding: 4px 6px; }
 #qsv-photo-box button:hover { background: rgba(0, 0, 0, 0.85); }
 #qsv-photo-box .qsv-photo-close { top: 5px; right: 5px; }
@@ -8814,7 +8817,11 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
       return idbGet(db, url).then(function (blob) {
         if (blob) return { blob: blob, store: false };
         if (corsBlocked.has(originOf(url))) return null;
-        return fetch(url, { mode: "cors", credentials: "omit", cache: "force-cache" }).then(
+        // credentials:"same-origin" (the fetch default) sends cookies only for a same-origin
+        // image — so a cookie-protected same-origin photo caches instead of failing and
+        // re-fetching every dwell — while cross-origin stays credential-free (no cookies sent to
+        // a third-party host, and compatible with an `Access-Control-Allow-Origin: *` response).
+        return fetch(url, { mode: "cors", credentials: "same-origin", cache: "force-cache" }).then(
           function (r) { return r.ok ? r.blob().then(function (b) { return { blob: b, store: true, db: db }; }) : null; },
           function () { corsBlocked.add(originOf(url)); return null; }
         );
@@ -8847,10 +8854,14 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
     box.querySelector(".qsv-photo-next").addEventListener("click", function (e) { e.stopPropagation(); step(1); });
     // the natural size is unknown until the bytes arrive, so re-place once it is: an unplaced
     // card measured at its empty size would otherwise land wrong and could cover the point.
-    box.querySelector("img").addEventListener("load", place);
+    box.querySelector("img").addEventListener("load", function () {
+      box.classList.remove("qsv-photo-loading");
+      place();
+    });
     // A data-supplied URL can 404 or expire (Boston's cloudinary links do), and a broken <img>
     // renders as an empty card that reads like a bug. Say so instead.
     box.querySelector("img").addEventListener("error", function () {
+      box.classList.remove("qsv-photo-loading");
       box.classList.add("qsv-photo-err");
       box.querySelector(".qsv-photo-cap").textContent =
         urls.length > 1 ? (at + 1) + " / " + urls.length + " - unavailable" : "image unavailable";
@@ -8868,6 +8879,7 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
     showToken++;
     if (!box) return;
     box.classList.remove("open");
+    box.classList.remove("qsv-photo-loading");
     // drop the src so a dismissed card holds no decoded image (and a re-open re-requests rather
     // than flashing the previous point's photo while the new one loads)
     box.querySelector("img").removeAttribute("src");
@@ -8902,14 +8914,24 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
     b.classList.toggle("qsv-photo-multi", urls.length > 1);
     b.classList.add("open");
     place();
-    // Resolve the src through the cache; assign only if the card hasn't since moved to another
-    // photo/point (the token guards that race). `src || url` falls back to the raw URL when the
-    // host has no CORS or the fetch failed — the browser HTTP cache still applies there.
+    // Bump the token so any in-flight resolve for a previous photo/point can detect it is stale.
     var url = urls[at], token = ++showToken;
+    // A cached image paints instantly. Otherwise DROP the previous point's photo up front and
+    // show a neutral "Loading…" box, so the card never displays a stale image at the new anchor
+    // while the async cache/fetch runs. The load/error handlers clear the loading state.
+    var cached = mem.get(url);
+    if (cached) {
+      b.classList.remove("qsv-photo-loading");
+      if (img.getAttribute("src") !== cached) img.src = cached;
+      return;
+    }
+    img.removeAttribute("src");
+    b.classList.add("qsv-photo-loading");
     resolveSrc(url).then(function (src) {
       if (token !== showToken) return;
-      var next = src || url;
-      if (img.getAttribute("src") !== next) img.src = next;
+      // `src || url` falls back to the raw URL when the host has no CORS or the fetch failed —
+      // the browser HTTP cache still applies there.
+      img.src = src || url;
     });
   }
   document.addEventListener("keydown", function (e) {

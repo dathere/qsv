@@ -4402,9 +4402,13 @@ fn viz_smart_photos_hint_only_on_points_with_photos() {
 
     // the client-side image cache chrome is emitted so a dwelled image is fetched at most once
     // (IndexedDB blob store + in-memory object-URL cache); guards the cache wiring's presence.
+    // `qsv-photo-loading` is the neutral box shown while an uncached image resolves, so the card
+    // never displays the previous point's photo at the new anchor.
     assert!(
-        html.contains("qsv-viz-photos") && html.contains("indexedDB"),
-        "the --photos chrome must include the IndexedDB image cache"
+        html.contains("qsv-viz-photos")
+            && html.contains("indexedDB")
+            && html.contains("qsv-photo-loading"),
+        "the --photos chrome must include the IndexedDB image cache and its loading state"
     );
 }
 

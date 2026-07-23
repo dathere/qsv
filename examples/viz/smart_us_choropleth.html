@@ -48,7 +48,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>332</td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>6</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-23 03:24 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-23 06:49 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -276,6 +276,190 @@
     setScrollZoom(gd, document.fullscreenElement === gd);
   }
   window.__qsvRefitScrollZoom = applyScrollZoom;
+  // ---- cluster bubbles: legible counts + hover ------------------------------------------------
+  // Two plotly gaps to close. (1) It builds the cluster COUNT layer with an EMPTY paint
+  // ({type:"symbol", paint:{}, layout:{"text-field":"{point_count_abbreviated}"}}), so MapLibre's
+  // default text-color (#000000) applies and no trace attribute exposes it. (2) `cluster.color`
+  // defaults to the trace's MARKER color — an identity color doing a magnitude job — so every
+  // bubble reads the same regardless of size, and black digits on it can land anywhere from
+  // 2.5:1 (white on the orange marker) to unreadable.
+  //
+  // So the bubbles are repainted on the GL instance as a proper SEQUENTIAL ramp keyed to
+  // point_count (light = few, dark = many), with the label ink picked per step by measured WCAG
+  // contrast — every pairing below clears 4.5:1 for the 12px count, worst case 6.59:1 light /
+  // 7.86:1 dark. The ramps are single-hue (blue), lightness-monotone, and each validates against
+  // its own basemap; the dark-basemap ramp is deliberately paler, since a step dark enough to
+  // vanish into a dark map fails the mark-vs-surface floor. A surface-colored ring keeps a bubble
+  // legible over a busy patch of basemap (park, water, motorway) where fill-vs-map contrast alone
+  // would not hold.
+  // NOTE: hex colors are single-quoted on purpose — a double-quote immediately followed by a hash
+  // would close this script's Rust raw-string delimiter.
+  var CLUSTER_INK = '#0b0b0b', CLUSTER_WHITE = '#ffffff';
+  var CLUSTER_STEPS = [10, 100, 1000];
+  var CLUSTER_REPAINT_MS = 500;
+  var CLUSTER_SCHEME = {
+    light: {
+      fills: ['#86b6ef', '#5598e7', '#1c5cab', '#0d366b'],
+      texts: [CLUSTER_INK, CLUSTER_INK, CLUSTER_WHITE, CLUSTER_WHITE],
+      ring:  '#fafafa'
+    },
+    dark: {
+      fills: ['#cde2fb', '#9ec5f4', '#6da7ec', '#184f95'],
+      texts: [CLUSTER_INK, CLUSTER_INK, CLUSTER_INK, CLUSTER_WHITE],
+      ring:  '#121212'
+    }
+  };
+  // a MapLibre "step" expression over the cluster's point_count, so the ramp is evaluated per
+  // bubble by the GL layer itself (no per-feature bookkeeping on our side).
+  function clusterStepExpr(values) {
+    var e = ["step", ["get", "point_count"], values[0]];
+    for (var i = 0; i < CLUSTER_STEPS.length; i++) e.push(CLUSTER_STEPS[i], values[i + 1]);
+    return e;
+  }
+  // Layers are (re)created by plotly whenever `cluster.enabled` flips, so ids are looked up by
+  // suffix each time rather than cached. "-cluster" never matches "-cluster-count" (different
+  // trailing 8 chars), so the circle and count layers stay distinct.
+  function clusterLayerIds(map, suffix) {
+    var style;
+    try { style = map.getStyle(); } catch (e) { return []; }
+    var layers = (style && style.layers) || [];
+    return layers.filter(function (l) {
+      return l && typeof l.id === "string" && l.id.slice(-suffix.length) === suffix;
+    }).map(function (l) { return l.id; });
+  }
+  function paintClusters(map, isDark) {
+    var scheme = isDark ? CLUSTER_SCHEME.dark : CLUSTER_SCHEME.light;
+    clusterLayerIds(map, "-cluster").forEach(function (id) {
+      try {
+        map.setPaintProperty(id, "circle-color", clusterStepExpr(scheme.fills));
+        map.setPaintProperty(id, "circle-stroke-color", scheme.ring);
+        map.setPaintProperty(id, "circle-stroke-width", 1.5);
+      } catch (e) {}
+    });
+    clusterLayerIds(map, "-cluster-count").forEach(function (id) {
+      try {
+        map.setPaintProperty(id, "text-color", clusterStepExpr(scheme.texts));
+        // MapLibre drops a symbol that collides with another label, and plotly sets no overlap
+        // policy — so a count silently disappeared whenever its bubble sat under a basemap place
+        // label, leaving an unlabelled blob (the number is the entire point of the bubble). Pin it:
+        // always draw the count, and don't let it suppress the basemap's own labels either.
+        map.setLayoutProperty(id, "text-allow-overlap", true);
+        map.setLayoutProperty(id, "text-ignore-placement", true);
+      } catch (e) {}
+    });
+  }
+  // WHEN to paint is the hard part: plotly creates the cluster layers only when `cluster.enabled`
+  // flips on, and there is no event that reliably lands after that. `styledata` and `plotly_restyle`
+  // both fire well BEFORE the layers exist (on a heavy dashboard the gap outran a bounded retry, and
+  // the ramp silently didn't take), and MapLibre's `idle` never fires at all under plotly's usage
+  // (measured: 0 firings on a 28-panel dashboard, even after a pan). So don't guess — poll a cheap
+  // predicate and repaint whenever the layers are found unpainted. Our ramp is a step EXPRESSION (an
+  // array) while plotly's default is a plain color string, so "needs paint" is a type check, and the
+  // scan short-circuits to false on the common case of a map with no cluster layers at all.
+  function clustersNeedPaint(map) {
+    var ids = clusterLayerIds(map, "-cluster");
+    if (!ids.length) return false;
+    var v;
+    try { v = map.getPaintProperty(ids[0], "circle-color"); } catch (e) { return false; }
+    return !Array.isArray(v);
+  }
+  // plotly gives cluster bubbles NO hover: it filters clustered features out of the hover-bearing
+  // circle layer (["!", ["has", "point_count"]]) and never registers the -cluster layers with its
+  // hover system. So supply our own tooltip — a plain positioned div in the map container (the
+  // maplibregl namespace is bundled but not published as a global, so Popup isn't reachable).
+  function clusterTip(map) {
+    if (map.__qsvClusterTip) return map.__qsvClusterTip;
+    var el = document.createElement("div");
+    el.style.cssText = "position:absolute;z-index:5;display:none;pointer-events:none;" +
+      "padding:3px 7px;border-radius:4px;white-space:nowrap;" +
+      "font:12px/1.35 Helvetica Neue, Helvetica, Arial, sans-serif;" +
+      "color:#fff;background:rgba(0,0,0,.78);box-shadow:0 1px 3px rgba(0,0,0,.3)";
+    try { map.getContainer().appendChild(el); } catch (e) { return null; }
+    map.__qsvClusterTip = el;
+    return el;
+  }
+  function installClusterUi(map, isDark) {
+    // keyed on the GL instance: a theme flip / fullscreen re-render builds a NEW map, which
+    // re-installs (picking up that render's basemap mode), while repeated calls against the same
+    // instance are no-ops.
+    if (map.__qsvClusterUi) return;
+    map.__qsvClusterUi = true;
+    paintClusters(map, isDark);
+    // the cluster layers only exist while clustering is ON, so re-assert on every render settle
+    // (see clustersNeedPaint) rather than trying to catch the moment they are added.
+    // Repaint on a slow tick rather than on an event (see clustersNeedPaint): this covers every path
+    // that rebuilds the layers — the "Clusters/Points" toggle, toggling it back off and on, the
+    // extent buttons — with one mechanism. The tick clears itself once plotly discards this map
+    // (a theme flip builds a new one, which gets its own install and its own tick), so no interval
+    // outlives its map. Painting is a no-op unless the layers are actually found unpainted.
+    var tick = setInterval(function () {
+      var alive = true;
+      try { if (!map.getStyle()) alive = false; } catch (e) { alive = false; }
+      if (!alive) { clearInterval(tick); return; }
+      if (clustersNeedPaint(map)) paintClusters(map, isDark);
+    }, CLUSTER_REPAINT_MS);
+    var tip = clusterTip(map);
+    if (!tip) return;
+    function hide() {
+      tip.style.display = "none";
+      try { map.getCanvas().style.cursor = ""; } catch (e) {}
+    }
+    function clusterAt(pt) {
+      var ids = clusterLayerIds(map, "-cluster");
+      if (!ids.length) return null;
+      var hits;
+      try { hits = map.queryRenderedFeatures(pt, { layers: ids }); } catch (e) { return null; }
+      return (hits && hits[0]) || null;
+    }
+    map.on("mousemove", function (e) {
+      var f = clusterAt(e.point);
+      var n = f && f.properties && f.properties.point_count;
+      if (typeof n !== "number") { hide(); return; }
+      tip.textContent = n.toLocaleString() + (n === 1 ? " point" : " points") + " - click to zoom in";
+      tip.style.display = "block";
+      tip.style.left = (e.point.x + 12) + "px";
+      tip.style.top = (e.point.y + 12) + "px";
+      try { map.getCanvas().style.cursor = "pointer"; } catch (err) {}
+    });
+    map.on("mouseout", hide);
+    map.on("click", function (e) {
+      var f = clusterAt(e.point);
+      if (!f || !f.properties || typeof f.properties.cluster_id !== "number") return;
+      var src;
+      try { src = map.getSource(f.source); } catch (err) { return; }
+      if (!src || typeof src.getClusterExpansionZoom !== "function") return;
+      var center = f.geometry && f.geometry.coordinates;
+      var fly = function (z) {
+        if (typeof z !== "number" || !center) return;
+        hide();
+        try { map.easeTo({ center: center, zoom: z }); } catch (err) {}
+      };
+      // maplibre-gl returns a Promise in 3+ and takes a node-style callback in 2.x — support both.
+      try {
+        var p = src.getClusterExpansionZoom(f.properties.cluster_id, function (err, z) {
+          if (!err) fly(z);
+        });
+        if (p && p.then) p.then(fly, function () {});
+      } catch (err) {}
+    });
+  }
+  // Same bounded wait as applyScrollZoom: the GL map attaches a frame or two after the render.
+  function applyClusterUi(gd, tries) {
+    if (tries === undefined) tries = 20;
+    var fl = gd._fullLayout || {};
+    var keys = mapKeys(gd);
+    if (!keys.length) return;
+    var ready = keys.every(function (k) { var sp = fl[k] && fl[k]._subplot; return sp && sp.map; });
+    if (!ready && tries > 0) { setTimeout(function () { applyClusterUi(gd, tries - 1); }, 100); return; }
+    keys.forEach(function (k) {
+      var sp = fl[k] && fl[k]._subplot, m = sp && sp.map;
+      // read the basemap mode from the style this render actually used, so a runtime theme flip
+      // (which re-runs newPlot with the dark/light basemap) re-installs with the matching ramp.
+      var style = (gd.layout && gd.layout[k] && gd.layout[k].style) || (fl[k] && fl[k].style) || "";
+      if (m) installClusterUi(m, /dark/i.test(String(style)));
+    });
+  }
+  window.__qsvRefitClusterUi = applyClusterUi;
   // gl3d (3D scene) panels need a DIFFERENT fix than geo/map. plotly's WebGL canvas swallows the
   // wheel (preventDefault) on EVERY wheel event — even when the scene is created with
   // scrollZoom:false, which suppresses the zoom but NOT the preventDefault. So a scroll over a 3D
@@ -324,6 +508,9 @@
       // regardless of the render config, so a scroll over the map would otherwise pan/zoom it and
       // swallow the page scroll.
       applyScrollZoom(gd);
+      // cluster bubbles: repaint plotly's black-by-default count labels and add hover/click-to-zoom
+      // (see installClusterUi). No-op for non-map panels and for maps that never cluster.
+      applyClusterUi(gd);
       // gl3d panels: stop the WebGL canvas from eating the wheel inline so the page can scroll
       // (scrollZoom:false suppresses the zoom but not the canvas preventDefault; see above).
       installGl3dScrollFix(gd);
@@ -481,6 +668,9 @@
           // plotly re-enables the MapLibre GL wheel-zoom handler on this newPlot, so re-assert the
           // inline/fullscreen scrollZoom state via the fullscreen script's published helper.
           if (window.__qsvRefitScrollZoom) window.__qsvRefitScrollZoom(gd);
+          // that newPlot also builds a NEW MapLibre instance, dropping the cluster label repaint
+          // and hover handlers with the old one — re-install them on the new map.
+          if (window.__qsvRefitClusterUi) window.__qsvRefitClusterUi(gd);
           // this newPlot re-render silently drops gd.on listeners — rebind the Data Dictionary
           // annotation hook (when that feature is on the page) once the re-render settles,
           // fulfilled OR rejected: the listeners are already gone either way.

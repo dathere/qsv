@@ -8708,7 +8708,7 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
 #qsv-photo-box.qsv-photo-err img { min-width: 170px; min-height: 96px; }
 /* while a photo resolves through the cache/fetch, hold a neutral box (never a stale image) */
 #qsv-photo-box.qsv-photo-loading img { min-width: 170px; min-height: 96px; }
-#qsv-photo-box.qsv-photo-loading .qsv-photo-inner::after { content: "Loading\2026"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #888; font: 12px/1 sans-serif; }
+#qsv-photo-box.qsv-photo-loading .qsv-photo-inner::after { content: "Loading\2026"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #888; font: 12px/1 sans-serif; pointer-events: none; }
 #qsv-photo-box button { position: absolute; background: rgba(0, 0, 0, 0.6); color: #ffffff; border: none; cursor: pointer; font: 600 13px/1 sans-serif; border-radius: 3px; padding: 4px 6px; }
 #qsv-photo-box button:hover { background: rgba(0, 0, 0, 0.85); }
 #qsv-photo-box .qsv-photo-close { top: 5px; right: 5px; }

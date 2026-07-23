@@ -8802,13 +8802,30 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
   document.addEventListener("click", function (e) {
     if (box && box.classList.contains("open") && !box.contains(e.target)) close();
   });
+  // Whether a rendered panel div carries the photo payload — a trace whose customdata is a
+  // (non-empty) array of strings, i.e. the `|`-joined per-point URLs. Only such a panel gets the
+  // hover + map-leave handlers; attaching the close-cancel handler to OTHER panels would let the
+  // pointer moving from the map into an adjacent panel cancel the map-leave timer and strand a
+  // stale card.
+  function hasPhotoTrace(gd) {
+    var d = gd.data;
+    if (!d) return false;
+    for (var i = 0; i < d.length; i++) {
+      var cd = d[i] && d[i].customdata;
+      if (cd && cd.length && typeof cd[0] === "string") return true;
+    }
+    return false;
+  }
   function hook() {
     var tries = hook.tries || 0;
     var gds = document.querySelectorAll('#qsv-viz-smart-grid, [id^="qsv-viz-panel-"]');
     var pending = false;
     gds.forEach(function (gd) {
-      if (gd.__qsvPhotoHooked) return;
+      if (gd.__qsvPhotoHooked || gd.__qsvPhotoSkip) return;
       if (!gd.on || (!gd.__qsvFs && tries < 100)) { pending = true; return; }
+      // Decide ONCE, now that the panel has rendered: a non-photo panel is marked skipped so it
+      // is never hooked and never keeps the poll alive. The map panel (photos present) proceeds.
+      if (!hasPhotoTrace(gd)) { gd.__qsvPhotoSkip = true; return; }
       gd.__qsvPhotoHooked = true;
       // DOM listeners on the panel div itself, so leaving the map auto-dismisses the card.
       // Attached ONCE and flagged separately from __qsvPhotoHooked: the div survives plotly's
@@ -14313,9 +14330,20 @@ const IMAGE_URL_EXTS: &[&str] = &[
     ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".bmp", ".tif", ".tiff",
 ];
 
-/// The URL up to (but not including) any `#fragment` or `?query`.
+/// The URL up to (but not including) any `#fragment` or `?query`. Used for image-extension
+/// DETECTION only — never for the embedded payload, which must keep the query (see
+/// `strip_fragment`).
 fn strip_url_suffix(url: &str) -> &str {
     url.split(['#', '?']).next().unwrap_or(url)
+}
+
+/// The URL with any `#fragment` removed but the `?query` PRESERVED. This is what the embedded
+/// payload uses: presigned S3/CloudFront (and similar) image links carry required auth in the
+/// query string, so dropping it would embed a URL that 404s or fetches the wrong object. A
+/// fragment (Boston 311's `#spot=<uuid>`) is never sent to the server, so it is safe to drop —
+/// and dropping it keeps identical images from looking distinct.
+fn strip_fragment(url: &str) -> &str {
+    url.split('#').next().unwrap_or(url)
 }
 
 /// Whether a raw cell value looks like a link to an image: an `http(s)` URL whose path ends in one
@@ -14335,15 +14363,16 @@ fn looks_like_image_url(value: &str) -> bool {
     IMAGE_URL_EXTS.iter().any(|ext| lower.ends_with(ext))
 }
 
-/// Split a raw cell into its individual image URLs, dropping the `#fragment`/`?query` suffix from
-/// each. Used both to build the embedded per-point payload and (via `looks_like_image_url`) to
-/// decide whether a column qualifies at all.
+/// Split a raw cell into its individual image URLs, dropping only the `#fragment` from each (the
+/// `?query` is preserved — see `strip_fragment` — so presigned links keep working). Used both to
+/// build the embedded per-point payload and (via `looks_like_image_url`) to decide whether a
+/// column qualifies at all.
 fn split_image_urls(value: &str) -> Vec<String> {
     value
         .split('|')
         .map(str::trim)
         .filter(|s| looks_like_image_url(s))
-        .map(|s| strip_url_suffix(s).to_string())
+        .map(|s| strip_fragment(s).to_string())
         .collect()
 }
 
@@ -26215,8 +26244,9 @@ mod tests {
         assert!(!looks_like_image_url("javascript:alert(1)//x.jpg"));
     }
 
-    /// Each cell is flattened into its individual URLs with the `#fragment`/`?query` dropped, and
-    /// non-image segments are discarded rather than emitted as broken sources.
+    /// Each cell is flattened into its individual URLs with the `#fragment` dropped but the
+    /// `?query` PRESERVED (presigned links need it), and non-image segments are discarded rather
+    /// than emitted as broken sources.
     #[test]
     fn split_image_urls_flattens_and_strips() {
         assert_eq!(
@@ -26229,9 +26259,14 @@ mod tests {
                 "https://e.org/c.png".to_string(),
             ]
         );
+        // a required query string is KEPT (S3/CloudFront presigned auth) — only the fragment goes
         assert_eq!(
-            split_image_urls("https://e.org/a.jpg?w=1"),
-            vec!["https://e.org/a.jpg".to_string()]
+            split_image_urls("https://e.org/a.jpg?X-Amz-Signature=abc123&e=900"),
+            vec!["https://e.org/a.jpg?X-Amz-Signature=abc123&e=900".to_string()]
+        );
+        assert_eq!(
+            split_image_urls("https://e.org/a.jpg?w=1#frag"),
+            vec!["https://e.org/a.jpg?w=1".to_string()]
         );
         // a cell with nothing image-like contributes no photos at all
         assert!(split_image_urls("(NULL)").is_empty());

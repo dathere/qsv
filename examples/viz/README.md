@@ -17,15 +17,23 @@ qsv and running [`gen_gallery.py`](gen_gallery.py) from the repo root —
 `python3 examples/viz/gen_gallery.py`. Individual `qsv viz` outputs are instead
 fully self-contained (plotly embedded), so they work offline.
 
-The eleven **smart dashboards** are embedded as `<iframe>`s of their genuine
+The fourteen **smart dashboards** are embedded as `<iframe>`s of their genuine
 `qsv viz smart` HTML output (`smart_*.html`) rather than reconstructed inline, so
 the full-width overview panels (map, choropleth, correlation heatmap, time-series,
 treemap/sunburst hierarchy), themes and map zoom buttons render exactly as the CLI produces
 them. Those iframe sources are the real output with the inline plotly bundle swapped for the
 same CDN tag (so they stay a few KB each); they need a network connection to render. Four of
 them (`smart_dict_treemap.html`, `smart_dict_sunburst.html`, `smart_world_choropleth.html`,
-`smart_nyc311.html`) are `--dictionary infer` examples that need a local LLM to regenerate, so
-`gen_gallery.py` reuses the committed copies instead of re-running the LLM.
+`smart_geospatial.html`) are `--dictionary infer` examples that need a local LLM to regenerate,
+so `gen_gallery.py` reuses the committed copies instead of re-running the LLM.
+
+The gallery closes with three clickable **screenshot link-outs** — `smart_nyc311.html`,
+`pitt311data.html` and `smart_boston_311_2025.html` — full `--dict-info` **visual data
+dictionaries** over real municipal 311 data. They are shown as scaled preview images that open
+the dashboard in its own popup window, rather than embedded, so the gallery page stays light
+(those pages run 3.6&ndash;6.9&nbsp;MB each). `gen_gallery.py` still regenerates the NYC one from
+the committed `nyc_311.csv`; the Pittsburgh and Boston dashboards are committed artifacts whose
+source data is far too large to commit, so they are reused as-is.
 
 **▶ View it rendered** (GitHub Pages, served with the correct `text/html` type):
 

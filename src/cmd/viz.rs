@@ -447,9 +447,11 @@ smart options:
                            dwelling on a map point for 2 seconds opens that row's photo in a
                            small preview card beside the pointer (arrow keys page through a
                            row with several photos; Escape dismisses the card). Points that
-                           have photos say so in their hover label. Fetched images are cached
-                           in the browser's IndexedDB, so re-dwelling a point or reloading the
-                           page serves them locally without another request to the image host.
+                           have photos say so in their hover label. When the image host allows
+                           cross-origin reads, fetched images are cached in the browser's
+                           IndexedDB, so re-dwelling a point or reloading the page serves them
+                           locally; otherwise the preview falls back to a normal image load
+                           served by the ordinary browser cache.
                            OFF by default, and deliberately so: images load from whatever
                            third-party host the DATA names, so enabling this makes everyone
                            who opens the dashboard request those URLs directly (revealing

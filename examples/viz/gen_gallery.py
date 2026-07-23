@@ -730,7 +730,7 @@ SCREENSHOTS = [
             "(<code>moarstats --advanced</code>) and <code>--bivariate</code> adds the NMI "
             "association heatmap plus the ranked top-relationships panel, while "
             "<code>--dataset-pid</code> adds a clickable citation link back to the source dataset. "
-            "The standalone page is a ~19&nbsp;MB self-contained dashboard &mdash; too large to embed "
+            "The standalone page is a ~6.8&nbsp;MB self-contained dashboard &mdash; too large to embed "
             "inline &mdash; so this is a screenshot: <b>click it to open the fully interactive "
             "dashboard in a new window</b>."),
         "image": "pitt311data-visual-datadic.webp",

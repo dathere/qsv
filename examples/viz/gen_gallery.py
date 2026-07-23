@@ -549,8 +549,9 @@ FIGURES = [
      True, ["icicle", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
     ("splom", "Scatter-plot matrix of four numeric columns (units_sold, revenue, discount_pct, "
      "profit_margin_pct): every pairwise scatter in an N x N grid with shared axes, so correlation "
-     "structure is legible at a glance. viz smart auto-adds this panel when 3+ correlated numeric "
-     "columns exist, capped at 6 dims selected by correlation participation.",
+     "structure is legible at a glance. This is a <b>standalone</b> chart command &mdash; the "
+     "<code>viz smart</code> dashboard has no SPLOM panel; it covers the same ground with its "
+     "correlation heatmap plus the strongest-pair scatter and 3D scatter drill-downs.",
      True, ["splom", "sales_sample.csv", "--cols", "units_sold,revenue,discount_pct,profit_margin_pct"]),
     ("parcats", "Parallel-categories flow over three categorical columns (region -> product_category "
      "-> payment_method): each ribbon is a category combination, sized by how many rows share it, so "

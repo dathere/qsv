@@ -342,8 +342,9 @@ qsv viz icicle sales_sample.csv --cols region,product_category,payment_method -o
 # auto-picks this over a treemap/sunburst for 3-4 associated many-to-many categoricals
 qsv viz parcats sales_sample.csv --cols region,product_category,payment_method -o parcats.html
 
-# splom — scatter-plot matrix: every pairwise scatter of --cols in an N x N grid with shared axes.
-# viz smart auto-adds this when 3+ correlated numerics exist (capped at 6 dims)
+# splom — scatter-plot matrix: every pairwise scatter of --cols in an N x N grid with shared axes,
+# so correlation structure is legible at a glance. Standalone only — viz smart covers the same
+# ground with its correlation heatmap plus the strongest-pair scatter and 3D scatter drill-downs
 qsv viz splom sales_sample.csv --cols units_sold,revenue,discount_pct,profit_margin_pct -o splom.html
 
 # map — point map on token-free OpenStreetMap tiles; color by magnitude, size by depth

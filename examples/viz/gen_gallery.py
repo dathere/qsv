@@ -53,7 +53,6 @@ SMART_IFRAME = {
     "smart dashboard (--dictionary infer, treemap)":  "smart_dict_treemap.html",
     "smart dashboard (--dictionary infer, sunburst)": "smart_dict_sunburst.html",
     "smart dashboard (--dictionary infer, world choropleth)": "smart_world_choropleth.html",
-    "smart dashboard (--smarter, committed --dictionary, NYC 311 metro choropleth)": "smart_nyc311.html",
     "smart dashboard (--smarter, curated --dictionary, region-code zip choropleth)": "smart_allegheny_dogs.html",
     "smart dashboard (animated geo, world events)":   "smart_world_events.html",
     "smart dashboard (Gapminder bubble, regions growth)": "smart_regions_growth.html",
@@ -77,9 +76,6 @@ PREGENERATED = {
     # smart_geospatial.html (Japan): --bivariate now implies --dictionary infer here (no
     # explicit --dictionary is passed), so it needs a live LLM like the other infer figures.
     "smart_geospatial.html",
-    # smart_nyc311.html is NOT here: it now uses a committed curated dictionary
-    # (nyc311_dict.schema.json), so --bivariate doesn't imply --dictionary infer (already
-    # set) and it still regenerates deterministically without an LLM.
 }
 
 # CSS for the smart-dashboard iframes. `scrolling="no"` + `overflow:hidden` plus the postMessage
@@ -88,10 +84,11 @@ PREGENERATED = {
 DASH_CSS = ("figure.full iframe.dash{width:100%;border:0;height:600px;display:block;"
             "border-radius:6px;overflow:hidden}")
 
-# The final gallery entry is a clickable SCREENSHOT (not a plotly figure): a scaled preview image
-# that opens the full, standalone `pitt311data.html` dashboard in a new popup window (that page is
-# ~19MB — too large to embed as an iframe like the smart_*.html dashboards). Portrait image, so cap
-# its rendered height and center it; the border + hover lift mirror the surrounding figure chrome.
+# The gallery's closing entries are clickable SCREENSHOTS (not plotly figures): scaled preview
+# images that open a full, standalone `qsv viz smart` dashboard in a new popup window (see
+# SCREENSHOTS below — those pages are far heavier than the embedded smart_*.html iframes). Portrait
+# images, so cap their rendered height and center them; the border + hover lift mirror the
+# surrounding figure chrome.
 SHOT_CSS = ("figure a.shot{display:block;text-align:center;text-decoration:none;cursor:pointer}"
             "figure a.shot img{max-width:100%;max-height:900px;height:auto;border:1px solid #e6e9f0;"
             "border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.06)}"
@@ -650,63 +647,6 @@ FIGURES = [
      "is a rough synthetic proxy (latitude + elevation-lapse model), so treat it as illustrative. "
      "Requires a local LLM; the committed HTML is reused on regen.",
      True, ["smart", "world_cities.csv", "--dictionary", "infer"]),
-    ("smart dashboard (--smarter, committed --dictionary, NYC 311 metro choropleth)",
-     "A <b>10,000-row</b> sample of NYC 311 service requests (2010–2020) profiled into auto-chosen "
-     "panels on a real, wide municipal dataset. The "
-     "headline panel is the <b>metro choropleth</b>: each request's lat/lon is binned into NYC's "
-     "<b>188 neighborhood</b> polygons (no geocoding — 110 of them receive requests, and 10 of the "
-     "7,464 located points fall too far from any polygon to snap), and because the matched regions "
-     "span a city-scale extent, <code>viz smart</code> draws the filled "
-     "regions on an interactive <b>MapLibre tile basemap</b> (token-free carto tiles, fine "
-     "street/coastline detail) instead of the coarse projection basemap it uses for "
-     "country/continental choropleths. The leading <b>point map</b> flags bad-geocode "
-     "<b>outliers</b> (here, <i>9 in Pennsylvania</i>): a nice illustration of the hover's value — "
-     "for a stray PA point, the tooltip shows the record's own <i>Incident City: NEW YORK</i> "
-     "right above its reverse-geocoded <i>Pennsylvania, United States</i>, so a real Manhattan "
-     "complaint saddled with corrupt coordinates is self-evident at a glance. "
-     "<code>--smarter</code> runs <code>moarstats --advanced</code> "
-     "to enrich the stats cache, and a committed <code>--dictionary</code> "
-     "(<code>nyc311_dict.schema.json</code> — a Data Dictionary generated for this dataset, then "
-     "reviewed and committed alongside it) tags the record's identifier columns (<i>Unique Key</i>, "
-     "<i>BBL</i>) so they're skipped rather than charted as quantities, labels the State-Plane "
-     "coordinates as coordinate dimensions, and supplies friendly names (e.g. "
-     "<i>Complaint Creation Date</i>, <i>Resolution Deadline</i>), so the "
-     "profiler treats a service-request log as volume-and-category data. Alongside the maps the "
-     "auto-profiler fills the dashboard with frequency bars, an <b>hour-of-day</b> seasonality "
-     "profile, a time trend, a <b>parallel-categories (parcats) flow</b> over 3-4 associated "
-     "categorical columns (co-occurrence ribbons, auto-chosen over a nested treemap/sunburst for "
-     "this many-to-many set) and a mean-by-borough panel. New here is an "
-     "auto-selected, colored <b>Sankey flow</b> (<i>Agency Code → Submission Channel</i>): it "
-     "traces how each city agency's complaints arrive by channel, the thickest ribbons being "
-     "<i>HPD → PHONE</i> (1,426) and <i>NYPD → PHONE</i> (1,348). "
-     "<code>--bivariate</code> adds an <b>NMI association heatmap</b> across the <b>36 charted "
-     "columns</b> plus a ranked "
-     "<b>Top Relationships</b> panel — a horizontal <b>multivariate lollipop</b> where each dot's "
-     "position is the pair's NMI on a value axis <b>zoomed</b> to the shown band (so near-ceiling "
-     "associations separate instead of crushing together at 1.0), its <b>size</b> encodes "
-     "co-occurrence support, and an <b>amber</b> dot flags a nonlinear pair. The top pair is a "
-     "purely categorical one a Pearson-only heatmap could never surface, since neither column is "
-     "numeric: <i>Borough</i> × <i>Park Borough</i> (NMI=1.0, n=10,000 of 10,000). It also flags a "
-     "genuine <b>nonlinear</b> pair in amber — <i>Closed Date</i> × <i>Due Date</i> (NMI=0.9994): a "
-     "complaint's actual close date is almost perfectly rank-associated with its deadline, yet how "
-     "far the two land apart varies by complaint type, curving the relationship in a way a linear "
-     "correlation alone would understate. The ranking is <b>support-weighted</b>: a pair only "
-     "qualifies "
-     "when its co-occurring row count is at least 10% of the best-supported pair's, so a "
-     "technically-perfect NMI from two sparsely-populated columns can't crowd out a more broadly "
-     "meaningful one — the top of the ranking instead surfaces genuinely dataset-wide pairs like "
-     "<i>Borough</i> × <i>Park Borough</i> (n=10,000) and "
-     "<i>Due Date</i> × <i>Resolution Action Updated Date</i> (NMI=0.9996, n=3,467). "
-     "<code>--dict-info</code> adds a per-panel info icon and a slide-over <b>Data Dictionary</b> "
-     "drawer sourced from the same committed schema, topped by a <b>download row</b> that bundles "
-     "the dictionary as JSON Schema, the frequency counts the panels actually charted, and the "
-     "stats &amp; bivariate sidecars this run was built from &mdash; every file carried inside the "
-     "HTML, so anyone you send the dashboard to can save them. The run stays fully "
-     "<b>deterministic</b> and offline: because the dictionary is committed, <code>--bivariate</code> "
-     "never triggers a live <code>--dictionary infer</code> pass.",
-     True, ["smart", "nyc_311.csv", "--smarter", "--bivariate", "--dict-info",
-            "--dictionary", "nyc311_dict.schema.json",
-            "--geojson", "nyc_neighborhoods.geojson"]),
     ("smart dashboard (--smarter, curated --dictionary, region-code zip choropleth)",
      "All <b>50,013</b> Allegheny County lifetime dog licenses, profiled into auto-chosen panels. "
      "The headline panel is a <b>summary choropleth keyed off a region-code COLUMN</b>, not "
@@ -759,38 +699,156 @@ FIGURES = [
      True, ["smart", "regions_growth.csv"]),
 ]
 
-# A final, non-plotly gallery entry: a clickable screenshot that links out to the full, standalone
-# "Pittsburgh 311 smart visual data dictionary" page. That page (pitt311data.html) is a ~19MB
-# self-contained `qsv viz smart` dashboard — too large to embed inline as an iframe like the
-# smart_*.html figures — so the gallery shows a scaled screenshot that opens it in a new popup
-# window. Kept OUT of FIGURES so it never runs through `qsv viz` as a chart command; its `cmd` is
-# the verbatim command that produced the dashboard (rendered as a copy-pasteable block, unwrapped).
-SCREENSHOT = {
-    "title": "Pittsburgh 311 smart visual data dictionary",
-    "desc": (
-        "A full <code>qsv viz smart</code> <b>visual data dictionary</b> over real "
-        "<b>Pittsburgh 311</b> service requests from the "
-        '<a href="https://data.wprdc.org/dataset/pittsburgh-311-data">Western Pennsylvania '
-        "Regional Data Center (WPRDC)</a>. The dashboard bins each request's lat/lon by "
-        "point-in-polygon into Pittsburgh's neighborhood polygons "
-        "(<code>--geojson pittsburgh-neighborhoods</code>, no geocoding); a curated "
-        "<code>--dictionary</code> (<code>pitt311data.schema.json</code>) tags identifier/code "
-        "columns and supplies friendly field labels, and <code>--dict-info</code> renders that "
-        "dictionary as its own in-page <b>Data Dictionary</b> tab (with a hover/click info icon "
-        "on every panel title). <code>--smarter</code> enriches the stats cache "
-        "(<code>moarstats --advanced</code>) and <code>--bivariate</code> adds the NMI "
-        "association heatmap plus the ranked top-relationships panel, while "
-        "<code>--dataset-pid</code> adds a clickable citation link back to the source dataset. "
-        "The standalone page is a ~19&nbsp;MB self-contained dashboard &mdash; too large to embed "
-        "inline &mdash; so this is a screenshot: <b>click it to open the fully interactive "
-        "dashboard in a new window</b>."),
-    "image": "pitt311data-visual-datadic.png",
-    "href":  "pitt311data.html",
-    "cmd":   ("qsv viz smart pitt311data.csv --smarter --dictionary pitt311data.schema.json "
-              "--dict-info --bivariate -o pitt311data-smart-visual-datadic.html "
-              "--geojson pittsburgh-neighborhoods "
-              "--dataset-pid https://data.wprdc.org/dataset/pittsburgh-311-data"),
-}
+# The gallery closes with clickable SCREENSHOTS (not plotly figures): scaled preview images that
+# open a full, standalone `qsv viz smart` "visual data dictionary" dashboard in a new popup window.
+# These pages are far too heavy to embed as iframes like the smart_*.html figures (6.9MB for
+# Boston, 6.8MB for Pittsburgh; NYC's 3.6MB dashboard is shown this way too so the gallery page
+# stays light), and Pittsburgh's and Boston's source data is too large to commit at all. Kept OUT
+# of FIGURES so they never run through `qsv viz` as a chart command.
+#
+# Each entry carries the verbatim command that produced its dashboard (rendered as a
+# copy-pasteable block), a `win` popup-window name (distinct per entry, so opening one doesn't
+# replace another), and optionally `args` — the `qsv viz` args to REGENERATE the linked page on
+# every run. Only NYC 311 has `args`: its dataset (nyc_311.csv) is committed, so its dashboard
+# stays deterministic and plaintext-validated like the iframe figures. Entries without `args` are
+# committed artifacts reused as-is, and supply their own `cmd`.
+SCREENSHOTS = [
+    {
+        "title": "Pittsburgh 311 smart visual data dictionary",
+        "win":   "pitt311data",
+        "desc": (
+            "A full <code>qsv viz smart</code> <b>visual data dictionary</b> over real "
+            "<b>Pittsburgh 311</b> service requests from the "
+            '<a href="https://data.wprdc.org/dataset/pittsburgh-311-data">Western Pennsylvania '
+            "Regional Data Center (WPRDC)</a>. The dashboard bins each request's lat/lon by "
+            "point-in-polygon into Pittsburgh's neighborhood polygons "
+            "(<code>--geojson pittsburgh-neighborhoods</code>, no geocoding); a curated "
+            "<code>--dictionary</code> (<code>pitt311data.schema.json</code>) tags identifier/code "
+            "columns and supplies friendly field labels, and <code>--dict-info</code> renders that "
+            "dictionary as its own in-page <b>Data Dictionary</b> tab (with a hover/click info icon "
+            "on every panel title). <code>--smarter</code> enriches the stats cache "
+            "(<code>moarstats --advanced</code>) and <code>--bivariate</code> adds the NMI "
+            "association heatmap plus the ranked top-relationships panel, while "
+            "<code>--dataset-pid</code> adds a clickable citation link back to the source dataset. "
+            "The standalone page is a ~19&nbsp;MB self-contained dashboard &mdash; too large to embed "
+            "inline &mdash; so this is a screenshot: <b>click it to open the fully interactive "
+            "dashboard in a new window</b>."),
+        "image": "pitt311data-visual-datadic.webp",
+        "href":  "pitt311data.html",
+        "cmd":   ("qsv viz smart pitt311data.csv --smarter --dictionary pitt311data.schema.json "
+                  "--dict-info --bivariate -o pitt311data-smart-visual-datadic.html "
+                  "--geojson pittsburgh-neighborhoods "
+                  "--dataset-pid https://data.wprdc.org/dataset/pittsburgh-311-data"),
+    },
+    {
+        "title": "NYC 311 smart visual data dictionary (metro choropleth)",
+        "win":   "smart_nyc311",
+        "desc": (
+            "A <b>10,000-row</b> sample of NYC 311 service requests (2010–2020) profiled into auto-chosen "
+            "panels on a real, wide municipal dataset. The "
+            "headline panel is the <b>metro choropleth</b>: each request's lat/lon is binned into NYC's "
+            "<b>188 neighborhood</b> polygons (no geocoding — 110 of them receive requests, and 10 of the "
+            "7,464 located points fall too far from any polygon to snap), and because the matched regions "
+            "span a city-scale extent, <code>viz smart</code> draws the filled "
+            "regions on an interactive <b>MapLibre tile basemap</b> (token-free carto tiles, fine "
+            "street/coastline detail) instead of the coarse projection basemap it uses for "
+            "country/continental choropleths. The leading <b>point map</b> flags bad-geocode "
+            "<b>outliers</b> (here, <i>9 in Pennsylvania</i>): a nice illustration of the hover's value — "
+            "for a stray PA point, the tooltip shows the record's own <i>Incident City: NEW YORK</i> "
+            "right above its reverse-geocoded <i>Pennsylvania, United States</i>, so a real Manhattan "
+            "complaint saddled with corrupt coordinates is self-evident at a glance. "
+            "<code>--smarter</code> runs <code>moarstats --advanced</code> "
+            "to enrich the stats cache, and a committed <code>--dictionary</code> "
+            "(<code>nyc311_dict.schema.json</code> — a Data Dictionary generated for this dataset, then "
+            "reviewed and committed alongside it) tags the record's identifier columns (<i>Unique Key</i>, "
+            "<i>BBL</i>) so they're skipped rather than charted as quantities, labels the State-Plane "
+            "coordinates as coordinate dimensions, and supplies friendly names (e.g. "
+            "<i>Complaint Creation Date</i>, <i>Resolution Deadline</i>), so the "
+            "profiler treats a service-request log as volume-and-category data. Alongside the maps the "
+            "auto-profiler fills the dashboard with frequency bars, an <b>hour-of-day</b> seasonality "
+            "profile, a time trend, a <b>parallel-categories (parcats) flow</b> over 3-4 associated "
+            "categorical columns (co-occurrence ribbons, auto-chosen over a nested treemap/sunburst for "
+            "this many-to-many set) and a mean-by-borough panel. New here is an "
+            "auto-selected, colored <b>Sankey flow</b> (<i>Agency Code → Submission Channel</i>): it "
+            "traces how each city agency's complaints arrive by channel, the thickest ribbons being "
+            "<i>HPD → PHONE</i> (1,426) and <i>NYPD → PHONE</i> (1,348). "
+            "<code>--bivariate</code> adds an <b>NMI association heatmap</b> across the <b>36 charted "
+            "columns</b> plus a ranked "
+            "<b>Top Relationships</b> panel — a horizontal <b>multivariate lollipop</b> where each dot's "
+            "position is the pair's NMI on a value axis <b>zoomed</b> to the shown band (so near-ceiling "
+            "associations separate instead of crushing together at 1.0), its <b>size</b> encodes "
+            "co-occurrence support, and an <b>amber</b> dot flags a nonlinear pair. The top pair is a "
+            "purely categorical one a Pearson-only heatmap could never surface, since neither column is "
+            "numeric: <i>Borough</i> × <i>Park Borough</i> (NMI=1.0, n=10,000 of 10,000). It also flags a "
+            "genuine <b>nonlinear</b> pair in amber — <i>Closed Date</i> × <i>Due Date</i> (NMI=0.9994): a "
+            "complaint's actual close date is almost perfectly rank-associated with its deadline, yet how "
+            "far the two land apart varies by complaint type, curving the relationship in a way a linear "
+            "correlation alone would understate. The ranking is <b>support-weighted</b>: a pair only "
+            "qualifies "
+            "when its co-occurring row count is at least 10% of the best-supported pair's, so a "
+            "technically-perfect NMI from two sparsely-populated columns can't crowd out a more broadly "
+            "meaningful one — the top of the ranking instead surfaces genuinely dataset-wide pairs like "
+            "<i>Borough</i> × <i>Park Borough</i> (n=10,000) and "
+            "<i>Due Date</i> × <i>Resolution Action Updated Date</i> (NMI=0.9996, n=3,467). "
+            "<code>--dict-info</code> adds a per-panel info icon and a slide-over <b>Data Dictionary</b> "
+            "drawer sourced from the same committed schema, topped by a <b>download row</b> that bundles "
+            "the dictionary as JSON Schema, the frequency counts the panels actually charted, and the "
+            "stats &amp; bivariate sidecars this run was built from &mdash; every file carried inside the "
+            "HTML, so anyone you send the dashboard to can save them. The run stays fully "
+            "<b>deterministic</b> and offline: because the dictionary is committed, <code>--bivariate</code> "
+            "never triggers a live <code>--dictionary infer</code> pass. "
+            "The standalone page is a ~3.6&nbsp;MB dashboard, shown here as a screenshot so the "
+            "gallery page stays light: <b>click it to open the fully interactive dashboard in a "
+            "new window</b>."),
+        "image": "nyc311data-visual-datadic.webp",
+        "href":  "smart_nyc311.html",
+        # regenerated on every run from the committed nyc_311.csv (its `cmd` is derived from
+        # these args, so the displayed command can't drift from what was actually run)
+        "args": ["smart", "nyc_311.csv", "--smarter", "--bivariate", "--dict-info",
+                 "--dictionary", "nyc311_dict.schema.json",
+                 "--geojson", "nyc_neighborhoods.geojson"],
+    },
+    {
+        "title": "Boston 311 (2025) smart visual data dictionary",
+        "win":   "smart_boston_311_2025",
+        "desc": (
+            "A full <code>qsv viz smart</code> <b>visual data dictionary</b> over a full year of "
+            "<b>Boston 311</b> service requests (2025): <b>267,187 rows x 31 columns</b>, 92.6% "
+            "complete, from the "
+            '<a href="https://data.boston.gov/dataset/311-service-requests">City of Boston open '
+            "data portal</a>, profiled into <b>28 auto-chosen panels</b>. A dense point map leads, "
+            "followed by a <b>25-neighborhood choropleth</b>: each request's coordinates are binned "
+            "point-in-polygon into Boston's neighborhood boundaries (<code>--geojson</code> with "
+            "<code>--feature-id-key properties.name</code>, no geocoding) &mdash; Dorchester tops it "
+            "at <b>38,855</b> requests (14.7%, rank 1 of 25), and each region's hover reports how "
+            "many nearby strays were snapped into it. Because the matched regions span a city-scale "
+            "extent, the fill lands on an interactive <b>MapLibre tile basemap</b> rather than the "
+            "coarse projection basemap used for country/continental choropleths. Beyond the maps the "
+            "auto-profiler adds an <b>hour-of-day</b> seasonality profile, a case-volume time trend, "
+            "a <b>parallel-categories flow</b> (<i>Data Source &rarr; Subject Area &rarr; Fire "
+            "District &rarr; City Council District</i>) and 23 frequency bars &mdash; among them the "
+            "SLA split (<b>ONTIME 182,145</b> vs <b>OVERDUE 85,042</b>). <code>--smarter</code> "
+            "enriches the stats cache (<code>moarstats --advanced</code>), and a committed "
+            "<code>--dictionary</code> (<code>boston311.schema.json</code>, generated with "
+            "<code>qsv describegpt --dictionary --two-pass --format jsonschema</code>, then reviewed "
+            "and committed) supplies the friendly field labels that <code>--dict-info</code> renders "
+            "as the in-page <b>Data Dictionary</b> tab &mdash; a hover/click info icon on every panel "
+            "title, and a download row bundling the dictionary as JSON Schema alongside the stats and "
+            "charted-frequency sidecars this run was built from. <code>--dataset-pid</code> adds a "
+            "clickable citation link back to the source dataset. The standalone page is a "
+            "~6.9&nbsp;MB self-contained dashboard &mdash; too large to embed inline &mdash; so this "
+            "is a screenshot: <b>click it to open the fully interactive dashboard in a new window</b>."),
+        "image": "boston311data-visual-datadic.webp",
+        "href":  "smart_boston_311_2025.html",
+        "cmd":   ("qsv viz smart boston311-2025.tsv --smarter "
+                  "--dictionary boston311.schema.json --dict-info --bivariate "
+                  "-o smart_boston_311_2025.html "
+                  "--geojson boston_neighborhood_boundaries.json "
+                  "--dataset-pid https://data.boston.gov/dataset/311-service-requests/"
+                  "resource/9d7c2214-4709-478a-a2e8-fb2020a5bb94 "
+                  "--feature-id-key properties.name"),
+    },
+]
 
 
 def find_qsv():
@@ -869,8 +927,9 @@ WRAP_SEP = " \\\n  "
 
 def command_block_html(tokens):
     """The copy-pasteable command block (wrapped display form + icon-only Copy button) for a token
-    list. Shared by the per-figure figcaptions and the final screenshot entry — the latter shows a
-    verbatim command rather than one synthesized from viz args."""
+    list. Shared by the per-figure figcaptions and the closing screenshot entries — the latter show
+    a verbatim command (or one built from their own args) rather than one synthesized from a
+    figure's viz args."""
     display = html_escape(WRAP_SEP.join(wrap_command_lines(tokens)))
     oneline = html_escape(" ".join(tokens), quote=True)
     return (f'<div class="cmdbox"><button class="copy" type="button" title="Copy" '
@@ -1080,11 +1139,13 @@ def main():
     head = re.sub(r'<details class="toc">.*?</details>\n', "", head, flags=re.S)
     toc_links = "".join(
         f'<a href="#{anchor_id(t)}">{html_escape(toc_label(t))}</a>' for (t, _d, _f, _a) in FIGURES)
-    # final entry: the clickable screenshot / visual data dictionary (a link-out, not a chart)
-    toc_links += (f'<a href="#{anchor_id(SCREENSHOT["title"])}">'
-                  f'{html_escape(SCREENSHOT["title"])}</a>')
+    # final entries: the clickable screenshots / visual data dictionaries (link-outs, not charts)
+    toc_links += "".join(
+        f'<a href="#{anchor_id(s["title"])}">{html_escape(s["title"])}</a>' for s in SCREENSHOTS)
+    dict_count = (f'{len(SCREENSHOTS)} data '
+                  f'{"dictionary" if len(SCREENSHOTS) == 1 else "dictionaries"}')
     toc_html = (f'<details class="toc"><summary>Jump to a chart'
-                f'<span class="toc-count">{len(FIGURES)} charts + data dictionary</span></summary>'
+                f'<span class="toc-count">{len(FIGURES)} charts + {dict_count}</span></summary>'
                 f'<div class="toc-links">{toc_links}</div></details>\n')
     head = head.replace('<div class="grid">', toc_html + '<div class="grid">', 1)
 
@@ -1167,24 +1228,37 @@ def main():
                 f'var fr=FIGS[{idx}].frames; if(fr&&fr.length)Plotly.addFrames("{gid}",fr);}});'
             )
 
-    # Final, clickable-screenshot entry (a full-width cell, no plotly figure): opens the standalone
-    # pitt311data.html dashboard in a new popup window on click; target=_blank is the no-JS fallback
-    # and the onclick's window.open gives the popup its own sized window. NOT added to `figs`/`plots`
-    # — it carries no Plotly data or newPlot call, so the FIGS array stays aligned with the charts.
-    shot = SCREENSHOT
-    shot_anchor = anchor_id(shot["title"])
-    fig_divs.append(
-        f'<figure class="cell full" id="{shot_anchor}">'
-        f'<figcaption><span class="t">{shot["title"]}</span>'
-        f'<span class="d">{shot["desc"]}</span>'
-        f'{command_block_html(shlex.split(shot["cmd"]))}</figcaption>'
-        f'<a class="shot" href="{shot["href"]}" target="_blank" rel="noopener" '
-        f'''onclick="window.open(this.href,'pitt311data','popup,width=1280,height=900');'''
-        f'''return false;" '''
-        f'title="Open the full interactive dashboard in a new window">'
-        f'<img src="{shot["image"]}" loading="lazy" '
-        f'alt="{html_escape(shot["title"])} screenshot"/></a></figure>'
-    )
+    # Final, clickable-screenshot entries (full-width cells, no plotly figure): each opens its
+    # standalone dashboard in its own popup window on click; target=_blank is the no-JS fallback and
+    # the onclick's window.open gives the popup its own sized window, named per entry so opening one
+    # dashboard never replaces another. NOT added to `figs`/`plots` — they carry no Plotly data or
+    # newPlot call, so the FIGS array stays aligned with the charts.
+    for shot in SCREENSHOTS:
+        # entries with `args` are regenerated from a committed dataset (same helpers as the iframe
+        # figures, so the linked page stays deterministic and plaintext-validated); the rest are
+        # committed artifacts reused as-is.
+        if shot.get("args"):
+            sys.stderr.write(f"[shot] {shot['title']}: qsv viz {' '.join(shot['args'])} "
+                             f"-> {shot['href']}\n")
+            html = inject_resize_reporter(run_html(qsv, shot["args"]))
+            with open(os.path.join(VIZ_DIR, shot["href"]), "w", encoding="utf-8") as fh:
+                fh.write(html)
+            cmd_tokens = ["qsv", "viz", *(shlex.quote(a) for a in shot["args"]), "-o", shot["href"]]
+        else:
+            cmd_tokens = shlex.split(shot["cmd"])
+        shot_anchor = anchor_id(shot["title"])
+        fig_divs.append(
+            f'<figure class="cell full" id="{shot_anchor}">'
+            f'<figcaption><span class="t">{shot["title"]}</span>'
+            f'<span class="d">{shot["desc"]}</span>'
+            f'{command_block_html(cmd_tokens)}</figcaption>'
+            f'<a class="shot" href="{shot["href"]}" target="_blank" rel="noopener" '
+            f'''onclick="window.open(this.href,'{shot["win"]}','popup,width=1280,height=900');'''
+            f'''return false;" '''
+            f'title="Open the full interactive dashboard in a new window">'
+            f'<img src="{shot["image"]}" loading="lazy" '
+            f'alt="{html_escape(shot["title"])} screenshot"/></a></figure>'
+        )
 
     figs_json = "const FIGS = [" + ",".join(
         json.dumps(f, ensure_ascii=False, separators=(",", ":")) for f in figs) + "];"
@@ -1213,6 +1287,12 @@ def main():
     # ones. Normalize both from viz's own output rather than hardcoding a second copy of the
     # version/digest in this script.
     CDN_TAG_RE = r'<script src="https://cdn\.plot\.ly/[^>]*></script>'
+    # every page this script is responsible for besides the gallery frame: the embedded iframes plus
+    # the screenshot link-out targets. The link-outs are not embedded, but they ARE committed here
+    # (smart_nyc311.html is regenerated on every run and CDN-backed), so they get the same treatment.
+    # A page carrying an inline plotly bundle instead (pitt311data.html, smart_boston_311_2025.html)
+    # simply has no CDN tag to sync or check, so this is a no-op for it.
+    linked_pages = sorted(set(SMART_IFRAME.values()) | {s["href"] for s in SCREENSHOTS})
 
     def _emitted_cdn_tag():
         # from a REGENERATED dashboard: those came from the qsv binary in this very run, so they
@@ -1235,9 +1315,10 @@ def main():
         body, n = re.subn(CDN_TAG_RE, emitted_tag, body, count=1)
         if n:
             sys.stderr.write(f"scaffold plotly tag synced to viz output: {emitted_tag}\n")
-        # every embedded dashboard, including the reused LLM-backed ones. Only the <script> tag is
-        # touched — figure content, themes and layout are left exactly as generated.
-        for name in sorted(set(SMART_IFRAME.values())):
+        # every embedded dashboard (including the reused LLM-backed ones) and every screenshot
+        # link-out target. Only the <script> tag is touched — figure content, themes and layout are
+        # left exactly as generated.
+        for name in linked_pages:
             path = os.path.join(VIZ_DIR, name)
             if not os.path.exists(path):
                 continue
@@ -1250,12 +1331,12 @@ def main():
                 sys.stderr.write(f"synced plotly CDN tag in {name}\n")
 
     # Fail closed: never commit a page that pulls plotly from a CDN without integrity. This catches
-    # a dashboard added to SMART_IFRAME but never regenerated, and any future path that bypasses
-    # the sync above.
+    # a dashboard added to SMART_IFRAME (or linked from SCREENSHOTS) but never regenerated, and any
+    # future path that bypasses the sync above.
     unprotected = []
     for label, html in [("gallery.html", body)] + [
         (name, open(os.path.join(VIZ_DIR, name), encoding="utf-8").read())
-        for name in sorted(set(SMART_IFRAME.values()))
+        for name in linked_pages
         if os.path.exists(os.path.join(VIZ_DIR, name))
     ]:
         for tag in re.findall(CDN_TAG_RE, html):

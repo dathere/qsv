@@ -847,7 +847,7 @@ SCREENSHOTS = [
             "the fully interactive dashboard in a new window</b>."),
         "image": "boston311data-visual-datadic.webp",
         "href":  "smart_boston_311_2025.html",
-        "cmd":   ("qsv viz smart boston311-2025.tsv --smarter "
+        "cmd":   ("QSV_VIZ_MAX_POINTS=300000 qsv viz smart boston311-2025.tsv --smarter "
                   "--dictionary boston311.schema.json --dict-info --bivariate --photos "
                   "-o smart_boston_311_2025.html "
                   "--geojson boston_neighborhood_boundaries.json "

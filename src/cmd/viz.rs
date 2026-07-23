@@ -445,21 +445,19 @@ smart options:
                            (detected from the stats cache - an http(s) value ending in a
                            common image extension), embed each point's image URL so that
                            dwelling on a map point for 2 seconds opens that row's photo in a
-                           small preview card beside the pointer (arrow keys or the on-card
-                           arrows page through a case with several photos; the on-card enlarge
-                           button grows the preview in place; Escape or a click elsewhere
-                           dismisses it). OFF by default, and deliberately so: the
-                           images load from whatever third-party host the DATA names, so
-                           enabling this makes everyone who opens the dashboard request
-                           those URLs directly (revealing their IP to that host). Nothing
-                           is fetched until a viewer dwells on a point. Points that HAVE photos
-                           say so in their hover label, which is what makes the dwell
-                           discoverable. Every mapped point's URLs are embedded (hover needs
-                           them all), so the page grows - on the 267K-row Boston 311 dataset,
-                           by ~1.8MB (+27%) for 47K photo URLs. HTML output only - static image
-                           exports (PNG/SVG/PDF) are unaffected - and only on the tile-basemap
-                           map panel, so a dataset with no lat/lon (or one wide enough to render
-                           as a world overview) shows no photos. Only affects `smart`.
+                           small preview card beside the pointer (arrow keys page through a
+                           row with several photos; Escape dismisses the card). Points that
+                           have photos say so in their hover label. Fetched images are cached
+                           in the browser's IndexedDB, so re-dwelling a point or reloading the
+                           page serves them locally without another request to the image host.
+                           OFF by default, and deliberately so: images load from whatever
+                           third-party host the DATA names, so enabling this makes everyone
+                           who opens the dashboard request those URLs directly (revealing
+                           their IP to that host). Nothing is fetched until a viewer dwells.
+                           Embedding every mapped point's URLs also grows the HTML. Applies to
+                           HTML output only - static image exports (PNG/SVG/PDF) are
+                           unaffected - and only on the tile-basemap map panel. Only affects
+                           `smart`.
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
     --no-nulls             Omit the "(NULL)" bar (empty cells) from frequency bar charts.
                            By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`.

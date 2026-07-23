@@ -736,8 +736,8 @@ SCREENSHOTS = [
             "dashboard in a new window</b>."),
         "image": "pitt311data-visual-datadic.webp",
         "href":  "pitt311data.html",
-        "cmd":   ("qsv viz smart pitt311data.csv --smarter --dictionary pitt311data.schema.json "
-                  "--dict-info --bivariate -o pitt311data-smart-visual-datadic.html "
+        "cmd":   ("qsv viz smart pittsburgh_311.tsv --smarter --dictionary pitt311data.schema.json "
+                  "--dict-info --bivariate -o pitt311data.html "
                   "--geojson pittsburgh-neighborhoods "
                   "--dataset-pid https://data.wprdc.org/dataset/pittsburgh-311-data"),
     },

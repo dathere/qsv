@@ -4410,6 +4410,11 @@ fn viz_smart_photos_hint_only_on_points_with_photos() {
             && html.contains("qsv-photo-loading"),
         "the --photos chrome must include the IndexedDB image cache and its loading state"
     );
+    // the enlarge-in-place toggle (button + size class) must be present
+    assert!(
+        html.contains("qsv-photo-zoom") && html.contains("qsv-photo-big"),
+        "the --photos chrome must include the enlarge toggle"
+    );
 }
 
 #[test]

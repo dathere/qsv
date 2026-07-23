@@ -446,8 +446,9 @@ smart options:
                            common image extension), embed each point's image URL so that
                            dwelling on a map point for 2 seconds opens that row's photo in a
                            small preview card beside the pointer (arrow keys or the on-card
-                           arrows page through a case with several photos; Escape or a click
-                           elsewhere dismisses it). OFF by default, and deliberately so: the
+                           arrows page through a case with several photos; the on-card enlarge
+                           button grows the preview in place; Escape or a click elsewhere
+                           dismisses it). OFF by default, and deliberately so: the
                            images load from whatever third-party host the DATA names, so
                            enabling this makes everyone who opens the dashboard request
                            those URLs directly (revealing their IP to that host). Nothing
@@ -8704,14 +8705,20 @@ const PHOTO_CHROME: &str = r##"<style>
 #qsv-photo-box .qsv-photo-inner { position: relative; line-height: 0; background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.25); border-radius: 5px; box-shadow: 0 3px 14px rgba(0, 0, 0, 0.4); padding: 3px; }
 body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-color: rgba(255, 255, 255, 0.28); }
 #qsv-photo-box img { display: block; max-width: 260px; max-height: 260px; border-radius: 3px; }
+/* enlarge toggle: grow the card in place (still beside the marker), clamped to the viewport so a
+   big photo near an edge can't overflow it (place() also keeps the box on-screen) */
+#qsv-photo-box.qsv-photo-big img { max-width: min(520px, 92vw); max-height: min(520px, 85vh); }
 /* a broken source collapses the <img> to nothing, so give the card a floor to caption */
 #qsv-photo-box.qsv-photo-err img { min-width: 170px; min-height: 96px; }
 /* while a photo resolves through the cache/fetch, hold a neutral box (never a stale image) */
 #qsv-photo-box.qsv-photo-loading img { min-width: 170px; min-height: 96px; }
+/* keep the loading box near the enlarged size so the card doesn't jump small->big on load */
+#qsv-photo-box.qsv-photo-big.qsv-photo-loading img { min-width: 320px; min-height: 220px; }
 #qsv-photo-box.qsv-photo-loading .qsv-photo-inner::after { content: "Loading\2026"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #888; font: 12px/1 sans-serif; pointer-events: none; }
 #qsv-photo-box button { position: absolute; background: rgba(0, 0, 0, 0.6); color: #ffffff; border: none; cursor: pointer; font: 600 13px/1 sans-serif; border-radius: 3px; padding: 4px 6px; }
 #qsv-photo-box button:hover { background: rgba(0, 0, 0, 0.85); }
 #qsv-photo-box .qsv-photo-close { top: 5px; right: 5px; }
+#qsv-photo-box .qsv-photo-zoom { top: 5px; left: 5px; font-size: 14px; }
 #qsv-photo-box .qsv-photo-prev, #qsv-photo-box .qsv-photo-next { top: 50%; transform: translateY(-50%); display: none; }
 #qsv-photo-box .qsv-photo-prev { left: 5px; }
 #qsv-photo-box .qsv-photo-next { right: 5px; }
@@ -8732,6 +8739,9 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
   // Bumped by every show()/step()/new dwell so a slow cache/fetch that resolves after the user
   // has navigated to a different photo or point can detect it is stale and not clobber the img.
   var showToken = 0;
+  // Enlarge toggle: grows the card in place (still beside the marker, no backdrop). Persists
+  // across dwells so it reads as a mode — expand once and later photos stay big until shrunk.
+  var enlarged = false;
   function scheduleClose() {
     clearTimeout(closeTimer);
     closeTimer = setTimeout(close, LEAVE_GRACE_MS);
@@ -8845,11 +8855,20 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
     box.innerHTML = '<div class="qsv-photo-inner">' +
       '<img alt="Photo for the hovered map point" />' +
       '<button type="button" class="qsv-photo-close" aria-label="Close">&#215;</button>' +
+      '<button type="button" class="qsv-photo-zoom" aria-label="Enlarge photo" title="Enlarge">&#10530;</button>' +
       '<button type="button" class="qsv-photo-prev" aria-label="Previous photo">&#8249;</button>' +
       '<button type="button" class="qsv-photo-next" aria-label="Next photo">&#8250;</button>' +
       '<div class="qsv-photo-cap"></div></div>';
     document.body.appendChild(box);
     box.querySelector(".qsv-photo-close").addEventListener("click", close);
+    // enlarge/shrink toggle: flip the persistent mode, restyle, and re-place so the resized card
+    // stays beside the marker and on-screen.
+    box.querySelector(".qsv-photo-zoom").addEventListener("click", function (e) {
+      e.stopPropagation();
+      enlarged = !enlarged;
+      applyBig();
+      place();
+    });
     box.querySelector(".qsv-photo-prev").addEventListener("click", function (e) { e.stopPropagation(); step(-1); });
     box.querySelector(".qsv-photo-next").addEventListener("click", function (e) { e.stopPropagation(); step(1); });
     // the natural size is unknown until the bytes arrive, so re-place once it is: an unplaced
@@ -8885,6 +8904,19 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
     box.querySelector("img").removeAttribute("src");
     urls = [];
   }
+  // Sync the enlarge state onto the card: toggle the size class and swap the button glyph/label
+  // between enlarge (&#10530;) and shrink (&#10529;). Called from show() (so a new photo respects
+  // the persistent mode) and from the toggle handler.
+  function applyBig() {
+    if (!box) return;
+    box.classList.toggle("qsv-photo-big", enlarged);
+    var z = box.querySelector(".qsv-photo-zoom");
+    if (z) {
+      z.innerHTML = enlarged ? "&#10529;" : "&#10530;";
+      z.setAttribute("aria-label", enlarged ? "Shrink photo" : "Enlarge photo");
+      z.title = enlarged ? "Shrink" : "Enlarge";
+    }
+  }
   // Anchor beside the MARKER without covering it: vertically centered on the point and offset
   // horizontally by GAP. Preferring the LEFT side keeps the card clear of plotly's own hover
   // tooltip, which opens to the right of the point; it flips right only when there isn't room,
@@ -8913,6 +8945,7 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
     b.querySelector(".qsv-photo-cap").textContent = urls.length > 1 ? (at + 1) + " / " + urls.length : "";
     b.classList.toggle("qsv-photo-multi", urls.length > 1);
     b.classList.add("open");
+    applyBig();
     place();
     // Bump the token so any in-flight resolve for a previous photo/point can detect it is stale.
     var url = urls[at], token = ++showToken;

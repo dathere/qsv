@@ -8319,6 +8319,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
   // would close this script's Rust raw-string delimiter.
   var CLUSTER_INK = '#0b0b0b', CLUSTER_WHITE = '#ffffff';
   var CLUSTER_STEPS = [10, 100, 1000];
+  var CLUSTER_REPAINT_MS = 500;
   var CLUSTER_SCHEME = {
     light: {
       fills: ['#86b6ef', '#5598e7', '#1c5cab', '#0d366b'],
@@ -8359,8 +8360,31 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       } catch (e) {}
     });
     clusterLayerIds(map, "-cluster-count").forEach(function (id) {
-      try { map.setPaintProperty(id, "text-color", clusterStepExpr(scheme.texts)); } catch (e) {}
+      try {
+        map.setPaintProperty(id, "text-color", clusterStepExpr(scheme.texts));
+        // MapLibre drops a symbol that collides with another label, and plotly sets no overlap
+        // policy — so a count silently disappeared whenever its bubble sat under a basemap place
+        // label, leaving an unlabelled blob (the number is the entire point of the bubble). Pin it:
+        // always draw the count, and don't let it suppress the basemap's own labels either.
+        map.setLayoutProperty(id, "text-allow-overlap", true);
+        map.setLayoutProperty(id, "text-ignore-placement", true);
+      } catch (e) {}
     });
+  }
+  // WHEN to paint is the hard part: plotly creates the cluster layers only when `cluster.enabled`
+  // flips on, and there is no event that reliably lands after that. `styledata` and `plotly_restyle`
+  // both fire well BEFORE the layers exist (on a heavy dashboard the gap outran a bounded retry, and
+  // the ramp silently didn't take), and MapLibre's `idle` never fires at all under plotly's usage
+  // (measured: 0 firings on a 28-panel dashboard, even after a pan). So don't guess — poll a cheap
+  // predicate and repaint whenever the layers are found unpainted. Our ramp is a step EXPRESSION (an
+  // array) while plotly's default is a plain color string, so "needs paint" is a type check, and the
+  // scan short-circuits to false on the common case of a map with no cluster layers at all.
+  function clustersNeedPaint(map) {
+    var ids = clusterLayerIds(map, "-cluster");
+    if (!ids.length) return false;
+    var v;
+    try { v = map.getPaintProperty(ids[0], "circle-color"); } catch (e) { return false; }
+    return !Array.isArray(v);
   }
   // plotly gives cluster bubbles NO hover: it filters clustered features out of the hover-bearing
   // circle layer (["!", ["has", "point_count"]]) and never registers the -cluster layers with its
@@ -8384,10 +8408,19 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
     if (map.__qsvClusterUi) return;
     map.__qsvClusterUi = true;
     paintClusters(map, isDark);
-    // the cluster layers only exist while clustering is ON, and the "Clusters/Points" toggle adds
-    // them after this first paint — styledata fires on that layer add, so re-assert there
-    // (idempotent).
-    try { map.on("styledata", function () { paintClusters(map, isDark); }); } catch (e) {}
+    // the cluster layers only exist while clustering is ON, so re-assert on every render settle
+    // (see clustersNeedPaint) rather than trying to catch the moment they are added.
+    // Repaint on a slow tick rather than on an event (see clustersNeedPaint): this covers every path
+    // that rebuilds the layers — the "Clusters/Points" toggle, toggling it back off and on, the
+    // extent buttons — with one mechanism. The tick clears itself once plotly discards this map
+    // (a theme flip builds a new one, which gets its own install and its own tick), so no interval
+    // outlives its map. Painting is a no-op unless the layers are actually found unpainted.
+    var tick = setInterval(function () {
+      var alive = true;
+      try { if (!map.getStyle()) alive = false; } catch (e) { alive = false; }
+      if (!alive) { clearInterval(tick); return; }
+      if (clustersNeedPaint(map)) paintClusters(map, isDark);
+    }, CLUSTER_REPAINT_MS);
     var tip = clusterTip(map);
     if (!tip) return;
     function hide() {

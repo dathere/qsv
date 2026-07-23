@@ -840,7 +840,9 @@ SCREENSHOTS = [
             "<code>closed_photo</code> column into map imagery: a point that has a photo says so in "
             "its hover, and resting on it for two seconds opens the case photo in a small preview "
             "beside the marker (nothing is fetched until you dwell, since the images load from a "
-            "third-party host). The standalone page is a ~8.7&nbsp;MB self-contained dashboard "
+            "third-party host). Embedding every one of the 264,951 mapped points (all 267,187 "
+            "records, via <code>QSV_VIZ_MAX_POINTS=300000</code>) makes this a ~12.4&nbsp;MB "
+            "self-contained dashboard "
             "&mdash; too large to embed inline &mdash; so this is a screenshot: <b>click it to open "
             "the fully interactive dashboard in a new window</b>."),
         "image": "boston311data-visual-datadic.webp",

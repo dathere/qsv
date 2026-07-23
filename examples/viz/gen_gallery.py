@@ -836,13 +836,19 @@ SCREENSHOTS = [
             "as the in-page <b>Data Dictionary</b> tab &mdash; a hover/click info icon on every panel "
             "title, and a download row bundling the dictionary as JSON Schema alongside the stats and "
             "charted-frequency sidecars this run was built from. <code>--dataset-pid</code> adds a "
-            "clickable citation link back to the source dataset. The standalone page is a "
-            "~6.9&nbsp;MB self-contained dashboard &mdash; too large to embed inline &mdash; so this "
-            "is a screenshot: <b>click it to open the fully interactive dashboard in a new window</b>."),
+            "clickable citation link back to the source dataset. <code>--photos</code> turns the "
+            "<code>closed_photo</code> column into map imagery: a point that has a photo says so in "
+            "its hover, and resting on it for two seconds opens the case photo in a small preview "
+            "beside the marker (nothing is fetched until you dwell, since the images load from a "
+            "third-party host). Embedding every one of the 264,951 mapped points (all 267,187 "
+            "records, via <code>QSV_VIZ_MAX_POINTS=300000</code>) makes this a ~12.4&nbsp;MB "
+            "self-contained dashboard "
+            "&mdash; too large to embed inline &mdash; so this is a screenshot: <b>click it to open "
+            "the fully interactive dashboard in a new window</b>."),
         "image": "boston311data-visual-datadic.webp",
         "href":  "smart_boston_311_2025.html",
-        "cmd":   ("qsv viz smart boston311-2025.tsv --smarter "
-                  "--dictionary boston311.schema.json --dict-info --bivariate "
+        "cmd":   ("QSV_VIZ_MAX_POINTS=300000 qsv viz smart boston311-2025.tsv --smarter "
+                  "--dictionary boston311.schema.json --dict-info --bivariate --photos "
                   "-o smart_boston_311_2025.html "
                   "--geojson boston_neighborhood_boundaries.json "
                   "--dataset-pid https://data.boston.gov/dataset/311-service-requests/"

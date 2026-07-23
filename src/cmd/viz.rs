@@ -441,6 +441,24 @@ smart options:
                            bubble-size measure. "off" omits the toggle, so points
                            are always drawn plainly. Only affects `smart`.
                            [default: auto]
+    --photos               For the `viz smart` map panel: when a column holds image URLs
+                           (detected from the stats cache - an http(s) value ending in a
+                           common image extension), embed each point's image URL so that
+                           dwelling on a map point for 2 seconds opens that row's photo in a
+                           small preview card beside the pointer (arrow keys or the on-card
+                           arrows page through a case with several photos; Escape or a click
+                           elsewhere dismisses it). OFF by default, and deliberately so: the
+                           images load from whatever third-party host the DATA names, so
+                           enabling this makes everyone who opens the dashboard request
+                           those URLs directly (revealing their IP to that host). Nothing
+                           is fetched until a viewer dwells on a point. Points that HAVE photos
+                           say so in their hover label, which is what makes the dwell
+                           discoverable. Every mapped point's URLs are embedded (hover needs
+                           them all), so the page grows - on the 267K-row Boston 311 dataset,
+                           by ~1.8MB (+27%) for 47K photo URLs. HTML output only - static image
+                           exports (PNG/SVG/PDF) are unaffected - and only on the tile-basemap
+                           map panel, so a dataset with no lat/lon (or one wide enough to render
+                           as a world overview) shows no photos. Only affects `smart`.
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
     --no-nulls             Omit the "(NULL)" bar (empty cells) from frequency bar charts.
                            By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`.
@@ -1426,6 +1444,7 @@ struct Args {
     flag_grid_cols:          usize,
     flag_heatmap_density:    usize,
     flag_cluster:            String,
+    flag_photos:             bool,
     flag_limit:              usize,
     flag_no_nulls:           bool,
     flag_no_other:           bool,
@@ -4576,8 +4595,18 @@ fn format_map_dataset_line(id_value: Option<&str>, extra: &[(String, String)]) -
 /// `MAP_HOVER_TEMPLATE` appends the coordinates at render time from the lat/lon data arrays, so
 /// they aren't duplicated into every embedded hover string. Attached via `.text_array(..)` +
 /// `.hover_template(MAP_HOVER_TEMPLATE)` (through `map_hover_text_values`).
-fn assemble_map_hover(dataset_line: &str, has_id: bool, geo_place: &str) -> String {
-    let mut lines: Vec<String> = Vec::with_capacity(2);
+///
+/// `photo_count` (0 unless `--photos` embedded URLs for this point) adds the affordance line that
+/// makes the hover-dwell preview discoverable: without it the 2-second dwell is an invisible
+/// feature nobody would think to try. Points with no photo get NO line, so the hover stays clean
+/// for the ~69% of Boston 311 cases that were closed without one.
+fn assemble_map_hover(
+    dataset_line: &str,
+    has_id: bool,
+    geo_place: &str,
+    photo_count: usize,
+) -> String {
+    let mut lines: Vec<String> = Vec::with_capacity(3);
     if !has_id && !geo_place.is_empty() {
         // no identifier column: the reverse-geocoded place becomes the (bold) identifier
         lines.push(format!("<b>{geo_place}</b>"));
@@ -4591,6 +4620,12 @@ fn assemble_map_hover(dataset_line: &str, has_id: bool, geo_place: &str) -> Stri
         if !geo_place.is_empty() {
             lines.push(geo_place.to_string());
         }
+    }
+    if photo_count > 0 {
+        let plural = if photo_count == 1 { "" } else { "s" };
+        lines.push(format!(
+            "<i>{photo_count} photo{plural} - keep hovering to view</i>"
+        ));
     }
     lines.join("<br>")
 }
@@ -8067,6 +8102,12 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
             var rehook = function () { gd.__qsvDictHooked = false; window.__qsvDictRehook(); };
             np.then(rehook, rehook);
           }
+          // same for the --photos hover-dwell lightbox (see PHOTO_CHROME): its plotly_hover
+          // listener went with the old plot, so rebind it once the re-render settles.
+          if (gd.__qsvPhotoHooked && window.__qsvPhotoRehook && np && np.then) {
+            var prehook = function () { gd.__qsvPhotoHooked = false; window.__qsvPhotoRehook.tries = 0; window.__qsvPhotoRehook(); };
+            np.then(prehook, prehook);
+          }
         } else {
           Plotly.relayout(gd, u);
         }
@@ -8622,6 +8663,203 @@ fn inject_fullscreen_chrome(doc: &str) -> String {
     }
 }
 
+/// How long the pointer must rest on a map point before its photo opens, in milliseconds. Long
+/// enough that sweeping the cursor across a dense point cloud never fires a request — the dwell
+/// IS the consent gesture for the third-party image fetch, so it must be deliberate.
+const PHOTO_DWELL_MS: u32 = 2000;
+
+/// `--photos` chrome: the hover-dwell photo preview `<style>` + `<script>`, injected into a `viz
+/// smart` HTML page ONLY when an image-URL column was detected and the flag was given (mirroring
+/// `dict_chrome`). Every other dashboard omits it entirely and so never references an off-origin
+/// URL.
+///
+/// The preview is a SMALL card anchored beside the pointer (offset by `GAP`, flipped at the
+/// viewport edges) rather than a full-screen overlay, so the marker it describes and the points
+/// around it stay visible while it is open — the photo is context for the map, not a replacement
+/// for it.
+///
+/// The script reads each point's `|`-joined image URLs from the trace `customdata` that
+/// `build_map_panel` embedded. Nothing is fetched on load: the `<img>` `src` is assigned only
+/// after the pointer rests on a point for `PHOTO_DWELL_MS`, so opening the dashboard makes no
+/// third-party request at all and a viewer who never dwells makes none either.
+///
+/// The polling `hook()` mirrors `DICT_SCRIPT_TEMPLATE`'s: plotly renders in a deferred module
+/// script, so `gd.on` exists only after render, and the fullscreen enhancer's one-time
+/// `Plotly.newPlot` would drop a listener attached before it (hence the `__qsvFs` wait, with a
+/// ~10s fallback so a render error doesn't disable photos permanently). `__qsvPhotoRehook` is
+/// published for the theme toggle, whose MapLibre re-render silently drops `gd.on` listeners.
+const PHOTO_CHROME: &str = r##"<style>
+#qsv-photo-box { position: fixed; z-index: 1000; display: none; left: 0; top: 0; }
+#qsv-photo-box.open { display: block; }
+#qsv-photo-box .qsv-photo-inner { position: relative; line-height: 0; background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.25); border-radius: 5px; box-shadow: 0 3px 14px rgba(0, 0, 0, 0.4); padding: 3px; }
+body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-color: rgba(255, 255, 255, 0.28); }
+#qsv-photo-box img { display: block; max-width: 260px; max-height: 260px; border-radius: 3px; }
+/* a broken source collapses the <img> to nothing, so give the card a floor to caption */
+#qsv-photo-box.qsv-photo-err img { min-width: 170px; min-height: 96px; }
+#qsv-photo-box button { position: absolute; background: rgba(0, 0, 0, 0.6); color: #ffffff; border: none; cursor: pointer; font: 600 13px/1 sans-serif; border-radius: 3px; padding: 4px 6px; }
+#qsv-photo-box button:hover { background: rgba(0, 0, 0, 0.85); }
+#qsv-photo-box .qsv-photo-close { top: 5px; right: 5px; }
+#qsv-photo-box .qsv-photo-prev, #qsv-photo-box .qsv-photo-next { top: 50%; transform: translateY(-50%); display: none; }
+#qsv-photo-box .qsv-photo-prev { left: 5px; }
+#qsv-photo-box .qsv-photo-next { right: 5px; }
+#qsv-photo-box.qsv-photo-multi .qsv-photo-prev, #qsv-photo-box.qsv-photo-multi .qsv-photo-next { display: block; }
+#qsv-photo-box .qsv-photo-cap { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); color: #ffffff; font: 11px/1.4 sans-serif; background: rgba(0, 0, 0, 0.65); padding: 2px 7px; border-radius: 3px; white-space: nowrap; }
+</style>
+<script>
+(function () {
+  var DWELL_MS = __QSVDWELLMS__;
+  // gap from the cursor: large enough that the card never sits under the pointer or the map
+  // marker it describes, small enough to read as attached to it.
+  var GAP = 18, EDGE = 10;
+  // Grace period before auto-closing once the pointer leaves the map. The card is anchored
+  // BESIDE the marker, so reaching its arrows means leaving the map first — closing instantly
+  // would make them unreachable. Any re-entry (map or card) within this window cancels the close.
+  var LEAVE_GRACE_MS = 300;
+  var timer = null, closeTimer = null, box = null, urls = [], at = 0, anchor = { x: 0, y: 0 };
+  function scheduleClose() {
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(close, LEAVE_GRACE_MS);
+  }
+  function cancelClose() { clearTimeout(closeTimer); }
+  function build() {
+    if (box) return box;
+    box = document.createElement("div");
+    box.id = "qsv-photo-box";
+    box.innerHTML = '<div class="qsv-photo-inner">' +
+      '<img alt="Photo for the hovered map point" />' +
+      '<button type="button" class="qsv-photo-close" aria-label="Close">&#215;</button>' +
+      '<button type="button" class="qsv-photo-prev" aria-label="Previous photo">&#8249;</button>' +
+      '<button type="button" class="qsv-photo-next" aria-label="Next photo">&#8250;</button>' +
+      '<div class="qsv-photo-cap"></div></div>';
+    document.body.appendChild(box);
+    box.querySelector(".qsv-photo-close").addEventListener("click", close);
+    box.querySelector(".qsv-photo-prev").addEventListener("click", function (e) { e.stopPropagation(); step(-1); });
+    box.querySelector(".qsv-photo-next").addEventListener("click", function (e) { e.stopPropagation(); step(1); });
+    // the natural size is unknown until the bytes arrive, so re-place once it is: an unplaced
+    // card measured at its empty size would otherwise land wrong and could cover the point.
+    box.querySelector("img").addEventListener("load", place);
+    // A data-supplied URL can 404 or expire (Boston's cloudinary links do), and a broken <img>
+    // renders as an empty card that reads like a bug. Say so instead.
+    box.querySelector("img").addEventListener("error", function () {
+      box.classList.add("qsv-photo-err");
+      box.querySelector(".qsv-photo-cap").textContent =
+        urls.length > 1 ? (at + 1) + " / " + urls.length + " - unavailable" : "image unavailable";
+      place();
+    });
+    // moving onto the card keeps it up (its arrows are the reason to go there); moving off it
+    // to anywhere that isn't the map dismisses it.
+    box.addEventListener("mouseenter", cancelClose);
+    box.addEventListener("mouseleave", scheduleClose);
+    return box;
+  }
+  function close() {
+    clearTimeout(closeTimer);
+    if (!box) return;
+    box.classList.remove("open");
+    // drop the src so a dismissed card holds no decoded image (and a re-open re-requests rather
+    // than flashing the previous point's photo while the new one loads)
+    box.querySelector("img").removeAttribute("src");
+    urls = [];
+  }
+  // Anchor beside the MARKER without covering it: vertically centered on the point and offset
+  // horizontally by GAP. Preferring the LEFT side keeps the card clear of plotly's own hover
+  // tooltip, which opens to the right of the point; it flips right only when there isn't room,
+  // and both axes are clamped so an edge-of-map point still shows its photo in full.
+  function place() {
+    if (!box || !box.classList.contains("open")) return;
+    var r = box.getBoundingClientRect();
+    var w = r.width || 0, h = r.height || 0;
+    var left = anchor.x - GAP - w;
+    if (left < EDGE) left = anchor.x + GAP;
+    if (left + w > window.innerWidth - EDGE) left = Math.max(EDGE, window.innerWidth - EDGE - w);
+    var top = anchor.y - h / 2;
+    if (top + h > window.innerHeight - EDGE) top = window.innerHeight - EDGE - h;
+    if (top < EDGE) top = EDGE;
+    box.style.left = Math.round(left) + "px";
+    box.style.top = Math.round(top) + "px";
+  }
+  function step(d) {
+    if (urls.length < 2) return;
+    at = (at + d + urls.length) % urls.length;
+    show();
+  }
+  function show() {
+    var b = build(), img = b.querySelector("img");
+    b.classList.remove("qsv-photo-err");
+    if (img.getAttribute("src") !== urls[at]) img.src = urls[at];
+    b.querySelector(".qsv-photo-cap").textContent = urls.length > 1 ? (at + 1) + " / " + urls.length : "";
+    b.classList.toggle("qsv-photo-multi", urls.length > 1);
+    b.classList.add("open");
+    place();
+  }
+  document.addEventListener("keydown", function (e) {
+    if (!box || !box.classList.contains("open")) return;
+    if (e.key === "Escape") close();
+    else if (e.key === "ArrowLeft") step(-1);
+    else if (e.key === "ArrowRight") step(1);
+  });
+  // a click anywhere outside the card dismisses it (it has no backdrop of its own)
+  document.addEventListener("click", function (e) {
+    if (box && box.classList.contains("open") && !box.contains(e.target)) close();
+  });
+  function hook() {
+    var tries = hook.tries || 0;
+    var gds = document.querySelectorAll('#qsv-viz-smart-grid, [id^="qsv-viz-panel-"]');
+    var pending = false;
+    gds.forEach(function (gd) {
+      if (gd.__qsvPhotoHooked) return;
+      if (!gd.on || (!gd.__qsvFs && tries < 100)) { pending = true; return; }
+      gd.__qsvPhotoHooked = true;
+      // DOM listeners on the panel div itself, so leaving the map auto-dismisses the card.
+      // Attached ONCE and flagged separately from __qsvPhotoHooked: the div survives plotly's
+      // re-renders (only its `gd.on` listeners are dropped), so re-adding them on every rehook
+      // would stack duplicate handlers.
+      if (!gd.__qsvPhotoDom) {
+        gd.__qsvPhotoDom = true;
+        gd.addEventListener("mouseenter", cancelClose);
+        gd.addEventListener("mouseleave", function () {
+          // a pending dwell is abandoned too, so the card can't pop up after the pointer left
+          clearTimeout(timer);
+          scheduleClose();
+        });
+      }
+      gd.on("plotly_hover", function (ev) {
+        var pt = ev && ev.points && ev.points[0];
+        var cd = pt && pt.customdata;
+        if (typeof cd !== "string" || !cd) return;
+        // Anchor on the MARKER, not the pointer: plotly's map hover event carries no
+        // clientX/clientY (only a synthetic mousemove), and the marker is what must stay
+        // uncovered anyway. `bbox` is relative to the plot div, so add the div's viewport
+        // offset. Resolved at hover time — the event is not retained across the dwell.
+        var r = gd.getBoundingClientRect(), bb = pt.bbox, x, y;
+        if (bb) {
+          x = r.left + (bb.x0 + bb.x1) / 2;
+          y = r.top + (bb.y0 + bb.y1) / 2;
+        } else if (typeof pt.xPixel === "number" && typeof pt.yPixel === "number") {
+          x = r.left + pt.xPixel;
+          y = r.top + pt.yPixel;
+        } else {
+          return;
+        }
+        clearTimeout(timer);
+        timer = setTimeout(function () {
+          anchor = { x: x, y: y };
+          urls = cd.split("|");
+          at = 0;
+          show();
+        }, DWELL_MS);
+      });
+      gd.on("plotly_unhover", function () { clearTimeout(timer); });
+    });
+    hook.tries = tries + 1;
+    if (pending && hook.tries < 200) setTimeout(hook, 100);
+  }
+  window.__qsvPhotoRehook = hook;
+  hook();
+})();
+</script>
+"##;
+
 fn smart_html_page(
     title_text: &str,
     theme: Option<BuiltinTheme>,
@@ -8630,6 +8868,7 @@ fn smart_html_page(
     show_heading: bool,
     dict_page: Option<&str>,
     meta_table: Option<&str>,
+    photos: bool,
 ) -> String {
     let js = plotly_js_block();
     let meta_table = meta_table.unwrap_or("");
@@ -8676,6 +8915,13 @@ fn smart_html_page(
             ),
         ),
         None => (String::new(), String::new()),
+    };
+    // --photos chrome: empty (so no off-origin URL is ever referenced) unless the flag was given
+    // AND a map panel actually embedded per-point image URLs.
+    let photo_chrome = if photos {
+        PHOTO_CHROME.replace("__QSVDWELLMS__", &PHOTO_DWELL_MS.to_string())
+    } else {
+        String::new()
     };
     // A RAW-string template (actual newlines, not `\n` escapes) so rustfmt's `format_strings` can't
     // split an escape across a line wrap and corrupt the output — it once mangled `\n{script}` into
@@ -8725,6 +8971,7 @@ fn smart_html_page(
 {fs_prelude}
 {FULLSCREEN_SCRIPT}
 {dict_chrome}
+{photo_chrome}
 {script}
 </body>
 </html>
@@ -11646,6 +11893,14 @@ enum PanelKind {
         /// extent overlay reference. `None` for near-global / antimeridian extents (see
         /// `map_pan_bounds`), where no constraint is applied.
         pan_bounds:         Option<MapBounds>,
+        /// `--photos` only: each point's image URLs, `|`-joined, row-aligned to `lats`/`lons`
+        /// (and `outlier_photos` to `outlier_lats`/`outlier_lons`). Emitted as the trace's
+        /// `customdata`, which the hover-dwell lightbox JS reads; an empty string means that row
+        /// has no photo and dwelling on it does nothing. BOTH vectors are empty when `--photos`
+        /// is off, and no `customdata` is emitted at all — so a default dashboard embeds no
+        /// third-party URLs and its viewers' browsers request nothing off-origin.
+        photos:             Vec<String>,
+        outlier_photos:     Vec<String>,
     },
     /// Geographic point map drawn on a `ScatterGeo` projection basemap (coastlines/land/countries,
     /// no network tiles) instead of a MapLibre tile map — used for `viz smart` when the coordinates
@@ -14049,6 +14304,70 @@ fn select_map_identifier(
         }
     }
     None
+}
+
+/// Common image file extensions recognized by `looks_like_image_url`. Kept deliberately narrow —
+/// a false positive here puts a broken `<img>` in the preview card (and makes the page reference
+/// an unrelated host), while a false negative merely leaves `--photos` inert on that column.
+const IMAGE_URL_EXTS: &[&str] = &[
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".bmp", ".tif", ".tiff",
+];
+
+/// The URL up to (but not including) any `#fragment` or `?query`.
+fn strip_url_suffix(url: &str) -> &str {
+    url.split(['#', '?']).next().unwrap_or(url)
+}
+
+/// Whether a raw cell value looks like a link to an image: an `http(s)` URL whose path ends in one
+/// of `IMAGE_URL_EXTS`.
+///
+/// Two shapes in real data have to be handled before the extension test:
+///   * **multi-value cells** — Boston 311's `closed_photo` packs several URLs into one cell
+///     separated by ` | `, so only the FIRST segment is examined.
+///   * **fragment / query suffixes** — the same feed appends `#spot=<uuid>`, which would otherwise
+///     hide the `.jpg`. Both `#...` and `?...` are trimmed before matching.
+fn looks_like_image_url(value: &str) -> bool {
+    let first = value.split('|').next().unwrap_or("").trim();
+    if !(first.starts_with("http://") || first.starts_with("https://")) {
+        return false;
+    }
+    let lower = strip_url_suffix(first).to_ascii_lowercase();
+    IMAGE_URL_EXTS.iter().any(|ext| lower.ends_with(ext))
+}
+
+/// Split a raw cell into its individual image URLs, dropping the `#fragment`/`?query` suffix from
+/// each. Used both to build the embedded per-point payload and (via `looks_like_image_url`) to
+/// decide whether a column qualifies at all.
+fn split_image_urls(value: &str) -> Vec<String> {
+    value
+        .split('|')
+        .map(str::trim)
+        .filter(|s| looks_like_image_url(s))
+        .map(|s| strip_url_suffix(s).to_string())
+        .collect()
+}
+
+/// Columns holding image URLs, detected from the stats cache ALONE so `--photos` works for a bare
+/// `qsv viz smart data.csv` with no Data Dictionary (where `content_type` is empty and the
+/// semantic precedence chain falls through to statistics).
+///
+/// `min`/`max` are the only real cell values the stats cache carries per column, and they are used
+/// in preference to `mode`/`antimode` because those two arrive wrapped in qsv's own display
+/// formatting (a `*PREVIEW:` prefix, `|`-joined ties) that would have to be unwrapped first.
+///
+/// An all-NULL column is inherently excluded: it stats as type `NULL` with empty min/max, so
+/// nothing matches. That is the desired behavior — Boston 311's `submitted_photo` is empty across
+/// all 267k rows, and detecting it from its NAME would produce a lightbox that never loads.
+fn image_url_cols(stats: &[crate::cmd::stats::StatsData]) -> Vec<usize> {
+    stats
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| {
+            s.min.as_deref().is_some_and(looks_like_image_url)
+                || s.max.as_deref().is_some_and(looks_like_image_url)
+        })
+        .map(|(i, _)| i)
+        .collect()
 }
 
 /// Choose the ordered list of column indices to show in a `viz smart` map-point hover. Always
@@ -16975,6 +17294,15 @@ fn build_map_panel(
     // sizing by an untagged numeric would be an arbitrary, misleading encoding.
     let size_idx = first_col_by_concepts(col_sems, MAP_MEASURE_CONCEPTS, lat_idx, lon_idx, &[]);
 
+    // opt-in `--photos`: the image-URL columns whose per-row values ride along as `customdata` for
+    // the hover-dwell lightbox. Empty unless the flag is set, so a default dashboard embeds no
+    // off-origin URL and its viewers' browsers request nothing from a third-party image host.
+    let photo_idxs: Vec<usize> = if args.flag_photos {
+        image_url_cols(stats)
+    } else {
+        Vec::new()
+    };
+
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     // friendly labels for the extra fields: dictionary label, else the column header.
     let extra_labels: Vec<String> = extra_idxs
@@ -16996,6 +17324,10 @@ fn build_map_panel(
     // raw bubble-size measure per in-range point, row-aligned with lats/lons; left empty unless a
     // map measure was found. A missing/non-numeric value is NaN (drawn at the smallest size).
     let mut sizes_raw: Vec<f64> = Vec::new();
+    // `--photos`: this point's image URLs, `|`-joined (the separator the source data already uses
+    // for multi-photo cells) and row-aligned with lats/lons. Empty string for a row with no photo,
+    // and the whole vector stays empty when the flag is off.
+    let mut photo_urls: Vec<String> = Vec::new();
     let build_dataset_lines = id_idx.is_some() || !extra_idxs.is_empty();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
@@ -17010,6 +17342,17 @@ fn build_map_panel(
             lons.push(lon);
             if let Some(si) = size_idx {
                 sizes_raw.push(parse_f64(record.get(si)).unwrap_or(f64::NAN));
+            }
+            if !photo_idxs.is_empty() {
+                // one row can carry photos in several columns (Boston 311 has a submitted and a
+                // closed photo), and each cell can itself hold several `|`-separated URLs — so
+                // flatten both levels into one ordered list for this point's lightbox.
+                let urls: Vec<String> = photo_idxs
+                    .iter()
+                    .filter_map(|&i| record.get(i))
+                    .flat_map(|b| split_image_urls(&String::from_utf8_lossy(b)))
+                    .collect();
+                photo_urls.push(urls.join("|"));
             }
             // with no identifier and no hover fields the formatted line is always empty, so
             // building it allocates a Vec plus a String per row for a result that is discarded.
@@ -17074,14 +17417,27 @@ fn build_map_panel(
     let (core_idx, out_idx) = partition_geo_outlier_indices(&lats, &lons);
     let gather_f64 =
         |idx: &[usize], src: &[f64]| -> Vec<f64> { idx.iter().map(|&i| src[i]).collect() };
-    let gather_str =
-        |idx: &[usize]| -> Vec<String> { idx.iter().map(|&i| dataset_lines[i].clone()).collect() };
+    let gather_str = |idx: &[usize], src: &[String]| -> Vec<String> {
+        idx.iter().map(|&i| src[i].clone()).collect()
+    };
     let core_lats = gather_f64(&core_idx, &lats);
     let core_lons = gather_f64(&core_idx, &lons);
     let out_lats = gather_f64(&out_idx, &lats);
     let out_lons = gather_f64(&out_idx, &lons);
-    let core_lines = gather_str(&core_idx);
-    let out_lines = gather_str(&out_idx);
+    let core_lines = gather_str(&core_idx, &dataset_lines);
+    let out_lines = gather_str(&out_idx, &dataset_lines);
+    // `--photos` payloads follow the SAME index partition as the hover lines, so a point's photos
+    // can never drift onto a different point's marker. A filler of empty strings when the flag is
+    // off keeps one packing path below rather than two (two is where alignment bugs come from).
+    let photos_or_blank = |idx: &[usize], n: usize| -> Vec<String> {
+        if photo_idxs.is_empty() {
+            vec![String::new(); n]
+        } else {
+            gather_str(idx, &photo_urls)
+        }
+    };
+    let core_photos_raw = photos_or_blank(&core_idx, core_lats.len());
+    let out_photos_raw = photos_or_blank(&out_idx, out_lats.len());
 
     // reverse-geocode the CORE bounding box into the spatial-extent overlay + summary, plus a
     // representative sample of the outliers for the call-out (one batched engine load). Degrades to
@@ -17097,9 +17453,6 @@ fn build_map_panel(
 
     // downsample coords AND the row-aligned dataset hover lines together (pack the line into the
     // pair's `Y` so the same stride applies), keeping each line aligned to its (lat, lon).
-    let pack = |lons: &[f64], lines: &[String]| -> Vec<(f64, String)> {
-        lons.iter().copied().zip(lines.iter().cloned()).collect()
-    };
     // core: pack lon + hover line + (optional) bubble measure so one stride keeps them aligned.
     let core_sizes_raw: Vec<f64> = if size_idx.is_some() {
         gather_f64(&core_idx, &sizes_raw)
@@ -17108,12 +17461,13 @@ fn build_map_panel(
     };
     // move the lines in rather than cloning the whole set: `core_lines` is rebuilt from the
     // downsampled result below, so the original vector is dead after this
-    let core_packed: Vec<(f64, String, f64)> = core_lons
+    let core_packed: Vec<(f64, String, f64, String)> = core_lons
         .iter()
         .copied()
         .zip(core_lines)
         .zip(core_sizes_raw.iter().copied())
-        .map(|((lo, line), sz)| (lo, line, sz))
+        .zip(core_photos_raw)
+        .map(|(((lo, line), sz), photo)| (lo, line, sz, photo))
         .collect();
     let (lats, core_pl) = downsample_pair(&core_lats, &core_packed, *MAX_SMART_POINTS);
     let lons: Vec<f64> = core_pl.iter().map(|t| t.0).collect();
@@ -17123,12 +17477,26 @@ fn build_map_panel(
     let core_sizes: Option<Vec<f64>> = size_idx
         .map(|_| core_pl.iter().map(|t| t.2).collect::<Vec<f64>>())
         .filter(|v| v.iter().any(|x| x.is_finite()));
-    let (outlier_lats, out_pl) = downsample_pair(
-        &out_lats,
-        &pack(&out_lons, &out_lines),
-        SMART_GEO_OUTLIER_CAP,
-    );
-    let (outlier_lons, out_lines): (Vec<f64>, Vec<String>) = out_pl.into_iter().unzip();
+    let out_packed: Vec<(f64, String, String)> = out_lons
+        .iter()
+        .copied()
+        .zip(out_lines)
+        .zip(out_photos_raw)
+        .map(|((lo, line), photo)| (lo, line, photo))
+        .collect();
+    let (outlier_lats, out_pl) = downsample_pair(&out_lats, &out_packed, SMART_GEO_OUTLIER_CAP);
+    let outlier_lons: Vec<f64> = out_pl.iter().map(|t| t.0).collect();
+    let out_lines: Vec<String> = out_pl.iter().map(|t| t.1.clone()).collect();
+    // resolved AFTER downsampling so each surviving point keeps its own photos; left empty when
+    // `--photos` is off so the trace emits no `customdata` at all.
+    let (core_photos, outlier_photos): (Vec<String>, Vec<String>) = if photo_idxs.is_empty() {
+        (Vec::new(), Vec::new())
+    } else {
+        (
+            core_pl.iter().map(|t| t.3.clone()).collect(),
+            out_pl.iter().map(|t| t.2.clone()).collect(),
+        )
+    };
 
     // per-point reverse-geocoded place (City, County, Admin1, Country [+ FIPS under --smarter]),
     // gap-filtered so it never duplicates a dataset geo.* column already in the hover. One batched
@@ -17201,21 +17569,52 @@ fn build_map_panel(
     // field or a geocoded place); otherwise leave the vecs empty so render keeps plotly's default
     // lat/lon hover.
     let geo_contributed = core_places.iter().chain(&out_places).any(|p| !p.is_empty());
-    let (hover_text, outlier_hover_text) = if dataset_has_fields || geo_contributed {
-        let assemble = |lines: &[String], places: &[String]| {
-            lines
-                .iter()
-                .zip(places)
-                .map(|(line, place)| assemble_map_hover(line, has_id, place))
-                .collect::<Vec<String>>()
+    // `--photos` alone is enough to warrant a hover string: the photo-count affordance is the only
+    // thing that makes the dwell preview discoverable, so it must appear even on a map whose
+    // points would otherwise fall back to plotly's bare lat/lon hover.
+    let has_photo_payload = !core_photos.is_empty() || !outlier_photos.is_empty();
+    // The affordance may only appear where a dwell can actually deliver a photo, else it
+    // promises something the page cannot do:
+    //   * a `global` extent renders as `PanelKind::Geo`, which carries no photos at all — so
+    //     NEITHER of its traces can show one.
+    //   * in `density` mode the CORE is a `DensityMap` heat surface: no discrete markers, no
+    //     `customdata`. Its geographic-outlier companion is still a marker trace with photos, so
+    //     outliers keep the hint even in density mode.
+    let core_hint = !global && !density;
+    let outlier_hint = !global;
+    let (hover_text, outlier_hover_text) =
+        if dataset_has_fields || geo_contributed || has_photo_payload {
+            let assemble = |lines: &[String], places: &[String], photos: &[String], hint: bool| {
+                lines
+                    .iter()
+                    .enumerate()
+                    .zip(places)
+                    .map(|((i, line), place)| {
+                        // `photos` is empty when --photos is off, and an entry is "" for a point
+                        // with no photo — both yield a count of 0, i.e. no
+                        // affordance line.
+                        let n = if hint {
+                            photos.get(i).map_or(0, |p| {
+                                if p.is_empty() {
+                                    0
+                                } else {
+                                    p.split('|').count()
+                                }
+                            })
+                        } else {
+                            0
+                        };
+                        assemble_map_hover(line, has_id, place, n)
+                    })
+                    .collect::<Vec<String>>()
+            };
+            (
+                assemble(&core_lines, &core_places, &core_photos, core_hint),
+                assemble(&out_lines, &out_places, &outlier_photos, outlier_hint),
+            )
+        } else {
+            (Vec::new(), Vec::new())
         };
-        (
-            assemble(&core_lines, &core_places),
-            assemble(&out_lines, &out_places),
-        )
-    } else {
-        (Vec::new(), Vec::new())
-    };
 
     // geocode-gated companion: a per-region choropleth overview drawn beside the point map. Gate it
     // on the cheap min/max-extent SPAN (already computed above) — a per-region breakdown only makes
@@ -17355,6 +17754,8 @@ fn build_map_panel(
             outlier_hover_text,
             sizes: core_sizes,
             pan_bounds,
+            photos: core_photos,
+            outlier_photos,
         }
     };
     Ok(Some((
@@ -21663,6 +22064,9 @@ fn render_smart_grid_page(
         false,
         dict_page,
         meta_table,
+        // never: `--photos` rides on the map panel's customdata, and a `PanelKind::Map` forces
+        // the inline render path (see `has_noncartesian`), so it can't reach this typed grid.
+        false,
     )
 }
 
@@ -21842,6 +22246,8 @@ fn smart_inline_panel_plot(
         outlier_hover_text,
         sizes,
         pan_bounds,
+        photos,
+        outlier_photos,
     } = &panel.kind
     {
         // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
@@ -21894,6 +22300,12 @@ fn smart_inline_panel_plot(
                     .text_array(map_hover_text_values(hover_text))
                     .hover_template(MAP_HOVER_TEMPLATE);
             }
+            // `--photos`: per-point image URLs for the hover-dwell lightbox. Inert everywhere
+            // except the page's own JS — plotly never renders `customdata` unless a hovertemplate
+            // references it, and `MAP_HOVER_TEMPLATE` deliberately does not.
+            if !photos.is_empty() {
+                core_trace = core_trace.custom_data(photos.clone());
+            }
             if *cluster {
                 // native MapLibre client-side clustering, configured but DISABLED at load so the
                 // map opens on individual points; the "Clusters/Points" toggle (see
@@ -21920,6 +22332,9 @@ fn smart_inline_panel_plot(
                 out_trace = out_trace
                     .text_array(map_hover_text_values(outlier_hover_text))
                     .hover_template(MAP_HOVER_TEMPLATE);
+            }
+            if !outlier_photos.is_empty() {
+                out_trace = out_trace.custom_data(outlier_photos.clone());
             }
             plot.add_trace(out_trace);
         }
@@ -23044,6 +23459,13 @@ fn render_smart_inline(
         r#"<div class="qsv-viz-grid">
 {cells}</div>"#
     );
+    // Inject the lightbox chrome only when a map panel actually embedded per-point image URLs —
+    // not merely because `--photos` was passed. A dataset with no image column (or no lat/lon)
+    // then still produces a dashboard with no off-origin reference anywhere in it.
+    let has_photos = panels.iter().any(|p| {
+        matches!(&p.kind, PanelKind::Map { photos, outlier_photos, .. }
+            if !photos.is_empty() || !outlier_photos.is_empty())
+    });
     // panels carry no overall title, so the dashboard title is shown as the page <h1>.
     smart_html_page(
         title_text,
@@ -23053,6 +23475,7 @@ fn render_smart_inline(
         true,
         dict_page,
         meta_table,
+        has_photos,
     )
 }
 
@@ -25759,6 +26182,96 @@ mod tests {
         assert_eq!(select_map_identifier(&stats, &sems, None, 0, 1), None);
     }
 
+    /// `--photos` column detection reads only the stats cache, so it must recognize the real
+    /// shapes the Boston 311 feed produces: a bare image URL, one carrying the `#spot=<uuid>`
+    /// fragment, and a `|`-joined multi-photo cell.
+    #[test]
+    fn looks_like_image_url_accepts_real_shapes() {
+        assert!(looks_like_image_url("https://example.org/a/b/photo.jpg"));
+        assert!(looks_like_image_url("http://example.org/photo.PNG"));
+        assert!(looks_like_image_url(
+            "https://spot-boston-res.cloudinary.com/image/upload/v1/boston/x.jpg#spot=abc-123"
+        ));
+        assert!(looks_like_image_url("https://example.org/p.webp?w=200"));
+        // multi-value cell: the FIRST segment decides
+        assert!(looks_like_image_url(
+            "https://example.org/a.jpg#spot=1 | https://example.org/b.jpg#spot=2"
+        ));
+    }
+
+    /// Non-image URLs and non-URLs must not qualify — a false positive would put a broken
+    /// `<img>` in the lightbox and, worse, make the page reference an unrelated host.
+    #[test]
+    fn looks_like_image_url_rejects_non_images() {
+        assert!(!looks_like_image_url(""));
+        assert!(!looks_like_image_url("(NULL)"));
+        assert!(!looks_like_image_url("https://example.org/page.html"));
+        assert!(!looks_like_image_url("https://example.org/report.pdf"));
+        assert!(!looks_like_image_url("https://data.boston.gov/dataset/311"));
+        // a bare filename is not a fetchable source
+        assert!(!looks_like_image_url("photo.jpg"));
+        // non-http schemes are never embedded
+        assert!(!looks_like_image_url("file:///tmp/photo.jpg"));
+        assert!(!looks_like_image_url("javascript:alert(1)//x.jpg"));
+    }
+
+    /// Each cell is flattened into its individual URLs with the `#fragment`/`?query` dropped, and
+    /// non-image segments are discarded rather than emitted as broken sources.
+    #[test]
+    fn split_image_urls_flattens_and_strips() {
+        assert_eq!(
+            split_image_urls(
+                "https://e.org/a.jpg#spot=1 | https://e.org/b.jpg#spot=2 | https://e.org/c.png"
+            ),
+            vec![
+                "https://e.org/a.jpg".to_string(),
+                "https://e.org/b.jpg".to_string(),
+                "https://e.org/c.png".to_string(),
+            ]
+        );
+        assert_eq!(
+            split_image_urls("https://e.org/a.jpg?w=1"),
+            vec!["https://e.org/a.jpg".to_string()]
+        );
+        // a cell with nothing image-like contributes no photos at all
+        assert!(split_image_urls("(NULL)").is_empty());
+        assert!(split_image_urls("").is_empty());
+        // mixed: only the image segment survives
+        assert_eq!(
+            split_image_urls("https://e.org/page.html | https://e.org/a.gif"),
+            vec!["https://e.org/a.gif".to_string()]
+        );
+    }
+
+    /// Detection is driven by the stats cache's `min`/`max` (the only real cell values it carries),
+    /// which is what lets `--photos` work with no Data Dictionary. An all-NULL column — Boston
+    /// 311's `submitted_photo` — has no min/max and so is deliberately NOT detected: tagging it
+    /// would produce a lightbox that never loads.
+    #[test]
+    fn image_url_cols_detects_from_stats_min_max() {
+        let mut photo = stat("String", 100, Some(0.9));
+        photo.min = Some("https://e.org/a.jpg#spot=1".to_string());
+        photo.max = Some("https://e.org/z.jpg#spot=9".to_string());
+        let mut all_null = stat("NULL", 1, None);
+        all_null.min = None;
+        all_null.max = None;
+        let mut link = stat("String", 50, Some(0.5));
+        link.min = Some("https://e.org/page.html".to_string());
+        link.max = Some("https://e.org/other.html".to_string());
+        let stats = vec![stat("Float", 9, Some(0.5)), all_null, photo, link];
+        assert_eq!(image_url_cols(&stats), vec![2]);
+    }
+
+    /// Only ONE of min/max needs to look like an image: a column whose lexicographic extremes
+    /// straddle a null sentinel still qualifies on the other end.
+    #[test]
+    fn image_url_cols_detects_on_either_bound() {
+        let mut s = stat("String", 10, Some(0.5));
+        s.min = Some("(NULL)".to_string());
+        s.max = Some("https://e.org/z.jpeg".to_string());
+        assert_eq!(image_url_cols(&[s]), vec![0]);
+    }
+
     #[test]
     fn select_map_hover_fields_default_is_identifier_only() {
         let stats = vec![
@@ -25834,17 +26347,39 @@ mod tests {
         // with an identifier, the geocoded place is a context line (no coord line — that's
         // appended at render by MAP_HOVER_TEMPLATE from the lat/lon data arrays)
         assert_eq!(
-            assemble_map_hover("<b>Tokyo</b>", true, "Tokyo, Japan"),
+            assemble_map_hover("<b>Tokyo</b>", true, "Tokyo, Japan", 0),
             "<b>Tokyo</b><br>Tokyo, Japan"
         );
         // no identifier column: the geocoded place becomes the bold identifier
         assert_eq!(
-            assemble_map_hover("", false, "Tokyo, Japan"),
+            assemble_map_hover("", false, "Tokyo, Japan", 0),
             "<b>Tokyo, Japan</b>"
         );
         // empty when neither dataset nor geocode contributed — the template's coordinate
         // hover stands alone
-        assert_eq!(assemble_map_hover("", false, ""), "");
+        assert_eq!(assemble_map_hover("", false, "", 0), "");
+
+        // --photos affordance: only points that HAVE photos get the hint line, and it is the
+        // last line so the identifier still leads. Singular/plural both covered.
+        assert_eq!(
+            assemble_map_hover("<b>Tokyo</b>", true, "", 1),
+            "<b>Tokyo</b><br><i>1 photo - keep hovering to view</i>"
+        );
+        assert_eq!(
+            assemble_map_hover("<b>Tokyo</b>", true, "Tokyo, Japan", 3),
+            "<b>Tokyo</b><br>Tokyo, Japan<br><i>3 photos - keep hovering to view</i>"
+        );
+        // a photo-less point is untouched, so the ~69% of Boston 311 cases closed without one
+        // keep a clean hover
+        assert_eq!(
+            assemble_map_hover("<b>Tokyo</b>", true, "", 0),
+            "<b>Tokyo</b>"
+        );
+        // photos with no dataset line and no place: the hint stands alone above the coords
+        assert_eq!(
+            assemble_map_hover("", true, "", 2),
+            "<i>2 photos - keep hovering to view</i>"
+        );
 
         // map_hover_text_values: non-empty entries get the trailing <br> separator the
         // template relies on; empty entries stay empty (no leading blank line)

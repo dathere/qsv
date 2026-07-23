@@ -4157,6 +4157,250 @@ fn viz_smart_map_downsample_subtitle() {
     );
 }
 
+/// The `--photos` map trace (the one carrying per-point image URLs as `customdata`), pulled out of
+/// an inline dashboard rendered with `QSV_VIZ_NO_COMPRESS` — which keeps each map figure as plain
+/// JSON instead of the usual gzip+base64 payload, so the coordinates and photo payload can be
+/// read back and compared directly. `None` when no trace carries photos.
+fn photo_map_trace(html: &str) -> Option<serde_json::Value> {
+    for chunk in html.split("Plotly.newPlot(").skip(1) {
+        // `Plotly.newPlot("qsv-viz-panel-N", {figure});` — the figure starts after the div id.
+        let Some(comma) = chunk.find(", ") else {
+            continue;
+        };
+        // parse ONE JSON value and ignore the `);` and everything after it, so no brace/quote
+        // counting is needed to find where the figure ends.
+        let mut vals = serde_json::Deserializer::from_str(&chunk[comma + 2..])
+            .into_iter::<serde_json::Value>();
+        let Some(Ok(fig)) = vals.next() else {
+            continue;
+        };
+        let Some(traces) = fig.get("data").and_then(|d| d.as_array()) else {
+            continue;
+        };
+        if let Some(t) = traces.iter().find(|t| t.get("customdata").is_some()) {
+            return Some(t.clone());
+        }
+    }
+    None
+}
+
+fn f64_array(trace: &serde_json::Value, key: &str) -> Vec<f64> {
+    trace[key]
+        .as_array()
+        .expect("array")
+        .iter()
+        .map(|v| v.as_f64().unwrap_or(f64::NAN))
+        .collect()
+}
+
+fn str_array(trace: &serde_json::Value, key: &str) -> Vec<String> {
+    trace[key]
+        .as_array()
+        .expect("array")
+        .iter()
+        .map(|v| v.as_str().unwrap_or("").to_string())
+        .collect()
+}
+
+// `--photos` embeds each point's image URLs as trace `customdata`, and those payloads must stay
+// welded to their own coordinates through the core downsampling stride. This is the property the
+// packed-tuple threading in `build_map_panel` exists to guarantee: coordinates, hover lines and
+// photos are strided TOGETHER, so a photo can never end up describing a different point's marker.
+#[test]
+fn viz_smart_photos_stay_aligned_through_downsampling() {
+    let wrk = Workdir::new("viz_smart_photos_stay_aligned_through_downsampling");
+    // Every row's photo URL encodes its own row number, and its latitude is a function of that
+    // same number — so ANY drift between the coordinate arrays and the photo payload surfaces as
+    // a URL whose number doesn't match the latitude it was embedded against.
+    let n = 120usize;
+    let mut rows = String::from("id,lat,lon,photo\n");
+    for i in 0..n {
+        rows.push_str(&format!(
+            "{i},{:.5},-71.05000,https://example.org/p{i}.jpg#spot={i}\n",
+            40.30000 + 0.00001 * i as f64
+        ));
+    }
+    wrk.create_from_string("pts.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv", "--photos", "-o", &out_html]);
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    // force a stride well below the row count so downsampling definitely runs
+    cmd.env("QSV_VIZ_MAX_POINTS", "25");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    let trace = photo_map_trace(&html).expect("a map trace carrying photo customdata");
+    let lats = f64_array(&trace, "lat");
+    let photos = str_array(&trace, "customdata");
+    assert_eq!(
+        lats.len(),
+        photos.len(),
+        "customdata must be row-aligned to lat"
+    );
+    assert!(
+        photos.len() < n,
+        "expected a downsampled core (< {n} points), got {}",
+        photos.len()
+    );
+    assert!(photos.len() >= 2, "expected at least a couple of points");
+
+    for (lat, url) in lats.iter().zip(&photos) {
+        let i: usize = url
+            .trim_start_matches("https://example.org/p")
+            .trim_end_matches(".jpg")
+            .parse()
+            .unwrap_or_else(|_| panic!("unexpected embedded photo url: {url}"));
+        let expected = 40.30000 + 0.00001 * i as f64;
+        assert!(
+            (lat - expected).abs() < 1e-6,
+            "photo for row {i} (expected lat {expected}) was embedded against lat {lat} — the \
+             photo payload drifted off its coordinate during downsampling"
+        );
+    }
+    // the `#spot=<id>` fragment is stripped from every embedded URL in the PAYLOAD (the hover
+    // identifier text may still show the raw cell — that is the identifier-selection behavior,
+    // independent of --photos).
+    assert!(
+        photos.iter().all(|p| !p.contains("#spot=")),
+        "url fragments must be stripped from the customdata payload"
+    );
+}
+
+// `--photos` is strictly opt-in: without it a dashboard must embed NO image URL and none of the
+// preview chrome, so opening it makes no request to whatever third-party host the data names.
+#[test]
+fn viz_smart_photos_absent_unless_requested() {
+    let wrk = Workdir::new("viz_smart_photos_absent_unless_requested");
+    let mut rows = String::from("id,lat,lon,photo\n");
+    for i in 0..40 {
+        rows.push_str(&format!(
+            "{i},{:.5},-71.05000,https://example.org/p{i}.jpg\n",
+            40.30000 + 0.00010 * f64::from(i)
+        ));
+    }
+    wrk.create_from_string("pts.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv", "-o", &out_html]);
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(
+        photo_map_trace(&html).is_none(),
+        "no trace may carry photo customdata without --photos"
+    );
+    assert!(
+        !html.contains("qsv-photo-box"),
+        "the preview chrome must not be injected without --photos"
+    );
+    // Note: the raw URL CAN still appear as a point's hover identifier text (the photo column is
+    // a high-cardinality string, so hover-field selection may pick it) — that is orthogonal to
+    // --photos. The feature's opt-in is the customdata payload + chrome asserted above; the page
+    // makes no image REQUEST because nothing assigns an <img> src.
+}
+
+// `--photos` on a dataset whose only URL column isn't images must stay completely inert — a false
+// positive would put a broken preview on the page AND make it reference an unrelated host.
+#[test]
+fn viz_smart_photos_inert_without_an_image_column() {
+    let wrk = Workdir::new("viz_smart_photos_inert_without_an_image_column");
+    let mut rows = String::from("id,lat,lon,link\n");
+    for i in 0..40 {
+        rows.push_str(&format!(
+            "{i},{:.5},-71.05000,https://example.org/case/{i}.html\n",
+            40.30000 + 0.00010 * f64::from(i)
+        ));
+    }
+    wrk.create_from_string("pts.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv", "--photos", "-o", &out_html]);
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(
+        photo_map_trace(&html).is_none(),
+        "a .html link column is not photos"
+    );
+    assert!(
+        !html.contains("qsv-photo-box"),
+        "no preview chrome for a non-image column"
+    );
+}
+
+// The hover affordance ("N photos - keep hovering to view") is what makes the 2-second dwell
+// discoverable, so it must appear on exactly the points that HAVE photos — never on the ones
+// that don't, whose hover stays clean.
+#[test]
+fn viz_smart_photos_hint_only_on_points_with_photos() {
+    let wrk = Workdir::new("viz_smart_photos_hint_only_on_points_with_photos");
+    // every 3rd row has photos (and every 6th has two), the rest have none
+    let mut rows = String::from("id,lat,lon,photo\n");
+    for i in 0..60 {
+        let photo = if i % 6 == 0 {
+            format!("https://example.org/a{i}.jpg | https://example.org/b{i}.jpg")
+        } else if i % 3 == 0 {
+            format!("https://example.org/a{i}.jpg")
+        } else {
+            String::new()
+        };
+        rows.push_str(&format!(
+            "{i},{:.5},-71.05000,{photo}\n",
+            40.30000 + 0.00010 * f64::from(i)
+        ));
+    }
+    wrk.create_from_string("pts.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv", "--photos", "-o", &out_html]);
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.env_remove("QSV_VIZ_MAX_POINTS");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    let trace = photo_map_trace(&html).expect("a map trace carrying photo customdata");
+    let photos = str_array(&trace, "customdata");
+    let hovers = str_array(&trace, "text");
+    let with_photos = photos.iter().filter(|p| !p.is_empty()).count();
+    let without = photos.iter().filter(|p| p.is_empty()).count();
+    assert!(
+        with_photos > 0 && without > 0,
+        "fixture must mix both kinds"
+    );
+
+    // one hint per photo-bearing point, and none anywhere else
+    let hinted = hovers
+        .iter()
+        .filter(|h| h.contains("keep hovering to view"))
+        .count();
+    assert_eq!(
+        hinted, with_photos,
+        "the hint must appear on exactly the points that have photos"
+    );
+    for (photo, hover) in photos.iter().zip(&hovers) {
+        if photo.is_empty() {
+            assert!(
+                !hover.contains("keep hovering"),
+                "a photo-less point must keep a clean hover, got: {hover}"
+            );
+        } else {
+            let n = photo.split('|').count();
+            let plural = if n == 1 { "photo" } else { "photos" };
+            assert!(
+                hover.contains(&format!("{n} {plural} - keep hovering to view")),
+                "hover must name the photo count ({n}), got: {hover}"
+            );
+        }
+    }
+}
+
 #[test]
 fn viz_smart_heatmap_density_threshold() {
     let wrk = Workdir::new("viz_smart_heatmap_density_threshold");

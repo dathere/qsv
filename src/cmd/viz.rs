@@ -8683,6 +8683,16 @@ const PHOTO_DWELL_MS: u32 = 2000;
 /// after the pointer rests on a point for `PHOTO_DWELL_MS`, so opening the dashboard makes no
 /// third-party request at all and a viewer who never dwells makes none either.
 ///
+/// To spare the image host, a dwelled image is fetched at most ONCE and then served locally:
+/// `resolveSrc` layers an in-memory object-URL cache over an IndexedDB blob store
+/// (`qsv-viz-photos`), so re-dwelling a point, reopening the card, and reloading the page all serve
+/// from the cache with no new request. Reading bytes cross-origin needs CORS, so this is
+/// progressive enhancement: when the host sends CORS the blob is cached (and persists across
+/// reloads via IndexedDB); when it does not, `resolveSrc` returns null and `show` falls back to a
+/// plain `<img>` load that the browser HTTP cache still serves. A per-origin `corsBlocked` memo
+/// stops retrying `fetch` on a no-CORS host, so the cache path never issues more steady-state
+/// requests than the un-cached one. Failed loads (expired/404 links) are never cached.
+///
 /// The polling `hook()` mirrors `DICT_SCRIPT_TEMPLATE`'s: plotly renders in a deferred module
 /// script, so `gd.on` exists only after render, and the fullscreen enhancer's one-time
 /// `Plotly.newPlot` would drop a listener attached before it (hence the `__qsvFs` wait, with a
@@ -8716,11 +8726,111 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
   // would make them unreachable. Any re-entry (map or card) within this window cancels the close.
   var LEAVE_GRACE_MS = 300;
   var timer = null, closeTimer = null, box = null, urls = [], at = 0, anchor = { x: 0, y: 0 };
+  // Bumped by every show()/step()/new dwell so a slow cache/fetch that resolves after the user
+  // has navigated to a different photo or point can detect it is stale and not clobber the img.
+  var showToken = 0;
   function scheduleClose() {
     clearTimeout(closeTimer);
     closeTimer = setTimeout(close, LEAVE_GRACE_MS);
   }
   function cancelClose() { clearTimeout(closeTimer); }
+
+  // ---- image cache (progressive enhancement over the browser HTTP cache) ------------------
+  // A dwelled image is fetched from its third-party host at most once, then served locally on
+  // re-dwell, card-reopen, and (via IndexedDB) across page reloads. The 2s dwell already gates
+  // every request; this keeps a viewer from re-hitting the origin for an image they've seen.
+  //
+  // Reading bytes from a cross-origin host needs CORS, so this ENHANCES rather than replaces the
+  // plain <img> load: resolveSrc() yields a local blob URL when the host cooperates, else null,
+  // and show() falls back to the raw URL (which the browser HTTP cache still serves). It never
+  // issues more steady-state requests than the un-cached path — see corsBlocked below.
+  var DB_NAME = "qsv-viz-photos", DB_STORE = "img", MEM_MAX = 60, IDB_MAX = 300;
+  var mem = new Map();          // url -> object URL (insertion order ~= LRU)
+  var inflight = new Map();     // url -> Promise<objectURL|null> (dedups concurrent requests)
+  var corsBlocked = new Set();  // origins whose CORS fetch failed once: skip fetching thereafter
+  var dbp = null;               // memoized Promise<IDBDatabase|null>
+  function openDB() {
+    if (dbp) return dbp;
+    dbp = new Promise(function (res) {
+      try {
+        if (!window.indexedDB) return res(null);
+        var rq = indexedDB.open(DB_NAME, 1);
+        rq.onupgradeneeded = function () {
+          var db = rq.result;
+          if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+        };
+        rq.onsuccess = function () { res(rq.result); };
+        rq.onerror = function () { res(null); };
+      } catch (e) { res(null); }
+    });
+    return dbp;
+  }
+  function idbGet(db, url) {
+    return new Promise(function (res) {
+      if (!db) return res(null);
+      try {
+        var rq = db.transaction(DB_STORE, "readonly").objectStore(DB_STORE).get(url);
+        rq.onsuccess = function () { res(rq.result || null); };
+        rq.onerror = function () { res(null); };
+      } catch (e) { res(null); }
+    });
+  }
+  function idbPut(db, url, blob) {
+    if (!db) return;
+    try {
+      var store = db.transaction(DB_STORE, "readwrite").objectStore(DB_STORE);
+      store.put(blob, url);
+      // approximate eviction: content is immutable (content-addressed URLs), so exact LRU
+      // isn't needed — just keep the store bounded by trimming the oldest keys on overflow.
+      var cnt = store.count();
+      cnt.onsuccess = function () {
+        var over = cnt.result - IDB_MAX;
+        if (over <= 0) return;
+        var cur = store.openKeyCursor();
+        cur.onsuccess = function () {
+          var c = cur.result;
+          if (c && over-- > 0) { store.delete(c.key); c.continue(); }
+        };
+      };
+    } catch (e) {}
+  }
+  function memPut(url, objUrl) {
+    mem.set(url, objUrl);
+    if (mem.size > MEM_MAX) {
+      var oldest = mem.keys().next().value, u = mem.get(oldest);
+      mem.delete(oldest);
+      try { URL.revokeObjectURL(u); } catch (e) {}
+    }
+  }
+  function originOf(url) { try { return new URL(url).origin; } catch (e) { return url; } }
+  // Resolve a displayable src for `url`: memory -> IndexedDB -> one CORS fetch -> null. A null
+  // result means "no readable bytes" (no CORS, a fetch error, or a 4xx/5xx) and tells show() to
+  // fall back to the raw URL. Never caches a failed load (transient errors / expired links stay
+  // retryable). Concurrent callers for the same url share one promise.
+  function resolveSrc(url) {
+    if (mem.has(url)) return Promise.resolve(mem.get(url));
+    if (inflight.has(url)) return inflight.get(url);
+    var p = openDB().then(function (db) {
+      return idbGet(db, url).then(function (blob) {
+        if (blob) return { blob: blob, store: false };
+        if (corsBlocked.has(originOf(url))) return null;
+        return fetch(url, { mode: "cors", credentials: "omit", cache: "force-cache" }).then(
+          function (r) { return r.ok ? r.blob().then(function (b) { return { blob: b, store: true, db: db }; }) : null; },
+          function () { corsBlocked.add(originOf(url)); return null; }
+        );
+      });
+    }).then(function (hit) {
+      if (!hit) return null;
+      if (hit.store) idbPut(hit.db, url, hit.blob);
+      var objUrl = URL.createObjectURL(hit.blob);
+      memPut(url, objUrl);
+      return objUrl;
+    }).catch(function () { return null; })
+      .then(function (objUrl) { inflight.delete(url); return objUrl; });
+    inflight.set(url, p);
+    return p;
+  }
+  // -----------------------------------------------------------------------------------------
   function build() {
     if (box) return box;
     box = document.createElement("div");
@@ -8754,6 +8864,8 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
   }
   function close() {
     clearTimeout(closeTimer);
+    // invalidate any in-flight resolveSrc so a late blob can't paint a dismissed card
+    showToken++;
     if (!box) return;
     box.classList.remove("open");
     // drop the src so a dismissed card holds no decoded image (and a re-open re-requests rather
@@ -8786,11 +8898,19 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
   function show() {
     var b = build(), img = b.querySelector("img");
     b.classList.remove("qsv-photo-err");
-    if (img.getAttribute("src") !== urls[at]) img.src = urls[at];
     b.querySelector(".qsv-photo-cap").textContent = urls.length > 1 ? (at + 1) + " / " + urls.length : "";
     b.classList.toggle("qsv-photo-multi", urls.length > 1);
     b.classList.add("open");
     place();
+    // Resolve the src through the cache; assign only if the card hasn't since moved to another
+    // photo/point (the token guards that race). `src || url` falls back to the raw URL when the
+    // host has no CORS or the fetch failed — the browser HTTP cache still applies there.
+    var url = urls[at], token = ++showToken;
+    resolveSrc(url).then(function (src) {
+      if (token !== showToken) return;
+      var next = src || url;
+      if (img.getAttribute("src") !== next) img.src = next;
+    });
   }
   document.addEventListener("keydown", function (e) {
     if (!box || !box.classList.contains("open")) return;

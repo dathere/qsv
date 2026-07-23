@@ -4399,6 +4399,13 @@ fn viz_smart_photos_hint_only_on_points_with_photos() {
             );
         }
     }
+
+    // the client-side image cache chrome is emitted so a dwelled image is fetched at most once
+    // (IndexedDB blob store + in-memory object-URL cache); guards the cache wiring's presence.
+    assert!(
+        html.contains("qsv-viz-photos") && html.contains("indexedDB"),
+        "the --photos chrome must include the IndexedDB image cache"
+    );
 }
 
 #[test]

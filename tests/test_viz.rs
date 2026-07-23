@@ -4257,13 +4257,25 @@ fn viz_smart_map_cluster_ui_script() {
         "light and dark cluster ramps should both be present: {html}"
     );
     // a surface ring keeps a bubble legible over a busy patch of basemap
-    assert!(html.contains("circle-stroke-color"), "cluster ring missing: {html}");
+    assert!(
+        html.contains("circle-stroke-color"),
+        "cluster ring missing: {html}"
+    );
     // hover + click-to-expand handlers, and the re-install hook the theme toggle calls
-    assert!(html.contains("getClusterExpansionZoom"), "cluster click-to-expand missing: {html}");
-    assert!(html.contains("__qsvRefitClusterUi"), "cluster UI re-install hook missing: {html}");
+    assert!(
+        html.contains("getClusterExpansionZoom"),
+        "cluster click-to-expand missing: {html}"
+    );
+    assert!(
+        html.contains("__qsvRefitClusterUi"),
+        "cluster UI re-install hook missing: {html}"
+    );
     // the note tells the reader the bubbles are interactive
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("Hover a bubble"), "stderr note should mention hover: {stderr}");
+    assert!(
+        stderr.contains("Hover a bubble"),
+        "stderr note should mention hover: {stderr}"
+    );
 }
 
 // Opting back into the density heatmap (`--heatmap-density` at/below the point count) suppresses

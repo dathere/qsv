@@ -238,20 +238,21 @@ qsv viz smart allegheny_dog_licenses.csv --smarter --bivariate --dict-info \
     -o allegheny_dogs_dashboard.html
 ```
 
-### dictionary-guided hierarchy panels (treemap / sunburst)
+### dictionary-guided hierarchy panels (treemap / sunburst / icicle)
 
 When the dataset has **2+ low-cardinality categorical dimensions**, `viz smart` adds a
 part-to-whole **hierarchy** panel nesting them (the chosen dimensions still keep their own
 frequency bars). The chart type is auto-selected by depth, following visualization best practice:
 a **treemap** for a shallow 2-level hierarchy (area encodes size, for accurate comparison) and a
 **sunburst** for a deeper 3-level one (concentric rings emphasize parent-child structure). Override
-with `--hierarchy-style auto|treemap|sunburst`.
+with `--hierarchy-style auto|treemap|sunburst|icicle` — `icicle` is an opt-in level-aligned
+alternative that keeps deep labels readable where a sunburst's outer ring would crowd.
 
 The auto path also checks that the candidate dimensions are **statistically associated** (bias-
 corrected Cramér's V): nesting *independent* categoricals just replicates each level's marginal at
 every branch and tells you nothing the separate frequency bars don't, so that hierarchy is skipped
-(with a note on stderr). Pass an explicit `--hierarchy-style treemap|sunburst` to force the panel
-anyway.
+(with a note on stderr). Pass an explicit `--hierarchy-style treemap|sunburst|icicle` to force the
+panel anyway.
 
 Pairing this with **`--dictionary infer`** lets a local LLM (via
 [`describegpt`](https://github.com/dathere/qsv/blob/master/docs/help/describegpt.md), default

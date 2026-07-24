@@ -48,7 +48,7 @@
       {
         "flag": "--agg",
         "type": "string",
-        "description": "For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. For treemap/sunburst, only additive aggregations apply: count (default) or sum (requires --value)."
+        "description": "For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. For treemap/sunburst/icicle, only additive aggregations apply: count (default) or sum (requires --value)."
       },
       {
         "flag": "--annotation",
@@ -95,7 +95,7 @@
       {
         "flag": "--cols",
         "type": "string",
-        "description": "Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). For splom: the numeric columns to cross-plot (default: all numeric). For parcats: the categorical dimensions to flow across (best with 3-4)."
+        "description": "Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst/icicle: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). For splom: the numeric columns to cross-plot (default: all numeric). For parcats: the categorical dimensions to flow across (best with 3-4)."
       },
       {
         "flag": "--dataset-pid",
@@ -361,7 +361,7 @@
       {
         "flag": "--value",
         "type": "string",
-        "description": "Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1. For treemap/sunburst: a numeric measure summed per sector (when omitted, each row counts as 1)."
+        "description": "Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1. For treemap/sunburst/icicle: a numeric measure summed per sector (when omitted, each row counts as 1)."
       },
       {
         "flag": "--violin",

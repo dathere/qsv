@@ -7547,27 +7547,48 @@ fn positive_subset_pair(xs: &[f64], ys: &[f64]) -> Option<(Vec<f64>, Vec<f64>, f
     Some((px, py, 1.0 - kept_share))
 }
 
-/// Build `viz smart`'s correlated-pair density panel, or decline (issue #4223).
+/// Build `viz smart`'s correlated-pair density panel, or decline (issue #4223), honoring the
+/// resolved `--log-scale` mode:
 ///
-/// The linear binning is tried first and kept only if it is LEGIBLE — a grid whose busiest cell
-/// holds more than `SMART_CONTOUR_MAX_BIN_SHARE` of the points renders as a single dark square on
-/// an empty field, which is what the panel looked like on zero-inflated, heavily right-skewed money
-/// columns. When it fails, the one honest logarithmic view is retried: the rows positive on both
-/// axes, binned geometrically, with the dropped share stated in the title so the reader is never
-/// shown a subset dressed up as the whole. If that subset is too small (`positive_subset_pair`) or
-/// is itself concentrated, no panel is built — an absent panel beats an unreadable one, and the
-/// correlation heatmap above still reports the relationship.
+/// - `Auto` (default): bin linearly and keep it only if LEGIBLE — a grid whose busiest cell holds
+///   more than `SMART_CONTOUR_MAX_BIN_SHARE` of the points renders as a single dark square on an
+///   empty field (the zero-inflated, heavily right-skewed money-column case). When it collapses,
+///   retry the one honest logarithmic view: the rows positive on both axes, binned geometrically,
+///   with the dropped share stated in the title.
+/// - `Off`: never emit a log axis. Bin linearly; if that collapses there is no legible view left
+///   to offer under the user's explicit no-log choice, so drop the panel rather than show an
+///   unreadable single cell (the correlation heatmap above still reports the relationship).
+/// - `On`: force the log view directly (skip the linear attempt), matching how the box/bar panels
+///   treat `On` — a log axis can't place zeros, so this goes straight to the positive subset.
 ///
-/// `name` is the caller's already-composed title (field pair + r, plus ρ when nonlinear).
-fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str) -> Option<Panel> {
-    let (x, y, z) = bin_2d(xs, ys, SMART_CONTOUR_BINS, (false, false));
-    if density_concentration(&z) <= SMART_CONTOUR_MAX_BIN_SHARE {
-        return Some(Panel::new(
-            name.to_string(),
-            PanelKind::ContourPair { x, y, z },
-        ));
+/// A too-small or still-concentrated positive subset yields no panel — an absent panel beats an
+/// unreadable one. `name` is the caller's already-composed title (field pair + r, plus ρ when
+/// nonlinear).
+fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str, mode: LogScale) -> Option<Panel> {
+    // `On` forces log without consulting the linear grid, just as `measure_by_dim_logs` / the box
+    // paths force a log value axis under `On`.
+    if mode == LogScale::On {
+        return log_contour_panel(xs, ys, name);
     }
 
+    let (x, y, z) = bin_2d(xs, ys, SMART_CONTOUR_BINS, (false, false));
+    if density_concentration(&z) <= SMART_CONTOUR_MAX_BIN_SHARE {
+        return Some(Panel::new(name.to_string(), PanelKind::ContourPair { x, y, z }));
+    }
+
+    // the linear grid collapsed. Under `Off` the log retry is forbidden, so there is nothing
+    // legible to draw; under `Auto` fall back to the log-space positive subset.
+    if mode == LogScale::Off {
+        return None;
+    }
+    log_contour_panel(xs, ys, name)
+}
+
+/// The log-space density retry for `smart_contour_panel` (issue #4223): bin the strictly-positive
+/// rows geometrically and keep the panel only if that view is itself legible. The title records the
+/// omitted-zeros share so a subset is never shown dressed up as the whole; when nothing was dropped
+/// (an all-positive pair reached here under `--log-scale on`) the title carries the plain log cue.
+fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str) -> Option<Panel> {
     let (px, py, dropped) = positive_subset_pair(xs, ys)?;
     let (x, y, z) = bin_2d(&px, &py, SMART_CONTOUR_BINS, (true, true));
     if density_concentration(&z) > SMART_CONTOUR_MAX_BIN_SHARE {
@@ -7576,15 +7597,12 @@ fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str) -> Option<Panel> {
     }
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let dropped_pct = (dropped * 100.0).round() as u32;
-    Some(
-        Panel::new(
-            format!(
-                "{name} \u{b7} log scale, positive values only ({dropped_pct}% of rows omitted)"
-            ),
-            PanelKind::ContourPair { x, y, z },
-        )
-        .with_axis_log((true, true)),
-    )
+    let title = if dropped_pct > 0 {
+        format!("{name} \u{b7} log scale, positive values only ({dropped_pct}% of rows omitted)")
+    } else {
+        format!("{name} \u{b7} log scale")
+    };
+    Some(Panel::new(title, PanelKind::ContourPair { x, y, z }).with_axis_log((true, true)))
 }
 
 /// Build a `Contour` trace: the 2D density of two numeric columns (--x and --y), binned into a
@@ -20342,7 +20360,8 @@ impl<'a> SmartCtx<'a> {
                             // A density grid that collapses into one cell is dropped outright (or
                             // retried in log space over the positive subset) — the contour-branch
                             // counterpart of the `degenerate` scatter guard below (issue #4223).
-                            let panel = smart_contour_panel(&columns[i], &columns[j], &name);
+                            let panel =
+                                smart_contour_panel(&columns[i], &columns[j], &name, log_scale);
                             if panel.is_none() {
                                 viz_note(&format!(
                                     "viz smart: density panel for {} vs {} skipped (its \
@@ -30210,6 +30229,57 @@ mod tests {
         let deltas: Vec<f64> = xc_lin.windows(2).map(|w| w[1] - w[0]).collect();
         let d_first = deltas[0];
         assert!(deltas.iter().all(|d| (d - d_first).abs() < 1e-6));
+    }
+
+    #[test]
+    fn smart_contour_panel_honors_log_scale_mode() {
+        // a collapsed linear pair: 1200 zeros pile into one bin (0.6 > gate), plus 800 strictly-
+        // positive points spread across three decades so the log-space grid is legible.
+        let mut xs = vec![0.0_f64; 1200];
+        let mut ys = vec![0.0_f64; 1200];
+        for k in 0..800 {
+            let v = 10_f64.powf((k as f64 / 799.0) * 5.0); // 1 .. 1e5, geometric
+            xs.push(v);
+            ys.push(v);
+        }
+
+        // Auto (default): linear collapses -> log retry over the positive subset. Both axes log,
+        // and the omitted-zeros share is stated in the title.
+        let auto = smart_contour_panel(&xs, &ys, "a vs b", LogScale::Auto)
+            .expect("auto retries collapsed linear density in log space");
+        assert_eq!(auto.axis_log, (true, true));
+        assert!(auto.name.contains("omitted"), "auto title states dropped share: {}", auto.name);
+
+        // Off: the user disabled log, so a collapsed linear grid has no legible fallback -> no
+        // panel, and NEVER a log axis (regression guard for the review finding).
+        assert!(
+            smart_contour_panel(&xs, &ys, "a vs b", LogScale::Off).is_none(),
+            "--log-scale off must not emit a log contour"
+        );
+
+        // On: forces the log view even though the linear grid here is collapsed anyway.
+        let on = smart_contour_panel(&xs, &ys, "a vs b", LogScale::On)
+            .expect("on forces the log contour");
+        assert_eq!(on.axis_log, (true, true));
+
+        // An ALL-positive pair that fills its box on BOTH scales (a uniform 30x30 grid): neither
+        // the linear nor the log grid collapses. `On` still forces log (nothing dropped -> plain
+        // "log scale" cue, no "omitted"); `Off` leaves it linear.
+        let (mut gx, mut gy) = (Vec::new(), Vec::new());
+        for a in 1..=30 {
+            for b in 1..=30 {
+                gx.push(a as f64);
+                gy.push(b as f64);
+            }
+        }
+        let on_pos =
+            smart_contour_panel(&gx, &gy, "a vs b", LogScale::On).expect("on forces log");
+        assert_eq!(on_pos.axis_log, (true, true));
+        assert!(on_pos.name.contains("log scale") && !on_pos.name.contains("omitted"));
+        let off_pos = smart_contour_panel(&gx, &gy, "a vs b", LogScale::Off)
+            .expect("off keeps the legible linear contour");
+        assert_eq!(off_pos.axis_log, (false, false));
+        assert!(!off_pos.name.contains("log"));
     }
 
     #[test]

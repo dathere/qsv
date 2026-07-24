@@ -336,9 +336,8 @@ impl GetWebServer {
     }
 
     // Number of 304 (Not Modified) responses — i.e. successful conditional
-    // revalidations against the server. Only the get_cloud refresh test asserts
-    // on this, so it is gated to avoid a dead-code warning in non-cloud builds.
-    #[cfg(feature = "get_cloud")]
+    // revalidations against the server. Asserted by `get_dc_resolves_once_per_run`
+    // (every `get` build) and by the get_cloud refresh test, so it is ungated.
     fn revalidations(&self) -> usize {
         self.counters.revalidations.load(Ordering::SeqCst)
     }
@@ -1276,6 +1275,61 @@ fn get_cache_verify_detects_corruption() {
     assert!(
         stdout.contains("FAIL"),
         "verify should report FAIL for the corrupted blob:\n{stdout}"
+    );
+}
+
+// Regression (issue #4257): a `dc:` handle must resolve EXACTLY ONCE per command
+// run. `resolve_dc_path` refreshes a stale entry — a network fetch that can
+// materialize a DIFFERENT CSV — and every consumer needing a concrete path used to
+// resolve independently (`Config::new`, `process_input`, `get_stats_records`, …),
+// so one run could chart one snapshot and count another.
+//
+// `--ttl 0` makes the entry stale on EVERY resolution, so each resolution would
+// issue a conditional GET. `states.csv` (serve_states) advertises no
+// `Cache-Control: max-age`, so http-cache-reqwest cannot short-circuit it — each
+// resolution genuinely reaches the server and is counted as a 304 revalidation.
+// `frequency` builds a `Config` AND calls `util::get_stats_records`, so before the
+// per-run memo it revalidated more than once (measured: 4).
+//
+// `revalidations` is the discriminator; `body_sends` only confirms the 304s never
+// became re-downloads (it stays 1 either way). Uses `frequency`, which ships in
+// every binary that has the `get` feature, so this test is deliberately ungated —
+// qsvdp has `get` WITHOUT `feature_capable`.
+#[test]
+#[serial]
+fn get_dc_resolves_once_per_run() {
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_dc_resolves_once_per_run");
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url("states.csv");
+
+    // seed the cache with a zero TTL => permanently stale
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "states.csv", "--ttl", "0"])
+        .arg(&url);
+    wrk.assert_success(&mut g);
+    assert_eq!(server.body_sends(), 1, "seeding get should download once");
+    assert_eq!(
+        server.revalidations(),
+        0,
+        "seeding get should not revalidate"
+    );
+
+    // `frequency` resolves dc: from more than one place in a single run
+    let mut freq = wrk.command("frequency");
+    freq.env("QSV_CACHE_DIR", &cache_dir).arg("dc:states.csv");
+    wrk.assert_success(&mut freq);
+
+    assert_eq!(
+        server.revalidations(),
+        1,
+        "a dc: handle must resolve (and therefore refresh) exactly once per run"
+    );
+    assert_eq!(
+        server.body_sends(),
+        1,
+        "revalidations must stay 304s, never re-downloads"
     );
 }
 

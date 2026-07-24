@@ -401,9 +401,11 @@ pub use rich::*;
 #[cfg(feature = "get")]
 mod rich {
     use std::{
+        collections::HashMap,
         fs,
         io::{BufWriter, Read, Write},
         path::{Path, PathBuf},
+        sync::{Arc, LazyLock, Mutex, PoisonError},
         time::SystemTime,
     };
 
@@ -2823,13 +2825,78 @@ mod rich {
         Ok(results)
     }
 
+    /// What a resolved `dc:` handle yields. Cheap to clone; the memo hands out copies.
+    #[derive(Clone)]
+    struct ResolvedDc {
+        csv_path: PathBuf,
+        blake3:   String,
+        ext:      String,
+    }
+
+    /// Per-run memo of resolved `dc:` handles, keyed by (cache dir, entry name).
+    ///
+    /// `resolve_dc_path` can REFRESH a stale entry — a network fetch that materializes a
+    /// DIFFERENT CSV — and every consumer needing a concrete path resolves independently
+    /// (`Config::new`, `util::process_input`, `util::get_stats_records`, …), so a single run
+    /// could otherwise chart one snapshot and count another (issue #4257). First resolution
+    /// wins for the life of the process.
+    ///
+    /// That equals "for the life of the run" ONLY because qsv is one-command-per-process:
+    /// `main.rs` dispatches a single command and exits, and the MCP server spawns a fresh
+    /// binary per tool call. If qsv ever grows an in-process command loop, this memo must be
+    /// scoped to the run instead, or such a server would be pinned to a stale snapshot forever.
+    ///
+    /// The inner per-handle lock is held ACROSS resolution so two concurrent first-callers on
+    /// the same handle cannot both refresh and end up with different blobs — the very
+    /// divergence being prevented. The outer lock is held only long enough to hand out the
+    /// slot, so distinct handles never block each other. There is no deadlock risk: a
+    /// resolution only ever re-enters `Config::new` with a concrete path, never a `dc:` one.
+    static DC_RESOLVED: LazyLock<Mutex<HashMap<(String, String), Arc<Mutex<Option<ResolvedDc>>>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
     /// Resolve a `dc:<name>` input path to a usable (decompressed) CSV file path,
     /// auto-refreshing the entry if stale. Also materializes the sibling `.idx`.
+    ///
+    /// Memoized per run (see `DC_RESOLVED`): the first resolution of a handle does the
+    /// possibly-refreshing, possibly-networked work and every later one reuses it, so all
+    /// consumers in the run see the SAME materialized CSV. This applies to
+    /// `RefreshPolicy::Always` too — it re-fetches once per run rather than once per
+    /// resolution, since one snapshot per run is the point.
+    ///
+    /// The stats-sidecar sync deliberately runs on EVERY call. It is purely local and is not
+    /// idempotent by design: it captures the `.stats.csv.data.jsonl` sidecar into a durable
+    /// blob only once `util::get_stats_records` has written it, which is necessarily after the
+    /// first resolution.
     pub fn resolve_dc_path(name: &str) -> CliResult<PathBuf> {
         let cache_dir = set_qsv_cache_dir(DEFAULT_CACHE_DIR)?;
         let root = get_root(&cache_dir);
 
-        let mut entry = load_entry_by_name(&root, name)?.ok_or_else(|| {
+        let slot = {
+            let mut memo = DC_RESOLVED.lock().unwrap_or_else(PoisonError::into_inner);
+            Arc::clone(
+                memo.entry((cache_dir.clone(), name.to_string()))
+                    .or_default(),
+            )
+        };
+        let mut slot_guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
+        let resolved = if let Some(resolved) = slot_guard.as_ref() {
+            resolved.clone()
+        } else {
+            // successes only: a failed resolution stays unmemoized so it is retried
+            let resolved = resolve_dc_uncached(&cache_dir, &root, name)?;
+            *slot_guard = Some(resolved.clone());
+            resolved
+        };
+        drop(slot_guard);
+
+        sync_stats_sidecar(&root, &resolved);
+        Ok(resolved.csv_path)
+    }
+
+    /// The un-memoized body of `resolve_dc_path`: refresh-if-stale, then materialize the CSV
+    /// and its sibling `.idx`. Call this ONCE per handle per run — see `DC_RESOLVED`.
+    fn resolve_dc_uncached(cache_dir: &str, root: &Path, name: &str) -> CliResult<ResolvedDc> {
+        let mut entry = load_entry_by_name(root, name)?.ok_or_else(|| {
             CliError::Other(format!(
                 "dc: cache entry '{name}' not found. Fetch it first, e.g. `qsv get <source> \
                  --name {name}`."
@@ -2843,7 +2910,7 @@ mod rich {
                 let refresh_opts = GetOptions {
                     source:         entry.meta.source_uri.clone(),
                     name:           Some(name.to_string()),
-                    cache_dir:      cache_dir.clone(),
+                    cache_dir:      cache_dir.to_string(),
                     ttl_secs:       entry.meta.ttl_secs,
                     refresh_policy: entry.meta.refresh_policy,
                     compression:    entry.meta.compression,
@@ -2874,14 +2941,14 @@ mod rich {
                 };
                 // Best-effort: on refresh failure, fall back to the stale copy.
                 if get_resource(&refresh_opts).is_ok()
-                    && let Some(refreshed) = load_entry_by_name(&root, name)?
+                    && let Some(refreshed) = load_entry_by_name(root, name)?
                 {
                     entry = refreshed;
                 }
             }
         }
 
-        let body = read_blob(&root, &entry.meta.blake3, entry.meta.compression)?;
+        let body = read_blob(root, &entry.meta.blake3, entry.meta.compression)?;
         // The materialized temp name carries a known tabular extension that
         // selects the delimiter (.csv => comma, .tsv/.tab => tab, .ssv =>
         // semicolon). Isolate each extension in its own subdir AND key the
@@ -2915,7 +2982,7 @@ mod rich {
 
         // Materialize the sibling .idx (written after the CSV so its mtime is
         // not older than the CSV's, satisfying qsv's index-staleness check).
-        let idx_blob = idx_blob_path(&root, &entry.meta.blake3);
+        let idx_blob = idx_blob_path(root, &entry.meta.blake3);
         if idx_blob.exists() {
             let idx_dst = util::idx_path(&csv_path);
             if need_write || !idx_dst.exists() {
@@ -2928,23 +2995,35 @@ mod rich {
             }
         }
 
-        // Stats-cache (persist-on-use): the `.stats.csv.data.jsonl` sidecar that
-        // the "smart" commands build via `util::get_stats_records` to skip
-        // recomputation. Capture a freshly-built one into a durable, content-
-        // addressed blob so it survives temp-dir cleanup, and restore it when the
-        // temp copy is gone or stale (CSV just rewritten). The sidecar location
-        // mirrors `get_stats_records` (canonical CSV path + `with_extension`).
-        let canonical_csv = fs::canonicalize(&csv_path).unwrap_or_else(|_| csv_path.clone());
+        Ok(ResolvedDc {
+            csv_path,
+            blake3: entry.meta.blake3,
+            ext,
+        })
+    }
+
+    /// Stats-cache (persist-on-use): the `.stats.csv.data.jsonl` sidecar that the "smart"
+    /// commands build via `util::get_stats_records` to skip recomputation. Capture a
+    /// freshly-built one into a durable, content-addressed blob so it survives temp-dir
+    /// cleanup, and restore it when the temp copy is gone or stale (CSV just rewritten). The
+    /// sidecar location mirrors `get_stats_records` (canonical CSV path + `with_extension`).
+    ///
+    /// Runs on EVERY `resolve_dc_path` call, not just the first: within a run the sidecar only
+    /// appears AFTER `get_stats_records` has written it, so a later call is what captures it.
+    /// Purely local and best-effort — it never fails the caller.
+    fn sync_stats_sidecar(root: &Path, resolved: &ResolvedDc) {
+        let csv_path = &resolved.csv_path;
+        let canonical_csv = fs::canonicalize(csv_path).unwrap_or_else(|_| csv_path.clone());
         let stats_sidecar = canonical_csv.with_extension("stats.csv.data.jsonl");
-        let stats_blob = stats_blob_path(&root, &entry.meta.blake3, &ext);
+        let stats_blob = stats_blob_path(root, &resolved.blake3, &resolved.ext);
 
         // A sidecar is usable only if newer than the CSV — qsv's stats-cache
         // staleness rule (see `util::get_stats_records`).
         let sidecar_fresh = stats_sidecar.exists() && {
             let s = fs::metadata(&stats_sidecar)
                 .map(|m| filetime::FileTime::from_last_modification_time(&m));
-            let c = fs::metadata(&csv_path)
-                .map(|m| filetime::FileTime::from_last_modification_time(&m));
+            let c =
+                fs::metadata(csv_path).map(|m| filetime::FileTime::from_last_modification_time(&m));
             matches!((s, c), (Ok(s), Ok(c)) if s > c)
         };
 
@@ -2968,8 +3047,6 @@ mod rich {
                 filetime::FileTime::from_system_time(SystemTime::now()),
             );
         }
-
-        Ok(csv_path)
     }
 
     /// Write a cached entry's (decompressed) bytes to `output` (a file path, or

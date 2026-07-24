@@ -10121,7 +10121,8 @@ const fn violin_points(points: &BoxPoints) -> ViolinPoints {
 /// this returns `None`). Without an explicit mode, a size-based heuristic on the column's
 /// non-null value count (see `SMART_BOX_ALL_MAX`) picks the mode: all points for small data, just
 /// outliers for medium, and none for large data (returning `None` so no raw-values pass is done
-/// and the box stays a cache-only summary).
+/// here — the caller may still overlay just the Tukey outliers on the cache-only box via a
+/// fence-filtered pass; see `SMART_BOX_OUTLIERS_CAP`).
 /// A `None` return means "don't build a raw box for this column".
 fn smart_box_points(explicit: Option<&BoxPoints>, n_points: u64) -> Option<BoxPoints> {
     if let Some(mode) = explicit {

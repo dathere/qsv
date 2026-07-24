@@ -7586,8 +7586,9 @@ fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str, mode: LogScale) -> Op
 
 /// The log-space density retry for `smart_contour_panel` (issue #4223): bin the strictly-positive
 /// rows geometrically and keep the panel only if that view is itself legible. The title records the
-/// omitted-zeros share so a subset is never shown dressed up as the whole; when nothing was dropped
+/// omitted-zeros share so a subset is never shown dressed up as the whole; when NOTHING was dropped
 /// (an all-positive pair reached here under `--log-scale on`) the title carries the plain log cue.
+/// A non-zero omission that rounds below 1% is still disclosed (`<1%`) rather than silently hidden.
 fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str) -> Option<Panel> {
     let (px, py, dropped) = positive_subset_pair(xs, ys)?;
     let (x, y, z) = bin_2d(&px, &py, SMART_CONTOUR_BINS, (true, true));
@@ -7595,12 +7596,20 @@ fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str) -> Option<Panel> {
         // even in log space the mass sits in one cell: there is no distribution to draw
         return None;
     }
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let dropped_pct = (dropped * 100.0).round() as u32;
-    let title = if dropped_pct > 0 {
-        format!("{name} \u{b7} log scale, positive values only ({dropped_pct}% of rows omitted)")
-    } else {
+    // Branch on the RAW dropped share, not its rounded percent: any omission at all must be
+    // disclosed, so a handful of zeros in thousands of rows reads as `<1% of rows omitted`, never
+    // the bare "log scale" cue reserved for a genuinely all-positive pair.
+    let title = if dropped <= 0.0 {
         format!("{name} \u{b7} log scale")
+    } else {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let dropped_pct = (dropped * 100.0).round() as u32;
+        let share = if dropped_pct == 0 {
+            "<1%".to_string()
+        } else {
+            format!("{dropped_pct}%")
+        };
+        format!("{name} \u{b7} log scale, positive values only ({share} of rows omitted)")
     };
     Some(Panel::new(title, PanelKind::ContourPair { x, y, z }).with_axis_log((true, true)))
 }
@@ -30280,6 +30289,22 @@ mod tests {
             .expect("off keeps the legible linear contour");
         assert_eq!(off_pos.axis_log, (false, false));
         assert!(!off_pos.name.contains("log"));
+
+        // A tiny non-positive share must still be DISCLOSED, not hidden behind the bare "log
+        // scale" cue: 5 zeros in 5005 rows rounds to 0% but reads as "<1% of rows omitted".
+        let mut tx: Vec<f64> = (0..5000).map(|k| 10_f64.powf((k as f64 / 4999.0) * 5.0)).collect();
+        let mut ty = tx.clone();
+        for _ in 0..5 {
+            tx.push(0.0);
+            ty.push(0.0);
+        }
+        let tiny = smart_contour_panel(&tx, &ty, "a vs b", LogScale::On)
+            .expect("on forces log over the positive subset");
+        assert!(
+            tiny.name.contains("<1% of rows omitted"),
+            "sub-1% omission is disclosed, not hidden: {}",
+            tiny.name
+        );
     }
 
     #[test]

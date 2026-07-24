@@ -138,6 +138,11 @@
         "default": "50"
       },
       {
+        "flag": "--split-ragged",
+        "type": "flag",
+        "description": "Opt-in mode: instead of aborting on the first row with the wrong number of columns (a \"ragged\" row), write well-formed rows to the '<input>.<valid>' file and the ragged rows to the '<input>.<invalid>' file, with a report appended to '<input>.validation-errors.tsv'. Returns a non-zero exit code when any ragged row is found. Only column-count mismatches are diverted; malformed quoting and non-UTF-8 data still abort validation. Works in both RFC 4180 and JSON Schema validation modes. The split files are written next to each input file, so this is intended for on-disk file input(s)."
+      },
+      {
         "flag": "--timeout",
         "type": "string",
         "description": "Timeout for downloading json-schemas on URLs and for 'dynamicEnum' lookups on URLs. If 0, no timeout is used.",
@@ -169,6 +174,18 @@
     {
       "description": "Validate a CSV file. Use this to check if a CSV file is readable by qsv.",
       "command": "qsv validate data.csv"
+    },
+    {
+      "description": "Quarantine rows with the wrong number of columns instead of aborting. Well-formed rows go to data.csv.valid; ragged rows go to data.csv.invalid.",
+      "command": "qsv validate --split-ragged data.csv"
+    },
+    {
+      "description": "For CSV dialects validate cannot express (custom quote/escape characters, preamble/epilogue lines, non-UTF-8 encodings), normalize with `qsv input` FIRST, then validate the normalized output. Note that `qsv input` aborts on ragged rows, so this ordering only works on files that are not ragged.",
+      "command": "qsv input --quote \"'\" --escape '\\' --comment '#' data.tsv -o normalized.csv"
+    },
+    {
+      "description": "For CSV dialects validate cannot express (custom quote/escape characters, preamble/epilogue lines, non-UTF-8 encodings), normalize with `qsv input` FIRST, then validate the normalized output. Note that `qsv input` aborts on ragged rows, so this ordering only works on files that are not ragged.",
+      "command": "qsv validate normalized.csv"
     },
     {
       "description": "Validate a TSV file against a JSON Schema",

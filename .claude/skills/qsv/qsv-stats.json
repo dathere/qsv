@@ -69,6 +69,11 @@
         "description": "Infer date/datetime data types. This is an expensive option and should only be used when you know there are date/datetime fields. Also, if timezone is not specified in the data, it'll be set to UTC."
       },
       {
+        "flag": "--jsonl",
+        "type": "flag",
+        "description": "Emit the stats to stdout as JSON Lines (NDJSON) - one JSON object per column - instead of CSV. This is the same per-column shape the --stats-jsonl sidecar file uses, but streamed to stdout. Respects --output (the NDJSON is written to the file instead). Cannot be combined with --stats-jsonl or --pretty-json."
+      },
+      {
         "flag": "--mad",
         "type": "flag",
         "description": "Compute the median absolute deviation (MAD). https://en.wikipedia.org/wiki/Median_absolute_deviation"
@@ -124,6 +129,11 @@
         "flag": "--prefer-dmy",
         "type": "flag",
         "description": "Parse dates in dmy format. Otherwise, use mdy format. Ignored if --infer-dates is false."
+      },
+      {
+        "flag": "--pretty-json",
+        "type": "flag",
+        "description": "Like --jsonl, but emit a single pretty-printed JSON array of the per-column objects instead of newline-delimited objects. Cannot be combined with --stats-jsonl or --jsonl."
       },
       {
         "flag": "--quantile-method",

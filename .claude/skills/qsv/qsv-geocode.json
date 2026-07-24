@@ -73,7 +73,7 @@
       {
         "flag": "--cache-ttl",
         "type": "string",
-        "description": "Time-to-live for the persistent on-disk OpenCage result cache.",
+        "description": "Time-to-live for the persistent on-disk OpenCage result cache. A value of 0 disables time-based expiration (entries are cached indefinitely). Use --no-cache to disable caching entirely.",
         "default": "1209600"
       },
       {

@@ -7555,8 +7555,8 @@ fn positive_subset_pair(xs: &[f64], ys: &[f64]) -> Option<(Vec<f64>, Vec<f64>, f
 ///   empty field (the zero-inflated, heavily right-skewed money-column case). When it collapses,
 ///   retry the one honest logarithmic view: the rows positive on both axes, binned geometrically,
 ///   with the dropped share stated in the title.
-/// - `Off`: never emit a log axis. Bin linearly; if that collapses there is no legible view left
-///   to offer under the user's explicit no-log choice, so drop the panel rather than show an
+/// - `Off`: never emit a log axis. Bin linearly; if that collapses there is no legible view left to
+///   offer under the user's explicit no-log choice, so drop the panel rather than show an
 ///   unreadable single cell (the correlation heatmap above still reports the relationship).
 /// - `On`: force the log view directly (skip the linear attempt), matching how the box/bar panels
 ///   treat `On` — a log axis can't place zeros, so this goes straight to the positive subset.
@@ -7573,7 +7573,10 @@ fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str, mode: LogScale) -> Op
 
     let (x, y, z) = bin_2d(xs, ys, SMART_CONTOUR_BINS, (false, false));
     if density_concentration(&z) <= SMART_CONTOUR_MAX_BIN_SHARE {
-        return Some(Panel::new(name.to_string(), PanelKind::ContourPair { x, y, z }));
+        return Some(Panel::new(
+            name.to_string(),
+            PanelKind::ContourPair { x, y, z },
+        ));
     }
 
     // the linear grid collapsed. Under `Off` the log retry is forbidden, so there is nothing
@@ -30257,7 +30260,11 @@ mod tests {
         let auto = smart_contour_panel(&xs, &ys, "a vs b", LogScale::Auto)
             .expect("auto retries collapsed linear density in log space");
         assert_eq!(auto.axis_log, (true, true));
-        assert!(auto.name.contains("omitted"), "auto title states dropped share: {}", auto.name);
+        assert!(
+            auto.name.contains("omitted"),
+            "auto title states dropped share: {}",
+            auto.name
+        );
 
         // Off: the user disabled log, so a collapsed linear grid has no legible fallback -> no
         // panel, and NEVER a log axis (regression guard for the review finding).
@@ -30281,8 +30288,7 @@ mod tests {
                 gy.push(b as f64);
             }
         }
-        let on_pos =
-            smart_contour_panel(&gx, &gy, "a vs b", LogScale::On).expect("on forces log");
+        let on_pos = smart_contour_panel(&gx, &gy, "a vs b", LogScale::On).expect("on forces log");
         assert_eq!(on_pos.axis_log, (true, true));
         assert!(on_pos.name.contains("log scale") && !on_pos.name.contains("omitted"));
         let off_pos = smart_contour_panel(&gx, &gy, "a vs b", LogScale::Off)
@@ -30292,7 +30298,9 @@ mod tests {
 
         // A tiny non-positive share must still be DISCLOSED, not hidden behind the bare "log
         // scale" cue: 5 zeros in 5005 rows rounds to 0% but reads as "<1% of rows omitted".
-        let mut tx: Vec<f64> = (0..5000).map(|k| 10_f64.powf((k as f64 / 4999.0) * 5.0)).collect();
+        let mut tx: Vec<f64> = (0..5000)
+            .map(|k| 10_f64.powf((k as f64 / 4999.0) * 5.0))
+            .collect();
         let mut ty = tx.clone();
         for _ in 0..5 {
             tx.push(0.0);

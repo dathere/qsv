@@ -919,6 +919,26 @@ const SMART_CONTOUR_MIN_POINTS: usize = 5_000;
 /// Bin resolution (per axis) for `viz smart`'s correlated-pair density contour panel.
 const SMART_CONTOUR_BINS: usize = 30;
 
+/// Legibility gate for `viz smart`'s density contour panel (issue #4223): when a single bin of the
+/// `SMART_CONTOUR_BINS` x `SMART_CONTOUR_BINS` grid holds more than this share of ALL points, the
+/// contour has collapsed into one dark cell against an empty field — every other bin is either
+/// empty or indistinguishable, so the panel shows no distribution at all. This is the contour
+/// counterpart of `scatter_fill_stats`'s `degenerate` verdict, which already drops an equivalently
+/// unreadable scatter (the two branches of the same drill-down slot should hold to one standard).
+/// Heavily right-skewed, zero-inflated money columns are the canonical trigger.
+const SMART_CONTOUR_MAX_BIN_SHARE: f64 = 0.5;
+
+/// Minimum surviving points for the positive-subset log density retry (issue #4223). When linear
+/// binning fails `SMART_CONTOUR_MAX_BIN_SHARE`, the panel is rebuilt from only the rows positive on
+/// BOTH axes, binned in log space — but that subset has to be big enough to still describe a
+/// distribution rather than a handful of survivors.
+const SMART_CONTOUR_LOG_MIN_POINTS: usize = 500;
+
+/// Companion floor to `SMART_CONTOUR_LOG_MIN_POINTS`: the positive subset must also retain at least
+/// this share of the rows. An absolute count alone would admit a 500-of-500,000 sliver, whose
+/// density is a statement about a rounding error, not about the dataset.
+const SMART_CONTOUR_LOG_MIN_SHARE: f64 = 0.1;
+
 /// `viz smart` point-count thresholds for the default (no explicit `--box-points`) box-overlay
 /// heuristic, measured against each column's NON-NULL value count (only those values are
 /// collected, embedded and rendered — a mostly-null column shouldn't be denied an overlay tier
@@ -7419,12 +7439,36 @@ fn build_heatmap_pivot(args: &Args) -> CliResult<(Box<dyn Trace>, Option<String>
 
 /// Bin two row-aligned numeric vectors into a `bins` x `bins` grid of point counts, returning the
 /// per-axis bin-center coordinates and the `z[yi][xi]` count matrix. Shared by `viz contour` and
-/// `viz smart`'s correlated-pair density panel.
-fn bin_2d(xs: &[f64], ys: &[f64], bins: usize) -> (Vec<f64>, Vec<f64>, Vec<Vec<f64>>) {
-    let x_min = xs.iter().copied().fold(f64::INFINITY, f64::min);
-    let x_max = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let y_min = ys.iter().copied().fold(f64::INFINITY, f64::min);
-    let y_max = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+/// `viz smart`'s correlated-pair density panel. `log_axes` selects geometric (log-spaced) bin edges
+/// per axis: `viz contour` always passes `(false, false)`, while `viz smart` sets an axis when its
+/// positive-subset density retry engaged (issue #4223).
+fn bin_2d(
+    xs: &[f64],
+    ys: &[f64],
+    bins: usize,
+    log_axes: (bool, bool),
+) -> (Vec<f64>, Vec<f64>, Vec<Vec<f64>>) {
+    // Bin edges are laid out in the axis's OWN space: linearly for a linear axis, geometrically
+    // (evenly spaced in log10) for a log axis — so a heavy right tail gets bins that widen with
+    // the values instead of one bin swallowing the whole low mass (issue #4223). log10 of a
+    // non-positive value is -inf/NaN, so the `is_finite` guards below double as the "unplottable
+    // on a log axis" filter; on a linear axis they simply drop non-finite input.
+    let (log_x, log_y) = log_axes;
+    let to_axis = |v: f64, log: bool| if log { v.log10() } else { v };
+    let from_axis = |v: f64, log: bool| if log { 10_f64.powf(v) } else { v };
+
+    let (mut x_min, mut x_max) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut y_min, mut y_max) = (f64::INFINITY, f64::NEG_INFINITY);
+    for (&x, &y) in xs.iter().zip(ys.iter()) {
+        let (ax, ay) = (to_axis(x, log_x), to_axis(y, log_y));
+        if !ax.is_finite() || !ay.is_finite() {
+            continue;
+        }
+        x_min = x_min.min(ax);
+        x_max = x_max.max(ax);
+        y_min = y_min.min(ay);
+        y_max = y_max.max(ay);
+    }
     // guard against a degenerate (single-value) axis so the bin math never divides by zero
     let x_span = if x_max > x_min { x_max - x_min } else { 1.0 };
     let y_span = if y_max > y_min { y_max - y_min } else { 1.0 };
@@ -7432,19 +7476,115 @@ fn bin_2d(xs: &[f64], ys: &[f64], bins: usize) -> (Vec<f64>, Vec<f64>, Vec<Vec<f
     // z[yi][xi] = number of points falling in that cell
     let mut z = vec![vec![0.0_f64; bins]; bins];
     for (&x, &y) in xs.iter().zip(ys.iter()) {
-        let xi = (((x - x_min) / x_span) * bins as f64) as usize;
-        let yi = (((y - y_min) / y_span) * bins as f64) as usize;
+        let (ax, ay) = (to_axis(x, log_x), to_axis(y, log_y));
+        if !ax.is_finite() || !ay.is_finite() {
+            continue;
+        }
+        let xi = (((ax - x_min) / x_span) * bins as f64) as usize;
+        let yi = (((ay - y_min) / y_span) * bins as f64) as usize;
         z[yi.min(bins - 1)][xi.min(bins - 1)] += 1.0;
     }
 
-    // bin-center coordinates for the axes
+    // bin-center coordinates for the axes, mapped back to RAW values: a plotly log axis is fed
+    // raw coordinates and does the log transform itself, so geometric centers must be un-logged
+    // here or the axis would log them twice.
     let x_centers: Vec<f64> = (0..bins)
-        .map(|i| x_min + (i as f64 + 0.5) * x_span / bins as f64)
+        .map(|i| from_axis(x_min + (i as f64 + 0.5) * x_span / bins as f64, log_x))
         .collect();
     let y_centers: Vec<f64> = (0..bins)
-        .map(|i| y_min + (i as f64 + 0.5) * y_span / bins as f64)
+        .map(|i| from_axis(y_min + (i as f64 + 0.5) * y_span / bins as f64, log_y))
         .collect();
     (x_centers, y_centers, z)
+}
+
+/// The share of all binned points that landed in the single busiest cell of a `bin_2d` grid — the
+/// legibility measure behind `SMART_CONTOUR_MAX_BIN_SHARE` (issue #4223). A value near 1.0 means
+/// the contour is one dark cell against an empty field: no distribution is visible, so the panel
+/// is worthless no matter how the color scale is tuned. Returns 0.0 for an empty grid, which reads
+/// as "not concentrated" and so never trips the gate on its own (an empty grid is caught earlier,
+/// by the panel's own point-count guards).
+fn density_concentration(z: &[Vec<f64>]) -> f64 {
+    let mut total = 0.0_f64;
+    let mut peak = 0.0_f64;
+    for row in z {
+        for &c in row {
+            if c.is_finite() {
+                total += c;
+                peak = peak.max(c);
+            }
+        }
+    }
+    if total > 0.0 { peak / total } else { 0.0 }
+}
+
+/// Rows strictly positive on BOTH axes, for the log-space density retry (issue #4223). A log axis
+/// cannot place a zero or a negative, so a zero-inflated pair (money columns are routinely 45-60%
+/// zeros) can only be shown logarithmically by dropping that mass — which is honest ONLY if the
+/// caller says so in the panel title, and only worth doing if enough points survive.
+///
+/// Returns the aligned positive rows plus the DROPPED share, or `None` when the survivors fall
+/// below `SMART_CONTOUR_LOG_MIN_POINTS` / `SMART_CONTOUR_LOG_MIN_SHARE` — at which point the
+/// caller drops the panel rather than describing a sliver as the distribution.
+fn positive_subset_pair(xs: &[f64], ys: &[f64]) -> Option<(Vec<f64>, Vec<f64>, f64)> {
+    let n = xs.len().min(ys.len());
+    if n == 0 {
+        return None;
+    }
+    let mut px: Vec<f64> = Vec::new();
+    let mut py: Vec<f64> = Vec::new();
+    for k in 0..n {
+        let (x, y) = (xs[k], ys[k]);
+        if x > 0.0 && y > 0.0 && x.is_finite() && y.is_finite() {
+            px.push(x);
+            py.push(y);
+        }
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let kept_share = px.len() as f64 / n as f64;
+    if px.len() < SMART_CONTOUR_LOG_MIN_POINTS || kept_share < SMART_CONTOUR_LOG_MIN_SHARE {
+        return None;
+    }
+    Some((px, py, 1.0 - kept_share))
+}
+
+/// Build `viz smart`'s correlated-pair density panel, or decline (issue #4223).
+///
+/// The linear binning is tried first and kept only if it is LEGIBLE — a grid whose busiest cell
+/// holds more than `SMART_CONTOUR_MAX_BIN_SHARE` of the points renders as a single dark square on
+/// an empty field, which is what the panel looked like on zero-inflated, heavily right-skewed money
+/// columns. When it fails, the one honest logarithmic view is retried: the rows positive on both
+/// axes, binned geometrically, with the dropped share stated in the title so the reader is never
+/// shown a subset dressed up as the whole. If that subset is too small (`positive_subset_pair`) or
+/// is itself concentrated, no panel is built — an absent panel beats an unreadable one, and the
+/// correlation heatmap above still reports the relationship.
+///
+/// `name` is the caller's already-composed title (field pair + r, plus ρ when nonlinear).
+fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str) -> Option<Panel> {
+    let (x, y, z) = bin_2d(xs, ys, SMART_CONTOUR_BINS, (false, false));
+    if density_concentration(&z) <= SMART_CONTOUR_MAX_BIN_SHARE {
+        return Some(Panel::new(
+            name.to_string(),
+            PanelKind::ContourPair { x, y, z },
+        ));
+    }
+
+    let (px, py, dropped) = positive_subset_pair(xs, ys)?;
+    let (x, y, z) = bin_2d(&px, &py, SMART_CONTOUR_BINS, (true, true));
+    if density_concentration(&z) > SMART_CONTOUR_MAX_BIN_SHARE {
+        // even in log space the mass sits in one cell: there is no distribution to draw
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let dropped_pct = (dropped * 100.0).round() as u32;
+    Some(
+        Panel::new(
+            format!(
+                "{name} \u{b7} log scale, positive values only ({dropped_pct}% of rows omitted)"
+            ),
+            PanelKind::ContourPair { x, y, z },
+        )
+        .with_axis_log((true, true)),
+    )
 }
 
 /// Build a `Contour` trace: the 2D density of two numeric columns (--x and --y), binned into a
@@ -7472,7 +7612,8 @@ fn build_contour(args: &Args) -> CliResult<(Box<dyn Trace>, String, String)> {
 
     // grid resolution: --bins per axis (clamped to a sane range), else a default
     let bins = args.flag_bins.unwrap_or(20).clamp(2, 200);
-    let (x_centers, y_centers, z) = bin_2d(&xs, &ys, bins);
+    // `viz contour` is an explicit user request over user-named columns: bin linearly and honor it.
+    let (x_centers, y_centers, z) = bin_2d(&xs, &ys, bins, (false, false));
 
     let trace = Contour::new(x_centers, y_centers, z)
         .color_scale(ColorScale::Palette(ColorScalePalette::Viridis));
@@ -10038,6 +10179,41 @@ fn measure_by_dim_logs(mode: LogScale, values: &[f64]) -> bool {
     }
 }
 
+/// Whether ONE axis of a relationship panel (scatter pair, density contour) should render
+/// logarithmic, judged from the values actually plotted on it (issue #4223). The distribution
+/// panels resolve their single value axis from the stats cache via `box_log_skew_fallback`; a
+/// relationship panel instead holds both of its vectors in hand — already downsampled or
+/// positive-subsetted — so the verdict is read off exactly what the reader will see, and the two
+/// axes decide independently (a skewed measure against a well-behaved one gets one log axis, not
+/// two).
+///
+/// A log axis cannot place a zero or a negative, so — as in `measure_by_dim_logs` — a single
+/// non-positive value rules it out outright. That is deliberate: it keeps a zero-inflated column
+/// LINEAR here, and routes the heavy-tail case through the explicit, title-annotated
+/// positive-subset retry (`positive_subset_pair`) rather than silently dropping half the rows.
+fn relationship_axis_log(mode: LogScale, vs: &[f64]) -> bool {
+    if mode == LogScale::Off {
+        return false;
+    }
+    let (mut min_pos, mut max_pos) = (f64::INFINITY, f64::NEG_INFINITY);
+    let mut n = 0_usize;
+    for &v in vs {
+        if !v.is_finite() || v <= 0.0 {
+            return false;
+        }
+        n += 1;
+        min_pos = min_pos.min(v);
+        max_pos = max_pos.max(v);
+    }
+    match mode {
+        LogScale::On => n >= 2,
+        // `Auto` additionally requires a dynamic range wide enough that a linear axis would
+        // squash the low end against the origin — the exact failure #4223 reports.
+        LogScale::Auto => n >= 3 && max_pos >= min_pos * LOG_SCALE_MIN_RATIO,
+        LogScale::Off => false,
+    }
+}
+
 /// Whether a `viz smart` distribution panel should render as a violin instead of a box, under
 /// the resolved `--violin` mode. A violin (KDE silhouette + inner quartile box + mean line) is a
 /// strict superset of a box plot, so under `auto` it's the DEFAULT representation whenever it can
@@ -11630,6 +11806,11 @@ struct Panel {
     /// classification time from the cached stats + `--log-scale`; frequency bars decide from
     /// their counts at render time instead — see `panel_is_log`).
     value_log:       bool,
+    /// Per-axis `(x, y)` log verdict for the RELATIONSHIP panels (scatter pair, density contour),
+    /// whose two axes are both data-valued and skew independently — unlike `value_log`, which
+    /// speaks for a distribution panel's single value axis (issue #4223). Resolved at panel-build
+    /// time by `relationship_axis_log` from the plotted values + `--log-scale`.
+    axis_log:        (bool, bool),
     /// How much this panel is worth keeping when the dashboard overflows `--max-charts`:
     /// per-column panels get a stats-driven `panel_interest` score; overview panels
     /// (correlation, time-series, map, …) keep the `Panel::new` default of `f64::INFINITY`
@@ -11669,6 +11850,7 @@ impl Panel {
             subtitle: None,
             kind,
             value_log: false,
+            axis_log: (false, false),
             interest: f64::INFINITY,
             #[cfg(feature = "geocode")]
             geo_meta: None,
@@ -11688,6 +11870,12 @@ impl Panel {
     /// Set whether this panel's value axis is logarithmic (box panels, per `--log-scale`).
     fn with_value_log(mut self, value_log: bool) -> Self {
         self.value_log = value_log;
+        self
+    }
+
+    /// Set the per-axis `(x, y)` log verdict for a relationship panel (issue #4223).
+    fn with_axis_log(mut self, axis_log: (bool, bool)) -> Self {
+        self.axis_log = axis_log;
         self
     }
 
@@ -17978,6 +18166,7 @@ fn build_map_panel(
             subtitle: sample_note,
             kind,
             value_log: false,
+            axis_log: (false, false),
             interest: f64::INFINITY,
             dict_info: None,
             // a map panel charts a lat/lon PAIR, not a single stats row
@@ -19421,6 +19610,7 @@ impl<'a> SmartCtx<'a> {
                             }),
                             kind,
                             value_log: p.value_log,
+                            axis_log: p.axis_log,
                             interest: p.interest,
                             dict_info: p.dict_info,
                             stat_idx: p.stat_idx,
@@ -20134,6 +20324,8 @@ impl<'a> SmartCtx<'a> {
                 // arbitration, T1 is discarded, so suppressing the static pair too would drop
                 // the strongest-pair drill-down entirely.
                 let t1_wins = self.bubble_panel.is_none() && self.geo_anim_panel.is_none();
+                // copied out so the panel-building closures below don't hold a borrow of `self`
+                let log_scale = self.log_scale;
                 let pair_panel = pair
                     .filter(|&(i, j, _)| !(t1_wins && anim_ij == Some((i, j))))
                     .and_then(|(i, j, r)| {
@@ -20147,8 +20339,18 @@ impl<'a> SmartCtx<'a> {
                             format!("{} vs {} (r={r:.2})", labels[i], labels[j])
                         };
                         if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
-                            let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
-                            Some(Panel::new(name, PanelKind::ContourPair { x, y, z }))
+                            // A density grid that collapses into one cell is dropped outright (or
+                            // retried in log space over the positive subset) — the contour-branch
+                            // counterpart of the `degenerate` scatter guard below (issue #4223).
+                            let panel = smart_contour_panel(&columns[i], &columns[j], &name);
+                            if panel.is_none() {
+                                viz_note(&format!(
+                                    "viz smart: density panel for {} vs {} skipped (its \
+                                     distribution collapses into a single bin)",
+                                    labels[i], labels[j]
+                                ));
+                            }
+                            panel
                         } else {
                             let (xs, ys) =
                                 downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
@@ -20182,17 +20384,36 @@ impl<'a> SmartCtx<'a> {
                                     },
                                     None => (name, None, None),
                                 };
-                            Some(Panel::new(
-                                name,
-                                PanelKind::ScatterPair {
-                                    xs,
-                                    ys,
-                                    sizes,
-                                    x_label: labels[i].clone(),
-                                    y_label: labels[j].clone(),
-                                    size_label,
-                                },
-                            ))
+                            // Each axis decides its own scale from the points it will actually
+                            // show, so a heavy-tailed measure isn't squashed against the origin
+                            // (issue #4223). A single zero or negative keeps that axis linear.
+                            let axis_log = (
+                                relationship_axis_log(log_scale, &xs),
+                                relationship_axis_log(log_scale, &ys),
+                            );
+                            // These panels carry no axis titles (the pair is named in the panel
+                            // title), so the log cue goes in the title too — naming WHICH axis,
+                            // which a bare axis-side "log scale" label could not.
+                            let name = match axis_log {
+                                (true, true) => format!("{name} \u{b7} log x/y"),
+                                (true, false) => format!("{name} \u{b7} log x"),
+                                (false, true) => format!("{name} \u{b7} log y"),
+                                (false, false) => name,
+                            };
+                            Some(
+                                Panel::new(
+                                    name,
+                                    PanelKind::ScatterPair {
+                                        xs,
+                                        ys,
+                                        sizes,
+                                        x_label: labels[i].clone(),
+                                        y_label: labels[j].clone(),
+                                        size_label,
+                                    },
+                                )
+                                .with_axis_log(axis_log),
+                            )
                         }
                     });
 
@@ -20211,14 +20432,32 @@ impl<'a> SmartCtx<'a> {
                     .filter(|_| columns.len() >= 3 && !self.out_format.is_image())
                     .and_then(|(i, j, _)| {
                         let third = least_redundant_third(&matrix, i, j);
-                        third.map(|k| {
+                        third.and_then(|k| {
                             // both downsamples share (n, cap) so they pick the same row indices ->
                             // aligned
                             let (xs, ys) =
                                 downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
                             let (_, zs) =
                                 downsample_pair(&columns[i], &columns[k], *MAX_SMART_POINTS);
-                            Panel::new(
+                            // Legibility (issue #4223): a 3D cloud is only worth rotating if it has
+                            // spread in every plane. Judge it by its three 2-D projections with the
+                            // same `degenerate` test that drops an unreadable scatter — a
+                            // heavily-skewed triple collapses ALL of them onto the origin, which is
+                            // the "mass at the origin with a few outliers floating" report. A 3D
+                            // scene also can't be read off a static image, so there's no fallback
+                            // rendering worth keeping.
+                            if scatter_fill_stats(&xs, &ys).degenerate
+                                || scatter_fill_stats(&xs, &zs).degenerate
+                                || scatter_fill_stats(&ys, &zs).degenerate
+                            {
+                                viz_note(&format!(
+                                    "viz smart: 3D panel for {} / {} / {} skipped (its points \
+                                     collapse onto the origin in at least one plane)",
+                                    labels[i], labels[j], labels[k]
+                                ));
+                                return None;
+                            }
+                            Some(Panel::new(
                                 format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
                                 PanelKind::Scatter3D {
                                     xs,
@@ -20230,7 +20469,7 @@ impl<'a> SmartCtx<'a> {
                                         labels[k].clone(),
                                     ),
                                 },
-                            )
+                            ))
                         })
                     });
 
@@ -22163,13 +22402,25 @@ fn smart_grid_parts(
                         .anchor(xref.clone()),
                 )
             } else {
+                // a relationship panel's per-axis log verdict (issue #4223). The y side sets the
+                // axis TYPE only — `styled_y_axis`'s "log scale" title is the cue for an unlabeled
+                // distribution axis, while these panels name the logged axis in the panel title.
+                let (x_log, y_log) = panel.axis_log;
+                let mut y = styled_y_axis(bar_max, log_y, theme);
+                if y_log {
+                    y = y.type_(AxisType::Log);
+                }
                 (
-                    styled_x_axis(is_box, is_date, theme, freq_bar_tick_text(panel, freq))
-                        .domain(&geom.x_domain)
-                        .anchor(yref.clone()),
-                    styled_y_axis(bar_max, log_y, theme)
-                        .domain(&geom.y_domain)
-                        .anchor(xref.clone()),
+                    styled_x_axis(
+                        is_box,
+                        is_date,
+                        x_log,
+                        theme,
+                        freq_bar_tick_text(panel, freq),
+                    )
+                    .domain(&geom.x_domain)
+                    .anchor(yref.clone()),
+                    y.domain(&geom.y_domain).anchor(xref.clone()),
                 )
             };
         axes.push((pos, x_axis, y_axis));
@@ -23445,9 +23696,22 @@ fn smart_inline_panel_plot(
             lollipop_category_axis(theme, &ticks),
         )
     } else {
+        // per-axis log for a relationship panel (issue #4223); see the grid path for why the y
+        // side sets only the axis type and not `styled_y_axis`'s title cue.
+        let (x_log, y_log) = panel.axis_log;
+        let mut y = styled_y_axis(bar_max, log_y, theme);
+        if y_log {
+            y = y.type_(AxisType::Log);
+        }
         (
-            styled_x_axis(is_box, is_date, theme, freq_bar_tick_text(panel, freq)),
-            styled_y_axis(bar_max, log_y, theme),
+            styled_x_axis(
+                is_box,
+                is_date,
+                x_log,
+                theme,
+                freq_bar_tick_text(panel, freq),
+            ),
+            y,
         )
     };
     let mut layout = Layout::new()
@@ -25140,12 +25404,15 @@ fn freq_bar_tick_text(panel: &Panel, freq: &FreqMap) -> Option<Vec<String>> {
 /// A styled x-axis for a dashboard panel: no vertical gridlines, a light baseline, and
 /// small tick labels. For single-box panels (`is_box`), the lone "0" category tick is
 /// meaningless, so its labels and baseline are hidden. For time-series panels (`is_date`),
-/// the axis is typed as a date axis so plotly spaces ticks chronologically. `tick_text`, when
+/// the axis is typed as a date axis so plotly spaces ticks chronologically. For relationship
+/// panels whose x values span orders of magnitude (`log`), the axis is typed logarithmic — the
+/// panel title names which axis was logged (issue #4223). `tick_text`, when
 /// present (frequency-bar panels), supplies display-only truncated category labels — the bar's
 /// x data keeps the full names, so distinct categories never collapse onto one tick.
 fn styled_x_axis(
     is_box: bool,
     is_date: bool,
+    log: bool,
     theme: Option<BuiltinTheme>,
     tick_text: Option<Vec<String>>,
 ) -> Axis {
@@ -25166,6 +25433,13 @@ fn styled_x_axis(
     }
     if is_date {
         a = a.type_(AxisType::Date);
+    }
+    // a relationship panel whose x values span orders of magnitude (issue #4223). Mutually
+    // exclusive with the date/category modes above by construction: those panels carry no
+    // `axis_log`, and this one is neither dated nor categorical. The cue is the axis title, set by
+    // the caller (which knows the column name) rather than here.
+    if log {
+        a = a.type_(AxisType::Log);
     }
     // display-only truncated labels for categorical bar panels (freq bars, measure-by-dim). Force
     // the axis to category mode:
@@ -29832,6 +30106,110 @@ mod tests {
         // than 3 points can't form a cloud and stay degenerate.
         assert!(!scatter_fill_stats(&[0.0, 10.0, 5.0], &[0.0, 3.0, 10.0]).degenerate);
         assert!(scatter_fill_stats(&[0.0, 10.0], &[0.0, 10.0]).degenerate);
+    }
+
+    #[test]
+    fn density_concentration_flags_one_cell_collapse() {
+        // a uniform 2x2 grid: each of the 4 cells holds a quarter of the mass -> 0.25
+        let uniform = vec![vec![1.0, 1.0], vec![1.0, 1.0]];
+        assert!((density_concentration(&uniform) - 0.25).abs() < 1e-9);
+
+        // all mass in one cell (the "single dark cell at the origin" symptom) -> 1.0
+        let collapsed = vec![vec![99.0, 0.0], vec![0.0, 0.0]];
+        assert!((density_concentration(&collapsed) - 1.0).abs() < 1e-9);
+        assert!(density_concentration(&collapsed) > SMART_CONTOUR_MAX_BIN_SHARE);
+
+        // a well-spread grid stays under the gate; NaN cells (empty bins) are ignored, not summed
+        let spread = vec![vec![10.0, 12.0, f64::NAN], vec![11.0, 9.0, 13.0]];
+        assert!(density_concentration(&spread) < SMART_CONTOUR_MAX_BIN_SHARE);
+
+        // an empty grid reads as "not concentrated" (0.0), never tripping the gate on its own
+        assert_eq!(density_concentration(&[vec![0.0, 0.0]]), 0.0);
+    }
+
+    #[test]
+    fn positive_subset_pair_keeps_substantial_positive_mass() {
+        // 1000 rows, all strictly positive on both axes: nothing dropped
+        let xs: Vec<f64> = (1..=1000).map(|i| i as f64).collect();
+        let ys: Vec<f64> = (1..=1000).map(|i| (i * 2) as f64).collect();
+        let (px, py, dropped) = positive_subset_pair(&xs, &ys).expect("all-positive kept");
+        assert_eq!(px.len(), 1000);
+        assert_eq!(py.len(), 1000);
+        assert!(dropped.abs() < 1e-9);
+
+        // ~50% zeros but 1000 survivors and 50% share: kept, with the dropped share reported
+        let mut zx = vec![0.0_f64; 1000];
+        let mut zy = vec![0.0_f64; 1000];
+        for i in 1..=1000 {
+            zx.push(i as f64);
+            zy.push(i as f64);
+        }
+        let (_, _, dropped) = positive_subset_pair(&zx, &zy).expect("half positive kept");
+        assert!((dropped - 0.5).abs() < 1e-9);
+
+        // too few survivors (below SMART_CONTOUR_LOG_MIN_POINTS): declined even though the share
+        // is high
+        let few_x: Vec<f64> = (1..=100).map(|i| i as f64).collect();
+        let few_y = few_x.clone();
+        assert!(positive_subset_pair(&few_x, &few_y).is_none());
+
+        // enough absolute survivors but a tiny share (600 positives in 100k rows): declined, so a
+        // rounding-error sliver is never dressed up as the distribution
+        let mut sparse_x = vec![0.0_f64; 100_000];
+        let mut sparse_y = vec![0.0_f64; 100_000];
+        for i in 1..=600 {
+            sparse_x.push(i as f64);
+            sparse_y.push(i as f64);
+        }
+        assert!(positive_subset_pair(&sparse_x, &sparse_y).is_none());
+    }
+
+    #[test]
+    fn relationship_axis_log_engages_only_on_wide_positive_range() {
+        // Auto: a wide positive dynamic range (>= LOG_SCALE_MIN_RATIO) engages log
+        let wide: Vec<f64> = vec![1.0, 10.0, 100.0, 1000.0];
+        assert!(relationship_axis_log(LogScale::Auto, &wide));
+
+        // Auto: a modest range stays linear (no spurious log on well-behaved data)
+        let modest: Vec<f64> = vec![10.0, 12.0, 15.0, 18.0];
+        assert!(!relationship_axis_log(LogScale::Auto, &modest));
+
+        // a single zero (zero-inflated column) rules out log outright, even with a wide range
+        let zeroed: Vec<f64> = vec![0.0, 1.0, 100.0, 1000.0];
+        assert!(!relationship_axis_log(LogScale::Auto, &zeroed));
+
+        // On forces log for any 2+ strictly-positive values regardless of range;
+        // Off never logs
+        assert!(relationship_axis_log(LogScale::On, &modest));
+        assert!(!relationship_axis_log(LogScale::Off, &wide));
+    }
+
+    #[test]
+    fn bin_2d_log_axes_use_geometric_centers() {
+        // three decades of positive data, log-binned on both axes. The returned bin CENTERS are
+        // raw values (a plotly log axis consumes raw coords), so they must grow multiplicatively
+        // across the axis rather than in equal linear steps.
+        let xs: Vec<f64> = vec![1.0, 10.0, 100.0, 1000.0];
+        let ys = xs.clone();
+        let (xc, _, z) = bin_2d(&xs, &ys, 10, (true, true));
+        // every point counted exactly once (4 points -> total mass 4)
+        let total: f64 = z.iter().flatten().sum();
+        assert!((total - 4.0).abs() < 1e-9);
+        // consecutive centers grow by a roughly constant RATIO (geometric), not a constant delta
+        let ratios: Vec<f64> = xc.windows(2).map(|w| w[1] / w[0]).collect();
+        let first = ratios[0];
+        assert!(ratios.iter().all(|r| (r - first).abs() < 1e-6));
+        // and the linear deltas are NOT constant (proving the spacing isn't linear)
+        let d0 = xc[1] - xc[0];
+        let dn = xc[xc.len() - 1] - xc[xc.len() - 2];
+        assert!(dn > d0 * 2.0);
+
+        // linear binning of the same data keeps constant linear DELTAS (regression: viz contour
+        // must be unaffected by the new parameter)
+        let (xc_lin, _, _) = bin_2d(&xs, &ys, 10, (false, false));
+        let deltas: Vec<f64> = xc_lin.windows(2).map(|w| w[1] - w[0]).collect();
+        let d_first = deltas[0];
+        assert!(deltas.iter().all(|d| (d - d_first).abs() < 1e-6));
     }
 
     #[test]

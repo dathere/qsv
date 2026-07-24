@@ -239,7 +239,7 @@ viz options:
                            the third numeric axis for scatter3d.
     --cols <cols>          Columns to use. For heatmap: numeric columns for the
                            correlation matrix (default: all numeric). For radar:
-                           the numeric axes to plot. For treemap/sunburst: the
+                           the numeric axes to plot. For treemap/sunburst/icicle: the
                            categorical dimensions that form the hierarchy levels,
                            outermost first (e.g. region,category,subcategory).
                            For splom: the numeric columns to cross-plot (default:
@@ -265,7 +265,7 @@ viz options:
     --source <col>         Source node column for a sankey diagram.
     --target <col>         Target node column for a sankey diagram.
     --value <col>          Flow value column for a sankey diagram. When omitted,
-                           each row counts as a flow of 1. For treemap/sunburst:
+                           each row counts as a flow of 1. For treemap/sunburst/icicle:
                            a numeric measure summed per sector (when omitted, each
                            row counts as 1).
     --sankey-value-order   Order sankey nodes by total flow (largest at the top of each
@@ -281,8 +281,8 @@ viz options:
                            the density grid (default: 20).
     --agg <fn>             For bar/line, aggregate the y values when the x value
                            repeats. One of: sum, mean, count, min, max.
-                           For treemap/sunburst, only additive aggregations apply:
-                           count (default) or sum (requires --value).
+                           For treemap/sunburst/icicle, only additive aggregations
+                           apply: count (default) or sum (requires --value).
     --box-points <mode>    Which sample points to draw alongside a box. Reading the
                            raw values lets plotly render true Tukey whiskers (1.5*IQR)
                            with the points beyond the fences as outliers. One of:
@@ -6205,8 +6205,8 @@ fn build_hierarchy_plot(args: &Args) -> CliResult<Plot> {
     let dims = resolve_many(args.flag_cols.as_ref(), &headers, nh, "cols")?;
     if dims.len() < HIER_MIN_DIMS {
         return fail_incorrectusage_clierror!(
-            "treemap/sunburst needs at least {HIER_MIN_DIMS} --cols (hierarchy levels, outer \
-             first)."
+            "treemap/sunburst/icicle needs at least {HIER_MIN_DIMS} --cols (hierarchy levels, \
+             outer first)."
         );
     }
 
@@ -10121,7 +10121,8 @@ const fn violin_points(points: &BoxPoints) -> ViolinPoints {
 /// this returns `None`). Without an explicit mode, a size-based heuristic on the column's
 /// non-null value count (see `SMART_BOX_ALL_MAX`) picks the mode: all points for small data, just
 /// outliers for medium, and none for large data (returning `None` so no raw-values pass is done
-/// and the box stays a cache-only summary).
+/// here — the caller may still overlay just the Tukey outliers on the cache-only box via a
+/// fence-filtered pass; see `SMART_BOX_OUTLIERS_CAP`).
 /// A `None` return means "don't build a raw box for this column".
 fn smart_box_points(explicit: Option<&BoxPoints>, n_points: u64) -> Option<BoxPoints> {
     if let Some(mode) = explicit {

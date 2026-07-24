@@ -95,9 +95,13 @@ per column: a **correlation heatmap** over the numeric columns (shown as the
 lower triangle only — the mirror half and the trivial 1.0 diagonal are dropped),
 **box plots** for continuous numerics, and **frequency bars** for low-cardinality
 categoricals, booleans, and ratings. The box plots overlay sample points based on
-the dataset size — every point for small data, just the Tukey outliers for medium
-data, and none for large data (where the box stays a fast cache-only quartile
-summary); pass `--box-points <outliers|all|suspected|none>` to force a mode. When
+the column's non-null value count — every point for a small column (≤ 1,000
+values, demoted to outliers-only once the dashboard runs past 8 panels, where a
+thousand jittered points per cell turns to noise), and just the Tukey outliers
+for a medium one (≤ 10,000). Above that the box is a fast cache-only quartile
+summary — but a column that actually *has* outliers still gets them overlaid as
+points, collected by a single fence-filtered pass and capped at 5,000; pass
+`--box-points <outliers|all|suspected|none>` to force a mode. When
 the numeric columns have a strongly correlated pair,
 a **scatter** of that pair is added next to the heatmap as a drill-down — or, for
 large datasets where a scatter would overplot, a **2D density contour** of the
@@ -130,15 +134,17 @@ high-cardinality text columns are skipped.
 
 On large datasets `viz smart` keeps the page light and interactive: each
 data-heavy panel (map, time-series, correlated-pair scatter, 3D scatter) is
-uniformly downsampled to at most 50,000 points (the correlated-pair density
-contour instead embeds only a fixed bin grid, so it stays compact at any row
-count), and the map view is framed to the core extent (geographic outliers
-excluded) so a few stray geocodes can't zoom it out to nothing. The map panel
-also adapts to volume — at ~20,000+ mappable rows
-it renders as a **density heatmap** (individual markers would overplot into a
-solid blob), and below that as semi-transparent point markers. (These caps apply
-only to the `smart` dashboard; the standalone chart commands below plot every
-row and frame the full extent.)
+uniformly downsampled to at most 150,000 points (tunable with
+`QSV_VIZ_MAX_POINTS`; the correlated-pair density contour instead embeds only a
+fixed bin grid, so it stays compact at any row count), and the map view is framed
+to the core extent (geographic outliers excluded) so a few stray geocodes can't
+zoom it out to nothing. The map panel also adapts to volume — a dense point map
+opens as semi-transparent markers with an in-map **Clusters/Points** toggle that
+collapses them into interactive count bubbles on demand (`--cluster`, offered
+automatically from 1,000 points). Static **density heatmap** rendering is off by
+default; opt back into it with `--heatmap-density <n>` to aggregate the core at
+or above *n* mappable points. (These caps apply only to the `smart` dashboard;
+the standalone chart commands below plot every row and frame the full extent.)
 
 ### moarstats-informed dashboards
 
@@ -232,20 +238,21 @@ qsv viz smart allegheny_dog_licenses.csv --smarter --bivariate --dict-info \
     -o allegheny_dogs_dashboard.html
 ```
 
-### dictionary-guided hierarchy panels (treemap / sunburst)
+### dictionary-guided hierarchy panels (treemap / sunburst / icicle)
 
 When the dataset has **2+ low-cardinality categorical dimensions**, `viz smart` adds a
 part-to-whole **hierarchy** panel nesting them (the chosen dimensions still keep their own
 frequency bars). The chart type is auto-selected by depth, following visualization best practice:
 a **treemap** for a shallow 2-level hierarchy (area encodes size, for accurate comparison) and a
 **sunburst** for a deeper 3-level one (concentric rings emphasize parent-child structure). Override
-with `--hierarchy-style auto|treemap|sunburst`.
+with `--hierarchy-style auto|treemap|sunburst|icicle` — `icicle` is an opt-in level-aligned
+alternative that keeps deep labels readable where a sunburst's outer ring would crowd.
 
 The auto path also checks that the candidate dimensions are **statistically associated** (bias-
 corrected Cramér's V): nesting *independent* categoricals just replicates each level's marginal at
 every branch and tells you nothing the separate frequency bars don't, so that hierarchy is skipped
-(with a note on stderr). Pass an explicit `--hierarchy-style treemap|sunburst` to force the panel
-anyway.
+(with a note on stderr). Pass an explicit `--hierarchy-style treemap|sunburst|icicle` to force the
+panel anyway.
 
 Pairing this with **`--dictionary infer`** lets a local LLM (via
 [`describegpt`](https://github.com/dathere/qsv/blob/master/docs/help/describegpt.md), default

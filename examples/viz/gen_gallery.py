@@ -57,6 +57,7 @@ SMART_IFRAME = {
     "smart dashboard (animated geo, world events)":   "smart_world_events.html",
     "smart dashboard (Gapminder bubble, regions growth)": "smart_regions_growth.html",
     "smart dashboard (--smarter, Gini/Lorenz inequality + log-skew boxes)": "smart_cms_medicare.html",
+    "smart dashboard (--smarter, zero-inflated capital pipeline)": "smart_cpdb.html",
 }
 
 # Iframe artifacts that depend on a live LLM (`--dictionary infer` calls describegpt against a
@@ -476,6 +477,21 @@ FIGURES = [
      "against its largest values, so <code>viz smart</code> draws it on a <b>log axis</b> instead, "
      "keeping the median and quartiles legible.",
      True, ["smart", "cms_medicare_providers.csv", "--smarter"]),
+    ("smart dashboard (--smarter, zero-inflated capital pipeline)",
+     "<b>NYC Capital Projects Database</b> (12,587 projects, sourced from Checkbook NYC), the "
+     "dataset this dashboard's inequality work was designed against. Its money columns are both "
+     "extremely concentrated (Gini 0.93&ndash;0.96) <i>and</i> heavily zero-inflated, which the "
+     "Lorenz panels state outright: <code>flat run = 60% zeros, not small values</code>. That long "
+     "flat opening run is not a mass of small projects &mdash; it is the projects with nothing "
+     "committed or spent <i>yet</i>, a funding-pipeline stage rather than a have-not population. "
+     "Every Lorenz panel also carries the unit caveat, because a Gini across units as unlike a "
+     "subway extension and a playground resurfacing is close to tautological and must not be read "
+     "as inequity.<br><br>Note what is <b>absent</b>: no pipeline funnel. The column names look "
+     "like planned &rarr; committed &rarr; spent, but the values are not nested (spent totals "
+     "2.9&times; committed &mdash; they are independent sums on different bases), so the "
+     "containment gate declines and says so on stderr rather than drawing a funnel the data does "
+     "not support.",
+     True, ["smart", "nyc_capital_projects.csv", "--smarter"]),
     ("bar", "Revenue by region (aggregated sum).",
      False, ["bar", "sales_sample.csv", "--x", "region", "--y", "revenue", "--agg", "sum"]),
     ("bar (animated slider)",

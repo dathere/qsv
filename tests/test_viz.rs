@@ -2171,7 +2171,11 @@ fn viz_smart_inline_many_panels() {
     let mut rows = headers.join(",");
     rows.push('\n');
     for r in 0..30 {
-        let cells: Vec<String> = (0..10).map(|c| format!("v{}", (r + c) % 4)).collect();
+        // each column cycles on its OWN modulus, so the 10 columns have 10 DISTINCT
+        // cardinalities (2..=11). `(r + c) % 4` gave every column the same 4 values in a
+        // rotated order — a bijection between every pair — which the 1:1 collapse
+        // (issue #4221) correctly folds down to a single panel.
+        let cells: Vec<String> = (0..10).map(|c| format!("v{}", r % (c + 2))).collect();
         rows.push_str(&cells.join(","));
         rows.push('\n');
     }
@@ -2274,7 +2278,11 @@ fn viz_smart_inline_open_no_output() {
     let mut rows = headers.join(",");
     rows.push('\n');
     for r in 0..30 {
-        let cells: Vec<String> = (0..10).map(|c| format!("v{}", (r + c) % 4)).collect();
+        // each column cycles on its OWN modulus, so the 10 columns have 10 DISTINCT
+        // cardinalities (2..=11). `(r + c) % 4` gave every column the same 4 values in a
+        // rotated order — a bijection between every pair — which the 1:1 collapse
+        // (issue #4221) correctly folds down to a single panel.
+        let cells: Vec<String> = (0..10).map(|c| format!("v{}", r % (c + 2))).collect();
         rows.push_str(&cells.join(","));
         rows.push('\n');
     }
@@ -3494,6 +3502,157 @@ fn viz_smart_timeseries_panel() {
     assert!(html.contains(r#""type":"date""#));
     // ... titled "<numeric> over <date>"; revenue is the continuous numeric column chosen as y
     assert!(html.contains("revenue over txn_date"));
+}
+
+#[test]
+fn viz_smart_collapses_one_to_one_categorical_twins() {
+    // `orgcode` <-> `orgfullname`: a code/label pair in strict 1:1 correspondence. Charted
+    // separately they produce byte-identical frequency bars and waste a parcats axis on the same
+    // variable. Only the SHORTER-valued member is charted (it fits a bar label; the long form
+    // truncates on an axis), and the drop is reported so the mapping stays discoverable
+    // (issue #4221). Column names are deliberately distinctive: the embedded plotly bundle
+    // contains words like "across", so a short name would false-match a substring assertion.
+    let wrk = Workdir::new("viz_smart_collapses_one_to_one_categorical_twins");
+    let codes = [
+        ("DPR", "Department of Parks and Recreation"),
+        ("DDC", "Department of Design and Construction"),
+        ("HPD", "Housing Preservation and Development"),
+        ("DOE", "Department of Education"),
+    ];
+    let regions = ["north", "south", "east"];
+    let mut rows = String::from("orgcode,orgfullname,region,amount\n");
+    for i in 0..60 {
+        let (code, full) = codes[i % 4];
+        rows.push_str(&format!(
+            "{code},{full},{},{}\n",
+            regions[(i / 4) % 3],
+            10 + (i % 7) * 5
+        ));
+    }
+    wrk.create_from_string("t.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "t.csv", "-o", &out_html]);
+    let got = wrk.output_stderr(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(
+        got.contains("charting only orgcode for orgfullname"),
+        "expected a 1:1 collapse note naming the kept and dropped columns; got: {got}"
+    );
+    assert!(
+        html.contains("orgcode"),
+        "the shorter-valued member must still be charted"
+    );
+    assert!(
+        !html.contains("orgfullname"),
+        "the redundant 1:1 twin must not reach the dashboard at all"
+    );
+}
+
+#[test]
+fn viz_smart_keeps_equal_cardinality_columns_that_are_not_one_to_one() {
+    // The guard against over-collapsing: both columns have the SAME cardinality (3), which is what
+    // makes them candidates at all, but their values cross (9 distinct pairs, not 3), so neither
+    // determines the other and BOTH panels must survive. Equal cardinality is only a cheap
+    // pre-filter — a false positive here would DELETE a panel.
+    let wrk = Workdir::new("viz_smart_keeps_equal_cardinality_columns_that_are_not_one_to_one");
+    let mut rows = String::from("zonecode,huegroup,amount\n");
+    for i in 0..60 {
+        rows.push_str(&format!(
+            "{},{},{}\n",
+            ["red", "green", "blue"][i % 3],
+            ["north", "south", "east"][(i / 3) % 3],
+            10 + (i % 7) * 5
+        ));
+    }
+    wrk.create_from_string("t.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "t.csv", "-o", &out_html]);
+    let got = wrk.output_stderr(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(
+        !got.contains("1:1"),
+        "equal cardinality alone must not collapse two crossed columns; got: {got}"
+    );
+    assert!(html.contains("zonecode"), "html missing zonecode");
+    assert!(html.contains("huegroup"), "html missing huegroup");
+}
+
+#[test]
+fn viz_smart_keeps_columns_blank_on_different_rows() {
+    // Two columns that map perfectly WHERE BOTH ARE POPULATED but are blank on disjoint row
+    // ranges are not the same variable — their bars carry different counts and different (NULL)
+    // shares. Their cached cardinalities still match (two values plus the empty), so the
+    // pre-filter lets the pair through and the judgment itself has to reject it: an empty cell
+    // canonicalizes to its own id, so the two columns separate on the first row where one is
+    // blank and the other is not (roborev 3818).
+    let wrk = Workdir::new("viz_smart_keeps_columns_blank_on_different_rows");
+    let mut rows = String::from("acode,bname,amount\n");
+    for i in 0..200 {
+        let (a, b) = if i < 50 {
+            ("", if i % 2 == 0 { "P" } else { "Q" })
+        } else if i < 100 {
+            (if i % 3 == 0 { "x" } else { "y" }, "")
+        } else if i % 2 == 0 {
+            ("x", "P")
+        } else {
+            ("y", "Q")
+        };
+        rows.push_str(&format!("{a},{b},{}\n", 10 + (i % 7) * 5));
+    }
+    wrk.create_from_string("t.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "t.csv", "-o", &out_html]);
+    let got = wrk.output_stderr(&mut cmd);
+
+    assert!(
+        !got.contains("1:1"),
+        "columns blank on different rows must not collapse; got: {got}"
+    );
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains("acode"), "html missing acode");
+    assert!(html.contains("bname"), "html missing bname");
+}
+
+#[test]
+fn viz_smart_keeps_sparse_columns_that_only_coincide_where_populated() {
+    // Two mostly-empty columns that carry a value on the SAME narrow slice would look like a
+    // clean bijection if blanks counted as a category: one value each, one pair, and hundreds of
+    // rows of "support" supplied entirely by their shared emptiness. Absence is not a value, so
+    // the judgment runs only over rows where both columns are populated — where there is a single
+    // distinct value and 10 rows, far too little to delete a panel over.
+    let wrk = Workdir::new("viz_smart_keeps_sparse_columns_that_only_coincide_where_populated");
+    let mut rows = String::from("zonecode,rarecodeone,rarecodetwo,amount\n");
+    for i in 0..300 {
+        let (a, b) = if i < 10 { ("P", "Q") } else { ("", "") };
+        rows.push_str(&format!(
+            "{},{a},{b},{}\n",
+            ["red", "green", "blue"][i % 3],
+            10 + (i % 7) * 5
+        ));
+    }
+    wrk.create_from_string("t.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "t.csv", "-o", &out_html]);
+    let got = wrk.output_stderr(&mut cmd);
+
+    assert!(
+        !got.contains("1:1"),
+        "co-emptiness must not read as a functional dependency; got: {got}"
+    );
 }
 
 #[test]
@@ -6924,7 +7083,11 @@ fn viz_smart_inline_theme_drives_page_chrome() {
     let mut rows = headers.join(",");
     rows.push('\n');
     for r in 0..30 {
-        let cells: Vec<String> = (0..10).map(|c| format!("v{}", (r + c) % 4)).collect();
+        // each column cycles on its OWN modulus, so the 10 columns have 10 DISTINCT
+        // cardinalities (2..=11). `(r + c) % 4` gave every column the same 4 values in a
+        // rotated order — a bijection between every pair — which the 1:1 collapse
+        // (issue #4221) correctly folds down to a single panel.
+        let cells: Vec<String> = (0..10).map(|c| format!("v{}", r % (c + 2))).collect();
         rows.push_str(&cells.join(","));
         rows.push('\n');
     }
@@ -7157,7 +7320,11 @@ fn viz_smart_embeds_plotly_once_without_mathjax() {
     let mut rows = headers.join(",");
     rows.push('\n');
     for r in 0..30 {
-        let cells: Vec<String> = (0..10).map(|c| format!("v{}", (r + c) % 4)).collect();
+        // each column cycles on its OWN modulus, so the 10 columns have 10 DISTINCT
+        // cardinalities (2..=11). `(r + c) % 4` gave every column the same 4 values in a
+        // rotated order — a bijection between every pair — which the 1:1 collapse
+        // (issue #4221) correctly folds down to a single panel.
+        let cells: Vec<String> = (0..10).map(|c| format!("v{}", r % (c + 2))).collect();
         rows.push_str(&cells.join(","));
         rows.push('\n');
     }
@@ -7405,7 +7572,11 @@ fn viz_smart_inline_has_theme_toggle() {
     let mut rows = headers.join(",");
     rows.push('\n');
     for r in 0..30 {
-        let cells: Vec<String> = (0..10).map(|c| format!("v{}", (r + c) % 4)).collect();
+        // each column cycles on its OWN modulus, so the 10 columns have 10 DISTINCT
+        // cardinalities (2..=11). `(r + c) % 4` gave every column the same 4 values in a
+        // rotated order — a bijection between every pair — which the 1:1 collapse
+        // (issue #4221) correctly folds down to a single panel.
+        let cells: Vec<String> = (0..10).map(|c| format!("v{}", r % (c + 2))).collect();
         rows.push_str(&cells.join(","));
         rows.push('\n');
     }
@@ -7583,11 +7754,23 @@ fn two_dim_hierarchy(wrk: &Workdir) {
 fn three_dim_hierarchy(wrk: &Workdir) {
     let mut rows = String::from("id,region,category,channel\n");
     for i in 1..=120 {
-        let (region, category, channel) = match i % 4 {
-            0 => ("East", "Widgets", "Web"),
-            1 => ("East", "Gadgets", "Retail"),
-            2 => ("West", "Gizmos", "Phone"),
-            _ => ("North", "Doohickeys", "Partner"),
+        let (region, category) = match i % 4 {
+            0 => ("East", "Widgets"),
+            1 => ("East", "Gadgets"),
+            2 => ("West", "Gizmos"),
+            _ => ("North", "Doohickeys"),
+        };
+        // `channel` must be strongly associated with `category` (the hierarchy panel needs
+        // Cramér's V past its floor) WITHOUT being 1:1 with it: a strict bijection is a
+        // relabeling of the same variable, which the 1:1 collapse (issue #4221) folds away,
+        // leaving only two levels and a treemap. Doohickeys therefore splits across two
+        // channels, so category -> channel is one-to-many.
+        let channel = match category {
+            "Widgets" => "Web",
+            "Gadgets" => "Retail",
+            "Gizmos" => "Phone",
+            _ if i % 8 == 3 => "Partner",
+            _ => "Kiosk",
         };
         rows.push_str(&format!("{i},{region},{category},{channel}\n"));
     }
@@ -10149,10 +10332,20 @@ fn viz_smart_bivariate_top_relationships_ranks_beyond_strongest_pair() {
     let cats = ["A", "B", "C", "D"];
     for i in 0..300 {
         let g1 = cats[i % 4];
-        let g2 = g1;
-        let g3 = cats[(i * 3) % 4];
-        let g4 = g3;
-        let noise: Vec<&str> = (0..6).map(|k| cats[(i * 7 + k * 13) % 4]).collect();
+        // g2/g4 track g1/g3 on all but a handful of rows: NMI stays ~1.0 with full 300-row
+        // support, but the relation is NOT a bijection, so the 1:1 collapse (issue #4221) leaves
+        // both columns charted. An exact duplicate is literally the same variable and folds into
+        // a single panel, taking with it the well-supported high-NMI pairs these tests rank.
+        let g2 = if i % 50 == 0 { cats[(i + 1) % 4] } else { g1 };
+        // block-stepped, NOT `(i * 3) % 4`: multiplying a linear sequence by a coprime factor
+        // permutes it, so the old g3 was a relabeling of g1 and folded into it. The divisor sits
+        // clear of the noise columns' 2..=7 range so it does not collide with one of them either.
+        let g3 = cats[(i / 11) % 4];
+        let g4 = if i % 50 == 25 { cats[(i + 1) % 4] } else { g3 };
+        // genuine filler: a per-column BLOCK size rather than a per-column offset. Offsets of a
+        // linear sequence are rotations of one another, so every "noise" column was a relabeling
+        // of g1 and all ten collapsed into one panel.
+        let noise: Vec<&str> = (0..6).map(|k| cats[(i / (k + 2)) % 4]).collect();
         rows.push_str(&format!(
             "{g1},{g2},{g3},{g4},{},{},{},{},{},{}\n",
             noise[0], noise[1], noise[2], noise[3], noise[4], noise[5]
@@ -10202,10 +10395,20 @@ fn viz_smart_bivariate_top_relationships_lollipop_encodings() {
     let cats = ["A", "B", "C", "D"];
     for i in 0..300 {
         let g1 = cats[i % 4];
-        let g2 = g1;
-        let g3 = cats[(i * 3) % 4];
-        let g4 = g3;
-        let noise: Vec<&str> = (0..6).map(|k| cats[(i * 7 + k * 13) % 4]).collect();
+        // g2/g4 track g1/g3 on all but a handful of rows: NMI stays ~1.0 with full 300-row
+        // support, but the relation is NOT a bijection, so the 1:1 collapse (issue #4221) leaves
+        // both columns charted. An exact duplicate is literally the same variable and folds into
+        // a single panel, taking with it the well-supported high-NMI pairs these tests rank.
+        let g2 = if i % 50 == 0 { cats[(i + 1) % 4] } else { g1 };
+        // block-stepped, NOT `(i * 3) % 4`: multiplying a linear sequence by a coprime factor
+        // permutes it, so the old g3 was a relabeling of g1 and folded into it. The divisor sits
+        // clear of the noise columns' 2..=7 range so it does not collide with one of them either.
+        let g3 = cats[(i / 11) % 4];
+        let g4 = if i % 50 == 25 { cats[(i + 1) % 4] } else { g3 };
+        // genuine filler: a per-column BLOCK size rather than a per-column offset. Offsets of a
+        // linear sequence are rotations of one another, so every "noise" column was a relabeling
+        // of g1 and all ten collapsed into one panel.
+        let noise: Vec<&str> = (0..6).map(|k| cats[(i / (k + 2)) % 4]).collect();
         rows.push_str(&format!(
             "{g1},{g2},{g3},{g4},{},{},{},{},{},{}\n",
             noise[0], noise[1], noise[2], noise[3], noise[4], noise[5]
@@ -10510,10 +10713,20 @@ fn viz_smart_bivariate_top_relationships_excludes_low_support_pairs() {
     let cats = ["A", "B", "C", "D"];
     for i in 0..300 {
         let g1 = cats[i % 4];
-        let g2 = g1;
-        let g3 = cats[(i * 3) % 4];
-        let g4 = g3;
-        let noise: Vec<&str> = (0..6).map(|k| cats[(i * 7 + k * 13) % 4]).collect();
+        // g2/g4 track g1/g3 on all but a handful of rows: NMI stays ~1.0 with full 300-row
+        // support, but the relation is NOT a bijection, so the 1:1 collapse (issue #4221) leaves
+        // both columns charted. An exact duplicate is literally the same variable and folds into
+        // a single panel, taking with it the well-supported high-NMI pairs these tests rank.
+        let g2 = if i % 50 == 0 { cats[(i + 1) % 4] } else { g1 };
+        // block-stepped, NOT `(i * 3) % 4`: multiplying a linear sequence by a coprime factor
+        // permutes it, so the old g3 was a relabeling of g1 and folded into it. The divisor sits
+        // clear of the noise columns' 2..=7 range so it does not collide with one of them either.
+        let g3 = cats[(i / 11) % 4];
+        let g4 = if i % 50 == 25 { cats[(i + 1) % 4] } else { g3 };
+        // genuine filler: a per-column BLOCK size rather than a per-column offset. Offsets of a
+        // linear sequence are rotations of one another, so every "noise" column was a relabeling
+        // of g1 and all ten collapsed into one panel.
+        let noise: Vec<&str> = (0..6).map(|k| cats[(i / (k + 2)) % 4]).collect();
         let (sparse_a, sparse_b) = if i < 10 { ("P", "Q") } else { ("", "") };
         rows.push_str(&format!(
             "{g1},{g2},{g3},{g4},{},{},{},{},{},{},{sparse_a},{sparse_b}\n",
@@ -11139,7 +11352,10 @@ fn viz_smart_dict_info_inline_path() {
     let wrk = Workdir::new("viz_smart_dict_info_inline_path");
     let mut rows = String::from("c0,c1,c2,c3,c4,c5,c6,c7,c8,c9\n");
     for i in 0..60 {
-        let vals: Vec<String> = (0..10).map(|c| format!("v{}", (i + c) % 3)).collect();
+        // per-column modulus => 10 distinct cardinalities. A shared modulus made every pair of
+        // columns a bijection, which the 1:1 collapse (issue #4221) folds into one panel — and
+        // this test needs >8 chartable columns to reach the inline-div path.
+        let vals: Vec<String> = (0..10).map(|c| format!("v{}", i % (c + 2))).collect();
         rows.push_str(&format!("{}\n", vals.join(",")));
     }
     wrk.create_from_string("wide.csv", &rows);

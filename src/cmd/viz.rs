@@ -10574,7 +10574,15 @@ fn measure_by_dim_panel(
                 .sum::<f64>()
                 - correction;
             let eta2 = (ss_between / ss_total).clamp(0.0, 1.0);
-            if best.is_none_or(|(b, ..)| eta2 > b) {
+            // Require a MEANINGFUL improvement, not just a larger float. `ss_between` sums over a
+            // HashMap's values, so its rounding depends on iteration order: two dimensions that
+            // are mathematically tied (1:1 columns like an agency code and its name explain
+            // exactly the same variance) land within a few ULPs of each other and a bare `>`
+            // picked a different winner run to run — the panel title flipped between reruns of
+            // the same binary on the same file. An epsilon makes the earlier (lowest-index)
+            // candidate win every tie, so the choice is reproducible.
+            const ETA2_TIE_EPS: f64 = 1e-9;
+            if best.is_none_or(|(b, ..)| eta2 > b + ETA2_TIE_EPS) {
                 best = Some((eta2, mi, di));
             }
         }
@@ -15393,6 +15401,208 @@ fn dimension_code_twins(
     suppress
 }
 
+/// Identify categorical columns that are **1:1** with another charted categorical column — each
+/// value of one maps to exactly one value of the other and vice versa — and return the redundant
+/// members to suppress, keeping one representative per group (issue #4221).
+///
+/// The reported case is a code/label pair like `magencyacro` ↔ `magencyname` (`DPR` ↔ `Department
+/// of Parks & Recreation`). Charted separately they produce byte-identical frequency bars, and the
+/// parcats overview spends two of its axes on the same variable with trivial straight-through
+/// ribbons between them.
+///
+/// This is the DATA-DRIVEN counterpart of `dimension_code_twins`, which recognizes the same
+/// redundancy from NAMES alone (`subject` + `subject_code`) and only with a dictionary present.
+/// Neither `magencyacro` nor `magencyname` is the other's `<base>_code`, and the reporting
+/// dashboard has no dictionary, so the name rule cannot see this pair. Both feed the same
+/// suppression set, so every downstream consumer — the per-column panel loop, `dim_indices`, and
+/// `eligible_categorical_dims` (hence parcats and the hierarchy panel) — inherits the verdict.
+///
+/// # Algorithm: partition refinement
+///
+/// Two columns are 1:1 exactly when they induce the SAME PARTITION of the rows — the value names
+/// are irrelevant, only which rows group together. So each column canonicalizes its values to ids
+/// by first appearance, and the candidate columns are refined into groups that still agree:
+/// every row splits each group by its members' ids, and a group that survives every row is a set
+/// of columns whose partitions never diverged. That is the definition of the property, checked
+/// directly.
+///
+/// This replaced an earlier per-pair formulation that compared distinct-value counts against
+/// distinct-pair counts. That version accumulated three separate counters whose null semantics had
+/// to be kept in agreement by hand, and grew a correctness bug each time one of them was reasoned
+/// about slightly differently (see the guards below, each of which was earned by a real failure).
+/// Refinement removes the class: presence is part of a column's identity rather than a side
+/// condition, so there is nothing left to keep in sync.
+///
+/// It is also cheaper. The per-pair form was O(k²) per row in a bucket of k same-cardinality
+/// columns, allocating a set for every pair up front; this is O(k), allocates per column, and —
+/// because groups only ever shrink — **stops reading as soon as every group is a singleton**. On
+/// the overwhelmingly common input, where no two columns are 1:1, that is a handful of rows rather
+/// than the whole file.
+///
+/// # Guards
+///
+/// **Free pre-filter.** Two columns can only be 1:1 if their cardinalities match, so groups are
+/// seeded from the stats cache's `cardinality` and the data pass happens ONLY when at least two
+/// eligible categoricals share one. The common case pays nothing.
+///
+/// **Strict.** "Near-1:1" is deliberately not detected: a tolerance risks suppressing a column
+/// that carries real information, and a false positive here DELETES a panel.
+///
+/// **Empty is not a value, but it IS part of the pattern.** An empty cell canonicalizes to its own
+/// reserved id, so two columns blank on DIFFERENT rows separate immediately — they are not the
+/// same variable however well their populated values line up. Distinct values and support are
+/// counted over populated rows only, so two columns that merely share a blank region cannot
+/// collapse on the strength of their blanks.
+///
+/// **Support.** A bijection observed over a handful of rows is coincidence, not a functional
+/// dependency: two unrelated flags (`is_active`, `has_paid`) can easily agree on every one of four
+/// rows. A group must therefore average at least `MIN_ROWS_PER_CATEGORY` populated rows per
+/// category. The guard is on SUPPORT, not on cardinality — a two-category pair is not inherently
+/// suspect, and gating on cardinality would permanently blind this to the real binary code/label
+/// pairs (`M`/`F` against `Male`/`Female`) that are squarely the redundancy being targeted.
+fn one_to_one_categorical_twins(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+    sems: &[ColSemantics],
+) -> CliResult<std::collections::HashSet<usize>> {
+    use std::collections::{HashMap, HashSet};
+
+    /// Populated rows a category must average before a group counts as a functional dependency
+    /// rather than a small-sample coincidence. A 4-row agreement tells you nothing.
+    const MIN_ROWS_PER_CATEGORY: u64 = 4;
+    /// Canonical id for an empty cell, distinct from every real value's id.
+    const EMPTY_ID: u32 = u32::MAX;
+
+    let mut suppress = HashSet::new();
+
+    let eligible: Vec<usize> = stats
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| {
+            sems.get(*i)
+                .is_some_and(|sem| matches!(sem.route, Route::Defer | Route::Dimension))
+                && s.r#type == "String"
+                && s.cardinality >= 2
+                && s.cardinality <= CATEGORICAL_MAX_CARDINALITY
+        })
+        .map(|(i, _)| i)
+        .collect();
+
+    // seed the groups from the free pre-filter: unequal cardinality rules out a bijection outright
+    let mut by_card: HashMap<u64, Vec<usize>> = HashMap::new();
+    for &i in &eligible {
+        by_card.entry(stats[i].cardinality).or_default().push(i);
+    }
+    let mut groups: Vec<Vec<usize>> = by_card.into_values().filter(|v| v.len() >= 2).collect();
+    if groups.is_empty() {
+        return Ok(suppress);
+    }
+    // `into_values` yields buckets in HashMap order; sort so notes and the pass are reproducible
+    for g in &mut groups {
+        g.sort_unstable();
+    }
+    groups.sort();
+
+    // per-column canonical value -> id, assigned in order of first appearance. Two columns agree
+    // on a row when their ids match, whatever their values are named.
+    let mut ids: HashMap<usize, HashMap<String, u32>> = HashMap::new();
+    // populated (non-empty) row count per column — the support its share of a group rests on
+    let mut present: HashMap<usize, u64> = HashMap::new();
+
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    let mut record = csv::ByteRecord::new();
+    let mut row_id: HashMap<usize, u32> = HashMap::new();
+    while rdr.read_byte_record(&mut record)? {
+        // only columns still in a live group can matter: once two columns separate they can never
+        // rejoin, so a column that has fallen out of every group is never looked at again
+        row_id.clear();
+        for &i in groups.iter().flatten() {
+            let v = cell_to_string(record.get(i));
+            let id = if v.trim().is_empty() {
+                EMPTY_ID
+            } else {
+                *present.entry(i).or_default() += 1;
+                let map = ids.entry(i).or_default();
+                let next = map.len() as u32;
+                *map.entry(v).or_insert(next)
+            };
+            row_id.insert(i, id);
+        }
+        // refine: split every group by its members' ids on this row, keeping only the sub-groups
+        // that still have someone to disagree with
+        let mut refined: Vec<Vec<usize>> = Vec::with_capacity(groups.len());
+        for g in &groups {
+            let mut by_id: HashMap<u32, Vec<usize>> = HashMap::new();
+            for &i in g {
+                by_id
+                    .entry(row_id.get(&i).copied().unwrap_or(EMPTY_ID))
+                    .or_default()
+                    .push(i);
+            }
+            refined.extend(by_id.into_values().filter(|sub| sub.len() > 1));
+        }
+        groups = refined;
+        if groups.is_empty() {
+            // nothing can become 1:1 again — stop reading
+            break;
+        }
+    }
+
+    for g in &mut groups {
+        g.sort_unstable();
+    }
+    groups.sort();
+
+    // Keep the column with the SHORTEST values: every member carries the same information, so the
+    // one that fits a bar label or a treemap tile wins ("DPR" over "Department of Parks &
+    // Recreation", which truncates on an axis). Column index breaks a tie so the pick is stable.
+    for g in groups {
+        let distinct = |i: usize| ids.get(&i).map_or(0, HashMap::len);
+        let populated = |i: usize| present.get(&i).copied().unwrap_or(0);
+        // a single-value column is not a dimension anyone charts against, and its "bijection" is
+        // vacuous; and the mapping must be corroborated enough times to be a dependency at all
+        let n_distinct = g.iter().map(|&i| distinct(i)).max().unwrap_or(0);
+        let min_populated = g.iter().map(|&i| populated(i)).min().unwrap_or(0);
+        if n_distinct < 2 || min_populated < MIN_ROWS_PER_CATEGORY * n_distinct as u64 {
+            continue;
+        }
+        let mean_len = |&i: &usize| {
+            ids.get(&i).map_or(usize::MAX, |vs| {
+                if vs.is_empty() {
+                    usize::MAX
+                } else {
+                    vs.keys().map(String::len).sum::<usize>() / vs.len()
+                }
+            })
+        };
+        let Some(&keep) = g.iter().min_by_key(|i| (mean_len(i), **i)) else {
+            continue;
+        };
+        let name = |i: usize| {
+            let s = &stats[i];
+            if s.field.is_empty() {
+                format!("col {}", i + 1)
+            } else {
+                s.field.clone()
+            }
+        };
+        let dropped: Vec<String> = g.iter().filter(|&&i| i != keep).map(|&i| name(i)).collect();
+        for &i in &g {
+            if i != keep {
+                suppress.insert(i);
+            }
+        }
+        viz_note(&format!(
+            "viz smart: charting only {} for {} — they are 1:1 ({n_distinct} categories), so \
+             separate panels and parcats axes would be duplicates",
+            name(keep),
+            dropped.join(", "),
+        ));
+    }
+
+    Ok(suppress)
+}
+
 /// Canonical-timestamp priority for a date column's dictionary concept: a smaller rank wins as the
 /// time-series x-axis. Event/created timestamps lead; closed/updated/due are secondary; a bare date
 /// or no concept is last. Lets `viz smart` trend "requests over created_date" rather than over a
@@ -19732,11 +19942,24 @@ impl<'a> SmartCtx<'a> {
         // De-duplicate code/label twins (subject + subject_code -> chart only "subject"). Gated on
         // a dictionary being present so a stats-only dashboard is byte-identical; timezone
         // twins and IDs are already de-duplicated by the Temporal/Skip routing above.
-        let twin_suppress = if dict_data.is_some() {
+        let mut twin_suppress = if dict_data.is_some() {
             dimension_code_twins(&stats, &col_sems)
         } else {
             std::collections::HashSet::new()
         };
+        // ... and the same redundancy detected from the DATA rather than the names: two
+        // categorical columns in a 1:1 correspondence chart as identical bars and waste a parcats
+        // axis on the same variable (issue #4221). Deliberately NOT dictionary-gated — the name
+        // rule above can only fire on a `<base>_code` spelling, and the reporting dashboard has
+        // neither that spelling nor a dictionary. Soft-fail: a dashboard with a duplicate panel
+        // beats no dashboard.
+        match one_to_one_categorical_twins(args, &stats, &col_sems) {
+            Ok(dupes) => twin_suppress.extend(dupes),
+            Err(e) => viz_note(&format!(
+                "viz smart: 1:1 dimension detection failed ({e}); redundant categorical panels \
+                 may appear."
+            )),
+        }
 
         // Build the geographic map panel up front (one data pass) so we can learn which lat/lon
         // columns it ACTUALLY consumed. Those columns are charted on the map only —

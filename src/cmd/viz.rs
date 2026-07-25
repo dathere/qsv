@@ -12320,7 +12320,10 @@ enum PanelKind {
     /// (x, ascending) and cumulative value share (y), both 0→1 and row-aligned; the equality
     /// diagonal is the trivial (0,0)→(1,1) reference line, added as a second trace at render.
     /// `gini` is the CACHED coefficient (shown in the title, never recomputed here, so it matches
-    /// the box hint / pivotp / scoresql); `label` is the measure's human label for the hover. A
+    /// the box hint / pivotp / scoresql); `label` is the measure's human label for the hover. The
+    /// panel subtitle carries the framing caveat (`lorenz_caveat`) that keeps a high Gini over
+    /// heterogeneous rows — and a flat run that is really a pile of zeros — from reading as an
+    /// equity finding (issue #4222). A
     /// plain cartesian Scatter (lines), so it composes with the typed subplot grid and static
     /// image export.
     Lorenz {
@@ -15128,6 +15131,12 @@ fn mean_is_outlier_driven(s: &crate::cmd::stats::StatsData) -> bool {
     mean >= median * MEAN_MEDIAN_RATIO_MIN
 }
 
+/// Zero share at or above which zeros stop being incidental and start reshaping how the
+/// distribution must be read. Shared by `box_shape_hint`'s "% zeros" title part and the Lorenz
+/// panel's flat-run caveat (`lorenz_caveat`) so the two can never disagree about whether the same
+/// column is zero-inflated — they are routinely shown on the same dashboard.
+const ZERO_SHARE_MIN: f64 = 0.30;
+
 /// Share of zero values among a numeric column's non-null values, from the streaming sign
 /// counts (`n_negative`/`n_zero`/`n_positive`) in the base stats cache. `None` for non-numeric
 /// columns (the counts are only computed for Integer/Float) or when there are no numeric values.
@@ -15156,9 +15165,9 @@ fn zero_share(s: &crate::cmd::stats::StatsData) -> Option<f64> {
 ///
 /// Returns None when nothing notable — the title is left unchanged.
 fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
-    // nulls/zeros below ~a third of the column read as ordinary; above, they reshape the box.
+    // nulls below ~a third of the column read as ordinary; above, they reshape the box. Zeros
+    // use the shared `ZERO_SHARE_MIN`, which the Lorenz flat-run caveat reads too.
     const NULL_SHARE_MIN: f64 = 0.30;
-    const ZERO_SHARE_MIN: f64 = 0.30;
     // |Pearson skewness| below this reads as ~symmetric; outlier shares below 1% are negligible.
     const SKEW_MIN_ABS: f64 = 0.5;
     const OUTLIER_MIN_PCT: f64 = 1.0;
@@ -15270,6 +15279,42 @@ fn is_inequality_candidate(sem: &ColSemantics, s: &crate::cmd::stats::StatsData)
         },
     };
     additive && s.gini_coefficient.is_some_and(|g| g >= LORENZ_GINI_MIN)
+}
+
+/// The caveat line shown beneath a Lorenz panel's title (issue #4222), guarding against the
+/// dominant misread of the inequality vocabulary.
+///
+/// Two independent hazards, both of which the curve's geometry alone cannot disclose:
+///
+/// 1. **Unit heterogeneity (always shown).** A Gini over rows that are not comparable units is
+///    close to tautological — a subway extension SHOULD cost a thousand times a playground
+///    resurfacing — yet "Gini 0.96" reads to a general audience as unfairness. There is no row-unit
+///    signal anywhere in the stats cache: whether a row is a person, a household, a geography or a
+///    heterogeneous capital project is semantics, not a statistic. Rather than invent a
+///    name-heuristic proxy — which would either delete a legitimate equity finding or silently keep
+///    a misleading one — the caveat is UNCONDITIONAL and the reader is told what the number does
+///    and does not license. No gate, so no false negatives.
+/// 2. **Zero inflation (shown when it applies).** At or above `ZERO_SHARE_MIN`, the flat opening
+///    run of the curve IS the zeros, not a mass of small-but-nonzero records — commonly a pipeline
+///    stage (nothing committed/spent YET) rather than a have-not population. Those are two
+///    different populations and the curve draws them identically.
+///
+/// The zero share comes from `zero_share` (base stats cache, non-null denominator), the same
+/// helper and the same `ZERO_SHARE_MIN` threshold behind the "% zeros" box-title hint, so the two
+/// annotations agree whenever both appear on one dashboard. Nothing here is recomputed from the
+/// data: the panel's Gini remains the CACHED coefficient, untouched.
+fn lorenz_caveat(s: &crate::cmd::stats::StatsData) -> String {
+    const UNIT_CAVEAT: &str = "concentration is expected unless rows are comparable units";
+
+    zero_share(s).filter(|z| *z >= ZERO_SHARE_MIN).map_or_else(
+        || UNIT_CAVEAT.to_string(),
+        |z| {
+            format!(
+                "flat run = {:.0}% zeros, not small values \u{b7} {UNIT_CAVEAT}",
+                z * 100.0
+            )
+        },
+    )
 }
 
 /// APPROXIMATE share of the most frequent value, reconstructed entirely from the stats cache:
@@ -15984,11 +16029,15 @@ fn build_timeseries_panel(
 /// the picture and the number agree with the box hint / pivotp / scoresql). Only non-negative
 /// finite values are kept, matching the domain moarstats' Gini was computed over. Returns `None`
 /// for a degenerate column (see `lorenz_curve`).
+///
+/// `stat` is the column's cached stats row, used ONLY to compose the panel's framing caveat
+/// (`lorenz_caveat`) from the already-cached zero share — no statistic is recomputed here.
 fn build_lorenz_panel(
     args: &Args,
     sems: &[ColSemantics],
     idx: usize,
     gini: f64,
+    stat: &crate::cmd::stats::StatsData,
 ) -> CliResult<Option<Panel>> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let label = sems
@@ -16012,15 +16061,18 @@ fn build_lorenz_panel(
         return Ok(None);
     };
 
-    Ok(Some(Panel::new(
-        format!("{label} \u{2014} Lorenz curve (Gini {gini:.2})"),
-        PanelKind::Lorenz {
-            pop,
-            share,
-            gini,
-            label,
-        },
-    )))
+    Ok(Some(
+        Panel::new(
+            format!("{label} \u{2014} Lorenz curve (Gini {gini:.2})"),
+            PanelKind::Lorenz {
+                pop,
+                share,
+                gini,
+                label,
+            },
+        )
+        .with_subtitle(Some(lorenz_caveat(stat))),
+    ))
 }
 
 /// Compute the exact Lorenz curve for a set of non-negative values: sort ascending, then return
@@ -21126,7 +21178,8 @@ impl<'a> SmartCtx<'a> {
             }
             // insert weakest-first so the strongest inequality ends up topmost among them
             for (idx, gini) in lorenz_candidates.into_iter().rev() {
-                let built = build_lorenz_panel(self.args, &self.col_sems, idx, gini);
+                let built =
+                    build_lorenz_panel(self.args, &self.col_sems, idx, gini, &self.stats[idx]);
                 match built {
                     Ok(Some(panel)) => self.panels.insert(0, panel),
                     Ok(None) => {},

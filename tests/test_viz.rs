@@ -519,6 +519,55 @@ fn viz_smart_animated_scatter_pair_when_temporal() {
 }
 
 #[test]
+fn viz_smart_animated_pair_title_reports_pearson_under_spearman() {
+    // `smart_arc_pair_csv`'s centroids, mapped through 2^n so both columns become tail-dominated
+    // (all positive, mean well past 2x the median). That flips the correlation matrix to Spearman,
+    // and the animated pair selector reads its coefficient from whichever matrix it is handed —
+    // so the title would report a rho while LABELING it "r", and the Pearson-vs-Spearman
+    // nonlinearity note could never fire, its gap having collapsed to zero.
+    //
+    // The two coefficients are deliberately far apart on this fixture: Pearson r = -0.247 (the
+    // exponential mapping leaves a linear tilt) while the rank relationship is a symmetric arc, so
+    // Spearman rho = 0.00. A title reading "(r=0.00)" is the regression.
+    let cents = [(0, 2), (3, 10), (6, 13), (9, 10), (12, 2)];
+    let mut rows = String::from("date,a,b\n");
+    for (m, (cx, cy)) in cents.iter().enumerate() {
+        for dx in -1..=1_i32 {
+            for dy in -1..=1_i32 {
+                let a = 2_i64.pow(u32::try_from(cx + dx + 1).unwrap());
+                let b = 2_i64.pow(u32::try_from(cy + dy + 1).unwrap());
+                rows.push_str(&format!("2024-0{}-01,{a},{b}\n", m + 1));
+            }
+        }
+    }
+
+    let wrk = Workdir::new("viz_smart_animated_pair_title_reports_pearson_under_spearman");
+    wrk.create_from_string("s.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // the matrix must actually be in Spearman mode, or this asserts nothing
+    assert!(
+        html.contains("Correlation (Spearman"),
+        "fixture must be tail-dominated enough to select Spearman; html: {html}"
+    );
+    assert!(
+        html.contains("over time"),
+        "expected an animated pair panel"
+    );
+    assert!(
+        html.contains("(r=-0.25)"),
+        "the animated pair title must carry the PEARSON r, not the Spearman rho it was selected \
+         with; html: {html}"
+    );
+}
+
+#[test]
 fn viz_smart_pair_gated_out_when_tautological() {
     // headline critique fix: a rigid tautological pair (y = 2x, r=1.0) with a date column must NOT
     // animate — its centroids only slide along the line (curvature ~0), so a time reveal adds

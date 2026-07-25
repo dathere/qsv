@@ -20379,10 +20379,17 @@ impl<'a> SmartCtx<'a> {
                     else {
                         break 'anim None;
                     };
-                    let Some((i, j, r)) = select_drifting_pair(&matrix, &columns, &bucket_means)
+                    let Some((i, j, _)) = select_drifting_pair(&matrix, &columns, &bucket_means)
                     else {
                         break 'anim None;
                     };
+                    // `select_drifting_pair` hands back the coefficient from the matrix it was
+                    // given — which is Spearman's rho on a tail-dominated table. The title below
+                    // and its nonlinearity note are Pearson-defined, so read r off `pmatrix`, as
+                    // the static drill-down does. Taking the returned value instead would label a
+                    // rho as "r" AND collapse the Pearson-vs-Spearman gap to zero, so the note
+                    // could never fire in exactly the mode that most needs it.
+                    let r = pmatrix[i][j];
                     // large-N contours aren't animatable (a scatter would overplot into a solid
                     // mass)
                     if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {

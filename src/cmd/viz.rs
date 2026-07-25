@@ -7738,6 +7738,20 @@ fn contour_hover_template(x_label: &str, y_label: &str) -> String {
     )
 }
 
+/// Hover text for a point on a Lorenz curve: the measure, its CACHED Gini, and the concentration
+/// stated in plain terms — the bottom X% of records hold Y% of the total.
+///
+/// Kept beside `contour_hover_template` because the two share the hazard that motivates both: a
+/// raw column label interpolated into a string plotly parses for `%{...}` tokens, so each label
+/// needs the full `escape_template_pct(escape_hover(..))` composition. Extracting this out of the
+/// render match arm is also what makes the escaping unit-testable without building a dashboard.
+fn lorenz_hover_template(label: &str, gini: f64) -> String {
+    format!(
+        "{} (Gini {gini:.2})<br>bottom %{{x:.0%}} of records hold %{{y:.0%}}<extra></extra>",
+        escape_template_pct(&escape_hover(label))
+    )
+}
+
 /// Build a `Contour` trace: the 2D density of two numeric columns (--x and --y), binned into a
 /// `--bins` x `--bins` grid of point counts. Unlike `heatmap` (categorical/correlation), this
 /// shows the smooth joint distribution of two continuous variables.
@@ -22344,16 +22358,8 @@ fn panel_trace(
             label,
         } => {
             // the cumulative curve; the muted equality diagonal is a SECOND trace added by the
-            // caller (grid + inline) right after this one. The hover leads with the (cached) Gini
-            // and states the concentration in plain terms: the bottom X% of records hold Y% of the
-            // total.
-            let hover = format!(
-                "{} (Gini {gini:.2})<br>bottom %{{x:.0%}} of records hold \
-                 %{{y:.0%}}<extra></extra>",
-                // a raw column label inside a template that parses `%{...}`: same composition the
-                // contour/bubble hovers use, so a "% of total"-style header stays literal
-                escape_template_pct(&escape_hover(label))
-            );
+            // caller (grid + inline) right after this one.
+            let hover = lorenz_hover_template(label, *gini);
             let mut t = Scatter::new(pop.clone(), share.clone())
                 .mode(Mode::Lines)
                 .name(panel.name.clone())
@@ -29992,6 +29998,34 @@ mod tests {
         // markup first, then `%`-doubling -- the same one-order composition as the other sinks
         let m = contour_hover_template("R&D 50%", "plain");
         assert!(m.starts_with("R&amp;D 50%%: "), "got: {m}");
+    }
+
+    #[test]
+    fn lorenz_hover_template_neutralizes_percent_bearing_labels() {
+        // the Lorenz hover interpolates a raw measure label into a template that parses `%{...}`,
+        // exactly as the contour hover does -- `%` in a header is NOT an intensive-measure token
+        // (tokenization splits on non-alphanumerics), so such a column really can reach a Lorenz
+        // panel and really can carry a `%` into the template
+        let t = lorenz_hover_template("% of total", 0.87);
+        assert!(
+            t.starts_with("%% of total (Gini 0.87)"),
+            "a literal `%` in the label must be doubled, got: {t}"
+        );
+        // a token-shaped label is neutralized rather than honored
+        assert!(
+            lorenz_hover_template("%{x}", 0.5).starts_with("%%{x} (Gini 0.50)"),
+            "a token-shaped label must be neutralized"
+        );
+        // markup first, then `%`-doubling -- the one fixed order shared by every template sink
+        assert!(
+            lorenz_hover_template("R&D 50%", 0.5).starts_with("R&amp;D 50%% "),
+            "markup must be escaped before the `%`-doubling"
+        );
+        // the template's OWN tokens survive intact, and the trace-name box stays suppressed
+        assert!(
+            t.ends_with("bottom %{x:.0%} of records hold %{y:.0%}<extra></extra>"),
+            "got: {t}"
+        );
     }
 
     #[test]

@@ -10293,10 +10293,20 @@ fn viz_smart_bivariate_top_relationships_ranks_beyond_strongest_pair() {
     let cats = ["A", "B", "C", "D"];
     for i in 0..300 {
         let g1 = cats[i % 4];
-        let g2 = g1;
-        let g3 = cats[(i * 3) % 4];
-        let g4 = g3;
-        let noise: Vec<&str> = (0..6).map(|k| cats[(i * 7 + k * 13) % 4]).collect();
+        // g2/g4 track g1/g3 on all but a handful of rows: NMI stays ~1.0 with full 300-row
+        // support, but the relation is NOT a bijection, so the 1:1 collapse (issue #4221) leaves
+        // both columns charted. An exact duplicate is literally the same variable and folds into
+        // a single panel, taking with it the well-supported high-NMI pairs these tests rank.
+        let g2 = if i % 50 == 0 { cats[(i + 1) % 4] } else { g1 };
+        // block-stepped, NOT `(i * 3) % 4`: multiplying a linear sequence by a coprime factor
+        // permutes it, so the old g3 was a relabeling of g1 and folded into it. The divisor sits
+        // clear of the noise columns' 2..=7 range so it does not collide with one of them either.
+        let g3 = cats[(i / 11) % 4];
+        let g4 = if i % 50 == 25 { cats[(i + 1) % 4] } else { g3 };
+        // genuine filler: a per-column BLOCK size rather than a per-column offset. Offsets of a
+        // linear sequence are rotations of one another, so every "noise" column was a relabeling
+        // of g1 and all ten collapsed into one panel.
+        let noise: Vec<&str> = (0..6).map(|k| cats[(i / (k + 2)) % 4]).collect();
         rows.push_str(&format!(
             "{g1},{g2},{g3},{g4},{},{},{},{},{},{}\n",
             noise[0], noise[1], noise[2], noise[3], noise[4], noise[5]
@@ -10346,10 +10356,20 @@ fn viz_smart_bivariate_top_relationships_lollipop_encodings() {
     let cats = ["A", "B", "C", "D"];
     for i in 0..300 {
         let g1 = cats[i % 4];
-        let g2 = g1;
-        let g3 = cats[(i * 3) % 4];
-        let g4 = g3;
-        let noise: Vec<&str> = (0..6).map(|k| cats[(i * 7 + k * 13) % 4]).collect();
+        // g2/g4 track g1/g3 on all but a handful of rows: NMI stays ~1.0 with full 300-row
+        // support, but the relation is NOT a bijection, so the 1:1 collapse (issue #4221) leaves
+        // both columns charted. An exact duplicate is literally the same variable and folds into
+        // a single panel, taking with it the well-supported high-NMI pairs these tests rank.
+        let g2 = if i % 50 == 0 { cats[(i + 1) % 4] } else { g1 };
+        // block-stepped, NOT `(i * 3) % 4`: multiplying a linear sequence by a coprime factor
+        // permutes it, so the old g3 was a relabeling of g1 and folded into it. The divisor sits
+        // clear of the noise columns' 2..=7 range so it does not collide with one of them either.
+        let g3 = cats[(i / 11) % 4];
+        let g4 = if i % 50 == 25 { cats[(i + 1) % 4] } else { g3 };
+        // genuine filler: a per-column BLOCK size rather than a per-column offset. Offsets of a
+        // linear sequence are rotations of one another, so every "noise" column was a relabeling
+        // of g1 and all ten collapsed into one panel.
+        let noise: Vec<&str> = (0..6).map(|k| cats[(i / (k + 2)) % 4]).collect();
         rows.push_str(&format!(
             "{g1},{g2},{g3},{g4},{},{},{},{},{},{}\n",
             noise[0], noise[1], noise[2], noise[3], noise[4], noise[5]
@@ -10654,10 +10674,20 @@ fn viz_smart_bivariate_top_relationships_excludes_low_support_pairs() {
     let cats = ["A", "B", "C", "D"];
     for i in 0..300 {
         let g1 = cats[i % 4];
-        let g2 = g1;
-        let g3 = cats[(i * 3) % 4];
-        let g4 = g3;
-        let noise: Vec<&str> = (0..6).map(|k| cats[(i * 7 + k * 13) % 4]).collect();
+        // g2/g4 track g1/g3 on all but a handful of rows: NMI stays ~1.0 with full 300-row
+        // support, but the relation is NOT a bijection, so the 1:1 collapse (issue #4221) leaves
+        // both columns charted. An exact duplicate is literally the same variable and folds into
+        // a single panel, taking with it the well-supported high-NMI pairs these tests rank.
+        let g2 = if i % 50 == 0 { cats[(i + 1) % 4] } else { g1 };
+        // block-stepped, NOT `(i * 3) % 4`: multiplying a linear sequence by a coprime factor
+        // permutes it, so the old g3 was a relabeling of g1 and folded into it. The divisor sits
+        // clear of the noise columns' 2..=7 range so it does not collide with one of them either.
+        let g3 = cats[(i / 11) % 4];
+        let g4 = if i % 50 == 25 { cats[(i + 1) % 4] } else { g3 };
+        // genuine filler: a per-column BLOCK size rather than a per-column offset. Offsets of a
+        // linear sequence are rotations of one another, so every "noise" column was a relabeling
+        // of g1 and all ten collapsed into one panel.
+        let noise: Vec<&str> = (0..6).map(|k| cats[(i / (k + 2)) % 4]).collect();
         let (sparse_a, sparse_b) = if i < 10 { ("P", "Q") } else { ("", "") };
         rows.push_str(&format!(
             "{g1},{g2},{g3},{g4},{},{},{},{},{},{},{sparse_a},{sparse_b}\n",

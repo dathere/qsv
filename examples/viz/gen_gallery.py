@@ -510,6 +510,13 @@ FIGURES = [
      False, ["violin", "sales_sample.csv", "--y", "revenue", "--x", "region"]),
     ("pie (donut)", "Revenue share by product category.",
      False, ["pie", "sales_sample.csv", "--x", "product_category", "--y", "revenue", "--donut"]),
+    ("funnel",
+     "Stage-by-stage drop-off for a signup pipeline encoded as <em>rows</em> (one row per stage "
+     "per channel, summed per stage). Stages keep the order they first appear in the file, so the "
+     "data defines the pipeline and nothing is inferred; each band is labelled with its conversion "
+     "from the previous stage. This is the row-shaped counterpart to the column-shaped pipeline "
+     "<code>viz smart</code> detects automatically.",
+     False, ["funnel", "signup_funnel.csv", "--x", "stage", "--y", "users"]),
     ("heatmap (correlation)", "Pearson correlation matrix over numeric columns.",
      False, ["heatmap", "sales_sample.csv"]),
     ("scatter (correlated pair)",

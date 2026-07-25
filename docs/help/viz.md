@@ -51,6 +51,11 @@ violin      Violin plot: a box plot plus a KDE density curve revealing the
             distribution's shape (modes, shoulders). Same inputs as box
             (--y = value column, optional --x = group column).
 pie         Proportions.      --x = label column, optional --y = value column.
+funnel      Stage-by-stage drop-off. --x = stage column, optional --y = value
+            column (counts stage occurrences when omitted). Stages keep the
+            order they first appear in the file, so the rows define the
+            pipeline; plotly labels each band with its conversion from the
+            previous stage.
 heatmap     Color grid. Correlation matrix of numeric columns (default; an
             optional column subset via --cols), or a category x category pivot
             with --x/--y/--z.
@@ -204,6 +209,12 @@ qsv viz violin data.csv --y measurement --x group -o violin.html
 qsv viz pie data.csv --x category --donut -o pie.html
 ```
 
+> Funnel of a pipeline whose stages are ROWS (stage column + amount column)
+
+```console
+qsv viz funnel pipeline.csv --x stage --y amount -o funnel.html
+```
+
 > Correlation heatmap over all numeric columns
 
 ```console
@@ -324,6 +335,7 @@ qsv viz histogram   [options] <input>
 qsv viz box         [options] <input>
 qsv viz violin      [options] <input>
 qsv viz pie         [options] <input>
+qsv viz funnel      [options] <input>
 qsv viz heatmap     [options] <input>
 qsv viz contour     [options] <input>
 qsv viz candlestick [options] <input>

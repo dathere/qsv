@@ -37,6 +37,11 @@ Chart types (subcommands):
                 distribution's shape (modes, shoulders). Same inputs as box
                 (--y = value column, optional --x = group column).
     pie         Proportions.      --x = label column, optional --y = value column.
+    funnel      Stage-by-stage drop-off. --x = stage column, optional --y = value
+                column (counts stage occurrences when omitted). Stages keep the
+                order they first appear in the file, so the rows define the
+                pipeline; plotly labels each band with its conversion from the
+                previous stage.
     heatmap     Color grid. Correlation matrix of numeric columns (default; an
                 optional column subset via --cols), or a category x category pivot
                 with --x/--y/--z.
@@ -152,6 +157,9 @@ Examples:
   # Pie chart of category proportions (counts), as a donut
   qsv viz pie data.csv --x category --donut -o pie.html
 
+  # Funnel of a pipeline whose stages are ROWS (stage column + amount column)
+  qsv viz funnel pipeline.csv --x stage --y amount -o funnel.html
+
   # Correlation heatmap over all numeric columns
   qsv viz heatmap data.csv -o corr.html
 
@@ -216,6 +224,7 @@ Usage:
     qsv viz box         [options] <input>
     qsv viz violin      [options] <input>
     qsv viz pie         [options] <input>
+    qsv viz funnel      [options] <input>
     qsv viz heatmap     [options] <input>
     qsv viz contour     [options] <input>
     qsv viz candlestick [options] <input>
@@ -1433,6 +1442,7 @@ struct Args {
     cmd_box:                 bool,
     cmd_violin:              bool,
     cmd_pie:                 bool,
+    cmd_funnel:              bool,
     cmd_heatmap:             bool,
     cmd_contour:             bool,
     cmd_candlestick:         bool,
@@ -1967,6 +1977,13 @@ fn build_plot(
             plot.add_trace(build_pie(args)?);
             (None, None)
         },
+        // A funnel is cartesian, but plotly draws no visible value axis for it -- each band
+        // carries its own value and conversion label instead. An axis title here would be dead
+        // config that never renders, so it gets none, like the domain-based traces above.
+        Chart::Funnel => {
+            plot.add_trace(build_funnel_chart(args)?);
+            (None, None)
+        },
         Chart::Sankey => {
             let (trace, menu) = build_sankey(args)?;
             plot.add_trace(trace);
@@ -2038,6 +2055,7 @@ enum Chart {
     Box,
     Violin,
     Pie,
+    Funnel,
     Heatmap,
     Contour,
     Candlestick,
@@ -2071,6 +2089,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Violin
     } else if args.cmd_pie {
         Chart::Pie
+    } else if args.cmd_funnel {
+        Chart::Funnel
     } else if args.cmd_heatmap {
         Chart::Heatmap
     } else if args.cmd_contour {
@@ -7363,6 +7383,65 @@ fn build_pie(args: &Args) -> CliResult<Box<dyn Trace>> {
         pie = pie.hole(0.4);
     }
     Ok(pie)
+}
+
+/// `viz funnel`: a stage-by-stage drop-off chart. Sums `--y` per `--x` stage, or counts stage
+/// occurrences when `--y` is omitted — the same input shape as `viz pie`, and read the same way.
+///
+/// The two funnels in qsv are complements, not duplicates. `viz smart`'s panel detects a pipeline
+/// spread across SEPARATE COLUMNS (planned/committed/spent) and has to infer both the order and
+/// the nesting. This one takes a pipeline encoded as ROWS — one row per stage — which the smart
+/// path explicitly declines to guess at. Here the user has already answered both questions, so
+/// there is nothing to infer: **stage order is first-appearance order in the file**, and no
+/// containment check applies, because an explicit `viz funnel` is a request, not a detection.
+///
+/// Stages are NOT sorted by value. A stage that outruns its predecessor is a finding the reader
+/// needs to see, and sorting would quietly hide it.
+fn build_funnel_chart(args: &Args) -> CliResult<Box<dyn Trace>> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let stage_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
+    let value_idx = match args.flag_y.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "y")?),
+        None => None,
+    };
+
+    let mut order: Vec<String> = Vec::new();
+    let mut acc: HashMap<String, f64> = HashMap::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let stage = cell_to_string(record.get(stage_idx));
+        if stage.is_empty() {
+            continue;
+        }
+        let inc = match value_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => v,
+                None => continue,
+            },
+            None => 1.0,
+        };
+        if let Some(v) = acc.get_mut(&stage) {
+            *v += inc;
+        } else {
+            order.push(stage.clone());
+            acc.insert(stage, inc);
+        }
+    }
+    if order.is_empty() {
+        return fail_clierror!("No data found for the funnel chart.");
+    }
+    let values: Vec<f64> = order.iter().map(|s| acc[s]).collect();
+    if values.iter().any(|v| *v < 0.0) {
+        return fail_clierror!(
+            "A funnel cannot represent a negative stage total; check the --y column."
+        );
+    }
+
+    // plotly draws index 0 at the TOP and works downward, so first-appearance order is fed as-is.
+    Ok(Funnel::new(values, order)
+        .orientation(Orientation::Horizontal)
+        .text_info("value+percent previous")
+        .connector(FunnelConnector::new().visible(true)))
 }
 
 /// Non-fatal advisory: a pie of many NEAR-EQUAL slices is the worst case for a pie chart — humans

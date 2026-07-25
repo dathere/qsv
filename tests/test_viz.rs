@@ -6853,6 +6853,74 @@ fn viz_contour_hover_names_both_measures_and_the_row_count() {
     );
 }
 
+fn funnel_stages(wrk: &Workdir) {
+    wrk.create_from_string(
+        "stages.csv",
+        "stage,amount\nVisited,48210\nSignedup,12980\nActivated,7412\nSubscribed,2104\nRenewed,\
+         861\n",
+    );
+}
+
+#[test]
+fn viz_funnel_keeps_file_order_and_labels_conversion() {
+    // `viz funnel` takes a pipeline encoded as ROWS, which `viz smart`'s column-based detector
+    // explicitly declines to guess at. Order is first-appearance order in the file -- the user
+    // has already answered the question the smart path has to infer -- and is never sorted by
+    // value, so a stage that outruns its predecessor stays visible.
+    let wrk = Workdir::new("viz_funnel_keeps_file_order_and_labels_conversion");
+    funnel_stages(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["funnel", "stages.csv", "--x", "stage", "--y", "amount"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"funnel""#), "html: {html}");
+    assert!(
+        html.contains(r#""y":["Visited","SignedUp","Activated","Subscribed","Renewed"]"#)
+            || html.contains(r#""y":["Visited","Signedup","Activated","Subscribed","Renewed"]"#),
+        "stages must keep file order, unsorted; html: {html}"
+    );
+    assert!(
+        html.contains(r#""textinfo":"value+percent previous""#),
+        "each band should carry its value and conversion; html: {html}"
+    );
+}
+
+#[test]
+fn viz_funnel_counts_stage_rows_when_no_value_column() {
+    // --y omitted counts occurrences per stage, mirroring `viz pie`'s behaviour
+    let wrk = Workdir::new("viz_funnel_counts_stage_rows_when_no_value_column");
+    wrk.create_from_string(
+        "ev.csv",
+        "stage\nVisited\nVisited\nVisited\nSignedup\nSignedup\nActivated\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["funnel", "ev.csv", "--x", "stage"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""x":[3.0,2.0,1.0]"#) || html.contains(r#""x":[3,2,1]"#),
+        "stage occurrences should be counted; html: {html}"
+    );
+}
+
+#[test]
+fn viz_funnel_rejects_a_negative_stage_total() {
+    // a negative band is not something a funnel can represent, so this fails loudly rather than
+    // drawing a nonsense chart
+    let wrk = Workdir::new("viz_funnel_rejects_a_negative_stage_total");
+    wrk.create_from_string("neg.csv", "stage,amount\nVisited,100\nRefunded,-40\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["funnel", "neg.csv", "--x", "stage", "--y", "amount"]);
+    wrk.assert_err(&mut cmd);
+}
+
 #[test]
 fn viz_contour_non_numeric_errors() {
     let wrk = Workdir::new("viz_contour_non_numeric_errors");

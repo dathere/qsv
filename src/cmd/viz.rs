@@ -20817,16 +20817,9 @@ impl<'a> SmartCtx<'a> {
                             // could not override it. This mirrors the contour branch, which
                             // already retries a collapsed grid in log space before giving up.
                             //
-                            // `relationship_axis_log` only returns true for strictly positive
-                            // values, so `ln` is finite wherever it is applied. The linear case
-                            // borrows the original vectors and allocates nothing.
-                            let logged = |on: bool, vs: &[f64]| -> Option<Vec<f64>> {
-                                on.then(|| vs.iter().map(|v| v.ln()).collect())
-                            };
-                            let (lx, ly) = (logged(axis_log.0, &xs), logged(axis_log.1, &ys));
-                            let plotted_x = lx.as_deref().unwrap_or(&xs);
-                            let plotted_y = ly.as_deref().unwrap_or(&ys);
-                            if scatter_fill_stats(plotted_x, plotted_y).degenerate {
+                            // `scatter_fill_plotted` also backs the render-height branch, so the
+                            // drop and the compact-height decisions judge the same space.
+                            if scatter_fill_plotted(&xs, &ys, axis_log).degenerate {
                                 return None;
                             }
                             // Encode a third numeric (the axis MOST associated with the pair, so
@@ -23169,7 +23162,7 @@ fn smart_inline_panel_plot(
     let themed = theme.is_some();
     // overview panels (map/geo, correlation, time-series, …) render a little taller than the
     // per-column box/bar/histogram panels.
-    let row_height = panel_render_height(&panel.kind);
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
     // map panels use a MapLibre `map` layout (tile basemap, framed to the points) instead of
     // cartesian x/y axes, so they're assembled here rather than through the shared
     // `panel_trace`/axis path.
@@ -24372,7 +24365,7 @@ fn render_smart_inline(
         // wrap the plot in a fixed-height box so plotly's responsive `height:100%` div resolves to
         // a concrete height instead of expanding to fill the whole cell (which would otherwise
         // overlap/clip any caption rendered below it).
-        let plot_height = panel_render_height(&panel.kind);
+        let plot_height = panel_render_height(&panel.kind, panel.axis_log);
         cells.push_str(&format!(
             r#"      <div class="qsv-viz-plot" style="height:{plot_height}px">
 "#
@@ -25562,6 +25555,25 @@ struct ScatterFill {
     sparse:     bool,
 }
 
+/// `scatter_fill_stats` over the values as the panel will actually PLOT them: log-transformed on
+/// whichever axes resolved to a log scale (issue #4276). Both verdicts a scatter's fill drives —
+/// the build-time drop (`degenerate`) and the render-height branch (`sparse`) — go through here,
+/// so they stay in agreement about which space the cloud is judged in, exactly as
+/// `scatter_fill_stats` promises about its thresholds.
+///
+/// A cloud squashed against the origin on linear axes can be perfectly well spread once logged;
+/// judging the height on the raw values would hand a rescued panel the compact height meant for a
+/// genuinely sparse one. `relationship_axis_log` only returns true for strictly positive values,
+/// so `ln` is finite wherever it is applied, and the all-linear case borrows the caller's slices
+/// and allocates nothing.
+fn scatter_fill_plotted(xs: &[f64], ys: &[f64], axis_log: (bool, bool)) -> ScatterFill {
+    let logged = |on: bool, vs: &[f64]| -> Option<Vec<f64>> {
+        on.then(|| vs.iter().map(|v| v.ln()).collect())
+    };
+    let (lx, ly) = (logged(axis_log.0, xs), logged(axis_log.1, ys));
+    scatter_fill_stats(lx.as_deref().unwrap_or(xs), ly.as_deref().unwrap_or(ys))
+}
+
 /// Classify a scatter's fill from its row-aligned `xs`/`ys` in one O(n) pass. Thresholds live here
 /// (one place) so the build-time drop guard and the render-height branch stay in agreement.
 fn scatter_fill_stats(xs: &[f64], ys: &[f64]) -> ScatterFill {
@@ -25640,7 +25652,7 @@ fn scatter_fill_stats(xs: &[f64], ys: &[f64]) -> ScatterFill {
 /// category/node count (clamped); a sparse scatter gets a compact height; hierarchy gets the tall
 /// `HIER_ROW_HEIGHT_PX`; the leading KPI row a short content-matched height; other overview panels
 /// `OVERVIEW_ROW_HEIGHT_PX`; everything else `ROW_HEIGHT_PX`.
-fn panel_render_height(kind: &PanelKind) -> usize {
+fn panel_render_height(kind: &PanelKind, axis_log: (bool, bool)) -> usize {
     match kind {
         PanelKind::Hierarchy { .. } => HIER_ROW_HEIGHT_PX,
         PanelKind::Parcats {
@@ -25681,7 +25693,7 @@ fn panel_render_height(kind: &PanelKind) -> usize {
         | PanelKind::Choropleth { .. }
         | PanelKind::ChoroplethMap { .. } => MAP_ROW_HEIGHT_PX,
         PanelKind::AnimatedGeo { .. } => MAP_ROW_HEIGHT_PX + SLIDER_CONTROL_ALLOWANCE_PX,
-        PanelKind::ScatterPair { xs, ys, .. } if scatter_fill_stats(xs, ys).sparse => {
+        PanelKind::ScatterPair { xs, ys, .. } if scatter_fill_plotted(xs, ys, axis_log).sparse => {
             SCATTER_SPARSE_HEIGHT_PX
         },
         _ if is_overview_panel(kind) => OVERVIEW_ROW_HEIGHT_PX,
@@ -25705,8 +25717,8 @@ fn kpi_row_height(tiles: &[KpiTile]) -> usize {
 /// HTML dashboard. One row unit is `ROW_HEIGHT_PX`; a taller overview/map/parcats panel scales
 /// above 1.0, a short KPI row below it, a sparse scatter below it. At `1.0` for every row the
 /// weighted grid geometry reduces to the original uniform layout.
-fn panel_row_scale(kind: &PanelKind) -> f64 {
-    panel_render_height(kind) as f64 / ROW_HEIGHT_PX as f64
+fn panel_row_scale(kind: &PanelKind, axis_log: (bool, bool)) -> f64 {
+    panel_render_height(kind, axis_log) as f64 / ROW_HEIGHT_PX as f64
 }
 
 /// Compute the paper-space domains for a cell at grid position (`row`, `col`) in a `rows`×`cols`
@@ -25823,7 +25835,7 @@ fn smart_grid_layout(panels: &[Panel], cols: usize) -> (Vec<SubplotGeometry>, us
     // and sparse-scatter rows). With all rows the same height this reduces to the uniform grid.
     let mut row_scales = vec![0.0_f64; rows];
     for (panel, &(r, _, _)) in panels.iter().zip(placements.iter()) {
-        row_scales[r] = row_scales[r].max(panel_row_scale(&panel.kind));
+        row_scales[r] = row_scales[r].max(panel_row_scale(&panel.kind, panel.axis_log));
     }
     for s in &mut row_scales {
         if *s <= 0.0 {
@@ -30572,8 +30584,8 @@ mod tests {
             },
         );
 
-        let plain_scale = panel_row_scale(&plain.kind);
-        let gauge_scale = panel_row_scale(&gauged.kind);
+        let plain_scale = panel_row_scale(&plain.kind, (false, false));
+        let gauge_scale = panel_row_scale(&gauged.kind, (false, false));
 
         // the scale is the content-matched inline height as a fraction of a normal row
         assert!((plain_scale - KPI_ROW_HEIGHT_PX as f64 / ROW_HEIGHT_PX as f64).abs() < 1e-9);
@@ -30584,7 +30596,7 @@ mod tests {
         assert!(gauge_scale < 1.0 && plain_scale < 1.0);
         // a non-KPI panel keeps a full-height row (uniform grid unchanged)
         let bar = Panel::new("c".to_string(), PanelKind::FreqBar { idx: 0 });
-        assert!((panel_row_scale(&bar.kind) - 1.0).abs() < 1e-9);
+        assert!((panel_row_scale(&bar.kind, (false, false)) - 1.0).abs() < 1e-9);
 
         // the gauge KPI first-row band is genuinely taller in the assembled grid geometry
         let with_kpi = |lead: Panel| {
@@ -30626,12 +30638,14 @@ mod tests {
             bucket_labels: vec!["a".to_string(), "b".to_string()],
             frame_label:   "t".to_string(),
         };
-        assert_eq!(panel_render_height(&geo), MAP_ROW_HEIGHT_PX);
+        assert_eq!(panel_render_height(&geo, (false, false)), MAP_ROW_HEIGHT_PX);
         assert_eq!(
-            panel_render_height(&anim),
+            panel_render_height(&anim, (false, false)),
             MAP_ROW_HEIGHT_PX + SLIDER_CONTROL_ALLOWANCE_PX
         );
-        assert!(panel_render_height(&anim) > panel_render_height(&geo));
+        assert!(
+            panel_render_height(&anim, (false, false)) > panel_render_height(&geo, (false, false))
+        );
     }
 
     #[test]
@@ -30644,9 +30658,9 @@ mod tests {
                 .collect(),
             counts:     vec![1.0; n],
         };
-        let small = panel_render_height(&parcats(3)); // 3*44=132 -> floored
-        let mid = panel_render_height(&parcats(15)); // 15*44=660 -> between
-        let big = panel_render_height(&parcats(40)); // 40*44=1760 -> ceiled
+        let small = panel_render_height(&parcats(3), (false, false)); // 3*44=132 -> floored
+        let mid = panel_render_height(&parcats(15), (false, false)); // 15*44=660 -> between
+        let big = panel_render_height(&parcats(40), (false, false)); // 40*44=1760 -> ceiled
 
         assert_eq!(small, PARCATS_HEIGHT_MIN_PX);
         assert_eq!(mid, 15 * PARCATS_PX_PER_CATEGORY);
@@ -30667,9 +30681,9 @@ mod tests {
             link_value:  vec![1.0; n],
             value_order: false,
         };
-        let small = panel_render_height(&sankey(3)); // 3*40=120 -> floored
-        let mid = panel_render_height(&sankey(18)); // 18*40=720 -> between
-        let big = panel_render_height(&sankey(40)); // 40*40=1600 -> ceiled
+        let small = panel_render_height(&sankey(3), (false, false)); // 3*40=120 -> floored
+        let mid = panel_render_height(&sankey(18), (false, false)); // 18*40=720 -> between
+        let big = panel_render_height(&sankey(40), (false, false)); // 40*40=1600 -> ceiled
 
         assert_eq!(small, SANKEY_HEIGHT_MIN_PX);
         assert_eq!(mid, 18 * SANKEY_PX_PER_NODE);
@@ -30694,7 +30708,10 @@ mod tests {
             size_label: None,
         };
         // a well-filled ScatterPair keeps its full overview-panel height
-        assert_eq!(panel_render_height(&spread_panel), OVERVIEW_ROW_HEIGHT_PX);
+        assert_eq!(
+            panel_render_height(&spread_panel, (false, false)),
+            OVERVIEW_ROW_HEIGHT_PX
+        );
         // and a sparse one is shorter than a well-filled one
         assert!(SCATTER_SPARSE_HEIGHT_PX < OVERVIEW_ROW_HEIGHT_PX);
 
@@ -30715,7 +30732,50 @@ mod tests {
             y_label:    "y".to_string(),
             size_label: None,
         };
-        assert_eq!(panel_render_height(&sparse_panel), SCATTER_SPARSE_HEIGHT_PX);
+        assert_eq!(
+            panel_render_height(&sparse_panel, (false, false)),
+            SCATTER_SPARSE_HEIGHT_PX
+        );
+
+        // A heavy-tailed but strictly positive cloud reads as sparse on LINEAR axes -- the bulk
+        // piles against the origin under a far outlier -- yet spreads cleanly once logged. Such a
+        // panel is rescued from the build-time drop by its log axes (issue #4276), so its HEIGHT
+        // must be judged in the same space: sizing it off the raw values would hand a
+        // well-filled cloud the compact height meant for a genuinely sparse one (roborev 3821).
+        let mut hx: Vec<f64> = Vec::new();
+        let mut hy: Vec<f64> = Vec::new();
+        for i in 0..99 {
+            let v = 1.0 + f64::from(i % 20);
+            hx.push(v);
+            hy.push(v * 3.0);
+        }
+        hx.push(1.0e6);
+        hy.push(3.0e6);
+        let raw = scatter_fill_stats(&hx, &hy);
+        assert!(
+            raw.sparse,
+            "the linear view of a heavy tail should read as sparse"
+        );
+        let plotted = scatter_fill_plotted(&hx, &hy, (true, true));
+        assert!(!plotted.sparse, "logging it should spread the cloud out");
+        let heavy_panel = PanelKind::ScatterPair {
+            xs:         hx,
+            ys:         hy,
+            sizes:      None,
+            x_label:    "x".to_string(),
+            y_label:    "y".to_string(),
+            size_label: None,
+        };
+        assert_eq!(
+            panel_render_height(&heavy_panel, (true, true)),
+            OVERVIEW_ROW_HEIGHT_PX,
+            "a log-rescued scatter must get the full height, not the sparse one"
+        );
+        // ... while the same panel drawn on linear axes still gets the compact height
+        assert_eq!(
+            panel_render_height(&heavy_panel, (false, false)),
+            SCATTER_SPARSE_HEIGHT_PX
+        );
 
         // degenerate: a flat line (no y-spread) collapses to 1-D → dropped at build time
         let flat_x: Vec<f64> = (0..50).map(|i| i as f64).collect();

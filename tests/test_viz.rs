@@ -3468,11 +3468,143 @@ fn viz_smart_measure_by_dimension_panel() {
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
-    // the grouped bar's title names the measure, dimension, aggregation, and η²
+    // the grouped bar's title names the measure, dimension, aggregation, and the explained share.
+    // This measure is symmetric (mean == median), so it keeps the mean.
     assert!(
         html.contains("amount by region (mean"),
         "expected a measure-by-dimension bar titled 'amount by region (mean, ...)'"
     );
+    // η² is stated as a plain explained-variance share, not a bare coefficient (issue #4220)
+    assert!(
+        html.contains("% of variance)"),
+        "expected the grouped bar to state η² as an explained-variance percentage"
+    );
+    assert!(
+        !html.contains("\\u003b7\\u00b2=") && !html.contains("η²="),
+        "the bare 'η²=' coefficient should no longer headline the grouped bar"
+    );
+}
+
+/// A heavy right tail (30x10, 15x100, 10x1000, 5x5000) split so the big projects sit in one
+/// group. Mean ~613 against a median of 55 — an 11x ratio, so the mean describes the tail rather
+/// than a typical row (`mean_is_outlier_driven`). Shared by the aggregation tests below.
+fn skewed_amount_rows() -> String {
+    let mut rows = String::from("region,amount\n");
+    for _ in 0..30 {
+        rows.push_str("east,10\n");
+    }
+    for _ in 0..15 {
+        rows.push_str("east,100\n");
+    }
+    for _ in 0..10 {
+        rows.push_str("west,1000\n");
+    }
+    for _ in 0..5 {
+        rows.push_str("west,5000\n");
+    }
+    rows
+}
+
+#[test]
+fn viz_smart_measure_by_dimension_sums_a_skewed_untagged_measure() {
+    let wrk = Workdir::new("viz_smart_measure_by_dimension_sums_a_skewed_untagged_measure");
+    // Without a dictionary every measure is un-tagged, which used to mean "average it". On a
+    // heavily right-skewed additive measure the mean is set by the largest handful of rows, so
+    // the panel ranked whoever held the single biggest item rather than the biggest total
+    // (issue #4220). Such a column must now be summed.
+    wrk.create_from_string("skew.csv", &skewed_amount_rows());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "skew.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("amount by region (sum"),
+        "a heavily right-skewed un-tagged measure should be summed, not averaged"
+    );
+}
+
+#[test]
+fn viz_smart_measure_by_dimension_keeps_mean_for_a_skewed_intensive_measure() {
+    let wrk =
+        Workdir::new("viz_smart_measure_by_dimension_keeps_mean_for_a_skewed_intensive_measure");
+    // Identical distribution to the test above, but the column NAMES an intensive quantity. A
+    // rate must never be summed across a group however skewed it is, and `is_intensive_measure`
+    // recognizes that from the header alone — no dictionary needed.
+    wrk.create_from_string(
+        "rate.csv",
+        &skewed_amount_rows().replace("region,amount", "region,failure_rate"),
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rate.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("failure_rate by region (mean"),
+        "an intensive measure must keep the mean even when heavily right-skewed"
+    );
+}
+
+#[test]
+fn viz_smart_correlation_uses_spearman_on_heavy_tailed_columns() {
+    let wrk = Workdir::new("viz_smart_correlation_uses_spearman_on_heavy_tailed_columns");
+    // Two heavy-tailed numeric columns (a majority of the matrix) => the correlation panel is
+    // computed and LABELED as Spearman's rank rho, whose cells a few extreme rows can't dominate
+    // (issue #4220).
+    let mut rows = String::from("region,spend,commit\n");
+    for i in 0..30 {
+        rows.push_str(&format!("east,{},{}\n", 10 + i % 3, 12 + i % 3));
+    }
+    for i in 0..15 {
+        rows.push_str(&format!("east,{},{}\n", 100 + i % 3, 110 + i % 3));
+    }
+    for i in 0..10 {
+        rows.push_str(&format!("west,{},{}\n", 1000 + i % 3, 1100 + i % 3));
+    }
+    for i in 0..5 {
+        rows.push_str(&format!("west,{},{}\n", 5000 + i % 3, 5500 + i % 3));
+    }
+    wrk.create_from_string("heavy.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "heavy.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("Correlation (Spearman"),
+        "a mostly heavy-tailed numeric table should get a Spearman correlation panel"
+    );
+}
+
+#[test]
+fn viz_smart_correlation_stays_pearson_on_well_behaved_columns() {
+    let wrk = Workdir::new("viz_smart_correlation_stays_pearson_on_well_behaved_columns");
+    // Symmetric, tame columns keep Pearson — and the panel now says so, rather than leaving the
+    // reader to assume which coefficient a bare "Correlation" holds.
+    let mut rows = String::from("a,b\n");
+    for i in 0..40 {
+        rows.push_str(&format!("{},{}\n", 10 + i % 20, 30 + (i * 2) % 20));
+    }
+    wrk.create_from_string("tame.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "tame.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("Correlation (Pearson r)"),
+        "a well-behaved numeric table should keep — and name — the Pearson correlation panel"
+    );
+    assert!(!html.contains("Correlation (Spearman"));
 }
 
 #[test]

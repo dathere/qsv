@@ -5679,7 +5679,7 @@ dependencies = [
 [[package]]
 name = "plotly"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=deps%2Fwebdriver-downloader-0.17%2Bfunnel#667358fcfca838eafc0201ec4e7ffc3aede1f1d2"
+source = "git+https://github.com/dathere/plotly?branch=deps%2Fwebdriver-downloader-0.17%2Bfunnel#60a4ffc07830ce429de0498e4a7c83671486a298"
 dependencies = [
  "askama",
  "async-trait",
@@ -5702,7 +5702,7 @@ dependencies = [
 [[package]]
 name = "plotly_derive"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=deps%2Fwebdriver-downloader-0.17%2Bfunnel#667358fcfca838eafc0201ec4e7ffc3aede1f1d2"
+source = "git+https://github.com/dathere/plotly?branch=deps%2Fwebdriver-downloader-0.17%2Bfunnel#60a4ffc07830ce429de0498e4a7c83671486a298"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -5713,7 +5713,7 @@ dependencies = [
 [[package]]
 name = "plotly_static"
 version = "0.1.0"
-source = "git+https://github.com/dathere/plotly?branch=deps%2Fwebdriver-downloader-0.17%2Bfunnel#667358fcfca838eafc0201ec4e7ffc3aede1f1d2"
+source = "git+https://github.com/dathere/plotly?branch=deps%2Fwebdriver-downloader-0.17%2Bfunnel#60a4ffc07830ce429de0498e4a7c83671486a298"
 dependencies = [
  "anyhow",
  "base64",

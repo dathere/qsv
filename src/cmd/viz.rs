@@ -7637,19 +7637,31 @@ fn positive_subset_pair(xs: &[f64], ys: &[f64]) -> Option<(Vec<f64>, Vec<f64>, f
 ///
 /// A too-small or still-concentrated positive subset yields no panel — an absent panel beats an
 /// unreadable one. `name` is the caller's already-composed title (field pair + r, plus ρ when
-/// nonlinear).
-fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str, mode: LogScale) -> Option<Panel> {
+/// nonlinear); `labels` is the same pair of field labels UNDECORATED, kept for the cell hover.
+fn smart_contour_panel(
+    xs: &[f64],
+    ys: &[f64],
+    name: &str,
+    mode: LogScale,
+    labels: (&str, &str),
+) -> Option<Panel> {
     // `On` forces log without consulting the linear grid, just as `measure_by_dim_logs` / the box
     // paths force a log value axis under `On`.
     if mode == LogScale::On {
-        return log_contour_panel(xs, ys, name);
+        return log_contour_panel(xs, ys, name, labels);
     }
 
     let (x, y, z) = bin_2d(xs, ys, SMART_CONTOUR_BINS, (false, false));
     if density_concentration(&z) <= SMART_CONTOUR_MAX_BIN_SHARE {
         return Some(Panel::new(
             name.to_string(),
-            PanelKind::ContourPair { x, y, z },
+            PanelKind::ContourPair {
+                x,
+                y,
+                z,
+                x_label: labels.0.to_string(),
+                y_label: labels.1.to_string(),
+            },
         ));
     }
 
@@ -7658,7 +7670,7 @@ fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str, mode: LogScale) -> Op
     if mode == LogScale::Off {
         return None;
     }
-    log_contour_panel(xs, ys, name)
+    log_contour_panel(xs, ys, name, labels)
 }
 
 /// The log-space density retry for `smart_contour_panel` (issue #4223): bin the strictly-positive
@@ -7666,7 +7678,7 @@ fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str, mode: LogScale) -> Op
 /// omitted-zeros share so a subset is never shown dressed up as the whole; when NOTHING was dropped
 /// (an all-positive pair reached here under `--log-scale on`) the title carries the plain log cue.
 /// A non-zero omission that rounds below 1% is still disclosed (`<1%`) rather than silently hidden.
-fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str) -> Option<Panel> {
+fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str, labels: (&str, &str)) -> Option<Panel> {
     let (px, py, dropped) = positive_subset_pair(xs, ys)?;
     let (x, y, z) = bin_2d(&px, &py, SMART_CONTOUR_BINS, (true, true));
     if density_concentration(&z) > SMART_CONTOUR_MAX_BIN_SHARE {
@@ -7688,7 +7700,38 @@ fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str) -> Option<Panel> {
         };
         format!("{name} \u{b7} log scale, positive values only ({share} of rows omitted)")
     };
-    Some(Panel::new(title, PanelKind::ContourPair { x, y, z }).with_axis_log((true, true)))
+    Some(
+        Panel::new(
+            title,
+            PanelKind::ContourPair {
+                x,
+                y,
+                z,
+                x_label: labels.0.to_string(),
+                y_label: labels.1.to_string(),
+            },
+        )
+        .with_axis_log((true, true)),
+    )
+}
+
+/// Hover text for one cell of a 2D density contour: the two measures at the cell's bin center,
+/// plus how many rows landed in it.
+///
+/// Plotly's default contour hover is a bare `x`/`y`/`z` triple labeled with an auto-generated
+/// "trace N" — which names neither measure nor says what `z` counts, so the reader is left to
+/// guess that the third number is a row count rather than a third variable. `<extra></extra>`
+/// drops that "trace N" box entirely.
+///
+/// The bin centers are RAW values (`bin_2d` un-logs geometric centers before returning them), so
+/// `.3s` SI formatting reads in the data's own units on both linear and log axes. Shared by
+/// `viz contour` and `viz smart`'s density panel so the two hovers can never drift apart.
+fn contour_hover_template(x_label: &str, y_label: &str) -> String {
+    format!(
+        "{}: %{{x:.3s}}<br>{}: %{{y:.3s}}<br>%{{z:,}} rows<extra></extra>",
+        escape_hover(x_label),
+        escape_hover(y_label)
+    )
 }
 
 /// Build a `Contour` trace: the 2D density of two numeric columns (--x and --y), binned into a
@@ -7719,13 +7762,15 @@ fn build_contour(args: &Args) -> CliResult<(Box<dyn Trace>, String, String)> {
     // `viz contour` is an explicit user request over user-named columns: bin linearly and honor it.
     let (x_centers, y_centers, z) = bin_2d(&xs, &ys, bins, (false, false));
 
-    let trace = Contour::new(x_centers, y_centers, z)
-        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis));
-    Ok((
-        trace,
+    let (x_label, y_label) = (
         col_label(&headers, x_idx, nh),
         col_label(&headers, y_idx, nh),
-    ))
+    );
+    let hover = contour_hover_template(&x_label, &y_label);
+    let trace = Contour::new(x_centers, y_centers, z)
+        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+        .hover_template(&hover);
+    Ok((trace, x_label, y_label))
 }
 
 /// Candlestick (or OHLC bar) chart from a date/x column and four numeric price columns.
@@ -12335,10 +12380,15 @@ enum PanelKind {
     /// 2D density contour of the most strongly correlated numeric pair — used INSTEAD of
     /// `ScatterPair` for large datasets (>= `SMART_CONTOUR_MIN_POINTS`), where a scatter overplots.
     /// Carries the precomputed bin-center axes and count grid so the render loop stays pure.
+    /// `x_label`/`y_label` are the two measures' human labels, carried for the cell hover
+    /// (`contour_hover_template`) the same way `ScatterPair` carries its own — the panel title is
+    /// decorated with r/rho and log-scale cues, so it cannot be parsed back into axis names.
     ContourPair {
-        x: Vec<f64>,
-        y: Vec<f64>,
-        z: Vec<Vec<f64>>,
+        x:       Vec<f64>,
+        y:       Vec<f64>,
+        z:       Vec<Vec<f64>>,
+        x_label: String,
+        y_label: String,
     },
     /// A numeric measure aggregated BY a low-cardinality categorical dimension (e.g. mean amount by
     /// region) — the (dimension, measure) pair with the strongest association (correlation ratio
@@ -20834,8 +20884,13 @@ impl<'a> SmartCtx<'a> {
                             // A density grid that collapses into one cell is dropped outright (or
                             // retried in log space over the positive subset) — the contour-branch
                             // counterpart of the `degenerate` scatter guard below (issue #4223).
-                            let panel =
-                                smart_contour_panel(&columns[i], &columns[j], &name, log_scale);
+                            let panel = smart_contour_panel(
+                                &columns[i],
+                                &columns[j],
+                                &name,
+                                log_scale,
+                                (&labels[i], &labels[j]),
+                            );
                             if panel.is_none() {
                                 viz_note(&format!(
                                     "viz smart: density panel for {} vs {} skipped (its \
@@ -22303,11 +22358,20 @@ fn panel_trace(
             }
             t
         },
-        PanelKind::ContourPair { x, y, z } => {
+        PanelKind::ContourPair {
+            x,
+            y,
+            z,
+            x_label,
+            y_label,
+        } => {
             // standalone (inline) panels show the colorbar; grid cells hide it to avoid clutter
+            let hover = contour_hover_template(x_label, y_label);
             let mut c = Contour::new(x.clone(), y.clone(), z.clone())
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
-                .show_scale(axes.is_none());
+                .show_scale(axes.is_none())
+                .name(&panel.name)
+                .hover_template(&hover);
             if let Some((xa, ya)) = &axes {
                 c = c.x_axis(xa.as_str()).y_axis(ya.as_str());
             }
@@ -30961,7 +31025,7 @@ mod tests {
 
         // Auto (default): linear collapses -> log retry over the positive subset. Both axes log,
         // and the omitted-zeros share is stated in the title.
-        let auto = smart_contour_panel(&xs, &ys, "a vs b", LogScale::Auto)
+        let auto = smart_contour_panel(&xs, &ys, "a vs b", LogScale::Auto, ("a", "b"))
             .expect("auto retries collapsed linear density in log space");
         assert_eq!(auto.axis_log, (true, true));
         assert!(
@@ -30973,12 +31037,12 @@ mod tests {
         // Off: the user disabled log, so a collapsed linear grid has no legible fallback -> no
         // panel, and NEVER a log axis (regression guard for the review finding).
         assert!(
-            smart_contour_panel(&xs, &ys, "a vs b", LogScale::Off).is_none(),
+            smart_contour_panel(&xs, &ys, "a vs b", LogScale::Off, ("a", "b")).is_none(),
             "--log-scale off must not emit a log contour"
         );
 
         // On: forces the log view even though the linear grid here is collapsed anyway.
-        let on = smart_contour_panel(&xs, &ys, "a vs b", LogScale::On)
+        let on = smart_contour_panel(&xs, &ys, "a vs b", LogScale::On, ("a", "b"))
             .expect("on forces the log contour");
         assert_eq!(on.axis_log, (true, true));
 
@@ -30992,10 +31056,11 @@ mod tests {
                 gy.push(b as f64);
             }
         }
-        let on_pos = smart_contour_panel(&gx, &gy, "a vs b", LogScale::On).expect("on forces log");
+        let on_pos = smart_contour_panel(&gx, &gy, "a vs b", LogScale::On, ("a", "b"))
+            .expect("on forces log");
         assert_eq!(on_pos.axis_log, (true, true));
         assert!(on_pos.name.contains("log scale") && !on_pos.name.contains("omitted"));
-        let off_pos = smart_contour_panel(&gx, &gy, "a vs b", LogScale::Off)
+        let off_pos = smart_contour_panel(&gx, &gy, "a vs b", LogScale::Off, ("a", "b"))
             .expect("off keeps the legible linear contour");
         assert_eq!(off_pos.axis_log, (false, false));
         assert!(!off_pos.name.contains("log"));
@@ -31010,7 +31075,7 @@ mod tests {
             tx.push(0.0);
             ty.push(0.0);
         }
-        let tiny = smart_contour_panel(&tx, &ty, "a vs b", LogScale::On)
+        let tiny = smart_contour_panel(&tx, &ty, "a vs b", LogScale::On, ("a", "b"))
             .expect("on forces log over the positive subset");
         assert!(
             tiny.name.contains("<1% of rows omitted"),

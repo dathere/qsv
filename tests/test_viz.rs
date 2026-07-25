@@ -12117,6 +12117,62 @@ fn viz_smart_no_funnel_for_unspent_complement_column() {
     );
 }
 
+#[test]
+fn viz_smart_no_funnel_when_a_zero_stage_masks_a_containment_violation() {
+    // roborev 3832: an all-zero stage is carried without a data vector, and the containment gate
+    // used to SKIP any pair involving one. With planned -> all-zero commit -> non-nested spent
+    // that skipped BOTH pairs, so the funnel rendered even though spending exceeds the plan.
+    // A zero upstream contains only zeros, so a positive downstream must fail the gate.
+    let wrk = Workdir::new("viz_smart_no_funnel_when_a_zero_stage_masks_a_containment_violation");
+    let mut rows = String::from("totalplannedcommit,commitamt,spentamt\n");
+    for i in 0..300 {
+        let planned = ((i % 40) + 1) * 1000;
+        // nothing committed anywhere, yet money was spent -- and spent beyond the plan
+        let spent = planned * 3;
+        rows.push_str(&format!("{planned},0,{spent}\n"));
+    }
+    wrk.create_from_string("p.csv", &rows);
+
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        !html.contains("Pipeline funnel:"),
+        "a zero stage must not let a downstream violation through; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_funnel_zero_stage_rescue_honors_the_eligibility_filters() {
+    // roborev 3832: the rescue applied only a type/map check, so an all-zero column the MAIN pass
+    // would reject -- here `spent_pct`, intensive by name -- could still be admitted as a stage.
+    // Both paths now share one eligibility test, so the funnel stops at Committed.
+    let wrk = Workdir::new("viz_smart_funnel_zero_stage_rescue_honors_the_eligibility_filters");
+    let mut rows = String::from("totalplannedcommit,commitamt,spent_pct\n");
+    for i in 0..300 {
+        let planned = ((i % 40) + 1) * 1000;
+        let commit = planned * (i % 3) / 4;
+        rows.push_str(&format!("{planned},{commit},0\n"));
+    }
+    wrk.create_from_string("p.csv", &rows);
+
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        html.contains(r#""y":["Planned","Committed"]"#),
+        "an intensive all-zero column must not be rescued as a stage; html: {html}"
+    );
+}
+
 /// A dataset `viz smart` can actually profile: a low-cardinality dimension with repeated values
 /// (so it earns a frequency bar) plus a numeric measure with a spread (so it earns a box panel).
 fn cache_opts_csv() -> String {

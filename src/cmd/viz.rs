@@ -15611,6 +15611,35 @@ fn containment_fraction(upstream: &[f64], downstream: &[f64]) -> f64 {
     frac
 }
 
+/// Containment for one consecutive stage pair, where either side may be a RESCUED ALL-ZERO stage
+/// (carried as `None` because such a column never reaches the row-aligned read — see
+/// `build_funnel_panel` step 4).
+///
+/// The tempting shortcut is to skip any pair involving a zero stage, but that silently disables
+/// the gate: with `planned` → all-zero `commit` → non-nested `spent`, BOTH pairs get skipped and
+/// the funnel is drawn even though the real `planned`/`spent` relationship violates containment.
+/// So a zero stage is treated as the vector of zeros it actually is:
+///
+/// - zero DOWNSTREAM sits inside any non-negative upstream — trivially contained;
+/// - zero UPSTREAM contains only zeros, so a positive downstream value means the process recorded a
+///   later stage while its predecessor recorded nothing. That is precisely the nesting claim a
+///   funnel makes, so it is measured and can fail the gate rather than being waved through.
+fn stage_containment(columns: &[Vec<f64>], up: Option<usize>, down: Option<usize>) -> f64 {
+    match (up, down) {
+        (Some(u), Some(d)) => containment_fraction(&columns[u], &columns[d]),
+        (None, Some(d)) => {
+            let n = columns[d].len();
+            if n == 0 {
+                return 0.0;
+            }
+            #[allow(clippy::cast_precision_loss)]
+            let frac = columns[d].iter().filter(|v| **v <= 0.0).count() as f64 / n as f64;
+            frac
+        },
+        (Some(_) | None, None) => 1.0,
+    }
+}
+
 /// The caveat line beneath a funnel panel's title (issue #4222).
 ///
 /// Clause 1 is UNCONDITIONAL, following `lorenz_caveat`'s philosophy. The funnel's totals are
@@ -21421,17 +21450,27 @@ impl<'a> SmartCtx<'a> {
         // 1. resolve eligible columns to stage hits. Filters mirror `is_inequality_candidate`: a
         //    dictionary-declared Mean/Min/Max is intensive (a funnel of averages is nonsense), and
         //    rate/ratio/index and id/code names are never pipeline amounts.
+        // ONE eligibility test, shared by the main pass and the all-zero rescue in step 4.
+        // Keeping it in a single place is load-bearing rather than tidy: while the rescue carried
+        // its own looser copy, an all-zero `spent_pct` or `orders_id` could enter as a stage that
+        // the main pass would have rejected outright.
+        let eligible_stage = |src: usize| -> bool {
+            let (Some(sem), Some(s)) = (self.col_sems.get(src), self.stats.get(src)) else {
+                return false;
+            };
+            !self.is_map_col(src)
+                && matches!(sem.route, Route::Defer | Route::Measure)
+                && matches!(sem.agg, Some(Agg::Sum) | None)
+                && !is_intensive_measure(&sem.label, &s.field)
+                && !is_identifier_name(&sem.label, &s.field)
+        };
+
         let mut hits: Vec<(usize, FunnelHit)> = Vec::new();
         for (pos, &src) in kept_indices.iter().enumerate() {
             let (Some(sem), Some(s)) = (self.col_sems.get(src), self.stats.get(src)) else {
                 continue;
             };
-            if self.is_map_col(src)
-                || !matches!(sem.route, Route::Defer | Route::Measure)
-                || !matches!(sem.agg, Some(Agg::Sum) | None)
-                || is_intensive_measure(&sem.label, &s.field)
-                || is_identifier_name(&sem.label, &s.field)
-            {
+            if !eligible_stage(src) {
                 continue;
             }
             if let Some(hit) = stage_match(&sem.label, &s.field) {
@@ -21496,7 +21535,7 @@ impl<'a> SmartCtx<'a> {
         for (src, s) in self.stats.iter().enumerate() {
             if kept_indices.contains(&src)
                 || !matches!(s.r#type.as_str(), "Integer" | "Float")
-                || self.is_map_col(src)
+                || !eligible_stage(src)
             {
                 continue;
             }
@@ -21542,10 +21581,7 @@ impl<'a> SmartCtx<'a> {
         // 6. verify the order the names claimed. A rescued all-zero stage is trivially contained.
         for w in ordered.windows(2) {
             let [up, down] = w else { continue };
-            let (Some(ui), Some(di)) = (up.1, down.1) else {
-                continue;
-            };
-            let frac = containment_fraction(&columns[ui], &columns[di]);
+            let frac = stage_containment(columns, up.1, down.1);
             if frac < FUNNEL_CONTAINMENT_MIN {
                 viz_note(&format!(
                     "viz smart: pipeline funnel skipped \u{2014} {} is not contained in {} \
@@ -21593,10 +21629,7 @@ impl<'a> SmartCtx<'a> {
             violations.push(if k == 0 {
                 0.0
             } else {
-                match (ordered[k - 1].1, *pos) {
-                    (Some(ui), Some(di)) => 1.0 - containment_fraction(&columns[ui], &columns[di]),
-                    _ => 0.0,
-                }
+                1.0 - stage_containment(columns, ordered[k - 1].1, *pos)
             });
         }
 

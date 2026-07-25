@@ -3586,6 +3586,45 @@ fn viz_smart_keeps_equal_cardinality_columns_that_are_not_one_to_one() {
 }
 
 #[test]
+fn viz_smart_keeps_columns_blank_on_different_rows() {
+    // Two columns that map perfectly WHERE BOTH ARE POPULATED but are blank on disjoint row
+    // ranges are not the same variable — their bars carry different counts and different (NULL)
+    // shares. Their cached cardinalities still match (two values plus the empty), so the
+    // pre-filter lets the pair through and the judgment itself has to reject it: an empty cell
+    // canonicalizes to its own id, so the two columns separate on the first row where one is
+    // blank and the other is not (roborev 3818).
+    let wrk = Workdir::new("viz_smart_keeps_columns_blank_on_different_rows");
+    let mut rows = String::from("acode,bname,amount\n");
+    for i in 0..200 {
+        let (a, b) = if i < 50 {
+            ("", if i % 2 == 0 { "P" } else { "Q" })
+        } else if i < 100 {
+            (if i % 3 == 0 { "x" } else { "y" }, "")
+        } else if i % 2 == 0 {
+            ("x", "P")
+        } else {
+            ("y", "Q")
+        };
+        rows.push_str(&format!("{a},{b},{}\n", 10 + (i % 7) * 5));
+    }
+    wrk.create_from_string("t.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "t.csv", "-o", &out_html]);
+    let got = wrk.output_stderr(&mut cmd);
+
+    assert!(
+        !got.contains("1:1"),
+        "columns blank on different rows must not collapse; got: {got}"
+    );
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains("acode"), "html missing acode");
+    assert!(html.contains("bname"), "html missing bname");
+}
+
+#[test]
 fn viz_smart_keeps_sparse_columns_that_only_coincide_where_populated() {
     // Two mostly-empty columns that carry a value on the SAME narrow slice would look like a
     // clean bijection if blanks counted as a category: one value each, one pair, and hundreds of

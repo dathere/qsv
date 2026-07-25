@@ -15417,30 +15417,61 @@ fn dimension_code_twins(
 /// suppression set, so every downstream consumer — the per-column panel loop, `dim_indices`, and
 /// `eligible_categorical_dims` (hence parcats and the hierarchy panel) — inherits the verdict.
 ///
-/// **Cost:** the equal-cardinality pre-filter is free (it reads the stats cache) and two columns
-/// can only be 1:1 if their cardinalities match, so the data pass happens ONLY when at least two
-/// eligible categoricals share a cardinality. The common case pays nothing.
+/// # Algorithm: partition refinement
 ///
-/// **Strict by design.** "Near-1:1" is deliberately not detected: a tolerance risks suppressing a
-/// column that carries real information, and a false positive here DELETES a panel. Distinct
-/// values and distinct pairs are both counted here, in one pass, under identical normalization —
-/// never compared against the cache's own `cardinality`, whose null and whitespace semantics could
-/// drift from this function's and silently flip every verdict.
+/// Two columns are 1:1 exactly when they induce the SAME PARTITION of the rows — the value names
+/// are irrelevant, only which rows group together. So each column canonicalizes its values to ids
+/// by first appearance, and the candidate columns are refined into groups that still agree:
+/// every row splits each group by its members' ids, and a group that survives every row is a set
+/// of columns whose partitions never diverged. That is the definition of the property, checked
+/// directly.
 ///
-/// **Support guard.** A bijection observed over a handful of rows is coincidence, not a functional
+/// This replaced an earlier per-pair formulation that compared distinct-value counts against
+/// distinct-pair counts. That version accumulated three separate counters whose null semantics had
+/// to be kept in agreement by hand, and grew a correctness bug each time one of them was reasoned
+/// about slightly differently (see the guards below, each of which was earned by a real failure).
+/// Refinement removes the class: presence is part of a column's identity rather than a side
+/// condition, so there is nothing left to keep in sync.
+///
+/// It is also cheaper. The per-pair form was O(k²) per row in a bucket of k same-cardinality
+/// columns, allocating a set for every pair up front; this is O(k), allocates per column, and —
+/// because groups only ever shrink — **stops reading as soon as every group is a singleton**. On
+/// the overwhelmingly common input, where no two columns are 1:1, that is a handful of rows rather
+/// than the whole file.
+///
+/// # Guards
+///
+/// **Free pre-filter.** Two columns can only be 1:1 if their cardinalities match, so groups are
+/// seeded from the stats cache's `cardinality` and the data pass happens ONLY when at least two
+/// eligible categoricals share one. The common case pays nothing.
+///
+/// **Strict.** "Near-1:1" is deliberately not detected: a tolerance risks suppressing a column
+/// that carries real information, and a false positive here DELETES a panel.
+///
+/// **Empty is not a value, but it IS part of the pattern.** An empty cell canonicalizes to its own
+/// reserved id, so two columns blank on DIFFERENT rows separate immediately — they are not the
+/// same variable however well their populated values line up. Distinct values and support are
+/// counted over populated rows only, so two columns that merely share a blank region cannot
+/// collapse on the strength of their blanks.
+///
+/// **Support.** A bijection observed over a handful of rows is coincidence, not a functional
 /// dependency: two unrelated flags (`is_active`, `has_paid`) can easily agree on every one of four
-/// rows. The pair must therefore average at least `MIN_ROWS_PER_CATEGORY` rows per category — over
-/// the rows where BOTH columns are populated, not the file's row count — so each value-to-value
-/// link is corroborated several times over before a panel is deleted for it.
-/// The guard is on SUPPORT, not on cardinality — a two-category pair is not inherently suspect,
-/// and gating on cardinality would permanently blind this to the real binary code/label pairs
-/// (`M`/`F` against `Male`/`Female`) that are squarely the redundancy being targeted.
+/// rows. A group must therefore average at least `MIN_ROWS_PER_CATEGORY` populated rows per
+/// category. The guard is on SUPPORT, not on cardinality — a two-category pair is not inherently
+/// suspect, and gating on cardinality would permanently blind this to the real binary code/label
+/// pairs (`M`/`F` against `Male`/`Female`) that are squarely the redundancy being targeted.
 fn one_to_one_categorical_twins(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     sems: &[ColSemantics],
 ) -> CliResult<std::collections::HashSet<usize>> {
     use std::collections::{HashMap, HashSet};
+
+    /// Populated rows a category must average before a group counts as a functional dependency
+    /// rather than a small-sample coincidence. A 4-row agreement tells you nothing.
+    const MIN_ROWS_PER_CATEGORY: u64 = 4;
+    /// Canonical id for an empty cell, distinct from every real value's id.
+    const EMPTY_ID: u32 = u32::MAX;
 
     let mut suppress = HashSet::new();
 
@@ -15457,122 +15488,90 @@ fn one_to_one_categorical_twins(
         .map(|(i, _)| i)
         .collect();
 
-    // free pre-filter: unequal cardinality rules out a bijection outright
+    // seed the groups from the free pre-filter: unequal cardinality rules out a bijection outright
     let mut by_card: HashMap<u64, Vec<usize>> = HashMap::new();
     for &i in &eligible {
         by_card.entry(stats[i].cardinality).or_default().push(i);
     }
-    let mut buckets: Vec<Vec<usize>> = by_card.into_values().filter(|v| v.len() >= 2).collect();
-    if buckets.is_empty() {
+    let mut groups: Vec<Vec<usize>> = by_card.into_values().filter(|v| v.len() >= 2).collect();
+    if groups.is_empty() {
         return Ok(suppress);
     }
-    // `into_values` yields buckets in HashMap order; sort so the pass, the pair enumeration and
-    // any note ordering are reproducible run to run
-    for b in &mut buckets {
-        b.sort_unstable();
-    }
-    buckets.sort();
-
-    let cols: Vec<usize> = buckets.iter().flatten().copied().collect();
-    let pair_list: Vec<(usize, usize)> = buckets
-        .iter()
-        .flat_map(|b| {
-            b.iter()
-                .enumerate()
-                .flat_map(|(x, &a)| b[x + 1..].iter().map(move |&c| (a, c)))
-        })
-        .collect();
-
-    let mut singles: HashMap<usize, HashSet<String>> =
-        cols.iter().map(|&i| (i, HashSet::new())).collect();
-    let mut pairs: HashMap<(usize, usize), HashSet<(String, String)>> =
-        pair_list.iter().map(|&p| (p, HashSet::new())).collect();
-
-    // Rows a value-to-value link must be corroborated over, on average, before the pair counts as
-    // a functional dependency rather than a small-sample coincidence. Four means every category's
-    // mapping is re-observed several times; a 4-row bijection tells you nothing.
-    const MIN_ROWS_PER_CATEGORY: u64 = 4;
-
-    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
-    let mut record = csv::ByteRecord::new();
-    // Only rows where a column actually HAS a value inform its part of the judgment: an empty cell
-    // is the absence of a value, not a value. Two columns that are blank on the same rows are not
-    // thereby the same variable — without this, a pair that is populated on a narrow slice and
-    // empty everywhere else reads as a clean bijection between "the one value" and "blank", and a
-    // real column gets deleted on the strength of its blanks.
-    let mut cells: HashMap<usize, String> = HashMap::new();
-    // rows on which BOTH members of a pair are present — the support its bijection actually rests
-    // on, which is not the file's row count when either column is sparse
-    let mut pair_rows: HashMap<(usize, usize), u64> = pair_list.iter().map(|&p| (p, 0)).collect();
-    while rdr.read_byte_record(&mut record)? {
-        cells.clear();
-        for &i in &cols {
-            let v = cell_to_string(record.get(i));
-            if !v.trim().is_empty() {
-                cells.insert(i, v);
-            }
-        }
-        for (&i, set) in &mut singles {
-            if let Some(v) = cells.get(&i) {
-                set.insert(v.clone());
-            }
-        }
-        for (&(a, b), set) in &mut pairs {
-            // a pair already past the bijection bound can never come back under it; stop growing
-            // it so a highly-crossed pair costs no more than the cardinality cap
-            if set.len() > CATEGORICAL_MAX_CARDINALITY as usize {
-                continue;
-            }
-            if let (Some(va), Some(vb)) = (cells.get(&a), cells.get(&b)) {
-                set.insert((va.clone(), vb.clone()));
-                *pair_rows.entry((a, b)).or_default() += 1;
-            }
-        }
-    }
-
-    // group transitively: 1:1 is an equivalence relation, so A=B=C collapses to a single keeper
-    let mut group_of: HashMap<usize, usize> = cols.iter().map(|&i| (i, i)).collect();
-    fn root(group_of: &HashMap<usize, usize>, mut i: usize) -> usize {
-        while group_of[&i] != i {
-            i = group_of[&i];
-        }
-        i
-    }
-    for &(a, b) in &pair_list {
-        let (Some(sa), Some(sb), Some(sp)) = (singles.get(&a), singles.get(&b), pairs.get(&(a, b)))
-        else {
-            continue;
-        };
-        let supported =
-            pair_rows.get(&(a, b)).copied().unwrap_or(0) >= MIN_ROWS_PER_CATEGORY * sa.len() as u64;
-        if sa.len() > 1 && sp.len() == sa.len() && sp.len() == sb.len() && supported {
-            let (ra, rb) = (root(&group_of, a), root(&group_of, b));
-            if ra != rb {
-                group_of.insert(ra.max(rb), ra.min(rb));
-            }
-        }
-    }
-
-    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
-    for &i in &cols {
-        groups.entry(root(&group_of, i)).or_default().push(i);
-    }
-    let mut groups: Vec<Vec<usize>> = groups.into_values().filter(|g| g.len() > 1).collect();
+    // `into_values` yields buckets in HashMap order; sort so notes and the pass are reproducible
     for g in &mut groups {
         g.sort_unstable();
     }
     groups.sort();
 
-    // Keep the column with the SHORTEST values: both members carry the same information, so the
-    // one that fits a bar label or a parcats ribbon wins ("DPR" over "Department of Parks &
+    // per-column canonical value -> id, assigned in order of first appearance. Two columns agree
+    // on a row when their ids match, whatever their values are named.
+    let mut ids: HashMap<usize, HashMap<String, u32>> = HashMap::new();
+    // populated (non-empty) row count per column — the support its share of a group rests on
+    let mut present: HashMap<usize, u64> = HashMap::new();
+
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    let mut record = csv::ByteRecord::new();
+    let mut row_id: HashMap<usize, u32> = HashMap::new();
+    while rdr.read_byte_record(&mut record)? {
+        // only columns still in a live group can matter: once two columns separate they can never
+        // rejoin, so a column that has fallen out of every group is never looked at again
+        row_id.clear();
+        for &i in groups.iter().flatten() {
+            let v = cell_to_string(record.get(i));
+            let id = if v.trim().is_empty() {
+                EMPTY_ID
+            } else {
+                *present.entry(i).or_default() += 1;
+                let map = ids.entry(i).or_default();
+                let next = map.len() as u32;
+                *map.entry(v).or_insert(next)
+            };
+            row_id.insert(i, id);
+        }
+        // refine: split every group by its members' ids on this row, keeping only the sub-groups
+        // that still have someone to disagree with
+        let mut refined: Vec<Vec<usize>> = Vec::with_capacity(groups.len());
+        for g in &groups {
+            let mut by_id: HashMap<u32, Vec<usize>> = HashMap::new();
+            for &i in g {
+                by_id
+                    .entry(row_id.get(&i).copied().unwrap_or(EMPTY_ID))
+                    .or_default()
+                    .push(i);
+            }
+            refined.extend(by_id.into_values().filter(|sub| sub.len() > 1));
+        }
+        groups = refined;
+        if groups.is_empty() {
+            // nothing can become 1:1 again — stop reading
+            break;
+        }
+    }
+
+    for g in &mut groups {
+        g.sort_unstable();
+    }
+    groups.sort();
+
+    // Keep the column with the SHORTEST values: every member carries the same information, so the
+    // one that fits a bar label or a treemap tile wins ("DPR" over "Department of Parks &
     // Recreation", which truncates on an axis). Column index breaks a tie so the pick is stable.
     for g in groups {
+        let distinct = |i: usize| ids.get(&i).map_or(0, HashMap::len);
+        let populated = |i: usize| present.get(&i).copied().unwrap_or(0);
+        // a single-value column is not a dimension anyone charts against, and its "bijection" is
+        // vacuous; and the mapping must be corroborated enough times to be a dependency at all
+        let n_distinct = g.iter().map(|&i| distinct(i)).max().unwrap_or(0);
+        let min_populated = g.iter().map(|&i| populated(i)).min().unwrap_or(0);
+        if n_distinct < 2 || min_populated < MIN_ROWS_PER_CATEGORY * n_distinct as u64 {
+            continue;
+        }
         let mean_len = |&i: &usize| {
-            singles.get(&i).map_or(usize::MAX, |vs| {
+            ids.get(&i).map_or(usize::MAX, |vs| {
                 if vs.is_empty() {
                     usize::MAX
                 } else {
-                    vs.iter().map(String::len).sum::<usize>() / vs.len()
+                    vs.keys().map(String::len).sum::<usize>() / vs.len()
                 }
             })
         };
@@ -15594,11 +15593,10 @@ fn one_to_one_categorical_twins(
             }
         }
         viz_note(&format!(
-            "viz smart: charting only {} for {} — they are 1:1 ({} categories), so separate \
-             panels and parcats axes would be duplicates",
+            "viz smart: charting only {} for {} — they are 1:1 ({n_distinct} categories), so \
+             separate panels and parcats axes would be duplicates",
             name(keep),
             dropped.join(", "),
-            stats[keep].cardinality
         ));
     }
 

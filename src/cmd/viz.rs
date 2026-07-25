@@ -7726,11 +7726,15 @@ fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str, labels: (&str, &str)) -
 /// The bin centers are RAW values (`bin_2d` un-logs geometric centers before returning them), so
 /// `.3s` SI formatting reads in the data's own units on both linear and log axes. Shared by
 /// `viz contour` and `viz smart`'s density panel so the two hovers can never drift apart.
+///
+/// The labels are raw column headers interpolated into a template that itself parses `%{...}`, so
+/// they take the full `escape_template_pct(escape_hover(..))` composition — a header like
+/// `"% of total"` must reach the tooltip as text, not as a half-parsed template token.
 fn contour_hover_template(x_label: &str, y_label: &str) -> String {
     format!(
         "{}: %{{x:.3s}}<br>{}: %{{y:.3s}}<br>%{{z:,}} rows<extra></extra>",
-        escape_hover(x_label),
-        escape_hover(y_label)
+        escape_template_pct(&escape_hover(x_label)),
+        escape_template_pct(&escape_hover(y_label))
     )
 }
 
@@ -22346,7 +22350,9 @@ fn panel_trace(
             let hover = format!(
                 "{} (Gini {gini:.2})<br>bottom %{{x:.0%}} of records hold \
                  %{{y:.0%}}<extra></extra>",
-                escape_hover(label)
+                // a raw column label inside a template that parses `%{...}`: same composition the
+                // contour/bubble hovers use, so a "% of total"-style header stays literal
+                escape_template_pct(&escape_hover(label))
             );
             let mut t = Scatter::new(pop.clone(), share.clone())
                 .mode(Mode::Lines)
@@ -29964,6 +29970,28 @@ mod tests {
         // escaping twice is the bug this ordering guards against
         assert_ne!(escape_hover(&escape_hover(nasty)), escape_hover(nasty));
         assert!(escape_hover(&escape_hover(nasty)).contains("&amp;amp;"));
+    }
+
+    #[test]
+    fn contour_hover_template_neutralizes_percent_bearing_headers() {
+        // the labels are raw column headers dropped into a template that parses `%{...}`, so a
+        // header carrying `%` -- or one that already looks like a token -- must be neutralized
+        // rather than honored, and markup must be escaped before the `%`-doubling
+        let t = contour_hover_template("% of total", "%{x}");
+        assert!(
+            t.starts_with("%% of total: %{x:.3s}"),
+            "a literal `%` in a header must be doubled, got: {t}"
+        );
+        assert!(
+            t.contains("%%{x}: %{y:.3s}"),
+            "a token-shaped header must be neutralized, got: {t}"
+        );
+        // the template's OWN tokens survive intact, and the trace-name box stays suppressed
+        assert!(t.ends_with("%{z:,} rows<extra></extra>"), "got: {t}");
+
+        // markup first, then `%`-doubling -- the same one-order composition as the other sinks
+        let m = contour_hover_template("R&D 50%", "plain");
+        assert!(m.starts_with("R&amp;D 50%%: "), "got: {m}");
     }
 
     #[test]

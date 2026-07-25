@@ -20795,12 +20795,38 @@ impl<'a> SmartCtx<'a> {
                         } else {
                             let (xs, ys) =
                                 downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
+                            // Each axis decides its own scale from the points it will actually
+                            // show, so a heavy-tailed measure isn't squashed against the origin
+                            // (issue #4223). A single zero or negative keeps that axis linear.
+                            let axis_log = (
+                                relationship_axis_log(log_scale, &xs),
+                                relationship_axis_log(log_scale, &ys),
+                            );
                             // Drop a DEGENERATE scatter (essentially no 2-D spread — e.g. a heavily
                             // zero-skewed measure collapses every point onto one axis): it would
                             // render as an empty box, so omit the panel entirely. A merely sparse-
                             // but-informative scatter is kept and just gets a compact height (see
                             // `panel_render_height`).
-                            if scatter_fill_stats(&xs, &ys).degenerate {
+                            //
+                            // Judge that in the space the panel will RENDER in, not in linear
+                            // space (issue #4276). A heavy-tailed but strictly positive pair
+                            // collapses against the origin on linear axes while spreading cleanly
+                            // once logged, and this guard used to run first and drop it before the
+                            // log axes above were ever consulted — so the panel disappeared in
+                            // exactly the case log scaling exists to rescue, and `--log-scale on`
+                            // could not override it. This mirrors the contour branch, which
+                            // already retries a collapsed grid in log space before giving up.
+                            //
+                            // `relationship_axis_log` only returns true for strictly positive
+                            // values, so `ln` is finite wherever it is applied. The linear case
+                            // borrows the original vectors and allocates nothing.
+                            let logged = |on: bool, vs: &[f64]| -> Option<Vec<f64>> {
+                                on.then(|| vs.iter().map(|v| v.ln()).collect())
+                            };
+                            let (lx, ly) = (logged(axis_log.0, &xs), logged(axis_log.1, &ys));
+                            let plotted_x = lx.as_deref().unwrap_or(&xs);
+                            let plotted_y = ly.as_deref().unwrap_or(&ys);
+                            if scatter_fill_stats(plotted_x, plotted_y).degenerate {
                                 return None;
                             }
                             // Encode a third numeric (the axis MOST associated with the pair, so
@@ -20825,13 +20851,6 @@ impl<'a> SmartCtx<'a> {
                                     },
                                     None => (name, None, None),
                                 };
-                            // Each axis decides its own scale from the points it will actually
-                            // show, so a heavy-tailed measure isn't squashed against the origin
-                            // (issue #4223). A single zero or negative keeps that axis linear.
-                            let axis_log = (
-                                relationship_axis_log(log_scale, &xs),
-                                relationship_axis_log(log_scale, &ys),
-                            );
                             // These panels carry no axis titles (the pair is named in the panel
                             // title), so the log cue goes in the title too — naming WHICH axis,
                             // which a bare axis-side "log scale" label could not.

@@ -15506,20 +15506,30 @@ struct FunnelFamily {
 /// single token "totalplannedcommit" and a token-equality test against "planned" misses entirely.
 ///
 /// Substring matching is what burned `is_intensive_measure` (where "ratio" matched the whole
-/// `-ration` word family), so read why it is safe here: a stage word alone NEVER produces a panel.
-/// A spurious "ship" inside `township` can only reach the dashboard if a second column
-/// independently matches a DIFFERENT rank of the SAME family and the columns are row-wise nested
-/// in that order (`FUNNEL_CONTAINMENT_MIN`). `is_intensive_measure` had no such second gate; this
-/// does, and the conjunction is the entire safety argument.
+/// `-ration` word family), so the conjunction below matters: a stage word alone never produces a
+/// panel, because a second column must independently match a DIFFERENT rank of the SAME family
+/// and the two must be row-wise nested in that order (`FUNNEL_CONTAINMENT_MIN`).
+///
+/// That is a real constraint but NOT a sufficient one, and the distinction is worth stating
+/// plainly because assuming otherwise already shipped one false positive: a table holding a
+/// genuine `spent` column supplies the second rank for free, so any greedy word paired with it
+/// yields a funnel. `X Coordinate (State Plane)` matched a bare "plan" and produced
+/// "Pipeline funnel: X Coordinate (State Plane) -> spent_total".
+///
+/// So the vocabulary carries the real burden: prefer words that are not substrings of common
+/// unrelated nouns, and name the ones that are in `FUNNEL_NON_STAGE_MARKERS`.
 const FUNNEL_FAMILIES: &[FunnelFamily] = &[
     FunnelFamily {
         name:   "budget",
         stages: &[
             FunnelStage {
                 name:  "Planned",
+                // NB: bare "plan" is deliberately absent -- it matches "State Plane",
+                // "plant", "floorplan" and "airplane". "planned" covers the glued
+                // `totalplannedcommit` case that motivated substring matching, and the
+                // remaining words cover the stage without that collision surface.
                 words: &[
                     "planned",
-                    "plan",
                     "budget",
                     "appropriat",
                     "authoriz",
@@ -15586,6 +15596,7 @@ const FUNNEL_FAMILIES: &[FunnelFamily] = &[
 /// the panel's meaning. Small and closed by construction: every entry is either an `un-` negation
 /// or an explicit difference/residual word.
 const FUNNEL_NON_STAGE_MARKERS: &[&str] = &[
+    // complements and derived differences
     "unspent",
     "uncommitted",
     "unplanned",
@@ -15600,6 +15611,21 @@ const FUNNEL_NON_STAGE_MARKERS: &[&str] = &[
     "difference",
     "delta",
     "balance",
+    // COLLISIONS: ordinary words that merely CONTAIN a stage word. A review count is not an
+    // impressions stage and a contractor count is not a commitment, but "view" and "contract"
+    // match them, and a table that also holds a genuine spend or purchase column supplies the
+    // second rank the conjunction asks for -- so these need naming outright.
+    "review",
+    "overview",
+    "interview",
+    "contractor",
+    "wholesale",
+    "resale",
+    "lead time",
+    "lead_time",
+    "leadtime",
+    "replaced",
+    "displaced",
 ];
 
 /// Minimum share of complete-case rows that must satisfy `stage[k+1] <= stage[k]` for a pair of
@@ -30858,6 +30884,40 @@ mod tests {
         }
         // a plain stage column is of course still matched
         assert!(stage_match("", "spentamt").is_some());
+    }
+
+    #[test]
+    fn stage_match_rejects_words_that_merely_contain_a_stage_word() {
+        // A shipped false positive: `X Coordinate (State Plane)` matched a bare "plan" and, paired
+        // with a genuine `spent_total`, produced "Pipeline funnel: X Coordinate (State Plane) ->
+        // spent_total". The conjunction did not save it, because a real table supplies the second
+        // rank for free -- so the vocabulary itself has to be non-greedy.
+        for name in [
+            "X Coordinate (State Plane)",
+            "Y Coordinate (State Plane)",
+            "plant_capacity",
+            "floorplan_area",
+            // ordinary words that merely contain a stage word, caught by the collision guard
+            "review_count",
+            "overview_score",
+            "contractor_count",
+            "wholesale_price",
+            "lead_time_days",
+            "replaced_units",
+        ] {
+            assert!(
+                stage_match("", name).is_none(),
+                "{name} merely contains a stage word; it is not a pipeline stage"
+            );
+        }
+
+        // the real stage words still resolve, including the glued case substrings exist for
+        assert_eq!(
+            stage_match("", "totalplannedcommit").map(|h| h.rank),
+            Some(0)
+        );
+        assert_eq!(stage_match("", "budget_total").map(|h| h.rank), Some(0));
+        assert_eq!(stage_match("", "spent_total").map(|h| h.rank), Some(2));
     }
 
     #[test]

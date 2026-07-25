@@ -15622,8 +15622,8 @@ fn containment_fraction(upstream: &[f64], downstream: &[f64]) -> f64 {
 ///
 /// - zero DOWNSTREAM sits inside any non-negative upstream — trivially contained;
 /// - zero UPSTREAM contains only zeros, so a positive downstream value means the process recorded a
-///   later stage while its predecessor recorded nothing. That is precisely the nesting claim a
-///   funnel makes, so it is measured and can fail the gate rather than being waved through.
+///   later stage while its predecessor recorded nothing. This function reports the honest share
+///   (used by the subtitle); `stage_pair_passes` is what refuses to let ANY of it through.
 fn stage_containment(columns: &[Vec<f64>], up: Option<usize>, down: Option<usize>) -> f64 {
     match (up, down) {
         (Some(u), Some(d)) => containment_fraction(&columns[u], &columns[d]),
@@ -15638,6 +15638,29 @@ fn stage_containment(columns: &[Vec<f64>], up: Option<usize>, down: Option<usize
         },
         (Some(_) | None, None) => 1.0,
     }
+}
+
+/// Whether a consecutive stage pair may stand.
+///
+/// Ordinary pairs are held to `FUNNEL_CONTAINMENT_MIN`, whose tolerance exists for a specific
+/// real-world failure mode: genuine change orders on a POPULATED upstream stage, where a handful
+/// of rows legitimately overrun their predecessor.
+///
+/// A rescued ALL-ZERO upstream is a different kind of claim and must not borrow that tolerance.
+/// The column recorded nothing anywhere, so "90% contained" would mean up to a tenth of the rows
+/// show a later stage running while its predecessor never happened — not an overrun but a
+/// contradiction of the nesting the funnel asserts. One positive downstream value is enough to
+/// reject the pipeline.
+///
+/// The gate is kept separate from `stage_containment` on purpose: the subtitle reports the honest
+/// violation share from that function, so a pair rejected here is still described accurately
+/// rather than as a flat 0%.
+fn stage_pair_passes(columns: &[Vec<f64>], up: Option<usize>, down: Option<usize>) -> bool {
+    let frac = stage_containment(columns, up, down);
+    if up.is_none() && down.is_some() {
+        return frac >= 1.0;
+    }
+    frac >= FUNNEL_CONTAINMENT_MIN
 }
 
 /// The caveat line beneath a funnel panel's title (issue #4222).
@@ -21581,8 +21604,8 @@ impl<'a> SmartCtx<'a> {
         // 6. verify the order the names claimed. A rescued all-zero stage is trivially contained.
         for w in ordered.windows(2) {
             let [up, down] = w else { continue };
-            let frac = stage_containment(columns, up.1, down.1);
-            if frac < FUNNEL_CONTAINMENT_MIN {
+            if !stage_pair_passes(columns, up.1, down.1) {
+                let frac = stage_containment(columns, up.1, down.1);
                 viz_note(&format!(
                     "viz smart: pipeline funnel skipped \u{2014} {} is not contained in {} \
                      ({:.0}% of rows)",

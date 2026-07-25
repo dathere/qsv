@@ -12147,6 +12147,36 @@ fn viz_smart_no_funnel_when_a_zero_stage_masks_a_containment_violation() {
 }
 
 #[test]
+fn viz_smart_no_funnel_when_a_zero_stage_is_followed_by_sparse_activity() {
+    // roborev 3838: an all-zero upstream was measured against the global 90% containment gate, so
+    // a downstream stage active in up to a tenth of rows still rendered. That tolerance exists for
+    // change orders on a POPULATED stage; an empty predecessor is a categorical claim, and any
+    // spend below a stage that recorded nothing contradicts it. 5% here -- inside the old gate.
+    let wrk = Workdir::new("viz_smart_no_funnel_when_a_zero_stage_is_followed_by_sparse_activity");
+    let mut rows = String::from("totalplannedcommit,commitamt,spentamt\n");
+    for i in 0..300 {
+        let planned = ((i % 40) + 1) * 1000;
+        // nothing committed anywhere; 5% of rows nonetheless report spend (still <= planned, so
+        // only the zero-upstream rule can reject this)
+        let spent = if i % 20 == 0 { planned / 2 } else { 0 };
+        rows.push_str(&format!("{planned},0,{spent}\n"));
+    }
+    wrk.create_from_string("p.csv", &rows);
+
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        !html.contains("Pipeline funnel:"),
+        "spend below an empty stage must reject the pipeline, not be tolerated; html: {html}"
+    );
+}
+
+#[test]
 fn viz_smart_funnel_zero_stage_rescue_honors_the_eligibility_filters() {
     // roborev 3832: the rescue applied only a type/map check, so an all-zero column the MAIN pass
     // would reject -- here `spent_pct`, intensive by name -- could still be admitted as a stage.

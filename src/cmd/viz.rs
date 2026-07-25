@@ -903,6 +903,33 @@ const SMART_3D_COLLINEAR_MAX_ABS_R: f64 = 0.97;
 /// reader doesn't read the cloud as merely linear. Pearson alone can't see this.
 const SMART_NONLINEAR_MIN_GAP: f64 = 0.15;
 
+/// Pearson skewness at or above which a column reads as pronouncedly RIGHT-skewed — a long high
+/// tail over a dense low bulk. Matches `box_shape_hint`'s `SKEW_MIN_ABS`, so a column the box
+/// panel titles "right-skewed" is the same column that gets a log value axis
+/// (`box_log_skew_fallback`).
+///
+/// This detects MODERATE skew. It deliberately does NOT gate the robust-statistics choices
+/// (`mean_is_outlier_driven`), which target a far more extreme regime this coefficient cannot
+/// see — see that function for why.
+const RIGHT_SKEW_MIN: f64 = 0.5;
+
+/// How many times the median a column's mean must reach before the mean is treated as
+/// outlier-driven rather than typical (`mean_is_outlier_driven`, issue #4220). At 2x the "average"
+/// is already double the middle value, so half the rows sit below half the reported average — the
+/// point past which ranking groups by their mean says more about who holds the biggest item than
+/// about the groups.
+const MEAN_MEDIAN_RATIO_MIN: f64 = 2.0;
+
+/// Share of a correlation matrix's columns whose mean must be outlier-driven
+/// (`mean_is_outlier_driven`) before `viz smart` computes that matrix with SPEARMAN's rank
+/// correlation
+/// instead of Pearson's (issue #4220). On heavy-tailed columns a handful of extreme rows dominate
+/// Pearson's covariance, so the reported r describes the outliers rather than the bulk; ranks are
+/// immune to that. A simple majority is the trigger: the matrix is ONE panel with ONE coefficient
+/// label, so the choice has to describe the table as a whole, and a single skewed column among
+/// many well-behaved ones is not reason enough to re-express every cell.
+const SMART_CORR_SPEARMAN_MIN_SKEWED_SHARE: f64 = 0.5;
+
 /// `viz pie` prints a non-fatal advisory (suggesting a bar chart) when it has at least
 /// `PIE_NEAR_EQUAL_MIN_SLICES` slices whose coefficient of variation is below this: near-equal
 /// slices are the worst case for a pie (the eye can't compare similar angles/areas), and a bar
@@ -7102,6 +7129,40 @@ fn pearson_matrix(columns: &[Vec<f64>]) -> Vec<Vec<f64>> {
     m
 }
 
+/// Spearman rank-correlation matrix: `pearson_matrix` over each column's tie-averaged ranks
+/// (issue #4220). Ranks are taken ONCE per column here rather than inside a per-pair
+/// `spearman_rho`, which would re-sort every column N times for an N x N matrix.
+///
+/// Each column is ranked over exactly the prefix `pearson_matrix` will use (the shortest column's
+/// length), so a rank is the value's position among the rows that actually enter the correlation.
+fn spearman_matrix(columns: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    let len = columns.iter().map(Vec::len).min().unwrap_or(0);
+    let ranked: Vec<Vec<f64>> = columns.iter().map(|c| average_ranks(&c[..len])).collect();
+    pearson_matrix(&ranked)
+}
+
+/// Whether `viz smart`'s correlation matrix should be computed with Spearman's rho instead of
+/// Pearson's r: true when at least `SMART_CORR_SPEARMAN_MIN_SKEWED_SHARE` of the matrix's columns
+/// have an outlier-driven mean (`mean_is_outlier_driven`, issue #4220). Pearson's covariance is
+/// built from deviations about those means, so on such columns the reported r describes the tail
+/// rows; ranks are immune.
+///
+/// `kept_indices` maps a matrix position back to its ORIGINAL column index — `read_numeric_columns`
+/// drops candidates that turn out to be unreadable, so the matrix is not necessarily indexed like
+/// `stats`. Looking the skew up by the wrong index would silently gate on another column.
+fn corr_prefers_spearman(stats: &[crate::cmd::stats::StatsData], kept_indices: &[usize]) -> bool {
+    if kept_indices.is_empty() {
+        return false;
+    }
+    let skewed = kept_indices
+        .iter()
+        .filter(|&&i| stats.get(i).is_some_and(mean_is_outlier_driven))
+        .count();
+    #[allow(clippy::cast_precision_loss)]
+    let share = skewed as f64 / kept_indices.len() as f64;
+    share >= SMART_CORR_SPEARMAN_MIN_SKEWED_SHARE
+}
+
 /// Index pair (i, j) with the largest absolute Pearson correlation in the off-diagonal of a
 /// symmetric matrix, returned with its signed r. Skips NaN cells (undefined correlations, e.g.
 /// a constant column). Returns None when the matrix has fewer than two columns or every
@@ -7124,13 +7185,20 @@ fn strongest_pair(matrix: &[Vec<f64>]) -> Option<(usize, usize, f64)> {
 /// A diverging (RdBu) correlation heatmap trace fixed to the [-1, 1] scale. `axes` assigns
 /// the subplot axis refs when used as a `viz smart` panel (None for the standalone chart).
 /// A `hovertemplate` (and trace name) gives a clean `y vs x: r` tooltip instead of plotly's
-/// default "trace 0".
+/// default "trace 0". `spearman` swaps that hover symbol to rho, so a rank-correlation matrix
+/// (`corr_prefers_spearman`, issue #4220) never labels its cells with Pearson's r.
 fn corr_heatmap_trace(
     labels: Vec<String>,
     matrix: Vec<Vec<f64>>,
     axes: Option<(String, String)>,
     show_scale: bool,
+    spearman: bool,
 ) -> Box<dyn Trace> {
+    let (symbol, name) = if spearman {
+        ("\u{3c1}", "rank correlation")
+    } else {
+        ("r", "correlation")
+    };
     heatmap_trace_with_range(
         labels,
         matrix,
@@ -7140,8 +7208,8 @@ fn corr_heatmap_trace(
         1.0,
         Some(0.0),
         ColorScalePalette::RdBu,
-        "r",
-        "correlation",
+        symbol,
+        name,
         None,
     )
 }
@@ -7373,7 +7441,13 @@ fn build_heatmap_correlation(
     // headers are not required to be unique) collapse onto one axis slot and one set of cells is
     // silently hidden. The `viz smart` correlation path already routes through this helper.
     let labels = truncate_labels_unique(&labels, CORR_LABEL_MAX_CHARS);
-    Ok((corr_heatmap_trace(labels, matrix, None, true), None, None))
+    // the standalone `viz corr` chart is always Pearson: it has no skew gate, and its --help
+    // documents r
+    Ok((
+        corr_heatmap_trace(labels, matrix, None, true, false),
+        None,
+        None,
+    ))
 }
 
 fn build_heatmap_pivot(args: &Args) -> CliResult<(Box<dyn Trace>, Option<String>, Option<String>)> {
@@ -10110,15 +10184,13 @@ fn box_panel_logs(
 ///     (e.g. 45–60% zeros) LINEAR;
 ///   - the interquartile box sits in positive space (`q1 > 0`), so the median and quartiles render
 ///     on a log axis even though the tiny non-positive tail cannot;
-///   - the skew is pronounced and to the RIGHT (`pearson_skewness >= BOX_LOG_SKEW_MIN`, the same
-///     threshold that labels the title "right-skewed") — a left tail toward zero gains nothing;
+///   - the skew is pronounced and to the RIGHT (`is_right_skewed`, the same threshold that labels
+///     the title "right-skewed") — a left tail toward zero gains nothing;
 ///   - under `Auto`, the positive dynamic range (`max / q1`) spans `LOG_SCALE_MIN_RATIO`, the
 ///     high-dynamic-range case a linear axis squashes. `On` forces log without the range guard.
 fn box_log_skew_fallback(mode: LogScale, s: &crate::cmd::stats::StatsData) -> bool {
     // at most this share of values may be non-positive (dropped on the log axis)
     const BOX_LOG_NONPOS_MAX: f64 = 0.05;
-    // matches box_shape_hint's SKEW_MIN_ABS so a "right-skewed" title and a log axis agree
-    const BOX_LOG_SKEW_MIN: f64 = 0.5;
 
     if mode == LogScale::Off {
         return false;
@@ -10142,7 +10214,7 @@ fn box_log_skew_fallback(mode: LogScale, s: &crate::cmd::stats::StatsData) -> bo
         return false;
     }
     // right-skew only: the needle is a high-tail phenomenon, so require positive skew
-    if pearson_skewness_stat(s).is_none_or(|sk| sk < BOX_LOG_SKEW_MIN) {
+    if !is_right_skewed(s) {
         return false;
     }
     match mode {
@@ -10524,10 +10596,27 @@ fn measure_by_dim_panel(
         }
     };
 
-    // additive measures (counts/amounts) sum; rates/ratios (and the un-tagged default) average
-    let agg = match col_sems[measures[mi]].agg {
+    // Additive measures (counts/amounts) sum; rates/ratios average. An UN-TAGGED measure — which
+    // is EVERY measure when no data dictionary is supplied, since `derive_semantics` returns the
+    // default verdict without a dictionary row — used to fall through to the mean. When the mean is
+    // set by the tail rather than a typical row (`mean_is_outlier_driven`), "top N by mean" ranks
+    // whoever holds the single biggest item rather than the biggest total (issue #4220). Sum such a
+    // column instead: for an additive measure the total is both the outlier-robust ranking and the
+    // quantity a reader actually wants.
+    //
+    // The escape hatch is the name: an intensive quantity (a rate, index, temperature, per-capita
+    // figure) must never be summed, and `is_intensive_measure` recognizes those from the header
+    // alone — no dictionary required — so an un-tagged skewed RATE stays on the mean.
+    let m_idx = measures[mi];
+    let agg = match col_sems[m_idx].agg {
         Some(Agg::Sum) => Agg::Sum,
-        _ => Agg::Mean,
+        Some(_) => Agg::Mean,
+        None if mean_is_outlier_driven(&stats[m_idx])
+            && !is_intensive_measure(&col_sems[m_idx].label, &stats[m_idx].field) =>
+        {
+            Agg::Sum
+        },
+        None => Agg::Mean,
     };
     let agg_word = if agg == Agg::Sum { "sum" } else { "mean" };
 
@@ -10549,10 +10638,15 @@ fn measure_by_dim_panel(
     rows.truncate(top_n.max(1));
     let truncated = total_groups > rows.len();
 
+    // η² IS the share of the measure's variance the grouping explains, so state it that way
+    // (issue #4220). A bare "η²=0.17" reads as a headline effect size to anyone who doesn't hold
+    // Cohen's conventions in their head; "explains 17% of variance" says the same thing and lets
+    // the reader weigh the ranking for themselves.
     let mut title = format!(
-        "{} by {} ({agg_word}, \u{3b7}\u{b2}={eta2:.2})",
+        "{} by {} ({agg_word}, explains {:.0}% of variance)",
         label(measures[mi]),
-        label(dims[di])
+        label(dims[di]),
+        eta2 * 100.0
     );
     if truncated {
         title.push_str(&format!(" \u{2014} top {}", rows.len()));
@@ -12151,11 +12245,14 @@ enum PanelKind {
     /// the matching counts, both CLOSED (first element repeated at the end) so the polar ring
     /// connects.
     CyclicProfile { theta: Vec<String>, r: Vec<f64> },
-    /// Pearson correlation heatmap over the dataset's numeric columns. Carries precomputed
-    /// data (labels + matrix) so the render loop stays a pure assembly step.
+    /// Correlation heatmap over the dataset's numeric columns. Carries precomputed data (labels +
+    /// matrix) so the render loop stays a pure assembly step. `spearman` records WHICH coefficient
+    /// the cells hold — Spearman's rank rho on a mostly heavy-tailed table, else Pearson's r
+    /// (`corr_prefers_spearman`, issue #4220) — so the hover label matches the panel title.
     CorrHeatmap {
-        labels: Vec<String>,
-        matrix: Vec<Vec<f64>>,
+        labels:   Vec<String>,
+        matrix:   Vec<Vec<f64>>,
+        spearman: bool,
     },
     /// `viz smart --bivariate`: a normalized mutual information (NMI) heatmap over every
     /// surviving column pair from moarstats' bivariate sidecar — unlike `CorrHeatmap` (Pearson,
@@ -12888,6 +12985,11 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
         "pct",
         "ratio",
         "ratios",
+        // A rate is a per-unit quantity — summing "failure_rate" across a group produces a number
+        // with no meaning. Token-matched like the rest, so the additive `generation`/`migration`
+        // family is untouched, and so is a `rating` (a different word, tokenized whole).
+        "rate",
+        "rates",
         "index",
         "indexes",
         "indices",
@@ -14953,6 +15055,69 @@ fn pearson_skewness_stat(s: &crate::cmd::stats::StatsData) -> Option<f64> {
         };
         (stddev > 0.0).then(|| 3.0 * (mean - median) / stddev)
     })
+}
+
+/// Whether a column is pronouncedly RIGHT-skewed (`pearson_skewness_stat >= RIGHT_SKEW_MIN`): a
+/// dense low bulk under a long high tail. Backs the box panel's "right-skewed" title cue and its
+/// log value axis (`box_log_skew_fallback`). A column with no derivable skew (no moarstats value
+/// AND an incomplete base cache) reads as NOT skewed, keeping callers on their prior default.
+fn is_right_skewed(s: &crate::cmd::stats::StatsData) -> bool {
+    pearson_skewness_stat(s).is_some_and(|sk| sk >= RIGHT_SKEW_MIN)
+}
+
+/// Whether a column's MEAN is set by its tail rather than describing a typical row — the test
+/// behind `viz smart`'s robust-statistics choices (issue #4220): summing instead of averaging a
+/// group (`measure_by_dim_panel`) and correlating on ranks instead of values
+/// (`corr_prefers_spearman`).
+///
+/// Deliberately NOT `is_right_skewed`. Pearson's second skewness coefficient
+/// (`3 * (mean - median) / stddev`) SATURATES on exactly the distributions this targets: an
+/// extreme tail inflates `stddev` faster than it inflates `mean - median`, so the ratio stays
+/// small however lopsided the column gets. Measured on issue #4223/#4220's NYC capital-projects
+/// repro, `totalplannedcommit` scores 0.38 — under the moderate-skew threshold — while its mean
+/// ($15.2M) is **41x** its median ($367K) and its Gini is 0.96. A coefficient that calls that
+/// column un-skewed cannot gate a decision about whether its mean is meaningful.
+///
+/// The mean/median ratio is read directly off the always-present base stats cache and says the
+/// thing that actually matters to a reader: how far the "average" sits from the middle row.
+///
+/// Two guards keep it to the additive, positive-tail case it is written for:
+///   - a column with more than `MEAN_OUTLIER_MAX_NEG_SHARE` NEGATIVES is excluded. The ratio is
+///     meaningless when values straddle zero, and a symmetric signed column (profit/loss, an
+///     anomaly series) has a median near 0 that the zero-inflation branch below would otherwise
+///     misread as tail-dominated. The share is a small tolerance rather than zero because real
+///     additive money columns carry a few reversals — the repro's `totalplannedcommit` holds 179
+///     negative rollbacks in 12,587 rows (1.4%) and is emphatically still an additive amount. This
+///     mirrors `box_log_skew_fallback`'s `BOX_LOG_NONPOS_MAX` tolerance.
+///   - a non-positive median on such a column is tail-dominated BY DEFINITION: at least half the
+///     rows are zero or below, so every bit of a positive mean comes from the minority that isn't —
+///     the zero-inflated money column (45–60% zeros) the issue reports.
+fn mean_is_outlier_driven(s: &crate::cmd::stats::StatsData) -> bool {
+    /// at most this share of a column's values may be negative
+    const MEAN_OUTLIER_MAX_NEG_SHARE: f64 = 0.05;
+
+    let (Some(mean), Some(median)) = (s.mean, s.q2_median) else {
+        return false;
+    };
+    if !mean.is_finite() || mean <= 0.0 {
+        return false;
+    }
+    let (Some(neg), Some(zero), Some(pos)) = (s.n_negative, s.n_zero, s.n_positive) else {
+        return false;
+    };
+    let total = neg + zero + pos;
+    if total == 0 {
+        return false;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let neg_share = neg as f64 / total as f64;
+    if neg_share > MEAN_OUTLIER_MAX_NEG_SHARE {
+        return false;
+    }
+    if median <= 0.0 {
+        return true;
+    }
+    mean >= median * MEAN_MEDIAN_RATIO_MIN
 }
 
 /// Share of zero values among a numeric column's non-null values, from the streaming sign
@@ -20155,13 +20320,28 @@ impl<'a> SmartCtx<'a> {
                 read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices, false)?;
             // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
             if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
-                let matrix = pearson_matrix(&columns);
+                // Pearson is always computed: the nonlinearity note below is DEFINED as a
+                // Pearson-vs-Spearman divergence, so it needs an r even when the panel itself
+                // reports rho. On a mostly heavy-tailed table the displayed matrix (and every
+                // selection driven by it) switches to Spearman's rank correlation, whose cells a
+                // few extreme rows cannot dominate (issue #4220).
+                let pmatrix = pearson_matrix(&columns);
+                let spearman_corr = corr_prefers_spearman(&self.stats, &kept_indices);
+                let matrix = if spearman_corr {
+                    spearman_matrix(&columns)
+                } else {
+                    pmatrix.clone()
+                };
                 // the most strongly correlated pair drills into the heatmap's headline
                 // relationship, but only when it's at least moderately correlated (else it's a
-                // noise cloud). All the drill-downs below reuse the columns already read for the
-                // matrix (no extra data pass).
-                let pair =
-                    strongest_pair(&matrix).filter(|&(_, _, r)| r.abs() >= SCATTER_PAIR_MIN_ABS_R);
+                // noise cloud). Strength is judged by the SAME coefficient the heatmap shows, so
+                // the drill-down is the headline cell; the pair's Pearson r is then read off
+                // `pmatrix` for the title and the nonlinearity check, which are Pearson-defined.
+                // All the drill-downs below reuse the columns already read for the matrix (no
+                // extra data pass).
+                let pair = strongest_pair(&matrix)
+                    .filter(|&(_, _, c)| c.abs() >= SCATTER_PAIR_MIN_ABS_R)
+                    .map(|(i, j, _)| (i, j, pmatrix[i][j]));
 
                 // Animated relationship-over-time drill-down (T1), DECOUPLED from the strongest
                 // pair. The strongest pair is usually the most tautological (a near-line whose 2-D
@@ -20199,10 +20379,17 @@ impl<'a> SmartCtx<'a> {
                     else {
                         break 'anim None;
                     };
-                    let Some((i, j, r)) = select_drifting_pair(&matrix, &columns, &bucket_means)
+                    let Some((i, j, _)) = select_drifting_pair(&matrix, &columns, &bucket_means)
                     else {
                         break 'anim None;
                     };
+                    // `select_drifting_pair` hands back the coefficient from the matrix it was
+                    // given — which is Spearman's rho on a tail-dominated table. The title below
+                    // and its nonlinearity note are Pearson-defined, so read r off `pmatrix`, as
+                    // the static drill-down does. Taking the returned value instead would label a
+                    // rho as "r" AND collapse the Pearson-vs-Spearman gap to zero, so the note
+                    // could never fire in exactly the mode that most needs it.
+                    let r = pmatrix[i][j];
                     // large-N contours aren't animatable (a scatter would overplot into a solid
                     // mass)
                     if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
@@ -20509,13 +20696,21 @@ impl<'a> SmartCtx<'a> {
                 // redundant cells. `matrix` was already consumed by `strongest_pair`/the 3D
                 // third-axis pick above (which need the full square), so masking here only affects
                 // the rendered panel.
+                // The coefficient is named in the title (and in every cell's hover): a Spearman
+                // matrix reported as plain "Correlation" would be read as Pearson's r.
+                let corr_title = if spearman_corr {
+                    "Correlation (Spearman \u{3c1} \u{2014} rank, robust to outliers)"
+                } else {
+                    "Correlation (Pearson r)"
+                };
                 self.panels.insert(
                     0,
                     Panel::new(
-                        "Correlation".to_string(),
+                        corr_title.to_string(),
                         PanelKind::CorrHeatmap {
                             labels,
                             matrix: mask_to_lower_triangle(matrix),
+                            spearman: spearman_corr,
                         },
                     ),
                 );
@@ -21830,12 +22025,17 @@ fn panel_trace(
             }
             c
         },
-        PanelKind::CorrHeatmap { labels, matrix } => corr_heatmap_trace(
+        PanelKind::CorrHeatmap {
+            labels,
+            matrix,
+            spearman,
+        } => corr_heatmap_trace(
             truncate_labels_unique(labels, CORR_LABEL_MAX_CHARS),
             matrix.clone(),
             axes.clone(),
             // standalone (inline) panels show the colorbar; grid panels use in-cell labels
             axes.is_none(),
+            *spearman,
         ),
         PanelKind::AssocHeatmap {
             labels,
@@ -28779,6 +28979,10 @@ mod tests {
             "corporations",
             "migration",
             "iteration",
+            // "rate" is now an intensive token; "rating" is a different word and must survive
+            // token-whole matching
+            "rating",
+            "ratings",
         ] {
             assert!(
                 !is_intensive_measure(additive, additive),
@@ -28790,6 +28994,10 @@ mod tests {
             "ratio",
             "ratios",
             "debt_to_equity_ratio",
+            "rate",
+            "rates",
+            "failure_rate",
+            "interestRate",
             "percent",
             "percentage",
             "pct_complete",
@@ -29090,6 +29298,146 @@ mod tests {
         assert!(single[0][0].is_nan(), "n<2 observations is undefined");
     }
 
+    #[test]
+    fn spearman_matrix_matches_pairwise_spearman_rho() {
+        // ranking once per column must give exactly what the per-pair `spearman_rho` reference
+        // does, including its NaN semantics for a constant (all-ties) column
+        let cols = vec![
+            vec![1.0, 2.0, 3.0, 4.0, 5.0],
+            // monotonic but sharply curved: rho == 1 while Pearson r is well below it
+            vec![1.0, 2.0, 4.0, 40.0, 4000.0],
+            vec![5.0, 3.0, 4.0, 1.0, 2.0], // negatively related
+            vec![7.0, 7.0, 7.0, 7.0, 7.0], // constant -> all ranks tie -> undefined
+        ];
+        let m = spearman_matrix(&cols);
+        for i in 0..cols.len() {
+            for j in 0..cols.len() {
+                let want = spearman_rho(&cols[i], &cols[j]);
+                let got = m[i][j];
+                assert_eq!(
+                    want.is_nan(),
+                    got.is_nan(),
+                    "NaN disagreement at ({i},{j}): want {want} got {got}"
+                );
+                if !want.is_nan() {
+                    assert!(
+                        (want - got).abs() < 1e-12,
+                        "({i},{j}): want {want} got {got}"
+                    );
+                }
+            }
+        }
+        // the point of the switch: a monotone-but-curved pair is a perfect rank correlation, but
+        // its Pearson r understates it badly
+        assert!((m[0][1] - 1.0).abs() < 1e-12, "monotone pair must be rho=1");
+        assert!(
+            pearson_matrix(&cols)[0][1] < 0.75,
+            "the curved pair's Pearson r should be far below its rho"
+        );
+        assert!(spearman_matrix(&[]).is_empty());
+    }
+
+    #[test]
+    fn mean_is_outlier_driven_sees_tails_the_skewness_coefficient_misses() {
+        // `neg` out of 1000 values; the rest split zero/positive around the median
+        let col = |mean: f64, median: f64, stddev: f64, neg: u64| crate::cmd::stats::StatsData {
+            r#type: "Float".to_string(),
+            mean: Some(mean),
+            q2_median: Some(median),
+            stddev: Some(stddev),
+            n_negative: Some(neg),
+            n_zero: Some(0),
+            n_positive: Some(1000 - neg),
+            ..Default::default()
+        };
+
+        // The regression that motivated this predicate: `totalplannedcommit` from issue #4220's
+        // NYC capital-projects repro. Pearson's second skewness is 0.38 — BELOW RIGHT_SKEW_MIN —
+        // yet the mean is 41x the median. `is_right_skewed` must miss it and this must catch it;
+        // if the two ever agree here, someone has collapsed them back into one gate.
+        let cpdb = col(15_243_802.733, 367_000.0, 117_585_520.06, 0);
+        assert!(
+            !is_right_skewed(&cpdb),
+            "the skewness coefficient saturates on this column — that is the whole point"
+        );
+        assert!(mean_is_outlier_driven(&cpdb));
+
+        // zero-inflated: over half the rows are zero, so a positive mean is carried entirely by
+        // the minority tail (the 45-60%-zeros money columns the issue reports)
+        assert!(mean_is_outlier_driven(&col(
+            2_258_404.0,
+            0.0,
+            31_116_974.0,
+            0
+        )));
+
+        // a typical-looking column: the mean sits near the middle row
+        assert!(!mean_is_outlier_driven(&col(59.5, 59.5, 30.0, 0)));
+        // just under / at the 2x ratio
+        assert!(!mean_is_outlier_driven(&col(19.0, 10.0, 5.0, 0)));
+        assert!(mean_is_outlier_driven(&col(20.0, 10.0, 5.0, 0)));
+
+        // a SIGNED series (profit/loss, an anomaly index) centred near zero must NOT be read as
+        // tail-dominated just because its median lands on 0 — half its rows are negative
+        assert!(!mean_is_outlier_driven(&col(0.4, 0.0, 12.0, 500)));
+        // the negative tolerance is a small share, not zero: the repro's `totalplannedcommit`
+        // carries 1.4% negative rollbacks and is still an additive amount
+        assert!(mean_is_outlier_driven(&col(
+            15_243_802.7,
+            367_000.0,
+            117_585_520.0,
+            14
+        )));
+        // ... but a column that is one-fifth negative is not an additive positive-tail measure
+        assert!(!mean_is_outlier_driven(&col(500.0, 10.0, 900.0, 200)));
+
+        // a non-positive mean is not an additive positive-tail measure
+        assert!(!mean_is_outlier_driven(&col(0.0, 0.0, 1.0, 0)));
+        // an incomplete cache keeps the caller on its prior default
+        assert!(!mean_is_outlier_driven(&crate::cmd::stats::StatsData {
+            r#type: "Float".to_string(),
+            n_negative: Some(0),
+            ..Default::default()
+        }));
+        // sign counts missing entirely -> cannot judge -> prior default
+        assert!(!mean_is_outlier_driven(&crate::cmd::stats::StatsData {
+            r#type: "Float".to_string(),
+            mean: Some(100.0),
+            q2_median: Some(1.0),
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn corr_prefers_spearman_needs_a_majority_of_outlier_driven_columns() {
+        let col = |mean: f64, median: f64| crate::cmd::stats::StatsData {
+            r#type: "Float".to_string(),
+            mean: Some(mean),
+            q2_median: Some(median),
+            stddev: Some(1.0),
+            n_negative: Some(0),
+            n_zero: Some(0),
+            n_positive: Some(1000),
+            ..Default::default()
+        };
+        let heavy = col(100.0, 1.0); // mean 100x the median
+        let tame = col(10.0, 9.0);
+        assert!(mean_is_outlier_driven(&heavy));
+        assert!(!mean_is_outlier_driven(&tame));
+
+        let stats = vec![heavy.clone(), tame.clone(), heavy, tame];
+        // exactly half clears the >= majority share
+        assert!(corr_prefers_spearman(&stats, &[0, 1, 2, 3]));
+        // one of three is below it
+        assert!(!corr_prefers_spearman(&stats, &[0, 1, 3]));
+        // both heavy
+        assert!(corr_prefers_spearman(&stats, &[0, 2]));
+        // no columns at all -> Pearson, never a divide-by-zero
+        assert!(!corr_prefers_spearman(&stats, &[]));
+        // `kept_indices` addresses the ORIGINAL stats, not matrix positions: an out-of-range index
+        // must not panic and must not count
+        assert!(!corr_prefers_spearman(&stats, &[1, 99]));
+    }
     #[test]
     fn candidate_lons_probes_across_the_seam_for_adjacent_features() {
         // a feature hugging the dateline WITHOUT crossing it carries no wrap flag, but a query
@@ -29934,8 +30282,9 @@ mod tests {
             Panel::new(
                 "corr".to_string(),
                 PanelKind::CorrHeatmap {
-                    labels: vec!["a".to_string(), "b".to_string()],
-                    matrix: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+                    labels:   vec!["a".to_string(), "b".to_string()],
+                    matrix:   vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+                    spearman: false,
                 },
             ),
             Panel::new("c1".to_string(), PanelKind::FreqBar { idx: 0 }),

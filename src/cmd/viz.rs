@@ -702,8 +702,9 @@ use plotly::layout::update_menu::{
 };
 use plotly::{
     Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
-    HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Pie, Plot, Sankey, Scatter, Scatter3D,
-    ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Traces, Treemap, Violin,
+    Funnel, HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Pie, Plot, Sankey, Scatter,
+    Scatter3D, ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Traces, Treemap,
+    Violin,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
@@ -712,6 +713,7 @@ use plotly::{
         HoverInfo, Line, Marker, Mode, Orientation, Pattern, PatternShape, TextPosition, TickMode,
         Title,
     },
+    funnel::Connector as FunnelConnector,
     indicator::{Delta, Gauge, GaugeAxis, Mode as IndicatorMode, Number},
     layout::{
         Animation, AnimationMode, AnimationOptions, Annotation, Axis, AxisType, CategoryOrder,
@@ -12395,6 +12397,25 @@ enum PanelKind {
         gini:  f64,
         label: String,
     },
+    /// Ordered pipeline funnel over measures that form process STAGES — planned → committed →
+    /// spent, impressions → clicks → conversions (issue #4222). Built when column names resolve
+    /// to distinct ranks of one `FUNNEL_FAMILIES` vocabulary AND the columns are row-wise nested
+    /// in that order; see `build_funnel_panel` for why both gates are required.
+    ///
+    /// All five vectors are parallel and UPSTREAM-FIRST; the render arm reverses them, because
+    /// plotly places category index 0 at the axis bottom. `totals` is the summed amount per stage
+    /// and drives the bar length; `reached` is the count of complete-case rows with a strictly
+    /// positive value at that stage, carried because at high Gini "62% of dollars spent" and "45%
+    /// of projects spent anything" are both true and neither may be shown alone. `n_complete` is
+    /// the shared listwise-complete denominator, disclosed unconditionally in the subtitle since
+    /// these sums do NOT match `stats.sum`.
+    Funnel {
+        stages:     Vec<String>,
+        labels:     Vec<String>,
+        totals:     Vec<f64>,
+        reached:    Vec<usize>,
+        n_complete: usize,
+    },
     /// 2D density contour of the most strongly correlated numeric pair — used INSTEAD of
     /// `ScatterPair` for large datasets (>= `SMART_CONTOUR_MIN_POINTS`), where a scatter overplots.
     /// Carries the precomputed bin-center axes and count grid so the render loop stays pure.
@@ -15383,6 +15404,264 @@ fn lorenz_caveat(s: &crate::cmd::stats::StatsData) -> String {
             )
         },
     )
+}
+
+/// One stage of an ordered pipeline vocabulary: its canonical display name and the substrings
+/// that identify a column as belonging to it.
+struct FunnelStage {
+    name:  &'static str,
+    words: &'static [&'static str],
+}
+
+/// An ordered family of pipeline stages. Order within `stages` IS the pipeline order — it is the
+/// vocabulary, not the data, that establishes direction (see `build_funnel_panel`).
+struct FunnelFamily {
+    name:   &'static str,
+    stages: &'static [FunnelStage],
+}
+
+/// The pipeline vocabularies `viz smart` recognizes (issue #4222).
+///
+/// Matched as SUBSTRINGS, deliberately — `field_name_tokens` cannot help here. The motivating
+/// column is `totalplannedcommit`: one all-lowercase alphanumeric run, so tokenization yields the
+/// single token "totalplannedcommit" and a token-equality test against "planned" misses entirely.
+///
+/// Substring matching is what burned `is_intensive_measure` (where "ratio" matched the whole
+/// `-ration` word family), so read why it is safe here: a stage word alone NEVER produces a panel.
+/// A spurious "ship" inside `township` can only reach the dashboard if a second column
+/// independently matches a DIFFERENT rank of the SAME family and the columns are row-wise nested
+/// in that order (`FUNNEL_CONTAINMENT_MIN`). `is_intensive_measure` had no such second gate; this
+/// does, and the conjunction is the entire safety argument.
+const FUNNEL_FAMILIES: &[FunnelFamily] = &[
+    FunnelFamily {
+        name:   "budget",
+        stages: &[
+            FunnelStage {
+                name:  "Planned",
+                words: &[
+                    "planned",
+                    "plan",
+                    "budget",
+                    "appropriat",
+                    "authoriz",
+                    "estimated",
+                    "proposed",
+                ],
+            },
+            FunnelStage {
+                name:  "Committed",
+                words: &["commit", "encumber", "obligat", "contract", "awarded"],
+            },
+            FunnelStage {
+                name:  "Spent",
+                words: &[
+                    "spent", "spend", "expend", "disburs", "outlay", "paid", "actual",
+                ],
+            },
+        ],
+    },
+    FunnelFamily {
+        name:   "marketing",
+        stages: &[
+            FunnelStage {
+                name:  "Impressions",
+                words: &["impression", "view", "reach"],
+            },
+            FunnelStage {
+                name:  "Clicks",
+                words: &["click"],
+            },
+            FunnelStage {
+                name:  "Leads",
+                words: &["lead", "signup", "registrat"],
+            },
+            FunnelStage {
+                name:  "Conversions",
+                words: &["conversion", "convert", "purchase", "sale"],
+            },
+        ],
+    },
+    FunnelFamily {
+        name:   "fulfillment",
+        stages: &[
+            FunnelStage {
+                name:  "Ordered",
+                words: &["ordered", "orders", "placed"],
+            },
+            FunnelStage {
+                name:  "Shipped",
+                words: &["shipped", "shipment", "dispatch"],
+            },
+            FunnelStage {
+                name:  "Delivered",
+                words: &["delivered", "delivery", "received"],
+            },
+        ],
+    },
+];
+
+/// Names that CONTAIN a stage word but denote its complement or a derived difference, never the
+/// stage itself. These are the one false-positive class the vocabulary-plus-containment
+/// conjunction cannot catch on its own: `unspent_balance` contains "spent" AND is near-perfectly
+/// nested inside `planned`, so both gates pass and it would render as the Spent stage — inverting
+/// the panel's meaning. Small and closed by construction: every entry is either an `un-` negation
+/// or an explicit difference/residual word.
+const FUNNEL_NON_STAGE_MARKERS: &[&str] = &[
+    "unspent",
+    "uncommitted",
+    "unplanned",
+    "unpaid",
+    "unobligated",
+    "undisbursed",
+    "unshipped",
+    "remaining",
+    "variance",
+    "shortfall",
+    "overrun",
+    "difference",
+    "delta",
+    "balance",
+];
+
+/// Minimum share of complete-case rows that must satisfy `stage[k+1] <= stage[k]` for a pair of
+/// columns to be accepted as consecutive pipeline stages. Deliberately tolerant: capital projects
+/// really do have change orders, and a strict 1.0 would reject the flagship dataset outright.
+const FUNNEL_CONTAINMENT_MIN: f64 = 0.90;
+
+/// Containment-violation share above which the subtitle names it. Below this it is float noise or
+/// a handful of corrections, not a finding.
+const FUNNEL_VIOLATION_NOTE_MIN: f64 = 0.01;
+
+/// Minimum share of the table's rows that must survive the listwise-complete join for the funnel's
+/// totals to be worth showing at all.
+const FUNNEL_MIN_COMPLETE_FRAC: f64 = 0.50;
+
+/// Cap on funnel stages, so a wide finance table can't produce an unreadable twelve-band funnel.
+const FUNNEL_MAX_STAGES: usize = 6;
+
+/// A column's resolved pipeline position: which family it belongs to, its stage rank within that
+/// family, and how many DISTINCT ranks of that family its name matched (the ambiguity measure used
+/// to break rank collisions — an unambiguous `planned_amt` should beat a 2-match name).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct FunnelHit {
+    family:    usize,
+    rank:      usize,
+    ambiguity: usize,
+}
+
+/// Resolve a column name to a pipeline stage, or `None`.
+///
+/// `totalplannedcommit` contains BOTH "planned" (position 5) and "commit" (position 12); if
+/// "commit" won it would collide with a sibling `commit_total` and the funnel would be ambiguous
+/// or ordered backwards — on the exact dataset issue #4222 names. **Lowest character position
+/// wins**, because English puts the stage modifier before the noun ("planned commitment" is a
+/// plan; "spent_of_planned" is a spend). Ties on position go to the longer (more specific) word.
+fn stage_match(label: &str, field: &str) -> Option<FunnelHit> {
+    let hay = format!("{label} {field}").to_ascii_lowercase();
+    if FUNNEL_NON_STAGE_MARKERS.iter().any(|m| hay.contains(m)) {
+        return None;
+    }
+
+    let mut best: Option<(usize, usize, usize, usize)> = None; // (pos, !len, family, rank)
+    for (fi, fam) in FUNNEL_FAMILIES.iter().enumerate() {
+        for (ri, stage) in fam.stages.iter().enumerate() {
+            for word in stage.words {
+                if let Some(pos) = hay.find(word) {
+                    // earliest position wins; on a tie the longer word is the more specific match
+                    let key = (pos, usize::MAX - word.len(), fi, ri);
+                    if best.is_none_or(|b| key < b) {
+                        best = Some(key);
+                    }
+                }
+            }
+        }
+    }
+
+    let (_, _, family, rank) = best?;
+    // ambiguity is measured WITHIN the winning family: how many of its distinct ranks this one
+    // name could be read as.
+    let ambiguity = FUNNEL_FAMILIES[family]
+        .stages
+        .iter()
+        .filter(|stage| stage.words.iter().any(|w| hay.contains(w)))
+        .count();
+    Some(FunnelHit {
+        family,
+        rank,
+        ambiguity,
+    })
+}
+
+/// Share of row-aligned pairs satisfying `downstream <= upstream`. The tolerance is relative, so a
+/// float-noise equality on large money values doesn't read as a violation. Returns 0.0 for empty
+/// input (an empty pipeline is not a contained one).
+fn containment_fraction(upstream: &[f64], downstream: &[f64]) -> f64 {
+    let n = upstream.len().min(downstream.len());
+    if n == 0 {
+        return 0.0;
+    }
+    let ok = (0..n)
+        .filter(|&r| {
+            let (u, d) = (upstream[r], downstream[r]);
+            d <= u + 1e-9 * u.abs().max(1.0)
+        })
+        .count();
+    #[allow(clippy::cast_precision_loss)]
+    let frac = ok as f64 / n as f64;
+    frac
+}
+
+/// The caveat line beneath a funnel panel's title (issue #4222).
+///
+/// Clause 1 is UNCONDITIONAL, following `lorenz_caveat`'s philosophy. The funnel's totals are
+/// summed over the listwise-complete join `read_numeric_columns` produces — rows where ANY kept
+/// numeric column was blank are absent — so they will NOT match `stats.sum`, and a reader
+/// reconciling the two deserves to be told why without having to notice a discrepancy first.
+///
+/// The remaining clauses fire only when they apply, and both describe the same hazard from
+/// different angles: a downstream stage that outruns its predecessor. Per-row violations mean
+/// individual overruns; a larger downstream TOTAL means the overruns dominate the column. Capped
+/// at 3 clauses like `lorenz_caveat`, so the line stays one readable row.
+fn funnel_subtitle(
+    stages: &[String],
+    totals: &[f64],
+    violations: &[f64],
+    n_complete: usize,
+    complete_frac: f64,
+) -> Option<String> {
+    let mut parts: Vec<String> = vec![format!(
+        "n = {} complete cases ({:.0}% of rows)",
+        HumanCount(n_complete as u64),
+        complete_frac * 100.0
+    )];
+
+    // worst per-row violation, if any is worth naming
+    if let Some((k, v)) = violations
+        .iter()
+        .enumerate()
+        .skip(1)
+        .max_by(|a, b| a.1.total_cmp(b.1))
+        .filter(|(_, v)| **v >= FUNNEL_VIOLATION_NOTE_MIN)
+        && let (Some(here), Some(prev)) = (stages.get(k), stages.get(k - 1))
+    {
+        parts.push(format!(
+            "{here} exceeds {prev} in {:.0}% of rows",
+            v * 100.0
+        ));
+    }
+
+    // a stage whose TOTAL outruns its predecessor: the bar order is kept (vocabulary order is
+    // never sorted away), so the inverted band is the finding and needs naming.
+    if let Some(k) = (1..totals.len()).find(|&k| totals[k] > totals[k - 1])
+        && let (Some(here), Some(prev)) = (stages.get(k), stages.get(k - 1))
+    {
+        parts.push(format!(
+            "{here} total exceeds {prev} \u{2014} overruns, not leakage"
+        ));
+    }
+
+    parts.truncate(3);
+    Some(parts.join(" \u{b7} "))
 }
 
 /// APPROXIMATE share of the most frequent value, reconstructed entirely from the stats cache:
@@ -19964,6 +20243,9 @@ struct SmartCtx<'a> {
     /// at most ONE animated panel is shown; precedence is T3 (bubble) > T2 (geo) > T1 (scatter).
     bubble_panel:   Option<Panel>,
     geo_anim_panel: Option<Panel>,
+    /// the pipeline funnel (issue #4222), built during the correlation pass while the
+    /// row-aligned columns are live and inserted later with the other overview panels.
+    funnel_panel:   Option<Panel>,
 
     explicit_box_points: Option<BoxPoints>,
     count_conf:          Config,
@@ -20241,6 +20523,7 @@ impl<'a> SmartCtx<'a> {
             sankey_pair: None,
             bubble_panel: None,
             geo_anim_panel: None,
+            funnel_panel: None,
             explicit_box_points,
             count_conf,
             stats_input: prep.stats_input.clone(),
@@ -20663,6 +20946,14 @@ impl<'a> SmartCtx<'a> {
                 read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices, false)?;
             // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
             if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
+                // Pipeline funnel (issue #4222, ask 3): built HERE, while the row-aligned
+                // columns the correlation matrix needs are still live, so detection costs no
+                // extra data pass. STASHED rather than inserted, because the correlation
+                // heatmap's own `insert(0, ..)` further down would otherwise land on top of it.
+                let total_rows = self.row_count() as usize;
+                let funnel = self.build_funnel_panel(&labels, &columns, &kept_indices, total_rows);
+                self.funnel_panel = funnel;
+
                 // Pearson is always computed: the nonlinearity note below is DEFINED as a
                 // Pearson-vs-Spearman divergence, so it needs an r even when the panel itself
                 // reports rho. On a mostly heavy-tailed table the displayed matrix (and every
@@ -21103,6 +21394,247 @@ impl<'a> SmartCtx<'a> {
         Ok(())
     }
 
+    /// Build the pipeline-funnel panel from the row-aligned columns the correlation pass already
+    /// read (issue #4222, ask 3), or `None` when this table is not a pipeline.
+    ///
+    /// Two gates, both required. The VOCABULARY (`FUNNEL_FAMILIES`) supplies the ORDER — direction
+    /// is semantics, and no statistic can recover it — while row-wise CONTAINMENT verifies that
+    /// the order the names claim is the order the data actually has. Neither alone is safe:
+    /// names alone would read `township` as a shipping stage, and containment alone cannot tell
+    /// a pipeline from a partition (`total_pop` / `male_pop` / `female_pop` nests perfectly and
+    /// would render as leakage, the worst failure mode for the admin data qsv is usually
+    /// pointed at).
+    ///
+    /// `total_rows` is the table's row count, used only to disclose how much of it survived the
+    /// listwise-complete join.
+    fn build_funnel_panel(
+        &self,
+        labels: &[String],
+        columns: &[Vec<f64>],
+        kept_indices: &[usize],
+        total_rows: usize,
+    ) -> Option<Panel> {
+        if columns.is_empty() || labels.len() != kept_indices.len() {
+            return None;
+        }
+
+        // 1. resolve eligible columns to stage hits. Filters mirror `is_inequality_candidate`: a
+        //    dictionary-declared Mean/Min/Max is intensive (a funnel of averages is nonsense), and
+        //    rate/ratio/index and id/code names are never pipeline amounts.
+        let mut hits: Vec<(usize, FunnelHit)> = Vec::new();
+        for (pos, &src) in kept_indices.iter().enumerate() {
+            let (Some(sem), Some(s)) = (self.col_sems.get(src), self.stats.get(src)) else {
+                continue;
+            };
+            if self.is_map_col(src)
+                || !matches!(sem.route, Route::Defer | Route::Measure)
+                || !matches!(sem.agg, Some(Agg::Sum) | None)
+                || is_intensive_measure(&sem.label, &s.field)
+                || is_identifier_name(&sem.label, &s.field)
+            {
+                continue;
+            }
+            if let Some(hit) = stage_match(&sem.label, &s.field) {
+                hits.push((pos, hit));
+            }
+        }
+        if hits.len() < 2 {
+            // most tables are not pipelines; staying silent here keeps stderr useful
+            return None;
+        }
+
+        // 2. pick the family with the most distinct ranks represented (ties -> first family)
+        let family = {
+            let mut best: Option<(usize, usize)> = None;
+            for fi in 0..FUNNEL_FAMILIES.len() {
+                let ranks: std::collections::HashSet<usize> = hits
+                    .iter()
+                    .filter(|(_, h)| h.family == fi)
+                    .map(|(_, h)| h.rank)
+                    .collect();
+                if ranks.len() >= 2 && best.is_none_or(|(n, _)| ranks.len() > n) {
+                    best = Some((ranks.len(), fi));
+                }
+            }
+            best?.1
+        };
+        let fam = &FUNNEL_FAMILIES[family];
+
+        // 3. one column per rank. A collision goes to the less ambiguous name; a true tie is
+        //    unresolvable, and guessing which of two columns is "the" Spent stage would silently
+        //    invert the panel, so bail loudly instead.
+        let mut per_rank: std::collections::BTreeMap<usize, (usize, usize)> =
+            std::collections::BTreeMap::new();
+        for &(pos, hit) in &hits {
+            if hit.family != family {
+                continue;
+            }
+            match per_rank.get(&hit.rank).copied() {
+                Some((_, amb)) if amb < hit.ambiguity => {},
+                Some((other, amb)) if amb == hit.ambiguity => {
+                    viz_note(&format!(
+                        "viz smart: pipeline funnel skipped \u{2014} {} and {} both resolve to \
+                         the '{}' stage of the {} pipeline",
+                        labels[other], labels[pos], fam.stages[hit.rank].name, fam.name
+                    ));
+                    return None;
+                },
+                _ => {
+                    per_rank.insert(hit.rank, (pos, hit.ambiguity));
+                },
+            }
+        }
+        if per_rank.len() < 2 {
+            return None;
+        }
+
+        // 4. an ENTIRELY-zero stage never reaches `columns`: the correlation pre-filter requires
+        //    `cardinality > 1`. Dropping it would silently shorten the pipeline and imply the last
+        //    surviving stage ends the process, so rescue it from the base-cache sign counts (no
+        //    data pass) and carry it as a zero-height band.
+        let mut zero_stages: Vec<(usize, String)> = Vec::new();
+        for (src, s) in self.stats.iter().enumerate() {
+            if kept_indices.contains(&src)
+                || !matches!(s.r#type.as_str(), "Integer" | "Float")
+                || self.is_map_col(src)
+            {
+                continue;
+            }
+            let (Some(neg), Some(zero), Some(n_pos)) = (s.n_negative, s.n_zero, s.n_positive)
+            else {
+                continue;
+            };
+            if zero == 0 || neg + n_pos > 0 {
+                continue;
+            }
+            let Some(sem) = self.col_sems.get(src) else {
+                continue;
+            };
+            if let Some(hit) = stage_match(&sem.label, &s.field)
+                && hit.family == family
+                && !per_rank.contains_key(&hit.rank)
+            {
+                let label = if sem.label.is_empty() {
+                    s.field.clone()
+                } else {
+                    sem.label.clone()
+                };
+                zero_stages.push((hit.rank, label));
+            }
+        }
+
+        // 5. assemble the ordered stage list, upstream-first
+        let mut ordered: Vec<(usize, Option<usize>, String)> = per_rank
+            .iter()
+            .map(|(&rank, &(pos, _))| (rank, Some(pos), labels[pos].clone()))
+            .chain(zero_stages.into_iter().map(|(r, l)| (r, None, l)))
+            .collect();
+        ordered.sort_by_key(|&(rank, _, _)| rank);
+        if ordered.len() > FUNNEL_MAX_STAGES {
+            let dropped = ordered.len() - FUNNEL_MAX_STAGES;
+            ordered.truncate(FUNNEL_MAX_STAGES);
+            viz_note(&format!(
+                "viz smart: pipeline funnel shows the first {FUNNEL_MAX_STAGES} stages ({dropped} \
+                 more not shown)"
+            ));
+        }
+
+        // 6. verify the order the names claimed. A rescued all-zero stage is trivially contained.
+        for w in ordered.windows(2) {
+            let [up, down] = w else { continue };
+            let (Some(ui), Some(di)) = (up.1, down.1) else {
+                continue;
+            };
+            let frac = containment_fraction(&columns[ui], &columns[di]);
+            if frac < FUNNEL_CONTAINMENT_MIN {
+                viz_note(&format!(
+                    "viz smart: pipeline funnel skipped \u{2014} {} is not contained in {} \
+                     ({:.0}% of rows)",
+                    down.2,
+                    up.2,
+                    frac * 100.0
+                ));
+                return None;
+            }
+        }
+
+        // 7. totals, reach counts and violation shares
+        let n_complete = columns[0].len();
+        #[allow(clippy::cast_precision_loss)]
+        let complete_frac = if total_rows == 0 {
+            0.0
+        } else {
+            n_complete as f64 / total_rows as f64
+        };
+        if complete_frac < FUNNEL_MIN_COMPLETE_FRAC {
+            viz_note(&format!(
+                "viz smart: pipeline funnel skipped \u{2014} only {:.0}% of rows are complete \
+                 across every stage",
+                complete_frac * 100.0
+            ));
+            return None;
+        }
+
+        let mut stages: Vec<String> = Vec::with_capacity(ordered.len());
+        let mut stage_labels: Vec<String> = Vec::with_capacity(ordered.len());
+        let mut totals: Vec<f64> = Vec::with_capacity(ordered.len());
+        let mut reached: Vec<usize> = Vec::with_capacity(ordered.len());
+        let mut violations: Vec<f64> = Vec::with_capacity(ordered.len());
+        for (k, (rank, pos, label)) in ordered.iter().enumerate() {
+            stages.push(fam.stages[*rank].name.to_string());
+            stage_labels.push(label.clone());
+            if let Some(p) = pos {
+                totals.push(columns[*p].iter().sum());
+                reached.push(columns[*p].iter().filter(|v| **v > 0.0).count());
+            } else {
+                totals.push(0.0);
+                reached.push(0);
+            }
+            violations.push(if k == 0 {
+                0.0
+            } else {
+                match (ordered[k - 1].1, *pos) {
+                    (Some(ui), Some(di)) => 1.0 - containment_fraction(&columns[ui], &columns[di]),
+                    _ => 0.0,
+                }
+            });
+        }
+
+        if totals.iter().any(|t| *t < 0.0) {
+            viz_note(
+                "viz smart: pipeline funnel skipped \u{2014} a stage total is negative, which a \
+                 funnel cannot represent",
+            );
+            return None;
+        }
+        if totals.windows(2).all(|w| {
+            let [a, b] = w else { return true };
+            (a - b).abs() < f64::EPSILON
+        }) {
+            viz_note(
+                "viz smart: pipeline funnel skipped \u{2014} every stage total is identical (the \
+                 columns are copies, not stages)",
+            );
+            return None;
+        }
+
+        let subtitle = funnel_subtitle(&stages, &totals, &violations, n_complete, complete_frac);
+        let title = format!("Pipeline funnel: {}", stage_labels.join(" \u{2192} "));
+        Some(
+            Panel::new(
+                title,
+                PanelKind::Funnel {
+                    stages,
+                    labels: stage_labels,
+                    totals,
+                    reached,
+                    n_complete,
+                },
+            )
+            .with_subtitle(subtitle),
+        )
+    }
+
     /// Prepend the cross-column overview panels: the winning animated panel, measure-by-dimension,
     /// grouped violin, Lorenz curves, parcats, hierarchy, time-series, cyclic profile, and finally
     /// the geographic panels. Each is `insert(0, ..)`-ed, so the LAST one inserted leads the
@@ -21440,6 +21972,15 @@ impl<'a> SmartCtx<'a> {
             }
         }
 
+        // prepend the pipeline funnel (issue #4222), built during the correlation pass. Inserted
+        // after the cyclic/time-series blocks and before the geographic ones, so it sits directly
+        // beneath the maps and above the correlation heatmap, Lorenz curves and parcats: geo still
+        // leads, but the governance readout is top-of-fold rather than buried among the
+        // distribution panels.
+        if let Some(panel) = self.funnel_panel.take() {
+            self.panels.insert(0, panel);
+        }
+
         // prepend the geographic overview panels (built up front, above) so they lead the dashboard
         // and survive the panel cap. Insert the per-country choropleth first, then the point map at
         // index 0, yielding [map, choropleth, ...] — the point map for spatial detail, the
@@ -21643,6 +22184,7 @@ impl<'a> SmartCtx<'a> {
                 | PanelKind::AnimatedBubble { .. }
                 | PanelKind::ScatterPair { .. }
                 | PanelKind::Lorenz { .. }
+                | PanelKind::Funnel { .. }
                 | PanelKind::ContourPair { .. }
                 | PanelKind::Scatter3D { .. }
                 | PanelKind::Histogram { .. }
@@ -22370,6 +22912,64 @@ fn panel_trace(
             }
             t
         },
+        PanelKind::Funnel {
+            stages,
+            labels,
+            totals,
+            reached,
+            n_complete,
+        } => {
+            // A horizontal funnel: amount on the value axis, stage on the category axis.
+            // A funnel trace draws index 0 at the TOP and works downward — the opposite of a
+            // plain category axis, and the reason these arrays are fed UPSTREAM-FIRST, exactly
+            // as the panel carries them. Feeding them reversed (the lollipop's convention)
+            // renders the funnel upside down, widening toward the bottom.
+            //
+            // The bar text is left to plotly's own `textinfo`: it computes "percent previous"
+            // from the values themselves, so the conversion figures can never drift from the
+            // bars. The hover is fully pre-rendered into `hover_text`, which keeps every literal
+            // `%` in DATA rather than in the template — so `escape_template_pct` is unnecessary
+            // here and only the column label needs `escape_hover`.
+            let hover: Vec<String> = (0..stages.len())
+                .map(|k| {
+                    let pct = if *n_complete == 0 {
+                        0.0
+                    } else {
+                        #[allow(clippy::cast_precision_loss)]
+                        let p = reached[k] as f64 / *n_complete as f64 * 100.0;
+                        p
+                    };
+                    format!(
+                        "{}<br>Stage: {}<br>Amount: {}<br>Rows reached: {} of {} ({pct:.0}% of \
+                         complete cases)",
+                        escape_hover(&labels[k]),
+                        escape_hover(&stages[k]),
+                        fmt_measure(totals[k]),
+                        HumanCount(reached[k] as u64),
+                        HumanCount(*n_complete as u64),
+                    )
+                })
+                .collect();
+            let xs: Vec<f64> = totals.clone();
+            let ys: Vec<String> = stages.clone();
+            let mut f = Funnel::new(xs, ys)
+                .orientation(Orientation::Horizontal)
+                .name(panel.name.clone())
+                .marker(Marker::new().color(color))
+                // ONLY the stage-to-stage conversion: plotly computes it from the values, so it
+                // can never drift from the bars. The absolute amounts deliberately stay out of
+                // the band — "value+percent previous" is two long lines that plotly clips inside
+                // a short band — and live in the KPI row above and this panel's hover instead.
+                .text_info("percent previous")
+                .text_position(TextPosition::Outside)
+                .connector(FunnelConnector::new().visible(true))
+                .hover_text_array(hover)
+                .hover_template("%{hovertext}<extra></extra>");
+            if let Some((x, y)) = &axes {
+                f = f.x_axis(x.clone()).y_axis(y.clone());
+            }
+            f
+        },
         PanelKind::ContourPair {
             x,
             y,
@@ -22597,6 +23197,7 @@ fn smart_grid_parts(
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
             | PanelKind::Lorenz { .. }
+            | PanelKind::Funnel { .. }
             | PanelKind::ContourPair { .. }
             | PanelKind::Scatter3D { .. }
             | PanelKind::MeasureByDim { .. }
@@ -22626,6 +23227,12 @@ fn smart_grid_parts(
         .iter()
         .filter_map(|p| match &p.kind {
             PanelKind::TopRelationships { labels, .. } => labels
+                .iter()
+                .map(|l| l.chars().count().min(TOPREL_LABEL_MAX_CHARS))
+                .max(),
+            // the funnel is the other horizontal panel: its category ticks are the short
+            // canonical stage names, which still need left room reserved
+            PanelKind::Funnel { stages, .. } => stages
                 .iter()
                 .map(|l| l.chars().count().min(TOPREL_LABEL_MAX_CHARS))
                 .max(),
@@ -22979,45 +23586,58 @@ fn smart_grid_parts(
         let geom = geoms[n].clone();
         // the Top Relationships lollipop is the one horizontal panel: value (NMI) on a zoomed x,
         // pair on the category y — the opposite axis roles from every other (vertical) panel.
-        let (x_axis, y_axis) =
-            if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
-                let (floor, ceil) = lollipop_value_range(values);
-                // bottom-to-top (weakest-first), matching the reversed y-values the trace feeds
-                let ticks: Vec<String> = labels
-                    .iter()
-                    .rev()
-                    .map(|l| truncate_label(l, TOPREL_LABEL_MAX_CHARS))
-                    .collect();
-                (
-                    lollipop_value_axis(floor, ceil, theme)
-                        .domain(&geom.x_domain)
-                        .anchor(yref.clone()),
-                    lollipop_category_axis(theme, &ticks)
-                        .domain(&geom.y_domain)
-                        .anchor(xref.clone()),
-                )
-            } else {
-                // a relationship panel's per-axis log verdict (issue #4223). The y side sets the
-                // axis TYPE only — `styled_y_axis`'s "log scale" title is the cue for an unlabeled
-                // distribution axis, while these panels name the logged axis in the panel title.
-                let (x_log, y_log) = panel.axis_log;
-                let mut y = styled_y_axis(bar_max, log_y, theme);
-                if y_log {
-                    y = y.type_(AxisType::Log);
-                }
-                (
-                    styled_x_axis(
-                        is_box,
-                        is_date,
-                        x_log,
-                        theme,
-                        freq_bar_tick_text(panel, freq),
-                    )
+        let (x_axis, y_axis) = if let PanelKind::Funnel { stages, totals, .. } = &panel.kind {
+            // the funnel is horizontal like the lollipop, but its value axis is anchored at
+            // zero and its categories run TOP-DOWN, matching the upstream-first arrays the
+            // trace feeds (see the `panel_trace` arm).
+            let ticks: Vec<String> = stages.clone();
+            let max = totals.iter().copied().fold(0.0_f64, f64::max);
+            (
+                funnel_value_axis(max, theme)
                     .domain(&geom.x_domain)
                     .anchor(yref.clone()),
-                    y.domain(&geom.y_domain).anchor(xref.clone()),
+                lollipop_category_axis(theme, &ticks)
+                    .domain(&geom.y_domain)
+                    .anchor(xref.clone()),
+            )
+        } else if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
+            let (floor, ceil) = lollipop_value_range(values);
+            // bottom-to-top (weakest-first), matching the reversed y-values the trace feeds
+            let ticks: Vec<String> = labels
+                .iter()
+                .rev()
+                .map(|l| truncate_label(l, TOPREL_LABEL_MAX_CHARS))
+                .collect();
+            (
+                lollipop_value_axis(floor, ceil, theme)
+                    .domain(&geom.x_domain)
+                    .anchor(yref.clone()),
+                lollipop_category_axis(theme, &ticks)
+                    .domain(&geom.y_domain)
+                    .anchor(xref.clone()),
+            )
+        } else {
+            // a relationship panel's per-axis log verdict (issue #4223). The y side sets the
+            // axis TYPE only — `styled_y_axis`'s "log scale" title is the cue for an unlabeled
+            // distribution axis, while these panels name the logged axis in the panel title.
+            let (x_log, y_log) = panel.axis_log;
+            let mut y = styled_y_axis(bar_max, log_y, theme);
+            if y_log {
+                y = y.type_(AxisType::Log);
+            }
+            (
+                styled_x_axis(
+                    is_box,
+                    is_date,
+                    x_log,
+                    theme,
+                    freq_bar_tick_text(panel, freq),
                 )
-            };
+                .domain(&geom.x_domain)
+                .anchor(yref.clone()),
+                y.domain(&geom.y_domain).anchor(xref.clone()),
+            )
+        };
         axes.push((pos, x_axis, y_axis));
         annotations.push(panel_title_annotation(
             panel,
@@ -24255,6 +24875,7 @@ fn smart_inline_panel_plot(
     );
     let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
     let is_toprel = matches!(panel.kind, PanelKind::TopRelationships { .. });
+    let is_funnel = matches!(panel.kind, PanelKind::Funnel { .. });
     let (trace, bar_max, log_y) =
         panel_trace(panel, color, freq, hist, outliers, None, theme, log_scale);
 
@@ -24272,6 +24893,9 @@ fn smart_inline_panel_plot(
         (110, 90)
     } else if is_toprel {
         (TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24, 30)
+    } else if is_funnel {
+        // right room as well: plotly's in-band text can overflow the widest band
+        (TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24, 60)
     } else if log_y {
         (60 + LOG_AXIS_TITLE_MARGIN_PX, 30)
     } else {
@@ -24279,7 +24903,14 @@ fn smart_inline_panel_plot(
     };
     // the lollipop is the one horizontal panel: value (NMI) on a zoomed x, pair on the category y
     // — the opposite axis roles from every other (vertical) inline panel.
-    let (x_axis, y_axis) = if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
+    let (x_axis, y_axis) = if let PanelKind::Funnel { stages, totals, .. } = &panel.kind {
+        let ticks: Vec<String> = stages.clone();
+        let max = totals.iter().copied().fold(0.0_f64, f64::max);
+        (
+            funnel_value_axis(max, theme),
+            lollipop_category_axis(theme, &ticks),
+        )
+    } else if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
         let (floor, ceil) = lollipop_value_range(values);
         let ticks: Vec<String> = labels
             .iter()
@@ -25648,6 +26279,7 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::TopRelationships { .. }
         | PanelKind::ScatterPair { .. }
         | PanelKind::Lorenz { .. }
+        | PanelKind::Funnel { .. }
         | PanelKind::ContourPair { .. }
         | PanelKind::Scatter3D { .. }
         | PanelKind::MeasureByDim { .. }
@@ -26173,6 +26805,31 @@ fn lollipop_value_axis(floor: f64, ceil: f64, theme: Option<BuiltinTheme>) -> Ax
         .zero_line(false)
         .show_line(false)
         .range(vec![floor, ceil]);
+    if theme.is_none() {
+        a = a
+            .grid_color(GRID_COLOR)
+            .tick_color(AXIS_LINE)
+            .tick_font(Font::new().family(FONT_FAMILY).size(10));
+    }
+    a
+}
+
+/// The VALUE (x) axis for a horizontal pipeline funnel (issue #4222).
+///
+/// Anchored at **zero**, unlike `lollipop_value_axis`'s zoomed range. A funnel's whole claim is
+/// that band widths are proportional to stage amounts; a floor above zero would exaggerate the
+/// taper, which is the one thing this panel must not do. The headroom above `max` leaves room for
+/// plotly's in-band `textinfo` on the widest band.
+///
+/// Never logged, for the same reason — a log value axis destroys the proportional reading.
+fn funnel_value_axis(max: f64, theme: Option<BuiltinTheme>) -> Axis {
+    let ceil = if max > 0.0 { max * 1.35 } else { 1.0 };
+    let mut a = Axis::new()
+        .show_grid(true)
+        .grid_width(1)
+        .zero_line(false)
+        .show_line(false)
+        .range(vec![0.0, ceil]);
     if theme.is_none() {
         a = a
             .grid_color(GRID_COLOR)
@@ -30026,6 +30683,61 @@ mod tests {
             t.ends_with("bottom %{x:.0%} of records hold %{y:.0%}<extra></extra>"),
             "got: {t}"
         );
+    }
+
+    #[test]
+    fn stage_match_resolves_glued_multiword_names_by_position() {
+        // `totalplannedcommit` contains BOTH "planned" (pos 5) and "commit" (pos 12). English puts
+        // the stage modifier first, so the earliest match wins -- otherwise this column collides
+        // with a sibling `commit_total` and the pipeline is ambiguous or backwards.
+        let planned = stage_match("", "totalplannedcommit").expect("glued name should match");
+        assert_eq!(planned.rank, 0, "totalplannedcommit is the Planned stage");
+        assert_eq!(
+            planned.ambiguity, 2,
+            "it reads as two stages, hence ambiguous"
+        );
+
+        let committed = stage_match("", "commit_total").expect("commit_total should match");
+        assert_eq!(committed.rank, 1);
+        assert_eq!(committed.family, planned.family, "same vocabulary family");
+
+        // the reversed phrasing resolves the other way, by the same rule
+        assert_eq!(stage_match("", "spent_of_planned").map(|h| h.rank), Some(2));
+    }
+
+    #[test]
+    fn stage_match_rejects_negations_and_derived_columns() {
+        // these all CONTAIN a stage word and would pass row-wise containment against their own
+        // predecessor, so the conjunction cannot catch them -- only the negation guard can
+        for name in [
+            "unspent_balance",
+            "uncommitted_funds",
+            "unobligated",
+            "spend_variance",
+            "planned_actual_difference",
+        ] {
+            assert!(
+                stage_match("", name).is_none(),
+                "{name} denotes a complement or a difference, not a stage"
+            );
+        }
+        // a plain stage column is of course still matched
+        assert!(stage_match("", "spentamt").is_some());
+    }
+
+    #[test]
+    fn containment_fraction_tolerates_float_noise_and_counts_violations() {
+        // exact equality on large values must not read as a violation
+        let big = vec![1e12, 2e12, 3e12];
+        assert!((containment_fraction(&big, &big) - 1.0).abs() < f64::EPSILON);
+
+        // 1 of 4 rows breaks the nesting
+        let up = vec![10.0, 10.0, 10.0, 10.0];
+        let down = vec![1.0, 2.0, 3.0, 99.0];
+        assert!((containment_fraction(&up, &down) - 0.75).abs() < 1e-12);
+
+        // an empty pipeline is not a contained one
+        assert!((containment_fraction(&[], &[]) - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]

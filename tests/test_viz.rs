@@ -11895,6 +11895,228 @@ fn viz_smart_density_panel_hover_names_both_measures_and_the_row_count() {
     );
 }
 
+// A nested budget pipeline. Column names are deliberately GLUED (`totalplannedcommit`) to lock in
+// the substring matching the funnel detector needs -- `field_name_tokens` yields one token here,
+// so token-equality against "planned" would miss. Values repeat (a 40-value pool) so the columns
+// stay below the near-unique threshold that would drop them from the correlation read.
+fn pipeline_csv() -> String {
+    let mut rows = String::from("totalplannedcommit,commitamt,spentamt\n");
+    for i in 0..300 {
+        let planned = ((i % 40) + 1) * 1000;
+        let commit = planned * (i % 3) / 4;
+        let spent = commit * (i % 2) / 3;
+        rows.push_str(&format!("{planned},{commit},{spent}\n"));
+    }
+    rows
+}
+
+#[test]
+fn viz_smart_builds_pipeline_funnel_for_glued_stage_names() {
+    // issue #4222 ask 3. `totalplannedcommit` contains both "planned" (pos 5) and "commit"
+    // (pos 12); the lowest-position rule must resolve it to Planned, leaving `commitamt` as the
+    // Committed stage. If "commit" won instead, the two would collide and the funnel would be
+    // skipped as ambiguous -- on the very dataset shape the issue was filed against.
+    let wrk = Workdir::new("viz_smart_builds_pipeline_funnel_for_glued_stage_names");
+    wrk.create_from_string("p.csv", &pipeline_csv());
+
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        html.contains(r#""type":"funnel""#),
+        "a nested planned/committed/spent table should earn a funnel panel; html: {html}"
+    );
+    assert!(
+        html.contains("Pipeline funnel: totalplannedcommit"),
+        "the funnel title should lead with the upstream column; html: {html}"
+    );
+    // stage order is vocabulary order, upstream-first -- a funnel trace draws index 0 at the TOP
+    assert!(
+        html.contains(r#""y":["Planned","Committed","Spent"]"#),
+        "stages must be fed upstream-first, or the funnel renders upside down; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_funnel_hover_reports_both_dollar_and_row_conversion() {
+    // At high concentration "42% of dollars committed" and "N of M projects committed anything"
+    // are both true and read as a contradiction, so neither may appear alone.
+    let wrk = Workdir::new("viz_smart_funnel_hover_reports_both_dollar_and_row_conversion");
+    wrk.create_from_string("p.csv", &pipeline_csv());
+
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    // the dollar side is plotly's own textinfo, computed from the bar values so it cannot drift
+    assert!(
+        html.contains(r#""textinfo":"percent previous""#),
+        "stage-to-stage conversion must be labeled on the bands; html: {html}"
+    );
+    // the row side rides in the hover, against a denominator named in the same breath
+    assert!(
+        html.contains("Rows reached:") && html.contains("complete cases)"),
+        "the hover must carry rows-reached and its denominator; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_funnel_declares_complete_case_denominator() {
+    // The funnel sums over the listwise-complete join, so its totals do NOT match `stats.sum`.
+    // Following `lorenz_caveat`, that is disclosed unconditionally rather than only when bad.
+    let wrk = Workdir::new("viz_smart_funnel_declares_complete_case_denominator");
+    let mut rows = String::from("totalplannedcommit,commitamt,spentamt,othermeasure\n");
+    for i in 0..300 {
+        let planned = ((i % 40) + 1) * 1000;
+        let commit = planned * (i % 3) / 4;
+        let spent = commit * (i % 2) / 3;
+        // blank in 10% of rows, so the listwise join drops those rows from every stage
+        let other = if i % 10 == 0 {
+            String::new()
+        } else {
+            format!("{}", i % 17)
+        };
+        rows.push_str(&format!("{planned},{commit},{spent},{other}\n"));
+    }
+    wrk.create_from_string("p.csv", &rows);
+
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        html.contains("complete cases (90% of rows)"),
+        "the funnel subtitle must state the complete-case denominator; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_funnel_includes_an_all_zero_stage() {
+    // A wholly-zero stage has cardinality 1, so the correlation pre-filter drops it and it never
+    // reaches the row-aligned columns. Losing it would silently shorten the pipeline and imply
+    // the last surviving stage ends the process, so it is rescued from the cached sign counts.
+    let wrk = Workdir::new("viz_smart_funnel_includes_an_all_zero_stage");
+    let mut rows = String::from("totalplannedcommit,commitamt,spentamt\n");
+    for i in 0..300 {
+        let planned = ((i % 40) + 1) * 1000;
+        let commit = planned * (i % 3) / 4;
+        rows.push_str(&format!("{planned},{commit},0\n"));
+    }
+    wrk.create_from_string("p.csv", &rows);
+
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        html.contains(r#""y":["Planned","Committed","Spent"]"#),
+        "the nothing-spent-yet stage must still appear, at zero; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_funnel_flags_overrun_without_reordering_stages() {
+    // A downstream stage whose TOTAL outruns its predecessor is the finding, not a glitch: bar
+    // order stays vocabulary order (never sorted by value) and the subtitle names the inversion.
+    let wrk = Workdir::new("viz_smart_funnel_flags_overrun_without_reordering_stages");
+    let mut rows = String::from("totalplannedcommit,commitamt,spentamt\n");
+    for i in 0..300 {
+        let planned = ((i % 40) + 1) * 1000;
+        // 3 rows in 300 (1%) blow through their plan by 100x -- under the 90% containment gate,
+        // but enough to dominate the committed total
+        let commit = if i % 100 == 7 {
+            planned * 100
+        } else {
+            planned / 2
+        };
+        rows.push_str(&format!("{planned},{commit},0\n"));
+    }
+    wrk.create_from_string("p.csv", &rows);
+
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        html.contains("total exceeds"),
+        "an inverted stage total must be named in the subtitle; html: {html}"
+    );
+    assert!(
+        html.contains(r#""y":["Planned","Committed","Spent"]"#),
+        "vocabulary order must survive an overrun; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_no_funnel_when_containment_is_violated() {
+    // Vocabulary alone is NOT enough: these two columns name distinct stages of one family, so
+    // only the row-wise containment gate can reject them.
+    let wrk = Workdir::new("viz_smart_no_funnel_when_containment_is_violated");
+    let mut rows = String::from("plannedamt,spentamt\n");
+    for i in 0..300 {
+        let planned = ((i % 40) + 1) * 1000;
+        // spent exceeds planned in 30% of rows -- well past FUNNEL_CONTAINMENT_MIN
+        let spent = if i % 10 < 3 { planned * 2 } else { planned / 2 };
+        rows.push_str(&format!("{planned},{spent}\n"));
+    }
+    wrk.create_from_string("p.csv", &rows);
+
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        !html.contains("Pipeline funnel:"),
+        "columns that are not nested must not be drawn as a pipeline; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_no_funnel_for_unspent_complement_column() {
+    // `unspentamt` contains "spent" AND is perfectly nested inside `plannedamt`, so BOTH gates
+    // pass -- it is the one false-positive class the conjunction cannot catch, and the reason the
+    // negation guard exists. Read as a Spent stage it would invert the panel's meaning.
+    let wrk = Workdir::new("viz_smart_no_funnel_for_unspent_complement_column");
+    let mut rows = String::from("plannedamt,unspentamt\n");
+    for i in 0..300 {
+        let planned = ((i % 40) + 1) * 1000;
+        let unspent = planned / 2;
+        rows.push_str(&format!("{planned},{unspent}\n"));
+    }
+    wrk.create_from_string("p.csv", &rows);
+
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        !html.contains("Pipeline funnel:"),
+        "a complement column must not be read as its own stage; html: {html}"
+    );
+}
+
 /// A dataset `viz smart` can actually profile: a low-cardinality dimension with repeated values
 /// (so it earns a frequency bar) plus a numeric measure with a spread (so it earns a box panel).
 fn cache_opts_csv() -> String {

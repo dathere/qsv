@@ -567,6 +567,72 @@ fn viz_smart_animated_pair_title_reports_pearson_under_spearman() {
     );
 }
 
+/// 1000 rows — below `SMART_CONTOUR_MIN_POINTS`, so the correlated pair routes to the SCATTER
+/// branch rather than the density contour. Strictly positive with a heavy right tail: the bulk
+/// sits in 1..=20 and a handful of rows are out at ~1e6, so on linear axes every point collapses
+/// against the origin, while in log space the cloud spreads cleanly. Values repeat so the columns
+/// stay well below the near-unique cutoff that would exclude them from the correlation matrix.
+fn heavy_tailed_pair_csv() -> String {
+    let mut rows = String::from("spend,commit\n");
+    for i in 0..990 {
+        let x = 1 + (i % 20);
+        rows.push_str(&format!("{x},{}\n", x * 3));
+    }
+    for i in 0..10 {
+        let x = 1_000_000 + i * 1000;
+        rows.push_str(&format!("{x},{}\n", x * 3));
+    }
+    rows
+}
+
+#[test]
+fn viz_smart_scatter_pair_judges_legibility_on_the_logged_axes() {
+    // The scatter branch used to test for a degenerate cloud on the RAW values, before its log
+    // axes were resolved — so a heavy-tailed but strictly positive pair was dropped for being
+    // unreadable on linear axes it was never going to be drawn on, in exactly the case log
+    // scaling exists to rescue (issue #4276). Legibility is now judged in the space the panel
+    // renders in, mirroring the contour branch's linear -> log retry.
+    let wrk = Workdir::new("viz_smart_scatter_pair_judges_legibility_on_the_logged_axes");
+    wrk.create_from_string("h.csv", &heavy_tailed_pair_csv());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "h.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("spend vs commit"),
+        "the heavy-tailed pair must survive: it is legible once logged; html: {html}"
+    );
+    assert!(
+        html.contains("log x/y"),
+        "both axes span orders of magnitude and hold no zeros, so both should be logged"
+    );
+}
+
+#[test]
+fn viz_smart_scatter_pair_log_scale_off_still_drops_an_illegible_cloud() {
+    // `--log-scale off` is the user declining log axes, so the pair is judged — and dropped — on
+    // the linear axes it will actually be drawn on. Absent beats unreadable, the same call the
+    // contour branch makes under `off`.
+    let wrk = Workdir::new("viz_smart_scatter_pair_log_scale_off_still_drops_an_illegible_cloud");
+    wrk.create_from_string("h.csv", &heavy_tailed_pair_csv());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "h.csv", "--log-scale", "off", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        !html.contains("spend vs commit"),
+        "with log declined, a cloud that collapses on linear axes should still be dropped"
+    );
+}
+
 #[test]
 fn viz_smart_pair_gated_out_when_tautological() {
     // headline critique fix: a rigid tautological pair (y = 2x, r=1.0) with a date column must NOT

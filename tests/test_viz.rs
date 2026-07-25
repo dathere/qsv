@@ -6827,6 +6827,33 @@ fn viz_contour_density() {
 }
 
 #[test]
+fn viz_contour_hover_names_both_measures_and_the_row_count() {
+    // Plotly's default contour hover is a bare x/y/z triple labeled "trace N", which names
+    // neither measure and never says that z is a row count. Both contour paths (this standalone
+    // command and `viz smart`'s density panel) must spell that out via one shared template.
+    let wrk = Workdir::new("viz_contour_hover_names_both_measures_and_the_row_count");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["contour", "quakes.csv", "--x", "lon", "--y", "lat"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    // plotly unicode-escapes angle brackets on serialization, so the template is matched in the
+    // form it is actually emitted in
+    let html = String::from_utf8_lossy(&out.stdout);
+    let want = concat!(
+        r"lon: %{x:.3s}\u003cbr\u003e",
+        r"lat: %{y:.3s}\u003cbr\u003e",
+        r"%{z:,} rows\u003cextra\u003e\u003c/extra\u003e"
+    );
+    assert!(
+        html.contains(want),
+        "the contour cell hover must name both measures and the row count; html: {html}"
+    );
+}
+
+#[test]
 fn viz_contour_non_numeric_errors() {
     let wrk = Workdir::new("viz_contour_non_numeric_errors");
     quakes(&wrk);
@@ -11748,6 +11775,123 @@ fn viz_smart_plain_adds_no_lorenz_without_smarter() {
     assert!(
         !html.contains("Lorenz curve"),
         "plain viz smart (no --smarter) must not add a Lorenz panel; html: {html}"
+    );
+}
+
+// A zero-inflated unequal additive measure: 300 rows of exactly 0 (60% of the column), 150 small
+// holders (value 1) and 50 large holders (1000..1049). The Gini clears the Lorenz gate, and the
+// curve's long flat opening run is ENTIRELY the zeros -- the case issue #4222 is about.
+fn zero_inflated_spend_csv() -> String {
+    let mut rows = String::from("id,spend\n");
+    let mut id = 1;
+    for _ in 0..300 {
+        rows.push_str(&format!("{id},0\n"));
+        id += 1;
+    }
+    for _ in 0..150 {
+        rows.push_str(&format!("{id},1\n"));
+        id += 1;
+    }
+    for v in 0..50 {
+        rows.push_str(&format!("{id},{}\n", 1000 + v));
+        id += 1;
+    }
+    rows
+}
+
+#[test]
+fn viz_smart_lorenz_labels_zero_run_and_caveats_unit_heterogeneity() {
+    // issue #4222: a Lorenz panel over a zero-inflated column must say that its flat run IS the
+    // zeros (a pipeline stage / nothing-recorded-yet population), not a mass of small-but-nonzero
+    // records -- and must always carry the unit-heterogeneity caveat, since a high Gini over
+    // non-comparable rows is expected rather than an equity finding.
+    let wrk = Workdir::new("viz_smart_lorenz_labels_zero_run_and_caveats_unit_heterogeneity");
+    wrk.create_from_string("spend.csv", &zero_inflated_spend_csv());
+
+    let out_html = wrk.path("spend.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "spend.csv", "--smarter", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("spend.html").unwrap();
+    // the panel exists at all (its equality diagonal is the reliable panel marker)
+    assert_eq!(
+        html.matches(r#""name":"equality""#).count(),
+        1,
+        "the zero-inflated spend column should earn exactly one Lorenz panel; html: {html}"
+    );
+    // 300 zeros / 500 numeric values = 60%, reported over the SAME non-null denominator the
+    // "% zeros" box hint uses, so the two annotations agree on one dashboard.
+    assert!(
+        html.contains("flat run = 60% zeros, not small values"),
+        "the flat run must be labeled as the zero stage; html: {html}"
+    );
+    assert!(
+        html.contains("concentration is expected unless rows are comparable units"),
+        "the Lorenz panel must carry the unit-heterogeneity caveat; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_lorenz_caveats_unit_heterogeneity_without_zero_run() {
+    // The unit caveat is UNCONDITIONAL (there is no row-unit signal in the stats cache, so gating
+    // it would risk silently dropping it where it is most needed), but the zero-run label is not:
+    // `unequal_income_csv` holds no zeros at all, so only the caveat appears.
+    let wrk = Workdir::new("viz_smart_lorenz_caveats_unit_heterogeneity_without_zero_run");
+    wrk.create_from_string("inc.csv", &unequal_income_csv());
+
+    let out_html = wrk.path("inc.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "inc.csv", "--smarter", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("inc.html").unwrap();
+    assert!(
+        html.contains("concentration is expected unless rows are comparable units"),
+        "every Lorenz panel carries the unit caveat; html: {html}"
+    );
+    assert!(
+        !html.contains("flat run ="),
+        "a column with no zeros must not claim a zero flat run; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_density_panel_hover_names_both_measures_and_the_row_count() {
+    // `viz smart` swaps the scatter drill-down for a density contour past
+    // SMART_CONTOUR_MIN_POINTS (5,000 rows). That contour used to fall back to plotly's default
+    // hover -- a bare x/y/z triple over an auto-generated "trace N" -- so the reader could not
+    // tell which measure was which, nor that z counts rows. It shares one hover template with the
+    // standalone `viz contour` command.
+    let wrk = Workdir::new("viz_smart_density_panel_hover_names_both_measures_and_the_row_count");
+    let mut rows = String::from("widgetcount,zonescore\n");
+    for i in 0..6000 {
+        // both axes spread near-uniformly so the linear grid stays legible (a collapsed grid is
+        // dropped outright), and strongly correlated so this is the pair drill-down
+        let x = i % 100;
+        let y = x * 2 + i % 37;
+        rows.push_str(&format!("{x},{y}\n"));
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let out_html = wrk.path("d.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("d.html").unwrap();
+    assert!(
+        html.contains(r#""type":"contour""#),
+        "6,000 rows should produce a density contour, not a scatter; html: {html}"
+    );
+    assert!(
+        html.contains(
+            r"widgetcount: %{x:.3s}\u003cbr\u003ezonescore: %{y:.3s}\u003cbr\u003e%{z:,} rows\u003cextra\u003e\u003c/extra\u003e"
+        ),
+        "the density cell hover must name both measures and the row count; html: {html}"
     );
 }
 

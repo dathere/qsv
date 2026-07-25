@@ -7637,19 +7637,31 @@ fn positive_subset_pair(xs: &[f64], ys: &[f64]) -> Option<(Vec<f64>, Vec<f64>, f
 ///
 /// A too-small or still-concentrated positive subset yields no panel — an absent panel beats an
 /// unreadable one. `name` is the caller's already-composed title (field pair + r, plus ρ when
-/// nonlinear).
-fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str, mode: LogScale) -> Option<Panel> {
+/// nonlinear); `labels` is the same pair of field labels UNDECORATED, kept for the cell hover.
+fn smart_contour_panel(
+    xs: &[f64],
+    ys: &[f64],
+    name: &str,
+    mode: LogScale,
+    labels: (&str, &str),
+) -> Option<Panel> {
     // `On` forces log without consulting the linear grid, just as `measure_by_dim_logs` / the box
     // paths force a log value axis under `On`.
     if mode == LogScale::On {
-        return log_contour_panel(xs, ys, name);
+        return log_contour_panel(xs, ys, name, labels);
     }
 
     let (x, y, z) = bin_2d(xs, ys, SMART_CONTOUR_BINS, (false, false));
     if density_concentration(&z) <= SMART_CONTOUR_MAX_BIN_SHARE {
         return Some(Panel::new(
             name.to_string(),
-            PanelKind::ContourPair { x, y, z },
+            PanelKind::ContourPair {
+                x,
+                y,
+                z,
+                x_label: labels.0.to_string(),
+                y_label: labels.1.to_string(),
+            },
         ));
     }
 
@@ -7658,7 +7670,7 @@ fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str, mode: LogScale) -> Op
     if mode == LogScale::Off {
         return None;
     }
-    log_contour_panel(xs, ys, name)
+    log_contour_panel(xs, ys, name, labels)
 }
 
 /// The log-space density retry for `smart_contour_panel` (issue #4223): bin the strictly-positive
@@ -7666,7 +7678,7 @@ fn smart_contour_panel(xs: &[f64], ys: &[f64], name: &str, mode: LogScale) -> Op
 /// omitted-zeros share so a subset is never shown dressed up as the whole; when NOTHING was dropped
 /// (an all-positive pair reached here under `--log-scale on`) the title carries the plain log cue.
 /// A non-zero omission that rounds below 1% is still disclosed (`<1%`) rather than silently hidden.
-fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str) -> Option<Panel> {
+fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str, labels: (&str, &str)) -> Option<Panel> {
     let (px, py, dropped) = positive_subset_pair(xs, ys)?;
     let (x, y, z) = bin_2d(&px, &py, SMART_CONTOUR_BINS, (true, true));
     if density_concentration(&z) > SMART_CONTOUR_MAX_BIN_SHARE {
@@ -7688,7 +7700,56 @@ fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str) -> Option<Panel> {
         };
         format!("{name} \u{b7} log scale, positive values only ({share} of rows omitted)")
     };
-    Some(Panel::new(title, PanelKind::ContourPair { x, y, z }).with_axis_log((true, true)))
+    Some(
+        Panel::new(
+            title,
+            PanelKind::ContourPair {
+                x,
+                y,
+                z,
+                x_label: labels.0.to_string(),
+                y_label: labels.1.to_string(),
+            },
+        )
+        .with_axis_log((true, true)),
+    )
+}
+
+/// Hover text for one cell of a 2D density contour: the two measures at the cell's bin center,
+/// plus how many rows landed in it.
+///
+/// Plotly's default contour hover is a bare `x`/`y`/`z` triple labeled with an auto-generated
+/// "trace N" — which names neither measure nor says what `z` counts, so the reader is left to
+/// guess that the third number is a row count rather than a third variable. `<extra></extra>`
+/// drops that "trace N" box entirely.
+///
+/// The bin centers are RAW values (`bin_2d` un-logs geometric centers before returning them), so
+/// `.3s` SI formatting reads in the data's own units on both linear and log axes. Shared by
+/// `viz contour` and `viz smart`'s density panel so the two hovers can never drift apart.
+///
+/// The labels are raw column headers interpolated into a template that itself parses `%{...}`, so
+/// they take the full `escape_template_pct(escape_hover(..))` composition — a header like
+/// `"% of total"` must reach the tooltip as text, not as a half-parsed template token.
+fn contour_hover_template(x_label: &str, y_label: &str) -> String {
+    format!(
+        "{}: %{{x:.3s}}<br>{}: %{{y:.3s}}<br>%{{z:,}} rows<extra></extra>",
+        escape_template_pct(&escape_hover(x_label)),
+        escape_template_pct(&escape_hover(y_label))
+    )
+}
+
+/// Hover text for a point on a Lorenz curve: the measure, its CACHED Gini, and the concentration
+/// stated in plain terms — the bottom X% of records hold Y% of the total.
+///
+/// Kept beside `contour_hover_template` because the two share the hazard that motivates both: a
+/// raw column label interpolated into a string plotly parses for `%{...}` tokens, so each label
+/// needs the full `escape_template_pct(escape_hover(..))` composition. Extracting this out of the
+/// render match arm is also what makes the escaping unit-testable without building a dashboard.
+fn lorenz_hover_template(label: &str, gini: f64) -> String {
+    format!(
+        "{} (Gini {gini:.2})<br>bottom %{{x:.0%}} of records hold %{{y:.0%}}<extra></extra>",
+        escape_template_pct(&escape_hover(label))
+    )
 }
 
 /// Build a `Contour` trace: the 2D density of two numeric columns (--x and --y), binned into a
@@ -7719,13 +7780,15 @@ fn build_contour(args: &Args) -> CliResult<(Box<dyn Trace>, String, String)> {
     // `viz contour` is an explicit user request over user-named columns: bin linearly and honor it.
     let (x_centers, y_centers, z) = bin_2d(&xs, &ys, bins, (false, false));
 
-    let trace = Contour::new(x_centers, y_centers, z)
-        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis));
-    Ok((
-        trace,
+    let (x_label, y_label) = (
         col_label(&headers, x_idx, nh),
         col_label(&headers, y_idx, nh),
-    ))
+    );
+    let hover = contour_hover_template(&x_label, &y_label);
+    let trace = Contour::new(x_centers, y_centers, z)
+        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+        .hover_template(&hover);
+    Ok((trace, x_label, y_label))
 }
 
 /// Candlestick (or OHLC bar) chart from a date/x column and four numeric price columns.
@@ -12320,7 +12383,10 @@ enum PanelKind {
     /// (x, ascending) and cumulative value share (y), both 0→1 and row-aligned; the equality
     /// diagonal is the trivial (0,0)→(1,1) reference line, added as a second trace at render.
     /// `gini` is the CACHED coefficient (shown in the title, never recomputed here, so it matches
-    /// the box hint / pivotp / scoresql); `label` is the measure's human label for the hover. A
+    /// the box hint / pivotp / scoresql); `label` is the measure's human label for the hover. The
+    /// panel subtitle carries the framing caveat (`lorenz_caveat`) that keeps a high Gini over
+    /// heterogeneous rows — and a flat run that is really a pile of zeros — from reading as an
+    /// equity finding (issue #4222). A
     /// plain cartesian Scatter (lines), so it composes with the typed subplot grid and static
     /// image export.
     Lorenz {
@@ -12332,10 +12398,15 @@ enum PanelKind {
     /// 2D density contour of the most strongly correlated numeric pair — used INSTEAD of
     /// `ScatterPair` for large datasets (>= `SMART_CONTOUR_MIN_POINTS`), where a scatter overplots.
     /// Carries the precomputed bin-center axes and count grid so the render loop stays pure.
+    /// `x_label`/`y_label` are the two measures' human labels, carried for the cell hover
+    /// (`contour_hover_template`) the same way `ScatterPair` carries its own — the panel title is
+    /// decorated with r/rho and log-scale cues, so it cannot be parsed back into axis names.
     ContourPair {
-        x: Vec<f64>,
-        y: Vec<f64>,
-        z: Vec<Vec<f64>>,
+        x:       Vec<f64>,
+        y:       Vec<f64>,
+        z:       Vec<Vec<f64>>,
+        x_label: String,
+        y_label: String,
     },
     /// A numeric measure aggregated BY a low-cardinality categorical dimension (e.g. mean amount by
     /// region) — the (dimension, measure) pair with the strongest association (correlation ratio
@@ -15128,6 +15199,12 @@ fn mean_is_outlier_driven(s: &crate::cmd::stats::StatsData) -> bool {
     mean >= median * MEAN_MEDIAN_RATIO_MIN
 }
 
+/// Zero share at or above which zeros stop being incidental and start reshaping how the
+/// distribution must be read. Shared by `box_shape_hint`'s "% zeros" title part and the Lorenz
+/// panel's flat-run caveat (`lorenz_caveat`) so the two can never disagree about whether the same
+/// column is zero-inflated — they are routinely shown on the same dashboard.
+const ZERO_SHARE_MIN: f64 = 0.30;
+
 /// Share of zero values among a numeric column's non-null values, from the streaming sign
 /// counts (`n_negative`/`n_zero`/`n_positive`) in the base stats cache. `None` for non-numeric
 /// columns (the counts are only computed for Integer/Float) or when there are no numeric values.
@@ -15156,9 +15233,9 @@ fn zero_share(s: &crate::cmd::stats::StatsData) -> Option<f64> {
 ///
 /// Returns None when nothing notable — the title is left unchanged.
 fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
-    // nulls/zeros below ~a third of the column read as ordinary; above, they reshape the box.
+    // nulls below ~a third of the column read as ordinary; above, they reshape the box. Zeros
+    // use the shared `ZERO_SHARE_MIN`, which the Lorenz flat-run caveat reads too.
     const NULL_SHARE_MIN: f64 = 0.30;
-    const ZERO_SHARE_MIN: f64 = 0.30;
     // |Pearson skewness| below this reads as ~symmetric; outlier shares below 1% are negligible.
     const SKEW_MIN_ABS: f64 = 0.5;
     const OUTLIER_MIN_PCT: f64 = 1.0;
@@ -15270,6 +15347,42 @@ fn is_inequality_candidate(sem: &ColSemantics, s: &crate::cmd::stats::StatsData)
         },
     };
     additive && s.gini_coefficient.is_some_and(|g| g >= LORENZ_GINI_MIN)
+}
+
+/// The caveat line shown beneath a Lorenz panel's title (issue #4222), guarding against the
+/// dominant misread of the inequality vocabulary.
+///
+/// Two independent hazards, both of which the curve's geometry alone cannot disclose:
+///
+/// 1. **Unit heterogeneity (always shown).** A Gini over rows that are not comparable units is
+///    close to tautological — a subway extension SHOULD cost a thousand times a playground
+///    resurfacing — yet "Gini 0.96" reads to a general audience as unfairness. There is no row-unit
+///    signal anywhere in the stats cache: whether a row is a person, a household, a geography or a
+///    heterogeneous capital project is semantics, not a statistic. Rather than invent a
+///    name-heuristic proxy — which would either delete a legitimate equity finding or silently keep
+///    a misleading one — the caveat is UNCONDITIONAL and the reader is told what the number does
+///    and does not license. No gate, so no false negatives.
+/// 2. **Zero inflation (shown when it applies).** At or above `ZERO_SHARE_MIN`, the flat opening
+///    run of the curve IS the zeros, not a mass of small-but-nonzero records — commonly a pipeline
+///    stage (nothing committed/spent YET) rather than a have-not population. Those are two
+///    different populations and the curve draws them identically.
+///
+/// The zero share comes from `zero_share` (base stats cache, non-null denominator), the same
+/// helper and the same `ZERO_SHARE_MIN` threshold behind the "% zeros" box-title hint, so the two
+/// annotations agree whenever both appear on one dashboard. Nothing here is recomputed from the
+/// data: the panel's Gini remains the CACHED coefficient, untouched.
+fn lorenz_caveat(s: &crate::cmd::stats::StatsData) -> String {
+    const UNIT_CAVEAT: &str = "concentration is expected unless rows are comparable units";
+
+    zero_share(s).filter(|z| *z >= ZERO_SHARE_MIN).map_or_else(
+        || UNIT_CAVEAT.to_string(),
+        |z| {
+            format!(
+                "flat run = {:.0}% zeros, not small values \u{b7} {UNIT_CAVEAT}",
+                z * 100.0
+            )
+        },
+    )
 }
 
 /// APPROXIMATE share of the most frequent value, reconstructed entirely from the stats cache:
@@ -15984,11 +16097,15 @@ fn build_timeseries_panel(
 /// the picture and the number agree with the box hint / pivotp / scoresql). Only non-negative
 /// finite values are kept, matching the domain moarstats' Gini was computed over. Returns `None`
 /// for a degenerate column (see `lorenz_curve`).
+///
+/// `stat` is the column's cached stats row, used ONLY to compose the panel's framing caveat
+/// (`lorenz_caveat`) from the already-cached zero share — no statistic is recomputed here.
 fn build_lorenz_panel(
     args: &Args,
     sems: &[ColSemantics],
     idx: usize,
     gini: f64,
+    stat: &crate::cmd::stats::StatsData,
 ) -> CliResult<Option<Panel>> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let label = sems
@@ -16012,15 +16129,18 @@ fn build_lorenz_panel(
         return Ok(None);
     };
 
-    Ok(Some(Panel::new(
-        format!("{label} \u{2014} Lorenz curve (Gini {gini:.2})"),
-        PanelKind::Lorenz {
-            pop,
-            share,
-            gini,
-            label,
-        },
-    )))
+    Ok(Some(
+        Panel::new(
+            format!("{label} \u{2014} Lorenz curve (Gini {gini:.2})"),
+            PanelKind::Lorenz {
+                pop,
+                share,
+                gini,
+                label,
+            },
+        )
+        .with_subtitle(Some(lorenz_caveat(stat))),
+    ))
 }
 
 /// Compute the exact Lorenz curve for a set of non-negative values: sort ascending, then return
@@ -20782,8 +20902,13 @@ impl<'a> SmartCtx<'a> {
                             // A density grid that collapses into one cell is dropped outright (or
                             // retried in log space over the positive subset) — the contour-branch
                             // counterpart of the `degenerate` scatter guard below (issue #4223).
-                            let panel =
-                                smart_contour_panel(&columns[i], &columns[j], &name, log_scale);
+                            let panel = smart_contour_panel(
+                                &columns[i],
+                                &columns[j],
+                                &name,
+                                log_scale,
+                                (&labels[i], &labels[j]),
+                            );
                             if panel.is_none() {
                                 viz_note(&format!(
                                     "viz smart: density panel for {} vs {} skipped (its \
@@ -21126,7 +21251,8 @@ impl<'a> SmartCtx<'a> {
             }
             // insert weakest-first so the strongest inequality ends up topmost among them
             for (idx, gini) in lorenz_candidates.into_iter().rev() {
-                let built = build_lorenz_panel(self.args, &self.col_sems, idx, gini);
+                let built =
+                    build_lorenz_panel(self.args, &self.col_sems, idx, gini, &self.stats[idx]);
                 match built {
                     Ok(Some(panel)) => self.panels.insert(0, panel),
                     Ok(None) => {},
@@ -22232,14 +22358,8 @@ fn panel_trace(
             label,
         } => {
             // the cumulative curve; the muted equality diagonal is a SECOND trace added by the
-            // caller (grid + inline) right after this one. The hover leads with the (cached) Gini
-            // and states the concentration in plain terms: the bottom X% of records hold Y% of the
-            // total.
-            let hover = format!(
-                "{} (Gini {gini:.2})<br>bottom %{{x:.0%}} of records hold \
-                 %{{y:.0%}}<extra></extra>",
-                escape_hover(label)
-            );
+            // caller (grid + inline) right after this one.
+            let hover = lorenz_hover_template(label, *gini);
             let mut t = Scatter::new(pop.clone(), share.clone())
                 .mode(Mode::Lines)
                 .name(panel.name.clone())
@@ -22250,11 +22370,20 @@ fn panel_trace(
             }
             t
         },
-        PanelKind::ContourPair { x, y, z } => {
+        PanelKind::ContourPair {
+            x,
+            y,
+            z,
+            x_label,
+            y_label,
+        } => {
             // standalone (inline) panels show the colorbar; grid cells hide it to avoid clutter
+            let hover = contour_hover_template(x_label, y_label);
             let mut c = Contour::new(x.clone(), y.clone(), z.clone())
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
-                .show_scale(axes.is_none());
+                .show_scale(axes.is_none())
+                .name(&panel.name)
+                .hover_template(&hover);
             if let Some((xa, ya)) = &axes {
                 c = c.x_axis(xa.as_str()).y_axis(ya.as_str());
             }
@@ -29850,6 +29979,56 @@ mod tests {
     }
 
     #[test]
+    fn contour_hover_template_neutralizes_percent_bearing_headers() {
+        // the labels are raw column headers dropped into a template that parses `%{...}`, so a
+        // header carrying `%` -- or one that already looks like a token -- must be neutralized
+        // rather than honored, and markup must be escaped before the `%`-doubling
+        let t = contour_hover_template("% of total", "%{x}");
+        assert!(
+            t.starts_with("%% of total: %{x:.3s}"),
+            "a literal `%` in a header must be doubled, got: {t}"
+        );
+        assert!(
+            t.contains("%%{x}: %{y:.3s}"),
+            "a token-shaped header must be neutralized, got: {t}"
+        );
+        // the template's OWN tokens survive intact, and the trace-name box stays suppressed
+        assert!(t.ends_with("%{z:,} rows<extra></extra>"), "got: {t}");
+
+        // markup first, then `%`-doubling -- the same one-order composition as the other sinks
+        let m = contour_hover_template("R&D 50%", "plain");
+        assert!(m.starts_with("R&amp;D 50%%: "), "got: {m}");
+    }
+
+    #[test]
+    fn lorenz_hover_template_neutralizes_percent_bearing_labels() {
+        // the Lorenz hover interpolates a raw measure label into a template that parses `%{...}`,
+        // exactly as the contour hover does -- `%` in a header is NOT an intensive-measure token
+        // (tokenization splits on non-alphanumerics), so such a column really can reach a Lorenz
+        // panel and really can carry a `%` into the template
+        let t = lorenz_hover_template("% of total", 0.87);
+        assert!(
+            t.starts_with("%% of total (Gini 0.87)"),
+            "a literal `%` in the label must be doubled, got: {t}"
+        );
+        // a token-shaped label is neutralized rather than honored
+        assert!(
+            lorenz_hover_template("%{x}", 0.5).starts_with("%%{x} (Gini 0.50)"),
+            "a token-shaped label must be neutralized"
+        );
+        // markup first, then `%`-doubling -- the one fixed order shared by every template sink
+        assert!(
+            lorenz_hover_template("R&D 50%", 0.5).starts_with("R&amp;D 50%% "),
+            "markup must be escaped before the `%`-doubling"
+        );
+        // the template's OWN tokens survive intact, and the trace-name box stays suppressed
+        assert!(
+            t.ends_with("bottom %{x:.0%} of records hold %{y:.0%}<extra></extra>"),
+            "got: {t}"
+        );
+    }
+
+    #[test]
     fn panel_title_escapes_markup_with_and_without_subtitle() {
         // a hostile column header must not reach plotly's markup renderer as live markup on
         // EITHER branch — the no-subtitle branch is the default (no --dictionary) path
@@ -30908,7 +31087,7 @@ mod tests {
 
         // Auto (default): linear collapses -> log retry over the positive subset. Both axes log,
         // and the omitted-zeros share is stated in the title.
-        let auto = smart_contour_panel(&xs, &ys, "a vs b", LogScale::Auto)
+        let auto = smart_contour_panel(&xs, &ys, "a vs b", LogScale::Auto, ("a", "b"))
             .expect("auto retries collapsed linear density in log space");
         assert_eq!(auto.axis_log, (true, true));
         assert!(
@@ -30920,12 +31099,12 @@ mod tests {
         // Off: the user disabled log, so a collapsed linear grid has no legible fallback -> no
         // panel, and NEVER a log axis (regression guard for the review finding).
         assert!(
-            smart_contour_panel(&xs, &ys, "a vs b", LogScale::Off).is_none(),
+            smart_contour_panel(&xs, &ys, "a vs b", LogScale::Off, ("a", "b")).is_none(),
             "--log-scale off must not emit a log contour"
         );
 
         // On: forces the log view even though the linear grid here is collapsed anyway.
-        let on = smart_contour_panel(&xs, &ys, "a vs b", LogScale::On)
+        let on = smart_contour_panel(&xs, &ys, "a vs b", LogScale::On, ("a", "b"))
             .expect("on forces the log contour");
         assert_eq!(on.axis_log, (true, true));
 
@@ -30939,10 +31118,11 @@ mod tests {
                 gy.push(b as f64);
             }
         }
-        let on_pos = smart_contour_panel(&gx, &gy, "a vs b", LogScale::On).expect("on forces log");
+        let on_pos = smart_contour_panel(&gx, &gy, "a vs b", LogScale::On, ("a", "b"))
+            .expect("on forces log");
         assert_eq!(on_pos.axis_log, (true, true));
         assert!(on_pos.name.contains("log scale") && !on_pos.name.contains("omitted"));
-        let off_pos = smart_contour_panel(&gx, &gy, "a vs b", LogScale::Off)
+        let off_pos = smart_contour_panel(&gx, &gy, "a vs b", LogScale::Off, ("a", "b"))
             .expect("off keeps the legible linear contour");
         assert_eq!(off_pos.axis_log, (false, false));
         assert!(!off_pos.name.contains("log"));
@@ -30957,7 +31137,7 @@ mod tests {
             tx.push(0.0);
             ty.push(0.0);
         }
-        let tiny = smart_contour_panel(&tx, &ty, "a vs b", LogScale::On)
+        let tiny = smart_contour_panel(&tx, &ty, "a vs b", LogScale::On, ("a", "b"))
             .expect("on forces log over the positive subset");
         assert!(
             tiny.name.contains("<1% of rows omitted"),

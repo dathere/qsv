@@ -37,6 +37,11 @@ Chart types (subcommands):
                 distribution's shape (modes, shoulders). Same inputs as box
                 (--y = value column, optional --x = group column).
     pie         Proportions.      --x = label column, optional --y = value column.
+    funnel      Stage-by-stage drop-off. --x = stage column, optional --y = value
+                column (counts stage occurrences when omitted). Stages keep the
+                order they first appear in the file, so the rows define the
+                pipeline; plotly labels each band with its conversion from the
+                previous stage.
     heatmap     Color grid. Correlation matrix of numeric columns (default; an
                 optional column subset via --cols), or a category x category pivot
                 with --x/--y/--z.
@@ -89,6 +94,21 @@ auto-picks panels, so no --x/--y is needed:
       with no headline measure. (Overall dataset completeness - the share of
       non-empty cells - is a quiet "Completeness:" line in the header metadata
       table, not a KPI tile.)
+    - pipeline funnel, when the dictionary DECLARES one (see --dictionary). Which
+      columns are process stages, and in which direction, is semantics rather than
+      a statistic - no column-name vocabulary settles it and no statistic does
+      either - so a funnel is drawn ONLY from an explicit declaration, never
+      guessed. Both encodings are supported: stages held in separate measure
+      columns, and stages held as values of one category column. Costs one extra
+      data pass over the declared stages only.
+      Stage order is the declared order and is never re-sorted by size. For the
+      column encoding, row-wise containment (does each stage nest inside the one
+      before it?) is MEASURED and disclosed in the subtitle, but never refuses the
+      panel: a pipeline whose stages overrun is a finding to name, not a reason to
+      show nothing. Totals sum over the rows complete across every declared stage,
+      so they do NOT match `stats.sum`; the subtitle always discloses that
+      denominator. See also the standalone `qsv viz funnel` chart type, which takes
+      its stage order from the file and needs no dictionary.
     - correlation heatmap, when 2+ continuous numeric columns exist (one extra
       data pass for Pearson correlations). If the strongest pair is at least
       moderately correlated, a drill-down is added beside it: a scatter (or a 2D
@@ -151,6 +171,9 @@ Examples:
 
   # Pie chart of category proportions (counts), as a donut
   qsv viz pie data.csv --x category --donut -o pie.html
+
+  # Funnel of a pipeline whose stages are ROWS (stage column + amount column)
+  qsv viz funnel pipeline.csv --x stage --y amount -o funnel.html
 
   # Correlation heatmap over all numeric columns
   qsv viz heatmap data.csv -o corr.html
@@ -216,6 +239,7 @@ Usage:
     qsv viz box         [options] <input>
     qsv viz violin      [options] <input>
     qsv viz pie         [options] <input>
+    qsv viz funnel      [options] <input>
     qsv viz heatmap     [options] <input>
     qsv viz contour     [options] <input>
     qsv viz candlestick [options] <input>
@@ -518,6 +542,27 @@ smart options:
                            A "target" number on a measure renders a "vs target" DELTA against that
                            goal (value minus target) - a GOAL you supply, never a fabricated
                            prior-period baseline, so "infer" never emits it; hand-author it.
+                           The dictionary is also the ONLY source of the pipeline funnel panel,
+                           declared in the dataset-level "x-qsv" object as a "relationships" entry
+                           with "kind": "pipeline". Two encodings, both hand-editable:
+                             stages as COLUMNS - "members" lists the stage columns in process
+                             order, WIDEST/UPSTREAM FIRST (note this is the opposite direction
+                             from a "kind":"ordered" group, which ascends), e.g.
+                               {"kind":"pipeline",
+                                "members":["planned_amt","committed_amt","spent_amt"]}
+                             stages as ROW VALUES - "stage_column" names the category column,
+                             "stages" lists its values in process order, and an optional
+                             "value_column" names the measure to sum per stage (omit it to count
+                             rows), e.g.
+                               {"kind":"pipeline","members":["stage","revenue"],
+                                "stage_column":"stage",
+                                "stages":["Impression","Click","Lead","Conversion"],
+                                "value_column":"revenue"}
+                           Declared order is authoritative and is never re-sorted by size, so a
+                           stage that outruns its predecessor stays visible instead of being
+                           quietly reordered away. A declaration naming a missing column, or a
+                           stage that is an average/rate rather than a summable amount, is skipped
+                           with a note rather than erroring.
                            Only affects `smart`.
     --dictionary-context <file>  Path to a file with extra context about the dataset
                            (a glossary, README, data dictionary, PDF, etc.) forwarded to
@@ -702,8 +747,9 @@ use plotly::layout::update_menu::{
 };
 use plotly::{
     Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
-    HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Pie, Plot, Sankey, Scatter, Scatter3D,
-    ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Traces, Treemap, Violin,
+    Funnel, HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Pie, Plot, Sankey, Scatter,
+    Scatter3D, ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Traces, Treemap,
+    Violin,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
@@ -712,6 +758,7 @@ use plotly::{
         HoverInfo, Line, Marker, Mode, Orientation, Pattern, PatternShape, TextPosition, TickMode,
         Title,
     },
+    funnel::Connector as FunnelConnector,
     indicator::{Delta, Gauge, GaugeAxis, Mode as IndicatorMode, Number},
     layout::{
         Animation, AnimationMode, AnimationOptions, Annotation, Axis, AxisType, CategoryOrder,
@@ -1431,6 +1478,7 @@ struct Args {
     cmd_box:                 bool,
     cmd_violin:              bool,
     cmd_pie:                 bool,
+    cmd_funnel:              bool,
     cmd_heatmap:             bool,
     cmd_contour:             bool,
     cmd_candlestick:         bool,
@@ -1965,6 +2013,13 @@ fn build_plot(
             plot.add_trace(build_pie(args)?);
             (None, None)
         },
+        // A funnel is cartesian, but plotly draws no visible value axis for it -- each band
+        // carries its own value and conversion label instead. An axis title here would be dead
+        // config that never renders, so it gets none, like the domain-based traces above.
+        Chart::Funnel => {
+            plot.add_trace(build_funnel_chart(args)?);
+            (None, None)
+        },
         Chart::Sankey => {
             let (trace, menu) = build_sankey(args)?;
             plot.add_trace(trace);
@@ -2036,6 +2091,7 @@ enum Chart {
     Box,
     Violin,
     Pie,
+    Funnel,
     Heatmap,
     Contour,
     Candlestick,
@@ -2069,6 +2125,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Violin
     } else if args.cmd_pie {
         Chart::Pie
+    } else if args.cmd_funnel {
+        Chart::Funnel
     } else if args.cmd_heatmap {
         Chart::Heatmap
     } else if args.cmd_contour {
@@ -7363,6 +7421,68 @@ fn build_pie(args: &Args) -> CliResult<Box<dyn Trace>> {
     Ok(pie)
 }
 
+/// `viz funnel`: a stage-by-stage drop-off chart. Sums `--y` per `--x` stage, or counts stage
+/// occurrences when `--y` is omitted — the same input shape as `viz pie`, and read the same way.
+///
+/// The two funnels in qsv are complements, not duplicates, and the difference is WHERE the stage
+/// order comes from. `viz smart`'s panel takes it from a dictionary declaration
+/// (`x-qsv.relationships`, `kind: "pipeline"`) and supports both encodings, so it can chart a
+/// row-shaped pipeline too — but only when one was declared. This command takes the order from
+/// the FILE: **stage order is first-appearance order**, so it needs no dictionary, no LLM and no
+/// declaration. An explicit `qsv viz funnel` is a request, not a detection.
+///
+/// Neither applies a containment check. Here there is nothing to check against — the user named
+/// the stage column — and in `viz smart` containment is measured for disclosure only.
+///
+/// Stages are NOT sorted by value. A stage that outruns its predecessor is a finding the reader
+/// needs to see, and sorting would quietly hide it.
+fn build_funnel_chart(args: &Args) -> CliResult<Box<dyn Trace>> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let stage_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
+    let value_idx = match args.flag_y.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "y")?),
+        None => None,
+    };
+
+    let mut order: Vec<String> = Vec::new();
+    let mut acc: HashMap<String, f64> = HashMap::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let stage = cell_to_string(record.get(stage_idx));
+        if stage.is_empty() {
+            continue;
+        }
+        let inc = match value_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => v,
+                None => continue,
+            },
+            None => 1.0,
+        };
+        if let Some(v) = acc.get_mut(&stage) {
+            *v += inc;
+        } else {
+            order.push(stage.clone());
+            acc.insert(stage, inc);
+        }
+    }
+    if order.is_empty() {
+        return fail_clierror!("No data found for the funnel chart.");
+    }
+    let values: Vec<f64> = order.iter().map(|s| acc[s]).collect();
+    if values.iter().any(|v| *v < 0.0) {
+        return fail_clierror!(
+            "A funnel cannot represent a negative stage total; check the --y column."
+        );
+    }
+
+    // plotly draws index 0 at the TOP and works downward, so first-appearance order is fed as-is.
+    Ok(Funnel::new(values, order)
+        .orientation(Orientation::Horizontal)
+        .text_info("value+percent previous")
+        .connector(FunnelConnector::new().visible(true)))
+}
+
 /// Non-fatal advisory: a pie of many NEAR-EQUAL slices is the worst case for a pie chart — humans
 /// compare angles/areas poorly, so similar slices are nearly indistinguishable and a bar chart is
 /// strictly easier to read. Measured by the coefficient of variation (stddev / mean) of the slice
@@ -12395,6 +12515,28 @@ enum PanelKind {
         gini:  f64,
         label: String,
     },
+    /// Ordered pipeline funnel over process STAGES — planned → committed → spent, impressions →
+    /// clicks → conversions (issue #4222). Built ONLY from a dictionary declaration
+    /// (`x-qsv.relationships`, `kind: "pipeline"`); see `PipelineSpec` for why the direction
+    /// cannot be inferred from names or statistics, and `build_funnel_panel` for the encoding.
+    ///
+    /// All four vectors are parallel and UPSTREAM-FIRST; the render arm reverses them, because
+    /// plotly places category index 0 at the axis bottom. `totals` drives the bar length.
+    ///
+    /// `reached` and `n_complete` mean DIFFERENT things per `shape`, which is exactly why `shape`
+    /// is carried rather than inferred: for `Columns` they are complete-case counts over the
+    /// listwise join (so the sums do NOT match `stats.sum`, disclosed unconditionally in the
+    /// subtitle), while for the row encodings `reached` IS the per-stage row count and sums to
+    /// `n_complete`. Reusing the column wording there would claim a 100% complete-case rate that
+    /// means nothing.
+    Funnel {
+        stages:     Vec<String>,
+        labels:     Vec<String>,
+        totals:     Vec<f64>,
+        reached:    Vec<usize>,
+        n_complete: usize,
+        shape:      FunnelShape,
+    },
     /// 2D density contour of the most strongly correlated numeric pair — used INSTEAD of
     /// `ScatterPair` for large datasets (>= `SMART_CONTOUR_MIN_POINTS`), where a scatter overplots.
     /// Carries the precomputed bin-center axes and count grid so the render loop stays pure.
@@ -12826,12 +12968,53 @@ struct DictRow {
     target:       Option<f64>,
 }
 
+/// How a built funnel's numbers should be read — the render arm's hover text depends on it.
+///
+/// Kept as data on the panel rather than re-derived, because `reached`/`n_complete` are
+/// numerically indistinguishable between the shapes while meaning different things.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum FunnelShape {
+    /// Stages are separate measure COLUMNS; counts are complete-case rows with a positive value.
+    Columns,
+    /// Stages are row values; `totals` are sums of the named measure column.
+    RowsMeasure { value_label: String },
+    /// Stages are row values; `totals` ARE the row counts, so they equal `reached`.
+    RowsCount,
+}
+
+/// A pipeline declared by the dictionary (`x-qsv.relationships`, `kind: "pipeline"`), in either
+/// of the two encodings describegpt emits — see `describegpt::dictionary::parse_llm_relationships`.
+///
+/// This is the ONLY way `viz smart` learns that a set of measures forms a process. Issue #4222
+/// framed the question correctly: which columns are stages, and in what direction, is SEMANTICS,
+/// not a statistic. No column-name vocabulary can settle it (`township` reads as a shipping
+/// stage) and no statistic can either (`total_pop`/`male_pop`/`female_pop` nests perfectly yet is
+/// a partition, not a pipeline). So the dictionary declares it, an LLM proposes it, and a human
+/// can refine it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PipelineSpec {
+    /// Stages are separate measure COLUMNS, listed upstream-first. Note this is the OPPOSITE
+    /// direction from a `kind: "ordered"` group, which ascends.
+    Columns { members: Vec<String> },
+    /// Stages are VALUES of one category column. `value_column` names the measure to sum per
+    /// stage; when absent the funnel counts rows.
+    Rows {
+        stage_column: String,
+        stages:       Vec<String>,
+        value_column: Option<String>,
+    },
+}
+
 /// A parsed describegpt Data Dictionary: per-column semantic rows keyed by field name, plus the
 /// dataset `grain` ("one row = one X"). Drives `viz smart` semantic routing.
 #[derive(Clone, Debug, Default)]
 struct DictData {
     rows:                HashMap<String, DictRow>,
     grain:               Option<String>,
+    /// Pipelines declared via `x-qsv.relationships`. Parsed leniently here (shape only); the
+    /// funnel builder does the strict validation against real columns and types, mirroring how
+    /// `gauge_range` is shape-parsed here and range-checked at the KPI tile.
+    pipelines:           Vec<PipelineSpec>,
     /// Dataset-level prose description (jsonschema top-level `description`, produced by
     /// describegpt --description). Legacy json dictionaries don't carry one.
     dataset_description: Option<String>,
@@ -13078,8 +13261,18 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
         "elevations",
         "altitude",
         "altitudes",
+        "depth",
+        "depths",
         "density",
         "densities",
+        // Logarithmic and other non-linear scales, where even the SUM's unit is meaningless:
+        // adding two Richter magnitudes does not describe anything. `magnitude` joins the
+        // physical-measurement group above because it fails the same way -- a dictionary that
+        // tags it `role: measure` (as an LLM readily does, magnitude being a number with no
+        // obvious rate/percent tell in its name) would otherwise yield "Total Earthquake
+        // Magnitude", which is exactly the KPI this guard exists to prevent.
+        "magnitude",
+        "magnitudes",
         // Durations and ages/tenures. A per-record SPAN is not additive the way an amount is:
         // "Total Account Age (Days)" sums a per-customer state into a number that means nothing,
         // and the same applies to elapsed/latency/runtime style measures. This also keeps the
@@ -13355,6 +13548,69 @@ fn classify_with_semantics(
     }
 }
 
+/// Lenient shape-parse of `x-qsv.relationships` into the pipelines `viz smart` can chart.
+///
+/// Structural only, by design: no column-existence, type or eligibility check happens here. That
+/// mirrors `xq_range`'s split — shape at parse time, validity at the consumption site — and it
+/// matters because dictionaries are hand-editable. A malformed or stale declaration must degrade
+/// to "no funnel", never to an error; this is a dashboard, not a validator.
+///
+/// JSONSchema-only. The legacy flat `{"fields":[…]}` dictionary has nowhere to put a row-encoded
+/// declaration, so supporting it there would be half a feature.
+fn xq_pipelines(v: &serde_json::Value) -> Vec<PipelineSpec> {
+    let Some(rels) = v
+        .get("x-qsv")
+        .and_then(|x| x.get("relationships"))
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Vec::new();
+    };
+    let str_at = |o: &serde_json::Value, k: &str| {
+        o.get(k)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string)
+    };
+    let str_array = |o: &serde_json::Value, k: &str| -> Vec<String> {
+        o.get(k)
+            .and_then(serde_json::Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    let mut out = Vec::new();
+    for rel in rels {
+        if rel.get("kind").and_then(serde_json::Value::as_str) != Some("pipeline") {
+            continue;
+        }
+        // `stage_column` discriminates the two encodings, exactly as on the emitting side.
+        if let Some(stage_column) = str_at(rel, "stage_column") {
+            let stages = str_array(rel, "stages");
+            if stages.len() >= 2 {
+                out.push(PipelineSpec::Rows {
+                    stage_column,
+                    stages,
+                    value_column: str_at(rel, "value_column"),
+                });
+            }
+        } else {
+            let members = str_array(rel, "members");
+            if members.len() >= 2 {
+                out.push(PipelineSpec::Columns { members });
+            }
+        }
+    }
+    out
+}
+
 /// Parse a describegpt Data Dictionary into per-column semantic rows + the dataset grain.
 ///
 /// Accepts BOTH shapes so `--dictionary <path>` works with either:
@@ -13442,6 +13698,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
         return Some(DictData {
             rows,
             grain,
+            pipelines: xq_pipelines(&v),
             dataset_description,
             generated_by,
         });
@@ -15383,6 +15640,176 @@ fn lorenz_caveat(s: &crate::cmd::stats::StatsData) -> String {
             )
         },
     )
+}
+
+/// Declared stage names that denote a COMPLEMENT or residual rather than a stage the process
+/// passed through.
+///
+/// This is the one hazard that disclosing containment cannot replace, which is why the list
+/// outlived the name-matching vocabulary it was born in. `unspent_balance` nests PERFECTLY inside
+/// `planned` — it reports 0% violations — while rendering a funnel that means the opposite of the
+/// truth. Every other bad declaration shows up as a violation share the subtitle can name; this
+/// one does not.
+///
+/// It WARNS, it does not veto. An explicit declaration outranks a name heuristic, and the
+/// collision half of the old list (`review`, `contractor`, `wholesale`, `lead_time`, …) was
+/// deleted with the vocabulary: those existed solely as antidotes to greedy substring matching,
+/// so warning on a declared `contractor_amt` would be a pure false alarm.
+const FUNNEL_COMPLEMENT_MARKERS: &[&str] = &[
+    "unspent",
+    "uncommitted",
+    "unplanned",
+    "unpaid",
+    "unobligated",
+    "undisbursed",
+    "unshipped",
+    "remaining",
+    "variance",
+    "shortfall",
+    "overrun",
+    "difference",
+    "delta",
+    "balance",
+];
+
+/// Containment-violation share above which the subtitle names it. Below this it is float noise or
+/// a handful of corrections, not a finding.
+const FUNNEL_VIOLATION_NOTE_MIN: f64 = 0.01;
+
+/// Minimum share of the table's rows that must survive the listwise-complete join for a
+/// COLUMN-shaped funnel's totals to be worth showing at all. Deliberately not applied to the row
+/// encoding — see `build_row_funnel_panel`.
+const FUNNEL_MIN_COMPLETE_FRAC: f64 = 0.50;
+
+/// Cap on funnel stages, so a wide finance table can't produce an unreadable twelve-band funnel.
+const FUNNEL_MAX_STAGES: usize = 6;
+
+/// Whether a declared stage name reads as a complement/residual (see `FUNNEL_COMPLEMENT_MARKERS`).
+fn is_complement_name(label: &str, field: &str) -> bool {
+    let hay = format!("{label} {field}").to_ascii_lowercase();
+    FUNNEL_COMPLEMENT_MARKERS.iter().any(|m| hay.contains(m))
+}
+
+/// Share of row-aligned pairs satisfying `downstream <= upstream`. The tolerance is relative, so a
+/// float-noise equality on large money values doesn't read as a violation. Returns 0.0 for empty
+/// input (an empty pipeline is not a contained one).
+fn containment_fraction(upstream: &[f64], downstream: &[f64]) -> f64 {
+    let n = upstream.len().min(downstream.len());
+    if n == 0 {
+        return 0.0;
+    }
+    let ok = (0..n)
+        .filter(|&r| {
+            let (u, d) = (upstream[r], downstream[r]);
+            d <= u + 1e-9 * u.abs().max(1.0)
+        })
+        .count();
+    #[allow(clippy::cast_precision_loss)]
+    let frac = ok as f64 / n as f64;
+    frac
+}
+
+/// Sum a value column (or count rows) per declared stage value, in one pass.
+///
+/// Returns `(totals, counts, matched)` parallel to `wanted`, plus the number of rows that landed
+/// in ANY declared stage — the row encoding's denominator.
+///
+/// Stage matching is trimmed and case-insensitive, with the first declared stage winning a
+/// collision. The LLM transcribes these values from the frequency distribution, so case drift is
+/// a realistic failure that would otherwise silently zero a band. A declared stage with no
+/// matching rows is legitimate and stays as a zero-height band; dropping it would imply the
+/// process ends at the last stage that happens to have data.
+fn read_stage_totals(
+    args: &Args,
+    stage_idx: usize,
+    value_idx: Option<usize>,
+    wanted: &[String],
+) -> CliResult<(Vec<f64>, Vec<usize>, usize)> {
+    let lookup: HashMap<String, usize> = wanted
+        .iter()
+        .enumerate()
+        .rev() // reverse so the FIRST declared stage wins a case-insensitive collision
+        .map(|(k, s)| (s.trim().to_ascii_lowercase(), k))
+        .collect();
+
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    let mut totals = vec![0.0_f64; wanted.len()];
+    let mut counts = vec![0_usize; wanted.len()];
+    let mut matched = 0_usize;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let raw = cell_to_string(record.get(stage_idx));
+        let key = raw.trim().to_ascii_lowercase();
+        let Some(&k) = lookup.get(&key) else {
+            continue;
+        };
+        let inc = match value_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => v,
+                // a row whose measure doesn't parse contributes to neither total nor count,
+                // so the disclosed denominator stays honest
+                None => continue,
+            },
+            None => 1.0,
+        };
+        totals[k] += inc;
+        counts[k] += 1;
+        matched += 1;
+    }
+    Ok((totals, counts, matched))
+}
+
+/// The caveat line beneath a funnel panel's title (issue #4222).
+///
+/// Clause 1 is UNCONDITIONAL, following `lorenz_caveat`'s philosophy. The funnel's totals are
+/// summed over the listwise-complete join `read_numeric_columns` produces — rows where ANY kept
+/// numeric column was blank are absent — so they will NOT match `stats.sum`, and a reader
+/// reconciling the two deserves to be told why without having to notice a discrepancy first.
+///
+/// The remaining clauses fire only when they apply, and both describe the same hazard from
+/// different angles: a downstream stage that outruns its predecessor. Per-row violations mean
+/// individual overruns; a larger downstream TOTAL means the overruns dominate the column. Capped
+/// at 3 clauses like `lorenz_caveat`, so the line stays one readable row.
+fn funnel_subtitle(
+    stages: &[String],
+    totals: &[f64],
+    violations: &[f64],
+    n_complete: usize,
+    complete_frac: f64,
+) -> Option<String> {
+    let mut parts: Vec<String> = vec![format!(
+        "n = {} complete cases ({:.0}% of rows)",
+        HumanCount(n_complete as u64),
+        complete_frac * 100.0
+    )];
+
+    // worst per-row violation, if any is worth naming
+    if let Some((k, v)) = violations
+        .iter()
+        .enumerate()
+        .skip(1)
+        .max_by(|a, b| a.1.total_cmp(b.1))
+        .filter(|(_, v)| **v >= FUNNEL_VIOLATION_NOTE_MIN)
+        && let (Some(here), Some(prev)) = (stages.get(k), stages.get(k - 1))
+    {
+        parts.push(format!(
+            "{here} exceeds {prev} in {:.0}% of rows",
+            v * 100.0
+        ));
+    }
+
+    // a stage whose TOTAL outruns its predecessor: the bar order is kept (vocabulary order is
+    // never sorted away), so the inverted band is the finding and needs naming.
+    if let Some(k) = (1..totals.len()).find(|&k| totals[k] > totals[k - 1])
+        && let (Some(here), Some(prev)) = (stages.get(k), stages.get(k - 1))
+    {
+        parts.push(format!(
+            "{here} total exceeds {prev} \u{2014} overruns, not leakage"
+        ));
+    }
+
+    parts.truncate(3);
+    Some(parts.join(" \u{b7} "))
 }
 
 /// APPROXIMATE share of the most frequent value, reconstructed entirely from the stats cache:
@@ -19964,6 +20391,9 @@ struct SmartCtx<'a> {
     /// at most ONE animated panel is shown; precedence is T3 (bubble) > T2 (geo) > T1 (scatter).
     bubble_panel:   Option<Panel>,
     geo_anim_panel: Option<Panel>,
+    /// the pipeline funnel (issue #4222), built during the correlation pass while the
+    /// row-aligned columns are live and inserted later with the other overview panels.
+    funnel_panel:   Option<Panel>,
 
     explicit_box_points: Option<BoxPoints>,
     count_conf:          Config,
@@ -20241,6 +20671,7 @@ impl<'a> SmartCtx<'a> {
             sankey_pair: None,
             bubble_panel: None,
             geo_anim_panel: None,
+            funnel_panel: None,
             explicit_box_points,
             count_conf,
             stats_input: prep.stats_input.clone(),
@@ -20528,6 +20959,15 @@ impl<'a> SmartCtx<'a> {
     /// panels (T2 geo, T3 bubble), and the correlation heatmap with its scatter/contour/3D
     /// drill-downs.
     fn add_relationship_panels(&mut self) -> CliResult<()> {
+        // Pipeline funnel (issue #4222, ask 3). Built FIRST and STASHED rather than inserted,
+        // because the correlation heatmap's own `insert(0, ..)` further down would otherwise land
+        // on top of it. It takes its own data pass: piggybacking the correlation read looks free
+        // but silently drops any declared stage the correlation pre-filter excluded (a near-unique
+        // money column), and force-including one would perturb the Pearson matrix and shrink the
+        // listwise join for every other correlation-derived panel.
+        let total_rows = self.row_count() as usize;
+        self.funnel_panel = self.build_funnel_panel(total_rows)?;
+
         // `--bivariate`: NMI-driven association heatmap + ranked top relationships, built from
         // moarstats' bivariate sidecar (already produced by the `--smarter` block above, since
         // `--bivariate` forces `--smarter`). Inserted here — BEFORE the correlation-heatmap block
@@ -21103,6 +21543,335 @@ impl<'a> SmartCtx<'a> {
         Ok(())
     }
 
+    /// Build the pipeline-funnel panel from a dictionary declaration (issue #4222, ask 3), or
+    /// `None` when none was declared or none validates.
+    ///
+    /// **A funnel is drawn only when the dictionary declares one.** Which columns are stages, and
+    /// in which direction, is SEMANTICS — no column-name vocabulary settles it (`township` reads
+    /// as a shipping stage) and no statistic does either (`total_pop`/`male_pop`/`female_pop`
+    /// nests perfectly yet is a partition). The predecessor of this code guessed with a hardcoded
+    /// word list and then used row-wise containment as a gate to catch its own bad guesses. Issue
+    /// #4222 rejected exactly that shape of solution for its sibling asks — "it is semantics, not
+    /// a statistic, so it deserves explicit treatment rather than a guessed proxy" — and this
+    /// follows suit.
+    ///
+    /// Containment is therefore still MEASURED but never REFUSES: a declared pipeline whose
+    /// stages do not nest is drawn with the violation share named in the subtitle. That is more
+    /// informative than silence, and it is why the NYC CPDB dataset — three aggregates on
+    /// different accounting bases — now renders where it previously was declined.
+    ///
+    /// `total_rows` is the table's row count, used only to disclose how much of it the funnel
+    /// actually covers.
+    fn build_funnel_panel(&mut self, total_rows: usize) -> CliResult<Option<Panel>> {
+        let specs = match self.dict_data.as_ref() {
+            Some(d) if !d.pipelines.is_empty() => d.pipelines.clone(),
+            _ => return Ok(None),
+        };
+        // First declaration that validates wins; a dashboard with two funnels is out of scope.
+        for spec in &specs {
+            let built = match spec {
+                PipelineSpec::Columns { members } => {
+                    self.build_column_funnel(members, total_rows)?
+                },
+                PipelineSpec::Rows {
+                    stage_column,
+                    stages,
+                    value_column,
+                } => self.build_row_funnel(
+                    stage_column,
+                    stages,
+                    value_column.as_deref(),
+                    total_rows,
+                )?,
+            };
+            if built.is_some() {
+                return Ok(built);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Resolve a declared column name to its stats index.
+    fn stage_index(&self, name: &str) -> Option<usize> {
+        self.stats.iter().position(|s| s.field == name)
+    }
+
+    /// A stage column's display label — the dictionary `title` when it supplied one.
+    fn stage_label(&self, idx: usize) -> String {
+        self.col_sems
+            .get(idx)
+            .map(|s| s.label.clone())
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| self.stats[idx].field.clone())
+    }
+
+    /// Funnel over stages held in SEPARATE COLUMNS, listed upstream-first.
+    fn build_column_funnel(
+        &self,
+        members: &[String],
+        total_rows: usize,
+    ) -> CliResult<Option<Panel>> {
+        // Resolve and screen the declared members. The split between hard-skip and warn-only is
+        // deliberate: a declaration outranks a NAME heuristic (so an identifier-looking or
+        // complement-looking name only warns), but it cannot make an arithmetically meaningless
+        // chart sensible — summing a rate or a coordinate is nonsense whoever asked for it.
+        let mut indices: Vec<usize> = Vec::with_capacity(members.len());
+        for name in members {
+            let Some(idx) = self.stage_index(name) else {
+                viz_note(&format!(
+                    "viz smart: pipeline funnel — declared stage '{name}' is not a column in this \
+                     file"
+                ));
+                return Ok(None);
+            };
+            let s = &self.stats[idx];
+            let sem = &self.col_sems[idx];
+            if !matches!(s.r#type.as_str(), "Integer" | "Float") || self.is_map_col(idx) {
+                viz_note(&format!(
+                    "viz smart: pipeline funnel skipped — declared stage '{name}' is not a \
+                     numeric amount"
+                ));
+                return Ok(None);
+            }
+            if matches!(sem.agg, Some(Agg::Mean)) || is_intensive_measure(&sem.label, &s.field) {
+                viz_note(&format!(
+                    "viz smart: pipeline funnel skipped — declared stage '{name}' is an average \
+                     or rate, which cannot be summed into a funnel"
+                ));
+                return Ok(None);
+            }
+            if is_complement_name(&sem.label, &s.field) {
+                // Warn, don't refuse. A complement nests PERFECTLY, so it shows 0% violations —
+                // the subtitle cannot surface this one and nothing else will.
+                viz_note(&format!(
+                    "viz smart: pipeline funnel — '{name}' reads as a complement or remainder, \
+                     not a stage the process passed through; the funnel may be inverted"
+                ));
+            }
+            indices.push(idx);
+        }
+        if indices.len() < 2 {
+            return Ok(None);
+        }
+        if indices.len() > FUNNEL_MAX_STAGES {
+            let dropped = indices.len() - FUNNEL_MAX_STAGES;
+            indices.truncate(FUNNEL_MAX_STAGES);
+            viz_note(&format!(
+                "viz smart: pipeline funnel shows the first {FUNNEL_MAX_STAGES} stages ({dropped} \
+                 more not shown)"
+            ));
+        }
+
+        // Dedicated pass over exactly the declared stages, so the complete-case denominator is
+        // the funnel's own rather than one diluted by unrelated numeric columns.
+        self.progress.set_message("Reading pipeline stages…");
+        let (mut rdr, headers, nh) = reader_and_headers(self.args)?;
+        let (labels, columns, kept) =
+            read_numeric_columns(&mut rdr, &headers, nh, &indices, false)?;
+        if kept.len() != indices.len() || columns.first().is_none_or(Vec::is_empty) {
+            viz_note(
+                "viz smart: pipeline funnel skipped — a declared stage held no usable numeric data",
+            );
+            return Ok(None);
+        }
+
+        let n_complete = columns[0].len();
+        #[allow(clippy::cast_precision_loss)]
+        let complete_frac = if total_rows == 0 {
+            0.0
+        } else {
+            n_complete as f64 / total_rows as f64
+        };
+        if complete_frac < FUNNEL_MIN_COMPLETE_FRAC {
+            viz_note(&format!(
+                "viz smart: pipeline funnel skipped — only {:.0}% of rows are complete across \
+                 every stage",
+                complete_frac * 100.0
+            ));
+            return Ok(None);
+        }
+
+        let totals: Vec<f64> = columns.iter().map(|c| c.iter().sum()).collect();
+        let reached: Vec<usize> = columns
+            .iter()
+            .map(|c| c.iter().filter(|v| **v > 0.0).count())
+            .collect();
+        // Measured for DISCLOSURE only -- this no longer gates anything.
+        let violations: Vec<f64> = (0..columns.len())
+            .map(|k| {
+                if k == 0 {
+                    0.0
+                } else {
+                    1.0 - containment_fraction(&columns[k - 1], &columns[k])
+                }
+            })
+            .collect();
+
+        let stages: Vec<String> = indices.iter().map(|&i| self.stage_label(i)).collect();
+        Ok(self.finish_funnel(
+            stages,
+            labels,
+            totals,
+            reached,
+            &violations,
+            n_complete,
+            complete_frac,
+            FunnelShape::Columns,
+        ))
+    }
+
+    /// Funnel over stages held as VALUES of one category column.
+    fn build_row_funnel(
+        &self,
+        stage_column: &str,
+        stages: &[String],
+        value_column: Option<&str>,
+        total_rows: usize,
+    ) -> CliResult<Option<Panel>> {
+        let Some(stage_idx) = self.stage_index(stage_column) else {
+            viz_note(&format!(
+                "viz smart: pipeline funnel — declared stage column '{stage_column}' is not a \
+                 column in this file"
+            ));
+            return Ok(None);
+        };
+        let value_idx = match value_column {
+            Some(vc) => {
+                let Some(vi) = self.stage_index(vc) else {
+                    viz_note(&format!(
+                        "viz smart: pipeline funnel — declared value column '{vc}' is not a \
+                         column in this file"
+                    ));
+                    return Ok(None);
+                };
+                if !matches!(self.stats[vi].r#type.as_str(), "Integer" | "Float") {
+                    viz_note(&format!(
+                        "viz smart: pipeline funnel skipped — value column '{vc}' is not numeric"
+                    ));
+                    return Ok(None);
+                }
+                Some(vi)
+            },
+            None => None,
+        };
+        for s in stages {
+            if is_complement_name("", s) {
+                viz_note(&format!(
+                    "viz smart: pipeline funnel — stage '{s}' reads as a complement or remainder \
+                     rather than a stage the process passed through"
+                ));
+            }
+        }
+
+        let mut wanted: Vec<String> = stages.to_vec();
+        if wanted.len() > FUNNEL_MAX_STAGES {
+            let dropped = wanted.len() - FUNNEL_MAX_STAGES;
+            wanted.truncate(FUNNEL_MAX_STAGES);
+            viz_note(&format!(
+                "viz smart: pipeline funnel shows the first {FUNNEL_MAX_STAGES} stages ({dropped} \
+                 more not shown)"
+            ));
+        }
+
+        self.progress.set_message("Reading pipeline stages…");
+        let (totals, counts, matched) =
+            read_stage_totals(self.args, stage_idx, value_idx, &wanted)?;
+        if counts.iter().filter(|c| **c > 0).count() < 2 {
+            viz_note(&format!(
+                "viz smart: pipeline funnel skipped — fewer than two of the declared stages of \
+                 '{stage_column}' appear in the data"
+            ));
+            return Ok(None);
+        }
+
+        #[allow(clippy::cast_precision_loss)]
+        let complete_frac = if total_rows == 0 {
+            0.0
+        } else {
+            matched as f64 / total_rows as f64
+        };
+        // No FUNNEL_MIN_COMPLETE_FRAC gate here, deliberately. Rows outside the declared stages
+        // are simply other statuses -- a legitimately different thing from a row whose stage
+        // amount was blank -- so a 50% bar would reject a real funnel over a busy status column.
+        let labels = vec![self.stage_label(stage_idx); wanted.len()];
+        let shape = match value_idx {
+            Some(vi) => FunnelShape::RowsMeasure {
+                value_label: self.stage_label(vi),
+            },
+            None => FunnelShape::RowsCount,
+        };
+        // Stages partition the rows, so per-row containment is undefined; the subtitle's
+        // total-inversion clause still fires and remains a genuine finding.
+        let violations = vec![0.0; wanted.len()];
+        Ok(self.finish_funnel(
+            wanted,
+            labels,
+            totals,
+            counts,
+            &violations,
+            matched,
+            complete_frac,
+            shape,
+        ))
+    }
+
+    /// Shared tail: the refusals that apply to every funnel, then the panel.
+    #[allow(clippy::too_many_arguments)]
+    fn finish_funnel(
+        &self,
+        stages: Vec<String>,
+        labels: Vec<String>,
+        totals: Vec<f64>,
+        reached: Vec<usize>,
+        violations: &[f64],
+        n_complete: usize,
+        complete_frac: f64,
+        shape: FunnelShape,
+    ) -> Option<Panel> {
+        if totals.iter().any(|t| *t < 0.0) {
+            viz_note(
+                "viz smart: pipeline funnel skipped \u{2014} a stage total is negative, which a \
+                 funnel cannot represent",
+            );
+            return None;
+        }
+        if totals.windows(2).all(|w| {
+            let [a, b] = w else { return true };
+            (a - b).abs() < f64::EPSILON
+        }) {
+            viz_note(
+                "viz smart: pipeline funnel skipped \u{2014} every stage total is identical (the \
+                 columns are copies, not stages)",
+            );
+            return None;
+        }
+        let subtitle = funnel_subtitle(&stages, &totals, violations, n_complete, complete_frac);
+        let title = match &shape {
+            FunnelShape::Columns => {
+                format!("Pipeline funnel: {}", labels.join(" \u{2192} "))
+            },
+            _ => format!(
+                "Pipeline funnel: {} ({})",
+                labels.first().cloned().unwrap_or_default(),
+                stages.join(" \u{2192} ")
+            ),
+        };
+        Some(
+            Panel::new(
+                title,
+                PanelKind::Funnel {
+                    stages,
+                    labels,
+                    totals,
+                    reached,
+                    n_complete,
+                    shape,
+                },
+            )
+            .with_subtitle(subtitle),
+        )
+    }
+
     /// Prepend the cross-column overview panels: the winning animated panel, measure-by-dimension,
     /// grouped violin, Lorenz curves, parcats, hierarchy, time-series, cyclic profile, and finally
     /// the geographic panels. Each is `insert(0, ..)`-ed, so the LAST one inserted leads the
@@ -21440,6 +22209,15 @@ impl<'a> SmartCtx<'a> {
             }
         }
 
+        // prepend the pipeline funnel (issue #4222), built during the correlation pass. Inserted
+        // after the cyclic/time-series blocks and before the geographic ones, so it sits directly
+        // beneath the maps and above the correlation heatmap, Lorenz curves and parcats: geo still
+        // leads, but the governance readout is top-of-fold rather than buried among the
+        // distribution panels.
+        if let Some(panel) = self.funnel_panel.take() {
+            self.panels.insert(0, panel);
+        }
+
         // prepend the geographic overview panels (built up front, above) so they lead the dashboard
         // and survive the panel cap. Insert the per-country choropleth first, then the point map at
         // index 0, yielding [map, choropleth, ...] — the point map for spatial detail, the
@@ -21643,6 +22421,7 @@ impl<'a> SmartCtx<'a> {
                 | PanelKind::AnimatedBubble { .. }
                 | PanelKind::ScatterPair { .. }
                 | PanelKind::Lorenz { .. }
+                | PanelKind::Funnel { .. }
                 | PanelKind::ContourPair { .. }
                 | PanelKind::Scatter3D { .. }
                 | PanelKind::Histogram { .. }
@@ -22370,6 +23149,89 @@ fn panel_trace(
             }
             t
         },
+        PanelKind::Funnel {
+            stages,
+            labels,
+            totals,
+            reached,
+            n_complete,
+            shape,
+        } => {
+            // A horizontal funnel: amount on the value axis, stage on the category axis.
+            // A funnel trace draws index 0 at the TOP and works downward — the opposite of a
+            // plain category axis, and the reason these arrays are fed UPSTREAM-FIRST, exactly
+            // as the panel carries them. Feeding them reversed (the lollipop's convention)
+            // renders the funnel upside down, widening toward the bottom.
+            //
+            // The bar text is left to plotly's own `textinfo`: it computes "percent previous"
+            // from the values themselves, so the conversion figures can never drift from the
+            // bars. The hover is fully pre-rendered into `hover_text`, which keeps every literal
+            // `%` in DATA rather than in the template — so `escape_template_pct` is unnecessary
+            // here and only the column label needs `escape_hover`.
+            let hover: Vec<String> = (0..stages.len())
+                .map(|k| {
+                    let pct = if *n_complete == 0 {
+                        0.0
+                    } else {
+                        #[allow(clippy::cast_precision_loss)]
+                        let p = reached[k] as f64 / *n_complete as f64 * 100.0;
+                        p
+                    };
+                    // The counts mean different things per shape, so the wording must too: for
+                    // the row encodings `reached` IS the stage's row count and sums to
+                    // `n_complete`, so "of complete cases" would assert a 100% completeness rate
+                    // that means nothing.
+                    match shape {
+                        FunnelShape::Columns => format!(
+                            "{}<br>Stage: {}<br>Amount: {}<br>Rows reached: {} of {} ({pct:.0}% \
+                             of complete cases)",
+                            escape_hover(&labels[k]),
+                            escape_hover(&stages[k]),
+                            fmt_measure(totals[k]),
+                            HumanCount(reached[k] as u64),
+                            HumanCount(*n_complete as u64),
+                        ),
+                        FunnelShape::RowsMeasure { value_label } => format!(
+                            "{}<br>Stage: {}<br>{}: {}<br>Rows in stage: {} of {} ({pct:.0}% of \
+                             rows in declared stages)",
+                            escape_hover(&labels[k]),
+                            escape_hover(&stages[k]),
+                            escape_hover(value_label),
+                            fmt_measure(totals[k]),
+                            HumanCount(reached[k] as u64),
+                            HumanCount(*n_complete as u64),
+                        ),
+                        FunnelShape::RowsCount => format!(
+                            "{}<br>Stage: {}<br>Rows: {} of {} ({pct:.0}% of rows in declared \
+                             stages)",
+                            escape_hover(&labels[k]),
+                            escape_hover(&stages[k]),
+                            HumanCount(reached[k] as u64),
+                            HumanCount(*n_complete as u64),
+                        ),
+                    }
+                })
+                .collect();
+            let xs: Vec<f64> = totals.clone();
+            let ys: Vec<String> = stages.clone();
+            let mut f = Funnel::new(xs, ys)
+                .orientation(Orientation::Horizontal)
+                .name(panel.name.clone())
+                .marker(Marker::new().color(color))
+                // ONLY the stage-to-stage conversion: plotly computes it from the values, so it
+                // can never drift from the bars. The absolute amounts deliberately stay out of
+                // the band — "value+percent previous" is two long lines that plotly clips inside
+                // a short band — and live in the KPI row above and this panel's hover instead.
+                .text_info("percent previous")
+                .text_position(TextPosition::Outside)
+                .connector(FunnelConnector::new().visible(true))
+                .hover_text_array(hover)
+                .hover_template("%{hovertext}<extra></extra>");
+            if let Some((x, y)) = &axes {
+                f = f.x_axis(x.clone()).y_axis(y.clone());
+            }
+            f
+        },
         PanelKind::ContourPair {
             x,
             y,
@@ -22597,6 +23459,7 @@ fn smart_grid_parts(
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
             | PanelKind::Lorenz { .. }
+            | PanelKind::Funnel { .. }
             | PanelKind::ContourPair { .. }
             | PanelKind::Scatter3D { .. }
             | PanelKind::MeasureByDim { .. }
@@ -22626,6 +23489,12 @@ fn smart_grid_parts(
         .iter()
         .filter_map(|p| match &p.kind {
             PanelKind::TopRelationships { labels, .. } => labels
+                .iter()
+                .map(|l| l.chars().count().min(TOPREL_LABEL_MAX_CHARS))
+                .max(),
+            // the funnel is the other horizontal panel: its category ticks are the short
+            // canonical stage names, which still need left room reserved
+            PanelKind::Funnel { stages, .. } => stages
                 .iter()
                 .map(|l| l.chars().count().min(TOPREL_LABEL_MAX_CHARS))
                 .max(),
@@ -22979,45 +23848,58 @@ fn smart_grid_parts(
         let geom = geoms[n].clone();
         // the Top Relationships lollipop is the one horizontal panel: value (NMI) on a zoomed x,
         // pair on the category y — the opposite axis roles from every other (vertical) panel.
-        let (x_axis, y_axis) =
-            if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
-                let (floor, ceil) = lollipop_value_range(values);
-                // bottom-to-top (weakest-first), matching the reversed y-values the trace feeds
-                let ticks: Vec<String> = labels
-                    .iter()
-                    .rev()
-                    .map(|l| truncate_label(l, TOPREL_LABEL_MAX_CHARS))
-                    .collect();
-                (
-                    lollipop_value_axis(floor, ceil, theme)
-                        .domain(&geom.x_domain)
-                        .anchor(yref.clone()),
-                    lollipop_category_axis(theme, &ticks)
-                        .domain(&geom.y_domain)
-                        .anchor(xref.clone()),
-                )
-            } else {
-                // a relationship panel's per-axis log verdict (issue #4223). The y side sets the
-                // axis TYPE only — `styled_y_axis`'s "log scale" title is the cue for an unlabeled
-                // distribution axis, while these panels name the logged axis in the panel title.
-                let (x_log, y_log) = panel.axis_log;
-                let mut y = styled_y_axis(bar_max, log_y, theme);
-                if y_log {
-                    y = y.type_(AxisType::Log);
-                }
-                (
-                    styled_x_axis(
-                        is_box,
-                        is_date,
-                        x_log,
-                        theme,
-                        freq_bar_tick_text(panel, freq),
-                    )
+        let (x_axis, y_axis) = if let PanelKind::Funnel { stages, totals, .. } = &panel.kind {
+            // the funnel is horizontal like the lollipop, but its value axis is anchored at
+            // zero and its categories run TOP-DOWN, matching the upstream-first arrays the
+            // trace feeds (see the `panel_trace` arm).
+            let ticks: Vec<String> = stages.clone();
+            let max = totals.iter().copied().fold(0.0_f64, f64::max);
+            (
+                funnel_value_axis(max, theme)
                     .domain(&geom.x_domain)
                     .anchor(yref.clone()),
-                    y.domain(&geom.y_domain).anchor(xref.clone()),
+                lollipop_category_axis(theme, &ticks)
+                    .domain(&geom.y_domain)
+                    .anchor(xref.clone()),
+            )
+        } else if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
+            let (floor, ceil) = lollipop_value_range(values);
+            // bottom-to-top (weakest-first), matching the reversed y-values the trace feeds
+            let ticks: Vec<String> = labels
+                .iter()
+                .rev()
+                .map(|l| truncate_label(l, TOPREL_LABEL_MAX_CHARS))
+                .collect();
+            (
+                lollipop_value_axis(floor, ceil, theme)
+                    .domain(&geom.x_domain)
+                    .anchor(yref.clone()),
+                lollipop_category_axis(theme, &ticks)
+                    .domain(&geom.y_domain)
+                    .anchor(xref.clone()),
+            )
+        } else {
+            // a relationship panel's per-axis log verdict (issue #4223). The y side sets the
+            // axis TYPE only — `styled_y_axis`'s "log scale" title is the cue for an unlabeled
+            // distribution axis, while these panels name the logged axis in the panel title.
+            let (x_log, y_log) = panel.axis_log;
+            let mut y = styled_y_axis(bar_max, log_y, theme);
+            if y_log {
+                y = y.type_(AxisType::Log);
+            }
+            (
+                styled_x_axis(
+                    is_box,
+                    is_date,
+                    x_log,
+                    theme,
+                    freq_bar_tick_text(panel, freq),
                 )
-            };
+                .domain(&geom.x_domain)
+                .anchor(yref.clone()),
+                y.domain(&geom.y_domain).anchor(xref.clone()),
+            )
+        };
         axes.push((pos, x_axis, y_axis));
         annotations.push(panel_title_annotation(
             panel,
@@ -24255,6 +25137,7 @@ fn smart_inline_panel_plot(
     );
     let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
     let is_toprel = matches!(panel.kind, PanelKind::TopRelationships { .. });
+    let is_funnel = matches!(panel.kind, PanelKind::Funnel { .. });
     let (trace, bar_max, log_y) =
         panel_trace(panel, color, freq, hist, outliers, None, theme, log_scale);
 
@@ -24272,6 +25155,9 @@ fn smart_inline_panel_plot(
         (110, 90)
     } else if is_toprel {
         (TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24, 30)
+    } else if is_funnel {
+        // right room as well: plotly's in-band text can overflow the widest band
+        (TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24, 60)
     } else if log_y {
         (60 + LOG_AXIS_TITLE_MARGIN_PX, 30)
     } else {
@@ -24279,7 +25165,14 @@ fn smart_inline_panel_plot(
     };
     // the lollipop is the one horizontal panel: value (NMI) on a zoomed x, pair on the category y
     // — the opposite axis roles from every other (vertical) inline panel.
-    let (x_axis, y_axis) = if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
+    let (x_axis, y_axis) = if let PanelKind::Funnel { stages, totals, .. } = &panel.kind {
+        let ticks: Vec<String> = stages.clone();
+        let max = totals.iter().copied().fold(0.0_f64, f64::max);
+        (
+            funnel_value_axis(max, theme),
+            lollipop_category_axis(theme, &ticks),
+        )
+    } else if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
         let (floor, ceil) = lollipop_value_range(values);
         let ticks: Vec<String> = labels
             .iter()
@@ -25648,6 +26541,7 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::TopRelationships { .. }
         | PanelKind::ScatterPair { .. }
         | PanelKind::Lorenz { .. }
+        | PanelKind::Funnel { .. }
         | PanelKind::ContourPair { .. }
         | PanelKind::Scatter3D { .. }
         | PanelKind::MeasureByDim { .. }
@@ -26173,6 +27067,31 @@ fn lollipop_value_axis(floor: f64, ceil: f64, theme: Option<BuiltinTheme>) -> Ax
         .zero_line(false)
         .show_line(false)
         .range(vec![floor, ceil]);
+    if theme.is_none() {
+        a = a
+            .grid_color(GRID_COLOR)
+            .tick_color(AXIS_LINE)
+            .tick_font(Font::new().family(FONT_FAMILY).size(10));
+    }
+    a
+}
+
+/// The VALUE (x) axis for a horizontal pipeline funnel (issue #4222).
+///
+/// Anchored at **zero**, unlike `lollipop_value_axis`'s zoomed range. A funnel's whole claim is
+/// that band widths are proportional to stage amounts; a floor above zero would exaggerate the
+/// taper, which is the one thing this panel must not do. The headroom above `max` leaves room for
+/// plotly's in-band `textinfo` on the widest band.
+///
+/// Never logged, for the same reason — a log value axis destroys the proportional reading.
+fn funnel_value_axis(max: f64, theme: Option<BuiltinTheme>) -> Axis {
+    let ceil = if max > 0.0 { max * 1.35 } else { 1.0 };
+    let mut a = Axis::new()
+        .show_grid(true)
+        .grid_width(1)
+        .zero_line(false)
+        .show_line(false)
+        .range(vec![0.0, ceil]);
     if theme.is_none() {
         a = a
             .grid_color(GRID_COLOR)
@@ -27856,6 +28775,65 @@ mod tests {
         assert_eq!(
             derive_semantics(&stat("Integer", 33, Some(0.00003)), Some(tract)).route,
             Route::Dimension
+        );
+    }
+
+    #[test]
+    fn xq_pipelines_parses_both_encodings_and_skips_the_rest() {
+        let schema = r#"{
+          "properties": { "a": { "x-qsv": { "qsv_type": "Float" } } },
+          "x-qsv": { "relationships": [
+            {"kind": "pipeline", "members": ["planned", "committed", "spent"]},
+            {"kind": "pipeline", "stage_column": "status",
+             "stages": ["Impression", "Click"], "value_column": "revenue"},
+            {"kind": "pipeline", "stage_column": "status", "stages": ["only_one"]},
+            {"kind": "pipeline", "members": ["solo"]},
+            {"kind": "ordered", "members": ["created", "closed"]},
+            {"kind": "joint", "members": ["city", "state"]},
+            "not even an object"
+          ]}
+        }"#;
+        let data = parse_dictionary_semantics(schema).expect("schema should parse");
+        assert_eq!(
+            data.pipelines,
+            vec![
+                PipelineSpec::Columns {
+                    members: vec![
+                        "planned".to_string(),
+                        "committed".to_string(),
+                        "spent".to_string()
+                    ],
+                },
+                PipelineSpec::Rows {
+                    stage_column: "status".to_string(),
+                    stages:       vec!["Impression".to_string(), "Click".to_string()],
+                    value_column: Some("revenue".to_string()),
+                },
+            ],
+            "only well-formed `pipeline` entries survive -- ordered/joint, too-short and \
+             malformed ones are skipped rather than erroring"
+        );
+    }
+
+    #[test]
+    fn xq_pipelines_absent_or_legacy_yields_none() {
+        let no_rels = r#"{"properties":{"a":{"x-qsv":{"qsv_type":"Float"}}}}"#;
+        assert!(
+            parse_dictionary_semantics(no_rels)
+                .expect("schema should parse")
+                .pipelines
+                .is_empty()
+        );
+        // pipelines are JSONSchema-only: the legacy flat shape has nowhere to put a
+        // row-encoded declaration, so it never yields one.
+        let legacy = r#"{"fields":[
+            {"name":"a","type":"Float"},{"name":"b","type":"Float"}
+        ]}"#;
+        assert!(
+            parse_dictionary_semantics(legacy)
+                .expect("legacy dict should parse")
+                .pipelines
+                .is_empty()
         );
     }
 
@@ -30026,6 +31004,60 @@ mod tests {
             t.ends_with("bottom %{x:.0%} of records hold %{y:.0%}<extra></extra>"),
             "got: {t}"
         );
+    }
+
+    #[test]
+    fn complement_marker_warns_but_does_not_veto() {
+        // `unspent_balance` is the one bad declaration that disclosing containment cannot catch:
+        // a complement nests PERFECTLY inside its predecessor, so it reports 0% violations while
+        // rendering a funnel that means the opposite of the truth.
+        for name in [
+            "unspent",
+            "unspent_balance",
+            "remaining_budget",
+            "variance_amt",
+            "fund_balance",
+            "committed_delta",
+        ] {
+            assert!(
+                is_complement_name("", name),
+                "{name} should be flagged as a complement"
+            );
+        }
+        // The COLLISION half of the old marker list died with the name-matching vocabulary it
+        // existed to defend. Those words only ever mattered because a greedy substring match
+        // could mistake them for stages; warning on a column the dictionary explicitly DECLARED
+        // would be a pure false alarm.
+        for name in [
+            "review_count",
+            "contractor_amt",
+            "wholesale_total",
+            "lead_time_days",
+            "replaced_units",
+        ] {
+            assert!(
+                !is_complement_name("", name),
+                "{name} is an ordinary declared column, not a complement"
+            );
+        }
+        // and a genuine stage is never flagged
+        assert!(!is_complement_name("", "spentamt"));
+        assert!(!is_complement_name("", "totalplannedcommit"));
+    }
+
+    #[test]
+    fn containment_fraction_tolerates_float_noise_and_counts_violations() {
+        // exact equality on large values must not read as a violation
+        let big = vec![1e12, 2e12, 3e12];
+        assert!((containment_fraction(&big, &big) - 1.0).abs() < f64::EPSILON);
+
+        // 1 of 4 rows breaks the nesting
+        let up = vec![10.0, 10.0, 10.0, 10.0];
+        let down = vec![1.0, 2.0, 3.0, 99.0];
+        assert!((containment_fraction(&up, &down) - 0.75).abs() < 1e-12);
+
+        // an empty pipeline is not a contained one
+        assert!((containment_fraction(&[], &[]) - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]

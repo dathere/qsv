@@ -184,6 +184,19 @@ describegpt options:
                            "viz smart" dictionary-driven dashboard draws that KPI tile as a GAUGE.
                            (A KPI "vs target" delta uses "x-qsv.target", which is a GOAL you
                            hand-author - never inferred.)
+                           The LLM also infers dataset-level INTER-COLUMN RELATIONSHIPS, emitted
+                           as a "relationships" array (top-level in the JSON dictionary, and in
+                           the dataset-level "x-qsv" object of the JSON Schema one). Each entry
+                           has a "kind" of "joint", "ordered", "correlated" or "pipeline", plus a
+                           "members" list of the field names involved.
+                           A "pipeline" is a process whose stages narrow monotonically - planned
+                           to committed to spent, impressions to clicks to conversions. Its stages
+                           may be separate COLUMNS (listed in "members", upstream first - the
+                           opposite direction from "ordered", which ascends) or the VALUES of one
+                           category column (via "stage_column", an ordered "stages" list, and an
+                           optional "value_column" to sum). "qsv viz smart --dictionary" reads
+                           these to draw its pipeline funnel panel; edit them in the saved schema
+                           to correct or add one.
     --infer-null-values    Also have the LLM propose each field's null sentinels - literal values
                            that stand in for "missing" (e.g. NULL, N/A, -999, 9999-12-31).
                            Emitted into the JSON Schema dictionary's per-property "x-qsv" object,
@@ -3574,6 +3587,7 @@ fn format_dictionary_phase(
             args.flag_allow_extra_cols,
             args.flag_strict_dates,
             grain,
+            relationships,
         );
         let attribution = replace_attribution_placeholder(
             "{GENERATED_BY_SIGNATURE}",

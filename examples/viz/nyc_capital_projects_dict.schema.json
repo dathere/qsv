@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Data Dictionary for nyc_capital_projects.csv",
+  "description": "NYC Capital Projects Database (CPDB), sourced from NYC Open Data resource fi59-268w. One row per capital project, with the three budget aggregates the Capital Commitment Plan and the City budget track separately.",
+  "type": "object",
+  "properties": {
+    "maprojid": {
+      "type": "string",
+      "title": "Project ID",
+      "description": "Managing-agency project identifier; unique per project.",
+      "x-qsv": { "qsv_type": "String", "role": "identifier", "concept": "id.natural_key" }
+    },
+    "magencyacro": {
+      "type": "string",
+      "title": "Managing Agency",
+      "description": "Acronym of the agency managing the project.",
+      "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "org.agency" }
+    },
+    "magencyname": {
+      "type": "string",
+      "title": "Managing Agency Name",
+      "description": "Full name of the managing agency.",
+      "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "org.agency" }
+    },
+    "typecategory": {
+      "type": "string",
+      "title": "Project Type",
+      "description": "Broad category of capital work.",
+      "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.type" }
+    },
+    "totalplannedcommit": {
+      "type": "integer",
+      "title": "Planned",
+      "description": "Total planned commitments for the project allocated in the Capital Commitment Plan.",
+      "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" }
+    },
+    "commit_total": {
+      "type": "number",
+      "title": "Committed",
+      "description": "Total committed funding associated with the project within the City's budget.",
+      "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount" }
+    },
+    "spent_total": {
+      "type": "number",
+      "title": "Spent",
+      "description": "Total funding spent associated with the project within the City's budget.",
+      "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount" }
+    }
+  },
+  "x-qsv": {
+    "grain": "one row = one capital project",
+    "relationships": [
+      {
+        "kind": "pipeline",
+        "members": ["totalplannedcommit", "commit_total", "spent_total"]
+      }
+    ]
+  }
+}

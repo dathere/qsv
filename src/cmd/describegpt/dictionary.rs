@@ -1944,18 +1944,35 @@ pub(super) fn parse_llm_dictionary_response(
     Ok(result)
 }
 
+/// Upper bound on declared stages in a row-encoded `pipeline`, so a malformed
+/// response cannot declare a thousand-band funnel. `viz` applies its own, tighter
+/// display cap separately; this is only a structural-sanity guard.
+const MAX_DECLARED_STAGES: usize = 64;
+
 /// Extract the optional top-level `relationships` array from the LLM's dictionary
 /// response, validated against `field_names`. Each surviving entry is a clean
-/// JSON object `{kind, members[, anchor]}` ready to embed in the dictionary
-/// output and consume from `synthesize`.
+/// JSON object ready to embed in the dictionary output and consume from
+/// `synthesize` and `viz smart`.
 ///
-/// An entry is dropped when its `kind` is not one of `joint` / `ordered` /
-/// `correlated`, when it has fewer than two members, or when any member (or an
-/// `ordered` anchor) names a column not in `field_names`. Anything that isn't
-/// well-formed JSON yields an empty list — relationship inference is best-effort
-/// and never fails the dictionary phase. `synthesize` re-validates every
-/// relationship against the real data before using it, so this stage only needs
-/// to guarantee structural soundness.
+/// Recognized kinds are `joint` / `ordered` / `correlated` / `pipeline`. An entry
+/// is dropped when its kind is unknown, when it has fewer than two members, or
+/// when any member (or an `ordered` anchor) names a column not in `field_names`.
+/// Anything that isn't well-formed JSON yields an empty list — relationship
+/// inference is best-effort and never fails the dictionary phase.
+///
+/// `pipeline` (issue #4222) declares a process whose stages narrow monotonically,
+/// in either of two encodings. Stages-as-COLUMNS uses `members` alone, listed
+/// upstream-first — the OPPOSITE direction from `ordered`, which is ascending.
+/// Stages-as-ROW-VALUES additionally carries `stage_column`, an ordered `stages`
+/// array of that column's values, and an optional `value_column` to sum. The
+/// presence of `stage_column` is what discriminates the two.
+///
+/// **Every emitted entry carries `members`, unconditionally.** `synthesize`'s
+/// `SynthRelationship::members` has no serde default (unlike `anchor`) and the
+/// dictionary is deserialized in a single pass, so an entry lacking it does not
+/// degrade — it hard-errors `synthesize --dictionary`. For the row encoding the
+/// members are therefore SYNTHESIZED here from `stage_column`/`value_column`
+/// rather than taken from the LLM.
 pub(super) fn parse_llm_relationships(
     llm_response: &str,
     field_names: &[String],
@@ -1967,6 +1984,13 @@ pub(super) fn parse_llm_relationships(
         return Vec::new();
     };
     let in_fields = |name: &str| field_names.iter().any(|f| f == name);
+    let str_field = |obj: &serde_json::Map<String, serde_json::Value>, k: &str| {
+        obj.get(k)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string)
+    };
 
     let mut result = Vec::new();
     for entry in raw {
@@ -1974,9 +1998,69 @@ pub(super) fn parse_llm_relationships(
             continue;
         };
         let kind = obj.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
-        if !matches!(kind, "joint" | "ordered" | "correlated") {
+        if !matches!(kind, "joint" | "ordered" | "correlated" | "pipeline") {
             continue;
         }
+
+        // A `pipeline` carrying `stage_column` is the ROW encoding: its stages are
+        // values inside one column, which `members` cannot describe, so `members`
+        // is synthesized from the column references instead.
+        if kind == "pipeline"
+            && let Some(stage_column) = str_field(obj, "stage_column")
+        {
+            if !in_fields(&stage_column) {
+                continue;
+            }
+            let stages: Vec<String> = obj
+                .get("stages")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(ToString::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut seen_stages = std::collections::HashSet::new();
+            if stages.len() < 2
+                || stages.len() > MAX_DECLARED_STAGES
+                || !stages.iter().all(|s| seen_stages.insert(s.as_str()))
+            {
+                continue;
+            }
+            // An unusable `value_column` drops the WHOLE entry rather than falling
+            // back to counting rows: silently turning a declared measure funnel
+            // into a row-count funnel changes what the chart claims.
+            let value_column = match obj.get("value_column") {
+                Some(v) if !v.is_null() => {
+                    let Some(vc) = v.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+                        continue;
+                    };
+                    if !in_fields(vc) || vc == stage_column {
+                        continue;
+                    }
+                    Some(vc.to_string())
+                },
+                _ => None,
+            };
+
+            let mut members = vec![stage_column.clone()];
+            members.extend(value_column.clone());
+
+            let mut clean = serde_json::Map::new();
+            clean.insert("kind".to_string(), serde_json::json!(kind));
+            clean.insert("members".to_string(), serde_json::json!(members));
+            clean.insert("stage_column".to_string(), serde_json::json!(stage_column));
+            clean.insert("stages".to_string(), serde_json::json!(stages));
+            if let Some(vc) = value_column {
+                clean.insert("value_column".to_string(), serde_json::json!(vc));
+            }
+            result.push(serde_json::Value::Object(clean));
+            continue;
+        }
+
         let members: Vec<String> = obj
             .get("members")
             .and_then(|v| v.as_array())
@@ -1989,6 +2073,14 @@ pub(super) fn parse_llm_relationships(
             .unwrap_or_default();
         if members.len() < 2 || !members.iter().all(|m| in_fields(m)) {
             continue;
+        }
+        // A pipeline naming the same column at two ranks is malformed; the other
+        // kinds are unordered sets, where a repeat is merely redundant.
+        if kind == "pipeline" {
+            let mut seen = std::collections::HashSet::new();
+            if !members.iter().all(|m| seen.insert(m.as_str())) {
+                continue;
+            }
         }
 
         let mut clean = serde_json::Map::new();
@@ -3810,6 +3902,146 @@ mod tests {
         // The relationship survives (members are valid) but the bad anchor is dropped.
         assert_eq!(rels.len(), 1);
         assert!(rels[0].get("anchor").is_none());
+    }
+
+    #[test]
+    fn parse_llm_relationships_accepts_column_shaped_pipeline() {
+        let field_names = vec![
+            "planned".to_string(),
+            "committed".to_string(),
+            "spent".to_string(),
+        ];
+        let response = r#"{
+            "relationships": [
+                {"kind": "pipeline", "members": ["planned", "committed", "spent"]}
+            ]
+        }"#;
+        let rels = parse_llm_relationships(response, &field_names);
+        assert_eq!(rels.len(), 1);
+        assert_eq!(rels[0]["kind"], "pipeline");
+        // member ORDER is the pipeline order and must survive verbatim -- reordering
+        // it would invert the funnel.
+        assert_eq!(
+            rels[0]["members"],
+            serde_json::json!(["planned", "committed", "spent"])
+        );
+        // a column-shaped pipeline carries none of the row-encoding keys
+        assert!(rels[0].get("stage_column").is_none());
+    }
+
+    #[test]
+    fn parse_llm_relationships_drops_a_pipeline_repeating_a_column() {
+        let field_names = vec!["planned".to_string(), "spent".to_string()];
+        let response = r#"{
+            "relationships": [
+                {"kind": "pipeline", "members": ["planned", "planned"]}
+            ]
+        }"#;
+        assert!(parse_llm_relationships(response, &field_names).is_empty());
+    }
+
+    #[test]
+    fn parse_llm_relationships_accepts_row_encoded_pipeline() {
+        let field_names = vec!["status".to_string(), "amount".to_string()];
+        let response = r#"{
+            "relationships": [
+                {"kind": "pipeline", "stage_column": "status",
+                 "stages": ["Impression", "Click", "Conversion"],
+                 "value_column": "amount"}
+            ]
+        }"#;
+        let rels = parse_llm_relationships(response, &field_names);
+        assert_eq!(rels.len(), 1);
+        assert_eq!(rels[0]["stage_column"], "status");
+        assert_eq!(rels[0]["value_column"], "amount");
+        assert_eq!(
+            rels[0]["stages"],
+            serde_json::json!(["Impression", "Click", "Conversion"])
+        );
+        // members are SYNTHESIZED from the column references, never taken from the LLM
+        assert_eq!(rels[0]["members"], serde_json::json!(["status", "amount"]));
+    }
+
+    #[test]
+    fn parse_llm_relationships_row_pipeline_without_value_column_counts_rows() {
+        let field_names = vec!["status".to_string(), "amount".to_string()];
+        let response = r#"{
+            "relationships": [
+                {"kind": "pipeline", "stage_column": "status", "stages": ["Open", "Closed"]}
+            ]
+        }"#;
+        let rels = parse_llm_relationships(response, &field_names);
+        assert_eq!(rels.len(), 1);
+        assert!(rels[0].get("value_column").is_none());
+        assert_eq!(rels[0]["members"], serde_json::json!(["status"]));
+    }
+
+    #[test]
+    fn parse_llm_relationships_drops_malformed_row_pipelines() {
+        let field_names = vec!["status".to_string(), "amount".to_string()];
+        for (case, response) in [
+            (
+                "stage_column is not a real column",
+                r#"{"relationships":[{"kind":"pipeline","stage_column":"nope","stages":["a","b"]}]}"#,
+            ),
+            (
+                "fewer than two stages",
+                r#"{"relationships":[{"kind":"pipeline","stage_column":"status","stages":["a"]}]}"#,
+            ),
+            (
+                "duplicate stages",
+                r#"{"relationships":[{"kind":"pipeline","stage_column":"status","stages":["a","a"]}]}"#,
+            ),
+            (
+                "value_column is not a real column",
+                r#"{"relationships":[{"kind":"pipeline","stage_column":"status","stages":["a","b"],"value_column":"nope"}]}"#,
+            ),
+            (
+                "value_column duplicates stage_column",
+                r#"{"relationships":[{"kind":"pipeline","stage_column":"status","stages":["a","b"],"value_column":"status"}]}"#,
+            ),
+        ] {
+            assert!(
+                parse_llm_relationships(response, &field_names).is_empty(),
+                "should have dropped the entry: {case}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_llm_relationships_always_emits_members() {
+        // `synthesize`'s SynthRelationship::members has no serde default, and the
+        // dictionary is deserialized in a single pass -- an entry without `members`
+        // does not degrade, it HARD-ERRORS `synthesize --dictionary`. Every emitted
+        // relationship must therefore carry the key, including the row encoding,
+        // where the LLM supplies no usable member list at all.
+        let field_names = vec![
+            "status".to_string(),
+            "amount".to_string(),
+            "lo".to_string(),
+            "hi".to_string(),
+        ];
+        let response = r#"{
+            "relationships": [
+                {"kind": "pipeline", "stage_column": "status", "stages": ["a", "b"]},
+                {"kind": "pipeline", "stage_column": "status", "stages": ["a", "b"],
+                 "value_column": "amount"},
+                {"kind": "pipeline", "members": ["lo", "hi"]},
+                {"kind": "ordered", "members": ["lo", "hi"]},
+                {"kind": "joint", "members": ["lo", "hi"]}
+            ]
+        }"#;
+        let rels = parse_llm_relationships(response, &field_names);
+        assert_eq!(rels.len(), 5);
+        for rel in &rels {
+            let members = rel
+                .get("members")
+                .unwrap_or_else(|| panic!("every relationship must carry `members`: {rel}"));
+            assert!(
+                members.as_array().is_some_and(|m| !m.is_empty()),
+                "`members` must be a non-empty array: {rel}"
+            );
+        }
     }
 
     #[test]

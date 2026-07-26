@@ -57,6 +57,7 @@ SMART_IFRAME = {
     "smart dashboard (animated geo, world events)":   "smart_world_events.html",
     "smart dashboard (Gapminder bubble, regions growth)": "smart_regions_growth.html",
     "smart dashboard (--smarter, Gini/Lorenz inequality + log-skew boxes)": "smart_cms_medicare.html",
+    "smart dashboard (--smarter, zero-inflated capital pipeline)": "smart_cpdb.html",
 }
 
 # Iframe artifacts that depend on a live LLM (`--dictionary infer` calls describegpt against a
@@ -476,6 +477,28 @@ FIGURES = [
      "against its largest values, so <code>viz smart</code> draws it on a <b>log axis</b> instead, "
      "keeping the median and quartiles legible.",
      True, ["smart", "cms_medicare_providers.csv", "--smarter"]),
+    ("smart dashboard (--smarter, zero-inflated capital pipeline)",
+     "<b>NYC Capital Projects Database</b> (12,587 projects, sourced from Checkbook NYC), the "
+     "dataset this dashboard's inequality work was designed against. Its money columns are both "
+     "extremely concentrated (Gini 0.93&ndash;0.96) <i>and</i> heavily zero-inflated, which the "
+     "Lorenz panels state outright: <code>flat run = 60% zeros, not small values</code>. That long "
+     "flat opening run is not a mass of small projects &mdash; it is the projects with nothing "
+     "committed or spent <i>yet</i>, a funding-pipeline stage rather than a have-not population. "
+     "Every Lorenz panel also carries the unit caveat, because a Gini across units as unlike a "
+     "subway extension and a playground resurfacing is close to tautological and must not be read "
+     "as inequity.<br><br>It also carries the <b>pipeline funnel</b>, declared by "
+     "<code>nyc_capital_projects_dict.schema.json</code> as an <code>x-qsv.relationships</code> "
+     "entry of <code>kind: \"pipeline\"</code>. Which columns are stages, and in which direction, "
+     "is semantics rather than a statistic, so a funnel is only ever drawn from an explicit "
+     "declaration &mdash; never guessed from column names.<br><br>Read the subtitle: these stages "
+     "do <i>not</i> nest. Spent totals 2.9&times; committed, because the three are independent "
+     "aggregates on different bases &mdash; <code>totalplannedcommit</code> is allocated in the "
+     "Capital Commitment Plan, while the other two are sums within the City's budget. Rather than "
+     "refuse the panel, the funnel draws and <b>names the violation</b>: "
+     "<code>Spent exceeds Committed in 46% of rows</code>. Declared order is never re-sorted by "
+     "size, so the overrun stays visible instead of being quietly tidied away.",
+     True, ["smart", "nyc_capital_projects.csv", "--smarter",
+            "--dictionary", "nyc_capital_projects_dict.schema.json"]),
     ("bar", "Revenue by region (aggregated sum).",
      False, ["bar", "sales_sample.csv", "--x", "region", "--y", "revenue", "--agg", "sum"]),
     ("bar (animated slider)",
@@ -510,6 +533,13 @@ FIGURES = [
      False, ["violin", "sales_sample.csv", "--y", "revenue", "--x", "region"]),
     ("pie (donut)", "Revenue share by product category.",
      False, ["pie", "sales_sample.csv", "--x", "product_category", "--y", "revenue", "--donut"]),
+    ("funnel",
+     "Stage-by-stage drop-off for a signup pipeline encoded as <em>rows</em> (one row per stage "
+     "per channel, summed per stage). Stages keep the order they first appear in the file, so the "
+     "data defines the pipeline and nothing is inferred; each band is labelled with its conversion "
+     "from the previous stage. This is the row-shaped counterpart to the column-shaped pipeline "
+     "<code>viz smart</code> detects automatically.",
+     False, ["funnel", "signup_funnel.csv", "--x", "stage", "--y", "users"]),
     ("heatmap (correlation)", "Pearson correlation matrix over numeric columns.",
      False, ["heatmap", "sales_sample.csv"]),
     ("scatter (correlated pair)",

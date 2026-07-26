@@ -12442,6 +12442,75 @@ fn viz_smart_row_pipeline_that_grows_is_bridged() {
         "four stages bridge into seven bars: a seed, then a step and a running total each; html: \
          {html}"
     );
+    // the stage hover must use the DECLARED value-column label, not the column encoding's
+    // generic "Amount" -- the bridge borrowed that wording and mislabelled every row encoding
+    assert!(
+        html.contains("revenue: "),
+        "a row-encoded measure bridge must label the value with its declared value column; html: \
+         {html}"
+    );
+    assert!(
+        !html.contains("Amount: "),
+        "\"Amount\" is the COLUMN encoding's wording; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_row_count_bridge_says_rows_not_amount() {
+    // A count-only row pipeline whose stages GROW. `reached` IS the value here, so the funnel
+    // arm folds both into one "Rows: n of m" line; the bridge used to print "Amount: 100"
+    // alongside a duplicate "Rows in stage: 100", labelling a row count as an amount and
+    // stating the same number twice.
+    let wrk = Workdir::new("viz_smart_row_count_bridge_says_rows_not_amount");
+    let mut rows = String::from("stage,region\n");
+    for i in 0..300 {
+        let stage = if i % 6 == 0 {
+            "Impression"
+        } else if i % 6 < 3 {
+            "Click"
+        } else {
+            "Conversion"
+        };
+        rows.push_str(&format!("{stage},r{}\n", i % 3));
+    }
+    wrk.create_from_string("p.csv", &rows);
+    wrk.create_from_string(
+        "d.schema.json",
+        r#"{
+          "properties": {
+            "stage": {"type":"string","x-qsv":{"qsv_type":"String","role":"dimension"}},
+            "region": {"type":"string","x-qsv":{"qsv_type":"String","role":"dimension"}}
+          },
+          "x-qsv": { "relationships": [
+            {"kind":"pipeline","members":["stage"],"stage_column":"stage",
+             "stages":["Impression","Click","Conversion"]}
+          ] }
+        }"#,
+    );
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("d.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        html.contains(r#""type":"waterfall""#),
+        "growing stage counts must be bridged; html: {html}"
+    );
+    assert!(
+        html.contains("Rows: "),
+        "a count-only bridge must call the value Rows; html: {html}"
+    );
+    assert!(
+        !html.contains("Amount: "),
+        "a row count is not an Amount; html: {html}"
+    );
+    assert!(
+        !html.contains("Rows in stage: "),
+        "the count line is redundant when the count IS the value; html: {html}"
+    );
 }
 
 #[test]

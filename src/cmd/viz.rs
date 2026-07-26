@@ -23269,20 +23269,42 @@ fn panel_trace(
             let mut measures: Vec<Measure> = Vec::with_capacity(stages.len() * 2 - 1);
             let mut hover: Vec<String> = Vec::with_capacity(stages.len() * 2 - 1);
 
-            let pct_of = |k: usize| -> String {
-                if *n_complete == 0 {
-                    return String::new();
-                }
+            // A stage bar's hover, worded per `shape` exactly as the funnel arm words it: the
+            // number means something different in each encoding, so calling it "Amount"
+            // everywhere would label a ROW COUNT as an amount, and would drop the declared
+            // value-column label a row-encoded measure pipeline was given. `RowsCount` folds the
+            // value and the count into one line because they are the same number.
+            let stage_hover = |k: usize| -> String {
                 #[allow(clippy::cast_precision_loss)]
-                let p = reached[k] as f64 / *n_complete as f64 * 100.0;
+                let pct = if *n_complete == 0 {
+                    0.0
+                } else {
+                    reached[k] as f64 / *n_complete as f64 * 100.0
+                };
                 match shape {
                     FunnelShape::Columns => format!(
-                        "<br>Rows reached: {} of {} ({p:.0}% of complete cases)",
+                        "{}<br>Stage: {}<br>Amount: {}<br>Rows reached: {} of {} ({pct:.0}% of \
+                         complete cases)",
+                        escape_hover(&labels[k]),
+                        escape_hover(&stages[k]),
+                        fmt_measure(totals[k]),
                         HumanCount(reached[k] as u64),
                         HumanCount(*n_complete as u64),
                     ),
-                    _ => format!(
-                        "<br>Rows in stage: {} of {} ({p:.0}% of rows in declared stages)",
+                    FunnelShape::RowsMeasure { value_label } => format!(
+                        "{}<br>Stage: {}<br>{}: {}<br>Rows in stage: {} of {} ({pct:.0}% of rows \
+                         in declared stages)",
+                        escape_hover(&labels[k]),
+                        escape_hover(&stages[k]),
+                        escape_hover(value_label),
+                        fmt_measure(totals[k]),
+                        HumanCount(reached[k] as u64),
+                        HumanCount(*n_complete as u64),
+                    ),
+                    FunnelShape::RowsCount => format!(
+                        "{}<br>Stage: {}<br>Rows: {} of {} ({pct:.0}% of rows in declared stages)",
+                        escape_hover(&labels[k]),
+                        escape_hover(&stages[k]),
                         HumanCount(reached[k] as u64),
                         HumanCount(*n_complete as u64),
                     ),
@@ -23292,13 +23314,7 @@ fn panel_trace(
             cats.push(stages[0].clone());
             vals.push(totals[0]);
             measures.push(Measure::Absolute);
-            hover.push(format!(
-                "{}<br>Stage: {}<br>Amount: {}{}",
-                escape_hover(&labels[0]),
-                escape_hover(&stages[0]),
-                fmt_measure(totals[0]),
-                pct_of(0),
-            ));
+            hover.push(stage_hover(0));
 
             for k in 1..stages.len() {
                 let delta = totals[k] - totals[k - 1];
@@ -23320,13 +23336,7 @@ fn panel_trace(
                 cats.push(stages[k].clone());
                 vals.push(totals[k]);
                 measures.push(Measure::Total);
-                hover.push(format!(
-                    "{}<br>Stage: {}<br>Amount: {}{}",
-                    escape_hover(&labels[k]),
-                    escape_hover(&stages[k]),
-                    fmt_measure(totals[k]),
-                    pct_of(k),
-                ));
+                hover.push(stage_hover(k));
             }
 
             bar_max = vals

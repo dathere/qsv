@@ -1154,10 +1154,20 @@ def cleanup_sidecars():
     # writes a `*.stats.bivariate.csv` sidecar (a separate moarstats output, so it doesn't
     # match the `.stats.csv` substring check below). Don't leave any of these in the tree
     # (the committed datasets ship without them).
+    #
+    # Called at BOTH ends of main(). Sweeping afterwards keeps the tree clean; sweeping first is
+    # what keeps the gallery reproducible, because `viz smart` REUSES an existing stats cache
+    # rather than recomputing it. A cache left behind by unrelated manual work -- notably a
+    # `--smarter` run, whose moarstats enrichment adds outlier annotations to panel titles -- is
+    # otherwise silently inherited by a figure whose own command never asked for it. That
+    # produced a committed dashboard whose caption did not match the command printed beside it.
+    removed = 0
     for f in os.listdir(VIZ_DIR):
         if (".stats.csv" in f or ".stats.jsonl" in f or ".stats.bivariate.csv" in f
                 or f.endswith(".idx")):
             os.unlink(os.path.join(VIZ_DIR, f))
+            removed += 1
+    return removed
 
 
 # Counting words as README.md writes them. Only the range the gallery can plausibly reach.
@@ -1210,11 +1220,16 @@ def check_readme_claims():
         "screenshot link-out count",
     )
 
-    # every input a figure actually feeds qsv should be findable in the README's tables
+    # every input actually fed to qsv should be findable in the README's tables. That includes
+    # the screenshot link-outs built with `args`: those run qsv exactly like a figure does. The
+    # `cmd`-only entries are display strings for datasets too large to commit, so their inputs
+    # are deliberately not required here.
+    fed_to_qsv = [fig[3] for fig in FIGURES]
+    fed_to_qsv += [shot["args"] for shot in SCREENSHOTS if "args" in shot]
     inputs = {
         arg
-        for fig in FIGURES
-        for arg in fig[3]
+        for argv in fed_to_qsv
+        for arg in argv
         if arg.endswith((".csv", ".tsv", ".schema.json", ".geojson"))
     }
     for asset in sorted(inputs):
@@ -1230,6 +1245,13 @@ def check_readme_claims():
 
 def main():
     qsv = find_qsv()
+    # before anything runs qsv: a stale cache from unrelated work would otherwise be reused and
+    # silently change a figure (see `cleanup_sidecars`).
+    stale = cleanup_sidecars()
+    if stale:
+        sys.stderr.write(
+            f"swept {stale} pre-existing qsv sidecar(s) so figures regenerate from source\n"
+        )
     # QSV_VIZ_REGEN_LLM opts into regenerating the `--dictionary infer` dashboards live (needs a
     # local LLM up); otherwise their committed HTML is reused so a normal run stays LLM-free.
     # Only an explicit truthy value enables it, so QSV_VIZ_REGEN_LLM=0/false/off (or empty) stays

@@ -94,18 +94,26 @@ auto-picks panels, so no --x/--y is needed:
       with no headline measure. (Overall dataset completeness - the share of
       non-empty cells - is a quiet "Completeness:" line in the header metadata
       table, not a KPI tile.)
-    - pipeline funnel, when the dictionary DECLARES one (see --dictionary). Which
+    - pipeline panel, when the dictionary DECLARES one (see --dictionary). Which
       columns are process stages, and in which direction, is semantics rather than
       a statistic - no column-name vocabulary settles it and no statistic does
-      either - so a funnel is drawn ONLY from an explicit declaration, never
+      either - so the panel is drawn ONLY from an explicit declaration, never
       guessed. Both encodings are supported: stages held in separate measure
       columns, and stages held as values of one category column. Costs one extra
       data pass over the declared stages only.
+      The declaration fixes WHICH columns and in WHAT order; the numbers decide the
+      FORM. A funnel's band widths are a containment claim, so one is drawn only
+      while the stage totals never grow. If any stage outruns the one before it, the
+      same declaration is drawn as a BRIDGE instead: the signed difference between
+      consecutive totals, each step labelled as the arithmetic difference it is
+      rather than as a flow. A funnel there would render a band wider than the one
+      above it, asserting the opposite of the data. The subtitle says which form was
+      used and why.
       Stage order is the declared order and is never re-sorted by size. For the
       column encoding, row-wise containment (does each stage nest inside the one
-      before it?) is MEASURED and disclosed in the subtitle, but never refuses the
-      panel: a pipeline whose stages overrun is a finding to name, not a reason to
-      show nothing. Totals sum over the rows complete across every declared stage,
+      before it?) is MEASURED and disclosed in the subtitle - separately from the
+      form, since rows can overrun while the totals still shrink, or nest while the
+      totals grow. Totals sum over the rows complete across every declared stage,
       so they do NOT match `stats.sum`; the subtitle always discloses that
       denominator. See also the standalone `qsv viz funnel` chart type, which takes
       its stage order from the file and needs no dictionary.
@@ -542,8 +550,9 @@ smart options:
                            A "target" number on a measure renders a "vs target" DELTA against that
                            goal (value minus target) - a GOAL you supply, never a fabricated
                            prior-period baseline, so "infer" never emits it; hand-author it.
-                           The dictionary is also the ONLY source of the pipeline funnel panel,
-                           declared in the dataset-level "x-qsv" object as a "relationships" entry
+                           The dictionary is also the ONLY source of the pipeline panel (drawn as
+                           a funnel, or as a bridge when the stage totals do not nest), declared in
+                           the dataset-level "x-qsv" object as a "relationships" entry
                            with "kind": "pipeline". Two encodings, both hand-editable:
                              stages as COLUMNS - "members" lists the stage columns in process
                              order, WIDEST/UPSTREAM FIRST (note this is the opposite direction
@@ -560,7 +569,8 @@ smart options:
                                 "value_column":"revenue"}
                            Declared order is authoritative and is never re-sorted by size, so a
                            stage that outruns its predecessor stays visible instead of being
-                           quietly reordered away. A declaration naming a missing column, or a
+                           quietly reordered away - it switches the panel to a bridge rather than
+                           drawing a funnel that widens. A declaration naming a missing column, or a
                            stage that is an average/rate rather than a summable amount, is skipped
                            with a note rather than erroring.
                            Only affects `smart`.

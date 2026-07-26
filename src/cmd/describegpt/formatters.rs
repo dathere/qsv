@@ -140,6 +140,13 @@ pub(super) fn format_dictionary_json(
 /// `grain` is the dataset-level "one row = one X" statement (when inferred);
 /// emitted as `x-qsv.grain` only when `infer_content_type` is set.
 ///
+/// `relationships` are the LLM-inferred inter-column groups (see
+/// `dictionary::parse_llm_relationships`), emitted as `x-qsv.relationships` under
+/// the same flag. `viz smart --dictionary` reads `kind: "pipeline"` entries from
+/// here to build its funnel panel (issue #4222), so dropping them — as this
+/// emitter previously did, while `format_dictionary_json` kept them — severed the
+/// only path by which a declared pipeline could reach viz.
+///
 /// The schema's top-level `x-qsv.generated_by` is left as the literal
 /// `{GENERATED_BY_SIGNATURE}` placeholder; the caller substitutes the resolved
 /// attribution after building, mirroring the pattern used by
@@ -155,6 +162,7 @@ pub(super) fn format_dictionary_jsonschema(
     allow_extra_cols: bool,
     strict_dates: bool,
     grain: Option<&str>,
+    relationships: &[Value],
 ) -> Value {
     let mut properties = serde_json::Map::with_capacity(entries.len());
     // Every column is listed in `required`, matching `qsv schema`'s behavior.
@@ -199,6 +207,24 @@ pub(super) fn format_dictionary_jsonschema(
         && let Some(x_qsv) = doc.get_mut("x-qsv").and_then(Value::as_object_mut)
     {
         x_qsv.insert("grain".to_string(), Value::String(g.to_string()));
+    }
+
+    // LLM-inferred inter-column relationships, gated on the same --infer-content-type path (the
+    // prompt only asks for them under that flag). They ride in the top-level x-qsv rather than at
+    // the schema root for the same reason `grain` does: it keeps the document a valid draft
+    // 2020-12 schema, and a dictionary built without the flag stays byte-identical.
+    //
+    // Without this, `--format JSON` carried relationships but JSONSchema silently dropped them --
+    // and JSONSchema is the format `viz smart --dictionary` consumes, so `kind: "pipeline"` (the
+    // funnel declaration, issue #4222) never reached viz at all.
+    if infer_content_type
+        && !relationships.is_empty()
+        && let Some(x_qsv) = doc.get_mut("x-qsv").and_then(Value::as_object_mut)
+    {
+        x_qsv.insert(
+            "relationships".to_string(),
+            Value::Array(relationships.to_vec()),
+        );
     }
 
     doc
@@ -1142,6 +1168,7 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         let x = &schema["properties"]["depth"]["x-qsv"];
         assert_eq!(x["null_values"], json!(["NULL"]));
@@ -1167,10 +1194,87 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         let x = &schema["properties"]["col"]["x-qsv"];
         assert!(x.get("null_values").is_none());
         assert!(x.get("null_candidates").is_none());
+    }
+
+    #[test]
+    fn jsonschema_carries_relationships_in_x_qsv() {
+        // The gap this closes: `--format JSON` emitted relationships all along, but the
+        // JSONSchema emitter dropped them -- and JSONSchema is what `viz smart
+        // --dictionary` consumes, so a declared `kind: "pipeline"` could never reach
+        // viz's funnel builder (issue #4222).
+        let e = sample_entry("col", "email");
+        let rels = vec![json!({
+            "kind": "pipeline",
+            "members": ["planned", "committed", "spent"],
+        })];
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&e),
+            "in.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            &rels,
+        );
+        assert_eq!(
+            schema["x-qsv"]["relationships"],
+            json!([{"kind": "pipeline", "members": ["planned", "committed", "spent"]}]),
+            "relationships must ride in the top-level x-qsv, where viz reads them"
+        );
+        // and the doc must still be a valid draft 2020-12 schema -- the whole reason
+        // x-qsv exists rather than a schema-root key.
+        assert!(
+            jsonschema::meta::validate(&schema).is_ok(),
+            "emitted schema must survive the same meta-validation describegpt applies before \
+             writing"
+        );
+    }
+
+    #[test]
+    fn jsonschema_omits_relationships_when_absent_or_flag_off() {
+        // Byte-identical output for dictionaries that have no relationships, and for
+        // runs without --infer-content-type (the flag the prompt gates them on).
+        let e = sample_entry("col", "email");
+        let rels = vec![json!({"kind": "pipeline", "members": ["a", "b"]})];
+
+        let none_inferred = format_dictionary_jsonschema(
+            std::slice::from_ref(&e),
+            "in.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            &[],
+        );
+        assert!(none_inferred["x-qsv"].get("relationships").is_none());
+
+        let flag_off = format_dictionary_jsonschema(
+            std::slice::from_ref(&e),
+            "in.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            None,
+            &rels,
+        );
+        assert!(
+            flag_off["x-qsv"].get("relationships").is_none(),
+            "without --infer-content-type the schema must stay as it was"
+        );
     }
 
     #[test]
@@ -1302,6 +1406,7 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         let xq = &schema["properties"]["created"]["x-qsv"];
         assert_eq!(xq["min"], "01/24/2013");
@@ -1335,6 +1440,7 @@ mod tests {
             false,
             false,
             Some("one row = one 311 service request"),
+            &[],
         );
         let xq = &schema["properties"]["census_tract"]["x-qsv"];
         assert_eq!(xq["role"], "dimension");
@@ -1355,6 +1461,7 @@ mod tests {
             false,
             false,
             Some("one row = one 311 service request"),
+            &[],
         );
         let xq_off = &off["properties"]["census_tract"]["x-qsv"];
         assert!(xq_off.get("role").is_none(), "role leaked when flag off");
@@ -1379,6 +1486,7 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         let xq2 = &schema2["properties"]["plain"]["x-qsv"];
         assert!(xq2.get("role").is_none() && xq2.get("concept").is_none());
@@ -1406,6 +1514,7 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         let gr = &schema["properties"]["rating"]["x-qsv"]["gauge_range"];
         assert_eq!(gr, &json!([0.0, 5.0]));
@@ -1423,6 +1532,7 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         assert!(
             off["properties"]["rating"]["x-qsv"]
@@ -1445,6 +1555,7 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         assert!(
             schema3["properties"]["plain_measure"]["x-qsv"]
@@ -1512,6 +1623,7 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         let examples = schema["properties"]["created"]["examples"]
             .as_array()
@@ -1558,6 +1670,7 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         let examples = schema["properties"]["X Coordinate"]["examples"]
             .as_array()
@@ -1589,6 +1702,7 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         let examples = schema["properties"]["name"]["examples"]
             .as_array()
@@ -1620,6 +1734,7 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         let prop = &schema["properties"]["license"];
         assert_eq!(prop["examples"][0], "Dog Lifetime Spayed Female");
@@ -1645,6 +1760,7 @@ mod tests {
             false,
             false,
             None,
+            &[],
         );
         assert_eq!(
             schema["properties"]["license"]["examples"][0],

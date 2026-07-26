@@ -172,10 +172,36 @@ Emit a top-level "relationships" array; each element is an object with:
                      subtotal <= total). List "members" from lowest to highest.
       "correlated" - numeric fields that move together, positively or negatively
                      (e.g. height and weight, quantity and total_price).
+      "pipeline"   - a PROCESS whose stages narrow monotonically, each stage being a
+                     subset of the one before it (planned -> committed -> spent;
+                     impressions -> clicks -> leads -> conversions; ordered ->
+                     shipped -> delivered).
   - "members": an array of 2 or more field names in the group, spelled exactly as the
                field names above. For "ordered", list them in ascending order.
   - "anchor": ("ordered" only) the field the others are measured from - normally the
               first/earliest member.
+
+A "pipeline" has TWO possible encodings - pick the one matching the data:
+  a) STAGES AS COLUMNS - one numeric column per stage. List them in "members" in
+     process order, WIDEST/UPSTREAM FIRST (e.g. ["planned","committed","spent"]).
+     NOTE this is the OPPOSITE direction from "ordered", which ascends. Do not
+     confuse the two.
+  b) STAGES AS ROW VALUES of a single category column. Additionally set:
+       - "stage_column": that column's name.
+       - "stages": its values in process order, widest first, spelled EXACTLY as they
+                   appear in the Frequency Distribution below.
+       - "value_column": (optional) the numeric column to sum per stage. Omit it to
+                         count rows instead.
+     Still set "members" to ["<stage_column>"] plus "<value_column>" if you named one.
+
+Only declare a ROW-ENCODED pipeline when a single subject PASSES THROUGH the stages over
+time - an event log where one row is one event and the same subject appears at several
+stages. NEVER declare one when each row simply sits in one mutually-exclusive state.
+Check the "grain" sentence you are about to write: if it says "one row = one <entity>",
+then a status/state column is a PARTITION, not a pipeline, and a funnel of it would be a
+lie. Never name a complement or residual as a stage (unspent, remaining, balance,
+variance, difference) - those are what is LEFT OVER, not a stage the process passed through.
+
 Only emit relationships you are confident about from the field names, the Labels and
 Descriptions you produced, and the Summary Statistics. Do NOT place a field in more
 than one relationship. If you find none, emit an empty array.
@@ -237,7 +263,10 @@ Return the results in JSON format where each field name is a key, and the value 
   "grain": "one row = one record",
   "relationships": [
 {% raw %}    {"kind": "ordered", "members": ["created_date", "closed_date"], "anchor": "created_date"},
-    {"kind": "joint", "members": ["city", "state", "zip"]}{% endraw %}
+    {"kind": "joint", "members": ["city", "state", "zip"]},
+    {"kind": "pipeline", "members": ["planned_amt", "committed_amt", "spent_amt"]},
+    {"kind": "pipeline", "members": ["funnel_stage", "revenue"], "stage_column": "funnel_stage",
+     "stages": ["Impression", "Click", "Lead", "Conversion"], "value_column": "revenue"}{% endraw %}
   ]{% endif %}{% raw %}
 }{% endraw %}
 

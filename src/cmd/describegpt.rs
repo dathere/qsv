@@ -3574,6 +3574,7 @@ fn format_dictionary_phase(
             args.flag_allow_extra_cols,
             args.flag_strict_dates,
             grain,
+            relationships,
         );
         let attribution = replace_attribution_placeholder(
             "{GENERATED_BY_SIGNATURE}",

@@ -22,7 +22,10 @@ Usage (from the repo root), after changing viz output or the datasets:
 
 Set QSV_BIN to point at a specific binary; otherwise target/{debug,release}/qsv
 or a `qsv` on PATH is used. Re-run and commit gallery.html if the diff is what
-you expect. The per-figure commands below are mirrored in README.md.
+you expect. README.md documents `viz` usage in tutorial form; its commands are
+# illustrative and deliberately NOT a verbatim mirror of the gallery's argv (the gallery
+# pins things like --max-charts that would only distract a reader). What README.md IS
+# required to keep in step with this file is checked by `check_readme_claims` below.
 """
 import json
 import os
@@ -1157,6 +1160,74 @@ def cleanup_sidecars():
             os.unlink(os.path.join(VIZ_DIR, f))
 
 
+# Counting words as README.md writes them. Only the range the gallery can plausibly reach.
+_NUM_WORDS = {
+    1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
+    8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen",
+    14: "fourteen", 15: "fifteen", 16: "sixteen", 17: "seventeen", 18: "eighteen",
+    19: "nineteen", 20: "twenty", 21: "twenty-one", 22: "twenty-two",
+    23: "twenty-three", 24: "twenty-four",
+}
+
+
+def check_readme_claims():
+    """Fail closed on the README drift this script can actually prove.
+
+    Adding a figure silently invalidates prose counts and leaves its input undocumented; that
+    has happened repeatedly, most recently a dashboard count that was corrected to the number of
+    `smart_*.html` files on disk when the sentence is about EMBEDDED iframes -- two of those files
+    are screenshot link-outs, so the "fix" was wrong in the other direction.
+
+    Only claims with a mechanical source of truth are checked. Command text is deliberately NOT
+    compared: README.md is a tutorial and its invocations differ from the gallery's argv on
+    purpose. Runs AFTER the gallery is written, so a new figure still regenerates -- the exit
+    code is what tells you the docs need a follow-up.
+    """
+    readme_path = os.path.join(VIZ_DIR, "README.md")
+    if not os.path.exists(readme_path):
+        return
+    with open(readme_path, encoding="utf-8") as fh:
+        readme = fh.read()
+
+    problems = []
+
+    def expect_phrase(count, phrase_fmt, what):
+        word = _NUM_WORDS.get(count, str(count))
+        if phrase_fmt.format(n=word) not in readme:
+            problems.append(
+                f"{what}: expected README.md to say "
+                f"{phrase_fmt.format(n=word)!r} (there are {count})"
+            )
+
+    expect_phrase(
+        len(SMART_IFRAME),
+        "The {n} **smart dashboards** are embedded",
+        "embedded-dashboard count",
+    )
+    expect_phrase(
+        len(SCREENSHOTS),
+        "closes with {n} clickable **screenshot link-outs**",
+        "screenshot link-out count",
+    )
+
+    # every input a figure actually feeds qsv should be findable in the README's tables
+    inputs = {
+        arg
+        for fig in FIGURES
+        for arg in fig[3]
+        if arg.endswith((".csv", ".tsv", ".schema.json", ".geojson"))
+    }
+    for asset in sorted(inputs):
+        if f"`{asset}`" not in readme:
+            problems.append(f"undocumented gallery input: `{asset}` is not mentioned in README.md")
+
+    if problems:
+        raise SystemExit(
+            "gallery written, but README.md is now out of step with gen_gallery.py:\n  "
+            + "\n  ".join(problems)
+        )
+
+
 def main():
     qsv = find_qsv()
     # QSV_VIZ_REGEN_LLM opts into regenerating the `--dictionary infer` dashboards live (needs a
@@ -1409,6 +1480,8 @@ def main():
         fh.write(body)
     cleanup_sidecars()
     sys.stderr.write(f"wrote {GALLERY} ({len(body)} bytes, {len(figs)} figures)\n")
+
+    check_readme_claims()
 
 
 if __name__ == "__main__":

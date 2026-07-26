@@ -28,6 +28,7 @@ nd            = "nd"
 Pn            = "Pn"
 tripel        = "tripel"
 sems          = "sems"
+appropriat    = "appropriat"
 
 [files]
 extend-exclude = [

@@ -94,18 +94,26 @@ auto-picks panels, so no --x/--y is needed:
       with no headline measure. (Overall dataset completeness - the share of
       non-empty cells - is a quiet "Completeness:" line in the header metadata
       table, not a KPI tile.)
-    - pipeline funnel, when the dictionary DECLARES one (see --dictionary). Which
+    - pipeline panel, when the dictionary DECLARES one (see --dictionary). Which
       columns are process stages, and in which direction, is semantics rather than
       a statistic - no column-name vocabulary settles it and no statistic does
-      either - so a funnel is drawn ONLY from an explicit declaration, never
+      either - so the panel is drawn ONLY from an explicit declaration, never
       guessed. Both encodings are supported: stages held in separate measure
       columns, and stages held as values of one category column. Costs one extra
       data pass over the declared stages only.
+      The declaration fixes WHICH columns and in WHAT order; the numbers decide the
+      FORM. A funnel's band widths are a containment claim, so one is drawn only
+      while the stage totals never grow. If any stage outruns the one before it, the
+      same declaration is drawn as a BRIDGE instead: the signed difference between
+      consecutive totals, each step labelled as the arithmetic difference it is
+      rather than as a flow. A funnel there would render a band wider than the one
+      above it, asserting the opposite of the data. The subtitle says which form was
+      used and why.
       Stage order is the declared order and is never re-sorted by size. For the
       column encoding, row-wise containment (does each stage nest inside the one
-      before it?) is MEASURED and disclosed in the subtitle, but never refuses the
-      panel: a pipeline whose stages overrun is a finding to name, not a reason to
-      show nothing. Totals sum over the rows complete across every declared stage,
+      before it?) is MEASURED and disclosed in the subtitle - separately from the
+      form, since rows can overrun while the totals still shrink, or nest while the
+      totals grow. Totals sum over the rows complete across every declared stage,
       so they do NOT match `stats.sum`; the subtitle always discloses that
       denominator. See also the standalone `qsv viz funnel` chart type, which takes
       its stage order from the file and needs no dictionary.
@@ -542,8 +550,9 @@ smart options:
                            A "target" number on a measure renders a "vs target" DELTA against that
                            goal (value minus target) - a GOAL you supply, never a fabricated
                            prior-period baseline, so "infer" never emits it; hand-author it.
-                           The dictionary is also the ONLY source of the pipeline funnel panel,
-                           declared in the dataset-level "x-qsv" object as a "relationships" entry
+                           The dictionary is also the ONLY source of the pipeline panel (drawn as
+                           a funnel, or as a bridge when the stage totals do not nest), declared in
+                           the dataset-level "x-qsv" object as a "relationships" entry
                            with "kind": "pipeline". Two encodings, both hand-editable:
                              stages as COLUMNS - "members" lists the stage columns in process
                              order, WIDEST/UPSTREAM FIRST (note this is the opposite direction
@@ -560,7 +569,8 @@ smart options:
                                 "value_column":"revenue"}
                            Declared order is authoritative and is never re-sorted by size, so a
                            stage that outruns its predecessor stays visible instead of being
-                           quietly reordered away. A declaration naming a missing column, or a
+                           quietly reordered away - it switches the panel to a bridge rather than
+                           drawing a funnel that widens. A declaration naming a missing column, or a
                            stage that is an average/rate rather than a summable amount, is skipped
                            with a note rather than erroring.
                            Only affects `smart`.
@@ -749,14 +759,14 @@ use plotly::{
     Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
     Funnel, HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Pie, Plot, Sankey, Scatter,
     Scatter3D, ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Traces, Treemap,
-    Violin,
+    Violin, Waterfall,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
     common::{
-        Anchor, ColorBar, ColorScale, ColorScalePalette, Domain, ErrorData, ErrorType, Fill, Font,
-        HoverInfo, Line, Marker, Mode, Orientation, Pattern, PatternShape, TextPosition, TickMode,
-        Title,
+        Anchor, ColorBar, ColorScale, ColorScalePalette, Domain, ErrorData, ErrorType,
+        ExponentFormat, Fill, Font, HoverInfo, Line, Marker, Mode, Orientation, Pattern,
+        PatternShape, TextPosition, TickMode, Title,
     },
     funnel::Connector as FunnelConnector,
     indicator::{Delta, Gauge, GaugeAxis, Mode as IndicatorMode, Number},
@@ -774,6 +784,7 @@ use plotly::{
     traces::{icicle::BranchValues as IcicleBranchValues, scatter_map::Cluster},
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
     violin::{MeanLine, SpanMode, ViolinBox, ViolinPoints},
+    waterfall::{Marker as WaterfallMarker, Measure, MeasureStyle},
 };
 use rayon::prelude::*;
 use serde::Deserialize;
@@ -1429,6 +1440,11 @@ const OTHER_TEXT: &str = "Other";
 /// Muted grey for the aggregate `(NULL)` / `Other (N)` frequency bars so they read as summary
 /// buckets, visually distinct from the palette-colored real categories.
 const MUTED_COLOR: &str = "#999999";
+/// Bridge delta colours (issue #4222). A bridge's step bars are the only place in the dashboard
+/// where a bar's SIGN is the message, so they get their own semantics rather than the panel hue:
+/// a shortfall against the previous stage and an overrun beyond it must not look alike.
+const BRIDGE_DOWN_COLOR: &str = "#c0504d";
+const BRIDGE_UP_COLOR: &str = "#4f8a5b";
 
 /// Faint grey wash used as the fill of a box/violin distribution panel when it renders on a
 /// log value axis (see `log_distribution_body_cue`).
@@ -12536,6 +12552,7 @@ enum PanelKind {
         reached:    Vec<usize>,
         n_complete: usize,
         shape:      FunnelShape,
+        form:       PipelineForm,
     },
     /// 2D density contour of the most strongly correlated numeric pair — used INSTEAD of
     /// `ScatterPair` for large datasets (>= `SMART_CONTOUR_MIN_POINTS`), where a scatter overplots.
@@ -12966,6 +12983,45 @@ struct DictRow {
     /// 100% completeness, 0 error-rate), never a fabricated prior-period baseline. Rendered as a
     /// "vs target" delta.
     target:       Option<f64>,
+}
+
+/// Which form a declared pipeline is drawn as (issue #4222).
+///
+/// The dictionary declares the SEMANTICS — that these columns are one ordered pipeline — and that
+/// declaration is always honoured. It does not, and cannot, declare that the stages actually nest:
+/// that is a measurable property of the data, and it decides the FORM.
+///
+/// A funnel is a containment chart; its band widths ARE the claim that each stage is a subset of
+/// the one above. Drawing one for stages that grow renders a band wider than its predecessor — an
+/// hourglass that asserts the opposite of what the numbers say, which no subtitle can retract,
+/// because the geometry is read before the caption is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PipelineForm {
+    /// Stage totals never increase: the containment claim holds, so the funnel is honest.
+    Funnel,
+    /// At least one stage total exceeds its predecessor. The panel bridges the signed differences
+    /// between consecutive totals instead — same declared order, same numbers, but the form
+    /// asserts arithmetic rather than containment.
+    Bridge,
+}
+
+impl PipelineForm {
+    /// Funnel only while the declared totals are monotonically non-increasing.
+    ///
+    /// Deliberately NOT the per-row containment share: that measures how many individual rows
+    /// break the nesting and is reported in the subtitle, whereas this decides what the picture
+    /// claims. A pipeline can have violating rows that still net out to a shrinking total (a
+    /// funnel remains truthful), or perfectly nesting rows whose totals grow (it does not).
+    fn for_totals(totals: &[f64]) -> Self {
+        if totals.windows(2).all(|w| {
+            let [a, b] = w else { return true };
+            b <= a
+        }) {
+            Self::Funnel
+        } else {
+            Self::Bridge
+        }
+    }
 }
 
 /// How a built funnel's numbers should be read — the render arm's hover text depends on it.
@@ -15759,6 +15815,22 @@ fn read_stage_totals(
     Ok((totals, counts, matched))
 }
 
+/// Render a completeness share for the funnel subtitle, never rounding UP to 100%.
+///
+/// The clause this feeds exists specifically to warn that the funnel's totals will not reconcile
+/// with `stats.sum`. Plain `{:.0}` defeats that: a dataset dropping 21 of 12,587 rows is 99.83%
+/// complete, which renders as "100% of rows" — asserting the opposite of the disclosure's whole
+/// purpose, while a nine-figure sum quietly goes missing. So anything short of genuinely complete
+/// is FLOORED to one decimal; only an exact 1.0 prints a bare "100".
+fn complete_pct_str(complete_frac: f64) -> String {
+    if complete_frac >= 1.0 {
+        return "100".to_string();
+    }
+    // floor, not round: 99.96% must not become "100.0%"
+    let tenths = (complete_frac * 1000.0).floor() / 10.0;
+    format!("{tenths:.1}")
+}
+
 /// The caveat line beneath a funnel panel's title (issue #4222).
 ///
 /// Clause 1 is UNCONDITIONAL, following `lorenz_caveat`'s philosophy. The funnel's totals are
@@ -15776,11 +15848,12 @@ fn funnel_subtitle(
     violations: &[f64],
     n_complete: usize,
     complete_frac: f64,
+    form: &PipelineForm,
 ) -> Option<String> {
     let mut parts: Vec<String> = vec![format!(
-        "n = {} complete cases ({:.0}% of rows)",
+        "n = {} complete cases ({}% of rows)",
         HumanCount(n_complete as u64),
-        complete_frac * 100.0
+        complete_pct_str(complete_frac)
     )];
 
     // worst per-row violation, if any is worth naming
@@ -15796,6 +15869,12 @@ fn funnel_subtitle(
             "{here} exceeds {prev} in {:.0}% of rows",
             v * 100.0
         ));
+    }
+
+    // On a bridge, name the form choice: a reader who expected the declared "pipeline" to be a
+    // funnel is owed the reason it is not one, in the same line that reports the violation.
+    if matches!(form, PipelineForm::Bridge) {
+        parts.push("stages do not nest \u{2014} bridged, not funnelled".to_string());
     }
 
     // a stage whose TOTAL outruns its predecessor: the bar order is kept (vocabulary order is
@@ -21830,8 +21909,8 @@ impl<'a> SmartCtx<'a> {
     ) -> Option<Panel> {
         if totals.iter().any(|t| *t < 0.0) {
             viz_note(
-                "viz smart: pipeline funnel skipped \u{2014} a stage total is negative, which a \
-                 funnel cannot represent",
+                "viz smart: pipeline panel skipped \u{2014} a stage total is negative, which \
+                 neither a funnel nor a bridge can represent",
             );
             return None;
         }
@@ -21845,13 +21924,27 @@ impl<'a> SmartCtx<'a> {
             );
             return None;
         }
-        let subtitle = funnel_subtitle(&stages, &totals, violations, n_complete, complete_frac);
+        // The declaration says these columns are one pipeline; the NUMBERS decide whether a
+        // containment form can honestly represent it. See `PipelineForm`.
+        let form = PipelineForm::for_totals(&totals);
+        let subtitle = funnel_subtitle(
+            &stages,
+            &totals,
+            violations,
+            n_complete,
+            complete_frac,
+            &form,
+        );
+        let noun = match form {
+            PipelineForm::Funnel => "funnel",
+            PipelineForm::Bridge => "bridge",
+        };
         let title = match &shape {
             FunnelShape::Columns => {
-                format!("Pipeline funnel: {}", labels.join(" \u{2192} "))
+                format!("Pipeline {noun}: {}", labels.join(" \u{2192} "))
             },
             _ => format!(
-                "Pipeline funnel: {} ({})",
+                "Pipeline {noun}: {} ({})",
                 labels.first().cloned().unwrap_or_default(),
                 stages.join(" \u{2192} ")
             ),
@@ -21866,6 +21959,7 @@ impl<'a> SmartCtx<'a> {
                     reached,
                     n_complete,
                     shape,
+                    form,
                 },
             )
             .with_subtitle(subtitle),
@@ -23156,6 +23250,146 @@ fn panel_trace(
             reached,
             n_complete,
             shape,
+            form: PipelineForm::Bridge,
+        } => {
+            // The declared stages do not nest, so the panel bridges the signed differences
+            // between consecutive totals instead of asserting containment (see `PipelineForm`).
+            //
+            // Drawn VERTICALLY, unlike the funnel. A waterfall is an ordinary bar-like trace, so
+            // category index 0 lands at the axis BOTTOM — the opposite of a funnel — and the
+            // arrays cannot simply be reversed to compensate, because a waterfall accumulates in
+            // array order and index 0 must be the `Absolute` that seeds the running total.
+            // Vertical sidesteps that entirely, and is the conventional orientation for a bridge.
+            //
+            // Each step is `stage[k] - stage[k-1]`, labelled as exactly that: an ARITHMETIC
+            // difference between two independent totals, never "converted" or "lost", because
+            // the whole reason this is not a funnel is that no flow between them is claimed.
+            let mut cats: Vec<String> = Vec::with_capacity(stages.len() * 2 - 1);
+            let mut vals: Vec<f64> = Vec::with_capacity(stages.len() * 2 - 1);
+            let mut measures: Vec<Measure> = Vec::with_capacity(stages.len() * 2 - 1);
+            let mut hover: Vec<String> = Vec::with_capacity(stages.len() * 2 - 1);
+
+            // A stage bar's hover, worded per `shape` exactly as the funnel arm words it: the
+            // number means something different in each encoding, so calling it "Amount"
+            // everywhere would label a ROW COUNT as an amount, and would drop the declared
+            // value-column label a row-encoded measure pipeline was given. `RowsCount` folds the
+            // value and the count into one line because they are the same number.
+            let stage_hover = |k: usize| -> String {
+                #[allow(clippy::cast_precision_loss)]
+                let pct = if *n_complete == 0 {
+                    0.0
+                } else {
+                    reached[k] as f64 / *n_complete as f64 * 100.0
+                };
+                match shape {
+                    FunnelShape::Columns => format!(
+                        "{}<br>Stage: {}<br>Amount: {}<br>Rows reached: {} of {} ({pct:.0}% of \
+                         complete cases)",
+                        escape_hover(&labels[k]),
+                        escape_hover(&stages[k]),
+                        fmt_measure(totals[k]),
+                        HumanCount(reached[k] as u64),
+                        HumanCount(*n_complete as u64),
+                    ),
+                    FunnelShape::RowsMeasure { value_label } => format!(
+                        "{}<br>Stage: {}<br>{}: {}<br>Rows in stage: {} of {} ({pct:.0}% of rows \
+                         in declared stages)",
+                        escape_hover(&labels[k]),
+                        escape_hover(&stages[k]),
+                        escape_hover(value_label),
+                        fmt_measure(totals[k]),
+                        HumanCount(reached[k] as u64),
+                        HumanCount(*n_complete as u64),
+                    ),
+                    FunnelShape::RowsCount => format!(
+                        "{}<br>Stage: {}<br>Rows: {} of {} ({pct:.0}% of rows in declared stages)",
+                        escape_hover(&labels[k]),
+                        escape_hover(&stages[k]),
+                        HumanCount(reached[k] as u64),
+                        HumanCount(*n_complete as u64),
+                    ),
+                }
+            };
+
+            cats.push(stages[0].clone());
+            vals.push(totals[0]);
+            measures.push(Measure::Absolute);
+            hover.push(stage_hover(0));
+
+            for k in 1..stages.len() {
+                let delta = totals[k] - totals[k - 1];
+                cats.push(format!("{} \u{2212} {}", stages[k], stages[k - 1]));
+                vals.push(delta);
+                measures.push(Measure::Relative);
+                hover.push(format!(
+                    "{} \u{2212} {}<br>Difference: {}<br>{} is {} than {}",
+                    escape_hover(&stages[k]),
+                    escape_hover(&stages[k - 1]),
+                    fmt_measure(delta),
+                    escape_hover(&stages[k]),
+                    if delta < 0.0 { "lower" } else { "higher" },
+                    escape_hover(&stages[k - 1]),
+                ));
+
+                // `Total` re-derives its own height from the running total; the real amount goes
+                // in the slot anyway so the arrays stay parallel and the JSON self-documenting.
+                cats.push(stages[k].clone());
+                vals.push(totals[k]);
+                measures.push(Measure::Total);
+                hover.push(stage_hover(k));
+            }
+
+            bar_max = vals
+                .iter()
+                .zip(&measures)
+                .filter(|(_, m)| !matches!(m, Measure::Relative))
+                .map(|(v, _)| *v)
+                .fold(None, |acc: Option<f64>, v| {
+                    Some(acc.map_or(v, |a| f64::max(a, v)))
+                });
+
+            // Per-bar templates, because no single one is right for every bar: a step bar's
+            // number is its DELTA, a stage bar's is the running TOTAL. plotly stays the
+            // formatter (so the labels cannot drift from the values it draws), and `.3s` matches
+            // the SI precision the KPI row and the axes already use — its own `textinfo` renders
+            // seven significant figures.
+            let templates: Vec<String> = measures
+                .iter()
+                .map(|m| {
+                    if matches!(m, Measure::Relative) {
+                        "%{delta:.3s}".to_string()
+                    } else {
+                        "%{final:.3s}".to_string()
+                    }
+                })
+                .collect();
+            let mut w = Waterfall::new(cats, vals)
+                .name(panel.name.clone())
+                .measure(measures)
+                .text_template_array(templates)
+                .text_position(TextPosition::Outside)
+                .increasing(
+                    MeasureStyle::new().marker(WaterfallMarker::new().color(BRIDGE_UP_COLOR)),
+                )
+                .decreasing(
+                    MeasureStyle::new().marker(WaterfallMarker::new().color(BRIDGE_DOWN_COLOR)),
+                )
+                .totals(MeasureStyle::new().marker(WaterfallMarker::new().color(color)))
+                .hover_text_array(hover)
+                .hover_template("%{hovertext}<extra></extra>");
+            if let Some((x, y)) = &axes {
+                w = w.x_axis(x.clone()).y_axis(y.clone());
+            }
+            w
+        },
+        PanelKind::Funnel {
+            stages,
+            labels,
+            totals,
+            reached,
+            n_complete,
+            shape,
+            form: _,
         } => {
             // A horizontal funnel: amount on the value axis, stage on the category axis.
             // A funnel trace draws index 0 at the TOP and works downward — the opposite of a
@@ -23494,7 +23728,11 @@ fn smart_grid_parts(
                 .max(),
             // the funnel is the other horizontal panel: its category ticks are the short
             // canonical stage names, which still need left room reserved
-            PanelKind::Funnel { stages, .. } => stages
+            PanelKind::Funnel {
+                stages,
+                form: PipelineForm::Funnel,
+                ..
+            } => stages
                 .iter()
                 .map(|l| l.chars().count().min(TOPREL_LABEL_MAX_CHARS))
                 .max(),
@@ -23848,7 +24086,13 @@ fn smart_grid_parts(
         let geom = geoms[n].clone();
         // the Top Relationships lollipop is the one horizontal panel: value (NMI) on a zoomed x,
         // pair on the category y — the opposite axis roles from every other (vertical) panel.
-        let (x_axis, y_axis) = if let PanelKind::Funnel { stages, totals, .. } = &panel.kind {
+        let (x_axis, y_axis) = if let PanelKind::Funnel {
+            stages,
+            totals,
+            form: PipelineForm::Funnel,
+            ..
+        } = &panel.kind
+        {
             // the funnel is horizontal like the lollipop, but its value axis is anchored at
             // zero and its categories run TOP-DOWN, matching the upstream-first arrays the
             // trace feeds (see the `panel_trace` arm).
@@ -23859,6 +24103,18 @@ fn smart_grid_parts(
                     .domain(&geom.x_domain)
                     .anchor(yref.clone()),
                 lollipop_category_axis(theme, &ticks)
+                    .domain(&geom.y_domain)
+                    .anchor(xref.clone()),
+            )
+        } else if let PanelKind::Funnel { totals, .. } = &panel.kind {
+            // a bridge is VERTICAL (see the `panel_trace` arm): categories on x, amounts on y,
+            // with the ordinary bar headroom so the outside delta labels are not clipped.
+            let max = totals.iter().copied().fold(0.0_f64, f64::max);
+            (
+                styled_x_axis(false, false, false, theme, None)
+                    .domain(&geom.x_domain)
+                    .anchor(yref.clone()),
+                styled_y_axis(Some(max), false, theme)
                     .domain(&geom.y_domain)
                     .anchor(xref.clone()),
             )
@@ -25137,7 +25393,6 @@ fn smart_inline_panel_plot(
     );
     let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
     let is_toprel = matches!(panel.kind, PanelKind::TopRelationships { .. });
-    let is_funnel = matches!(panel.kind, PanelKind::Funnel { .. });
     let (trace, bar_max, log_y) =
         panel_trace(panel, color, freq, hist, outliers, None, theme, log_scale);
 
@@ -25155,9 +25410,18 @@ fn smart_inline_panel_plot(
         (110, 90)
     } else if is_toprel {
         (TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24, 30)
-    } else if is_funnel {
-        // right room as well: plotly's in-band text can overflow the widest band
-        (TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24, 60)
+    } else if let PanelKind::Funnel {
+        stages,
+        form: PipelineForm::Funnel,
+        ..
+    } = &panel.kind
+    {
+        // size from the funnel's OWN ticks, not the lollipop's budget: the lollipop reserves room
+        // for 56-char truncated column-PAIR labels, while a funnel's ticks are short stage names
+        // ("Planned", "Committed"). Borrowing its constant reserved 416px for labels needing ~90,
+        // leaving the headline panel squeezed into the left half of a full-width cell.
+        // Right room as well: plotly's in-band text can overflow the widest band.
+        (funnel_left_margin(stages), 60)
     } else if log_y {
         (60 + LOG_AXIS_TITLE_MARGIN_PX, 30)
     } else {
@@ -25165,7 +25429,13 @@ fn smart_inline_panel_plot(
     };
     // the lollipop is the one horizontal panel: value (NMI) on a zoomed x, pair on the category y
     // — the opposite axis roles from every other (vertical) inline panel.
-    let (x_axis, y_axis) = if let PanelKind::Funnel { stages, totals, .. } = &panel.kind {
+    let (x_axis, y_axis) = if let PanelKind::Funnel {
+        stages,
+        totals,
+        form: PipelineForm::Funnel,
+        ..
+    } = &panel.kind
+    {
         let ticks: Vec<String> = stages.clone();
         let max = totals.iter().copied().fold(0.0_f64, f64::max);
         (
@@ -26977,7 +27247,12 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
         .show_grid(true)
         .grid_width(1)
         .zero_line(false)
-        .show_line(false);
+        .show_line(false)
+        // match the SI prefixes qsv's own value labels use (`%{y:.3s}` on bars, `.3~s` on
+        // indicators). Plotly's untouched default is `exponentformat: "B"`, which renders 10^9 as
+        // "B" while the bar sitting against that gridline is labelled "G" — one chart, two
+        // suffixes for the same magnitude.
+        .exponent_format(ExponentFormat::SI);
     // when themed, let the template style the gridlines/ticks/fonts
     if theme.is_none() {
         a = a
@@ -27076,27 +27351,49 @@ fn lollipop_value_axis(floor: f64, ceil: f64, theme: Option<BuiltinTheme>) -> Ax
     a
 }
 
+/// Left margin (px) reserved for a funnel panel's category ticks in the INLINE render path.
+///
+/// Mirrors the per-label sizing `smart_grid_parts` already does for its shared margin, rather
+/// than borrowing `TOPREL_LABEL_MAX_CHARS` — that budget is sized for the lollipop's 56-char
+/// truncated column-PAIR labels, and a funnel's ticks are short stage names.
+fn funnel_left_margin(stages: &[String]) -> usize {
+    stages
+        .iter()
+        .map(|l| l.chars().count().min(TOPREL_LABEL_MAX_CHARS))
+        .max()
+        .map_or(60, |longest| longest * CORR_LABEL_PX_PER_CHAR + 24)
+}
+
 /// The VALUE (x) axis for a horizontal pipeline funnel (issue #4222).
 ///
-/// Anchored at **zero**, unlike `lollipop_value_axis`'s zoomed range. A funnel's whole claim is
-/// that band widths are proportional to stage amounts; a floor above zero would exaggerate the
-/// taper, which is the one thing this panel must not do. The headroom above `max` leaves room for
-/// plotly's in-band `textinfo` on the widest band.
+/// **Symmetric about zero, because plotly centers funnel bands on the value zero** — each band
+/// spans `-amount/2 ..= +amount/2`. A `0..=ceil` range therefore puts the band centre on the
+/// LEFT EDGE of the plot area and draws half of every band outside it. That was survivable only
+/// because the panel happened to reserve a 416px left margin wide enough to absorb the overflow;
+/// sizing that margin to the actual tick labels (which is what it is for) clipped the widest band.
 ///
-/// Never logged, for the same reason — a log value axis destroys the proportional reading.
+/// So the range is half-width either side of zero: the widest band still occupies `1/1.35` of the
+/// plot area, exactly as before, but centred rather than half off-screen — and the remaining
+/// headroom leaves room for plotly's `textinfo` beside the widest band.
+///
+/// Tick labels are hidden: with a symmetric range they would read `-100G … 100G` for amounts that
+/// are never negative, and a funnel's value axis carries no information the panel doesn't already
+/// state — the band text gives stage-to-stage conversion and the hover gives exact amounts. The
+/// standalone `viz funnel` likewise draws no value axis.
+///
+/// Never logged — a log value axis destroys the proportional reading the form depends on.
 fn funnel_value_axis(max: f64, theme: Option<BuiltinTheme>) -> Axis {
-    let ceil = if max > 0.0 { max * 1.35 } else { 1.0 };
+    let half = if max > 0.0 { max * 1.35 / 2.0 } else { 1.0 };
     let mut a = Axis::new()
-        .show_grid(true)
-        .grid_width(1)
+        .show_grid(false)
         .zero_line(false)
         .show_line(false)
-        .range(vec![0.0, ceil]);
+        .show_tick_labels(false)
+        // SI prefixes, matching the rest of the dashboard's value formatting (see `styled_y_axis`)
+        .exponent_format(ExponentFormat::SI)
+        .range(vec![-half, half]);
     if theme.is_none() {
-        a = a
-            .grid_color(GRID_COLOR)
-            .tick_color(AXIS_LINE)
-            .tick_font(Font::new().family(FONT_FAMILY).size(10));
+        a = a.tick_color(AXIS_LINE);
     }
     a
 }
@@ -31058,6 +31355,87 @@ mod tests {
 
         // an empty pipeline is not a contained one
         assert!((containment_fraction(&[], &[]) - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn pipeline_form_follows_the_totals_not_the_rows() {
+        use PipelineForm::{Bridge, Funnel};
+        // monotonically shrinking: the containment claim holds
+        assert_eq!(PipelineForm::for_totals(&[100.0, 60.0, 40.0]), Funnel);
+        // flat stages still nest (a plateau is not growth)
+        assert_eq!(PipelineForm::for_totals(&[100.0, 100.0, 40.0]), Funnel);
+        // one growing step is enough to make a funnel dishonest -- this is the CPDB shape,
+        // where Spent (81G) outruns Committed (28.4G)
+        assert_eq!(
+            PipelineForm::for_totals(&[191.75, 28.38, 80.98]),
+            Bridge,
+            "a stage that outruns its predecessor must not be drawn as containment"
+        );
+        // growth anywhere counts, including the last step only
+        assert_eq!(PipelineForm::for_totals(&[100.0, 60.0, 61.0]), Bridge);
+        // degenerate inputs are funnels by default -- nothing contradicts containment
+        assert_eq!(PipelineForm::for_totals(&[]), Funnel);
+        assert_eq!(PipelineForm::for_totals(&[42.0]), Funnel);
+    }
+
+    #[test]
+    fn complete_pct_str_never_rounds_up_to_100() {
+        // the real CPDB case: 12,566 of 12,587 rows. `{:.0}` rendered this as "100", asserting
+        // completeness while a nine-figure sum was silently dropped.
+        assert_eq!(complete_pct_str(12_566.0 / 12_587.0), "99.8");
+
+        // rounding would reach 100 well before completeness does; flooring must not
+        assert_eq!(complete_pct_str(0.9996), "99.9");
+        assert_eq!(complete_pct_str(0.999_999), "99.9");
+
+        // only genuine completeness prints a bare 100
+        assert_eq!(complete_pct_str(1.0), "100");
+
+        // and the ordinary cases still read naturally
+        assert_eq!(complete_pct_str(0.5), "50.0");
+        assert_eq!(complete_pct_str(0.0), "0.0");
+    }
+
+    #[test]
+    fn funnel_left_margin_sizes_to_the_stage_labels() {
+        let stages: Vec<String> = ["Planned", "Committed", "Spent"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        // "Committed" is 9 chars -> 9*7 + 24. The bug was borrowing the lollipop's 56-char
+        // budget (56*7 + 24 = 416px) for labels that need a fraction of it.
+        assert_eq!(funnel_left_margin(&stages), 9 * CORR_LABEL_PX_PER_CHAR + 24);
+        assert!(funnel_left_margin(&stages) < TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24);
+
+        // an absurdly long stage name is still capped at the lollipop budget
+        let long = vec!["x".repeat(200)];
+        assert_eq!(
+            funnel_left_margin(&long),
+            TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24
+        );
+
+        // no stages: fall back to the default left margin rather than zero
+        assert_eq!(funnel_left_margin(&[]), 60);
+    }
+
+    #[test]
+    fn funnel_value_axis_is_symmetric_about_zero() {
+        // plotly centres funnel bands on the value zero, so a 0..=ceil range would draw half of
+        // every band outside the plot area (only survivable while an oversized left margin
+        // absorbed the overflow).
+        let axis = serde_json::to_value(funnel_value_axis(100.0, None)).unwrap();
+        let range = axis["range"].as_array().unwrap();
+        let lo = range[0].as_f64().unwrap();
+        let hi = range[1].as_f64().unwrap();
+        assert!(lo < 0.0 && hi > 0.0, "range must straddle zero: {lo}..{hi}");
+        assert!(
+            (lo + hi).abs() < 1e-9,
+            "range must be symmetric: {lo}..{hi}"
+        );
+        // the widest band still occupies 1/1.35 of the plot area
+        assert!((hi - 100.0 * 1.35 / 2.0).abs() < 1e-9);
+        // and its tick labels stay hidden: a symmetric range would read as negative amounts
+        assert_eq!(axis["showticklabels"], serde_json::json!(false));
     }
 
     #[test]

@@ -22,7 +22,10 @@ Usage (from the repo root), after changing viz output or the datasets:
 
 Set QSV_BIN to point at a specific binary; otherwise target/{debug,release}/qsv
 or a `qsv` on PATH is used. Re-run and commit gallery.html if the diff is what
-you expect. The per-figure commands below are mirrored in README.md.
+you expect. README.md documents `viz` usage in tutorial form; its commands are
+# illustrative and deliberately NOT a verbatim mirror of the gallery's argv (the gallery
+# pins things like --max-charts that would only distract a reader). What README.md IS
+# required to keep in step with this file is checked by `check_readme_claims` below.
 """
 import json
 import os
@@ -57,6 +60,7 @@ SMART_IFRAME = {
     "smart dashboard (animated geo, world events)":   "smart_world_events.html",
     "smart dashboard (Gapminder bubble, regions growth)": "smart_regions_growth.html",
     "smart dashboard (--smarter, Gini/Lorenz inequality + log-skew boxes)": "smart_cms_medicare.html",
+    "smart dashboard (dictionary-declared pipeline funnel)": "smart_onboarding_funnel.html",
     "smart dashboard (--smarter, zero-inflated capital pipeline)": "smart_cpdb.html",
 }
 
@@ -477,6 +481,21 @@ FIGURES = [
      "against its largest values, so <code>viz smart</code> draws it on a <b>log axis</b> instead, "
      "keeping the median and quartiles legible.",
      True, ["smart", "cms_medicare_providers.csv", "--smarter"]),
+    ("smart dashboard (dictionary-declared pipeline funnel)",
+     "A synthetic <b>product-onboarding funnel</b> &mdash; visits &rarr; signups &rarr; activated "
+     "&rarr; subscribed, one row per channel per week. The four stage columns are declared as a "
+     "pipeline in <code>onboarding_funnel_dict.schema.json</code> "
+     "(<code>x-qsv.relationships</code>, <code>kind: \"pipeline\"</code>); which columns are "
+     "stages, and in which direction, is semantics rather than a statistic, so the panel is only "
+     "ever drawn from an explicit declaration &mdash; never guessed from column names.<br><br>"
+     "Here the stages genuinely <b>nest</b>: every row is a strict subset of the one before it, "
+     "and so are the totals. That is what earns a <b>funnel</b>, whose band widths <i>are</i> a "
+     "containment claim &mdash; plotly computes the stage-to-stage conversion from the bar values "
+     "themselves (<code>100% &rarr; 41% &rarr; 54% &rarr; 46%</code>), so the percentages can "
+     "never drift from the bands. Compare the next figure, where the same kind of declaration "
+     "over non-nesting totals is drawn as a bridge instead.",
+     True, ["smart", "onboarding_funnel.csv",
+            "--dictionary", "onboarding_funnel_dict.schema.json"]),
     ("smart dashboard (--smarter, zero-inflated capital pipeline)",
      "<b>NYC Capital Projects Database</b> (12,587 projects, sourced from Checkbook NYC), the "
      "dataset this dashboard's inequality work was designed against. Its money columns are both "
@@ -486,17 +505,22 @@ FIGURES = [
      "committed or spent <i>yet</i>, a funding-pipeline stage rather than a have-not population. "
      "Every Lorenz panel also carries the unit caveat, because a Gini across units as unlike a "
      "subway extension and a playground resurfacing is close to tautological and must not be read "
-     "as inequity.<br><br>It also carries the <b>pipeline funnel</b>, declared by "
+     "as inequity.<br><br>It also carries the <b>pipeline bridge</b>, declared by "
      "<code>nyc_capital_projects_dict.schema.json</code> as an <code>x-qsv.relationships</code> "
      "entry of <code>kind: \"pipeline\"</code>. Which columns are stages, and in which direction, "
-     "is semantics rather than a statistic, so a funnel is only ever drawn from an explicit "
-     "declaration &mdash; never guessed from column names.<br><br>Read the subtitle: these stages "
-     "do <i>not</i> nest. Spent totals 2.9&times; committed, because the three are independent "
+     "is semantics rather than a statistic, so the panel is only ever drawn from an explicit "
+     "declaration &mdash; never guessed from column names.<br><br>The declaration says these "
+     "columns are one pipeline; it cannot say that they <i>nest</i>, and that is measured. Here "
+     "they do not: spent totals 2.9&times; committed, because the three are independent "
      "aggregates on different bases &mdash; <code>totalplannedcommit</code> is allocated in the "
-     "Capital Commitment Plan, while the other two are sums within the City's budget. Rather than "
-     "refuse the panel, the funnel draws and <b>names the violation</b>: "
-     "<code>Spent exceeds Committed in 46% of rows</code>. Declared order is never re-sorted by "
-     "size, so the overrun stays visible instead of being quietly tidied away.",
+     "Capital Commitment Plan, while the other two are sums within the City's budget. A funnel's "
+     "band widths <i>are</i> a containment claim, so drawing one would render a band wider than "
+     "the one above it &mdash; an hourglass asserting the opposite of the numbers, which no "
+     "caption can retract. So <code>viz smart</code> keeps the declaration and changes the "
+     "<b>form</b>: it bridges the signed gap between consecutive totals, naming each step as the "
+     "arithmetic difference it is (<code>Committed &minus; Planned</code>), never as a flow. "
+     "Declared order is still never re-sorted by size, and the subtitle says why the form "
+     "changed: <code>stages do not nest &mdash; bridged, not funnelled</code>.",
      True, ["smart", "nyc_capital_projects.csv", "--smarter",
             "--dictionary", "nyc_capital_projects_dict.schema.json"]),
     ("bar", "Revenue by region (aggregated sum).",
@@ -1130,14 +1154,104 @@ def cleanup_sidecars():
     # writes a `*.stats.bivariate.csv` sidecar (a separate moarstats output, so it doesn't
     # match the `.stats.csv` substring check below). Don't leave any of these in the tree
     # (the committed datasets ship without them).
+    #
+    # Called at BOTH ends of main(). Sweeping afterwards keeps the tree clean; sweeping first is
+    # what keeps the gallery reproducible, because `viz smart` REUSES an existing stats cache
+    # rather than recomputing it. A cache left behind by unrelated manual work -- notably a
+    # `--smarter` run, whose moarstats enrichment adds outlier annotations to panel titles -- is
+    # otherwise silently inherited by a figure whose own command never asked for it. That
+    # produced a committed dashboard whose caption did not match the command printed beside it.
+    removed = 0
     for f in os.listdir(VIZ_DIR):
         if (".stats.csv" in f or ".stats.jsonl" in f or ".stats.bivariate.csv" in f
                 or f.endswith(".idx")):
             os.unlink(os.path.join(VIZ_DIR, f))
+            removed += 1
+    return removed
+
+
+# Counting words as README.md writes them. Only the range the gallery can plausibly reach.
+_NUM_WORDS = {
+    1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
+    8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen",
+    14: "fourteen", 15: "fifteen", 16: "sixteen", 17: "seventeen", 18: "eighteen",
+    19: "nineteen", 20: "twenty", 21: "twenty-one", 22: "twenty-two",
+    23: "twenty-three", 24: "twenty-four",
+}
+
+
+def check_readme_claims():
+    """Fail closed on the README drift this script can actually prove.
+
+    Adding a figure silently invalidates prose counts and leaves its input undocumented; that
+    has happened repeatedly, most recently a dashboard count that was corrected to the number of
+    `smart_*.html` files on disk when the sentence is about EMBEDDED iframes -- two of those files
+    are screenshot link-outs, so the "fix" was wrong in the other direction.
+
+    Only claims with a mechanical source of truth are checked. Command text is deliberately NOT
+    compared: README.md is a tutorial and its invocations differ from the gallery's argv on
+    purpose. Runs AFTER the gallery is written, so a new figure still regenerates -- the exit
+    code is what tells you the docs need a follow-up.
+    """
+    readme_path = os.path.join(VIZ_DIR, "README.md")
+    if not os.path.exists(readme_path):
+        return
+    with open(readme_path, encoding="utf-8") as fh:
+        readme = fh.read()
+
+    problems = []
+
+    def expect_phrase(count, phrase_fmt, what):
+        word = _NUM_WORDS.get(count, str(count))
+        if phrase_fmt.format(n=word) not in readme:
+            problems.append(
+                f"{what}: expected README.md to say "
+                f"{phrase_fmt.format(n=word)!r} (there are {count})"
+            )
+
+    expect_phrase(
+        len(SMART_IFRAME),
+        "The {n} **smart dashboards** are embedded",
+        "embedded-dashboard count",
+    )
+    expect_phrase(
+        len(SCREENSHOTS),
+        "closes with {n} clickable **screenshot link-outs**",
+        "screenshot link-out count",
+    )
+
+    # every input actually fed to qsv should be findable in the README's tables. That includes
+    # the screenshot link-outs built with `args`: those run qsv exactly like a figure does. The
+    # `cmd`-only entries are display strings for datasets too large to commit, so their inputs
+    # are deliberately not required here.
+    fed_to_qsv = [fig[3] for fig in FIGURES]
+    fed_to_qsv += [shot["args"] for shot in SCREENSHOTS if "args" in shot]
+    inputs = {
+        arg
+        for argv in fed_to_qsv
+        for arg in argv
+        if arg.endswith((".csv", ".tsv", ".schema.json", ".geojson"))
+    }
+    for asset in sorted(inputs):
+        if f"`{asset}`" not in readme:
+            problems.append(f"undocumented gallery input: `{asset}` is not mentioned in README.md")
+
+    if problems:
+        raise SystemExit(
+            "gallery written, but README.md is now out of step with gen_gallery.py:\n  "
+            + "\n  ".join(problems)
+        )
 
 
 def main():
     qsv = find_qsv()
+    # before anything runs qsv: a stale cache from unrelated work would otherwise be reused and
+    # silently change a figure (see `cleanup_sidecars`).
+    stale = cleanup_sidecars()
+    if stale:
+        sys.stderr.write(
+            f"swept {stale} pre-existing qsv sidecar(s) so figures regenerate from source\n"
+        )
     # QSV_VIZ_REGEN_LLM opts into regenerating the `--dictionary infer` dashboards live (needs a
     # local LLM up); otherwise their committed HTML is reused so a normal run stays LLM-free.
     # Only an explicit truthy value enables it, so QSV_VIZ_REGEN_LLM=0/false/off (or empty) stays
@@ -1388,6 +1502,8 @@ def main():
         fh.write(body)
     cleanup_sidecars()
     sys.stderr.write(f"wrote {GALLERY} ({len(body)} bytes, {len(figs)} figures)\n")
+
+    check_readme_claims()
 
 
 if __name__ == "__main__":

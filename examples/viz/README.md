@@ -17,7 +17,7 @@ qsv and running [`gen_gallery.py`](gen_gallery.py) from the repo root —
 `python3 examples/viz/gen_gallery.py`. Individual `qsv viz` outputs are instead
 fully self-contained (plotly embedded), so they work offline.
 
-The fourteen **smart dashboards** are embedded as `<iframe>`s of their genuine
+The sixteen **smart dashboards** are embedded as `<iframe>`s of their genuine
 `qsv viz smart` HTML output (`smart_*.html`) rather than reconstructed inline, so
 the full-width overview panels (map, choropleth, correlation heatmap, time-series,
 treemap/sunburst hierarchy), themes and map zoom buttons render exactly as the CLI produces
@@ -56,6 +56,9 @@ as `text/plain`, so a browser won't render it):
 | `sales_sample.csv` | 500 e-commerce orders: categoricals, a boolean, a rating, several correlated numerics, an ID and a high-cardinality text column | `smart`, `bar`, `line`, `scatter` (incl. bubble & 3D), `histogram`, `box`, `pie`, `heatmap`, `contour` |
 | `stock_prices.csv` | 90 trading days of `date,open,high,low,close,volume` | `smart` (time-series), `candlestick`, `ohlc`, `line` |
 | `web_flows.csv` | `source,target,sessions` funnel edges | `sankey` |
+| `signup_funnel.csv` | 15 rows of `stage,channel,users` — 5 signup stages x 3 channels, the stages already in process order | `funnel` (stages as ROWS, summed per stage; no dictionary needed) |
+| `nyc_capital_projects.csv` | 12,587 NYC capital projects (CPDB): managing agency, project type, and three budget aggregates that do NOT nest | `smart` (pipeline **bridge**, Lorenz/Gini) |
+| `onboarding_funnel.csv` | 60 channel-weeks of `visits,signups,activated,subscribed` — four stage columns that nest in every row | `smart` (pipeline **funnel**) |
 | `product_ratings.csv` | `brand` + 6 numeric score axes (multiple reviews per brand) | `radar` |
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto geo panel — global extent), `map` (points & density), `geo` (projection) |
 | `country_stats.csv` | 20 countries with `iso3,country,gdp_usd_tn` | `choropleth` (fill countries by GDP, matched by ISO-3 code) |
@@ -87,6 +90,8 @@ render the dictionary as an in-page **Data Dictionary** tab. The committed ones 
 | `allegheny_dogs_dict.schema.json` | 8 | `allegheny_dog_licenses.csv` — tags `OwnerZip` as `geo.zip_code`, the signal that turns a numeric zip into a choropleth key |
 | `boston311.schema.json` | 31 | `boston311-2025.tsv` (not committed — 153&nbsp;MB) for the Boston 311 link-out dashboard |
 | `pitt311data.schema.json` | 26 | `pittsburgh_311.tsv` (not committed) for the Pittsburgh 311 link-out dashboard |
+| `nyc_capital_projects_dict.schema.json` | 7 | `nyc_capital_projects.csv` — declares the three budget columns as an `x-qsv.relationships` pipeline. Their totals grow, so the panel is drawn as a **bridge** rather than a funnel |
+| `onboarding_funnel_dict.schema.json` | 6 | `onboarding_funnel.csv` — declares the four stage columns as a pipeline. Their totals nest, so the same declaration earns a **funnel** |
 
 ## The smart dashboard
 

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Data Dictionary for onboarding_funnel.csv",
+  "description": "A synthetic product-onboarding funnel: one row per acquisition channel per week, with the four stage counts a visitor passes through. Each stage is a strict subset of the one before it, in every row.",
+  "type": "object",
+  "properties": {
+    "channel": {
+      "type": "string",
+      "title": "Channel",
+      "description": "Acquisition channel the visitor arrived from.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "role": "dimension",
+        "concept": "category.type"
+      }
+    },
+    "week": {
+      "type": "string",
+      "title": "Week",
+      "description": "Reporting week, zero-padded within the year.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "role": "dimension",
+        "concept": "time.period"
+      }
+    },
+    "visits": {
+      "type": "integer",
+      "title": "Visits",
+      "description": "Sessions that reached the product site.",
+      "x-qsv": {
+        "qsv_type": "Integer",
+        "role": "measure",
+        "concept": "measure.count"
+      }
+    },
+    "signups": {
+      "type": "integer",
+      "title": "Signups",
+      "description": "Visits that created an account.",
+      "x-qsv": {
+        "qsv_type": "Integer",
+        "role": "measure",
+        "concept": "measure.count"
+      }
+    },
+    "activated": {
+      "type": "integer",
+      "title": "Activated",
+      "description": "Signups that completed onboarding.",
+      "x-qsv": {
+        "qsv_type": "Integer",
+        "role": "measure",
+        "concept": "measure.count"
+      }
+    },
+    "subscribed": {
+      "type": "integer",
+      "title": "Subscribed",
+      "description": "Activated users that started a paid plan.",
+      "x-qsv": {
+        "qsv_type": "Integer",
+        "role": "measure",
+        "concept": "measure.count"
+      }
+    }
+  },
+  "x-qsv": {
+    "grain": "one row = one channel-week",
+    "relationships": [
+      {
+        "kind": "pipeline",
+        "members": [
+          "visits",
+          "signups",
+          "activated",
+          "subscribed"
+        ]
+      }
+    ]
+  }
+}

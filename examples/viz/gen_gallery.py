@@ -57,6 +57,7 @@ SMART_IFRAME = {
     "smart dashboard (animated geo, world events)":   "smart_world_events.html",
     "smart dashboard (Gapminder bubble, regions growth)": "smart_regions_growth.html",
     "smart dashboard (--smarter, Gini/Lorenz inequality + log-skew boxes)": "smart_cms_medicare.html",
+    "smart dashboard (dictionary-declared pipeline funnel)": "smart_onboarding_funnel.html",
     "smart dashboard (--smarter, zero-inflated capital pipeline)": "smart_cpdb.html",
 }
 
@@ -477,6 +478,21 @@ FIGURES = [
      "against its largest values, so <code>viz smart</code> draws it on a <b>log axis</b> instead, "
      "keeping the median and quartiles legible.",
      True, ["smart", "cms_medicare_providers.csv", "--smarter"]),
+    ("smart dashboard (dictionary-declared pipeline funnel)",
+     "A synthetic <b>product-onboarding funnel</b> &mdash; visits &rarr; signups &rarr; activated "
+     "&rarr; subscribed, one row per channel per week. The four stage columns are declared as a "
+     "pipeline in <code>onboarding_funnel_dict.schema.json</code> "
+     "(<code>x-qsv.relationships</code>, <code>kind: \"pipeline\"</code>); which columns are "
+     "stages, and in which direction, is semantics rather than a statistic, so the panel is only "
+     "ever drawn from an explicit declaration &mdash; never guessed from column names.<br><br>"
+     "Here the stages genuinely <b>nest</b>: every row is a strict subset of the one before it, "
+     "and so are the totals. That is what earns a <b>funnel</b>, whose band widths <i>are</i> a "
+     "containment claim &mdash; plotly computes the stage-to-stage conversion from the bar values "
+     "themselves (<code>100% &rarr; 41% &rarr; 54% &rarr; 46%</code>), so the percentages can "
+     "never drift from the bands. Compare the next figure, where the same kind of declaration "
+     "over non-nesting totals is drawn as a bridge instead.",
+     True, ["smart", "onboarding_funnel.csv",
+            "--dictionary", "onboarding_funnel_dict.schema.json"]),
     ("smart dashboard (--smarter, zero-inflated capital pipeline)",
      "<b>NYC Capital Projects Database</b> (12,587 projects, sourced from Checkbook NYC), the "
      "dataset this dashboard's inequality work was designed against. Its money columns are both "

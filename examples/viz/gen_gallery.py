@@ -486,12 +486,19 @@ FIGURES = [
      "committed or spent <i>yet</i>, a funding-pipeline stage rather than a have-not population. "
      "Every Lorenz panel also carries the unit caveat, because a Gini across units as unlike a "
      "subway extension and a playground resurfacing is close to tautological and must not be read "
-     "as inequity.<br><br>Note what is <b>absent</b>: no pipeline funnel. The column names look "
-     "like planned &rarr; committed &rarr; spent, but the values are not nested (spent totals "
-     "2.9&times; committed &mdash; they are independent sums on different bases), so the "
-     "containment gate declines and says so on stderr rather than drawing a funnel the data does "
-     "not support.",
-     True, ["smart", "nyc_capital_projects.csv", "--smarter"]),
+     "as inequity.<br><br>It also carries the <b>pipeline funnel</b>, declared by "
+     "<code>nyc_capital_projects_dict.schema.json</code> as an <code>x-qsv.relationships</code> "
+     "entry of <code>kind: \"pipeline\"</code>. Which columns are stages, and in which direction, "
+     "is semantics rather than a statistic, so a funnel is only ever drawn from an explicit "
+     "declaration &mdash; never guessed from column names.<br><br>Read the subtitle: these stages "
+     "do <i>not</i> nest. Spent totals 2.9&times; committed, because the three are independent "
+     "aggregates on different bases &mdash; <code>totalplannedcommit</code> is allocated in the "
+     "Capital Commitment Plan, while the other two are sums within the City's budget. Rather than "
+     "refuse the panel, the funnel draws and <b>names the violation</b>: "
+     "<code>Spent exceeds Committed in 46% of rows</code>. Declared order is never re-sorted by "
+     "size, so the overrun stays visible instead of being quietly tidied away.",
+     True, ["smart", "nyc_capital_projects.csv", "--smarter",
+            "--dictionary", "nyc_capital_projects_dict.schema.json"]),
     ("bar", "Revenue by region (aggregated sum).",
      False, ["bar", "sales_sample.csv", "--x", "region", "--y", "revenue", "--agg", "sum"]),
     ("bar (animated slider)",

@@ -13261,8 +13261,18 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
         "elevations",
         "altitude",
         "altitudes",
+        "depth",
+        "depths",
         "density",
         "densities",
+        // Logarithmic and other non-linear scales, where even the SUM's unit is meaningless:
+        // adding two Richter magnitudes does not describe anything. `magnitude` joins the
+        // physical-measurement group above because it fails the same way -- a dictionary that
+        // tags it `role: measure` (as an LLM readily does, magnitude being a number with no
+        // obvious rate/percent tell in its name) would otherwise yield "Total Earthquake
+        // Magnitude", which is exactly the KPI this guard exists to prevent.
+        "magnitude",
+        "magnitudes",
         // Durations and ages/tenures. A per-record SPAN is not additive the way an amount is:
         // "Total Account Age (Days)" sums a per-customer state into a number that means nothing,
         // and the same applies to elapsed/latency/runtime style measures. This also keeps the

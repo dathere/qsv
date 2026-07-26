@@ -754,9 +754,9 @@ use plotly::{
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
     common::{
-        Anchor, ColorBar, ColorScale, ColorScalePalette, Domain, ErrorData, ErrorType, Fill, Font,
-        HoverInfo, Line, Marker, Mode, Orientation, Pattern, PatternShape, TextPosition, TickMode,
-        Title,
+        Anchor, ColorBar, ColorScale, ColorScalePalette, Domain, ErrorData, ErrorType,
+        ExponentFormat, Fill, Font, HoverInfo, Line, Marker, Mode, Orientation, Pattern,
+        PatternShape, TextPosition, TickMode, Title,
     },
     funnel::Connector as FunnelConnector,
     indicator::{Delta, Gauge, GaugeAxis, Mode as IndicatorMode, Number},
@@ -15759,6 +15759,22 @@ fn read_stage_totals(
     Ok((totals, counts, matched))
 }
 
+/// Render a completeness share for the funnel subtitle, never rounding UP to 100%.
+///
+/// The clause this feeds exists specifically to warn that the funnel's totals will not reconcile
+/// with `stats.sum`. Plain `{:.0}` defeats that: a dataset dropping 21 of 12,587 rows is 99.83%
+/// complete, which renders as "100% of rows" — asserting the opposite of the disclosure's whole
+/// purpose, while a nine-figure sum quietly goes missing. So anything short of genuinely complete
+/// is FLOORED to one decimal; only an exact 1.0 prints a bare "100".
+fn complete_pct_str(complete_frac: f64) -> String {
+    if complete_frac >= 1.0 {
+        return "100".to_string();
+    }
+    // floor, not round: 99.96% must not become "100.0%"
+    let tenths = (complete_frac * 1000.0).floor() / 10.0;
+    format!("{tenths:.1}")
+}
+
 /// The caveat line beneath a funnel panel's title (issue #4222).
 ///
 /// Clause 1 is UNCONDITIONAL, following `lorenz_caveat`'s philosophy. The funnel's totals are
@@ -15778,9 +15794,9 @@ fn funnel_subtitle(
     complete_frac: f64,
 ) -> Option<String> {
     let mut parts: Vec<String> = vec![format!(
-        "n = {} complete cases ({:.0}% of rows)",
+        "n = {} complete cases ({}% of rows)",
         HumanCount(n_complete as u64),
-        complete_frac * 100.0
+        complete_pct_str(complete_frac)
     )];
 
     // worst per-row violation, if any is worth naming
@@ -25137,7 +25153,6 @@ fn smart_inline_panel_plot(
     );
     let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
     let is_toprel = matches!(panel.kind, PanelKind::TopRelationships { .. });
-    let is_funnel = matches!(panel.kind, PanelKind::Funnel { .. });
     let (trace, bar_max, log_y) =
         panel_trace(panel, color, freq, hist, outliers, None, theme, log_scale);
 
@@ -25155,9 +25170,13 @@ fn smart_inline_panel_plot(
         (110, 90)
     } else if is_toprel {
         (TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24, 30)
-    } else if is_funnel {
-        // right room as well: plotly's in-band text can overflow the widest band
-        (TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24, 60)
+    } else if let PanelKind::Funnel { stages, .. } = &panel.kind {
+        // size from the funnel's OWN ticks, not the lollipop's budget: the lollipop reserves room
+        // for 56-char truncated column-PAIR labels, while a funnel's ticks are short stage names
+        // ("Planned", "Committed"). Borrowing its constant reserved 416px for labels needing ~90,
+        // leaving the headline panel squeezed into the left half of a full-width cell.
+        // Right room as well: plotly's in-band text can overflow the widest band.
+        (funnel_left_margin(stages), 60)
     } else if log_y {
         (60 + LOG_AXIS_TITLE_MARGIN_PX, 30)
     } else {
@@ -26977,7 +26996,12 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
         .show_grid(true)
         .grid_width(1)
         .zero_line(false)
-        .show_line(false);
+        .show_line(false)
+        // match the SI prefixes qsv's own value labels use (`%{y:.3s}` on bars, `.3~s` on
+        // indicators). Plotly's untouched default is `exponentformat: "B"`, which renders 10^9 as
+        // "B" while the bar sitting against that gridline is labelled "G" — one chart, two
+        // suffixes for the same magnitude.
+        .exponent_format(ExponentFormat::SI);
     // when themed, let the template style the gridlines/ticks/fonts
     if theme.is_none() {
         a = a
@@ -27076,27 +27100,49 @@ fn lollipop_value_axis(floor: f64, ceil: f64, theme: Option<BuiltinTheme>) -> Ax
     a
 }
 
+/// Left margin (px) reserved for a funnel panel's category ticks in the INLINE render path.
+///
+/// Mirrors the per-label sizing `smart_grid_parts` already does for its shared margin, rather
+/// than borrowing `TOPREL_LABEL_MAX_CHARS` — that budget is sized for the lollipop's 56-char
+/// truncated column-PAIR labels, and a funnel's ticks are short stage names.
+fn funnel_left_margin(stages: &[String]) -> usize {
+    stages
+        .iter()
+        .map(|l| l.chars().count().min(TOPREL_LABEL_MAX_CHARS))
+        .max()
+        .map_or(60, |longest| longest * CORR_LABEL_PX_PER_CHAR + 24)
+}
+
 /// The VALUE (x) axis for a horizontal pipeline funnel (issue #4222).
 ///
-/// Anchored at **zero**, unlike `lollipop_value_axis`'s zoomed range. A funnel's whole claim is
-/// that band widths are proportional to stage amounts; a floor above zero would exaggerate the
-/// taper, which is the one thing this panel must not do. The headroom above `max` leaves room for
-/// plotly's in-band `textinfo` on the widest band.
+/// **Symmetric about zero, because plotly centers funnel bands on the value zero** — each band
+/// spans `-amount/2 ..= +amount/2`. A `0..=ceil` range therefore puts the band centre on the
+/// LEFT EDGE of the plot area and draws half of every band outside it. That was survivable only
+/// because the panel happened to reserve a 416px left margin wide enough to absorb the overflow;
+/// sizing that margin to the actual tick labels (which is what it is for) clipped the widest band.
 ///
-/// Never logged, for the same reason — a log value axis destroys the proportional reading.
+/// So the range is half-width either side of zero: the widest band still occupies `1/1.35` of the
+/// plot area, exactly as before, but centred rather than half off-screen — and the remaining
+/// headroom leaves room for plotly's `textinfo` beside the widest band.
+///
+/// Tick labels are hidden: with a symmetric range they would read `-100G … 100G` for amounts that
+/// are never negative, and a funnel's value axis carries no information the panel doesn't already
+/// state — the band text gives stage-to-stage conversion and the hover gives exact amounts. The
+/// standalone `viz funnel` likewise draws no value axis.
+///
+/// Never logged — a log value axis destroys the proportional reading the form depends on.
 fn funnel_value_axis(max: f64, theme: Option<BuiltinTheme>) -> Axis {
-    let ceil = if max > 0.0 { max * 1.35 } else { 1.0 };
+    let half = if max > 0.0 { max * 1.35 / 2.0 } else { 1.0 };
     let mut a = Axis::new()
-        .show_grid(true)
-        .grid_width(1)
+        .show_grid(false)
         .zero_line(false)
         .show_line(false)
-        .range(vec![0.0, ceil]);
+        .show_tick_labels(false)
+        // SI prefixes, matching the rest of the dashboard's value formatting (see `styled_y_axis`)
+        .exponent_format(ExponentFormat::SI)
+        .range(vec![-half, half]);
     if theme.is_none() {
-        a = a
-            .grid_color(GRID_COLOR)
-            .tick_color(AXIS_LINE)
-            .tick_font(Font::new().family(FONT_FAMILY).size(10));
+        a = a.tick_color(AXIS_LINE);
     }
     a
 }
@@ -31058,6 +31104,66 @@ mod tests {
 
         // an empty pipeline is not a contained one
         assert!((containment_fraction(&[], &[]) - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn complete_pct_str_never_rounds_up_to_100() {
+        // the real CPDB case: 12,566 of 12,587 rows. `{:.0}` rendered this as "100", asserting
+        // completeness while a nine-figure sum was silently dropped.
+        assert_eq!(complete_pct_str(12_566.0 / 12_587.0), "99.8");
+
+        // rounding would reach 100 well before completeness does; flooring must not
+        assert_eq!(complete_pct_str(0.9996), "99.9");
+        assert_eq!(complete_pct_str(0.999_999), "99.9");
+
+        // only genuine completeness prints a bare 100
+        assert_eq!(complete_pct_str(1.0), "100");
+
+        // and the ordinary cases still read naturally
+        assert_eq!(complete_pct_str(0.5), "50.0");
+        assert_eq!(complete_pct_str(0.0), "0.0");
+    }
+
+    #[test]
+    fn funnel_left_margin_sizes_to_the_stage_labels() {
+        let stages: Vec<String> = ["Planned", "Committed", "Spent"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        // "Committed" is 9 chars -> 9*7 + 24. The bug was borrowing the lollipop's 56-char
+        // budget (56*7 + 24 = 416px) for labels that need a fraction of it.
+        assert_eq!(funnel_left_margin(&stages), 9 * CORR_LABEL_PX_PER_CHAR + 24);
+        assert!(funnel_left_margin(&stages) < TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24);
+
+        // an absurdly long stage name is still capped at the lollipop budget
+        let long = vec!["x".repeat(200)];
+        assert_eq!(
+            funnel_left_margin(&long),
+            TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24
+        );
+
+        // no stages: fall back to the default left margin rather than zero
+        assert_eq!(funnel_left_margin(&[]), 60);
+    }
+
+    #[test]
+    fn funnel_value_axis_is_symmetric_about_zero() {
+        // plotly centres funnel bands on the value zero, so a 0..=ceil range would draw half of
+        // every band outside the plot area (only survivable while an oversized left margin
+        // absorbed the overflow).
+        let axis = serde_json::to_value(funnel_value_axis(100.0, None)).unwrap();
+        let range = axis["range"].as_array().unwrap();
+        let lo = range[0].as_f64().unwrap();
+        let hi = range[1].as_f64().unwrap();
+        assert!(lo < 0.0 && hi > 0.0, "range must straddle zero: {lo}..{hi}");
+        assert!(
+            (lo + hi).abs() < 1e-9,
+            "range must be symmetric: {lo}..{hi}"
+        );
+        // the widest band still occupies 1/1.35 of the plot area
+        assert!((hi - 100.0 * 1.35 / 2.0).abs() < 1e-9);
+        // and its tick labels stay hidden: a symmetric range would read as negative amounts
+        assert_eq!(axis["showticklabels"], serde_json::json!(false));
     }
 
     #[test]

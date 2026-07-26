@@ -12056,8 +12056,9 @@ fn viz_smart_builds_pipeline_funnel_from_a_dictionary() {
 #[test]
 fn viz_smart_funnel_honors_declared_order_over_magnitude() {
     // The declaration is authoritative: stages are NOT re-sorted by size. Reversing the members
-    // must reverse the bands even though that makes the funnel widen downward -- if the tool
-    // silently sorted, a mis-declared pipeline would look plausible and never be noticed.
+    // must reverse the panel's order -- if the tool silently sorted, a mis-declared pipeline
+    // would look plausible and never be noticed. Reversing necessarily makes the totals GROW, so
+    // the form becomes a bridge; the order guarantee is what is under test here, not the form.
     let wrk = Workdir::new("viz_smart_funnel_honors_declared_order_over_magnitude");
     let html = smart_with_dict(
         &wrk,
@@ -12065,8 +12066,12 @@ fn viz_smart_funnel_honors_declared_order_over_magnitude() {
         &pipeline_dict(r#"["spentamt","commitamt","totalplannedcommit"]"#),
     );
     assert!(
-        html.contains(r#""y":["spentamt","commitamt","totalplannedcommit"]"#),
-        "declared order must survive verbatim; html: {html}"
+        html.contains(
+            "\"x\":[\"spentamt\",\"commitamt \u{2212} \
+             spentamt\",\"commitamt\",\"totalplannedcommit \u{2212} \
+             commitamt\",\"totalplannedcommit\"]"
+        ),
+        "declared order must survive verbatim, bridged step-by-step; html: {html}"
     );
 }
 
@@ -12132,11 +12137,11 @@ fn viz_smart_funnel_denominator_covers_only_the_declared_stages() {
 
 #[test]
 fn viz_smart_funnel_discloses_containment_violations_instead_of_refusing() {
-    // INVERTED by the #4222 rework. This table's `spentamt` overruns `commitamt` on ~30% of rows,
-    // which used to trip a 0.90 containment GATE and suppress the panel entirely. Containment is
-    // now a MEASUREMENT, not a gate: the funnel draws and the subtitle names the violation share.
-    // This is what lets the motivating NYC CPDB dataset -- three aggregates on different
-    // accounting bases -- render at all.
+    // INVERTED by the #4222 rework, then refined again. This table's `spentamt` overruns
+    // `commitamt` on ~30% of rows and in TOTAL, so the panel still draws -- containment is a
+    // measurement, not a gate -- but it draws as a BRIDGE, because a funnel's band widths are a
+    // containment claim these numbers contradict. The subtitle still names the violation share.
+    // This is the motivating NYC CPDB shape: three aggregates on different accounting bases.
     let wrk = Workdir::new("viz_smart_funnel_discloses_containment_violations_instead_of_refusing");
     let mut rows = String::from("totalplannedcommit,commitamt,spentamt\n");
     for i in 0..300 {
@@ -12152,13 +12157,22 @@ fn viz_smart_funnel_discloses_containment_violations_instead_of_refusing() {
         &pipeline_dict(r#"["totalplannedcommit","commitamt","spentamt"]"#),
     );
     assert!(
-        html.contains(r#""type":"funnel""#),
-        "a declared pipeline draws even when its stages do not nest; html: {html}"
+        html.contains(r#""type":"waterfall""#),
+        "a declared pipeline whose stages do not nest draws as a bridge, not a funnel; html: \
+         {html}"
+    );
+    assert!(
+        !html.contains(r#""type":"funnel""#),
+        "a funnel would assert the containment these totals contradict; html: {html}"
     );
     assert!(
         html.contains("exceeds"),
         "the subtitle must NAME the containment violation rather than hiding the panel; html: \
          {html}"
+    );
+    assert!(
+        html.contains("stages do not nest"),
+        "the subtitle must say why the form is a bridge; html: {html}"
     );
 }
 
@@ -12273,11 +12287,14 @@ fn viz_smart_builds_a_row_encoded_funnel_summing_a_value_column() {
     let wrk = Workdir::new("viz_smart_builds_a_row_encoded_funnel_summing_a_value_column");
     let mut rows = String::from("stage,revenue,region\n");
     for i in 0..300 {
+        // per-stage spend shrinks down the pipeline, so the stage TOTALS nest and the panel
+        // stays a funnel -- this test is about the row encoding, not the form (see
+        // `viz_smart_row_pipeline_that_grows_is_bridged` for the other branch)
         let (stage, rev) = match i % 10 {
-            0..=4 => ("Impression", 1),
-            5..=7 => ("Click", 4),
-            8 => ("Lead", 20),
-            _ => ("Conversion", 90),
+            0..=4 => ("Impression", 90),
+            5..=7 => ("Click", 20),
+            8 => ("Lead", 4),
+            _ => ("Conversion", 1),
         };
         rows.push_str(&format!("{stage},{rev},r{}\n", i % 3));
     }
@@ -12370,6 +12387,64 @@ fn viz_smart_row_funnel_counts_rows_when_no_value_column_is_declared() {
 }
 
 #[test]
+fn viz_smart_row_pipeline_that_grows_is_bridged() {
+    // The row encoding is not exempt from the form rule. A marketing pipeline summing REVENUE
+    // grows down the stages even though the row COUNTS shrink -- revenue at conversion is not a
+    // subset of revenue at impression -- so a funnel would widen downward and assert a
+    // containment that does not hold. The declaration is still honoured: same stages, same
+    // order, bridged instead.
+    let wrk = Workdir::new("viz_smart_row_pipeline_that_grows_is_bridged");
+    let mut rows = String::from("stage,revenue,region\n");
+    for i in 0..300 {
+        let (stage, rev) = match i % 10 {
+            0..=4 => ("Impression", 1),
+            5..=7 => ("Click", 4),
+            8 => ("Lead", 20),
+            _ => ("Conversion", 90),
+        };
+        rows.push_str(&format!("{stage},{rev},r{}\n", i % 3));
+    }
+    wrk.create_from_string("p.csv", &rows);
+    wrk.create_from_string(
+        "d.schema.json",
+        r#"{
+          "properties": {
+            "stage": {"type":"string","x-qsv":{"qsv_type":"String","role":"dimension"}},
+            "revenue": {"type":"integer","x-qsv":{"qsv_type":"Integer","role":"measure"}},
+            "region": {"type":"string","x-qsv":{"qsv_type":"String","role":"dimension"}}
+          },
+          "x-qsv": { "relationships": [
+            {"kind":"pipeline","members":["stage","revenue"],"stage_column":"stage",
+             "stages":["Impression","Click","Lead","Conversion"],"value_column":"revenue"}
+          ] }
+        }"#,
+    );
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("d.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        html.contains(r#""type":"waterfall""#),
+        "a row-encoded pipeline whose value grows must be bridged; html: {html}"
+    );
+    assert!(
+        html.contains("Pipeline bridge:"),
+        "the title must say bridge, not funnel; html: {html}"
+    );
+    assert!(
+        html.contains(
+            r#""measure":["absolute","relative","total","relative","total","relative","total"]"#
+        ),
+        "four stages bridge into seven bars: a seed, then a step and a running total each; html: \
+         {html}"
+    );
+}
+
+#[test]
 fn viz_smart_row_funnel_tolerates_stage_case_drift_and_absent_stages() {
     // The stage values are transcribed by an LLM from the frequency distribution, so case drift
     // is a realistic failure that would otherwise silently zero a band. A declared stage with no
@@ -12378,7 +12453,9 @@ fn viz_smart_row_funnel_tolerates_stage_case_drift_and_absent_stages() {
     let wrk = Workdir::new("viz_smart_row_funnel_tolerates_stage_case_drift_and_absent_stages");
     let mut rows = String::from("stage,region\n");
     for i in 0..300 {
-        let stage = if i % 3 == 0 { "impression" } else { "click" };
+        // impressions outnumber clicks so the counts nest and the panel stays a funnel: this
+        // test is about case-insensitive stage matching, not the form
+        let stage = if i % 3 == 0 { "click" } else { "impression" };
         rows.push_str(&format!("{stage},r{}\n", i % 3));
     }
     wrk.create_from_string("p.csv", &rows);

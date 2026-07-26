@@ -486,17 +486,22 @@ FIGURES = [
      "committed or spent <i>yet</i>, a funding-pipeline stage rather than a have-not population. "
      "Every Lorenz panel also carries the unit caveat, because a Gini across units as unlike a "
      "subway extension and a playground resurfacing is close to tautological and must not be read "
-     "as inequity.<br><br>It also carries the <b>pipeline funnel</b>, declared by "
+     "as inequity.<br><br>It also carries the <b>pipeline bridge</b>, declared by "
      "<code>nyc_capital_projects_dict.schema.json</code> as an <code>x-qsv.relationships</code> "
      "entry of <code>kind: \"pipeline\"</code>. Which columns are stages, and in which direction, "
-     "is semantics rather than a statistic, so a funnel is only ever drawn from an explicit "
-     "declaration &mdash; never guessed from column names.<br><br>Read the subtitle: these stages "
-     "do <i>not</i> nest. Spent totals 2.9&times; committed, because the three are independent "
+     "is semantics rather than a statistic, so the panel is only ever drawn from an explicit "
+     "declaration &mdash; never guessed from column names.<br><br>The declaration says these "
+     "columns are one pipeline; it cannot say that they <i>nest</i>, and that is measured. Here "
+     "they do not: spent totals 2.9&times; committed, because the three are independent "
      "aggregates on different bases &mdash; <code>totalplannedcommit</code> is allocated in the "
-     "Capital Commitment Plan, while the other two are sums within the City's budget. Rather than "
-     "refuse the panel, the funnel draws and <b>names the violation</b>: "
-     "<code>Spent exceeds Committed in 46% of rows</code>. Declared order is never re-sorted by "
-     "size, so the overrun stays visible instead of being quietly tidied away.",
+     "Capital Commitment Plan, while the other two are sums within the City's budget. A funnel's "
+     "band widths <i>are</i> a containment claim, so drawing one would render a band wider than "
+     "the one above it &mdash; an hourglass asserting the opposite of the numbers, which no "
+     "caption can retract. So <code>viz smart</code> keeps the declaration and changes the "
+     "<b>form</b>: it bridges the signed gap between consecutive totals, naming each step as the "
+     "arithmetic difference it is (<code>Committed &minus; Planned</code>), never as a flow. "
+     "Declared order is still never re-sorted by size, and the subtitle says why the form "
+     "changed: <code>stages do not nest &mdash; bridged, not funnelled</code>.",
      True, ["smart", "nyc_capital_projects.csv", "--smarter",
             "--dictionary", "nyc_capital_projects_dict.schema.json"]),
     ("bar", "Revenue by region (aggregated sum).",

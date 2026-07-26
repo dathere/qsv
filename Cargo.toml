@@ -472,6 +472,8 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 #   - new trace types Splom, Parcats (PR #425) — used by qsv `viz splom`/`viz parcats`
 #   - webdriver-downloader 0.17 (PR #427) — used by qsv `viz_static` for headless Chromium/Firefox export
 #   - Funnel trace + layout funnelmode (PR #432) — used by qsv `viz smart` pipeline funnels
+#   - Waterfall trace (PR #432) — used by qsv `viz smart` when a declared pipeline's stages do
+#     NOT nest, so the panel bridges the signed gaps instead of asserting containment
 # When #421/#423/#425/#428/#432 merge upstream, repoint this to a plotly.rs release/main rev.
 plotly = { git = "https://github.com/dathere/plotly", branch = "deps/webdriver-downloader-0.17+funnel" }
 

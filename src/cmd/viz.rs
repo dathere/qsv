@@ -749,7 +749,7 @@ use plotly::{
     Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
     Funnel, HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Pie, Plot, Sankey, Scatter,
     Scatter3D, ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Traces, Treemap,
-    Violin,
+    Violin, Waterfall,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
@@ -774,6 +774,7 @@ use plotly::{
     traces::{icicle::BranchValues as IcicleBranchValues, scatter_map::Cluster},
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
     violin::{MeanLine, SpanMode, ViolinBox, ViolinPoints},
+    waterfall::{Marker as WaterfallMarker, Measure, MeasureStyle},
 };
 use rayon::prelude::*;
 use serde::Deserialize;
@@ -1429,6 +1430,11 @@ const OTHER_TEXT: &str = "Other";
 /// Muted grey for the aggregate `(NULL)` / `Other (N)` frequency bars so they read as summary
 /// buckets, visually distinct from the palette-colored real categories.
 const MUTED_COLOR: &str = "#999999";
+/// Bridge delta colours (issue #4222). A bridge's step bars are the only place in the dashboard
+/// where a bar's SIGN is the message, so they get their own semantics rather than the panel hue:
+/// a shortfall against the previous stage and an overrun beyond it must not look alike.
+const BRIDGE_DOWN_COLOR: &str = "#c0504d";
+const BRIDGE_UP_COLOR: &str = "#4f8a5b";
 
 /// Faint grey wash used as the fill of a box/violin distribution panel when it renders on a
 /// log value axis (see `log_distribution_body_cue`).
@@ -12536,6 +12542,7 @@ enum PanelKind {
         reached:    Vec<usize>,
         n_complete: usize,
         shape:      FunnelShape,
+        form:       PipelineForm,
     },
     /// 2D density contour of the most strongly correlated numeric pair — used INSTEAD of
     /// `ScatterPair` for large datasets (>= `SMART_CONTOUR_MIN_POINTS`), where a scatter overplots.
@@ -12966,6 +12973,45 @@ struct DictRow {
     /// 100% completeness, 0 error-rate), never a fabricated prior-period baseline. Rendered as a
     /// "vs target" delta.
     target:       Option<f64>,
+}
+
+/// Which form a declared pipeline is drawn as (issue #4222).
+///
+/// The dictionary declares the SEMANTICS — that these columns are one ordered pipeline — and that
+/// declaration is always honoured. It does not, and cannot, declare that the stages actually nest:
+/// that is a measurable property of the data, and it decides the FORM.
+///
+/// A funnel is a containment chart; its band widths ARE the claim that each stage is a subset of
+/// the one above. Drawing one for stages that grow renders a band wider than its predecessor — an
+/// hourglass that asserts the opposite of what the numbers say, which no subtitle can retract,
+/// because the geometry is read before the caption is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PipelineForm {
+    /// Stage totals never increase: the containment claim holds, so the funnel is honest.
+    Funnel,
+    /// At least one stage total exceeds its predecessor. The panel bridges the signed differences
+    /// between consecutive totals instead — same declared order, same numbers, but the form
+    /// asserts arithmetic rather than containment.
+    Bridge,
+}
+
+impl PipelineForm {
+    /// Funnel only while the declared totals are monotonically non-increasing.
+    ///
+    /// Deliberately NOT the per-row containment share: that measures how many individual rows
+    /// break the nesting and is reported in the subtitle, whereas this decides what the picture
+    /// claims. A pipeline can have violating rows that still net out to a shrinking total (a
+    /// funnel remains truthful), or perfectly nesting rows whose totals grow (it does not).
+    fn for_totals(totals: &[f64]) -> Self {
+        if totals.windows(2).all(|w| {
+            let [a, b] = w else { return true };
+            b <= a
+        }) {
+            Self::Funnel
+        } else {
+            Self::Bridge
+        }
+    }
 }
 
 /// How a built funnel's numbers should be read — the render arm's hover text depends on it.
@@ -15792,6 +15838,7 @@ fn funnel_subtitle(
     violations: &[f64],
     n_complete: usize,
     complete_frac: f64,
+    form: &PipelineForm,
 ) -> Option<String> {
     let mut parts: Vec<String> = vec![format!(
         "n = {} complete cases ({}% of rows)",
@@ -15812,6 +15859,12 @@ fn funnel_subtitle(
             "{here} exceeds {prev} in {:.0}% of rows",
             v * 100.0
         ));
+    }
+
+    // On a bridge, name the form choice: a reader who expected the declared "pipeline" to be a
+    // funnel is owed the reason it is not one, in the same line that reports the violation.
+    if matches!(form, PipelineForm::Bridge) {
+        parts.push("stages do not nest \u{2014} bridged, not funnelled".to_string());
     }
 
     // a stage whose TOTAL outruns its predecessor: the bar order is kept (vocabulary order is
@@ -21846,8 +21899,8 @@ impl<'a> SmartCtx<'a> {
     ) -> Option<Panel> {
         if totals.iter().any(|t| *t < 0.0) {
             viz_note(
-                "viz smart: pipeline funnel skipped \u{2014} a stage total is negative, which a \
-                 funnel cannot represent",
+                "viz smart: pipeline panel skipped \u{2014} a stage total is negative, which \
+                 neither a funnel nor a bridge can represent",
             );
             return None;
         }
@@ -21861,13 +21914,27 @@ impl<'a> SmartCtx<'a> {
             );
             return None;
         }
-        let subtitle = funnel_subtitle(&stages, &totals, violations, n_complete, complete_frac);
+        // The declaration says these columns are one pipeline; the NUMBERS decide whether a
+        // containment form can honestly represent it. See `PipelineForm`.
+        let form = PipelineForm::for_totals(&totals);
+        let subtitle = funnel_subtitle(
+            &stages,
+            &totals,
+            violations,
+            n_complete,
+            complete_frac,
+            &form,
+        );
+        let noun = match form {
+            PipelineForm::Funnel => "funnel",
+            PipelineForm::Bridge => "bridge",
+        };
         let title = match &shape {
             FunnelShape::Columns => {
-                format!("Pipeline funnel: {}", labels.join(" \u{2192} "))
+                format!("Pipeline {noun}: {}", labels.join(" \u{2192} "))
             },
             _ => format!(
-                "Pipeline funnel: {} ({})",
+                "Pipeline {noun}: {} ({})",
                 labels.first().cloned().unwrap_or_default(),
                 stages.join(" \u{2192} ")
             ),
@@ -21882,6 +21949,7 @@ impl<'a> SmartCtx<'a> {
                     reached,
                     n_complete,
                     shape,
+                    form,
                 },
             )
             .with_subtitle(subtitle),
@@ -23172,6 +23240,136 @@ fn panel_trace(
             reached,
             n_complete,
             shape,
+            form: PipelineForm::Bridge,
+        } => {
+            // The declared stages do not nest, so the panel bridges the signed differences
+            // between consecutive totals instead of asserting containment (see `PipelineForm`).
+            //
+            // Drawn VERTICALLY, unlike the funnel. A waterfall is an ordinary bar-like trace, so
+            // category index 0 lands at the axis BOTTOM — the opposite of a funnel — and the
+            // arrays cannot simply be reversed to compensate, because a waterfall accumulates in
+            // array order and index 0 must be the `Absolute` that seeds the running total.
+            // Vertical sidesteps that entirely, and is the conventional orientation for a bridge.
+            //
+            // Each step is `stage[k] - stage[k-1]`, labelled as exactly that: an ARITHMETIC
+            // difference between two independent totals, never "converted" or "lost", because
+            // the whole reason this is not a funnel is that no flow between them is claimed.
+            let mut cats: Vec<String> = Vec::with_capacity(stages.len() * 2 - 1);
+            let mut vals: Vec<f64> = Vec::with_capacity(stages.len() * 2 - 1);
+            let mut measures: Vec<Measure> = Vec::with_capacity(stages.len() * 2 - 1);
+            let mut hover: Vec<String> = Vec::with_capacity(stages.len() * 2 - 1);
+
+            let pct_of = |k: usize| -> String {
+                if *n_complete == 0 {
+                    return String::new();
+                }
+                #[allow(clippy::cast_precision_loss)]
+                let p = reached[k] as f64 / *n_complete as f64 * 100.0;
+                match shape {
+                    FunnelShape::Columns => format!(
+                        "<br>Rows reached: {} of {} ({p:.0}% of complete cases)",
+                        HumanCount(reached[k] as u64),
+                        HumanCount(*n_complete as u64),
+                    ),
+                    _ => format!(
+                        "<br>Rows in stage: {} of {} ({p:.0}% of rows in declared stages)",
+                        HumanCount(reached[k] as u64),
+                        HumanCount(*n_complete as u64),
+                    ),
+                }
+            };
+
+            cats.push(stages[0].clone());
+            vals.push(totals[0]);
+            measures.push(Measure::Absolute);
+            hover.push(format!(
+                "{}<br>Stage: {}<br>Amount: {}{}",
+                escape_hover(&labels[0]),
+                escape_hover(&stages[0]),
+                fmt_measure(totals[0]),
+                pct_of(0),
+            ));
+
+            for k in 1..stages.len() {
+                let delta = totals[k] - totals[k - 1];
+                cats.push(format!("{} \u{2212} {}", stages[k], stages[k - 1]));
+                vals.push(delta);
+                measures.push(Measure::Relative);
+                hover.push(format!(
+                    "{} \u{2212} {}<br>Difference: {}<br>{} is {} than {}",
+                    escape_hover(&stages[k]),
+                    escape_hover(&stages[k - 1]),
+                    fmt_measure(delta),
+                    escape_hover(&stages[k]),
+                    if delta < 0.0 { "lower" } else { "higher" },
+                    escape_hover(&stages[k - 1]),
+                ));
+
+                // `Total` re-derives its own height from the running total; the real amount goes
+                // in the slot anyway so the arrays stay parallel and the JSON self-documenting.
+                cats.push(stages[k].clone());
+                vals.push(totals[k]);
+                measures.push(Measure::Total);
+                hover.push(format!(
+                    "{}<br>Stage: {}<br>Amount: {}{}",
+                    escape_hover(&labels[k]),
+                    escape_hover(&stages[k]),
+                    fmt_measure(totals[k]),
+                    pct_of(k),
+                ));
+            }
+
+            bar_max = vals
+                .iter()
+                .zip(&measures)
+                .filter(|(_, m)| !matches!(m, Measure::Relative))
+                .map(|(v, _)| *v)
+                .fold(None, |acc: Option<f64>, v| {
+                    Some(acc.map_or(v, |a| f64::max(a, v)))
+                });
+
+            // Per-bar templates, because no single one is right for every bar: a step bar's
+            // number is its DELTA, a stage bar's is the running TOTAL. plotly stays the
+            // formatter (so the labels cannot drift from the values it draws), and `.3s` matches
+            // the SI precision the KPI row and the axes already use — its own `textinfo` renders
+            // seven significant figures.
+            let templates: Vec<String> = measures
+                .iter()
+                .map(|m| {
+                    if matches!(m, Measure::Relative) {
+                        "%{delta:.3s}".to_string()
+                    } else {
+                        "%{final:.3s}".to_string()
+                    }
+                })
+                .collect();
+            let mut w = Waterfall::new(cats, vals)
+                .name(panel.name.clone())
+                .measure(measures)
+                .text_template_array(templates)
+                .text_position(TextPosition::Outside)
+                .increasing(
+                    MeasureStyle::new().marker(WaterfallMarker::new().color(BRIDGE_UP_COLOR)),
+                )
+                .decreasing(
+                    MeasureStyle::new().marker(WaterfallMarker::new().color(BRIDGE_DOWN_COLOR)),
+                )
+                .totals(MeasureStyle::new().marker(WaterfallMarker::new().color(color)))
+                .hover_text_array(hover)
+                .hover_template("%{hovertext}<extra></extra>");
+            if let Some((x, y)) = &axes {
+                w = w.x_axis(x.clone()).y_axis(y.clone());
+            }
+            w
+        },
+        PanelKind::Funnel {
+            stages,
+            labels,
+            totals,
+            reached,
+            n_complete,
+            shape,
+            form: _,
         } => {
             // A horizontal funnel: amount on the value axis, stage on the category axis.
             // A funnel trace draws index 0 at the TOP and works downward — the opposite of a
@@ -23510,7 +23708,11 @@ fn smart_grid_parts(
                 .max(),
             // the funnel is the other horizontal panel: its category ticks are the short
             // canonical stage names, which still need left room reserved
-            PanelKind::Funnel { stages, .. } => stages
+            PanelKind::Funnel {
+                stages,
+                form: PipelineForm::Funnel,
+                ..
+            } => stages
                 .iter()
                 .map(|l| l.chars().count().min(TOPREL_LABEL_MAX_CHARS))
                 .max(),
@@ -23864,7 +24066,13 @@ fn smart_grid_parts(
         let geom = geoms[n].clone();
         // the Top Relationships lollipop is the one horizontal panel: value (NMI) on a zoomed x,
         // pair on the category y — the opposite axis roles from every other (vertical) panel.
-        let (x_axis, y_axis) = if let PanelKind::Funnel { stages, totals, .. } = &panel.kind {
+        let (x_axis, y_axis) = if let PanelKind::Funnel {
+            stages,
+            totals,
+            form: PipelineForm::Funnel,
+            ..
+        } = &panel.kind
+        {
             // the funnel is horizontal like the lollipop, but its value axis is anchored at
             // zero and its categories run TOP-DOWN, matching the upstream-first arrays the
             // trace feeds (see the `panel_trace` arm).
@@ -23875,6 +24083,18 @@ fn smart_grid_parts(
                     .domain(&geom.x_domain)
                     .anchor(yref.clone()),
                 lollipop_category_axis(theme, &ticks)
+                    .domain(&geom.y_domain)
+                    .anchor(xref.clone()),
+            )
+        } else if let PanelKind::Funnel { totals, .. } = &panel.kind {
+            // a bridge is VERTICAL (see the `panel_trace` arm): categories on x, amounts on y,
+            // with the ordinary bar headroom so the outside delta labels are not clipped.
+            let max = totals.iter().copied().fold(0.0_f64, f64::max);
+            (
+                styled_x_axis(false, false, false, theme, None)
+                    .domain(&geom.x_domain)
+                    .anchor(yref.clone()),
+                styled_y_axis(Some(max), false, theme)
                     .domain(&geom.y_domain)
                     .anchor(xref.clone()),
             )
@@ -25170,7 +25390,12 @@ fn smart_inline_panel_plot(
         (110, 90)
     } else if is_toprel {
         (TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24, 30)
-    } else if let PanelKind::Funnel { stages, .. } = &panel.kind {
+    } else if let PanelKind::Funnel {
+        stages,
+        form: PipelineForm::Funnel,
+        ..
+    } = &panel.kind
+    {
         // size from the funnel's OWN ticks, not the lollipop's budget: the lollipop reserves room
         // for 56-char truncated column-PAIR labels, while a funnel's ticks are short stage names
         // ("Planned", "Committed"). Borrowing its constant reserved 416px for labels needing ~90,
@@ -25184,7 +25409,13 @@ fn smart_inline_panel_plot(
     };
     // the lollipop is the one horizontal panel: value (NMI) on a zoomed x, pair on the category y
     // — the opposite axis roles from every other (vertical) inline panel.
-    let (x_axis, y_axis) = if let PanelKind::Funnel { stages, totals, .. } = &panel.kind {
+    let (x_axis, y_axis) = if let PanelKind::Funnel {
+        stages,
+        totals,
+        form: PipelineForm::Funnel,
+        ..
+    } = &panel.kind
+    {
         let ticks: Vec<String> = stages.clone();
         let max = totals.iter().copied().fold(0.0_f64, f64::max);
         (
@@ -31104,6 +31335,27 @@ mod tests {
 
         // an empty pipeline is not a contained one
         assert!((containment_fraction(&[], &[]) - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn pipeline_form_follows_the_totals_not_the_rows() {
+        use PipelineForm::{Bridge, Funnel};
+        // monotonically shrinking: the containment claim holds
+        assert_eq!(PipelineForm::for_totals(&[100.0, 60.0, 40.0]), Funnel);
+        // flat stages still nest (a plateau is not growth)
+        assert_eq!(PipelineForm::for_totals(&[100.0, 100.0, 40.0]), Funnel);
+        // one growing step is enough to make a funnel dishonest -- this is the CPDB shape,
+        // where Spent (81G) outruns Committed (28.4G)
+        assert_eq!(
+            PipelineForm::for_totals(&[191.75, 28.38, 80.98]),
+            Bridge,
+            "a stage that outruns its predecessor must not be drawn as containment"
+        );
+        // growth anywhere counts, including the last step only
+        assert_eq!(PipelineForm::for_totals(&[100.0, 60.0, 61.0]), Bridge);
+        // degenerate inputs are funnels by default -- nothing contradicts containment
+        assert_eq!(PipelineForm::for_totals(&[]), Funnel);
+        assert_eq!(PipelineForm::for_totals(&[42.0]), Funnel);
     }
 
     #[test]

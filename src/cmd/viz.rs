@@ -94,6 +94,21 @@ auto-picks panels, so no --x/--y is needed:
       with no headline measure. (Overall dataset completeness - the share of
       non-empty cells - is a quiet "Completeness:" line in the header metadata
       table, not a KPI tile.)
+    - pipeline funnel, when the dictionary DECLARES one (see --dictionary). Which
+      columns are process stages, and in which direction, is semantics rather than
+      a statistic - no column-name vocabulary settles it and no statistic does
+      either - so a funnel is drawn ONLY from an explicit declaration, never
+      guessed. Both encodings are supported: stages held in separate measure
+      columns, and stages held as values of one category column. Costs one extra
+      data pass over the declared stages only.
+      Stage order is the declared order and is never re-sorted by size. For the
+      column encoding, row-wise containment (does each stage nest inside the one
+      before it?) is MEASURED and disclosed in the subtitle, but never refuses the
+      panel: a pipeline whose stages overrun is a finding to name, not a reason to
+      show nothing. Totals sum over the rows complete across every declared stage,
+      so they do NOT match `stats.sum`; the subtitle always discloses that
+      denominator. See also the standalone `qsv viz funnel` chart type, which takes
+      its stage order from the file and needs no dictionary.
     - correlation heatmap, when 2+ continuous numeric columns exist (one extra
       data pass for Pearson correlations). If the strongest pair is at least
       moderately correlated, a drill-down is added beside it: a scatter (or a 2D
@@ -527,6 +542,27 @@ smart options:
                            A "target" number on a measure renders a "vs target" DELTA against that
                            goal (value minus target) - a GOAL you supply, never a fabricated
                            prior-period baseline, so "infer" never emits it; hand-author it.
+                           The dictionary is also the ONLY source of the pipeline funnel panel,
+                           declared in the dataset-level "x-qsv" object as a "relationships" entry
+                           with "kind": "pipeline". Two encodings, both hand-editable:
+                             stages as COLUMNS - "members" lists the stage columns in process
+                             order, WIDEST/UPSTREAM FIRST (note this is the opposite direction
+                             from a "kind":"ordered" group, which ascends), e.g.
+                               {"kind":"pipeline",
+                                "members":["planned_amt","committed_amt","spent_amt"]}
+                             stages as ROW VALUES - "stage_column" names the category column,
+                             "stages" lists its values in process order, and an optional
+                             "value_column" names the measure to sum per stage (omit it to count
+                             rows), e.g.
+                               {"kind":"pipeline","members":["stage","revenue"],
+                                "stage_column":"stage",
+                                "stages":["Impression","Click","Lead","Conversion"],
+                                "value_column":"revenue"}
+                           Declared order is authoritative and is never re-sorted by size, so a
+                           stage that outruns its predecessor stays visible instead of being
+                           quietly reordered away. A declaration naming a missing column, or a
+                           stage that is an average/rate rather than a summable amount, is skipped
+                           with a note rather than erroring.
                            Only affects `smart`.
     --dictionary-context <file>  Path to a file with extra context about the dataset
                            (a glossary, README, data dictionary, PDF, etc.) forwarded to
@@ -7388,12 +7424,15 @@ fn build_pie(args: &Args) -> CliResult<Box<dyn Trace>> {
 /// `viz funnel`: a stage-by-stage drop-off chart. Sums `--y` per `--x` stage, or counts stage
 /// occurrences when `--y` is omitted — the same input shape as `viz pie`, and read the same way.
 ///
-/// The two funnels in qsv are complements, not duplicates. `viz smart`'s panel detects a pipeline
-/// spread across SEPARATE COLUMNS (planned/committed/spent) and has to infer both the order and
-/// the nesting. This one takes a pipeline encoded as ROWS — one row per stage — which the smart
-/// path explicitly declines to guess at. Here the user has already answered both questions, so
-/// there is nothing to infer: **stage order is first-appearance order in the file**, and no
-/// containment check applies, because an explicit `viz funnel` is a request, not a detection.
+/// The two funnels in qsv are complements, not duplicates, and the difference is WHERE the stage
+/// order comes from. `viz smart`'s panel takes it from a dictionary declaration
+/// (`x-qsv.relationships`, `kind: "pipeline"`) and supports both encodings, so it can chart a
+/// row-shaped pipeline too — but only when one was declared. This command takes the order from
+/// the FILE: **stage order is first-appearance order**, so it needs no dictionary, no LLM and no
+/// declaration. An explicit `qsv viz funnel` is a request, not a detection.
+///
+/// Neither applies a containment check. Here there is nothing to check against — the user named
+/// the stage column — and in `viz smart` containment is measured for disclosure only.
 ///
 /// Stages are NOT sorted by value. A stage that outruns its predecessor is a finding the reader
 /// needs to see, and sorting would quietly hide it.

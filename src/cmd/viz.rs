@@ -12476,24 +12476,27 @@ enum PanelKind {
         gini:  f64,
         label: String,
     },
-    /// Ordered pipeline funnel over measures that form process STAGES — planned → committed →
-    /// spent, impressions → clicks → conversions (issue #4222). Built when column names resolve
-    /// to distinct ranks of one `FUNNEL_FAMILIES` vocabulary AND the columns are row-wise nested
-    /// in that order; see `build_funnel_panel` for why both gates are required.
+    /// Ordered pipeline funnel over process STAGES — planned → committed → spent, impressions →
+    /// clicks → conversions (issue #4222). Built ONLY from a dictionary declaration
+    /// (`x-qsv.relationships`, `kind: "pipeline"`); see `PipelineSpec` for why the direction
+    /// cannot be inferred from names or statistics, and `build_funnel_panel` for the encoding.
     ///
-    /// All five vectors are parallel and UPSTREAM-FIRST; the render arm reverses them, because
-    /// plotly places category index 0 at the axis bottom. `totals` is the summed amount per stage
-    /// and drives the bar length; `reached` is the count of complete-case rows with a strictly
-    /// positive value at that stage, carried because at high Gini "62% of dollars spent" and "45%
-    /// of projects spent anything" are both true and neither may be shown alone. `n_complete` is
-    /// the shared listwise-complete denominator, disclosed unconditionally in the subtitle since
-    /// these sums do NOT match `stats.sum`.
+    /// All four vectors are parallel and UPSTREAM-FIRST; the render arm reverses them, because
+    /// plotly places category index 0 at the axis bottom. `totals` drives the bar length.
+    ///
+    /// `reached` and `n_complete` mean DIFFERENT things per `shape`, which is exactly why `shape`
+    /// is carried rather than inferred: for `Columns` they are complete-case counts over the
+    /// listwise join (so the sums do NOT match `stats.sum`, disclosed unconditionally in the
+    /// subtitle), while for the row encodings `reached` IS the per-stage row count and sums to
+    /// `n_complete`. Reusing the column wording there would claim a 100% complete-case rate that
+    /// means nothing.
     Funnel {
         stages:     Vec<String>,
         labels:     Vec<String>,
         totals:     Vec<f64>,
         reached:    Vec<usize>,
         n_complete: usize,
+        shape:      FunnelShape,
     },
     /// 2D density contour of the most strongly correlated numeric pair — used INSTEAD of
     /// `ScatterPair` for large datasets (>= `SMART_CONTOUR_MIN_POINTS`), where a scatter overplots.
@@ -12926,12 +12929,53 @@ struct DictRow {
     target:       Option<f64>,
 }
 
+/// How a built funnel's numbers should be read — the render arm's hover text depends on it.
+///
+/// Kept as data on the panel rather than re-derived, because `reached`/`n_complete` are
+/// numerically indistinguishable between the shapes while meaning different things.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum FunnelShape {
+    /// Stages are separate measure COLUMNS; counts are complete-case rows with a positive value.
+    Columns,
+    /// Stages are row values; `totals` are sums of the named measure column.
+    RowsMeasure { value_label: String },
+    /// Stages are row values; `totals` ARE the row counts, so they equal `reached`.
+    RowsCount,
+}
+
+/// A pipeline declared by the dictionary (`x-qsv.relationships`, `kind: "pipeline"`), in either
+/// of the two encodings describegpt emits — see `describegpt::dictionary::parse_llm_relationships`.
+///
+/// This is the ONLY way `viz smart` learns that a set of measures forms a process. Issue #4222
+/// framed the question correctly: which columns are stages, and in what direction, is SEMANTICS,
+/// not a statistic. No column-name vocabulary can settle it (`township` reads as a shipping
+/// stage) and no statistic can either (`total_pop`/`male_pop`/`female_pop` nests perfectly yet is
+/// a partition, not a pipeline). So the dictionary declares it, an LLM proposes it, and a human
+/// can refine it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PipelineSpec {
+    /// Stages are separate measure COLUMNS, listed upstream-first. Note this is the OPPOSITE
+    /// direction from a `kind: "ordered"` group, which ascends.
+    Columns { members: Vec<String> },
+    /// Stages are VALUES of one category column. `value_column` names the measure to sum per
+    /// stage; when absent the funnel counts rows.
+    Rows {
+        stage_column: String,
+        stages:       Vec<String>,
+        value_column: Option<String>,
+    },
+}
+
 /// A parsed describegpt Data Dictionary: per-column semantic rows keyed by field name, plus the
 /// dataset `grain` ("one row = one X"). Drives `viz smart` semantic routing.
 #[derive(Clone, Debug, Default)]
 struct DictData {
     rows:                HashMap<String, DictRow>,
     grain:               Option<String>,
+    /// Pipelines declared via `x-qsv.relationships`. Parsed leniently here (shape only); the
+    /// funnel builder does the strict validation against real columns and types, mirroring how
+    /// `gauge_range` is shape-parsed here and range-checked at the KPI tile.
+    pipelines:           Vec<PipelineSpec>,
     /// Dataset-level prose description (jsonschema top-level `description`, produced by
     /// describegpt --description). Legacy json dictionaries don't carry one.
     dataset_description: Option<String>,
@@ -13455,6 +13499,69 @@ fn classify_with_semantics(
     }
 }
 
+/// Lenient shape-parse of `x-qsv.relationships` into the pipelines `viz smart` can chart.
+///
+/// Structural only, by design: no column-existence, type or eligibility check happens here. That
+/// mirrors `xq_range`'s split — shape at parse time, validity at the consumption site — and it
+/// matters because dictionaries are hand-editable. A malformed or stale declaration must degrade
+/// to "no funnel", never to an error; this is a dashboard, not a validator.
+///
+/// JSONSchema-only. The legacy flat `{"fields":[…]}` dictionary has nowhere to put a row-encoded
+/// declaration, so supporting it there would be half a feature.
+fn xq_pipelines(v: &serde_json::Value) -> Vec<PipelineSpec> {
+    let Some(rels) = v
+        .get("x-qsv")
+        .and_then(|x| x.get("relationships"))
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Vec::new();
+    };
+    let str_at = |o: &serde_json::Value, k: &str| {
+        o.get(k)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string)
+    };
+    let str_array = |o: &serde_json::Value, k: &str| -> Vec<String> {
+        o.get(k)
+            .and_then(serde_json::Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    let mut out = Vec::new();
+    for rel in rels {
+        if rel.get("kind").and_then(serde_json::Value::as_str) != Some("pipeline") {
+            continue;
+        }
+        // `stage_column` discriminates the two encodings, exactly as on the emitting side.
+        if let Some(stage_column) = str_at(rel, "stage_column") {
+            let stages = str_array(rel, "stages");
+            if stages.len() >= 2 {
+                out.push(PipelineSpec::Rows {
+                    stage_column,
+                    stages,
+                    value_column: str_at(rel, "value_column"),
+                });
+            }
+        } else {
+            let members = str_array(rel, "members");
+            if members.len() >= 2 {
+                out.push(PipelineSpec::Columns { members });
+            }
+        }
+    }
+    out
+}
+
 /// Parse a describegpt Data Dictionary into per-column semantic rows + the dataset grain.
 ///
 /// Accepts BOTH shapes so `--dictionary <path>` works with either:
@@ -13542,6 +13649,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
         return Some(DictData {
             rows,
             grain,
+            pipelines: xq_pipelines(&v),
             dataset_description,
             generated_by,
         });
@@ -15485,118 +15593,20 @@ fn lorenz_caveat(s: &crate::cmd::stats::StatsData) -> String {
     )
 }
 
-/// One stage of an ordered pipeline vocabulary: its canonical display name and the substrings
-/// that identify a column as belonging to it.
-struct FunnelStage {
-    name:  &'static str,
-    words: &'static [&'static str],
-}
-
-/// An ordered family of pipeline stages. Order within `stages` IS the pipeline order — it is the
-/// vocabulary, not the data, that establishes direction (see `build_funnel_panel`).
-struct FunnelFamily {
-    name:   &'static str,
-    stages: &'static [FunnelStage],
-}
-
-/// The pipeline vocabularies `viz smart` recognizes (issue #4222).
+/// Declared stage names that denote a COMPLEMENT or residual rather than a stage the process
+/// passed through.
 ///
-/// Matched as SUBSTRINGS, deliberately — `field_name_tokens` cannot help here. The motivating
-/// column is `totalplannedcommit`: one all-lowercase alphanumeric run, so tokenization yields the
-/// single token "totalplannedcommit" and a token-equality test against "planned" misses entirely.
+/// This is the one hazard that disclosing containment cannot replace, which is why the list
+/// outlived the name-matching vocabulary it was born in. `unspent_balance` nests PERFECTLY inside
+/// `planned` — it reports 0% violations — while rendering a funnel that means the opposite of the
+/// truth. Every other bad declaration shows up as a violation share the subtitle can name; this
+/// one does not.
 ///
-/// Substring matching is what burned `is_intensive_measure` (where "ratio" matched the whole
-/// `-ration` word family), so the conjunction below matters: a stage word alone never produces a
-/// panel, because a second column must independently match a DIFFERENT rank of the SAME family
-/// and the two must be row-wise nested in that order (`FUNNEL_CONTAINMENT_MIN`).
-///
-/// That is a real constraint but NOT a sufficient one, and the distinction is worth stating
-/// plainly because assuming otherwise already shipped one false positive: a table holding a
-/// genuine `spent` column supplies the second rank for free, so any greedy word paired with it
-/// yields a funnel. `X Coordinate (State Plane)` matched a bare "plan" and produced
-/// "Pipeline funnel: X Coordinate (State Plane) -> spent_total".
-///
-/// So the vocabulary carries the real burden: prefer words that are not substrings of common
-/// unrelated nouns, and name the ones that are in `FUNNEL_NON_STAGE_MARKERS`.
-const FUNNEL_FAMILIES: &[FunnelFamily] = &[
-    FunnelFamily {
-        name:   "budget",
-        stages: &[
-            FunnelStage {
-                name:  "Planned",
-                // NB: bare "plan" is deliberately absent -- it matches "State Plane",
-                // "plant", "floorplan" and "airplane". "planned" covers the glued
-                // `totalplannedcommit` case that motivated substring matching, and the
-                // remaining words cover the stage without that collision surface.
-                words: &[
-                    "planned",
-                    "budget",
-                    "appropriat",
-                    "authoriz",
-                    "estimated",
-                    "proposed",
-                ],
-            },
-            FunnelStage {
-                name:  "Committed",
-                words: &["commit", "encumber", "obligat", "contract", "awarded"],
-            },
-            FunnelStage {
-                name:  "Spent",
-                words: &[
-                    "spent", "spend", "expend", "disburs", "outlay", "paid", "actual",
-                ],
-            },
-        ],
-    },
-    FunnelFamily {
-        name:   "marketing",
-        stages: &[
-            FunnelStage {
-                name:  "Impressions",
-                words: &["impression", "view", "reach"],
-            },
-            FunnelStage {
-                name:  "Clicks",
-                words: &["click"],
-            },
-            FunnelStage {
-                name:  "Leads",
-                words: &["lead", "signup", "registrat"],
-            },
-            FunnelStage {
-                name:  "Conversions",
-                words: &["conversion", "convert", "purchase", "sale"],
-            },
-        ],
-    },
-    FunnelFamily {
-        name:   "fulfillment",
-        stages: &[
-            FunnelStage {
-                name:  "Ordered",
-                words: &["ordered", "orders", "placed"],
-            },
-            FunnelStage {
-                name:  "Shipped",
-                words: &["shipped", "shipment", "dispatch"],
-            },
-            FunnelStage {
-                name:  "Delivered",
-                words: &["delivered", "delivery", "received"],
-            },
-        ],
-    },
-];
-
-/// Names that CONTAIN a stage word but denote its complement or a derived difference, never the
-/// stage itself. These are the one false-positive class the vocabulary-plus-containment
-/// conjunction cannot catch on its own: `unspent_balance` contains "spent" AND is near-perfectly
-/// nested inside `planned`, so both gates pass and it would render as the Spent stage — inverting
-/// the panel's meaning. Small and closed by construction: every entry is either an `un-` negation
-/// or an explicit difference/residual word.
-const FUNNEL_NON_STAGE_MARKERS: &[&str] = &[
-    // complements and derived differences
+/// It WARNS, it does not veto. An explicit declaration outranks a name heuristic, and the
+/// collision half of the old list (`review`, `contractor`, `wholesale`, `lead_time`, …) was
+/// deleted with the vocabulary: those existed solely as antidotes to greedy substring matching,
+/// so warning on a declared `contractor_amt` would be a pure false alarm.
+const FUNNEL_COMPLEMENT_MARKERS: &[&str] = &[
     "unspent",
     "uncommitted",
     "unplanned",
@@ -15611,90 +15621,24 @@ const FUNNEL_NON_STAGE_MARKERS: &[&str] = &[
     "difference",
     "delta",
     "balance",
-    // COLLISIONS: ordinary words that merely CONTAIN a stage word. A review count is not an
-    // impressions stage and a contractor count is not a commitment, but "view" and "contract"
-    // match them, and a table that also holds a genuine spend or purchase column supplies the
-    // second rank the conjunction asks for -- so these need naming outright.
-    "review",
-    "overview",
-    "interview",
-    "contractor",
-    "wholesale",
-    "resale",
-    "lead time",
-    "lead_time",
-    "leadtime",
-    "replaced",
-    "displaced",
 ];
-
-/// Minimum share of complete-case rows that must satisfy `stage[k+1] <= stage[k]` for a pair of
-/// columns to be accepted as consecutive pipeline stages. Deliberately tolerant: capital projects
-/// really do have change orders, and a strict 1.0 would reject the flagship dataset outright.
-const FUNNEL_CONTAINMENT_MIN: f64 = 0.90;
 
 /// Containment-violation share above which the subtitle names it. Below this it is float noise or
 /// a handful of corrections, not a finding.
 const FUNNEL_VIOLATION_NOTE_MIN: f64 = 0.01;
 
-/// Minimum share of the table's rows that must survive the listwise-complete join for the funnel's
-/// totals to be worth showing at all.
+/// Minimum share of the table's rows that must survive the listwise-complete join for a
+/// COLUMN-shaped funnel's totals to be worth showing at all. Deliberately not applied to the row
+/// encoding — see `build_row_funnel_panel`.
 const FUNNEL_MIN_COMPLETE_FRAC: f64 = 0.50;
 
 /// Cap on funnel stages, so a wide finance table can't produce an unreadable twelve-band funnel.
 const FUNNEL_MAX_STAGES: usize = 6;
 
-/// A column's resolved pipeline position: which family it belongs to, its stage rank within that
-/// family, and how many DISTINCT ranks of that family its name matched (the ambiguity measure used
-/// to break rank collisions — an unambiguous `planned_amt` should beat a 2-match name).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct FunnelHit {
-    family:    usize,
-    rank:      usize,
-    ambiguity: usize,
-}
-
-/// Resolve a column name to a pipeline stage, or `None`.
-///
-/// `totalplannedcommit` contains BOTH "planned" (position 5) and "commit" (position 12); if
-/// "commit" won it would collide with a sibling `commit_total` and the funnel would be ambiguous
-/// or ordered backwards — on the exact dataset issue #4222 names. **Lowest character position
-/// wins**, because English puts the stage modifier before the noun ("planned commitment" is a
-/// plan; "spent_of_planned" is a spend). Ties on position go to the longer (more specific) word.
-fn stage_match(label: &str, field: &str) -> Option<FunnelHit> {
+/// Whether a declared stage name reads as a complement/residual (see `FUNNEL_COMPLEMENT_MARKERS`).
+fn is_complement_name(label: &str, field: &str) -> bool {
     let hay = format!("{label} {field}").to_ascii_lowercase();
-    if FUNNEL_NON_STAGE_MARKERS.iter().any(|m| hay.contains(m)) {
-        return None;
-    }
-
-    let mut best: Option<(usize, usize, usize, usize)> = None; // (pos, !len, family, rank)
-    for (fi, fam) in FUNNEL_FAMILIES.iter().enumerate() {
-        for (ri, stage) in fam.stages.iter().enumerate() {
-            for word in stage.words {
-                if let Some(pos) = hay.find(word) {
-                    // earliest position wins; on a tie the longer word is the more specific match
-                    let key = (pos, usize::MAX - word.len(), fi, ri);
-                    if best.is_none_or(|b| key < b) {
-                        best = Some(key);
-                    }
-                }
-            }
-        }
-    }
-
-    let (_, _, family, rank) = best?;
-    // ambiguity is measured WITHIN the winning family: how many of its distinct ranks this one
-    // name could be read as.
-    let ambiguity = FUNNEL_FAMILIES[family]
-        .stages
-        .iter()
-        .filter(|stage| stage.words.iter().any(|w| hay.contains(w)))
-        .count();
-    Some(FunnelHit {
-        family,
-        rank,
-        ambiguity,
-    })
+    FUNNEL_COMPLEMENT_MARKERS.iter().any(|m| hay.contains(m))
 }
 
 /// Share of row-aligned pairs satisfying `downstream <= upstream`. The tolerance is relative, so a
@@ -15716,56 +15660,54 @@ fn containment_fraction(upstream: &[f64], downstream: &[f64]) -> f64 {
     frac
 }
 
-/// Containment for one consecutive stage pair, where either side may be a RESCUED ALL-ZERO stage
-/// (carried as `None` because such a column never reaches the row-aligned read — see
-/// `build_funnel_panel` step 4).
+/// Sum a value column (or count rows) per declared stage value, in one pass.
 ///
-/// The tempting shortcut is to skip any pair involving a zero stage, but that silently disables
-/// the gate: with `planned` → all-zero `commit` → non-nested `spent`, BOTH pairs get skipped and
-/// the funnel is drawn even though the real `planned`/`spent` relationship violates containment.
-/// So a zero stage is treated as the vector of zeros it actually is:
+/// Returns `(totals, counts, matched)` parallel to `wanted`, plus the number of rows that landed
+/// in ANY declared stage — the row encoding's denominator.
 ///
-/// - zero DOWNSTREAM sits inside any non-negative upstream — trivially contained;
-/// - zero UPSTREAM contains only zeros, so a positive downstream value means the process recorded a
-///   later stage while its predecessor recorded nothing. This function reports the honest share
-///   (used by the subtitle); `stage_pair_passes` is what refuses to let ANY of it through.
-fn stage_containment(columns: &[Vec<f64>], up: Option<usize>, down: Option<usize>) -> f64 {
-    match (up, down) {
-        (Some(u), Some(d)) => containment_fraction(&columns[u], &columns[d]),
-        (None, Some(d)) => {
-            let n = columns[d].len();
-            if n == 0 {
-                return 0.0;
-            }
-            #[allow(clippy::cast_precision_loss)]
-            let frac = columns[d].iter().filter(|v| **v <= 0.0).count() as f64 / n as f64;
-            frac
-        },
-        (Some(_) | None, None) => 1.0,
-    }
-}
+/// Stage matching is trimmed and case-insensitive, with the first declared stage winning a
+/// collision. The LLM transcribes these values from the frequency distribution, so case drift is
+/// a realistic failure that would otherwise silently zero a band. A declared stage with no
+/// matching rows is legitimate and stays as a zero-height band; dropping it would imply the
+/// process ends at the last stage that happens to have data.
+fn read_stage_totals(
+    args: &Args,
+    stage_idx: usize,
+    value_idx: Option<usize>,
+    wanted: &[String],
+) -> CliResult<(Vec<f64>, Vec<usize>, usize)> {
+    let lookup: HashMap<String, usize> = wanted
+        .iter()
+        .enumerate()
+        .rev() // reverse so the FIRST declared stage wins a case-insensitive collision
+        .map(|(k, s)| (s.trim().to_ascii_lowercase(), k))
+        .collect();
 
-/// Whether a consecutive stage pair may stand.
-///
-/// Ordinary pairs are held to `FUNNEL_CONTAINMENT_MIN`, whose tolerance exists for a specific
-/// real-world failure mode: genuine change orders on a POPULATED upstream stage, where a handful
-/// of rows legitimately overrun their predecessor.
-///
-/// A rescued ALL-ZERO upstream is a different kind of claim and must not borrow that tolerance.
-/// The column recorded nothing anywhere, so "90% contained" would mean up to a tenth of the rows
-/// show a later stage running while its predecessor never happened — not an overrun but a
-/// contradiction of the nesting the funnel asserts. One positive downstream value is enough to
-/// reject the pipeline.
-///
-/// The gate is kept separate from `stage_containment` on purpose: the subtitle reports the honest
-/// violation share from that function, so a pair rejected here is still described accurately
-/// rather than as a flat 0%.
-fn stage_pair_passes(columns: &[Vec<f64>], up: Option<usize>, down: Option<usize>) -> bool {
-    let frac = stage_containment(columns, up, down);
-    if up.is_none() && down.is_some() {
-        return frac >= 1.0;
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    let mut totals = vec![0.0_f64; wanted.len()];
+    let mut counts = vec![0_usize; wanted.len()];
+    let mut matched = 0_usize;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let raw = cell_to_string(record.get(stage_idx));
+        let key = raw.trim().to_ascii_lowercase();
+        let Some(&k) = lookup.get(&key) else {
+            continue;
+        };
+        let inc = match value_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => v,
+                // a row whose measure doesn't parse contributes to neither total nor count,
+                // so the disclosed denominator stays honest
+                None => continue,
+            },
+            None => 1.0,
+        };
+        totals[k] += inc;
+        counts[k] += 1;
+        matched += 1;
     }
-    frac >= FUNNEL_CONTAINMENT_MIN
+    Ok((totals, counts, matched))
 }
 
 /// The caveat line beneath a funnel panel's title (issue #4222).
@@ -20968,6 +20910,15 @@ impl<'a> SmartCtx<'a> {
     /// panels (T2 geo, T3 bubble), and the correlation heatmap with its scatter/contour/3D
     /// drill-downs.
     fn add_relationship_panels(&mut self) -> CliResult<()> {
+        // Pipeline funnel (issue #4222, ask 3). Built FIRST and STASHED rather than inserted,
+        // because the correlation heatmap's own `insert(0, ..)` further down would otherwise land
+        // on top of it. It takes its own data pass: piggybacking the correlation read looks free
+        // but silently drops any declared stage the correlation pre-filter excluded (a near-unique
+        // money column), and force-including one would perturb the Pearson matrix and shrink the
+        // listwise join for every other correlation-derived panel.
+        let total_rows = self.row_count() as usize;
+        self.funnel_panel = self.build_funnel_panel(total_rows)?;
+
         // `--bivariate`: NMI-driven association heatmap + ranked top relationships, built from
         // moarstats' bivariate sidecar (already produced by the `--smarter` block above, since
         // `--bivariate` forces `--smarter`). Inserted here — BEFORE the correlation-heatmap block
@@ -21103,14 +21054,6 @@ impl<'a> SmartCtx<'a> {
                 read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices, false)?;
             // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
             if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
-                // Pipeline funnel (issue #4222, ask 3): built HERE, while the row-aligned
-                // columns the correlation matrix needs are still live, so detection costs no
-                // extra data pass. STASHED rather than inserted, because the correlation
-                // heatmap's own `insert(0, ..)` further down would otherwise land on top of it.
-                let total_rows = self.row_count() as usize;
-                let funnel = self.build_funnel_panel(&labels, &columns, &kept_indices, total_rows);
-                self.funnel_panel = funnel;
-
                 // Pearson is always computed: the nonlinearity note below is DEFINED as a
                 // Pearson-vs-Spearman divergence, so it needs an r even when the panel itself
                 // reports rho. On a mostly heavy-tailed table the displayed matrix (and every
@@ -21551,178 +21494,138 @@ impl<'a> SmartCtx<'a> {
         Ok(())
     }
 
-    /// Build the pipeline-funnel panel from the row-aligned columns the correlation pass already
-    /// read (issue #4222, ask 3), or `None` when this table is not a pipeline.
+    /// Build the pipeline-funnel panel from a dictionary declaration (issue #4222, ask 3), or
+    /// `None` when none was declared or none validates.
     ///
-    /// Two gates, both required. The VOCABULARY (`FUNNEL_FAMILIES`) supplies the ORDER — direction
-    /// is semantics, and no statistic can recover it — while row-wise CONTAINMENT verifies that
-    /// the order the names claim is the order the data actually has. Neither alone is safe:
-    /// names alone would read `township` as a shipping stage, and containment alone cannot tell
-    /// a pipeline from a partition (`total_pop` / `male_pop` / `female_pop` nests perfectly and
-    /// would render as leakage, the worst failure mode for the admin data qsv is usually
-    /// pointed at).
+    /// **A funnel is drawn only when the dictionary declares one.** Which columns are stages, and
+    /// in which direction, is SEMANTICS — no column-name vocabulary settles it (`township` reads
+    /// as a shipping stage) and no statistic does either (`total_pop`/`male_pop`/`female_pop`
+    /// nests perfectly yet is a partition). The predecessor of this code guessed with a hardcoded
+    /// word list and then used row-wise containment as a gate to catch its own bad guesses. Issue
+    /// #4222 rejected exactly that shape of solution for its sibling asks — "it is semantics, not
+    /// a statistic, so it deserves explicit treatment rather than a guessed proxy" — and this
+    /// follows suit.
     ///
-    /// `total_rows` is the table's row count, used only to disclose how much of it survived the
-    /// listwise-complete join.
-    fn build_funnel_panel(
+    /// Containment is therefore still MEASURED but never REFUSES: a declared pipeline whose
+    /// stages do not nest is drawn with the violation share named in the subtitle. That is more
+    /// informative than silence, and it is why the NYC CPDB dataset — three aggregates on
+    /// different accounting bases — now renders where it previously was declined.
+    ///
+    /// `total_rows` is the table's row count, used only to disclose how much of it the funnel
+    /// actually covers.
+    fn build_funnel_panel(&mut self, total_rows: usize) -> CliResult<Option<Panel>> {
+        let specs = match self.dict_data.as_ref() {
+            Some(d) if !d.pipelines.is_empty() => d.pipelines.clone(),
+            _ => return Ok(None),
+        };
+        // First declaration that validates wins; a dashboard with two funnels is out of scope.
+        for spec in &specs {
+            let built = match spec {
+                PipelineSpec::Columns { members } => {
+                    self.build_column_funnel(members, total_rows)?
+                },
+                PipelineSpec::Rows {
+                    stage_column,
+                    stages,
+                    value_column,
+                } => self.build_row_funnel(
+                    stage_column,
+                    stages,
+                    value_column.as_deref(),
+                    total_rows,
+                )?,
+            };
+            if built.is_some() {
+                return Ok(built);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Resolve a declared column name to its stats index.
+    fn stage_index(&self, name: &str) -> Option<usize> {
+        self.stats.iter().position(|s| s.field == name)
+    }
+
+    /// A stage column's display label — the dictionary `title` when it supplied one.
+    fn stage_label(&self, idx: usize) -> String {
+        self.col_sems
+            .get(idx)
+            .map(|s| s.label.clone())
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| self.stats[idx].field.clone())
+    }
+
+    /// Funnel over stages held in SEPARATE COLUMNS, listed upstream-first.
+    fn build_column_funnel(
         &self,
-        labels: &[String],
-        columns: &[Vec<f64>],
-        kept_indices: &[usize],
+        members: &[String],
         total_rows: usize,
-    ) -> Option<Panel> {
-        if columns.is_empty() || labels.len() != kept_indices.len() {
-            return None;
-        }
-
-        // 1. resolve eligible columns to stage hits. Filters mirror `is_inequality_candidate`: a
-        //    dictionary-declared Mean/Min/Max is intensive (a funnel of averages is nonsense), and
-        //    rate/ratio/index and id/code names are never pipeline amounts.
-        // ONE eligibility test, shared by the main pass and the all-zero rescue in step 4.
-        // Keeping it in a single place is load-bearing rather than tidy: while the rescue carried
-        // its own looser copy, an all-zero `spent_pct` or `orders_id` could enter as a stage that
-        // the main pass would have rejected outright.
-        let eligible_stage = |src: usize| -> bool {
-            let (Some(sem), Some(s)) = (self.col_sems.get(src), self.stats.get(src)) else {
-                return false;
+    ) -> CliResult<Option<Panel>> {
+        // Resolve and screen the declared members. The split between hard-skip and warn-only is
+        // deliberate: a declaration outranks a NAME heuristic (so an identifier-looking or
+        // complement-looking name only warns), but it cannot make an arithmetically meaningless
+        // chart sensible — summing a rate or a coordinate is nonsense whoever asked for it.
+        let mut indices: Vec<usize> = Vec::with_capacity(members.len());
+        for name in members {
+            let Some(idx) = self.stage_index(name) else {
+                viz_note(&format!(
+                    "viz smart: pipeline funnel — declared stage '{name}' is not a column in this \
+                     file"
+                ));
+                return Ok(None);
             };
-            !self.is_map_col(src)
-                && matches!(sem.route, Route::Defer | Route::Measure)
-                && matches!(sem.agg, Some(Agg::Sum) | None)
-                && !is_intensive_measure(&sem.label, &s.field)
-                && !is_identifier_name(&sem.label, &s.field)
-        };
-
-        let mut hits: Vec<(usize, FunnelHit)> = Vec::new();
-        for (pos, &src) in kept_indices.iter().enumerate() {
-            let (Some(sem), Some(s)) = (self.col_sems.get(src), self.stats.get(src)) else {
-                continue;
-            };
-            if !eligible_stage(src) {
-                continue;
+            let s = &self.stats[idx];
+            let sem = &self.col_sems[idx];
+            if !matches!(s.r#type.as_str(), "Integer" | "Float") || self.is_map_col(idx) {
+                viz_note(&format!(
+                    "viz smart: pipeline funnel skipped — declared stage '{name}' is not a \
+                     numeric amount"
+                ));
+                return Ok(None);
             }
-            if let Some(hit) = stage_match(&sem.label, &s.field) {
-                hits.push((pos, hit));
+            if matches!(sem.agg, Some(Agg::Mean)) || is_intensive_measure(&sem.label, &s.field) {
+                viz_note(&format!(
+                    "viz smart: pipeline funnel skipped — declared stage '{name}' is an average \
+                     or rate, which cannot be summed into a funnel"
+                ));
+                return Ok(None);
             }
+            if is_complement_name(&sem.label, &s.field) {
+                // Warn, don't refuse. A complement nests PERFECTLY, so it shows 0% violations —
+                // the subtitle cannot surface this one and nothing else will.
+                viz_note(&format!(
+                    "viz smart: pipeline funnel — '{name}' reads as a complement or remainder, \
+                     not a stage the process passed through; the funnel may be inverted"
+                ));
+            }
+            indices.push(idx);
         }
-        if hits.len() < 2 {
-            // most tables are not pipelines; staying silent here keeps stderr useful
-            return None;
+        if indices.len() < 2 {
+            return Ok(None);
         }
-
-        // 2. pick the family with the most distinct ranks represented (ties -> first family)
-        let family = {
-            let mut best: Option<(usize, usize)> = None;
-            for fi in 0..FUNNEL_FAMILIES.len() {
-                let ranks: std::collections::HashSet<usize> = hits
-                    .iter()
-                    .filter(|(_, h)| h.family == fi)
-                    .map(|(_, h)| h.rank)
-                    .collect();
-                if ranks.len() >= 2 && best.is_none_or(|(n, _)| ranks.len() > n) {
-                    best = Some((ranks.len(), fi));
-                }
-            }
-            best?.1
-        };
-        let fam = &FUNNEL_FAMILIES[family];
-
-        // 3. one column per rank. A collision goes to the less ambiguous name; a true tie is
-        //    unresolvable, and guessing which of two columns is "the" Spent stage would silently
-        //    invert the panel, so bail loudly instead.
-        let mut per_rank: std::collections::BTreeMap<usize, (usize, usize)> =
-            std::collections::BTreeMap::new();
-        for &(pos, hit) in &hits {
-            if hit.family != family {
-                continue;
-            }
-            match per_rank.get(&hit.rank).copied() {
-                Some((_, amb)) if amb < hit.ambiguity => {},
-                Some((other, amb)) if amb == hit.ambiguity => {
-                    viz_note(&format!(
-                        "viz smart: pipeline funnel skipped \u{2014} {} and {} both resolve to \
-                         the '{}' stage of the {} pipeline",
-                        labels[other], labels[pos], fam.stages[hit.rank].name, fam.name
-                    ));
-                    return None;
-                },
-                _ => {
-                    per_rank.insert(hit.rank, (pos, hit.ambiguity));
-                },
-            }
-        }
-        if per_rank.len() < 2 {
-            return None;
-        }
-
-        // 4. an ENTIRELY-zero stage never reaches `columns`: the correlation pre-filter requires
-        //    `cardinality > 1`. Dropping it would silently shorten the pipeline and imply the last
-        //    surviving stage ends the process, so rescue it from the base-cache sign counts (no
-        //    data pass) and carry it as a zero-height band.
-        let mut zero_stages: Vec<(usize, String)> = Vec::new();
-        for (src, s) in self.stats.iter().enumerate() {
-            if kept_indices.contains(&src)
-                || !matches!(s.r#type.as_str(), "Integer" | "Float")
-                || !eligible_stage(src)
-            {
-                continue;
-            }
-            let (Some(neg), Some(zero), Some(n_pos)) = (s.n_negative, s.n_zero, s.n_positive)
-            else {
-                continue;
-            };
-            if zero == 0 || neg + n_pos > 0 {
-                continue;
-            }
-            let Some(sem) = self.col_sems.get(src) else {
-                continue;
-            };
-            if let Some(hit) = stage_match(&sem.label, &s.field)
-                && hit.family == family
-                && !per_rank.contains_key(&hit.rank)
-            {
-                let label = if sem.label.is_empty() {
-                    s.field.clone()
-                } else {
-                    sem.label.clone()
-                };
-                zero_stages.push((hit.rank, label));
-            }
-        }
-
-        // 5. assemble the ordered stage list, upstream-first
-        let mut ordered: Vec<(usize, Option<usize>, String)> = per_rank
-            .iter()
-            .map(|(&rank, &(pos, _))| (rank, Some(pos), labels[pos].clone()))
-            .chain(zero_stages.into_iter().map(|(r, l)| (r, None, l)))
-            .collect();
-        ordered.sort_by_key(|&(rank, _, _)| rank);
-        if ordered.len() > FUNNEL_MAX_STAGES {
-            let dropped = ordered.len() - FUNNEL_MAX_STAGES;
-            ordered.truncate(FUNNEL_MAX_STAGES);
+        if indices.len() > FUNNEL_MAX_STAGES {
+            let dropped = indices.len() - FUNNEL_MAX_STAGES;
+            indices.truncate(FUNNEL_MAX_STAGES);
             viz_note(&format!(
                 "viz smart: pipeline funnel shows the first {FUNNEL_MAX_STAGES} stages ({dropped} \
                  more not shown)"
             ));
         }
 
-        // 6. verify the order the names claimed. A rescued all-zero stage is trivially contained.
-        for w in ordered.windows(2) {
-            let [up, down] = w else { continue };
-            if !stage_pair_passes(columns, up.1, down.1) {
-                let frac = stage_containment(columns, up.1, down.1);
-                viz_note(&format!(
-                    "viz smart: pipeline funnel skipped \u{2014} {} is not contained in {} \
-                     ({:.0}% of rows)",
-                    down.2,
-                    up.2,
-                    frac * 100.0
-                ));
-                return None;
-            }
+        // Dedicated pass over exactly the declared stages, so the complete-case denominator is
+        // the funnel's own rather than one diluted by unrelated numeric columns.
+        self.progress.set_message("Reading pipeline stages…");
+        let (mut rdr, headers, nh) = reader_and_headers(self.args)?;
+        let (labels, columns, kept) =
+            read_numeric_columns(&mut rdr, &headers, nh, &indices, false)?;
+        if kept.len() != indices.len() || columns.first().is_none_or(Vec::is_empty) {
+            viz_note(
+                "viz smart: pipeline funnel skipped — a declared stage held no usable numeric data",
+            );
+            return Ok(None);
         }
 
-        // 7. totals, reach counts and violation shares
         let n_complete = columns[0].len();
         #[allow(clippy::cast_precision_loss)]
         let complete_frac = if total_rows == 0 {
@@ -21732,35 +21635,150 @@ impl<'a> SmartCtx<'a> {
         };
         if complete_frac < FUNNEL_MIN_COMPLETE_FRAC {
             viz_note(&format!(
-                "viz smart: pipeline funnel skipped \u{2014} only {:.0}% of rows are complete \
-                 across every stage",
+                "viz smart: pipeline funnel skipped — only {:.0}% of rows are complete across \
+                 every stage",
                 complete_frac * 100.0
             ));
-            return None;
+            return Ok(None);
         }
 
-        let mut stages: Vec<String> = Vec::with_capacity(ordered.len());
-        let mut stage_labels: Vec<String> = Vec::with_capacity(ordered.len());
-        let mut totals: Vec<f64> = Vec::with_capacity(ordered.len());
-        let mut reached: Vec<usize> = Vec::with_capacity(ordered.len());
-        let mut violations: Vec<f64> = Vec::with_capacity(ordered.len());
-        for (k, (rank, pos, label)) in ordered.iter().enumerate() {
-            stages.push(fam.stages[*rank].name.to_string());
-            stage_labels.push(label.clone());
-            if let Some(p) = pos {
-                totals.push(columns[*p].iter().sum());
-                reached.push(columns[*p].iter().filter(|v| **v > 0.0).count());
-            } else {
-                totals.push(0.0);
-                reached.push(0);
+        let totals: Vec<f64> = columns.iter().map(|c| c.iter().sum()).collect();
+        let reached: Vec<usize> = columns
+            .iter()
+            .map(|c| c.iter().filter(|v| **v > 0.0).count())
+            .collect();
+        // Measured for DISCLOSURE only -- this no longer gates anything.
+        let violations: Vec<f64> = (0..columns.len())
+            .map(|k| {
+                if k == 0 {
+                    0.0
+                } else {
+                    1.0 - containment_fraction(&columns[k - 1], &columns[k])
+                }
+            })
+            .collect();
+
+        let stages: Vec<String> = indices.iter().map(|&i| self.stage_label(i)).collect();
+        Ok(self.finish_funnel(
+            stages,
+            labels,
+            totals,
+            reached,
+            &violations,
+            n_complete,
+            complete_frac,
+            FunnelShape::Columns,
+        ))
+    }
+
+    /// Funnel over stages held as VALUES of one category column.
+    fn build_row_funnel(
+        &self,
+        stage_column: &str,
+        stages: &[String],
+        value_column: Option<&str>,
+        total_rows: usize,
+    ) -> CliResult<Option<Panel>> {
+        let Some(stage_idx) = self.stage_index(stage_column) else {
+            viz_note(&format!(
+                "viz smart: pipeline funnel — declared stage column '{stage_column}' is not a \
+                 column in this file"
+            ));
+            return Ok(None);
+        };
+        let value_idx = match value_column {
+            Some(vc) => {
+                let Some(vi) = self.stage_index(vc) else {
+                    viz_note(&format!(
+                        "viz smart: pipeline funnel — declared value column '{vc}' is not a \
+                         column in this file"
+                    ));
+                    return Ok(None);
+                };
+                if !matches!(self.stats[vi].r#type.as_str(), "Integer" | "Float") {
+                    viz_note(&format!(
+                        "viz smart: pipeline funnel skipped — value column '{vc}' is not numeric"
+                    ));
+                    return Ok(None);
+                }
+                Some(vi)
+            },
+            None => None,
+        };
+        for s in stages {
+            if is_complement_name("", s) {
+                viz_note(&format!(
+                    "viz smart: pipeline funnel — stage '{s}' reads as a complement or remainder \
+                     rather than a stage the process passed through"
+                ));
             }
-            violations.push(if k == 0 {
-                0.0
-            } else {
-                1.0 - stage_containment(columns, ordered[k - 1].1, *pos)
-            });
         }
 
+        let mut wanted: Vec<String> = stages.to_vec();
+        if wanted.len() > FUNNEL_MAX_STAGES {
+            let dropped = wanted.len() - FUNNEL_MAX_STAGES;
+            wanted.truncate(FUNNEL_MAX_STAGES);
+            viz_note(&format!(
+                "viz smart: pipeline funnel shows the first {FUNNEL_MAX_STAGES} stages ({dropped} \
+                 more not shown)"
+            ));
+        }
+
+        self.progress.set_message("Reading pipeline stages…");
+        let (totals, counts, matched) =
+            read_stage_totals(self.args, stage_idx, value_idx, &wanted)?;
+        if counts.iter().filter(|c| **c > 0).count() < 2 {
+            viz_note(&format!(
+                "viz smart: pipeline funnel skipped — fewer than two of the declared stages of \
+                 '{stage_column}' appear in the data"
+            ));
+            return Ok(None);
+        }
+
+        #[allow(clippy::cast_precision_loss)]
+        let complete_frac = if total_rows == 0 {
+            0.0
+        } else {
+            matched as f64 / total_rows as f64
+        };
+        // No FUNNEL_MIN_COMPLETE_FRAC gate here, deliberately. Rows outside the declared stages
+        // are simply other statuses -- a legitimately different thing from a row whose stage
+        // amount was blank -- so a 50% bar would reject a real funnel over a busy status column.
+        let labels = vec![self.stage_label(stage_idx); wanted.len()];
+        let shape = match value_idx {
+            Some(vi) => FunnelShape::RowsMeasure {
+                value_label: self.stage_label(vi),
+            },
+            None => FunnelShape::RowsCount,
+        };
+        // Stages partition the rows, so per-row containment is undefined; the subtitle's
+        // total-inversion clause still fires and remains a genuine finding.
+        let violations = vec![0.0; wanted.len()];
+        Ok(self.finish_funnel(
+            wanted,
+            labels,
+            totals,
+            counts,
+            &violations,
+            matched,
+            complete_frac,
+            shape,
+        ))
+    }
+
+    /// Shared tail: the refusals that apply to every funnel, then the panel.
+    #[allow(clippy::too_many_arguments)]
+    fn finish_funnel(
+        &self,
+        stages: Vec<String>,
+        labels: Vec<String>,
+        totals: Vec<f64>,
+        reached: Vec<usize>,
+        violations: &[f64],
+        n_complete: usize,
+        complete_frac: f64,
+        shape: FunnelShape,
+    ) -> Option<Panel> {
         if totals.iter().any(|t| *t < 0.0) {
             viz_note(
                 "viz smart: pipeline funnel skipped \u{2014} a stage total is negative, which a \
@@ -21778,18 +21796,27 @@ impl<'a> SmartCtx<'a> {
             );
             return None;
         }
-
-        let subtitle = funnel_subtitle(&stages, &totals, &violations, n_complete, complete_frac);
-        let title = format!("Pipeline funnel: {}", stage_labels.join(" \u{2192} "));
+        let subtitle = funnel_subtitle(&stages, &totals, violations, n_complete, complete_frac);
+        let title = match &shape {
+            FunnelShape::Columns => {
+                format!("Pipeline funnel: {}", labels.join(" \u{2192} "))
+            },
+            _ => format!(
+                "Pipeline funnel: {} ({})",
+                labels.first().cloned().unwrap_or_default(),
+                stages.join(" \u{2192} ")
+            ),
+        };
         Some(
             Panel::new(
                 title,
                 PanelKind::Funnel {
                     stages,
-                    labels: stage_labels,
+                    labels,
                     totals,
                     reached,
                     n_complete,
+                    shape,
                 },
             )
             .with_subtitle(subtitle),
@@ -23079,6 +23106,7 @@ fn panel_trace(
             totals,
             reached,
             n_complete,
+            shape,
         } => {
             // A horizontal funnel: amount on the value axis, stage on the category axis.
             // A funnel trace draws index 0 at the TOP and works downward — the opposite of a
@@ -23100,15 +23128,39 @@ fn panel_trace(
                         let p = reached[k] as f64 / *n_complete as f64 * 100.0;
                         p
                     };
-                    format!(
-                        "{}<br>Stage: {}<br>Amount: {}<br>Rows reached: {} of {} ({pct:.0}% of \
-                         complete cases)",
-                        escape_hover(&labels[k]),
-                        escape_hover(&stages[k]),
-                        fmt_measure(totals[k]),
-                        HumanCount(reached[k] as u64),
-                        HumanCount(*n_complete as u64),
-                    )
+                    // The counts mean different things per shape, so the wording must too: for
+                    // the row encodings `reached` IS the stage's row count and sums to
+                    // `n_complete`, so "of complete cases" would assert a 100% completeness rate
+                    // that means nothing.
+                    match shape {
+                        FunnelShape::Columns => format!(
+                            "{}<br>Stage: {}<br>Amount: {}<br>Rows reached: {} of {} ({pct:.0}% \
+                             of complete cases)",
+                            escape_hover(&labels[k]),
+                            escape_hover(&stages[k]),
+                            fmt_measure(totals[k]),
+                            HumanCount(reached[k] as u64),
+                            HumanCount(*n_complete as u64),
+                        ),
+                        FunnelShape::RowsMeasure { value_label } => format!(
+                            "{}<br>Stage: {}<br>{}: {}<br>Rows in stage: {} of {} ({pct:.0}% of \
+                             rows in declared stages)",
+                            escape_hover(&labels[k]),
+                            escape_hover(&stages[k]),
+                            escape_hover(value_label),
+                            fmt_measure(totals[k]),
+                            HumanCount(reached[k] as u64),
+                            HumanCount(*n_complete as u64),
+                        ),
+                        FunnelShape::RowsCount => format!(
+                            "{}<br>Stage: {}<br>Rows: {} of {} ({pct:.0}% of rows in declared \
+                             stages)",
+                            escape_hover(&labels[k]),
+                            escape_hover(&stages[k]),
+                            HumanCount(reached[k] as u64),
+                            HumanCount(*n_complete as u64),
+                        ),
+                    }
                 })
                 .collect();
             let xs: Vec<f64> = totals.clone();
@@ -28678,6 +28730,65 @@ mod tests {
     }
 
     #[test]
+    fn xq_pipelines_parses_both_encodings_and_skips_the_rest() {
+        let schema = r#"{
+          "properties": { "a": { "x-qsv": { "qsv_type": "Float" } } },
+          "x-qsv": { "relationships": [
+            {"kind": "pipeline", "members": ["planned", "committed", "spent"]},
+            {"kind": "pipeline", "stage_column": "status",
+             "stages": ["Impression", "Click"], "value_column": "revenue"},
+            {"kind": "pipeline", "stage_column": "status", "stages": ["only_one"]},
+            {"kind": "pipeline", "members": ["solo"]},
+            {"kind": "ordered", "members": ["created", "closed"]},
+            {"kind": "joint", "members": ["city", "state"]},
+            "not even an object"
+          ]}
+        }"#;
+        let data = parse_dictionary_semantics(schema).expect("schema should parse");
+        assert_eq!(
+            data.pipelines,
+            vec![
+                PipelineSpec::Columns {
+                    members: vec![
+                        "planned".to_string(),
+                        "committed".to_string(),
+                        "spent".to_string()
+                    ],
+                },
+                PipelineSpec::Rows {
+                    stage_column: "status".to_string(),
+                    stages:       vec!["Impression".to_string(), "Click".to_string()],
+                    value_column: Some("revenue".to_string()),
+                },
+            ],
+            "only well-formed `pipeline` entries survive -- ordered/joint, too-short and \
+             malformed ones are skipped rather than erroring"
+        );
+    }
+
+    #[test]
+    fn xq_pipelines_absent_or_legacy_yields_none() {
+        let no_rels = r#"{"properties":{"a":{"x-qsv":{"qsv_type":"Float"}}}}"#;
+        assert!(
+            parse_dictionary_semantics(no_rels)
+                .expect("schema should parse")
+                .pipelines
+                .is_empty()
+        );
+        // pipelines are JSONSchema-only: the legacy flat shape has nowhere to put a
+        // row-encoded declaration, so it never yields one.
+        let legacy = r#"{"fields":[
+            {"name":"a","type":"Float"},{"name":"b","type":"Float"}
+        ]}"#;
+        assert!(
+            parse_dictionary_semantics(legacy)
+                .expect("legacy dict should parse")
+                .pipelines
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn render_dict_page_html_groups_stats_and_guards_sci_notation() {
         // Range min/max grouping is role-gated: only genuine `measure` columns get thousands
         // separators on their range. Identifiers, geo codes (ZIP) and years are dimensions, so
@@ -30847,77 +30958,42 @@ mod tests {
     }
 
     #[test]
-    fn stage_match_resolves_glued_multiword_names_by_position() {
-        // `totalplannedcommit` contains BOTH "planned" (pos 5) and "commit" (pos 12). English puts
-        // the stage modifier first, so the earliest match wins -- otherwise this column collides
-        // with a sibling `commit_total` and the pipeline is ambiguous or backwards.
-        let planned = stage_match("", "totalplannedcommit").expect("glued name should match");
-        assert_eq!(planned.rank, 0, "totalplannedcommit is the Planned stage");
-        assert_eq!(
-            planned.ambiguity, 2,
-            "it reads as two stages, hence ambiguous"
-        );
-
-        let committed = stage_match("", "commit_total").expect("commit_total should match");
-        assert_eq!(committed.rank, 1);
-        assert_eq!(committed.family, planned.family, "same vocabulary family");
-
-        // the reversed phrasing resolves the other way, by the same rule
-        assert_eq!(stage_match("", "spent_of_planned").map(|h| h.rank), Some(2));
-    }
-
-    #[test]
-    fn stage_match_rejects_negations_and_derived_columns() {
-        // these all CONTAIN a stage word and would pass row-wise containment against their own
-        // predecessor, so the conjunction cannot catch them -- only the negation guard can
+    fn complement_marker_warns_but_does_not_veto() {
+        // `unspent_balance` is the one bad declaration that disclosing containment cannot catch:
+        // a complement nests PERFECTLY inside its predecessor, so it reports 0% violations while
+        // rendering a funnel that means the opposite of the truth.
         for name in [
+            "unspent",
             "unspent_balance",
-            "uncommitted_funds",
-            "unobligated",
-            "spend_variance",
-            "planned_actual_difference",
+            "remaining_budget",
+            "variance_amt",
+            "fund_balance",
+            "committed_delta",
         ] {
             assert!(
-                stage_match("", name).is_none(),
-                "{name} denotes a complement or a difference, not a stage"
+                is_complement_name("", name),
+                "{name} should be flagged as a complement"
             );
         }
-        // a plain stage column is of course still matched
-        assert!(stage_match("", "spentamt").is_some());
-    }
-
-    #[test]
-    fn stage_match_rejects_words_that_merely_contain_a_stage_word() {
-        // A shipped false positive: `X Coordinate (State Plane)` matched a bare "plan" and, paired
-        // with a genuine `spent_total`, produced "Pipeline funnel: X Coordinate (State Plane) ->
-        // spent_total". The conjunction did not save it, because a real table supplies the second
-        // rank for free -- so the vocabulary itself has to be non-greedy.
+        // The COLLISION half of the old marker list died with the name-matching vocabulary it
+        // existed to defend. Those words only ever mattered because a greedy substring match
+        // could mistake them for stages; warning on a column the dictionary explicitly DECLARED
+        // would be a pure false alarm.
         for name in [
-            "X Coordinate (State Plane)",
-            "Y Coordinate (State Plane)",
-            "plant_capacity",
-            "floorplan_area",
-            // ordinary words that merely contain a stage word, caught by the collision guard
             "review_count",
-            "overview_score",
-            "contractor_count",
-            "wholesale_price",
+            "contractor_amt",
+            "wholesale_total",
             "lead_time_days",
             "replaced_units",
         ] {
             assert!(
-                stage_match("", name).is_none(),
-                "{name} merely contains a stage word; it is not a pipeline stage"
+                !is_complement_name("", name),
+                "{name} is an ordinary declared column, not a complement"
             );
         }
-
-        // the real stage words still resolve, including the glued case substrings exist for
-        assert_eq!(
-            stage_match("", "totalplannedcommit").map(|h| h.rank),
-            Some(0)
-        );
-        assert_eq!(stage_match("", "budget_total").map(|h| h.rank), Some(0));
-        assert_eq!(stage_match("", "spent_total").map(|h| h.rank), Some(2));
+        // and a genuine stage is never flagged
+        assert!(!is_complement_name("", "spentamt"));
+        assert!(!is_complement_name("", "totalplannedcommit"));
     }
 
     #[test]

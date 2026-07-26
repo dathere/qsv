@@ -11963,10 +11963,8 @@ fn viz_smart_density_panel_hover_names_both_measures_and_the_row_count() {
     );
 }
 
-// A nested budget pipeline. Column names are deliberately GLUED (`totalplannedcommit`) to lock in
-// the substring matching the funnel detector needs -- `field_name_tokens` yields one token here,
-// so token-equality against "planned" would miss. Values repeat (a 40-value pool) so the columns
-// stay below the near-unique threshold that would drop them from the correlation read.
+// A nested budget pipeline. Values repeat (a 40-value pool) so the columns stay below the
+// near-unique threshold.
 fn pipeline_csv() -> String {
     let mut rows = String::from("totalplannedcommit,commitamt,spentamt\n");
     for i in 0..300 {
@@ -11978,13 +11976,43 @@ fn pipeline_csv() -> String {
     rows
 }
 
+// A dictionary declaring the budget pipeline. Since #4222's rework this is the ONLY way a funnel
+// reaches a smart dashboard -- there is no name vocabulary left to infer one from.
+fn pipeline_dict(members: &str) -> String {
+    format!(
+        r#"{{
+          "properties": {{
+            "totalplannedcommit": {{"type":"integer","x-qsv":{{"qsv_type":"Integer"}}}},
+            "commitamt": {{"type":"integer","x-qsv":{{"qsv_type":"Integer"}}}},
+            "spentamt": {{"type":"integer","x-qsv":{{"qsv_type":"Integer"}}}}
+          }},
+          "x-qsv": {{ "relationships": [{{"kind":"pipeline","members":{members}}}] }}
+        }}"#
+    )
+}
+
+// Render `csv` with `dict` and return the HTML.
+fn smart_with_dict(wrk: &Workdir, csv: &str, dict: &str) -> String {
+    wrk.create_from_string("p.csv", csv);
+    wrk.create_from_string("d.schema.json", dict);
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("d.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+    wrk.read_to_string("p.html").unwrap()
+}
+
 #[test]
-fn viz_smart_builds_pipeline_funnel_for_glued_stage_names() {
-    // issue #4222 ask 3. `totalplannedcommit` contains both "planned" (pos 5) and "commit"
-    // (pos 12); the lowest-position rule must resolve it to Planned, leaving `commitamt` as the
-    // Committed stage. If "commit" won instead, the two would collide and the funnel would be
-    // skipped as ambiguous -- on the very dataset shape the issue was filed against.
-    let wrk = Workdir::new("viz_smart_builds_pipeline_funnel_for_glued_stage_names");
+fn viz_smart_no_funnel_without_a_dictionary() {
+    // THE headline behavior of the #4222 rework, and the honest replacement for the four
+    // `!contains("Pipeline funnel:")` negatives that used to sit below. Those were written when a
+    // name vocabulary could produce a funnel on its own, so they proved a guard was working. With
+    // detection now dictionary-only they would all pass for a different reason -- no dictionary,
+    // no funnel -- and prove nothing. This test asserts that baseline deliberately, on the very
+    // table that DOES draw once a dictionary declares it (see the test directly below).
+    let wrk = Workdir::new("viz_smart_no_funnel_without_a_dictionary");
     wrk.create_from_string("p.csv", &pipeline_csv());
 
     let out_html = wrk.path("p.html").to_string_lossy().to_string();
@@ -11995,17 +12023,50 @@ fn viz_smart_builds_pipeline_funnel_for_glued_stage_names() {
 
     let html = wrk.read_to_string("p.html").unwrap();
     assert!(
+        !html.contains("Pipeline funnel:") && !html.contains(r#""type":"funnel""#),
+        "a perfectly nested planned/committed/spent table must NOT produce a funnel without a \
+         dictionary -- stage identity is semantics, not a statistic; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_builds_pipeline_funnel_from_a_dictionary() {
+    // issue #4222 ask 3: the declared member ORDER is the pipeline order, upstream-first.
+    let wrk = Workdir::new("viz_smart_builds_pipeline_funnel_from_a_dictionary");
+    let html = smart_with_dict(
+        &wrk,
+        &pipeline_csv(),
+        &pipeline_dict(r#"["totalplannedcommit","commitamt","spentamt"]"#),
+    );
+    assert!(
         html.contains(r#""type":"funnel""#),
-        "a nested planned/committed/spent table should earn a funnel panel; html: {html}"
+        "a declared pipeline should earn a funnel panel; html: {html}"
     );
     assert!(
         html.contains("Pipeline funnel: totalplannedcommit"),
         "the funnel title should lead with the upstream column; html: {html}"
     );
-    // stage order is vocabulary order, upstream-first -- a funnel trace draws index 0 at the TOP
+    // a funnel trace draws index 0 at the TOP, so stages are fed upstream-first
     assert!(
-        html.contains(r#""y":["Planned","Committed","Spent"]"#),
-        "stages must be fed upstream-first, or the funnel renders upside down; html: {html}"
+        html.contains(r#""y":["totalplannedcommit","commitamt","spentamt"]"#),
+        "stages must be fed in declared order, or the funnel renders upside down; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_funnel_honors_declared_order_over_magnitude() {
+    // The declaration is authoritative: stages are NOT re-sorted by size. Reversing the members
+    // must reverse the bands even though that makes the funnel widen downward -- if the tool
+    // silently sorted, a mis-declared pipeline would look plausible and never be noticed.
+    let wrk = Workdir::new("viz_smart_funnel_honors_declared_order_over_magnitude");
+    let html = smart_with_dict(
+        &wrk,
+        &pipeline_csv(),
+        &pipeline_dict(r#"["spentamt","commitamt","totalplannedcommit"]"#),
+    );
+    assert!(
+        html.contains(r#""y":["spentamt","commitamt","totalplannedcommit"]"#),
+        "declared order must survive verbatim; html: {html}"
     );
 }
 
@@ -12014,15 +12075,11 @@ fn viz_smart_funnel_hover_reports_both_dollar_and_row_conversion() {
     // At high concentration "42% of dollars committed" and "N of M projects committed anything"
     // are both true and read as a contradiction, so neither may appear alone.
     let wrk = Workdir::new("viz_smart_funnel_hover_reports_both_dollar_and_row_conversion");
-    wrk.create_from_string("p.csv", &pipeline_csv());
-
-    let out_html = wrk.path("p.html").to_string_lossy().to_string();
-    let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "p.csv", "-o", &out_html])
-        .env("QSV_VIZ_NO_COMPRESS", "1");
-    wrk.assert_success(&mut cmd);
-
-    let html = wrk.read_to_string("p.html").unwrap();
+    let html = smart_with_dict(
+        &wrk,
+        &pipeline_csv(),
+        &pipeline_dict(r#"["totalplannedcommit","commitamt","spentamt"]"#),
+    );
     // the dollar side is plotly's own textinfo, computed from the bar values so it cannot drift
     assert!(
         html.contains(r#""textinfo":"percent previous""#),
@@ -12036,16 +12093,17 @@ fn viz_smart_funnel_hover_reports_both_dollar_and_row_conversion() {
 }
 
 #[test]
-fn viz_smart_funnel_declares_complete_case_denominator() {
-    // The funnel sums over the listwise-complete join, so its totals do NOT match `stats.sum`.
-    // Following `lorenz_caveat`, that is disclosed unconditionally rather than only when bad.
-    let wrk = Workdir::new("viz_smart_funnel_declares_complete_case_denominator");
+fn viz_smart_funnel_denominator_covers_only_the_declared_stages() {
+    // The funnel now takes its OWN data pass over exactly the declared stages, so an unrelated
+    // sparse column no longer dilutes the disclosed denominator. Under the old design this read
+    // 90%, because the listwise join spanned every numeric column in the table.
+    let wrk = Workdir::new("viz_smart_funnel_denominator_covers_only_the_declared_stages");
     let mut rows = String::from("totalplannedcommit,commitamt,spentamt,othermeasure\n");
     for i in 0..300 {
         let planned = ((i % 40) + 1) * 1000;
         let commit = planned * (i % 3) / 4;
         let spent = commit * (i % 2) / 3;
-        // blank in 10% of rows, so the listwise join drops those rows from every stage
+        // every 10th row leaves an unrelated measure blank
         let other = if i % 10 == 0 {
             String::new()
         } else {
@@ -12053,221 +12111,302 @@ fn viz_smart_funnel_declares_complete_case_denominator() {
         };
         rows.push_str(&format!("{planned},{commit},{spent},{other}\n"));
     }
-    wrk.create_from_string("p.csv", &rows);
-
-    let out_html = wrk.path("p.html").to_string_lossy().to_string();
-    let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "p.csv", "-o", &out_html])
-        .env("QSV_VIZ_NO_COMPRESS", "1");
-    wrk.assert_success(&mut cmd);
-
-    let html = wrk.read_to_string("p.html").unwrap();
+    let dict = format!(
+        r#"{{
+          "properties": {{
+            "totalplannedcommit": {{"type":"integer","x-qsv":{{"qsv_type":"Integer"}}}},
+            "commitamt": {{"type":"integer","x-qsv":{{"qsv_type":"Integer"}}}},
+            "spentamt": {{"type":"integer","x-qsv":{{"qsv_type":"Integer"}}}},
+            "othermeasure": {{"type":"integer","x-qsv":{{"qsv_type":"Integer"}}}}
+          }},
+          "x-qsv": {{ "relationships": [{{"kind":"pipeline",
+             "members":["totalplannedcommit","commitamt","spentamt"]}}] }}
+        }}"#
+    );
+    let html = smart_with_dict(&wrk, &rows, &dict);
     assert!(
-        html.contains("complete cases (90% of rows)"),
-        "the funnel subtitle must state the complete-case denominator; html: {html}"
+        html.contains("complete cases (100% of rows)"),
+        "the denominator must cover the declared stages only, not unrelated blanks; html: {html}"
     );
 }
 
 #[test]
-fn viz_smart_funnel_includes_an_all_zero_stage() {
-    // A wholly-zero stage has cardinality 1, so the correlation pre-filter drops it and it never
-    // reaches the row-aligned columns. Losing it would silently shorten the pipeline and imply
-    // the last surviving stage ends the process, so it is rescued from the cached sign counts.
-    let wrk = Workdir::new("viz_smart_funnel_includes_an_all_zero_stage");
+fn viz_smart_funnel_discloses_containment_violations_instead_of_refusing() {
+    // INVERTED by the #4222 rework. This table's `spentamt` overruns `commitamt` on ~30% of rows,
+    // which used to trip a 0.90 containment GATE and suppress the panel entirely. Containment is
+    // now a MEASUREMENT, not a gate: the funnel draws and the subtitle names the violation share.
+    // This is what lets the motivating NYC CPDB dataset -- three aggregates on different
+    // accounting bases -- render at all.
+    let wrk = Workdir::new("viz_smart_funnel_discloses_containment_violations_instead_of_refusing");
     let mut rows = String::from("totalplannedcommit,commitamt,spentamt\n");
     for i in 0..300 {
         let planned = ((i % 40) + 1) * 1000;
-        let commit = planned * (i % 3) / 4;
-        rows.push_str(&format!("{planned},{commit},0\n"));
+        let commit = planned / 2;
+        // ~30% of rows spend more than was ever committed
+        let spent = if i % 10 < 3 { commit * 3 } else { commit / 2 };
+        rows.push_str(&format!("{planned},{commit},{spent}\n"));
     }
-    wrk.create_from_string("p.csv", &rows);
-
-    let out_html = wrk.path("p.html").to_string_lossy().to_string();
-    let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "p.csv", "-o", &out_html])
-        .env("QSV_VIZ_NO_COMPRESS", "1");
-    wrk.assert_success(&mut cmd);
-
-    let html = wrk.read_to_string("p.html").unwrap();
+    let html = smart_with_dict(
+        &wrk,
+        &rows,
+        &pipeline_dict(r#"["totalplannedcommit","commitamt","spentamt"]"#),
+    );
     assert!(
-        html.contains(r#""y":["Planned","Committed","Spent"]"#),
-        "the nothing-spent-yet stage must still appear, at zero; html: {html}"
+        html.contains(r#""type":"funnel""#),
+        "a declared pipeline draws even when its stages do not nest; html: {html}"
+    );
+    assert!(
+        html.contains("exceeds"),
+        "the subtitle must NAME the containment violation rather than hiding the panel; html: \
+         {html}"
     );
 }
 
 #[test]
-fn viz_smart_funnel_flags_overrun_without_reordering_stages() {
-    // A downstream stage whose TOTAL outruns its predecessor is the finding, not a glitch: bar
-    // order stays vocabulary order (never sorted by value) and the subtitle names the inversion.
-    let wrk = Workdir::new("viz_smart_funnel_flags_overrun_without_reordering_stages");
-    let mut rows = String::from("totalplannedcommit,commitamt,spentamt\n");
+fn viz_smart_funnel_warns_when_a_declared_stage_is_a_complement() {
+    // INVERTED, and the assertion moved from html to STDERR on purpose. A complement column
+    // (`unspentamt`) nests PERFECTLY inside its predecessor, so it reports 0% violations -- the
+    // subtitle cannot surface it and no html assertion could either. The warning is the only
+    // signal, so the warning is what must be asserted.
+    let wrk = Workdir::new("viz_smart_funnel_warns_when_a_declared_stage_is_a_complement");
+    let mut rows = String::from("totalplannedcommit,unspentamt\n");
     for i in 0..300 {
         let planned = ((i % 40) + 1) * 1000;
-        // 3 rows in 300 (1%) blow through their plan by 100x -- under the 90% containment gate,
-        // but enough to dominate the committed total
-        let commit = if i % 100 == 7 {
-            planned * 100
-        } else {
-            planned / 2
-        };
-        rows.push_str(&format!("{planned},{commit},0\n"));
+        rows.push_str(&format!("{planned},{}\n", planned / 4));
     }
     wrk.create_from_string("p.csv", &rows);
-
+    wrk.create_from_string(
+        "d.schema.json",
+        r#"{
+          "properties": {
+            "totalplannedcommit": {"type":"integer","x-qsv":{"qsv_type":"Integer"}},
+            "unspentamt": {"type":"integer","x-qsv":{"qsv_type":"Integer"}}
+          },
+          "x-qsv": { "relationships": [
+            {"kind":"pipeline","members":["totalplannedcommit","unspentamt"]}
+          ] }
+        }"#,
+    );
     let out_html = wrk.path("p.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "p.csv", "-o", &out_html])
+    cmd.args(["smart", "p.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("d.schema.json"))
         .env("QSV_VIZ_NO_COMPRESS", "1");
-    wrk.assert_success(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
 
     let html = wrk.read_to_string("p.html").unwrap();
     assert!(
-        html.contains("total exceeds"),
-        "an inverted stage total must be named in the subtitle; html: {html}"
+        html.contains(r#""type":"funnel""#),
+        "an explicit declaration outranks a name heuristic, so the funnel still draws; html: \
+         {html}"
     );
     assert!(
-        html.contains(r#""y":["Planned","Committed","Spent"]"#),
-        "vocabulary order must survive an overrun; html: {html}"
+        stderr.contains("complement") || stderr.contains("remainder"),
+        "a complement stage must be WARNED about -- it nests perfectly, so nothing else can \
+         reveal it; stderr: {stderr}"
     );
 }
 
 #[test]
-fn viz_smart_no_funnel_when_containment_is_violated() {
-    // Vocabulary alone is NOT enough: these two columns name distinct stages of one family, so
-    // only the row-wise containment gate can reject them.
-    let wrk = Workdir::new("viz_smart_no_funnel_when_containment_is_violated");
-    let mut rows = String::from("plannedamt,spentamt\n");
-    for i in 0..300 {
-        let planned = ((i % 40) + 1) * 1000;
-        // spent exceeds planned in 30% of rows -- well past FUNNEL_CONTAINMENT_MIN
-        let spent = if i % 10 < 3 { planned * 2 } else { planned / 2 };
-        rows.push_str(&format!("{planned},{spent}\n"));
-    }
-    wrk.create_from_string("p.csv", &rows);
-
-    let out_html = wrk.path("p.html").to_string_lossy().to_string();
-    let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "p.csv", "-o", &out_html])
-        .env("QSV_VIZ_NO_COMPRESS", "1");
-    wrk.assert_success(&mut cmd);
-
-    let html = wrk.read_to_string("p.html").unwrap();
-    assert!(
-        !html.contains("Pipeline funnel:"),
-        "columns that are not nested must not be drawn as a pipeline; html: {html}"
-    );
-}
-
-#[test]
-fn viz_smart_no_funnel_for_unspent_complement_column() {
-    // `unspentamt` contains "spent" AND is perfectly nested inside `plannedamt`, so BOTH gates
-    // pass -- it is the one false-positive class the conjunction cannot catch, and the reason the
-    // negation guard exists. Read as a Spent stage it would invert the panel's meaning.
-    let wrk = Workdir::new("viz_smart_no_funnel_for_unspent_complement_column");
-    let mut rows = String::from("plannedamt,unspentamt\n");
-    for i in 0..300 {
-        let planned = ((i % 40) + 1) * 1000;
-        let unspent = planned / 2;
-        rows.push_str(&format!("{planned},{unspent}\n"));
-    }
-    wrk.create_from_string("p.csv", &rows);
-
-    let out_html = wrk.path("p.html").to_string_lossy().to_string();
-    let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "p.csv", "-o", &out_html])
-        .env("QSV_VIZ_NO_COMPRESS", "1");
-    wrk.assert_success(&mut cmd);
-
-    let html = wrk.read_to_string("p.html").unwrap();
-    assert!(
-        !html.contains("Pipeline funnel:"),
-        "a complement column must not be read as its own stage; html: {html}"
-    );
-}
-
-#[test]
-fn viz_smart_no_funnel_when_a_zero_stage_masks_a_containment_violation() {
-    // roborev 3832: an all-zero stage is carried without a data vector, and the containment gate
-    // used to SKIP any pair involving one. With planned -> all-zero commit -> non-nested spent
-    // that skipped BOTH pairs, so the funnel rendered even though spending exceeds the plan.
-    // A zero upstream contains only zeros, so a positive downstream must fail the gate.
-    let wrk = Workdir::new("viz_smart_no_funnel_when_a_zero_stage_masks_a_containment_violation");
-    let mut rows = String::from("totalplannedcommit,commitamt,spentamt\n");
-    for i in 0..300 {
-        let planned = ((i % 40) + 1) * 1000;
-        // nothing committed anywhere, yet money was spent -- and spent beyond the plan
-        let spent = planned * 3;
-        rows.push_str(&format!("{planned},0,{spent}\n"));
-    }
-    wrk.create_from_string("p.csv", &rows);
-
-    let out_html = wrk.path("p.html").to_string_lossy().to_string();
-    let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "p.csv", "-o", &out_html])
-        .env("QSV_VIZ_NO_COMPRESS", "1");
-    wrk.assert_success(&mut cmd);
-
-    let html = wrk.read_to_string("p.html").unwrap();
-    assert!(
-        !html.contains("Pipeline funnel:"),
-        "a zero stage must not let a downstream violation through; html: {html}"
-    );
-}
-
-#[test]
-fn viz_smart_no_funnel_when_a_zero_stage_is_followed_by_sparse_activity() {
-    // roborev 3838: an all-zero upstream was measured against the global 90% containment gate, so
-    // a downstream stage active in up to a tenth of rows still rendered. That tolerance exists for
-    // change orders on a POPULATED stage; an empty predecessor is a categorical claim, and any
-    // spend below a stage that recorded nothing contradicts it. 5% here -- inside the old gate.
-    let wrk = Workdir::new("viz_smart_no_funnel_when_a_zero_stage_is_followed_by_sparse_activity");
-    let mut rows = String::from("totalplannedcommit,commitamt,spentamt\n");
-    for i in 0..300 {
-        let planned = ((i % 40) + 1) * 1000;
-        // nothing committed anywhere; 5% of rows nonetheless report spend (still <= planned, so
-        // only the zero-upstream rule can reject this)
-        let spent = if i % 20 == 0 { planned / 2 } else { 0 };
-        rows.push_str(&format!("{planned},0,{spent}\n"));
-    }
-    wrk.create_from_string("p.csv", &rows);
-
-    let out_html = wrk.path("p.html").to_string_lossy().to_string();
-    let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "p.csv", "-o", &out_html])
-        .env("QSV_VIZ_NO_COMPRESS", "1");
-    wrk.assert_success(&mut cmd);
-
-    let html = wrk.read_to_string("p.html").unwrap();
-    assert!(
-        !html.contains("Pipeline funnel:"),
-        "spend below an empty stage must reject the pipeline, not be tolerated; html: {html}"
-    );
-}
-
-#[test]
-fn viz_smart_funnel_zero_stage_rescue_honors_the_eligibility_filters() {
-    // roborev 3832: the rescue applied only a type/map check, so an all-zero column the MAIN pass
-    // would reject -- here `spent_pct`, intensive by name -- could still be admitted as a stage.
-    // Both paths now share one eligibility test, so the funnel stops at Committed.
-    let wrk = Workdir::new("viz_smart_funnel_zero_stage_rescue_honors_the_eligibility_filters");
+fn viz_smart_funnel_skips_a_declared_stage_that_cannot_be_summed() {
+    // A declaration outranks a NAME heuristic, but it cannot make a meaningless chart sensible:
+    // summing an average or a rate is nonsense whoever asked for it, so `spent_pct` is refused.
+    let wrk = Workdir::new("viz_smart_funnel_skips_a_declared_stage_that_cannot_be_summed");
     let mut rows = String::from("totalplannedcommit,commitamt,spent_pct\n");
     for i in 0..300 {
         let planned = ((i % 40) + 1) * 1000;
         let commit = planned * (i % 3) / 4;
-        rows.push_str(&format!("{planned},{commit},0\n"));
+        rows.push_str(&format!("{planned},{commit},{}\n", i % 100));
     }
     wrk.create_from_string("p.csv", &rows);
-
+    wrk.create_from_string(
+        "d.schema.json",
+        r#"{
+          "properties": {
+            "totalplannedcommit": {"type":"integer","x-qsv":{"qsv_type":"Integer"}},
+            "commitamt": {"type":"integer","x-qsv":{"qsv_type":"Integer"}},
+            "spent_pct": {"type":"integer","x-qsv":{"qsv_type":"Integer"}}
+          },
+          "x-qsv": { "relationships": [
+            {"kind":"pipeline","members":["totalplannedcommit","commitamt","spent_pct"]}
+          ] }
+        }"#,
+    );
     let out_html = wrk.path("p.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "p.csv", "-o", &out_html])
+    cmd.args(["smart", "p.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("d.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    let stderr = wrk.output_stderr(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        !html.contains(r#""type":"funnel""#),
+        "an intensive measure must not be summed into a funnel; html: {html}"
+    );
+    assert!(
+        stderr.contains("rate") || stderr.contains("average"),
+        "the skip must say WHY; stderr: {stderr}"
+    );
+}
+
+#[test]
+fn viz_smart_funnel_ignores_a_pipeline_naming_a_missing_column() {
+    // A stale hand-edited dictionary must degrade to "no funnel", never to an error -- this is a
+    // dashboard, not a validator.
+    let wrk = Workdir::new("viz_smart_funnel_ignores_a_pipeline_naming_a_missing_column");
+    let html = smart_with_dict(
+        &wrk,
+        &pipeline_csv(),
+        &pipeline_dict(r#"["totalplannedcommit","no_such_column"]"#),
+    );
+    assert!(
+        !html.contains(r#""type":"funnel""#),
+        "a declaration naming a column that does not exist yields no funnel; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_builds_a_row_encoded_funnel_summing_a_value_column() {
+    // The shape `viz smart` previously declined to guess at: stages as VALUES of one column.
+    // Safe now because it is DECLARED, not inferred.
+    let wrk = Workdir::new("viz_smart_builds_a_row_encoded_funnel_summing_a_value_column");
+    let mut rows = String::from("stage,revenue,region\n");
+    for i in 0..300 {
+        let (stage, rev) = match i % 10 {
+            0..=4 => ("Impression", 1),
+            5..=7 => ("Click", 4),
+            8 => ("Lead", 20),
+            _ => ("Conversion", 90),
+        };
+        rows.push_str(&format!("{stage},{rev},r{}\n", i % 3));
+    }
+    wrk.create_from_string("p.csv", &rows);
+    wrk.create_from_string(
+        "d.schema.json",
+        r#"{
+          "properties": {
+            "stage": {"type":"string","x-qsv":{"qsv_type":"String","role":"dimension"}},
+            "revenue": {"type":"integer","x-qsv":{"qsv_type":"Integer","role":"measure"}},
+            "region": {"type":"string","x-qsv":{"qsv_type":"String","role":"dimension"}}
+          },
+          "x-qsv": { "relationships": [
+            {"kind":"pipeline","members":["stage","revenue"],"stage_column":"stage",
+             "stages":["Impression","Click","Lead","Conversion"],"value_column":"revenue"}
+          ] }
+        }"#,
+    );
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("d.schema.json"))
         .env("QSV_VIZ_NO_COMPRESS", "1");
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("p.html").unwrap();
     assert!(
-        html.contains(r#""y":["Planned","Committed"]"#),
-        "an intensive all-zero column must not be rescued as a stage; html: {html}"
+        html.contains(r#""type":"funnel""#),
+        "a declared row-encoded pipeline should earn a funnel panel; html: {html}"
+    );
+    assert!(
+        html.contains(r#""y":["Impression","Click","Lead","Conversion"]"#),
+        "stage VALUES become the bands, in declared order; html: {html}"
+    );
+    // the row encoding must NOT borrow the column encoding's complete-case wording: `reached`
+    // sums to the denominator here, so "of complete cases" would assert a meaningless 100%
+    assert!(
+        html.contains("rows in declared stages"),
+        "the hover must use the row-encoding wording; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_row_funnel_counts_rows_when_no_value_column_is_declared() {
+    let wrk = Workdir::new("viz_smart_row_funnel_counts_rows_when_no_value_column_is_declared");
+    let mut rows = String::from("stage,region\n");
+    for i in 0..300 {
+        let stage = match i % 10 {
+            0..=4 => "Impression",
+            5..=7 => "Click",
+            8 => "Lead",
+            _ => "Conversion",
+        };
+        rows.push_str(&format!("{stage},r{}\n", i % 3));
+    }
+    wrk.create_from_string("p.csv", &rows);
+    wrk.create_from_string(
+        "d.schema.json",
+        r#"{
+          "properties": {
+            "stage": {"type":"string","x-qsv":{"qsv_type":"String","role":"dimension"}},
+            "region": {"type":"string","x-qsv":{"qsv_type":"String","role":"dimension"}}
+          },
+          "x-qsv": { "relationships": [
+            {"kind":"pipeline","members":["stage"],"stage_column":"stage",
+             "stages":["Impression","Click","Lead","Conversion"]}
+          ] }
+        }"#,
+    );
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("d.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        html.contains(r#""type":"funnel""#),
+        "a count-only row pipeline should still draw; html: {html}"
+    );
+    // With no value column there is no Amount line -- the count IS the measure. NB: plotly
+    // unicode-escapes angle brackets, so the `<br>` separator is `<br>` in the emitted
+    // HTML and must not be matched literally here.
+    assert!(
+        html.contains("Rows: ") && !html.contains("Rows reached:"),
+        "a count-only funnel's hover must report a row count, not an amount or the column \
+         encoding's wording; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_row_funnel_tolerates_stage_case_drift_and_absent_stages() {
+    // The stage values are transcribed by an LLM from the frequency distribution, so case drift
+    // is a realistic failure that would otherwise silently zero a band. A declared stage with no
+    // rows is legitimate and stays as a zero band -- dropping it would imply the process ends at
+    // the last stage that happens to have data.
+    let wrk = Workdir::new("viz_smart_row_funnel_tolerates_stage_case_drift_and_absent_stages");
+    let mut rows = String::from("stage,region\n");
+    for i in 0..300 {
+        let stage = if i % 3 == 0 { "impression" } else { "click" };
+        rows.push_str(&format!("{stage},r{}\n", i % 3));
+    }
+    wrk.create_from_string("p.csv", &rows);
+    wrk.create_from_string(
+        "d.schema.json",
+        r#"{
+          "properties": {
+            "stage": {"type":"string","x-qsv":{"qsv_type":"String","role":"dimension"}},
+            "region": {"type":"string","x-qsv":{"qsv_type":"String","role":"dimension"}}
+          },
+          "x-qsv": { "relationships": [
+            {"kind":"pipeline","members":["stage"],"stage_column":"stage",
+             "stages":["Impression","Click","Conversion"]}
+          ] }
+        }"#,
+    );
+    let out_html = wrk.path("p.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "p.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("d.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("p.html").unwrap();
+    assert!(
+        html.contains(r#""y":["Impression","Click","Conversion"]"#),
+        "case-drifted stages must still match, and an absent stage stays as a zero band; html: \
+         {html}"
     );
 }
 

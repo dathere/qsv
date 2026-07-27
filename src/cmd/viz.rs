@@ -20721,10 +20721,9 @@ struct SmartPrep {
     /// the caller's `Args` with `--bivariate`'s implications applied (it forces `--smarter`, and
     /// infers a `--dictionary` when none was given).
     args:                    Args,
-    /// the validated input path (never stdin).
-    input:                   String,
-    /// the path the STATS cache is keyed on: `input`, with a `dc:` handle resolved ONCE here so
-    /// the stats load and the `--dict-info` download row can't drift onto different files.
+    /// the path the STATS cache is keyed on: the validated input path (never stdin), with a `dc:`
+    /// handle resolved ONCE here so the stats load and the `--dict-info` download row can't drift
+    /// onto different files.
     stats_input:             String,
     /// non-default parsing (`--no-headers` / `--delimiter`) forces the stats cache to regenerate.
     force_stats_regen:       bool,
@@ -20934,7 +20933,6 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
         // on the same file by construction rather than by two resolutions happening to agree
         stats_input: resolve_stats_input_path(&input),
         args,
-        input,
         force_stats_regen,
         bivariate_sidecar_fresh,
     })

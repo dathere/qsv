@@ -1464,10 +1464,7 @@ fn titlecase_hyphenated(w: &str) -> String {
 /// when it doesn't start with an assignment.
 fn strip_env_var_prefixes(line: &str) -> &str {
     let mut rest = line;
-    loop {
-        let Some(eq_pos) = rest.find('=') else {
-            break;
-        };
+    while let Some(eq_pos) = rest.find('=') {
         let name = &rest[..eq_pos];
         if name.is_empty()
             || name.starts_with(|c: char| c.is_ascii_digit())

@@ -14150,7 +14150,17 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
      CSS against the CURRENT viewport — a later window resize / device rotation can otherwise
      leave the persisted value outside the 20vh-90vh bounds. Every consumer (drawer height,
      body margin, fixed-widget pushes) uses this one clamped var so they can never disagree. */
-  body { --qsv-data-h-eff: clamp(20vh, var(--qsv-data-h, min(55vh, 560px)), 90vh); }
+  /* --qsv-data-vh is one vh worth of px. It defaults to the real thing, so a standalone page
+     behaves exactly as if the vh unit were used directly; an EMBEDDED page has the parent
+     overwrite it with a hundredth of the parent's viewport (see the qsvVizViewport handshake).
+     That indirection exists because vh inside an auto-sized iframe resolves against the IFRAME,
+     which the gallery has grown to the dashboard's full content height — so "55vh" meant 55% of
+     the whole document and the drawer opened far taller than the window it had to fit in. */
+  /* declared on :root, NOT on the body rule below — the handshake writes this var to
+     documentElement's inline style (as --qsv-data-h already does), and re-declaring it on body
+     would beat that inherited value and silently pin every page back to the default */
+  :root { --qsv-data-vh: 1vh; }
+  body { --qsv-data-h-eff: clamp(calc(20 * var(--qsv-data-vh)), var(--qsv-data-h, min(calc(55 * var(--qsv-data-vh)), 560px)), calc(90 * var(--qsv-data-vh))); }
   #qsv-data-drawer { position: fixed; left: 0; right: 0; bottom: 0; height: var(--qsv-data-h-eff); transform: translateY(103%); transition: transform 0.22s ease; z-index: 1120; display: flex; flex-direction: column; color: var(--qsv-page-ink, #1a1a1a); background: var(--qsv-page-bg, #ffffff); border-top: 1px solid rgba(127, 127, 127, 0.4); box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.18); }
   #qsv-data-drawer.open { transform: none; }
   #qsv-data-drawer:focus { outline: none; }
@@ -14269,6 +14279,25 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   // reader has taken over scrolling, and a late re-align would yank them back down even with
   // the drawer still open. The arming click's own pointerdown fires BEFORE show() captures its
   // sequence number, so it never cancels the series it starts.
+  // Height of the viewport the drawer actually has to fit inside. Standalone that is this
+  // window; embedded it is the PARENT's, which only the parent can tell us — an auto-sized
+  // iframe has no viewport of its own to measure. Until (or unless) it answers we use the
+  // local value, which is the pre-handshake behavior.
+  var parentVh = 0;
+  function viewportH() { return parentVh || window.innerHeight; }
+  if (window.self !== window.top) {
+    addEventListener("message", function (ev) {
+      var d = ev.data;
+      if (!d || typeof d.qsvVizViewport !== "number" || !(d.qsvVizViewport > 0)) return;
+      parentVh = d.qsvVizViewport;
+      // feed the CSS clamp in px-per-vh units
+      document.documentElement.style.setProperty("--qsv-data-vh", (parentVh / 100) + "px");
+      // the drawer may already be open (parent resize): re-fit the table to its new height
+      if (dt) dt.columns.adjust();
+    });
+    // the parent also broadcasts on its own resize; this is the initial ask
+    try { window.parent.postMessage({ qsvVizWantViewport: 1 }, "*"); } catch (e) {}
+  }
   var revealSeq = 0;
   ["wheel", "touchstart", "keydown", "pointerdown"].forEach(function (t) {
     addEventListener(t, function () { revealSeq++; }, { capture: true, passive: true });
@@ -14315,7 +14344,13 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
         grip.setPointerCapture(ev.pointerId);
         var raf = 0, lastH = 0;
         function onMove(mv) {
-          lastH = Math.min(Math.max(window.innerHeight - mv.clientY, window.innerHeight * 0.2), window.innerHeight * 0.9);
+          // the raw height stays in THIS frame's coordinates — the drawer is pinned to the
+          // bottom of this document and mv.clientY is measured in it — but the 20%/90% bounds
+          // are about the viewport the drawer must fit inside, which when embedded is the
+          // parent's (same reason as --qsv-data-vh; window.innerHeight here is the iframe's
+          // full content height, so the bounds would let the drawer grow past the window)
+          var vpH = viewportH();
+          lastH = Math.min(Math.max(window.innerHeight - mv.clientY, vpH * 0.2), vpH * 0.9);
           if (!raf) raf = requestAnimationFrame(function () {
             raf = 0;
             document.documentElement.style.setProperty("--qsv-data-h", Math.round(lastH) + "px");

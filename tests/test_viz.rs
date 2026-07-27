@@ -12939,7 +12939,7 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     // resizable drawer grip + focus management + stacking above the dictionary drawer
     assert!(html.contains("qsv-data-drawer-grip"));
     // the persisted px height is re-clamped in CSS against the current viewport (roborev #3864)
-    assert!(html.contains("--qsv-data-h-eff: clamp(20vh"));
+    assert!(html.contains("--qsv-data-h-eff: clamp(calc(20 * var(--qsv-data-vh))"));
     assert!(html.contains(r#"drawer.setAttribute("tabindex", "-1")"#));
     assert!(html.contains("z-index: 1120"));
     // plain embed of the vendored library (NO_COMPRESS): bundle header + real <style>
@@ -13023,6 +13023,36 @@ fn viz_smart_data_viewer_csv_export_preview_is_labeled() {
 
     assert!(html.contains(r#"text: "CSV (preview)""#));
     assert!(html.contains(r#"filename: "ten-preview""#));
+}
+
+// The drawer sizes itself against the viewport it must fit inside. Embedded in the gallery's
+// auto-sized iframes a vh resolves against the iframe — grown to the dashboard's full content
+// height — so the drawer opened taller than the window. It asks the parent for the real
+// viewport and converts the answer to px-per-vh.
+#[test]
+fn viz_smart_data_viewer_asks_parent_for_viewport() {
+    let wrk = Workdir::new("viz_smart_data_viewer_asks_parent_for_viewport");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // both halves of the handshake
+    assert!(html.contains("qsvVizWantViewport"));
+    assert!(html.contains("qsvVizViewport"));
+    // the default must sit on :root, never on body — a body declaration would beat the
+    // inherited value the handshake writes to documentElement and pin every page to 1vh
+    assert!(html.contains(":root { --qsv-data-vh: 1vh; }"));
+    assert!(!html.contains("body { --qsv-data-vh"));
+    // the height clamp and the grip's drag bounds both go through it
+    assert!(html.contains("calc(90 * var(--qsv-data-vh))"));
+    assert!(html.contains("vpH * 0.9"));
+    // standalone pages never ask, so they keep the plain vh behavior
+    assert!(html.contains("window.self !== window.top"));
 }
 
 // `--preview-threshold 0` disables the viewer entirely: no link, no payloads, no drawer, no

@@ -285,10 +285,13 @@ RESIZE_LISTENER_JS = (
     "if(!src)return;"
     "if(typeof d.qsvVizHeight===\"number\"){"
     "if(Math.abs(src.clientHeight-d.qsvVizHeight)>1)src.style.height=d.qsvVizHeight+\"px\";}"
+    # behavior "instant", not "smooth": this page sets scroll-behavior:smooth, and on an
+    # iframe-heavy load a smooth animation can be canceled at its first frame by concurrent
+    # layout work and never arrive — the jump stabilizer's snap() documents the same lesson.
     "else if(d.qsvVizReveal===\"bottom\"){var r=src.getBoundingClientRect();"
-    "if(r.bottom>innerHeight)scrollTo({top:scrollY+r.bottom-innerHeight,behavior:\"smooth\"});}"
+    "if(r.bottom>innerHeight)scrollTo({top:scrollY+r.bottom-innerHeight,behavior:\"instant\"});}"
     "else if(d.qsvVizReveal===\"top\"){var t=src.getBoundingClientRect();"
-    "scrollTo({top:Math.max(0,scrollY+t.top+(d.qsvVizOffset||0)-80),behavior:\"smooth\"});}"
+    "scrollTo({top:Math.max(0,scrollY+t.top+(d.qsvVizOffset||0)-80),behavior:\"instant\"});}"
     "});</script>")
 
 # The standalone (non-smart) figures are reconstructed in this page's own <script> via

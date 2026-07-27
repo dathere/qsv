@@ -14236,7 +14236,11 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       var fr = window.frameElement.getBoundingClientRect();
       var pw = window.parent;
       if (fr.bottom > pw.innerHeight) {
-        pw.scrollTo({ top: pw.scrollY + fr.bottom - pw.innerHeight, behavior: "smooth" });
+        // instant, NOT smooth: on an iframe-heavy gallery a smooth animation can be canceled
+        // at its first frame by concurrent layout work and never arrive (the gallery's jump
+        // stabilizer documents the same lesson) — and "auto" would inherit the gallery's
+        // scroll-behavior:smooth CSS
+        pw.scrollTo({ top: pw.scrollY + fr.bottom - pw.innerHeight, behavior: "instant" });
       }
     } catch (e) {}
   }
@@ -14249,9 +14253,17 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     try {
       var fr = window.frameElement.getBoundingClientRect();
       var y = fr.top + window.parent.scrollY + off - 80;
-      window.parent.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+      window.parent.scrollTo({ top: Math.max(0, y), behavior: "instant" });
     } catch (e) {}
   }
+  // Any reader input over the dashboard invalidates a pending reveal re-align series: the
+  // reader has taken over scrolling, and a late re-align would yank them back down even with
+  // the drawer still open. The arming click's own pointerdown fires BEFORE show() captures its
+  // sequence number, so it never cancels the series it starts.
+  var revealSeq = 0;
+  ["wheel", "touchstart", "keydown", "pointerdown"].forEach(function (t) {
+    addEventListener(t, function () { revealSeq++; }, { capture: true, passive: true });
+  });
   function show(drawer) {
     drawer.classList.add("open");
     document.body.classList.add("qsv-data-open");
@@ -14264,12 +14276,13 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     // each layout shift above the target cancels an in-flight smooth scroll (the same churn
     // the gallery's jump stabilizer exists to fight). Re-align a few times; once the drawer
     // region is visible the parent's reveal handler is a no-op, so the series converges.
-    // Re-check the drawer is still open first: a close within the window has already revealed
-    // the top, and a stale re-align would scroll the parent right back down.
+    // Each callback re-checks that the drawer is still open (a close has already revealed the
+    // top) AND that no reader input arrived since (revealSeq unchanged).
+    var seq = ++revealSeq;
     [450, 1200, 2200].forEach(function (t) {
       setTimeout(function () {
         var d = document.getElementById("qsv-data-drawer");
-        if (d && d.classList.contains("open")) revealBottom();
+        if (revealSeq === seq && d && d.classList.contains("open")) revealBottom();
       }, t);
     });
   }

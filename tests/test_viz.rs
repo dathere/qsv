@@ -12973,6 +12973,58 @@ fn viz_smart_data_viewer_preview_over_threshold() {
     assert!(!html.contains("row6sentinel"));
 }
 
+// The drawer's controls row carries a CSV export button next to the SearchBuilder popover.
+// It is deliberately configured with NO exportOptions: Buttons' defaults already export every
+// column (Responsive's collapsed set never touches DataTables' visibility) and the "display"
+// orthogonal round-trips markup/entity cell values, which `orthogonal: "export"` would strip.
+// Assertions use the emitted spacing so they cannot match the minified bundle, which embeds
+// plaintext in NO_COMPRESS pages and contains these words itself.
+#[test]
+fn viz_smart_data_viewer_csv_export_button() {
+    let wrk = Workdir::new("viz_smart_data_viewer_csv_export_button");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"extend: "csv""#));
+    // full embed: plain label, file named for the input stem
+    assert!(html.contains(r#"text: "CSV""#));
+    assert!(html.contains(r#"filename: "dv""#));
+    // neither tempting override is present
+    assert!(!html.contains(r#"orthogonal: "export""#));
+    assert!(!html.contains(r#"columns: ":all""#));
+    // the XSS guard the export fidelity depends on is still on the columns
+    assert!(html.contains("DataTable.render.text()"));
+}
+
+// A truncated preview must not hand back a file that looks complete: both the button label and
+// the download's name say "preview".
+#[test]
+fn viz_smart_data_viewer_csv_export_preview_is_labeled() {
+    let wrk = Workdir::new("viz_smart_data_viewer_csv_export_preview_is_labeled");
+    let mut csv = String::from("name,amt,grade\n");
+    for i in 1..=10 {
+        let grade = if i % 2 == 0 { "A" } else { "B" };
+        csv.push_str(&format!("row{i},{i},{grade}\n"));
+    }
+    wrk.create_from_string("ten.csv", &csv);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "ten.csv", "--preview-threshold", "5"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"text: "CSV (preview)""#));
+    assert!(html.contains(r#"filename: "ten-preview""#));
+}
+
 // `--preview-threshold 0` disables the viewer entirely: no link, no payloads, no drawer, no
 // DataTables bundle — the dashboard carries no trace of the feature.
 #[test]

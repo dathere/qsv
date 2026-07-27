@@ -14396,7 +14396,21 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
         // SearchBuilder rides in a Buttons popover ("Filter (n)") on the same controls row as
         // the page-length selector and the global search box, instead of a permanent pane.
         language: { searchBuilder: { button: { 0: "Filter", _: "Filter (%d)" } } },
-        layout: { topStart: ["pageLength", { buttons: ["searchBuilder"] }] }
+        layout: { topStart: ["pageLength", { buttons: ["searchBuilder", {
+          extend: "csv",
+          text: "__QSVDATAEXPORTTEXT__",
+          // substituted as a complete JS string literal: the stem is a user-supplied file name
+          filename: __QSVDATAEXPORTNAME__,
+          // No exportOptions — the defaults are right and the two tempting overrides are not.
+          // columns=":visible" already means every column: Responsive keeps its collapsed set
+          // in its own state and leaves DataTables' visibility alone. orthogonal="display" is
+          // the fidelity-preserving choice, not "export": Buttons strips markup and decodes
+          // entities on the way out, which mangles a raw cell but exactly inverts the escaping
+          // DataTable.render.text() applied for display. Over a markup/entity/quote/tab/emoji
+          // fixture "display" was 10/10 exact where "export" corrupted 4/10.
+          // Row scope is Buttons' default: search applies, paging does not, so the file holds
+          // every filtered row rather than the visible page.
+        }] }] }
       });
       // keep the filter-input row aligned with Responsive's column collapse
       function syncFilters(visible) {
@@ -27273,6 +27287,17 @@ fn datatable_columns_json(stats: &[crate::cmd::stats::StatsData]) -> String {
     cols
 }
 
+/// A complete JS string literal for `s`, safe to substitute into inline `<script>` source.
+/// JSON string syntax is a subset of JS, so `serde_json` does the quoting/escaping; the `&<>`
+/// trio is then escaped as in `inline_json_script` so the value cannot close the script tag.
+fn js_string_literal(s: &str) -> String {
+    serde_json::to_string(s)
+        .unwrap_or_else(|_| "\"\"".to_string())
+        .replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+}
+
 /// A plain (uncompressed) inline JSON `<script>` payload tag: `&`/`<`/`>` become `\u00XX` inside
 /// the JSON string literals so no cell value can smuggle a `</script>` into the page (same
 /// escape trio as `map_panel_inline_html`'s plain branch).
@@ -27309,6 +27334,18 @@ fn build_data_viewer_chrome(
             HumanCount(total_rows)
         )
     };
+    // The CSV export can only ever contain the rows that were embedded, so when the viewer is
+    // showing a truncated preview both the button and the file name have to say so — a
+    // download silently missing most of the dataset is worse than no download at all.
+    let export_stem = std::path::Path::new(args.arg_input.as_deref().unwrap_or("data"))
+        .file_stem()
+        .map_or_else(|| "data".to_string(), |s| s.to_string_lossy().into_owned());
+    let export_name = if full {
+        export_stem
+    } else {
+        format!("{export_stem}-preview")
+    };
+    let export_text = if full { "CSV" } else { "CSV (preview)" };
 
     let mut rows_tag = String::new();
     if viz_compress() && rows_json.len() >= DATATABLE_GZ_MIN_BYTES {
@@ -27327,7 +27364,10 @@ fn build_data_viewer_chrome(
     let chrome = format!(
         "{lib}\n{rows_tag}\n{cols_tag}\n{script}",
         lib = datatables_lib_block(),
-        script = DATA_DRAWER_SCRIPT.replace("__QSVDATATITLE__", &title),
+        script = DATA_DRAWER_SCRIPT
+            .replace("__QSVDATATITLE__", &title)
+            .replace("__QSVDATAEXPORTTEXT__", export_text)
+            .replace("__QSVDATAEXPORTNAME__", &js_string_literal(&export_name)),
     );
     Ok(Some((chrome, link_label)))
 }

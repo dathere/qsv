@@ -38,12 +38,20 @@ jobs:
           #   DevSkim flags as localhost access — fixture noise, not runtime code.
           #   Scoped to the generated text formats so executable/config files in
           #   the same dir (check_semanticmd.py, datadict.yaml) stay scanned.
+          # src/cmd/assets/datatables.min.* : vendored DataTables 3.0.0 bundle
+          #   (dt/b/date/r/sb). DS172411 flags every setTimeout call site
+          #   regardless of argument type; all 25 in the bundle pass a function
+          #   literal, none pass a string — minified third-party noise.
+          #   Scoped to the two vendored files so any hand-written asset added
+          #   to this dir stays scanned.
           ignore-globs: |
             .claude/**
             tests/resources/**
             docs/describegpt/*.md
             docs/describegpt/*.json
             docs/describegpt/*.toon
+            src/cmd/assets/datatables.min.js
+            src/cmd/assets/datatables.min.css
         
       - name: Upload DevSkim scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4

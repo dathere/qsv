@@ -463,12 +463,9 @@ impl DynEnumValidator {
     }
 }
 
-impl Keyword for DynEnumValidator {
+impl<'i> Keyword<'i> for DynEnumValidator {
     #[inline]
-    fn validate<'instance>(
-        &self,
-        instance: &'instance Value,
-    ) -> Result<(), ValidationError<'instance>> {
+    fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         if let Value::String(s) = instance
             && self.dynenum_set.contains(s)
         {
@@ -480,7 +477,7 @@ impl Keyword for DynEnumValidator {
     }
 
     #[inline]
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &'i Value) -> bool {
         if let Value::String(s) = instance {
             self.dynenum_set.contains(s)
         } else {
@@ -507,11 +504,8 @@ impl UniqueCombinedWithValidator {
     }
 }
 
-impl Keyword for UniqueCombinedWithValidator {
-    fn validate<'instance>(
-        &self,
-        instance: &'instance Value,
-    ) -> Result<(), ValidationError<'instance>> {
+impl<'i> Keyword<'i> for UniqueCombinedWithValidator {
+    fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         let obj = instance
             .as_object()
             .ok_or_else(|| ValidationError::custom("Instance must be an object"))?;
@@ -571,7 +565,7 @@ impl Keyword for UniqueCombinedWithValidator {
         Ok(())
     }
 
-    fn is_valid(&self, _instance: &Value) -> bool {
+    fn is_valid(&self, _instance: &'i Value) -> bool {
         // `uniqueCombinedWith` is stateful: a "valid" answer must atomically record the
         // combination, otherwise two concurrent duplicates both pass. Since `is_valid` is
         // not allowed to observably mutate state, we always return `false` to force the
@@ -585,7 +579,7 @@ fn unique_combined_with_validator_factory<'a>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
     _location: Location,
-) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
     // Get the array of column names/indices
     let columns = value.as_array().ok_or_else(|| {
         ValidationError::custom("'uniqueCombinedWith' must be an array of column names or indices")
@@ -944,7 +938,7 @@ fn dyn_enum_validator_factory<'a>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
     _location: Location,
-) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
     let uri = value.as_str().ok_or_else(|| {
         ValidationError::custom(
             "'dynamicEnum' must be set to a CSV file on the local filesystem or on a URL.",
@@ -980,7 +974,7 @@ fn dyn_enum_validator_factory<'a>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
     _location: Location,
-) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
     let Value::String(uri) = value else {
         return Err(ValidationError::custom(
             "'dynamicEnum' must be set to a CSV file on the local filesystem or on a URL.",

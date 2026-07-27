@@ -9962,21 +9962,22 @@ const DATATABLES_JS: &str = include_str!("assets/datatables.min.js");
 const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
 
 /// The download-builder combination the vendored bundle was built from: DataTables core 3.0.0 +
-/// DateTime 2.0.0 + SearchBuilder 2.0.0, default DataTables styling. Also the path segment of
-/// the version-pinned CDN URLs.
-const DATATABLES_CDN_COMBO: &str = "dt-3.0.0/date-2.0.0/sb-2.0.0";
+/// Buttons 4.0.0 (for the popover SearchBuilder "Filter" button) + DateTime 2.0.0 + Responsive
+/// 4.0.0 + SearchBuilder 2.0.0, default DataTables styling. Also the path segment of the
+/// version-pinned CDN URLs.
+const DATATABLES_CDN_COMBO: &str = "dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0";
 const DATATABLES_CDN_JS_SRI: &str =
-    "sha384-CjxR3VkdAPsdw4x7G2tqAsBz9ADMiTgDT3fELYrDZiTu9vj2Pk7MgzXIX691Bj1e";
+    "sha384-qsj+q+OqjwnpWR0ndlkUd+MsQd7oqHncAjb1PSxWIMH5ZStyVauUryBapGSlkcap";
 const DATATABLES_CDN_CSS_SRI: &str =
-    "sha384-nIvXMepBLLLzATSEdJqOTPe43BzpWBSa00W8Q/oS4NvnhKVRHTZ7v9urX0yhwkf0";
+    "sha384-ZtgaXPGRw8cZoyioB/MnlrKGlzPp58fYlI9z6CaPbGwG8kjkKPHju1nluTbJCNai";
 
-/// The DataTables bundle gzipped at max compression + base64 (~204 KB -> ~55 KB), computed once
-/// per process like `PLOTLY_GZ_B64`. Empty on (never-expected) gzip failure — callers then emit
-/// the plain bundle.
+/// The DataTables bundle gzipped at max compression + base64 (~281 KB -> ~106 KB b64), computed
+/// once per process like `PLOTLY_GZ_B64`. Empty on (never-expected) gzip failure — callers then
+/// emit the plain bundle.
 static DATATABLES_GZ_B64: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| gzip_b64(DATATABLES_JS.as_bytes(), flate2::Compression::best()));
 
-/// Like `DATATABLES_GZ_B64` but for the stylesheet (~47 KB -> ~8 KB).
+/// Like `DATATABLES_GZ_B64` but for the stylesheet (~67 KB -> ~12 KB b64).
 static DATATABLES_CSS_GZ_B64: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| gzip_b64(DATATABLES_CSS.as_bytes(), flate2::Compression::best()));
 
@@ -14145,16 +14146,26 @@ document.addEventListener("keydown", function (e) {
 /// bottom:50px) are pushed above the open drawer, mirroring the dictionary drawer's `right:`
 /// push of the same widgets.
 const DATA_DRAWER_SCRIPT: &str = r##"<style>
-  #qsv-data-drawer { position: fixed; left: 0; right: 0; bottom: 0; height: min(55vh, 560px); transform: translateY(103%); transition: transform 0.22s ease; z-index: 1090; display: flex; flex-direction: column; color: var(--qsv-page-ink, #1a1a1a); background: var(--qsv-page-bg, #ffffff); border-top: 1px solid rgba(127, 127, 127, 0.4); box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.18); }
+  #qsv-data-drawer { position: fixed; left: 0; right: 0; bottom: 0; height: var(--qsv-data-h, min(55vh, 560px)); transform: translateY(103%); transition: transform 0.22s ease; z-index: 1120; display: flex; flex-direction: column; color: var(--qsv-page-ink, #1a1a1a); background: var(--qsv-page-bg, #ffffff); border-top: 1px solid rgba(127, 127, 127, 0.4); box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.18); }
   #qsv-data-drawer.open { transform: none; }
-  .qsv-data-drawer-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 14px; font-size: 13px; font-weight: 600; border-bottom: 1px solid rgba(127, 127, 127, 0.25); }
+  #qsv-data-drawer:focus { outline: none; }
+  .qsv-data-drawer-grip { flex: none; height: 10px; cursor: ns-resize; touch-action: none; display: flex; align-items: center; justify-content: center; }
+  .qsv-data-drawer-grip::before { content: ""; width: 44px; height: 4px; border-radius: 2px; background: rgba(127, 127, 127, 0.55); }
+  .qsv-data-drawer-bar { display: flex; align-items: center; justify-content: space-between; padding: 0 14px 6px; font-size: 13px; font-weight: 600; border-bottom: 1px solid rgba(127, 127, 127, 0.25); }
   .qsv-data-drawer-bar a { color: inherit; text-decoration: none; font-weight: 400; font-size: 15px; opacity: 0.75; }
   .qsv-data-drawer-bar a:hover { opacity: 1; }
-  .qsv-data-drawer-content { flex: 1; overflow: auto; padding: 4px 14px 10px 14px; }
-  body.qsv-data-open { margin-bottom: min(55vh, 560px); }
-  body.qsv-data-open #qsv-logo { bottom: calc(min(55vh, 560px) + 12px); }
-  body.qsv-data-open #qsv-theme-toggle { bottom: calc(min(55vh, 560px) + 50px); }
-  tr.qsv-data-filters th { padding: 3px 6px; }
+  .qsv-data-drawer-content { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 14px 10px 14px; }
+  /* only the table's own layout row scrolls; the controls row above and the info/paging row
+     below stay fixed, and the sticky thead pins the title+filter rows inside the scroll region */
+  #qsv-data-drawer div.dt-container { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #qsv-data-drawer div.dt-container > div.dt-layout-row { flex: none; }
+  #qsv-data-drawer div.dt-container > div.dt-layout-table { flex: 1 1 auto; min-height: 0; overflow: auto; }
+  #qsv-data-table thead th { position: sticky; top: 0; z-index: 5; background: var(--qsv-page-bg, #ffffff); }
+  #qsv-data-table thead tr.qsv-data-filters th { top: var(--qsv-data-th1-h, 34px); }
+  body.qsv-data-open { margin-bottom: var(--qsv-data-h, min(55vh, 560px)); }
+  body.qsv-data-open #qsv-logo { bottom: calc(var(--qsv-data-h, min(55vh, 560px)) + 12px); }
+  body.qsv-data-open #qsv-theme-toggle { bottom: calc(var(--qsv-data-h, min(55vh, 560px)) + 50px); }
+  tr.qsv-data-filters th { padding: 3px 6px; box-shadow: 0 1px 0 rgba(127, 127, 127, 0.35); }
   tr.qsv-data-filters input { width: 100%; box-sizing: border-box; font-size: 11px; padding: 2px 5px; color: inherit; background: transparent; border: 1px solid rgba(127, 127, 127, 0.45); border-radius: 4px; }
   #qsv-data-drawer table.dataTable { color: inherit; }
   .qsv-viz-meta a.qsv-data-link { font-size: 0.9em; }
@@ -14204,6 +14215,8 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     drawer.classList.add("open");
     document.body.classList.add("qsv-data-open");
     window.dispatchEvent(new Event("resize"));
+    // move keyboard focus into the drawer (its tabindex="-1" makes it programmatically focusable)
+    drawer.focus({ preventScroll: true });
   }
   function build() {
     var rowsEl = document.getElementById("qsv-data-rows");
@@ -14214,6 +14227,35 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       var cols = JSON.parse(colsEl.textContent);
       var drawer = document.createElement("aside");
       drawer.id = "qsv-data-drawer";
+      drawer.setAttribute("tabindex", "-1");
+      // resize grip on the top edge: drag to make the drawer taller/shorter. The height rides
+      // the --qsv-data-h CSS var so the body margin and the fixed logo/theme widgets follow.
+      var grip = document.createElement("div");
+      grip.className = "qsv-data-drawer-grip";
+      grip.setAttribute("aria-hidden", "true");
+      grip.addEventListener("pointerdown", function (ev) {
+        ev.preventDefault();
+        grip.setPointerCapture(ev.pointerId);
+        var raf = 0, lastH = 0;
+        function onMove(mv) {
+          lastH = Math.min(Math.max(window.innerHeight - mv.clientY, window.innerHeight * 0.2), window.innerHeight * 0.9);
+          if (!raf) raf = requestAnimationFrame(function () {
+            raf = 0;
+            document.documentElement.style.setProperty("--qsv-data-h", Math.round(lastH) + "px");
+          });
+        }
+        function onUp() {
+          grip.removeEventListener("pointermove", onMove);
+          grip.removeEventListener("pointerup", onUp);
+          grip.removeEventListener("pointercancel", onUp);
+          // re-fit plotly panels to the shrunken/grown page and re-balance the table columns
+          window.dispatchEvent(new Event("resize"));
+          if (dt) dt.columns.adjust();
+        }
+        grip.addEventListener("pointermove", onMove);
+        grip.addEventListener("pointerup", onUp);
+        grip.addEventListener("pointercancel", onUp);
+      });
       var bar = document.createElement("div");
       bar.className = "qsv-data-drawer-bar";
       var title = document.createElement("span");
@@ -14258,6 +14300,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       thead.appendChild(filterRow);
       table.appendChild(thead);
       content.appendChild(table);
+      drawer.appendChild(grip);
       drawer.appendChild(bar);
       drawer.appendChild(content);
       document.body.appendChild(drawer);
@@ -14270,9 +14313,26 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
         // no initial sort: rows show in file order until the user orders a column
         order: [],
         pageLength: 25,
-        scrollX: true,
-        layout: { top1: "searchBuilder" }
+        // collapse the columns that don't fit into an expandable child-row control per row
+        responsive: true,
+        // SearchBuilder rides in a Buttons popover ("Filter (n)") on the same controls row as
+        // the page-length selector and the global search box, instead of a permanent pane.
+        language: { searchBuilder: { button: { 0: "Filter", _: "Filter (%d)" } } },
+        layout: { topStart: ["pageLength", { buttons: ["searchBuilder"] }] }
       });
+      // keep the filter-input row aligned with Responsive's column collapse
+      function syncFilters(visible) {
+        for (var i = 0; i < filterRow.children.length; i++) {
+          filterRow.children[i].style.display = visible[i] === false ? "none" : "";
+        }
+      }
+      dt.on("responsive-resize", function (e, api, visible) { if (visible) syncFilters(visible); });
+      try { syncFilters(dt.columns().responsiveHidden().toArray()); } catch (e) {}
+      // the filter row's sticky offset = the rendered height of the title row
+      var th1 = titleRow.getBoundingClientRect().height;
+      // floor, so the filter row overlaps the title row by the fractional pixel rather than
+      // leaving a see-through gap between the two sticky rows
+      if (th1 > 0) drawer.style.setProperty("--qsv-data-th1-h", Math.floor(th1) + "px");
       // let the just-appended drawer paint once closed, so the open transition animates
       requestAnimationFrame(function () { show(drawer); });
     });
@@ -14295,12 +14355,19 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     if (drawer) drawer.classList.remove("open");
     document.body.classList.remove("qsv-data-open");
     window.dispatchEvent(new Event("resize"));
+    // return focus to the Explore/Preview link in the metadata table — the top of the
+    // dashboard — which also scrolls it back into view
+    var link = document.querySelector("a.qsv-data-link");
+    if (link) link.focus();
     return false;
   };
   // Esc closes the data drawer; the dictionary drawer registers its own Esc handler, so with
   // both open a single Esc closes both — acceptable, they are independent overlays.
   document.addEventListener("keydown", function (ev) {
     if (ev.key === "Escape") {
+      // an open Buttons popover (the SearchBuilder "Filter" panel) owns this Esc — Buttons
+      // dismisses it itself; only a bare Esc closes the drawer
+      if (document.querySelector("div.dt-button-collection")) return;
       var drawer = document.getElementById("qsv-data-drawer");
       if (drawer && drawer.classList.contains("open")) window.qsvCloseData();
     }
@@ -31678,7 +31745,9 @@ mod tests {
                 .expect("combo segments are code-version");
             let name = match code {
                 "dt" => "DataTables",
+                "b" => "Buttons",
                 "date" => "DateTime",
+                "r" => "Responsive",
                 "sb" => "SearchBuilder",
                 other => panic!("unknown combo component {other}"),
             };

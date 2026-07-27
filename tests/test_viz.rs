@@ -12928,8 +12928,19 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     // drawer chrome + DataTable init + the searches the issue asks for
     assert!(html.contains("Data — all 5 rows"));
     assert!(html.contains("new DataTable"));
+    // SearchBuilder rides in a Buttons popover ("Filter (n)") on the controls row, not a
+    // permanent pane; per-column filter inputs + Responsive column collapse are on
     assert!(html.contains("searchBuilder"));
+    assert!(html.contains(r#"button: { 0: "Filter", _: "Filter (%d)" }"#));
+    assert!(!html.contains(r#"top1: "searchBuilder""#));
+    assert!(html.contains("responsive: true"));
+    assert!(!html.contains("scrollX: true"));
     assert!(html.contains("qsv-data-filters"));
+    // resizable drawer grip + focus management + stacking above the dictionary drawer
+    assert!(html.contains("qsv-data-drawer-grip"));
+    assert!(html.contains("--qsv-data-h"));
+    assert!(html.contains(r#"drawer.setAttribute("tabindex", "-1")"#));
+    assert!(html.contains("z-index: 1120"));
     // plain embed of the vendored library (NO_COMPRESS): bundle header + real <style>
     assert!(html.contains(r#"id="qsv-data-lib" type="text/javascript""#));
     assert!(html.contains("DataTables 3."));
@@ -13108,10 +13119,10 @@ fn viz_smart_data_viewer_cdn_tags_carry_sri() {
     let html = String::from_utf8_lossy(&out.stdout);
 
     assert!(html.contains(
-        "https://cdn.datatables.net/v/dt/dt-3.0.0/date-2.0.0/sb-2.0.0/datatables.min.js"
+        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.js"
     ));
     assert!(html.contains(
-        "https://cdn.datatables.net/v/dt/dt-3.0.0/date-2.0.0/sb-2.0.0/datatables.min.css"
+        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.css"
     ));
     // both tags carry integrity + crossorigin; no embedded library payloads remain
     assert_eq!(html.matches("cdn.datatables.net").count(), 2);

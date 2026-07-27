@@ -27454,9 +27454,26 @@ fn build_data_viewer_chrome(
     // The CSV export can only ever contain the rows that were embedded, so when the viewer is
     // showing a truncated preview both the button and the file name have to say so — a
     // download silently missing most of the dataset is worse than no download at all.
-    let export_stem = std::path::Path::new(args.arg_input.as_deref().unwrap_or("data"))
+    // The stem is not always a plain file name — a `dc:<name>` cache input keeps its prefix, so
+    // the raw stem can carry a colon, which is illegal in a Windows filename. Keep only the
+    // characters every platform accepts and fall back when nothing survives (stdin included,
+    // where there is no input path at all).
+    let raw_stem = std::path::Path::new(args.arg_input.as_deref().unwrap_or("data"))
         .file_stem()
         .map_or_else(|| "data".to_string(), |s| s.to_string_lossy().into_owned());
+    let mut export_stem: String = raw_stem
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if export_stem.trim_matches('-').is_empty() {
+        export_stem = "data".to_string();
+    }
     let export_name = if full {
         export_stem
     } else {

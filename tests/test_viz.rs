@@ -13025,6 +13025,30 @@ fn viz_smart_data_viewer_csv_export_preview_is_labeled() {
     assert!(html.contains(r#"filename: "ten-preview""#));
 }
 
+// The export file name is derived from the input, which is not always a plain file name — a
+// `dc:<name>` cache input keeps its prefix, and a colon is illegal in a Windows file name. Only
+// portable characters survive. (A space stands in for the colon here: it is legal in a file
+// name on every platform the tests run on, so the fixture itself stays portable.)
+#[test]
+fn viz_smart_data_viewer_csv_export_name_is_sanitized() {
+    let wrk = Workdir::new("viz_smart_data_viewer_csv_export_name_is_sanitized");
+    let mut csv = String::from("name,amt,grade\n");
+    for i in 1..=5 {
+        let grade = if i % 2 == 0 { "A" } else { "B" };
+        csv.push_str(&format!("row{i},{i},{grade}\n"));
+    }
+    wrk.create_from_string("od d.csv", &csv);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "od d.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"filename: "od-d""#));
+}
+
 // The drawer sizes itself against the viewport it must fit inside. Embedded in the gallery's
 // auto-sized iframes a vh resolves against the iframe — grown to the dashboard's full content
 // height — so the drawer opened taller than the window. It asks the parent for the real

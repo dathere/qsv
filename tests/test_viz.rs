@@ -13000,6 +13000,15 @@ fn viz_smart_data_viewer_csv_export_button() {
     assert!(!html.contains(r#"columns: ":all""#));
     // the XSS guard the export fidelity depends on is still on the columns
     assert!(html.contains("DataTable.render.text()"));
+    // the thead's second row is the per-column filter inputs, and the CSV writer serializes
+    // every header row -- it must be dropped or the file gets a blank line under the header.
+    // The hook has to sit INSIDE exportOptions; a level up it is silently never called.
+    assert!(html.contains("exportOptions: {"));
+    assert!(html.contains("customizeData: function (d) {"));
+    assert!(html.contains(r#"classList.contains("qsv-data-filters")"#));
+    // supplying exportOptions replaces csvHtml5's own default object, so the CSV-injection
+    // guard has to be restated rather than inherited
+    assert!(html.contains("escapeExcelFormula: true"));
 }
 
 // A truncated preview must not hand back a file that looks complete: both the button label and
@@ -13077,6 +13086,11 @@ fn viz_smart_data_viewer_asks_parent_for_viewport() {
     assert!(html.contains("vpH * 0.9"));
     // standalone pages never ask, so they keep the plain vh behavior
     assert!(html.contains("window.self !== window.top"));
+    // the ask is repeated on every open: an embedder that installs its listener below the
+    // iframe markup (the gallery does, ~320KB below) never hears the load-time one, and a
+    // dropped answer has no other recovery
+    assert!(html.contains("function askViewport()"));
+    assert!(html.contains("askViewport();"));
 }
 
 // DataTables orders its "date" type through the browser's Date.parse, which rejects day-first

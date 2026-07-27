@@ -200,9 +200,11 @@ JUMP_JS = (
     "if(location.hash.length>1)arm(document.getElementById(location.hash.slice(1)));});"
     # dashboard iframes report their height (qsvVizHeight -> re-snap) and forward the reader's own
     # scroll input (qsvUserScroll -> the reader took over, cancel and stop re-aligning).
+    # a data viewer reveal request is also reader takeover: without this the stabilizer would
+    # snap the jumped-to figure right back and undo the drawer reveal scroll.
     "addEventListener(\"message\",function(e){var d=e.data;if(!d)return;"
     "if(typeof d.qsvVizHeight===\"number\")snap();"
-    "else if(d.qsvUserScroll){until=0;moved=true;stop();}});"
+    "else if(d.qsvUserScroll||d.qsvVizReveal){until=0;moved=true;stop();}});"
     # scrolls over the non-iframe margins land on the parent window directly.
     "[\"wheel\",\"touchstart\",\"keydown\"].forEach(function(t){"
     "addEventListener(t,function(){until=0;moved=true;},{passive:true});});"
@@ -248,8 +250,11 @@ RESIZE_REPORTER_JS = (
     # stopPropagation()s (so a 3D panel scrolls the page instead of being eaten); a bubble-phase
     # listener here would never see that wheel. Capturing at the window fires before the plot div, so
     # the reader's scroll over a 3D panel still cancels the parent's jump stabilizer.
+    # pointerdown too: a CLICK inside the dashboard (e.g. the data viewer's Explore link) is
+    # just as much reader takeover as a scroll, and the jump stabilizer must not fight the
+    # drawer's reveal scroll after a TOC jump.
     "var us=function(){parent.postMessage({qsvUserScroll:1},\"*\");};"
-    "[\"wheel\",\"touchstart\",\"keydown\"].forEach(function(t){"
+    "[\"wheel\",\"touchstart\",\"keydown\",\"pointerdown\"].forEach(function(t){"
     "addEventListener(t,us,{capture:true,passive:true});});})();</script>")
 
 # Added to the gallery once: sizes each iframe to the height its dashboard reports (matched by
@@ -259,12 +264,25 @@ RESIZE_REPORTER_JS = (
 # Otherwise, since enlarging the iframe enlarges the child viewport, the next report would echo the
 # new height and the iframe would creep upward 1 step per resize. With this guard it converges to
 # the content height: once iframe == content, the report equals the current height and we stop.
+# It also honors qsvVizReveal messages from a dashboard's data viewer drawer (issue #4283): the
+# drawer is position:fixed, which inside a full-height, never-scrolling iframe pins it to the
+# iframe's BOTTOM edge — often far outside the parent viewport — and neither focus() nor
+# scrollIntoView can reveal it (both are no-ops on fixed elements; direct parent-window access
+# throws when the gallery is opened over file://). "bottom" aligns the iframe's bottom edge with
+# the viewport (open); "top" scrolls back to the dashboard's metadata link (close).
 RESIZE_LISTENER_JS = (
     "<script>addEventListener(\"message\",function(e){"
-    "var h=e.data&&e.data.qsvVizHeight;if(typeof h!==\"number\")return;"
-    "var f=document.getElementsByClassName(\"dash\");"
-    "for(var i=0;i<f.length;i++)if(f[i].contentWindow===e.source){"
-    "if(Math.abs(f[i].clientHeight-h)>1)f[i].style.height=h+\"px\";break;}});</script>")
+    "var d=e.data;if(!d)return;"
+    "var f=document.getElementsByClassName(\"dash\"),src=null;"
+    "for(var i=0;i<f.length;i++)if(f[i].contentWindow===e.source){src=f[i];break;}"
+    "if(!src)return;"
+    "if(typeof d.qsvVizHeight===\"number\"){"
+    "if(Math.abs(src.clientHeight-d.qsvVizHeight)>1)src.style.height=d.qsvVizHeight+\"px\";}"
+    "else if(d.qsvVizReveal===\"bottom\"){var r=src.getBoundingClientRect();"
+    "if(r.bottom>innerHeight)scrollTo({top:scrollY+r.bottom-innerHeight,behavior:\"smooth\"});}"
+    "else if(d.qsvVizReveal===\"top\"){var t=src.getBoundingClientRect();"
+    "scrollTo({top:Math.max(0,scrollY+t.top+(d.qsvVizOffset||0)-80),behavior:\"smooth\"});}"
+    "});</script>")
 
 # The standalone (non-smart) figures are reconstructed in this page's own <script> via
 # Plotly.newPlot, so — unlike the genuine `qsv viz` HTML output and the smart-dashboard iframes —

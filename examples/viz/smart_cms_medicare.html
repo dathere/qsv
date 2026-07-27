@@ -46,7 +46,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>30,007 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Preview)</a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>4</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>97.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-27 02:13 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-27 02:25 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
       <div class="qsv-viz-plot">
@@ -588,6 +588,13 @@
   // behavior. Standalone pages (self === top) never scroll.
   function revealBottom() {
     if (window.self === window.top) return;
+    // primary channel: ask a cooperating parent (the qsv gallery) to scroll. postMessage works
+    // even when the frames are cross-origin — e.g. a file://-opened gallery, where every direct
+    // parent-window access below throws — the same reason the gallery's iframe auto-sizing
+    // rides postMessage rather than reading the child document.
+    try { window.parent.postMessage({ qsvVizReveal: "bottom" }, "*"); } catch (e) {}
+    // fallback for same-origin embedders without the gallery listener: scroll the parent
+    // directly. In the gallery both paths fire and converge on the same position.
     try {
       var fr = window.frameElement.getBoundingClientRect();
       var pw = window.parent;
@@ -598,11 +605,13 @@
   }
   function revealTop(el) {
     if (window.self === window.top) return;
+    // the iframe viewport is the whole (unscrolled) document, so the element's viewport rect
+    // IS its document position within the iframe
+    var off = el.getBoundingClientRect().top;
+    try { window.parent.postMessage({ qsvVizReveal: "top", qsvVizOffset: off }, "*"); } catch (e) {}
     try {
       var fr = window.frameElement.getBoundingClientRect();
-      // the iframe viewport is the whole (unscrolled) document, so the element's viewport rect
-      // IS its document position; offset by the iframe's own position in the parent
-      var y = fr.top + window.parent.scrollY + el.getBoundingClientRect().top - 80;
+      var y = fr.top + window.parent.scrollY + off - 80;
       window.parent.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
     } catch (e) {}
   }
@@ -926,6 +935,6 @@
   else setTimeout(init, 0);
 })();
 </script>
-<script>(function(){function r(){parent.postMessage({qsvVizHeight:document.documentElement.scrollHeight},"*");}addEventListener("load",r);addEventListener("resize",r);if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);setTimeout(r,200);setTimeout(r,800);var us=function(){parent.postMessage({qsvUserScroll:1},"*");};["wheel","touchstart","keydown"].forEach(function(t){addEventListener(t,us,{capture:true,passive:true});});})();</script>
+<script>(function(){function r(){parent.postMessage({qsvVizHeight:document.documentElement.scrollHeight},"*");}addEventListener("load",r);addEventListener("resize",r);if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);setTimeout(r,200);setTimeout(r,800);var us=function(){parent.postMessage({qsvUserScroll:1},"*");};["wheel","touchstart","keydown","pointerdown"].forEach(function(t){addEventListener(t,us,{capture:true,passive:true});});})();</script>
 </body>
 </html>

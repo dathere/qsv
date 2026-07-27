@@ -14225,6 +14225,13 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   // behavior. Standalone pages (self === top) never scroll.
   function revealBottom() {
     if (window.self === window.top) return;
+    // primary channel: ask a cooperating parent (the qsv gallery) to scroll. postMessage works
+    // even when the frames are cross-origin — e.g. a file://-opened gallery, where every direct
+    // parent-window access below throws — the same reason the gallery's iframe auto-sizing
+    // rides postMessage rather than reading the child document.
+    try { window.parent.postMessage({ qsvVizReveal: "bottom" }, "*"); } catch (e) {}
+    // fallback for same-origin embedders without the gallery listener: scroll the parent
+    // directly. In the gallery both paths fire and converge on the same position.
     try {
       var fr = window.frameElement.getBoundingClientRect();
       var pw = window.parent;
@@ -14235,11 +14242,13 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   }
   function revealTop(el) {
     if (window.self === window.top) return;
+    // the iframe viewport is the whole (unscrolled) document, so the element's viewport rect
+    // IS its document position within the iframe
+    var off = el.getBoundingClientRect().top;
+    try { window.parent.postMessage({ qsvVizReveal: "top", qsvVizOffset: off }, "*"); } catch (e) {}
     try {
       var fr = window.frameElement.getBoundingClientRect();
-      // the iframe viewport is the whole (unscrolled) document, so the element's viewport rect
-      // IS its document position; offset by the iframe's own position in the parent
-      var y = fr.top + window.parent.scrollY + el.getBoundingClientRect().top - 80;
+      var y = fr.top + window.parent.scrollY + off - 80;
       window.parent.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
     } catch (e) {}
   }

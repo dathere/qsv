@@ -14420,7 +14420,28 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
         data: rows,
         // render.text(): cell values are DATA, not markup — without it DataTables injects them
         // as HTML, so a cell containing markup would render (or execute) instead of display
-        columns: cols.map(function (c) { return { type: c.type, render: DataTable.render.text() }; }),
+        columns: cols.map(function (c) {
+          var text = DataTable.render.text();
+          // A date cell may arrive as [raw, sortKey] when its source text is not one the
+          // browser's Date.parse orders correctly (see collect_datatable_rows). Split it back
+          // apart: ordering takes the key, everything the reader sees or searches takes the
+          // source text. Plain-string cells in the same column pass straight through, so this
+          // has to handle both shapes.
+          if (c.type !== "date") return { type: c.type, render: text };
+          // render.text() is an ORTHOGONAL MAP ({display, filter}), not a callable, so the
+          // date column supplies a map too. "_" is the fallback the un-keyed types ("type",
+          // and the "export" Buttons could ask for) resolve through, which keeps them on the
+          // source text exactly as an un-rendered column would be.
+          var raw = function (d) { return Array.isArray(d) ? d[0] : d; };
+          return { type: c.type, render: {
+            _: raw,
+            sort: function (d) { return Array.isArray(d) ? d[1] : d; },
+            // display and filter stay inside render.text() — dropping it here would put an
+            // unescaped cell value back into the page
+            display: function (d) { return text.display(raw(d)); },
+            filter: function (d) { return text.filter(raw(d)); }
+          } };
+        }),
         deferRender: true,
         // no initial sort: rows show in file order until the user orders a column
         order: [],
@@ -27262,14 +27283,27 @@ fn collect_smart_values(
 const DATATABLE_GZ_MIN_BYTES: usize = 4096;
 
 /// Read up to `limit` rows x ALL columns of the input, stream-serialized as a JSON
-/// array-of-arrays of strings for the data viewer drawer (issue #4283). Returns the JSON and the
-/// number of rows actually embedded. Cells are embedded as raw strings — DataTables sorts them
-/// by the per-column `type` the stats provide (`datatable_columns_json`).
-fn collect_datatable_rows(args: &Args, limit: u64) -> CliResult<(String, u64)> {
+/// array-of-arrays for the data viewer drawer (issue #4283). Returns the JSON and the number of
+/// rows actually embedded.
+///
+/// Cells are embedded as raw strings, which DataTables sorts by the per-column `type` the stats
+/// provide (`datatable_columns_json`). Date columns are the exception: DataTables orders its
+/// `date` type through the browser's `Date.parse`, which reads ISO and month-first text but
+/// rejects day-first (`25/07/2026` is month 25), so those columns fell back to source order.
+/// `date_cols` marks the columns where such a cell is instead embedded as a
+/// `[raw, sort-key]` pair, the sort key being the same qsv-dateparser reading that stats used to
+/// type the column — the display keeps the source text and ordering follows qsv's own parse.
+/// Cells that already lead with an ISO date sort correctly as they are and stay plain strings,
+/// so an ISO column costs nothing extra.
+fn collect_datatable_rows(args: &Args, limit: u64, date_cols: &[bool]) -> CliResult<(String, u64)> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
     let mut rdr = rconfig.reader()?;
+
+    // the same preference stats inferred the date columns under, so a sort key can never
+    // disagree with the type that asked for it
+    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
     // stream-serialize into one growing String: the JSON text is the only whole-dataset
     // allocation this pass makes
@@ -27288,13 +27322,54 @@ fn collect_datatable_rows(args: &Args, limit: u64) -> CliResult<(String, u64)> {
             }
             // serde_json escapes quotes/control chars; HTML-sensitive chars (&<>) are handled
             // at embed time — the gzip-b64 path needs nothing, the plain path \u-escapes them
-            out.push_str(&serde_json::to_string(&String::from_utf8_lossy(cell))?);
+            let text = String::from_utf8_lossy(cell);
+            let sort_key = if date_cols.get(i).copied().unwrap_or(false) {
+                datatable_date_sort_key(&text, prefer_dmy)
+            } else {
+                None
+            };
+            if let Some(key) = sort_key {
+                out.push('[');
+                out.push_str(&serde_json::to_string(&text)?);
+                out.push(',');
+                out.push_str(&serde_json::to_string(&key)?);
+                out.push(']');
+            } else {
+                out.push_str(&serde_json::to_string(&text)?);
+            }
         }
         out.push(']');
         n += 1;
     }
     out.push(']');
     Ok((out, n))
+}
+
+/// The sort key for one cell of a date column, or `None` when the raw text can stand on its own
+/// (blank, already ISO-leading, or unparseable — an unparseable cell has no better ordering to
+/// offer than itself). Keys are RFC 3339 in UTC, so they order lexicographically, which is how
+/// DataTables' `date` type will compare them.
+fn datatable_date_sort_key(text: &str, prefer_dmy: bool) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || is_iso_leading_date(trimmed) {
+        return None;
+    }
+    qsv_dateparser::parse_with_preference(trimmed, prefer_dmy)
+        .ok()
+        .map(|dt| dt.to_rfc3339())
+}
+
+/// Whether `text` opens with a `YYYY-MM-DD` date. Such a value is both `Date.parse`-readable and
+/// lexicographically ordered, so it needs no sort key.
+fn is_iso_leading_date(text: &str) -> bool {
+    let [y0, y1, y2, y3, dash1, m0, m1, dash2, d0, d1, ..] = *text.as_bytes() else {
+        return false;
+    };
+    dash1 == b'-'
+        && dash2 == b'-'
+        && [y0, y1, y2, y3, m0, m1, d0, d1]
+            .iter()
+            .all(u8::is_ascii_digit)
 }
 
 /// The per-column DataTables config for the data viewer: `[{"title":..,"type":..},..]`. Column
@@ -27357,7 +27432,14 @@ fn build_data_viewer_chrome(
     if threshold == 0 || total_rows == 0 || stats.is_empty() {
         return Ok(None);
     }
-    let (rows_json, embedded) = collect_datatable_rows(args, total_rows.min(threshold))?;
+    // which columns get a date sort key — the same Date/DateTime typing that
+    // `datatable_columns_json` turns into the DataTables "date" column type
+    let date_cols: Vec<bool> = stats
+        .iter()
+        .map(|s| matches!(s.r#type.as_str(), "Date" | "DateTime"))
+        .collect();
+    let (rows_json, embedded) =
+        collect_datatable_rows(args, total_rows.min(threshold), &date_cols)?;
     let full = embedded >= total_rows;
     let link_label = if full { "(Explore)" } else { "(Preview)" };
     let title = if full {

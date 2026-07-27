@@ -13055,6 +13055,66 @@ fn viz_smart_data_viewer_asks_parent_for_viewport() {
     assert!(html.contains("window.self !== window.top"));
 }
 
+// DataTables orders its "date" type through the browser's Date.parse, which rejects day-first
+// text (25/07/2026 is month 25) and leaves such a column in source order. Those cells embed as
+// [raw, sort-key] so ordering follows qsv's own parse while the display keeps the source text.
+// Cells that already lead with an ISO date sort correctly as-is and stay plain strings.
+#[test]
+fn viz_smart_data_viewer_date_sort_keys() {
+    let wrk = Workdir::new("viz_smart_data_viewer_date_sort_keys");
+    wrk.create_from_string(
+        "dates.csv",
+        "cat,dayfirst_date,iso_date,amt\nalpha,25/07/2026,2026-07-25,1\nbeta,30/11/2025,\
+         2025-11-30,2\ngamma,13/02/2026,2026-02-13,3\nalpha,19/03/2026,2026-03-19,4\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dates.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // stats typed both date columns, so both carry the DataTables date type
+    assert!(html.contains(r#""title":"dayfirst_date","type":"date""#));
+    assert!(html.contains(r#""title":"iso_date","type":"date""#));
+    // day-first cells pair the source text with qsv's reading of it -- 25/07 is July 25, which
+    // Date.parse would have rejected outright
+    assert!(html.contains(r#"["25/07/2026","2026-07-25T00:00:00+00:00"]"#));
+    assert!(html.contains(r#"["30/11/2025","2025-11-30T00:00:00+00:00"]"#));
+    // the ISO column pays nothing: its cells stay plain strings
+    assert!(!html.contains(r#"["2026-07-25","#));
+    // the split render keeps display/filter inside render.text()'s escaping
+    assert!(html.contains("text.display(raw(d))"));
+    assert!(html.contains("text.filter(raw(d))"));
+}
+
+// A column stats typed as a date can still hold blanks (a cell that fails to parse would have
+// made stats type the whole column String instead, so junk never reaches here). A blank has no
+// better ordering to offer than itself and stays a plain string rather than becoming a pair.
+#[test]
+fn viz_smart_data_viewer_unparseable_dates_stay_plain() {
+    let wrk = Workdir::new("viz_smart_data_viewer_unparseable_dates_stay_plain");
+    wrk.create_from_string(
+        "dates.csv",
+        "cat,when_date,amt\nalpha,25/07/2026,1\nbeta,,2\ngamma,13/02/2026,3\nalpha,19/03/2026,4\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dates.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the column is still a date column, and its parseable cells still pair
+    assert!(html.contains(r#""title":"when_date","type":"date""#));
+    assert!(html.contains(r#"["25/07/2026","2026-07-25T00:00:00+00:00"]"#));
+    // no pair was minted for the blank: its row embeds it as a plain empty string. Anchored on
+    // the whole row — a bare `["","` also occurs inside the plaintext minified bundle.
+    assert!(html.contains(r#"["beta","","2"]"#));
+}
+
 // `--preview-threshold 0` disables the viewer entirely: no link, no payloads, no drawer, no
 // DataTables bundle — the dashboard carries no trace of the feature.
 #[test]

@@ -206,10 +206,15 @@ if have == 0:
     print("WARNING: no roles inferred — was --infer-content-type passed?")
 # panel-unlocking hints, so the user knows up front what will/won't be drawn
 gauges = [k for k, v in p.items() if (v.get("x-qsv") or {}).get("gauge_range")]
-rels = (s.get("x-qsv") or {}).get("relationships") or s.get("relationships") or []
+# viz reads pipelines ONLY from the dataset-level x-qsv (see xq_pipelines in
+# src/cmd/viz.rs) — a root-level "relationships" array draws nothing.
+rels = (s.get("x-qsv") or {}).get("relationships") or []
 pipes = [r for r in rels if r.get("kind") == "pipeline"]
 print(f"gauge_range on {len(gauges)} measure(s): {', '.join(gauges) or '(none)'}")
 print(f"relationships: {len(rels)} ({len(pipes)} pipeline -> funnel/bridge panel)")
+if not rels and s.get("relationships"):
+    print("WARNING: relationships found at the ROOT, not under x-qsv — viz ignores"
+          " those. Is this the flat JSON dictionary instead of JSONSchema?")
 PY
 ```
 

@@ -14216,12 +14216,43 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       ? window.__qsvGunzip(el).then(function (s) { el.textContent = ""; return s; })
       : Promise.resolve(el.textContent);
   }
+  // Embedded reveal helpers. In the gallery's auto-sized iframes the iframe itself never
+  // scrolls (the PARENT page does), so position:fixed pins the drawer to the bottom of the
+  // FULL iframe height — often far below the visible viewport — and scrollIntoView cannot
+  // help: it is a no-op on fixed-position elements. Instead scroll the parent directly via
+  // frameElement geometry. Same-origin only (frameElement access throws cross-origin, and a
+  // file://-opened gallery has opaque frames) — then we quietly skip, which is today's
+  // behavior. Standalone pages (self === top) never scroll.
+  function revealBottom() {
+    if (window.self === window.top) return;
+    try {
+      var fr = window.frameElement.getBoundingClientRect();
+      var pw = window.parent;
+      if (fr.bottom > pw.innerHeight) {
+        pw.scrollTo({ top: pw.scrollY + fr.bottom - pw.innerHeight, behavior: "smooth" });
+      }
+    } catch (e) {}
+  }
+  function revealTop(el) {
+    if (window.self === window.top) return;
+    try {
+      var fr = window.frameElement.getBoundingClientRect();
+      // the iframe viewport is the whole (unscrolled) document, so the element's viewport rect
+      // IS its document position; offset by the iframe's own position in the parent
+      var y = fr.top + window.parent.scrollY + el.getBoundingClientRect().top - 80;
+      window.parent.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+    } catch (e) {}
+  }
   function show(drawer) {
     drawer.classList.add("open");
     document.body.classList.add("qsv-data-open");
     window.dispatchEvent(new Event("resize"));
     // move keyboard focus into the drawer (its tabindex="-1" makes it programmatically focusable)
     drawer.focus({ preventScroll: true });
+    revealBottom();
+    // opening grows the page (body margin) and the embedding gallery then auto-grows the
+    // iframe; re-align once the drawer transition + the parent's resize-report have settled
+    setTimeout(revealBottom, 450);
   }
   function build() {
     var rowsEl = document.getElementById("qsv-data-rows");
@@ -14363,7 +14394,11 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     // return focus to the Explore/Preview link in the metadata table — the top of the
     // dashboard — which also scrolls it back into view
     var link = document.querySelector("a.qsv-data-link");
-    if (link) link.focus();
+    if (link) {
+      link.focus();
+      // embedded: scroll the parent back to the top of this dashboard (see revealTop)
+      revealTop(link);
+    }
     return false;
   };
   // Esc closes the data drawer; the dictionary drawer registers its own Esc handler, so with

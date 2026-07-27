@@ -14173,6 +14173,15 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   tr.qsv-data-filters th { padding: 3px 6px; box-shadow: 0 1px 0 rgba(127, 127, 127, 0.35); }
   tr.qsv-data-filters input { width: 100%; box-sizing: border-box; font-size: 11px; padding: 2px 5px; color: inherit; background: transparent; border: 1px solid rgba(127, 127, 127, 0.45); border-radius: 4px; }
   #qsv-data-drawer table.dataTable { color: inherit; }
+  /* An unbroken long token (URL, base64 blob, hash) has no wrap opportunity, so the column
+     grows to the token's full width and the table overflows the drawer — which has no
+     horizontal scroll (Responsive and scrollX are mutually exclusive), leaving those columns
+     simply unreachable. `anywhere` lets such a token break mid-token; ordinary prose is
+     unaffected because it still wraps at its spaces first. Note this cannot be done with
+     `max-width`: browsers treat that as advisory on table cells under `table-layout: auto`,
+     and `fixed` is not an option — Responsive picks what to collapse by measuring natural
+     column widths, which fixed layout flattens. */
+  #qsv-data-table td, #qsv-data-table thead th { overflow-wrap: anywhere; }
   .qsv-viz-meta a.qsv-data-link { font-size: 0.9em; }
 </style>
 <script>
@@ -14381,6 +14390,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
         // no initial sort: rows show in file order until the user orders a column
         order: [],
         pageLength: 25,
+        lengthMenu: [10, 25, 50, 100],
         // collapse the columns that don't fit into an expandable child-row control per row
         responsive: true,
         // SearchBuilder rides in a Buttons popover ("Filter (n)") on the same controls row as

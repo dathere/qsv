@@ -113,6 +113,9 @@ implicit_clone       = "allow"
 redundant_pub_crate = "allow"
 # warned
 missing_asserts_for_indexing = "warn"
+# code identifiers in doc comments should be backticked.
+# prose-y proper nouns are exempted via doc-valid-idents in clippy.toml
+doc_markdown = "warn"
 
 [profile.release]
 codegen-units = 1

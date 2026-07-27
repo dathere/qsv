@@ -1,1 +1,19 @@
 too-many-arguments-threshold = 12
+
+# Proper nouns / library & format names that read as prose, not code.
+# ".." extends clippy's built-in list rather than replacing it.
+doc-valid-idents = [
+    "..",
+    "DataTables",
+    "GeoJSON",
+    "GeoJSONs",
+    "IndexedDB",
+    "MapLibre",
+    "MathJax",
+    "MiniJinja",
+    "NxN",
+    "OpenAI",
+    "SearchBuilder",
+    "ToC",
+    "snake_case",
+]

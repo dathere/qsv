@@ -347,7 +347,7 @@ fn synthesize_locale_is_case_insensitive() {
     );
 }
 
-/// A `full_name` faker column under JA_JP vs EN should produce noticeably
+/// A `full_name` faker column under `JA_JP` vs EN should produce noticeably
 /// different output — the Japanese name pool shares no surface tokens with
 /// the English one. Use a name-only fixture so frequency-weighted enumeration
 /// doesn't kick in.

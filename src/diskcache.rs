@@ -1747,7 +1747,7 @@ mod rich {
     /// Stream a fully-resolved `http(s)` URL into the cache. Replaces the former
     /// http-cache middleware path with a unified conditional-revalidation +
     /// streaming/ranged downloader that mirrors `ingest_cloud`: the first-part
-    /// ranged GET doubles as the conditional revalidation (ETag / Last-Modified)
+    /// ranged GET doubles as the conditional revalidation (`ETag` / Last-Modified)
     /// AND the size probe (a 206's `Content-Range` carries the total), so large
     /// objects stream into a `BlobSink` as parallel in-order byte-ranges (bounded
     /// memory) and small ones in a single streamed pass. Freshness is

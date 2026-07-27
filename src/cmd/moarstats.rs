@@ -2262,7 +2262,7 @@ fn finalize_kga(
 /// Single fused scan over a chunk of records that BOTH counts outliers (into
 /// slot-indexed `OutlierStats`) and collects numeric values for KGA (into
 /// slot-indexed `Vec<f64>`), replacing the two former independent full-file passes.
-/// Uses index-based slot access (no per-cell String-keyed HashMap lookup) and a
+/// Uses index-based slot access (no per-cell String-keyed `HashMap` lookup) and a
 /// single reused `csv::ByteRecord`.
 fn count_and_collect_chunk<I>(
     outlier_fields: &[OutlierFieldInfo],

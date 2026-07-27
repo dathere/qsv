@@ -6400,9 +6400,9 @@ fn frequency_jsonl_cache_embedded_numbers() {
 /// generated `CsvData` inputs (number of rows/columns).
 const PROP_TEST_SIZE: usize = 5;
 
-/// Percentage-sum tolerance derived from PROP_TEST_SIZE. With small inputs each
+/// Percentage-sum tolerance derived from `PROP_TEST_SIZE`. With small inputs each
 /// value's rounding error is bounded, so 0.01 suffices. The linear factor 0.002
-/// is calibrated for small sizes; for significantly larger PROP_TEST_SIZE values
+/// is calibrated for small sizes; for significantly larger `PROP_TEST_SIZE` values
 /// (e.g. 50+), the factor itself may need increasing since unique-value counts
 /// can grow faster than linearly with the size parameter.
 const PROP_PCT_TOLERANCE: f64 = PROP_TEST_SIZE as f64 * 0.002;

@@ -34458,7 +34458,7 @@ mod tests {
         assert_eq!(byte_decimal_places(b"n/a"), 0);
     }
 
-    /// Build PipFeatures from equator-anchored square boxes `side_deg` degrees on a side (one per
+    /// Build `PipFeatures` from equator-anchored square boxes `side_deg` degrees on a side (one per
     /// `count`), for exercising the region-size term of the auto snap cap.
     fn square_features(side_deg: f64, count: usize) -> Vec<PipFeature> {
         let features: Vec<serde_json::Value> = (0..count)

@@ -4666,9 +4666,9 @@ fn moarstats_join_inputs_without_keys_errors() {
 /// Verify that `--join-type left` propagates through `join_datasets_internal`
 /// and produces the larger joined dataset that left-join semantics require
 /// (all primary rows kept, including unmatched). The (id, value1) column pair
-/// is from the primary side only, so its n_pairs equals the joined row count
+/// is from the primary side only, so its `n_pairs` equals the joined row count
 /// — a regression silently coercing `left` to `inner` would drop the
-/// unmatched primary row and produce n_pairs=4 instead of 5.
+/// unmatched primary row and produce `n_pairs=4` instead of 5.
 #[test]
 #[serial]
 fn moarstats_join_type_left_runs_and_writes_bivariate() {
@@ -4735,7 +4735,7 @@ fn moarstats_join_type_left_runs_and_writes_bivariate() {
 /// in primary. The unmatched row has NULL primary columns, so any pair
 /// involving a primary column drops it. We therefore assert on a pair where
 /// BOTH columns are from secondary (`value2a`, `value2b`): that pair's
-/// n_pairs equals 6 under right (5 inner cross-matches + 1 unmatched
+/// `n_pairs` equals 6 under right (5 inner cross-matches + 1 unmatched
 /// secondary row, all with both secondary columns populated), but 5 under
 /// inner. A silent coercion to inner would yield 5.
 #[test]

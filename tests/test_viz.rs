@@ -4870,7 +4870,7 @@ fn viz_smart_heatmap_density_threshold() {
 
 /// Write a locally-clustered lat/lon CSV of `n` points (all within a ~0.04x0.03 deg box near
 /// downtown Pittsburgh, so they stay CORE points on a single MapLibre tile map, never spatial
-/// outliers or a global ScatterGeo overview). Columns: `id,lat,lon,val`.
+/// outliers or a global `ScatterGeo` overview). Columns: `id,lat,lon,val`.
 fn dense_local_geo(wrk: &Workdir, name: &str, n: usize) {
     let mut rows = String::from("id,lat,lon,val\n");
     for r in 0..n {
@@ -7515,7 +7515,7 @@ fn viz_smart_embeds_plotly_once_without_mathjax() {
 
 /// Inflate a `<script id=".." type="application/gzip-b64">` payload embedded in viz HTML back to
 /// its plaintext (plotly.js source or figure JSON) — the test-side mirror of the in-browser
-/// DecompressionStream bootstrap.
+/// `DecompressionStream` bootstrap.
 fn inflate_gz_payload(html: &str, id: &str) -> String {
     use std::io::Read;
 

@@ -7784,7 +7784,7 @@ p_fewshot_examples = ""
 
     /// Verifies that the default `describegpt_md_defaults.toml` produces byte-identical
     /// output to the legacy hardcoded `format!("# {}\n{}\n## REASONING\n\n{}\n## TOKEN \
-    /// USAGE\n\n{:?}\n---\n", ...)` wrapper for every PromptType. If this test breaks,
+    /// USAGE\n\n{:?}\n---\n", ...)` wrapper for every `PromptType`. If this test breaks,
     /// the default template was edited in a way that changes legacy output — either
     /// fix the template or bump the major version and document the change.
     #[test]
@@ -8922,7 +8922,7 @@ p_fewshot_examples = ""
         );
     }
 
-    /// Verifies the partial-override fallback in MarkdownTemplateOverride::apply_to:
+    /// Verifies the partial-override fallback in `MarkdownTemplateOverride::apply_to`:
     /// any field a user TOML omits falls back to the embedded default, so a minimal
     /// override (one template field set, all others omitted) Just Works.
     #[test]

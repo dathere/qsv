@@ -1526,9 +1526,9 @@ mod tests {
         assert_eq!(f(730), "R/P2Y");
     }
 
-    /// Copilot PR #3901 finding (mode() determinism): when multiple
+    /// Copilot PR #3901 finding (`mode()` determinism): when multiple
     /// values share the highest count, the first-seen value must win
-    /// for reproducible guess_accrual_periodicity output across runs.
+    /// for reproducible `guess_accrual_periodicity` output across runs.
     #[test]
     fn mode_tie_broken_by_first_seen_order() {
         use super::mode;
@@ -1545,8 +1545,8 @@ mod tests {
 
     /// Copilot PR #3901 finding (fractional-second ISO 8601 datetimes):
     /// DP+'s `datetime.fromisoformat` accepts these and our parser
-    /// must too — otherwise temporal_resolution /
-    /// guess_accrual_periodicity hard-fail on CSVs with sub-second
+    /// must too — otherwise `temporal_resolution` /
+    /// `guess_accrual_periodicity` hard-fail on CSVs with sub-second
     /// timestamps.
     #[test]
     fn parse_date_strings_accepts_fractional_seconds() {
@@ -1653,7 +1653,7 @@ mod tests {
         assert!(out.contains("-180,-90"), "got: {out}");
     }
 
-    /// Mixed positional + kwargs: name positional, bbox + feature_type
+    /// Mixed positional + kwargs: name positional, bbox + `feature_type`
     /// as kwargs. Verifies the trailing-Value-as-kwargs detection
     /// doesn't mis-classify a real positional Value as a kwargs marker.
     #[test]

@@ -1422,7 +1422,7 @@ const BIVARIATE_MIN_SUPPORT_RATIO: f64 = 0.10;
 /// (NMI's ceiling is 1.0; the small overshoot leaves marker/label room), and enforces only a tiny
 /// `TOPREL_MIN_SPAN` so an all-EXACTLY-tied top-N can't produce a zero-width axis (identical values
 /// legitimately overlap). Category (pair) labels are truncated to `TOPREL_LABEL_MAX_CHARS` on the
-/// y-axis (the full "`FieldA` × `FieldB`" rides in the hover) to bound the shared page left-margin.
+/// y-axis (the full `"FieldA × FieldB"` rides in the hover) to bound the shared page left-margin.
 const TOPREL_PAD_FRAC: f64 = 0.25;
 const TOPREL_MIN_PAD: f64 = 0.01;
 const TOPREL_MIN_SPAN: f64 = 0.02;
@@ -12589,7 +12589,7 @@ enum PanelKind {
     /// heatmap (which shows every survivor pair), the ranking is gated on co-occurrence support
     /// (`BIVARIATE_MIN_SUPPORT_RATIO`) so a technically-perfect NMI backed by only a sparse,
     /// narrow slice of rows can't crowd out a more broadly meaningful association. `labels` are
-    /// "`FieldA` × `FieldB`"; `hover_suffix` parallels `labels`/`values` and always leads with the
+    /// `"FieldA × FieldB"`; `hover_suffix` parallels `labels`/`values` and always leads with the
     /// pair's co-occurring row count (`<br>n=1234`), followed by the same nonlinearity-warning
     /// convention as `AssocHeatmap::hover_suffix` when applicable. Rendered as a horizontal
     /// multivariate lollipop: `values` (NMI) drives the dot's position on a zoomed value axis,

@@ -237,9 +237,17 @@ COPY_JS = (
 # Injected into each smart_*.html so the dashboard reports its real rendered height to the parent
 # gallery. postMessage works cross-origin (e.g. when the gallery is opened over file://), unlike
 # reading iframe.contentWindow.document; the ResizeObserver re-reports after plotly's async relayout.
+#
+# The reported height is CONTENT-derived (body border-box + body vertical margins), NOT
+# documentElement.scrollHeight: root scrollHeight is max(content, viewport), so once the iframe has
+# grown it can never report smaller and the iframe could only ratchet upward — the data viewer
+# drawer (issue #4283) reserves its space via body margin-bottom while open, and on close the
+# iframe must SHRINK back. Body margins are counted because that reserved drawer space is exactly
+# a body margin; fixed-position chrome (the drawer, theme toggle, logo) is deliberately excluded.
 RESIZE_REPORTER_JS = (
-    "<script>(function(){function r(){parent.postMessage("
-    "{qsvVizHeight:document.documentElement.scrollHeight},\"*\");}"
+    "<script>(function(){function r(){var b=document.body,c=getComputedStyle(b);"
+    "parent.postMessage({qsvVizHeight:Math.ceil(b.offsetHeight+"
+    "(parseFloat(c.marginTop)||0)+(parseFloat(c.marginBottom)||0))},\"*\");}"
     "addEventListener(\"load\",r);addEventListener(\"resize\",r);"
     "if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);"
     "setTimeout(r,200);setTimeout(r,800);"
@@ -259,11 +267,10 @@ RESIZE_REPORTER_JS = (
 
 # Added to the gallery once: sizes each iframe to the height its dashboard reports (matched by
 # comparing window references, which is allowed cross-origin). The reported height is
-# documentElement.scrollHeight = max(content, viewport), so set the iframe to exactly that and
-# ONLY when it actually differs (>1px) from the iframe's current height — never add padding on top.
-# Otherwise, since enlarging the iframe enlarges the child viewport, the next report would echo the
-# new height and the iframe would creep upward 1 step per resize. With this guard it converges to
-# the content height: once iframe == content, the report equals the current height and we stop.
+# content-derived (see RESIZE_REPORTER_JS) and therefore viewport-independent, so applying it can
+# never echo back into the next report; the >1px guard just suppresses no-op churn. Both
+# directions apply: the iframe SHRINKS back when the data viewer drawer closes and its reserved
+# body margin is released.
 # It also honors qsvVizReveal messages from a dashboard's data viewer drawer (issue #4283): the
 # drawer is position:fixed, which inside a full-height, never-scrolling iframe pins it to the
 # iframe's BOTTOM edge — often far outside the parent viewport — and neither focus() nor

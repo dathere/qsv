@@ -14259,14 +14259,19 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     // move keyboard focus into the drawer (its tabindex="-1" makes it programmatically focusable)
     drawer.focus({ preventScroll: true });
     revealBottom();
-    // opening grows the page (body margin) and the embedding gallery then auto-grows the
-    // iframe; re-align once the drawer transition + the parent's resize-report have settled.
-    // Re-check the drawer is still open first: a close within the settle window has already
-    // revealed the top, and a stale re-align would scroll the parent right back down.
-    setTimeout(function () {
-      var d = document.getElementById("qsv-data-drawer");
-      if (d && d.classList.contains("open")) revealBottom();
-    }, 450);
+    // Opening grows the page (body margin) and the embedding gallery then auto-grows the
+    // iframe, and on a still-settling gallery OTHER dashboards' iframes keep growing too —
+    // each layout shift above the target cancels an in-flight smooth scroll (the same churn
+    // the gallery's jump stabilizer exists to fight). Re-align a few times; once the drawer
+    // region is visible the parent's reveal handler is a no-op, so the series converges.
+    // Re-check the drawer is still open first: a close within the window has already revealed
+    // the top, and a stale re-align would scroll the parent right back down.
+    [450, 1200, 2200].forEach(function (t) {
+      setTimeout(function () {
+        var d = document.getElementById("qsv-data-drawer");
+        if (d && d.classList.contains("open")) revealBottom();
+      }, t);
+    });
   }
   function build() {
     var rowsEl = document.getElementById("qsv-data-rows");

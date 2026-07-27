@@ -43,10 +43,10 @@
 
 
 <table class="qsv-viz-meta">
-<tr><td class="qsv-viz-meta-k">Rows:</td><td>60</td></tr>
+<tr><td class="qsv-viz-meta-k">Rows:</td><td>60 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)</a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>6</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-26 15:58 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-27 00:04 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
       <div class="qsv-viz-plot">
@@ -504,6 +504,173 @@
 })();
 </script>
 
+<link rel="stylesheet" href="https://cdn.datatables.net/v/dt/dt-3.0.0/date-2.0.0/sb-2.0.0/datatables.min.css" integrity="sha384-nIvXMepBLLLzATSEdJqOTPe43BzpWBSa00W8Q/oS4NvnhKVRHTZ7v9urX0yhwkf0" crossorigin="anonymous">
+<script src="https://cdn.datatables.net/v/dt/dt-3.0.0/date-2.0.0/sb-2.0.0/datatables.min.js" integrity="sha384-CjxR3VkdAPsdw4x7G2tqAsBz9ADMiTgDT3fELYrDZiTu9vj2Pk7MgzXIX691Bj1e" crossorigin="anonymous"></script>
+<script id="qsv-data-rows" type="application/json">[["Organic Search","01","11629","5336","2592","1205"],["Paid Social","01","6350","1758","722","208"],["Email","01","3581","2130","1592","868"],["Referral","01","2878","1281","746","343"],["Partner","01","1695","625","278","105"],["Organic Search","02","11397","4933","2462","1042"],["Paid Social","02","6285","1739","658","173"],["Email","02","4183","2594","1721","996"],["Referral","02","2987","1585","891","405"],["Partner","02","1843","679","306","124"],["Organic Search","03","11933","5398","2913","1434"],["Paid Social","03","8006","2238","823","263"],["Email","03","3659","1952","1429","795"],["Referral","03","2805","1225","806","387"],["Partner","03","1996","731","331","138"],["Organic Search","04","10607","4341","2612","1195"],["Paid Social","04","6609","1686","624","200"],["Email","04","3653","2088","1547","851"],["Referral","04","3031","1542","1029","504"],["Partner","04","1811","696","319","113"],["Organic Search","05","10763","4053","2221","991"],["Paid Social","05","6729","1795","693","197"],["Email","05","4906","3098","1885","992"],["Referral","05","2362","1142","696","343"],["Partner","05","1958","734","353","125"],["Organic Search","06","11256","4952","2658","1185"],["Paid Social","06","7248","1976","816","237"],["Email","06","4661","2666","1678","970"],["Referral","06","3081","1509","985","479"],["Partner","06","1963","716","314","107"],["Organic Search","07","9835","3827","1973","940"],["Paid Social","07","6600","1855","677","200"],["Email","07","3709","2131","1312","682"],["Referral","07","2151","1154","727","376"],["Partner","07","2117","782","343","140"],["Organic Search","08","7851","3539","1982","864"],["Paid Social","08","8795","2549","968","306"],["Email","08","3296","1861","1117","600"],["Referral","08","2184","1011","614","348"],["Partner","08","1941","606","312","126"],["Organic Search","09","10318","4199","2056","867"],["Paid Social","09","8180","1995","810","227"],["Email","09","3582","2058","1229","611"],["Referral","09","2103","1143","618","312"],["Partner","09","2235","779","376","155"],["Organic Search","10","10070","4262","2172","847"],["Paid Social","10","6533","1894","638","185"],["Email","10","4443","2816","1706","881"],["Referral","10","2223","1035","650","299"],["Partner","10","1976","653","329","113"],["Organic Search","11","11134","4821","2354","1067"],["Paid Social","11","8645","2324","816","253"],["Email","11","4177","2526","1678","1016"],["Referral","11","2324","1150","780","350"],["Partner","11","1712","577","250","92"],["Organic Search","12","10577","3831","2337","987"],["Paid Social","12","6559","1778","749","209"],["Email","12","4968","3121","2086","1047"],["Referral","12","2577","1206","747","425"],["Partner","12","1898","599","252","87"]]</script>
+<script id="qsv-data-cols" type="application/json">[{"title":"channel","type":"string"},{"title":"week","type":"string"},{"title":"visits","type":"num"},{"title":"signups","type":"num"},{"title":"activated","type":"num"},{"title":"subscribed","type":"num"}]</script>
+<style>
+  #qsv-data-drawer { position: fixed; left: 0; right: 0; bottom: 0; height: min(55vh, 560px); transform: translateY(103%); transition: transform 0.22s ease; z-index: 1090; display: flex; flex-direction: column; color: var(--qsv-page-ink, #1a1a1a); background: var(--qsv-page-bg, #ffffff); border-top: 1px solid rgba(127, 127, 127, 0.4); box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.18); }
+  #qsv-data-drawer.open { transform: none; }
+  .qsv-data-drawer-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 14px; font-size: 13px; font-weight: 600; border-bottom: 1px solid rgba(127, 127, 127, 0.25); }
+  .qsv-data-drawer-bar a { color: inherit; text-decoration: none; font-weight: 400; font-size: 15px; opacity: 0.75; }
+  .qsv-data-drawer-bar a:hover { opacity: 1; }
+  .qsv-data-drawer-content { flex: 1; overflow: auto; padding: 4px 14px 10px 14px; }
+  body.qsv-data-open { margin-bottom: min(55vh, 560px); }
+  body.qsv-data-open #qsv-logo { bottom: calc(min(55vh, 560px) + 12px); }
+  body.qsv-data-open #qsv-theme-toggle { bottom: calc(min(55vh, 560px) + 50px); }
+  tr.qsv-data-filters th { padding: 3px 6px; }
+  tr.qsv-data-filters input { width: 100%; box-sizing: border-box; font-size: 11px; padding: 2px 5px; color: inherit; background: transparent; border: 1px solid rgba(127, 127, 127, 0.45); border-radius: 4px; }
+  #qsv-data-drawer table.dataTable { color: inherit; }
+  .qsv-viz-meta a.qsv-data-link { font-size: 0.9em; }
+</style>
+<script>
+(function () {
+  var dt = null;
+  // DataTables' native dark palette keys on `:root.dark` (the <html> element); qsv's theme
+  // toggle flips `body.qsv-dark`. Mirror the body class onto <html> so the drawer widgets
+  // follow the qsv theme — nothing else in the page styles off `html.dark`.
+  function syncDark() {
+    document.documentElement.classList.toggle("dark", document.body.classList.contains("qsv-dark"));
+  }
+  syncDark();
+  new MutationObserver(syncDark).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  // Ensure the DataTables library + stylesheet are installed. The payload tags come in three
+  // shapes (see `datatables_lib_block`): CDN tags (nothing to do — `window.DataTable` exists),
+  // plain inline (`<script>` already executed / real `<style>` already applied), or gzip-b64
+  // payloads that must be inflated here on first use.
+  function ensureLib() {
+    var jobs = [];
+    var cssEl = document.getElementById("qsv-data-css");
+    if (cssEl && cssEl.tagName === "SCRIPT") {
+      jobs.push(window.__qsvGunzip(cssEl).then(function (css) {
+        var st = document.createElement("style");
+        st.textContent = css;
+        cssEl.parentNode.replaceChild(st, cssEl);
+      }));
+    }
+    if (!window.DataTable) {
+      var lib = document.getElementById("qsv-data-lib");
+      if (lib && lib.getAttribute("type") === "application/gzip-b64") {
+        jobs.push(window.__qsvGunzip(lib).then(function (src) {
+          lib.textContent = "";
+          (0, eval)(src);
+        }));
+      }
+    }
+    return Promise.all(jobs);
+  }
+  function payloadText(el) {
+    return el.getAttribute("type") === "application/gzip-b64"
+      ? window.__qsvGunzip(el).then(function (s) { el.textContent = ""; return s; })
+      : Promise.resolve(el.textContent);
+  }
+  function show(drawer) {
+    drawer.classList.add("open");
+    document.body.classList.add("qsv-data-open");
+    window.dispatchEvent(new Event("resize"));
+  }
+  function build() {
+    var rowsEl = document.getElementById("qsv-data-rows");
+    var colsEl = document.getElementById("qsv-data-cols");
+    if (!rowsEl || !colsEl) return Promise.reject(new Error("data payload missing"));
+    return ensureLib().then(function () { return payloadText(rowsEl); }).then(function (rowsTxt) {
+      var rows = JSON.parse(rowsTxt);
+      var cols = JSON.parse(colsEl.textContent);
+      var drawer = document.createElement("aside");
+      drawer.id = "qsv-data-drawer";
+      var bar = document.createElement("div");
+      bar.className = "qsv-data-drawer-bar";
+      var title = document.createElement("span");
+      title.textContent = "Data — all 60 rows";
+      var close = document.createElement("a");
+      close.href = "#";
+      close.textContent = "✕";
+      close.setAttribute("aria-label", "Close data viewer");
+      close.addEventListener("click", function (ev) { ev.preventDefault(); window.qsvCloseData(); });
+      bar.appendChild(title);
+      bar.appendChild(close);
+      var content = document.createElement("div");
+      content.className = "qsv-data-drawer-content";
+      var table = document.createElement("table");
+      table.id = "qsv-data-table";
+      table.className = "display compact";
+      table.style.width = "100%";
+      // two header rows: titles (ordering) + per-column filter inputs. `data-dt-order="disable"`
+      // keeps DataTables from attaching ordering listeners to the filter row.
+      var thead = document.createElement("thead");
+      var titleRow = document.createElement("tr");
+      var filterRow = document.createElement("tr");
+      filterRow.className = "qsv-data-filters";
+      filterRow.setAttribute("data-dt-order", "disable");
+      cols.forEach(function (c, i) {
+        var th = document.createElement("th");
+        th.textContent = c.title;
+        titleRow.appendChild(th);
+        var fth = document.createElement("th");
+        var input = document.createElement("input");
+        input.type = "search";
+        input.placeholder = "Filter…";
+        input.setAttribute("aria-label", "Filter " + c.title);
+        input.addEventListener("input", function () {
+          var col = dt.column(i);
+          if (col.search() !== input.value) col.search(input.value).draw();
+        });
+        fth.appendChild(input);
+        filterRow.appendChild(fth);
+      });
+      thead.appendChild(titleRow);
+      thead.appendChild(filterRow);
+      table.appendChild(thead);
+      content.appendChild(table);
+      drawer.appendChild(bar);
+      drawer.appendChild(content);
+      document.body.appendChild(drawer);
+      dt = new DataTable(table, {
+        data: rows,
+        // render.text(): cell values are DATA, not markup — without it DataTables injects them
+        // as HTML, so a cell containing markup would render (or execute) instead of display
+        columns: cols.map(function (c) { return { type: c.type, render: DataTable.render.text() }; }),
+        deferRender: true,
+        // no initial sort: rows show in file order until the user orders a column
+        order: [],
+        pageLength: 25,
+        scrollX: true,
+        layout: { top1: "searchBuilder" }
+      });
+      // let the just-appended drawer paint once closed, so the open transition animates
+      requestAnimationFrame(function () { show(drawer); });
+    });
+  }
+  window.qsvOpenData = function () {
+    var drawer = document.getElementById("qsv-data-drawer");
+    if (drawer) { show(drawer); return false; }
+    var lib = document.getElementById("qsv-data-lib");
+    var gz = (lib && lib.getAttribute("type") === "application/gzip-b64") ||
+      document.getElementById("qsv-data-rows").getAttribute("type") === "application/gzip-b64";
+    if (gz && !window.DecompressionStream) {
+      if (window.__qsvNoDecompress) window.__qsvNoDecompress();
+      return false;
+    }
+    build().catch(function (e) { console.error("qsv viz: data viewer failed:", e); });
+    return false;
+  };
+  window.qsvCloseData = function () {
+    var drawer = document.getElementById("qsv-data-drawer");
+    if (drawer) drawer.classList.remove("open");
+    document.body.classList.remove("qsv-data-open");
+    window.dispatchEvent(new Event("resize"));
+    return false;
+  };
+  // Esc closes the data drawer; the dictionary drawer registers its own Esc handler, so with
+  // both open a single Esc closes both — acceptable, they are independent overlays.
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") {
+      var drawer = document.getElementById("qsv-data-drawer");
+      if (drawer && drawer.classList.contains("open")) window.qsvCloseData();
+    }
+  });
+})();
+</script>
 
 <script>
 (function () {

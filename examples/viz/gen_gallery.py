@@ -1103,6 +1103,14 @@ def run_html(qsv, args):
     map-panel *figures* keep their gzip+bdata encoding."""
     fd, out = tempfile.mkstemp(suffix=".html")
     os.close(fd)
+    # Gallery-wide data viewer cap: smart dashboards embed their rows for the Explore/Preview
+    # drawer (issue #4283), and under QSV_VIZ_NO_COMPRESS the payload is PLAIN json — the default
+    # 50k-row threshold would add ~6MB to smart_nyc311.html alone. 500 rows still demonstrates
+    # the drawer (small demo CSVs stay "(Explore)", larger ones show "(Preview)") while keeping
+    # the committed iframes small.
+    args = list(args)
+    if args and args[0] == "smart" and "--preview-threshold" not in args:
+        args += ["--preview-threshold", "500"]
     try:
         subprocess.run([qsv, "viz", *args, "-o", out], cwd=VIZ_DIR,
                        check=True, capture_output=True, text=True,

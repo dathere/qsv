@@ -449,6 +449,17 @@ smart options:
     --grid-cols <n>        Number of columns in the dashboard grid for the per-column
                            distribution panels. Overview panels (map/geo, correlation,
                            time-series) always span the full width. [default: 2]
+    --preview-threshold <n>  Row threshold for the interactive data viewer drawer of
+                           HTML dashboards. Next to the row count in the dashboard
+                           metadata, an "(Explore)" link opens the underlying table
+                           in a bottom drawer (with global, per-column and builder
+                           search) when the dataset has at most <n> rows and ALL rows
+                           are embedded in the page; above <n>, only the first <n>
+                           rows are embedded and the link reads "(Preview)". Note that
+                           embedded rows grow the HTML file (and browser memory) in
+                           proportion to rows x columns. Set to 0 to disable the data
+                           viewer entirely (no link, no embedded data). Only affects
+                           `smart` HTML output. [default: 50000]
     --heatmap-density <n>  For the `viz smart` map panel: at or above <n> mappable
                            points, draw the core as a density heatmap (DensityMap)
                            instead of markers. The heatmap keeps per-point hover
@@ -1554,6 +1565,7 @@ struct Args {
     flag_box_points:         Option<String>,
     flag_max_charts:         usize,
     flag_grid_cols:          usize,
+    flag_preview_threshold:  usize,
     flag_heatmap_density:    usize,
     flag_cluster:            String,
     flag_photos:             bool,
@@ -1761,6 +1773,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 theme,
                 dict_page,
                 metadata,
+                data_chrome,
             } => {
                 // HTML smart-grid is wrapped in qsv's own page so it gets the light/dark toggle;
                 // plotly's `to_html()` (used by the generic single-`Plot` path) has no injection
@@ -1772,6 +1785,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         &title,
                         dict_page.as_deref(),
                         metadata.as_deref(),
+                        data_chrome.as_deref(),
                     );
                     progress.finish_and_clear();
                     return output_inline_html(&html, &args);
@@ -1814,16 +1828,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 enum SmartRender {
     // `Plot` is large; box it so the enum isn't bloated by the rarely-larger variant.
     Grid {
-        plot:      Box<Plot>,
-        dims:      (usize, usize),
+        plot:        Box<Plot>,
+        dims:        (usize, usize),
         // carried out so the HTML path can wrap the plot in qsv's own toggle-enabled page
         // (`render_smart_grid_page`); the image-export path ignores all three.
-        title:     String,
-        theme:     Option<BuiltinTheme>,
+        title:       String,
+        theme:       Option<BuiltinTheme>,
         /// The embedded `--dict-info` Data Dictionary document (HTML output only).
-        dict_page: Option<String>,
+        dict_page:   Option<String>,
         /// The top-of-dashboard metadata table (HTML output only).
-        metadata:  Option<String>,
+        metadata:    Option<String>,
+        /// The data viewer drawer chrome (issue #4283; HTML output only).
+        data_chrome: Option<String>,
     },
     /// A fully-assembled Plotly JSON value (data + layout). Used only for static image export of
     /// more than `MAX_SUBPLOTS` panels: the layout carries `xaxis9+`/`yaxis9+`, which the typed
@@ -9514,9 +9530,13 @@ fn smart_html_page(
     dict_page: Option<&str>,
     meta_table: Option<&str>,
     photos: bool,
+    data_chrome: Option<&str>,
 ) -> String {
     let js = plotly_js_block();
     let meta_table = meta_table.unwrap_or("");
+    // data viewer drawer chrome (issue #4283): empty unless the metadata Rows link is rendered,
+    // so dashboards without the viewer stay byte-identical.
+    let data_chrome = data_chrome.unwrap_or("");
     let title = html_escape(title_text);
     let ToggleChrome {
         style: toggle_style,
@@ -9616,6 +9636,7 @@ fn smart_html_page(
 {fs_prelude}
 {FULLSCREEN_SCRIPT}
 {dict_chrome}
+{data_chrome}
 {photo_chrome}
 {script}
 </body>
@@ -9916,6 +9937,87 @@ fn plotly_js_block() -> String {
     format!(
         "{PLOTLY_STUB_SCRIPT}\n{GZ_PRELUDE_SCRIPT}\n<script id=\"qsv-plotly-gz\" \
          type=\"application/gzip-b64\">{b64}</script>\n{PLOTLY_GZ_BOOTSTRAP}"
+    )
+}
+
+/// Vendored DataTables v3 bundle (core + DateTime + SearchBuilder, "DataTables" default styling,
+/// minified + concatenated by the DataTables download builder). Powers the `viz smart` data
+/// viewer drawer. MIT licensed; the builder header comment in each file records the exact
+/// component versions. To rebuild or bump, fetch the concatenated combination the version consts
+/// below pin:
+///
+/// ```text
+/// curl -sSL -o src/cmd/assets/datatables.min.js \
+///   https://cdn.datatables.net/v/dt/<COMBO>/datatables.min.js
+/// curl -sSL -o src/cmd/assets/datatables.min.css \
+///   https://cdn.datatables.net/v/dt/<COMBO>/datatables.min.css
+/// echo "sha384-$(openssl dgst -sha384 -binary src/cmd/assets/datatables.min.js | openssl base64 -A)"
+/// echo "sha384-$(openssl dgst -sha384 -binary src/cmd/assets/datatables.min.css | openssl base64 -A)"
+/// ```
+///
+/// where `<COMBO>` is `DATATABLES_CDN_COMBO`. The CDN serves exactly these vendored bytes at the
+/// version-pinned (immutable) URL, so the vendored files are a local oracle for the SRI digests
+/// (see `datatables_cdn_sri_matches_the_vendored_bundle`).
+const DATATABLES_JS: &str = include_str!("assets/datatables.min.js");
+const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
+
+/// The download-builder combination the vendored bundle was built from: DataTables core 3.0.0 +
+/// DateTime 2.0.0 + SearchBuilder 2.0.0, default DataTables styling. Also the path segment of
+/// the version-pinned CDN URLs.
+const DATATABLES_CDN_COMBO: &str = "dt-3.0.0/date-2.0.0/sb-2.0.0";
+const DATATABLES_CDN_JS_SRI: &str =
+    "sha384-CjxR3VkdAPsdw4x7G2tqAsBz9ADMiTgDT3fELYrDZiTu9vj2Pk7MgzXIX691Bj1e";
+const DATATABLES_CDN_CSS_SRI: &str =
+    "sha384-nIvXMepBLLLzATSEdJqOTPe43BzpWBSa00W8Q/oS4NvnhKVRHTZ7v9urX0yhwkf0";
+
+/// The DataTables bundle gzipped at max compression + base64 (~204 KB -> ~55 KB), computed once
+/// per process like `PLOTLY_GZ_B64`. Empty on (never-expected) gzip failure — callers then emit
+/// the plain bundle.
+static DATATABLES_GZ_B64: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| gzip_b64(DATATABLES_JS.as_bytes(), flate2::Compression::best()));
+
+/// Like `DATATABLES_GZ_B64` but for the stylesheet (~47 KB -> ~8 KB).
+static DATATABLES_CSS_GZ_B64: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| gzip_b64(DATATABLES_CSS.as_bytes(), flate2::Compression::best()));
+
+/// The DataTables library block for the data viewer drawer: under `QSV_VIZ_CDN` version-pinned
+/// `<link>`/`<script src>` tags with Subresource Integrity; under `QSV_VIZ_NO_COMPRESS` (or on
+/// gzip failure) the plain inline bundle; otherwise gzip+base64 payload tags that
+/// `DATA_DRAWER_SCRIPT` inflates lazily on first drawer open (zero page-load cost, and the
+/// library never executes unless the drawer is actually used).
+///
+/// The payload elements are dispatched on by id + shape in `DATA_DRAWER_SCRIPT`:
+/// `#qsv-data-lib` is a `<script>` holding either gzip-b64 or plain JS source (by `type`), and
+/// `#qsv-data-css` is either a real `<style>` (already applied, nothing to do) or a gzip-b64
+/// `<script>` to inflate into one. In CDN mode neither payload element exists and
+/// `window.DataTable` is already installed by the `<script src>` tag.
+fn datatables_lib_block() -> String {
+    if viz_cdn() {
+        return format!(
+            "<link rel=\"stylesheet\" \
+             href=\"https://cdn.datatables.net/v/dt/{DATATABLES_CDN_COMBO}/datatables.min.css\" \
+             integrity=\"{DATATABLES_CDN_CSS_SRI}\" crossorigin=\"anonymous\">\n\
+             <script \
+             src=\"https://cdn.datatables.net/v/dt/{DATATABLES_CDN_COMBO}/datatables.min.js\" \
+             integrity=\"{DATATABLES_CDN_JS_SRI}\" crossorigin=\"anonymous\"></script>"
+        );
+    }
+    if viz_compress() {
+        let js_b64 = DATATABLES_GZ_B64.as_str();
+        let css_b64 = DATATABLES_CSS_GZ_B64.as_str();
+        if !js_b64.is_empty() && !css_b64.is_empty() {
+            return format!(
+                "<script id=\"qsv-data-lib\" \
+                 type=\"application/gzip-b64\">{js_b64}</script>\n<script id=\"qsv-data-css\" \
+                 type=\"application/gzip-b64\">{css_b64}</script>"
+            );
+        }
+    }
+    // vendored bundle contains no `</script>`/`</style>` (asserted by unit tests), so plain
+    // inline embedding needs no escaping
+    format!(
+        "<script id=\"qsv-data-lib\" type=\"text/javascript\">{DATATABLES_JS}</script>\n<style \
+         id=\"qsv-data-css\">{DATATABLES_CSS}</style>"
     )
 }
 
@@ -14022,6 +14124,187 @@ document.addEventListener("keydown", function (e) {
   document.body.classList.add("qsv-dict-open");
   drawer.classList.add("open");
   window.dispatchEvent(new Event("resize"));
+})();
+</script>"##;
+
+/// The data viewer drawer chrome for `viz smart` HTML dashboards (issue #4283): a bottom drawer
+/// holding the underlying rows in a DataTable, opened from the "(Explore)"/"(Preview)" link next
+/// to the metadata row count. Static CSS for the drawer shell + the script that lazily builds it
+/// on first open. `__QSVDATATITLE__` is replaced with the drawer-bar title ("all N rows" /
+/// "first N of M rows (preview)") at page build.
+///
+/// Mirrors the Data Dictionary drawer's mechanics (`DICT_SCRIPT_TEMPLATE`: lazy build, `.open` +
+/// `body.qsv-*-open` classes, a synthetic `resize` so plotly re-fits, Esc-to-close) but on the
+/// bottom edge, WITHOUT the dictionary's DOMParser/style-lifting indirection — that exists only
+/// because the dictionary doubles as a standalone page; this drawer is single-purpose, so its CSS
+/// ships directly below. z-index 1090 sits just under the dictionary drawer (1100); the two open
+/// on different axes and compose. Everything is lazy: the DataTables library (when gzip-embedded)
+/// is inflated and installed only on first open, so an unused drawer costs no page-load time.
+///
+/// The fixed bottom-right widgets (`#qsv-logo` at bottom:12px, `#qsv-theme-toggle` at
+/// bottom:50px) are pushed above the open drawer, mirroring the dictionary drawer's `right:`
+/// push of the same widgets.
+const DATA_DRAWER_SCRIPT: &str = r##"<style>
+  #qsv-data-drawer { position: fixed; left: 0; right: 0; bottom: 0; height: min(55vh, 560px); transform: translateY(103%); transition: transform 0.22s ease; z-index: 1090; display: flex; flex-direction: column; color: var(--qsv-page-ink, #1a1a1a); background: var(--qsv-page-bg, #ffffff); border-top: 1px solid rgba(127, 127, 127, 0.4); box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.18); }
+  #qsv-data-drawer.open { transform: none; }
+  .qsv-data-drawer-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 14px; font-size: 13px; font-weight: 600; border-bottom: 1px solid rgba(127, 127, 127, 0.25); }
+  .qsv-data-drawer-bar a { color: inherit; text-decoration: none; font-weight: 400; font-size: 15px; opacity: 0.75; }
+  .qsv-data-drawer-bar a:hover { opacity: 1; }
+  .qsv-data-drawer-content { flex: 1; overflow: auto; padding: 4px 14px 10px 14px; }
+  body.qsv-data-open { margin-bottom: min(55vh, 560px); }
+  body.qsv-data-open #qsv-logo { bottom: calc(min(55vh, 560px) + 12px); }
+  body.qsv-data-open #qsv-theme-toggle { bottom: calc(min(55vh, 560px) + 50px); }
+  tr.qsv-data-filters th { padding: 3px 6px; }
+  tr.qsv-data-filters input { width: 100%; box-sizing: border-box; font-size: 11px; padding: 2px 5px; color: inherit; background: transparent; border: 1px solid rgba(127, 127, 127, 0.45); border-radius: 4px; }
+  #qsv-data-drawer table.dataTable { color: inherit; }
+  .qsv-viz-meta a.qsv-data-link { font-size: 0.9em; }
+</style>
+<script>
+(function () {
+  var dt = null;
+  // DataTables' native dark palette keys on `:root.dark` (the <html> element); qsv's theme
+  // toggle flips `body.qsv-dark`. Mirror the body class onto <html> so the drawer widgets
+  // follow the qsv theme — nothing else in the page styles off `html.dark`.
+  function syncDark() {
+    document.documentElement.classList.toggle("dark", document.body.classList.contains("qsv-dark"));
+  }
+  syncDark();
+  new MutationObserver(syncDark).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  // Ensure the DataTables library + stylesheet are installed. The payload tags come in three
+  // shapes (see `datatables_lib_block`): CDN tags (nothing to do — `window.DataTable` exists),
+  // plain inline (`<script>` already executed / real `<style>` already applied), or gzip-b64
+  // payloads that must be inflated here on first use.
+  function ensureLib() {
+    var jobs = [];
+    var cssEl = document.getElementById("qsv-data-css");
+    if (cssEl && cssEl.tagName === "SCRIPT") {
+      jobs.push(window.__qsvGunzip(cssEl).then(function (css) {
+        var st = document.createElement("style");
+        st.textContent = css;
+        cssEl.parentNode.replaceChild(st, cssEl);
+      }));
+    }
+    if (!window.DataTable) {
+      var lib = document.getElementById("qsv-data-lib");
+      if (lib && lib.getAttribute("type") === "application/gzip-b64") {
+        jobs.push(window.__qsvGunzip(lib).then(function (src) {
+          lib.textContent = "";
+          (0, eval)(src);
+        }));
+      }
+    }
+    return Promise.all(jobs);
+  }
+  function payloadText(el) {
+    return el.getAttribute("type") === "application/gzip-b64"
+      ? window.__qsvGunzip(el).then(function (s) { el.textContent = ""; return s; })
+      : Promise.resolve(el.textContent);
+  }
+  function show(drawer) {
+    drawer.classList.add("open");
+    document.body.classList.add("qsv-data-open");
+    window.dispatchEvent(new Event("resize"));
+  }
+  function build() {
+    var rowsEl = document.getElementById("qsv-data-rows");
+    var colsEl = document.getElementById("qsv-data-cols");
+    if (!rowsEl || !colsEl) return Promise.reject(new Error("data payload missing"));
+    return ensureLib().then(function () { return payloadText(rowsEl); }).then(function (rowsTxt) {
+      var rows = JSON.parse(rowsTxt);
+      var cols = JSON.parse(colsEl.textContent);
+      var drawer = document.createElement("aside");
+      drawer.id = "qsv-data-drawer";
+      var bar = document.createElement("div");
+      bar.className = "qsv-data-drawer-bar";
+      var title = document.createElement("span");
+      title.textContent = "__QSVDATATITLE__";
+      var close = document.createElement("a");
+      close.href = "#";
+      close.textContent = "✕";
+      close.setAttribute("aria-label", "Close data viewer");
+      close.addEventListener("click", function (ev) { ev.preventDefault(); window.qsvCloseData(); });
+      bar.appendChild(title);
+      bar.appendChild(close);
+      var content = document.createElement("div");
+      content.className = "qsv-data-drawer-content";
+      var table = document.createElement("table");
+      table.id = "qsv-data-table";
+      table.className = "display compact";
+      table.style.width = "100%";
+      // two header rows: titles (ordering) + per-column filter inputs. `data-dt-order="disable"`
+      // keeps DataTables from attaching ordering listeners to the filter row.
+      var thead = document.createElement("thead");
+      var titleRow = document.createElement("tr");
+      var filterRow = document.createElement("tr");
+      filterRow.className = "qsv-data-filters";
+      filterRow.setAttribute("data-dt-order", "disable");
+      cols.forEach(function (c, i) {
+        var th = document.createElement("th");
+        th.textContent = c.title;
+        titleRow.appendChild(th);
+        var fth = document.createElement("th");
+        var input = document.createElement("input");
+        input.type = "search";
+        input.placeholder = "Filter…";
+        input.setAttribute("aria-label", "Filter " + c.title);
+        input.addEventListener("input", function () {
+          var col = dt.column(i);
+          if (col.search() !== input.value) col.search(input.value).draw();
+        });
+        fth.appendChild(input);
+        filterRow.appendChild(fth);
+      });
+      thead.appendChild(titleRow);
+      thead.appendChild(filterRow);
+      table.appendChild(thead);
+      content.appendChild(table);
+      drawer.appendChild(bar);
+      drawer.appendChild(content);
+      document.body.appendChild(drawer);
+      dt = new DataTable(table, {
+        data: rows,
+        // render.text(): cell values are DATA, not markup — without it DataTables injects them
+        // as HTML, so a cell containing markup would render (or execute) instead of display
+        columns: cols.map(function (c) { return { type: c.type, render: DataTable.render.text() }; }),
+        deferRender: true,
+        // no initial sort: rows show in file order until the user orders a column
+        order: [],
+        pageLength: 25,
+        scrollX: true,
+        layout: { top1: "searchBuilder" }
+      });
+      // let the just-appended drawer paint once closed, so the open transition animates
+      requestAnimationFrame(function () { show(drawer); });
+    });
+  }
+  window.qsvOpenData = function () {
+    var drawer = document.getElementById("qsv-data-drawer");
+    if (drawer) { show(drawer); return false; }
+    var lib = document.getElementById("qsv-data-lib");
+    var gz = (lib && lib.getAttribute("type") === "application/gzip-b64") ||
+      document.getElementById("qsv-data-rows").getAttribute("type") === "application/gzip-b64";
+    if (gz && !window.DecompressionStream) {
+      if (window.__qsvNoDecompress) window.__qsvNoDecompress();
+      return false;
+    }
+    build().catch(function (e) { console.error("qsv viz: data viewer failed:", e); });
+    return false;
+  };
+  window.qsvCloseData = function () {
+    var drawer = document.getElementById("qsv-data-drawer");
+    if (drawer) drawer.classList.remove("open");
+    document.body.classList.remove("qsv-data-open");
+    window.dispatchEvent(new Event("resize"));
+    return false;
+  };
+  // Esc closes the data drawer; the dictionary drawer registers its own Esc handler, so with
+  // both open a single Esc closes both — acceptable, they are independent overlays.
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") {
+      var drawer = document.getElementById("qsv-data-drawer");
+      if (drawer && drawer.classList.contains("open")) window.qsvCloseData();
+    }
+  });
 })();
 </script>"##;
 
@@ -20433,6 +20716,9 @@ struct SmartPanelData {
     title_text:    String,
     dict_page:     Option<String>,
     metadata_html: Option<String>,
+    /// the data viewer drawer chrome (issue #4283): library + payloads + drawer script.
+    /// HTML-only, `None` when disabled via `--preview-threshold 0`.
+    data_chrome:   Option<String>,
 }
 
 /// Shared working set threaded through `build_smart`'s phases.
@@ -22701,6 +22987,7 @@ impl<'a> SmartCtx<'a> {
         // scope). Rows/Columns/Compiled always render, so the table always has >=3 rows;
         // Description and PID are conditional. Image-export paths carry no table (would require
         // Plotly-layout annotations).
+        let mut data_viewer: Option<(String, &'static str)> = None;
         let metadata_html: Option<String> = if matches!(self.out_format, OutFormat::Html) {
             let mut rows = String::new();
             // Description: first paragraph of the dictionary's dataset-level description, only when
@@ -22719,10 +23006,20 @@ impl<'a> SmartCtx<'a> {
                     ));
                 }
             }
-            // Rows: reuse the lazily-computed dataset row count.
+            // Rows: reuse the lazily-computed dataset row count. When the data viewer drawer is
+            // enabled (issue #4283), the count links to it: "(Explore)" when every row is
+            // embedded, "(Preview)" when only the first --preview-threshold rows are.
             let n = self.row_count();
+            data_viewer = build_data_viewer_chrome(self.args, &self.stats, n)?;
+            let data_link = match &data_viewer {
+                Some((_, label)) => format!(
+                    " <a href=\"#\" class=\"qsv-data-link\" onclick=\"return \
+                     qsvOpenData()\">{label}</a>"
+                ),
+                None => String::new(),
+            };
             rows.push_str(&format!(
-                "<tr><td class=\"qsv-viz-meta-k\">Rows:</td><td>{}</td></tr>\n",
+                "<tr><td class=\"qsv-viz-meta-k\">Rows:</td><td>{}{data_link}</td></tr>\n",
                 HumanCount(n)
             ));
             // Columns
@@ -22780,6 +23077,7 @@ impl<'a> SmartCtx<'a> {
             title_text,
             dict_page,
             metadata_html,
+            data_chrome: data_viewer.map(|(chrome, _)| chrome),
         })
     }
 
@@ -22792,6 +23090,7 @@ impl<'a> SmartCtx<'a> {
             title_text,
             dict_page,
             metadata_html,
+            data_chrome,
         } = data;
 
         // a Geo panel in image mode must use the raw-JSON grid: it injects a domain-positioned
@@ -22826,6 +23125,7 @@ impl<'a> SmartCtx<'a> {
                 self.log_scale,
                 dict_page.as_deref(),
                 metadata_html.as_deref(),
+                data_chrome.as_deref(),
             )))
         } else if self
             .panels
@@ -22859,6 +23159,7 @@ impl<'a> SmartCtx<'a> {
                 self.log_scale,
                 dict_page,
                 metadata_html,
+                data_chrome,
             )
         }
     }
@@ -24199,6 +24500,7 @@ fn render_smart_grid(
     log_scale: LogScale,
     dict_page: Option<String>,
     metadata: Option<String>,
+    data_chrome: Option<String>,
 ) -> CliResult<SmartRender> {
     let SmartGridParts {
         traces,
@@ -24229,6 +24531,7 @@ fn render_smart_grid(
         theme,
         dict_page,
         metadata,
+        data_chrome,
     })
 }
 
@@ -24238,6 +24541,7 @@ fn render_smart_grid_page(
     title_text: &str,
     dict_page: Option<&str>,
     meta_table: Option<&str>,
+    data_chrome: Option<&str>,
 ) -> String {
     // match the responsiveness the single-`Plot` HTML path applies in `run`.
     plot.set_configuration(Configuration::new().responsive(true));
@@ -24265,6 +24569,7 @@ fn render_smart_grid_page(
         // never: `--photos` rides on the map panel's customdata, and a `PanelKind::Map` forces
         // the inline render path (see `has_noncartesian`), so it can't reach this typed grid.
         false,
+        data_chrome,
     )
 }
 
@@ -25628,6 +25933,7 @@ fn render_smart_inline(
     log_scale: LogScale,
     dict_page: Option<&str>,
     meta_table: Option<&str>,
+    data_chrome: Option<&str>,
 ) -> String {
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
     let theme = args.theme();
@@ -25712,6 +26018,7 @@ fn render_smart_inline(
         dict_page,
         meta_table,
         has_photos,
+        data_chrome,
     )
 }
 
@@ -26750,6 +27057,130 @@ fn collect_smart_values(
     }
 
     Ok((full, outliers))
+}
+
+/// Below this many serialized bytes the data viewer's row payload embeds as plain JSON even when
+/// compression is on — gzip+base64 overhead isn't worth it (mirrors `MAP_FIG_GZ_MIN_BYTES`).
+const DATATABLE_GZ_MIN_BYTES: usize = 4096;
+
+/// Read up to `limit` rows x ALL columns of the input, stream-serialized as a JSON
+/// array-of-arrays of strings for the data viewer drawer (issue #4283). Returns the JSON and the
+/// number of rows actually embedded. Cells are embedded as raw strings — DataTables sorts them
+/// by the per-column `type` the stats provide (`datatable_columns_json`).
+fn collect_datatable_rows(args: &Args, limit: u64) -> CliResult<(String, u64)> {
+    let rconfig = Config::new(args.arg_input.as_ref())
+        .delimiter(args.flag_delimiter)
+        .no_headers_flag(args.flag_no_headers);
+    let mut rdr = rconfig.reader()?;
+
+    // stream-serialize into one growing String: the JSON text is the only whole-dataset
+    // allocation this pass makes
+    let mut out = String::with_capacity(64 * 1024);
+    out.push('[');
+    let mut record = csv::ByteRecord::new();
+    let mut n: u64 = 0;
+    while n < limit && rdr.read_byte_record(&mut record)? {
+        if n > 0 {
+            out.push(',');
+        }
+        out.push('[');
+        for (i, cell) in record.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            // serde_json escapes quotes/control chars; HTML-sensitive chars (&<>) are handled
+            // at embed time — the gzip-b64 path needs nothing, the plain path \u-escapes them
+            out.push_str(&serde_json::to_string(&String::from_utf8_lossy(cell))?);
+        }
+        out.push(']');
+        n += 1;
+    }
+    out.push(']');
+    Ok((out, n))
+}
+
+/// The per-column DataTables config for the data viewer: `[{"title":..,"type":..},..]`. Column
+/// types come from the whole-dataset stats — client-side type detection would only see the
+/// (possibly partial) embedded subset. The `type` values are DataTables', driving both sorting
+/// and the SearchBuilder condition set per column.
+fn datatable_columns_json(stats: &[crate::cmd::stats::StatsData]) -> String {
+    let mut cols = String::with_capacity(stats.len() * 32);
+    cols.push('[');
+    for (i, s) in stats.iter().enumerate() {
+        if i > 0 {
+            cols.push(',');
+        }
+        let dt_type = match s.r#type.as_str() {
+            "Integer" | "Float" => "num",
+            "Date" | "DateTime" => "date",
+            _ => "string",
+        };
+        cols.push_str(&format!(
+            "{{\"title\":{},\"type\":\"{dt_type}\"}}",
+            serde_json::to_string(&s.field).unwrap_or_else(|_| "\"\"".to_string())
+        ));
+    }
+    cols.push(']');
+    cols
+}
+
+/// A plain (uncompressed) inline JSON `<script>` payload tag: `&`/`<`/`>` become `\u00XX` inside
+/// the JSON string literals so no cell value can smuggle a `</script>` into the page (same
+/// escape trio as `map_panel_inline_html`'s plain branch).
+fn inline_json_script(id: &str, json: &str) -> String {
+    let safe = json
+        .replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e");
+    format!("<script id=\"{id}\" type=\"application/json\">{safe}</script>")
+}
+
+/// Build the data viewer chrome for a smart HTML dashboard: the DataTables library block, the
+/// row + column payload tags, and the drawer CSS/script — plus the "(Explore)"/"(Preview)" label
+/// for the metadata Rows link. `None` when the viewer is disabled (`--preview-threshold 0`) or
+/// there is nothing to show. Callers gate on HTML output; image exports never pay the data pass.
+fn build_data_viewer_chrome(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+    total_rows: u64,
+) -> CliResult<Option<(String, &'static str)>> {
+    let threshold = args.flag_preview_threshold as u64;
+    if threshold == 0 || total_rows == 0 || stats.is_empty() {
+        return Ok(None);
+    }
+    let (rows_json, embedded) = collect_datatable_rows(args, total_rows.min(threshold))?;
+    let full = embedded >= total_rows;
+    let link_label = if full { "(Explore)" } else { "(Preview)" };
+    let title = if full {
+        format!("Data — all {} rows", HumanCount(embedded))
+    } else {
+        format!(
+            "Data — first {} of {} rows (preview)",
+            HumanCount(embedded),
+            HumanCount(total_rows)
+        )
+    };
+
+    let mut rows_tag = String::new();
+    if viz_compress() && rows_json.len() >= DATATABLE_GZ_MIN_BYTES {
+        let b64 = gzip_b64(rows_json.as_bytes(), flate2::Compression::default());
+        if !b64.is_empty() {
+            rows_tag = format!(
+                "<script id=\"qsv-data-rows\" type=\"application/gzip-b64\">{b64}</script>"
+            );
+        }
+    }
+    if rows_tag.is_empty() {
+        rows_tag = inline_json_script("qsv-data-rows", &rows_json);
+    }
+    let cols_tag = inline_json_script("qsv-data-cols", &datatable_columns_json(stats));
+
+    let chrome = format!(
+        "{lib}\n{rows_tag}\n{cols_tag}\n{script}",
+        lib = datatables_lib_block(),
+        script = DATA_DRAWER_SCRIPT.replace("__QSVDATATITLE__", &title),
+    );
+    Ok(Some((chrome, link_label)))
 }
 
 /// The plotly axis reference string for subplot `pos` (1-based): "x"/"y" for the first,
@@ -31222,6 +31653,70 @@ mod tests {
             "PLOTLY_CDN_SRI is stale: the embedded plotly.js bundle hashes to sha384-{digest}. \
              Regenerate it (see the command on PLOTLY_CDN_VERSION) and update PLOTLY_CDN_VERSION \
              to match the bundle."
+        );
+    }
+
+    #[test]
+    fn datatables_bundle_is_plain_embed_safe() {
+        // The plain (QSV_VIZ_NO_COMPRESS) path inlines the vendored bundle with NO escaping, so
+        // neither file may contain its own close tag. (The gz-b64 path is `</script>`-safe by
+        // construction — base64 has no `<`.)
+        assert!(
+            !DATATABLES_JS.contains("</script"),
+            "vendored datatables.min.js contains `</script` — plain inline embedding would \
+             truncate the tag"
+        );
+        assert!(
+            !DATATABLES_CSS.contains("</style"),
+            "vendored datatables.min.css contains `</style` — plain inline embedding would \
+             truncate the tag"
+        );
+        // the download-builder header comment must confirm the pinned component versions
+        for component in DATATABLES_CDN_COMBO.split('/') {
+            let (code, version) = component
+                .split_once('-')
+                .expect("combo segments are code-version");
+            let name = match code {
+                "dt" => "DataTables",
+                "date" => "DateTime",
+                "sb" => "SearchBuilder",
+                other => panic!("unknown combo component {other}"),
+            };
+            let marker = format!("{name} {version}");
+            assert!(
+                DATATABLES_JS.contains(&marker),
+                "vendored datatables.min.js header lacks \"{marker}\" — bundle and \
+                 DATATABLES_CDN_COMBO are out of sync"
+            );
+            assert!(
+                DATATABLES_CSS.contains(&marker),
+                "vendored datatables.min.css header lacks \"{marker}\" — bundle and \
+                 DATATABLES_CDN_COMBO are out of sync"
+            );
+        }
+    }
+
+    #[test]
+    fn datatables_cdn_sri_matches_the_vendored_bundle() {
+        use base64_simd::STANDARD as BASE64;
+        use sha2::{Digest, Sha384};
+
+        // The version-pinned cdn.datatables.net URLs serve exactly the vendored bytes, so the
+        // vendored files are an offline oracle for the SRI digests — this fails the moment the
+        // bundle is bumped without the hashes (or DATATABLES_CDN_COMBO) being regenerated.
+        let js_digest = BASE64.encode_to_string(Sha384::digest(DATATABLES_JS.as_bytes()));
+        assert_eq!(
+            format!("sha384-{js_digest}"),
+            DATATABLES_CDN_JS_SRI,
+            "DATATABLES_CDN_JS_SRI is stale: the vendored datatables.min.js hashes to \
+             sha384-{js_digest}. Regenerate it (see the command on DATATABLES_JS)."
+        );
+        let css_digest = BASE64.encode_to_string(Sha384::digest(DATATABLES_CSS.as_bytes()));
+        assert_eq!(
+            format!("sha384-{css_digest}"),
+            DATATABLES_CDN_CSS_SRI,
+            "DATATABLES_CDN_CSS_SRI is stale: the vendored datatables.min.css hashes to \
+             sha384-{css_digest}. Regenerate it (see the command on DATATABLES_JS)."
         );
     }
 

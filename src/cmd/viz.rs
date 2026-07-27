@@ -14150,7 +14150,17 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
      CSS against the CURRENT viewport — a later window resize / device rotation can otherwise
      leave the persisted value outside the 20vh-90vh bounds. Every consumer (drawer height,
      body margin, fixed-widget pushes) uses this one clamped var so they can never disagree. */
-  body { --qsv-data-h-eff: clamp(20vh, var(--qsv-data-h, min(55vh, 560px)), 90vh); }
+  /* --qsv-data-vh is one vh worth of px. It defaults to the real thing, so a standalone page
+     behaves exactly as if the vh unit were used directly; an EMBEDDED page has the parent
+     overwrite it with a hundredth of the parent's viewport (see the qsvVizViewport handshake).
+     That indirection exists because vh inside an auto-sized iframe resolves against the IFRAME,
+     which the gallery has grown to the dashboard's full content height — so "55vh" meant 55% of
+     the whole document and the drawer opened far taller than the window it had to fit in. */
+  /* declared on :root, NOT on the body rule below — the handshake writes this var to
+     documentElement's inline style (as --qsv-data-h already does), and re-declaring it on body
+     would beat that inherited value and silently pin every page back to the default */
+  :root { --qsv-data-vh: 1vh; }
+  body { --qsv-data-h-eff: clamp(calc(20 * var(--qsv-data-vh)), var(--qsv-data-h, min(calc(55 * var(--qsv-data-vh)), 560px)), calc(90 * var(--qsv-data-vh))); }
   #qsv-data-drawer { position: fixed; left: 0; right: 0; bottom: 0; height: var(--qsv-data-h-eff); transform: translateY(103%); transition: transform 0.22s ease; z-index: 1120; display: flex; flex-direction: column; color: var(--qsv-page-ink, #1a1a1a); background: var(--qsv-page-bg, #ffffff); border-top: 1px solid rgba(127, 127, 127, 0.4); box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.18); }
   #qsv-data-drawer.open { transform: none; }
   #qsv-data-drawer:focus { outline: none; }
@@ -14173,6 +14183,15 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   tr.qsv-data-filters th { padding: 3px 6px; box-shadow: 0 1px 0 rgba(127, 127, 127, 0.35); }
   tr.qsv-data-filters input { width: 100%; box-sizing: border-box; font-size: 11px; padding: 2px 5px; color: inherit; background: transparent; border: 1px solid rgba(127, 127, 127, 0.45); border-radius: 4px; }
   #qsv-data-drawer table.dataTable { color: inherit; }
+  /* An unbroken long token (URL, base64 blob, hash) has no wrap opportunity, so the column
+     grows to the token's full width and the table overflows the drawer — which has no
+     horizontal scroll (Responsive and scrollX are mutually exclusive), leaving those columns
+     simply unreachable. `anywhere` lets such a token break mid-token; ordinary prose is
+     unaffected because it still wraps at its spaces first. Note this cannot be done with
+     `max-width`: browsers treat that as advisory on table cells under `table-layout: auto`,
+     and `fixed` is not an option — Responsive picks what to collapse by measuring natural
+     column widths, which fixed layout flattens. */
+  #qsv-data-table td, #qsv-data-table thead th { overflow-wrap: anywhere; }
   .qsv-viz-meta a.qsv-data-link { font-size: 0.9em; }
 </style>
 <script>
@@ -14260,11 +14279,40 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   // reader has taken over scrolling, and a late re-align would yank them back down even with
   // the drawer still open. The arming click's own pointerdown fires BEFORE show() captures its
   // sequence number, so it never cancels the series it starts.
+  // Height of the viewport the drawer actually has to fit inside. Standalone that is this
+  // window; embedded it is the PARENT's, which only the parent can tell us — an auto-sized
+  // iframe has no viewport of its own to measure. Until (or unless) it answers we use the
+  // local value, which is the pre-handshake behavior.
+  var parentVh = 0;
+  function viewportH() { return parentVh || window.innerHeight; }
+  // Asked at load AND again on every open. The load-time ask races the embedder: the gallery
+  // installs its listener far below the iframe markup, so a dashboard near the top of the page
+  // can post before anything is listening, and a dropped answer has no other recovery — the
+  // drawer would stay sized to the iframe until the parent happened to resize.
+  function askViewport() {
+    if (window.self === window.top) return;
+    try { window.parent.postMessage({ qsvVizWantViewport: 1 }, "*"); } catch (e) {}
+  }
+  if (window.self !== window.top) {
+    addEventListener("message", function (ev) {
+      var d = ev.data;
+      if (!d || typeof d.qsvVizViewport !== "number" || !(d.qsvVizViewport > 0)) return;
+      parentVh = d.qsvVizViewport;
+      // feed the CSS clamp in px-per-vh units
+      document.documentElement.style.setProperty("--qsv-data-vh", (parentVh / 100) + "px");
+      // the drawer may already be open (parent resize): re-fit the table to its new height
+      if (dt) dt.columns.adjust();
+    });
+    // the parent also broadcasts on its own resize; this is the initial ask
+    askViewport();
+  }
   var revealSeq = 0;
   ["wheel", "touchstart", "keydown", "pointerdown"].forEach(function (t) {
     addEventListener(t, function () { revealSeq++; }, { capture: true, passive: true });
   });
   function show(drawer) {
+    // covers a load-time ask that went unheard, and picks up any change since the last open
+    askViewport();
     drawer.classList.add("open");
     document.body.classList.add("qsv-data-open");
     window.dispatchEvent(new Event("resize"));
@@ -14306,7 +14354,13 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
         grip.setPointerCapture(ev.pointerId);
         var raf = 0, lastH = 0;
         function onMove(mv) {
-          lastH = Math.min(Math.max(window.innerHeight - mv.clientY, window.innerHeight * 0.2), window.innerHeight * 0.9);
+          // the raw height stays in THIS frame's coordinates — the drawer is pinned to the
+          // bottom of this document and mv.clientY is measured in it — but the 20%/90% bounds
+          // are about the viewport the drawer must fit inside, which when embedded is the
+          // parent's (same reason as --qsv-data-vh; window.innerHeight here is the iframe's
+          // full content height, so the bounds would let the drawer grow past the window)
+          var vpH = viewportH();
+          lastH = Math.min(Math.max(window.innerHeight - mv.clientY, vpH * 0.2), vpH * 0.9);
           if (!raf) raf = requestAnimationFrame(function () {
             raf = 0;
             document.documentElement.style.setProperty("--qsv-data-h", Math.round(lastH) + "px");
@@ -14376,17 +14430,75 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
         data: rows,
         // render.text(): cell values are DATA, not markup — without it DataTables injects them
         // as HTML, so a cell containing markup would render (or execute) instead of display
-        columns: cols.map(function (c) { return { type: c.type, render: DataTable.render.text() }; }),
+        columns: cols.map(function (c) {
+          var text = DataTable.render.text();
+          // A date cell may arrive as [raw, sortKey] when its source text is not one the
+          // browser's Date.parse orders correctly (see collect_datatable_rows). Split it back
+          // apart: ordering takes the key, everything the reader sees or searches takes the
+          // source text. Plain-string cells in the same column pass straight through, so this
+          // has to handle both shapes.
+          if (c.type !== "date") return { type: c.type, render: text };
+          // render.text() is an ORTHOGONAL MAP ({display, filter}), not a callable, so the
+          // date column supplies a map too. "_" is the fallback the un-keyed types ("type",
+          // and the "export" Buttons could ask for) resolve through, which keeps them on the
+          // source text exactly as an un-rendered column would be.
+          var raw = function (d) { return Array.isArray(d) ? d[0] : d; };
+          return { type: c.type, render: {
+            _: raw,
+            sort: function (d) { return Array.isArray(d) ? d[1] : d; },
+            // display and filter stay inside render.text() — dropping it here would put an
+            // unescaped cell value back into the page
+            display: function (d) { return text.display(raw(d)); },
+            filter: function (d) { return text.filter(raw(d)); }
+          } };
+        }),
         deferRender: true,
         // no initial sort: rows show in file order until the user orders a column
         order: [],
         pageLength: 25,
+        lengthMenu: [10, 25, 50, 100],
         // collapse the columns that don't fit into an expandable child-row control per row
         responsive: true,
         // SearchBuilder rides in a Buttons popover ("Filter (n)") on the same controls row as
         // the page-length selector and the global search box, instead of a permanent pane.
         language: { searchBuilder: { button: { 0: "Filter", _: "Filter (%d)" } } },
-        layout: { topStart: ["pageLength", { buttons: ["searchBuilder"] }] }
+        layout: { topStart: ["pageLength", { buttons: ["searchBuilder", {
+          extend: "csv",
+          text: "__QSVDATAEXPORTTEXT__",
+          // substituted as a complete JS string literal: the stem is a user-supplied file name
+          filename: __QSVDATAEXPORTNAME__,
+          // Columns and orthogonal are deliberately left at their defaults, because the two
+          // overrides that look obviously right are both wrong. columns=":visible" already
+          // means every column: Responsive keeps its collapsed set in its own state and leaves
+          // DataTables' visibility alone. orthogonal="display" is the fidelity-preserving
+          // choice, not "export": Buttons strips markup and decodes entities on the way out,
+          // which mangles a raw cell but exactly inverts the escaping DataTable.render.text()
+          // applied for display. Over a markup/entity/quote/tab/emoji fixture "display" was
+          // 10/10 exact where "export" corrupted 4/10. Row scope is the default too: search
+          // applies, paging does not, so the file holds every filtered row, not the page.
+          exportOptions: {
+            // csvHtml5 carries this in its OWN default exportOptions, and supplying the object
+            // replaces that default rather than merging into it. Restated so the CSV-injection
+            // guard (a leading =, +, - or @ in a cell) cannot be lost by accident.
+            escapeExcelFormula: true,
+            // The header is the one default that is wrong for this table. The drawer's thead
+            // has TWO rows — the titles and the per-column filter inputs — and the CSV writer
+            // serializes every row of headerStructure, so the filter row landed in the file as
+            // a blank line between the header and the first record. Drop the rows belonging to
+            // it, matched by its class rather than by index or emptiness so this keeps working
+            // if the header gains rows later. Note this hook belongs to exportData's options,
+            // NOT to the button config: sitting a level up it is silently never called.
+            customizeData: function (d) {
+              if (!d.headerStructure) return;
+              d.headerStructure = d.headerStructure.filter(function (row) {
+                return !row.some(function (c) {
+                  return c.cell && c.cell.parentNode &&
+                    c.cell.parentNode.classList.contains("qsv-data-filters");
+                });
+              });
+            }
+          }
+        }] }] }
       });
       // keep the filter-input row aligned with Responsive's column collapse
       function syncFilters(visible) {
@@ -27203,14 +27315,27 @@ fn collect_smart_values(
 const DATATABLE_GZ_MIN_BYTES: usize = 4096;
 
 /// Read up to `limit` rows x ALL columns of the input, stream-serialized as a JSON
-/// array-of-arrays of strings for the data viewer drawer (issue #4283). Returns the JSON and the
-/// number of rows actually embedded. Cells are embedded as raw strings — DataTables sorts them
-/// by the per-column `type` the stats provide (`datatable_columns_json`).
-fn collect_datatable_rows(args: &Args, limit: u64) -> CliResult<(String, u64)> {
+/// array-of-arrays for the data viewer drawer (issue #4283). Returns the JSON and the number of
+/// rows actually embedded.
+///
+/// Cells are embedded as raw strings, which DataTables sorts by the per-column `type` the stats
+/// provide (`datatable_columns_json`). Date columns are the exception: DataTables orders its
+/// `date` type through the browser's `Date.parse`, which reads ISO and month-first text but
+/// rejects day-first (`25/07/2026` is month 25), so those columns fell back to source order.
+/// `date_cols` marks the columns where such a cell is instead embedded as a
+/// `[raw, sort-key]` pair, the sort key being the same qsv-dateparser reading that stats used to
+/// type the column — the display keeps the source text and ordering follows qsv's own parse.
+/// Cells that already lead with an ISO date sort correctly as they are and stay plain strings,
+/// so an ISO column costs nothing extra.
+fn collect_datatable_rows(args: &Args, limit: u64, date_cols: &[bool]) -> CliResult<(String, u64)> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
     let mut rdr = rconfig.reader()?;
+
+    // the same preference stats inferred the date columns under, so a sort key can never
+    // disagree with the type that asked for it
+    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
     // stream-serialize into one growing String: the JSON text is the only whole-dataset
     // allocation this pass makes
@@ -27229,13 +27354,54 @@ fn collect_datatable_rows(args: &Args, limit: u64) -> CliResult<(String, u64)> {
             }
             // serde_json escapes quotes/control chars; HTML-sensitive chars (&<>) are handled
             // at embed time — the gzip-b64 path needs nothing, the plain path \u-escapes them
-            out.push_str(&serde_json::to_string(&String::from_utf8_lossy(cell))?);
+            let text = String::from_utf8_lossy(cell);
+            let sort_key = if date_cols.get(i).copied().unwrap_or(false) {
+                datatable_date_sort_key(&text, prefer_dmy)
+            } else {
+                None
+            };
+            if let Some(key) = sort_key {
+                out.push('[');
+                out.push_str(&serde_json::to_string(&text)?);
+                out.push(',');
+                out.push_str(&serde_json::to_string(&key)?);
+                out.push(']');
+            } else {
+                out.push_str(&serde_json::to_string(&text)?);
+            }
         }
         out.push(']');
         n += 1;
     }
     out.push(']');
     Ok((out, n))
+}
+
+/// The sort key for one cell of a date column, or `None` when the raw text can stand on its own
+/// (blank, already ISO-leading, or unparseable — an unparseable cell has no better ordering to
+/// offer than itself). Keys are RFC 3339 in UTC, so they order lexicographically, which is how
+/// DataTables' `date` type will compare them.
+fn datatable_date_sort_key(text: &str, prefer_dmy: bool) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || is_iso_leading_date(trimmed) {
+        return None;
+    }
+    qsv_dateparser::parse_with_preference(trimmed, prefer_dmy)
+        .ok()
+        .map(|dt| dt.to_rfc3339())
+}
+
+/// Whether `text` opens with a `YYYY-MM-DD` date. Such a value is both `Date.parse`-readable and
+/// lexicographically ordered, so it needs no sort key.
+fn is_iso_leading_date(text: &str) -> bool {
+    let [y0, y1, y2, y3, dash1, m0, m1, dash2, d0, d1, ..] = *text.as_bytes() else {
+        return false;
+    };
+    dash1 == b'-'
+        && dash2 == b'-'
+        && [y0, y1, y2, y3, m0, m1, d0, d1]
+            .iter()
+            .all(u8::is_ascii_digit)
 }
 
 /// The per-column DataTables config for the data viewer: `[{"title":..,"type":..},..]`. Column
@@ -27263,6 +27429,17 @@ fn datatable_columns_json(stats: &[crate::cmd::stats::StatsData]) -> String {
     cols
 }
 
+/// A complete JS string literal for `s`, safe to substitute into inline `<script>` source.
+/// JSON string syntax is a subset of JS, so `serde_json` does the quoting/escaping; the `&<>`
+/// trio is then escaped as in `inline_json_script` so the value cannot close the script tag.
+fn js_string_literal(s: &str) -> String {
+    serde_json::to_string(s)
+        .unwrap_or_else(|_| "\"\"".to_string())
+        .replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+}
+
 /// A plain (uncompressed) inline JSON `<script>` payload tag: `&`/`<`/`>` become `\u00XX` inside
 /// the JSON string literals so no cell value can smuggle a `</script>` into the page (same
 /// escape trio as `map_panel_inline_html`'s plain branch).
@@ -27287,7 +27464,14 @@ fn build_data_viewer_chrome(
     if threshold == 0 || total_rows == 0 || stats.is_empty() {
         return Ok(None);
     }
-    let (rows_json, embedded) = collect_datatable_rows(args, total_rows.min(threshold))?;
+    // which columns get a date sort key — the same Date/DateTime typing that
+    // `datatable_columns_json` turns into the DataTables "date" column type
+    let date_cols: Vec<bool> = stats
+        .iter()
+        .map(|s| matches!(s.r#type.as_str(), "Date" | "DateTime"))
+        .collect();
+    let (rows_json, embedded) =
+        collect_datatable_rows(args, total_rows.min(threshold), &date_cols)?;
     let full = embedded >= total_rows;
     let link_label = if full { "(Explore)" } else { "(Preview)" };
     let title = if full {
@@ -27299,6 +27483,35 @@ fn build_data_viewer_chrome(
             HumanCount(total_rows)
         )
     };
+    // The CSV export can only ever contain the rows that were embedded, so when the viewer is
+    // showing a truncated preview both the button and the file name have to say so — a
+    // download silently missing most of the dataset is worse than no download at all.
+    // The stem is not always a plain file name — a `dc:<name>` cache input keeps its prefix, so
+    // the raw stem can carry a colon, which is illegal in a Windows filename. Keep only the
+    // characters every platform accepts and fall back when nothing survives (stdin included,
+    // where there is no input path at all).
+    let raw_stem = std::path::Path::new(args.arg_input.as_deref().unwrap_or("data"))
+        .file_stem()
+        .map_or_else(|| "data".to_string(), |s| s.to_string_lossy().into_owned());
+    let mut export_stem: String = raw_stem
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if export_stem.trim_matches('-').is_empty() {
+        export_stem = "data".to_string();
+    }
+    let export_name = if full {
+        export_stem
+    } else {
+        format!("{export_stem}-preview")
+    };
+    let export_text = if full { "CSV" } else { "CSV (preview)" };
 
     let mut rows_tag = String::new();
     if viz_compress() && rows_json.len() >= DATATABLE_GZ_MIN_BYTES {
@@ -27317,7 +27530,10 @@ fn build_data_viewer_chrome(
     let chrome = format!(
         "{lib}\n{rows_tag}\n{cols_tag}\n{script}",
         lib = datatables_lib_block(),
-        script = DATA_DRAWER_SCRIPT.replace("__QSVDATATITLE__", &title),
+        script = DATA_DRAWER_SCRIPT
+            .replace("__QSVDATATITLE__", &title)
+            .replace("__QSVDATAEXPORTTEXT__", export_text)
+            .replace("__QSVDATAEXPORTNAME__", &js_string_literal(&export_name)),
     );
     Ok(Some((chrome, link_label)))
 }

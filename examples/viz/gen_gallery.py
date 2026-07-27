@@ -292,6 +292,19 @@ RESIZE_LISTENER_JS = (
     "if(r.bottom>innerHeight)scrollTo({top:scrollY+r.bottom-innerHeight,behavior:\"instant\"});}"
     "else if(d.qsvVizReveal===\"top\"){var t=src.getBoundingClientRect();"
     "scrollTo({top:Math.max(0,scrollY+t.top+(d.qsvVizOffset||0)-80),behavior:\"instant\"});}"
+    # A dashboard sizes its data viewer drawer in vh, but inside an auto-sized iframe vh
+    # resolves against the iframe — which this listener has just grown to the dashboard's FULL
+    # content height — so the drawer opened far taller than the window. The iframe cannot
+    # measure the real viewport itself, so answer the child's request with ours; it converts to
+    # px-per-vh. Older pregenerated dashboards simply never ask.
+    "else if(d.qsvVizWantViewport){"
+    "e.source.postMessage({qsvVizViewport:innerHeight},\"*\");}"
+    "});"
+    # keep them current: a window resize or rotation changes the number every drawer depends on
+    "addEventListener(\"resize\",function(){"
+    "var f=document.getElementsByClassName(\"dash\");"
+    "for(var i=0;i<f.length;i++)if(f[i].contentWindow)"
+    "f[i].contentWindow.postMessage({qsvVizViewport:innerHeight},\"*\");"
     "});</script>")
 
 # The standalone (non-smart) figures are reconstructed in this page's own <script> via

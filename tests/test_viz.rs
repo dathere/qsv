@@ -12939,7 +12939,7 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     // resizable drawer grip + focus management + stacking above the dictionary drawer
     assert!(html.contains("qsv-data-drawer-grip"));
     // the persisted px height is re-clamped in CSS against the current viewport (roborev #3864)
-    assert!(html.contains("--qsv-data-h-eff: clamp(20vh"));
+    assert!(html.contains("--qsv-data-h-eff: clamp(calc(20 * var(--qsv-data-vh))"));
     assert!(html.contains(r#"drawer.setAttribute("tabindex", "-1")"#));
     assert!(html.contains("z-index: 1120"));
     // plain embed of the vendored library (NO_COMPRESS): bundle header + real <style>
@@ -12971,6 +12971,186 @@ fn viz_smart_data_viewer_preview_over_threshold() {
     assert!(html.contains("Data — first 5 of 10 rows (preview)"));
     assert!(html.contains("row5sentinel"));
     assert!(!html.contains("row6sentinel"));
+}
+
+// The drawer's controls row carries a CSV export button next to the SearchBuilder popover.
+// It is deliberately configured with NO exportOptions: Buttons' defaults already export every
+// column (Responsive's collapsed set never touches DataTables' visibility) and the "display"
+// orthogonal round-trips markup/entity cell values, which `orthogonal: "export"` would strip.
+// Assertions use the emitted spacing so they cannot match the minified bundle, which embeds
+// plaintext in NO_COMPRESS pages and contains these words itself.
+#[test]
+fn viz_smart_data_viewer_csv_export_button() {
+    let wrk = Workdir::new("viz_smart_data_viewer_csv_export_button");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"extend: "csv""#));
+    // full embed: plain label, file named for the input stem
+    assert!(html.contains(r#"text: "CSV""#));
+    assert!(html.contains(r#"filename: "dv""#));
+    // neither tempting override is present
+    assert!(!html.contains(r#"orthogonal: "export""#));
+    assert!(!html.contains(r#"columns: ":all""#));
+    // the XSS guard the export fidelity depends on is still on the columns
+    assert!(html.contains("DataTable.render.text()"));
+    // the thead's second row is the per-column filter inputs, and the CSV writer serializes
+    // every header row -- it must be dropped or the file gets a blank line under the header.
+    // The hook has to sit INSIDE exportOptions; a level up it is silently never called.
+    assert!(html.contains("exportOptions: {"));
+    assert!(html.contains("customizeData: function (d) {"));
+    assert!(html.contains(r#"classList.contains("qsv-data-filters")"#));
+    // supplying exportOptions replaces csvHtml5's own default object, so the CSV-injection
+    // guard has to be restated rather than inherited
+    assert!(html.contains("escapeExcelFormula: true"));
+}
+
+// A truncated preview must not hand back a file that looks complete: both the button label and
+// the download's name say "preview".
+#[test]
+fn viz_smart_data_viewer_csv_export_preview_is_labeled() {
+    let wrk = Workdir::new("viz_smart_data_viewer_csv_export_preview_is_labeled");
+    let mut csv = String::from("name,amt,grade\n");
+    for i in 1..=10 {
+        let grade = if i % 2 == 0 { "A" } else { "B" };
+        csv.push_str(&format!("row{i},{i},{grade}\n"));
+    }
+    wrk.create_from_string("ten.csv", &csv);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "ten.csv", "--preview-threshold", "5"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"text: "CSV (preview)""#));
+    assert!(html.contains(r#"filename: "ten-preview""#));
+}
+
+// The export file name is derived from the input, which is not always a plain file name — a
+// `dc:<name>` cache input keeps its prefix, and a colon is illegal in a Windows file name. Only
+// portable characters survive. (A space stands in for the colon here: it is legal in a file
+// name on every platform the tests run on, so the fixture itself stays portable.)
+#[test]
+fn viz_smart_data_viewer_csv_export_name_is_sanitized() {
+    let wrk = Workdir::new("viz_smart_data_viewer_csv_export_name_is_sanitized");
+    let mut csv = String::from("name,amt,grade\n");
+    for i in 1..=5 {
+        let grade = if i % 2 == 0 { "A" } else { "B" };
+        csv.push_str(&format!("row{i},{i},{grade}\n"));
+    }
+    wrk.create_from_string("od d.csv", &csv);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "od d.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"filename: "od-d""#));
+}
+
+// The drawer sizes itself against the viewport it must fit inside. Embedded in the gallery's
+// auto-sized iframes a vh resolves against the iframe — grown to the dashboard's full content
+// height — so the drawer opened taller than the window. It asks the parent for the real
+// viewport and converts the answer to px-per-vh.
+#[test]
+fn viz_smart_data_viewer_asks_parent_for_viewport() {
+    let wrk = Workdir::new("viz_smart_data_viewer_asks_parent_for_viewport");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // both halves of the handshake
+    assert!(html.contains("qsvVizWantViewport"));
+    assert!(html.contains("qsvVizViewport"));
+    // the default must sit on :root, never on body — a body declaration would beat the
+    // inherited value the handshake writes to documentElement and pin every page to 1vh
+    assert!(html.contains(":root { --qsv-data-vh: 1vh; }"));
+    assert!(!html.contains("body { --qsv-data-vh"));
+    // the height clamp and the grip's drag bounds both go through it
+    assert!(html.contains("calc(90 * var(--qsv-data-vh))"));
+    assert!(html.contains("vpH * 0.9"));
+    // standalone pages never ask, so they keep the plain vh behavior
+    assert!(html.contains("window.self !== window.top"));
+    // the ask is repeated on every open: an embedder that installs its listener below the
+    // iframe markup (the gallery does, ~320KB below) never hears the load-time one, and a
+    // dropped answer has no other recovery
+    assert!(html.contains("function askViewport()"));
+    assert!(html.contains("askViewport();"));
+}
+
+// DataTables orders its "date" type through the browser's Date.parse, which rejects day-first
+// text (25/07/2026 is month 25) and leaves such a column in source order. Those cells embed as
+// [raw, sort-key] so ordering follows qsv's own parse while the display keeps the source text.
+// Cells that already lead with an ISO date sort correctly as-is and stay plain strings.
+#[test]
+fn viz_smart_data_viewer_date_sort_keys() {
+    let wrk = Workdir::new("viz_smart_data_viewer_date_sort_keys");
+    wrk.create_from_string(
+        "dates.csv",
+        "cat,dayfirst_date,iso_date,amt\nalpha,25/07/2026,2026-07-25,1\nbeta,30/11/2025,\
+         2025-11-30,2\ngamma,13/02/2026,2026-02-13,3\nalpha,19/03/2026,2026-03-19,4\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dates.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // stats typed both date columns, so both carry the DataTables date type
+    assert!(html.contains(r#""title":"dayfirst_date","type":"date""#));
+    assert!(html.contains(r#""title":"iso_date","type":"date""#));
+    // day-first cells pair the source text with qsv's reading of it -- 25/07 is July 25, which
+    // Date.parse would have rejected outright
+    assert!(html.contains(r#"["25/07/2026","2026-07-25T00:00:00+00:00"]"#));
+    assert!(html.contains(r#"["30/11/2025","2025-11-30T00:00:00+00:00"]"#));
+    // the ISO column pays nothing: its cells stay plain strings
+    assert!(!html.contains(r#"["2026-07-25","#));
+    // the split render keeps display/filter inside render.text()'s escaping
+    assert!(html.contains("text.display(raw(d))"));
+    assert!(html.contains("text.filter(raw(d))"));
+}
+
+// A column stats typed as a date can still hold blanks (a cell that fails to parse would have
+// made stats type the whole column String instead, so junk never reaches here). A blank has no
+// better ordering to offer than itself and stays a plain string rather than becoming a pair.
+#[test]
+fn viz_smart_data_viewer_unparseable_dates_stay_plain() {
+    let wrk = Workdir::new("viz_smart_data_viewer_unparseable_dates_stay_plain");
+    wrk.create_from_string(
+        "dates.csv",
+        "cat,when_date,amt\nalpha,25/07/2026,1\nbeta,,2\ngamma,13/02/2026,3\nalpha,19/03/2026,4\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dates.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the column is still a date column, and its parseable cells still pair
+    assert!(html.contains(r#""title":"when_date","type":"date""#));
+    assert!(html.contains(r#"["25/07/2026","2026-07-25T00:00:00+00:00"]"#));
+    // no pair was minted for the blank: its row embeds it as a plain empty string. Anchored on
+    // the whole row — a bare `["","` also occurs inside the plaintext minified bundle.
+    assert!(html.contains(r#"["beta","","2"]"#));
 }
 
 // `--preview-threshold 0` disables the viewer entirely: no link, no payloads, no drawer, no

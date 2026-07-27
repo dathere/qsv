@@ -43,10 +43,10 @@
 
 
 <table class="qsv-viz-meta">
-<tr><td class="qsv-viz-meta-k">Rows:</td><td>60</td></tr>
+<tr><td class="qsv-viz-meta-k">Rows:</td><td>60 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)</a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>6</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-26 15:58 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-27 03:34 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
       <div class="qsv-viz-plot">
@@ -504,6 +504,311 @@
 })();
 </script>
 
+<link rel="stylesheet" href="https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.css" integrity="sha384-ZtgaXPGRw8cZoyioB/MnlrKGlzPp58fYlI9z6CaPbGwG8kjkKPHju1nluTbJCNai" crossorigin="anonymous">
+<script src="https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.js" integrity="sha384-qsj+q+OqjwnpWR0ndlkUd+MsQd7oqHncAjb1PSxWIMH5ZStyVauUryBapGSlkcap" crossorigin="anonymous"></script>
+<script id="qsv-data-rows" type="application/json">[["Organic Search","01","11629","5336","2592","1205"],["Paid Social","01","6350","1758","722","208"],["Email","01","3581","2130","1592","868"],["Referral","01","2878","1281","746","343"],["Partner","01","1695","625","278","105"],["Organic Search","02","11397","4933","2462","1042"],["Paid Social","02","6285","1739","658","173"],["Email","02","4183","2594","1721","996"],["Referral","02","2987","1585","891","405"],["Partner","02","1843","679","306","124"],["Organic Search","03","11933","5398","2913","1434"],["Paid Social","03","8006","2238","823","263"],["Email","03","3659","1952","1429","795"],["Referral","03","2805","1225","806","387"],["Partner","03","1996","731","331","138"],["Organic Search","04","10607","4341","2612","1195"],["Paid Social","04","6609","1686","624","200"],["Email","04","3653","2088","1547","851"],["Referral","04","3031","1542","1029","504"],["Partner","04","1811","696","319","113"],["Organic Search","05","10763","4053","2221","991"],["Paid Social","05","6729","1795","693","197"],["Email","05","4906","3098","1885","992"],["Referral","05","2362","1142","696","343"],["Partner","05","1958","734","353","125"],["Organic Search","06","11256","4952","2658","1185"],["Paid Social","06","7248","1976","816","237"],["Email","06","4661","2666","1678","970"],["Referral","06","3081","1509","985","479"],["Partner","06","1963","716","314","107"],["Organic Search","07","9835","3827","1973","940"],["Paid Social","07","6600","1855","677","200"],["Email","07","3709","2131","1312","682"],["Referral","07","2151","1154","727","376"],["Partner","07","2117","782","343","140"],["Organic Search","08","7851","3539","1982","864"],["Paid Social","08","8795","2549","968","306"],["Email","08","3296","1861","1117","600"],["Referral","08","2184","1011","614","348"],["Partner","08","1941","606","312","126"],["Organic Search","09","10318","4199","2056","867"],["Paid Social","09","8180","1995","810","227"],["Email","09","3582","2058","1229","611"],["Referral","09","2103","1143","618","312"],["Partner","09","2235","779","376","155"],["Organic Search","10","10070","4262","2172","847"],["Paid Social","10","6533","1894","638","185"],["Email","10","4443","2816","1706","881"],["Referral","10","2223","1035","650","299"],["Partner","10","1976","653","329","113"],["Organic Search","11","11134","4821","2354","1067"],["Paid Social","11","8645","2324","816","253"],["Email","11","4177","2526","1678","1016"],["Referral","11","2324","1150","780","350"],["Partner","11","1712","577","250","92"],["Organic Search","12","10577","3831","2337","987"],["Paid Social","12","6559","1778","749","209"],["Email","12","4968","3121","2086","1047"],["Referral","12","2577","1206","747","425"],["Partner","12","1898","599","252","87"]]</script>
+<script id="qsv-data-cols" type="application/json">[{"title":"channel","type":"string"},{"title":"week","type":"string"},{"title":"visits","type":"num"},{"title":"signups","type":"num"},{"title":"activated","type":"num"},{"title":"subscribed","type":"num"}]</script>
+<style>
+  /* effective drawer height: the grip persists --qsv-data-h in absolute px, so re-clamp it in
+     CSS against the CURRENT viewport — a later window resize / device rotation can otherwise
+     leave the persisted value outside the 20vh-90vh bounds. Every consumer (drawer height,
+     body margin, fixed-widget pushes) uses this one clamped var so they can never disagree. */
+  body { --qsv-data-h-eff: clamp(20vh, var(--qsv-data-h, min(55vh, 560px)), 90vh); }
+  #qsv-data-drawer { position: fixed; left: 0; right: 0; bottom: 0; height: var(--qsv-data-h-eff); transform: translateY(103%); transition: transform 0.22s ease; z-index: 1120; display: flex; flex-direction: column; color: var(--qsv-page-ink, #1a1a1a); background: var(--qsv-page-bg, #ffffff); border-top: 1px solid rgba(127, 127, 127, 0.4); box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.18); }
+  #qsv-data-drawer.open { transform: none; }
+  #qsv-data-drawer:focus { outline: none; }
+  .qsv-data-drawer-grip { flex: none; height: 10px; cursor: ns-resize; touch-action: none; display: flex; align-items: center; justify-content: center; }
+  .qsv-data-drawer-grip::before { content: ""; width: 44px; height: 4px; border-radius: 2px; background: rgba(127, 127, 127, 0.55); }
+  .qsv-data-drawer-bar { display: flex; align-items: center; justify-content: space-between; padding: 0 14px 6px; font-size: 13px; font-weight: 600; border-bottom: 1px solid rgba(127, 127, 127, 0.25); }
+  .qsv-data-drawer-bar a { color: inherit; text-decoration: none; font-weight: 400; font-size: 15px; opacity: 0.75; }
+  .qsv-data-drawer-bar a:hover { opacity: 1; }
+  .qsv-data-drawer-content { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 14px 10px 14px; }
+  /* only the table's own layout row scrolls; the controls row above and the info/paging row
+     below stay fixed, and the sticky thead pins the title+filter rows inside the scroll region */
+  #qsv-data-drawer div.dt-container { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #qsv-data-drawer div.dt-container > div.dt-layout-row { flex: none; }
+  #qsv-data-drawer div.dt-container > div.dt-layout-table { flex: 1 1 auto; min-height: 0; overflow: auto; }
+  #qsv-data-table thead th { position: sticky; top: 0; z-index: 5; background: var(--qsv-page-bg, #ffffff); }
+  #qsv-data-table thead tr.qsv-data-filters th { top: var(--qsv-data-th1-h, 34px); }
+  body.qsv-data-open { margin-bottom: var(--qsv-data-h-eff); }
+  body.qsv-data-open #qsv-logo { bottom: calc(var(--qsv-data-h-eff) + 12px); }
+  body.qsv-data-open #qsv-theme-toggle { bottom: calc(var(--qsv-data-h-eff) + 50px); }
+  tr.qsv-data-filters th { padding: 3px 6px; box-shadow: 0 1px 0 rgba(127, 127, 127, 0.35); }
+  tr.qsv-data-filters input { width: 100%; box-sizing: border-box; font-size: 11px; padding: 2px 5px; color: inherit; background: transparent; border: 1px solid rgba(127, 127, 127, 0.45); border-radius: 4px; }
+  #qsv-data-drawer table.dataTable { color: inherit; }
+  .qsv-viz-meta a.qsv-data-link { font-size: 0.9em; }
+</style>
+<script>
+(function () {
+  var dt = null;
+  // DataTables' native dark palette keys on `:root.dark` (the <html> element); qsv's theme
+  // toggle flips `body.qsv-dark`. Mirror the body class onto <html> so the drawer widgets
+  // follow the qsv theme — nothing else in the page styles off `html.dark`.
+  function syncDark() {
+    document.documentElement.classList.toggle("dark", document.body.classList.contains("qsv-dark"));
+  }
+  syncDark();
+  new MutationObserver(syncDark).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  // Ensure the DataTables library + stylesheet are installed. The payload tags come in three
+  // shapes (see `datatables_lib_block`): CDN tags (nothing to do — `window.DataTable` exists),
+  // plain inline (`<script>` already executed / real `<style>` already applied), or gzip-b64
+  // payloads that must be inflated here on first use.
+  function ensureLib() {
+    var jobs = [];
+    var cssEl = document.getElementById("qsv-data-css");
+    if (cssEl && cssEl.tagName === "SCRIPT") {
+      jobs.push(window.__qsvGunzip(cssEl).then(function (css) {
+        var st = document.createElement("style");
+        st.textContent = css;
+        cssEl.parentNode.replaceChild(st, cssEl);
+      }));
+    }
+    if (!window.DataTable) {
+      var lib = document.getElementById("qsv-data-lib");
+      if (lib && lib.getAttribute("type") === "application/gzip-b64") {
+        jobs.push(window.__qsvGunzip(lib).then(function (src) {
+          lib.textContent = "";
+          (0, eval)(src);
+        }));
+      }
+    }
+    return Promise.all(jobs);
+  }
+  function payloadText(el) {
+    return el.getAttribute("type") === "application/gzip-b64"
+      ? window.__qsvGunzip(el).then(function (s) { el.textContent = ""; return s; })
+      : Promise.resolve(el.textContent);
+  }
+  // Embedded reveal helpers. In the gallery's auto-sized iframes the iframe itself never
+  // scrolls (the PARENT page does), so position:fixed pins the drawer to the bottom of the
+  // FULL iframe height — often far below the visible viewport — and scrollIntoView cannot
+  // help: it is a no-op on fixed-position elements. Instead scroll the parent directly via
+  // frameElement geometry. Same-origin only (frameElement access throws cross-origin, and a
+  // file://-opened gallery has opaque frames) — then we quietly skip, which is today's
+  // behavior. Standalone pages (self === top) never scroll.
+  function revealBottom() {
+    if (window.self === window.top) return;
+    // primary channel: ask a cooperating parent (the qsv gallery) to scroll. postMessage works
+    // even when the frames are cross-origin — e.g. a file://-opened gallery, where every direct
+    // parent-window access below throws — the same reason the gallery's iframe auto-sizing
+    // rides postMessage rather than reading the child document.
+    try { window.parent.postMessage({ qsvVizReveal: "bottom" }, "*"); } catch (e) {}
+    // fallback for same-origin embedders without the gallery listener: scroll the parent
+    // directly. In the gallery both paths fire and converge on the same position.
+    try {
+      var fr = window.frameElement.getBoundingClientRect();
+      var pw = window.parent;
+      if (fr.bottom > pw.innerHeight) {
+        // instant, NOT smooth: on an iframe-heavy gallery a smooth animation can be canceled
+        // at its first frame by concurrent layout work and never arrive (the gallery's jump
+        // stabilizer documents the same lesson) — and "auto" would inherit the gallery's
+        // scroll-behavior:smooth CSS
+        pw.scrollTo({ top: pw.scrollY + fr.bottom - pw.innerHeight, behavior: "instant" });
+      }
+    } catch (e) {}
+  }
+  function revealTop(el) {
+    if (window.self === window.top) return;
+    // the iframe viewport is the whole (unscrolled) document, so the element's viewport rect
+    // IS its document position within the iframe
+    var off = el.getBoundingClientRect().top;
+    try { window.parent.postMessage({ qsvVizReveal: "top", qsvVizOffset: off }, "*"); } catch (e) {}
+    try {
+      var fr = window.frameElement.getBoundingClientRect();
+      var y = fr.top + window.parent.scrollY + off - 80;
+      window.parent.scrollTo({ top: Math.max(0, y), behavior: "instant" });
+    } catch (e) {}
+  }
+  // Any reader input over the dashboard invalidates a pending reveal re-align series: the
+  // reader has taken over scrolling, and a late re-align would yank them back down even with
+  // the drawer still open. The arming click's own pointerdown fires BEFORE show() captures its
+  // sequence number, so it never cancels the series it starts.
+  var revealSeq = 0;
+  ["wheel", "touchstart", "keydown", "pointerdown"].forEach(function (t) {
+    addEventListener(t, function () { revealSeq++; }, { capture: true, passive: true });
+  });
+  function show(drawer) {
+    drawer.classList.add("open");
+    document.body.classList.add("qsv-data-open");
+    window.dispatchEvent(new Event("resize"));
+    // move keyboard focus into the drawer (its tabindex="-1" makes it programmatically focusable)
+    drawer.focus({ preventScroll: true });
+    revealBottom();
+    // Opening grows the page (body margin) and the embedding gallery then auto-grows the
+    // iframe, and on a still-settling gallery OTHER dashboards' iframes keep growing too —
+    // each layout shift above the target cancels an in-flight smooth scroll (the same churn
+    // the gallery's jump stabilizer exists to fight). Re-align a few times; once the drawer
+    // region is visible the parent's reveal handler is a no-op, so the series converges.
+    // Each callback re-checks that the drawer is still open (a close has already revealed the
+    // top) AND that no reader input arrived since (revealSeq unchanged).
+    var seq = ++revealSeq;
+    [450, 1200, 2200].forEach(function (t) {
+      setTimeout(function () {
+        var d = document.getElementById("qsv-data-drawer");
+        if (revealSeq === seq && d && d.classList.contains("open")) revealBottom();
+      }, t);
+    });
+  }
+  function build() {
+    var rowsEl = document.getElementById("qsv-data-rows");
+    var colsEl = document.getElementById("qsv-data-cols");
+    if (!rowsEl || !colsEl) return Promise.reject(new Error("data payload missing"));
+    return ensureLib().then(function () { return payloadText(rowsEl); }).then(function (rowsTxt) {
+      var rows = JSON.parse(rowsTxt);
+      var cols = JSON.parse(colsEl.textContent);
+      var drawer = document.createElement("aside");
+      drawer.id = "qsv-data-drawer";
+      drawer.setAttribute("tabindex", "-1");
+      // resize grip on the top edge: drag to make the drawer taller/shorter. The height rides
+      // the --qsv-data-h CSS var so the body margin and the fixed logo/theme widgets follow.
+      var grip = document.createElement("div");
+      grip.className = "qsv-data-drawer-grip";
+      grip.setAttribute("aria-hidden", "true");
+      grip.addEventListener("pointerdown", function (ev) {
+        ev.preventDefault();
+        grip.setPointerCapture(ev.pointerId);
+        var raf = 0, lastH = 0;
+        function onMove(mv) {
+          lastH = Math.min(Math.max(window.innerHeight - mv.clientY, window.innerHeight * 0.2), window.innerHeight * 0.9);
+          if (!raf) raf = requestAnimationFrame(function () {
+            raf = 0;
+            document.documentElement.style.setProperty("--qsv-data-h", Math.round(lastH) + "px");
+          });
+        }
+        function onUp() {
+          grip.removeEventListener("pointermove", onMove);
+          grip.removeEventListener("pointerup", onUp);
+          grip.removeEventListener("pointercancel", onUp);
+          // re-fit plotly panels to the shrunken/grown page and re-balance the table columns
+          window.dispatchEvent(new Event("resize"));
+          if (dt) dt.columns.adjust();
+        }
+        grip.addEventListener("pointermove", onMove);
+        grip.addEventListener("pointerup", onUp);
+        grip.addEventListener("pointercancel", onUp);
+      });
+      var bar = document.createElement("div");
+      bar.className = "qsv-data-drawer-bar";
+      var title = document.createElement("span");
+      title.textContent = "Data — all 60 rows";
+      var close = document.createElement("a");
+      close.href = "#";
+      close.textContent = "✕";
+      close.setAttribute("aria-label", "Close data viewer");
+      close.addEventListener("click", function (ev) { ev.preventDefault(); window.qsvCloseData(); });
+      bar.appendChild(title);
+      bar.appendChild(close);
+      var content = document.createElement("div");
+      content.className = "qsv-data-drawer-content";
+      var table = document.createElement("table");
+      table.id = "qsv-data-table";
+      table.className = "display compact";
+      table.style.width = "100%";
+      // two header rows: titles (ordering) + per-column filter inputs. `data-dt-order="disable"`
+      // keeps DataTables from attaching ordering listeners to the filter row.
+      var thead = document.createElement("thead");
+      var titleRow = document.createElement("tr");
+      var filterRow = document.createElement("tr");
+      filterRow.className = "qsv-data-filters";
+      filterRow.setAttribute("data-dt-order", "disable");
+      cols.forEach(function (c, i) {
+        var th = document.createElement("th");
+        th.textContent = c.title;
+        titleRow.appendChild(th);
+        var fth = document.createElement("th");
+        var input = document.createElement("input");
+        input.type = "search";
+        input.placeholder = "Filter…";
+        input.setAttribute("aria-label", "Filter " + c.title);
+        input.addEventListener("input", function () {
+          var col = dt.column(i);
+          if (col.search() !== input.value) col.search(input.value).draw();
+        });
+        fth.appendChild(input);
+        filterRow.appendChild(fth);
+      });
+      thead.appendChild(titleRow);
+      thead.appendChild(filterRow);
+      table.appendChild(thead);
+      content.appendChild(table);
+      drawer.appendChild(grip);
+      drawer.appendChild(bar);
+      drawer.appendChild(content);
+      document.body.appendChild(drawer);
+      dt = new DataTable(table, {
+        data: rows,
+        // render.text(): cell values are DATA, not markup — without it DataTables injects them
+        // as HTML, so a cell containing markup would render (or execute) instead of display
+        columns: cols.map(function (c) { return { type: c.type, render: DataTable.render.text() }; }),
+        deferRender: true,
+        // no initial sort: rows show in file order until the user orders a column
+        order: [],
+        pageLength: 25,
+        // collapse the columns that don't fit into an expandable child-row control per row
+        responsive: true,
+        // SearchBuilder rides in a Buttons popover ("Filter (n)") on the same controls row as
+        // the page-length selector and the global search box, instead of a permanent pane.
+        language: { searchBuilder: { button: { 0: "Filter", _: "Filter (%d)" } } },
+        layout: { topStart: ["pageLength", { buttons: ["searchBuilder"] }] }
+      });
+      // keep the filter-input row aligned with Responsive's column collapse
+      function syncFilters(visible) {
+        for (var i = 0; i < filterRow.children.length; i++) {
+          filterRow.children[i].style.display = visible[i] === false ? "none" : "";
+        }
+      }
+      dt.on("responsive-resize", function (e, api, visible) { if (visible) syncFilters(visible); });
+      try { syncFilters(dt.columns().responsiveHidden().toArray()); } catch (e) {}
+      // the filter row's sticky offset = the rendered height of the title row
+      var th1 = titleRow.getBoundingClientRect().height;
+      // floor, so the filter row overlaps the title row by the fractional pixel rather than
+      // leaving a see-through gap between the two sticky rows
+      if (th1 > 0) drawer.style.setProperty("--qsv-data-th1-h", Math.floor(th1) + "px");
+      // let the just-appended drawer paint once closed, so the open transition animates
+      requestAnimationFrame(function () { show(drawer); });
+    });
+  }
+  window.qsvOpenData = function () {
+    var drawer = document.getElementById("qsv-data-drawer");
+    if (drawer) { show(drawer); return false; }
+    var lib = document.getElementById("qsv-data-lib");
+    var gz = (lib && lib.getAttribute("type") === "application/gzip-b64") ||
+      document.getElementById("qsv-data-rows").getAttribute("type") === "application/gzip-b64";
+    if (gz && !window.DecompressionStream) {
+      if (window.__qsvNoDecompress) window.__qsvNoDecompress();
+      return false;
+    }
+    build().catch(function (e) { console.error("qsv viz: data viewer failed:", e); });
+    return false;
+  };
+  window.qsvCloseData = function () {
+    var drawer = document.getElementById("qsv-data-drawer");
+    if (drawer) drawer.classList.remove("open");
+    document.body.classList.remove("qsv-data-open");
+    window.dispatchEvent(new Event("resize"));
+    // return focus to the Explore/Preview link in the metadata table — the top of the
+    // dashboard — which also scrolls it back into view
+    var link = document.querySelector("a.qsv-data-link");
+    if (link) {
+      link.focus();
+      // embedded: scroll the parent back to the top of this dashboard (see revealTop)
+      revealTop(link);
+    }
+    return false;
+  };
+  // Esc closes the data drawer; the dictionary drawer registers its own Esc handler, so with
+  // both open a single Esc closes both — acceptable, they are independent overlays.
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") {
+      // an open Buttons popover (the SearchBuilder "Filter" panel) owns this Esc — Buttons
+      // dismisses it itself; only a bare Esc closes the drawer
+      if (document.querySelector("div.dt-button-collection")) return;
+      var drawer = document.getElementById("qsv-data-drawer");
+      if (drawer && drawer.classList.contains("open")) window.qsvCloseData();
+    }
+  });
+})();
+</script>
 
 <script>
 (function () {
@@ -653,6 +958,6 @@
   else setTimeout(init, 0);
 })();
 </script>
-<script>(function(){function r(){parent.postMessage({qsvVizHeight:document.documentElement.scrollHeight},"*");}addEventListener("load",r);addEventListener("resize",r);if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);setTimeout(r,200);setTimeout(r,800);var us=function(){parent.postMessage({qsvUserScroll:1},"*");};["wheel","touchstart","keydown"].forEach(function(t){addEventListener(t,us,{capture:true,passive:true});});})();</script>
+<script>(function(){function r(){var b=document.body,c=getComputedStyle(b);parent.postMessage({qsvVizHeight:Math.ceil(b.offsetHeight+(parseFloat(c.marginTop)||0)+(parseFloat(c.marginBottom)||0))},"*");}addEventListener("load",r);addEventListener("resize",r);if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);setTimeout(r,200);setTimeout(r,800);var us=function(){parent.postMessage({qsvUserScroll:1},"*");};["wheel","touchstart","keydown","pointerdown"].forEach(function(t){addEventListener(t,us,{capture:true,passive:true});});})();</script>
 </body>
 </html>

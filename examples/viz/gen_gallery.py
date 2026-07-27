@@ -200,9 +200,11 @@ JUMP_JS = (
     "if(location.hash.length>1)arm(document.getElementById(location.hash.slice(1)));});"
     # dashboard iframes report their height (qsvVizHeight -> re-snap) and forward the reader's own
     # scroll input (qsvUserScroll -> the reader took over, cancel and stop re-aligning).
+    # a data viewer reveal request is also reader takeover: without this the stabilizer would
+    # snap the jumped-to figure right back and undo the drawer reveal scroll.
     "addEventListener(\"message\",function(e){var d=e.data;if(!d)return;"
     "if(typeof d.qsvVizHeight===\"number\")snap();"
-    "else if(d.qsvUserScroll){until=0;moved=true;stop();}});"
+    "else if(d.qsvUserScroll||d.qsvVizReveal){until=0;moved=true;stop();}});"
     # scrolls over the non-iframe margins land on the parent window directly.
     "[\"wheel\",\"touchstart\",\"keydown\"].forEach(function(t){"
     "addEventListener(t,function(){until=0;moved=true;},{passive:true});});"
@@ -235,9 +237,17 @@ COPY_JS = (
 # Injected into each smart_*.html so the dashboard reports its real rendered height to the parent
 # gallery. postMessage works cross-origin (e.g. when the gallery is opened over file://), unlike
 # reading iframe.contentWindow.document; the ResizeObserver re-reports after plotly's async relayout.
+#
+# The reported height is CONTENT-derived (body border-box + body vertical margins), NOT
+# documentElement.scrollHeight: root scrollHeight is max(content, viewport), so once the iframe has
+# grown it can never report smaller and the iframe could only ratchet upward — the data viewer
+# drawer (issue #4283) reserves its space via body margin-bottom while open, and on close the
+# iframe must SHRINK back. Body margins are counted because that reserved drawer space is exactly
+# a body margin; fixed-position chrome (the drawer, theme toggle, logo) is deliberately excluded.
 RESIZE_REPORTER_JS = (
-    "<script>(function(){function r(){parent.postMessage("
-    "{qsvVizHeight:document.documentElement.scrollHeight},\"*\");}"
+    "<script>(function(){function r(){var b=document.body,c=getComputedStyle(b);"
+    "parent.postMessage({qsvVizHeight:Math.ceil(b.offsetHeight+"
+    "(parseFloat(c.marginTop)||0)+(parseFloat(c.marginBottom)||0))},\"*\");}"
     "addEventListener(\"load\",r);addEventListener(\"resize\",r);"
     "if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);"
     "setTimeout(r,200);setTimeout(r,800);"
@@ -248,23 +258,41 @@ RESIZE_REPORTER_JS = (
     # stopPropagation()s (so a 3D panel scrolls the page instead of being eaten); a bubble-phase
     # listener here would never see that wheel. Capturing at the window fires before the plot div, so
     # the reader's scroll over a 3D panel still cancels the parent's jump stabilizer.
+    # pointerdown too: a CLICK inside the dashboard (e.g. the data viewer's Explore link) is
+    # just as much reader takeover as a scroll, and the jump stabilizer must not fight the
+    # drawer's reveal scroll after a TOC jump.
     "var us=function(){parent.postMessage({qsvUserScroll:1},\"*\");};"
-    "[\"wheel\",\"touchstart\",\"keydown\"].forEach(function(t){"
+    "[\"wheel\",\"touchstart\",\"keydown\",\"pointerdown\"].forEach(function(t){"
     "addEventListener(t,us,{capture:true,passive:true});});})();</script>")
 
 # Added to the gallery once: sizes each iframe to the height its dashboard reports (matched by
 # comparing window references, which is allowed cross-origin). The reported height is
-# documentElement.scrollHeight = max(content, viewport), so set the iframe to exactly that and
-# ONLY when it actually differs (>1px) from the iframe's current height — never add padding on top.
-# Otherwise, since enlarging the iframe enlarges the child viewport, the next report would echo the
-# new height and the iframe would creep upward 1 step per resize. With this guard it converges to
-# the content height: once iframe == content, the report equals the current height and we stop.
+# content-derived (see RESIZE_REPORTER_JS) and therefore viewport-independent, so applying it can
+# never echo back into the next report; the >1px guard just suppresses no-op churn. Both
+# directions apply: the iframe SHRINKS back when the data viewer drawer closes and its reserved
+# body margin is released.
+# It also honors qsvVizReveal messages from a dashboard's data viewer drawer (issue #4283): the
+# drawer is position:fixed, which inside a full-height, never-scrolling iframe pins it to the
+# iframe's BOTTOM edge — often far outside the parent viewport — and neither focus() nor
+# scrollIntoView can reveal it (both are no-ops on fixed elements; direct parent-window access
+# throws when the gallery is opened over file://). "bottom" aligns the iframe's bottom edge with
+# the viewport (open); "top" scrolls back to the dashboard's metadata link (close).
 RESIZE_LISTENER_JS = (
     "<script>addEventListener(\"message\",function(e){"
-    "var h=e.data&&e.data.qsvVizHeight;if(typeof h!==\"number\")return;"
-    "var f=document.getElementsByClassName(\"dash\");"
-    "for(var i=0;i<f.length;i++)if(f[i].contentWindow===e.source){"
-    "if(Math.abs(f[i].clientHeight-h)>1)f[i].style.height=h+\"px\";break;}});</script>")
+    "var d=e.data;if(!d)return;"
+    "var f=document.getElementsByClassName(\"dash\"),src=null;"
+    "for(var i=0;i<f.length;i++)if(f[i].contentWindow===e.source){src=f[i];break;}"
+    "if(!src)return;"
+    "if(typeof d.qsvVizHeight===\"number\"){"
+    "if(Math.abs(src.clientHeight-d.qsvVizHeight)>1)src.style.height=d.qsvVizHeight+\"px\";}"
+    # behavior "instant", not "smooth": this page sets scroll-behavior:smooth, and on an
+    # iframe-heavy load a smooth animation can be canceled at its first frame by concurrent
+    # layout work and never arrive — the jump stabilizer's snap() documents the same lesson.
+    "else if(d.qsvVizReveal===\"bottom\"){var r=src.getBoundingClientRect();"
+    "if(r.bottom>innerHeight)scrollTo({top:scrollY+r.bottom-innerHeight,behavior:\"instant\"});}"
+    "else if(d.qsvVizReveal===\"top\"){var t=src.getBoundingClientRect();"
+    "scrollTo({top:Math.max(0,scrollY+t.top+(d.qsvVizOffset||0)-80),behavior:\"instant\"});}"
+    "});</script>")
 
 # The standalone (non-smart) figures are reconstructed in this page's own <script> via
 # Plotly.newPlot, so — unlike the genuine `qsv viz` HTML output and the smart-dashboard iframes —
@@ -1103,6 +1131,14 @@ def run_html(qsv, args):
     map-panel *figures* keep their gzip+bdata encoding."""
     fd, out = tempfile.mkstemp(suffix=".html")
     os.close(fd)
+    # Gallery-wide data viewer cap: smart dashboards embed their rows for the Explore/Preview
+    # drawer (issue #4283), and under QSV_VIZ_NO_COMPRESS the payload is PLAIN json — the default
+    # 50k-row threshold would add ~6MB to smart_nyc311.html alone. 500 rows still demonstrates
+    # the drawer (small demo CSVs stay "(Explore)", larger ones show "(Preview)") while keeping
+    # the committed iframes small.
+    args = list(args)
+    if args and args[0] == "smart" and "--preview-threshold" not in args:
+        args += ["--preview-threshold", "500"]
     try:
         subprocess.run([qsv, "viz", *args, "-o", out], cwd=VIZ_DIR,
                        check=True, capture_output=True, text=True,

@@ -3600,7 +3600,16 @@ fn viz_smart_collapses_one_to_one_categorical_twins() {
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
     cmd.env("QSV_VIZ_NO_COMPRESS", "1");
-    cmd.args(["smart", "t.csv", "-o", &out_html]);
+    // the data viewer drawer embeds ALL raw columns by design, including collapsed twins;
+    // disable it — this test pins down the charting collapse specifically.
+    cmd.args([
+        "smart",
+        "t.csv",
+        "--preview-threshold",
+        "0",
+        "-o",
+        &out_html,
+    ]);
     let got = wrk.output_stderr(&mut cmd);
     let html = wrk.read_to_string("dash.html").unwrap();
 
@@ -3942,7 +3951,9 @@ fn viz_smart_metadata_table_always_renders() {
     let html = wrk.read_to_string("dash.html").unwrap();
     // Rows/Columns/Compiled always render in HTML output.
     assert!(html.contains(r#"<table class="qsv-viz-meta">"#));
-    assert!(html.contains(r#"<td class="qsv-viz-meta-k">Rows:</td><td>5</td>"#));
+    // the Rows cell also carries the data viewer's "(Explore)" link (issue #4283)
+    assert!(html.contains(r##"<td class="qsv-viz-meta-k">Rows:</td><td>5 <a href="#""##));
+    assert!(html.contains("(Explore)</a></td>"));
     assert!(html.contains(r#"<td class="qsv-viz-meta-k">Columns:</td><td>3</td>"#));
     // assert on the label, never the timestamp value (it makes output non-deterministic).
     assert!(html.contains(r#"<td class="qsv-viz-meta-k">Compiled:</td>"#));
@@ -7710,7 +7721,9 @@ fn viz_cdn_uncompressed_has_no_gz_machinery() {
     wrk.create_from_string("small.csv", "a,b,c\n1,x,9\n2,y,8\n3,x,7\n4,z,6\n5,y,5\n");
 
     let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "small.csv"]);
+    // the data viewer's drawer script carries its own (inert, payload-gated) gz dispatch, so
+    // disable it here — this test pins down the PLOTLY bundle/figure machinery specifically.
+    cmd.args(["smart", "small.csv", "--preview-threshold", "0"]);
     cmd.env("QSV_VIZ_CDN", "1");
     cmd.env("QSV_VIZ_NO_COMPRESS", "1");
     let out = wrk.output(&mut cmd);
@@ -10698,10 +10711,15 @@ fn viz_smart_bivariate_pii_column_excluded() {
 
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
+    // the data viewer drawer embeds ALL raw columns by design (it is the underlying table, not a
+    // panel), so it would legitimately carry "email"; disable it — this test pins down panel
+    // exclusion specifically.
     cmd.args([
         "smart",
         "pii.csv",
         "--bivariate",
+        "--preview-threshold",
+        "0",
         "-o",
         &out_html,
         "--dictionary",
@@ -12872,4 +12890,246 @@ fn viz_axis_and_colorbar_titles_escape_markup_headers_but_not_flags() {
             && !html.contains(r#"<a href="https://evil.example"#),
         "raw markup header leaked into the colorbar title"
     );
+}
+
+// ---- viz smart data viewer drawer (issue #4283) -------------------------------------------
+
+/// A small mixed-type CSV for the data viewer tests: numeric, date, categorical, and text.
+fn data_viewer_csv(wrk: &Workdir) {
+    wrk.create_from_string(
+        "dv.csv",
+        "name,amt,when,grade\nalpha,1.5,2023-01-02,A\nbeta,2.25,2023-02-03,B\ngamma,3.75,\
+         2023-03-04,A\ndelta,4.5,2023-04-05,C\nepsilon,5.25,2023-05-06,B\n",
+    );
+}
+
+// Under the (default 50k) threshold every row embeds and the metadata Rows cell links
+// "(Explore)"; the page carries the payloads, the drawer chrome, and the DataTables init with
+// global search + SearchBuilder + per-column filter inputs.
+#[test]
+fn viz_smart_data_viewer_explore_link_under_threshold() {
+    let wrk = Workdir::new("viz_smart_data_viewer_explore_link_under_threshold");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the metadata Rows cell carries the Explore link
+    assert!(html.contains("qsvOpenData()\">(Explore)</a>"));
+    assert!(!html.contains("(Preview)"));
+    // payloads: plain JSON rows + column config, with a recognizable cell value
+    assert!(html.contains(r#"id="qsv-data-rows" type="application/json""#));
+    assert!(html.contains(r#"id="qsv-data-cols" type="application/json""#));
+    assert!(html.contains("epsilon"));
+    // drawer chrome + DataTable init + the searches the issue asks for
+    assert!(html.contains("Data — all 5 rows"));
+    assert!(html.contains("new DataTable"));
+    // SearchBuilder rides in a Buttons popover ("Filter (n)") on the controls row, not a
+    // permanent pane; per-column filter inputs + Responsive column collapse are on
+    assert!(html.contains("searchBuilder"));
+    assert!(html.contains(r#"button: { 0: "Filter", _: "Filter (%d)" }"#));
+    assert!(!html.contains(r#"top1: "searchBuilder""#));
+    assert!(html.contains("responsive: true"));
+    assert!(!html.contains("scrollX: true"));
+    assert!(html.contains("qsv-data-filters"));
+    // resizable drawer grip + focus management + stacking above the dictionary drawer
+    assert!(html.contains("qsv-data-drawer-grip"));
+    // the persisted px height is re-clamped in CSS against the current viewport (roborev #3864)
+    assert!(html.contains("--qsv-data-h-eff: clamp(20vh"));
+    assert!(html.contains(r#"drawer.setAttribute("tabindex", "-1")"#));
+    assert!(html.contains("z-index: 1120"));
+    // plain embed of the vendored library (NO_COMPRESS): bundle header + real <style>
+    assert!(html.contains(r#"id="qsv-data-lib" type="text/javascript""#));
+    assert!(html.contains("DataTables 3."));
+}
+
+// Above the threshold only the first N rows embed and the link reads "(Preview)"; the drawer
+// title says so, and rows past the cut are NOT in the page.
+#[test]
+fn viz_smart_data_viewer_preview_over_threshold() {
+    let wrk = Workdir::new("viz_smart_data_viewer_preview_over_threshold");
+    let mut csv = String::from("name,amt,grade\n");
+    for i in 1..=10 {
+        let grade = if i % 2 == 0 { "A" } else { "B" };
+        csv.push_str(&format!("row{i}sentinel,{i},{grade}\n"));
+    }
+    wrk.create_from_string("ten.csv", &csv);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "ten.csv", "--preview-threshold", "5"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains("qsvOpenData()\">(Preview)</a>"));
+    assert!(!html.contains("(Explore)"));
+    assert!(html.contains("Data — first 5 of 10 rows (preview)"));
+    assert!(html.contains("row5sentinel"));
+    assert!(!html.contains("row6sentinel"));
+}
+
+// `--preview-threshold 0` disables the viewer entirely: no link, no payloads, no drawer, no
+// DataTables bundle — the dashboard carries no trace of the feature.
+#[test]
+fn viz_smart_data_viewer_disabled_at_zero() {
+    let wrk = Workdir::new("viz_smart_data_viewer_disabled_at_zero");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv", "--preview-threshold", "0"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(!html.contains("(Explore)"));
+    assert!(!html.contains("(Preview)"));
+    assert!(!html.contains("qsvOpenData"));
+    assert!(!html.contains("qsv-data-rows"));
+    assert!(!html.contains("qsv-data-drawer"));
+    assert!(!html.contains("DataTables 3."));
+}
+
+// Column types come from the whole-dataset stats, not client-side detection: numeric columns get
+// DataTables type "num", date columns "date", text "string" — driving both sorting and the
+// SearchBuilder condition set per column.
+#[test]
+fn viz_smart_data_viewer_column_types_from_stats() {
+    let wrk = Workdir::new("viz_smart_data_viewer_column_types_from_stats");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"{"title":"name","type":"string"}"#));
+    assert!(html.contains(r#"{"title":"amt","type":"num"}"#));
+    assert!(html.contains(r#"{"title":"when","type":"date"}"#));
+    assert!(html.contains(r#"{"title":"grade","type":"string"}"#));
+}
+
+// By default (compression on) a non-trivial rows payload embeds as gzip+base64 — no plaintext
+// cell values in the page — and inflates back to the exact rows JSON.
+#[test]
+fn viz_smart_data_viewer_gzip_payload_when_compressing() {
+    let wrk = Workdir::new("viz_smart_data_viewer_gzip_payload_when_compressing");
+    let mut csv = String::from("name,amt,grade\n");
+    for i in 1..=300 {
+        let grade = if i % 2 == 0 { "A" } else { "B" };
+        csv.push_str(&format!("padpadpadpad-row{i}-sentinel,{i},{grade}\n"));
+    }
+    wrk.create_from_string("many.csv", &csv);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "many.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"id="qsv-data-rows" type="application/gzip-b64""#));
+    assert!(!html.contains("row299-sentinel"));
+    let rows_json = inflate_gz_payload(&html, "qsv-data-rows");
+    assert!(rows_json.contains("padpadpadpad-row299-sentinel"));
+    let rows: serde_json::Value = serde_json::from_str(&rows_json).unwrap();
+    assert_eq!(rows.as_array().unwrap().len(), 300);
+    // the DataTables library rides as its own gzip payload, inflated on first drawer open
+    assert!(html.contains(r#"id="qsv-data-lib" type="application/gzip-b64""#));
+    assert!(html.contains(r#"id="qsv-data-css" type="application/gzip-b64""#));
+}
+
+// A rows payload below the gzip floor stays plain JSON even when compression is on — and the
+// column config payload is always plain. Neither plain payload path can reference __qsvGunzip
+// unconditionally (it only exists when the page carries gzip payloads elsewhere).
+#[test]
+fn viz_smart_data_viewer_small_payload_stays_plain() {
+    let wrk = Workdir::new("viz_smart_data_viewer_small_payload_stays_plain");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // 5 rows serialize well under DATATABLE_GZ_MIN_BYTES: plain even though compression is on
+    assert!(html.contains(r#"id="qsv-data-rows" type="application/json""#));
+    assert!(html.contains(r#"id="qsv-data-cols" type="application/json""#));
+    // the library still ships compressed
+    assert!(html.contains(r#"id="qsv-data-lib" type="application/gzip-b64""#));
+}
+
+// Cell values are data, not markup: a cell containing `</script>` and `&` embeds \u-escaped in
+// the plain payload so it can neither truncate the script tag nor inject HTML.
+#[test]
+fn viz_smart_data_viewer_cell_escaping() {
+    let wrk = Workdir::new("viz_smart_data_viewer_cell_escaping");
+    wrk.create_from_string(
+        "evil.csv",
+        "name,amt,grade\nx</script><b>&y,1,A\nplain,2,B\nother,3,A\nmore,4,B\nlast,5,A\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "evil.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r"x\u003c/script\u003e\u003cb\u003e\u0026y"));
+    assert!(!html.contains("x</script>"));
+}
+
+// Under --no-headers the DataTable column titles use the stats' generated names (0-based column
+// indices), consistent with the panel titles.
+#[test]
+fn viz_smart_data_viewer_no_headers_labels() {
+    let wrk = Workdir::new("viz_smart_data_viewer_no_headers_labels");
+    wrk.create_from_string("nh.csv", "1,A\n2,B\n3,A\n4,B\n5,A\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "nh.csv", "--no-headers"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"{"title":"0","type":"num"}"#));
+    assert!(html.contains(r#"{"title":"1","type":"string"}"#));
+}
+
+// Under QSV_VIZ_CDN the DataTables bundle is version-pinned CDN tags with Subresource Integrity
+// (like plotly's) instead of embedded payloads.
+#[test]
+fn viz_smart_data_viewer_cdn_tags_carry_sri() {
+    let wrk = Workdir::new("viz_smart_data_viewer_cdn_tags_carry_sri");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_CDN", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(
+        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.js"
+    ));
+    assert!(html.contains(
+        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.css"
+    ));
+    // both tags carry integrity + crossorigin; no embedded library payloads remain
+    assert_eq!(html.matches("cdn.datatables.net").count(), 2);
+    assert!(!html.contains(r#"id="qsv-data-lib""#));
+    assert!(!html.contains(r#"id="qsv-data-css""#));
+    // the rows/cols payloads still embed (client-side processing, per the issue)
+    assert!(html.contains(r#"id="qsv-data-rows""#));
+    assert!(html.contains(r#"id="qsv-data-cols""#));
 }

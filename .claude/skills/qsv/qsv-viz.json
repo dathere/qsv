@@ -10,13 +10,14 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: bar, box, candlestick, choropleth, contour, geo, heatmap, histogram, icicle, line, map, ohlc, parcats, pie, radar, sankey, scatter, scatter3d, smart, splom, sunburst, treemap, violin",
+        "description": "Subcommand to execute. Valid values: bar, box, candlestick, choropleth, contour, funnel, geo, heatmap, histogram, icicle, line, map, ohlc, parcats, pie, radar, sankey, scatter, scatter3d, smart, splom, sunburst, treemap, violin",
         "enum": [
           "bar",
           "box",
           "candlestick",
           "choropleth",
           "contour",
+          "funnel",
           "geo",
           "heatmap",
           "histogram",
@@ -120,7 +121,7 @@
       {
         "flag": "--dictionary",
         "type": "string",
-        "description": "Use a describegpt Data Dictionary to guide panel selection from each field's semantic role/concept (falling back to its content type) instead of relying on column statistics alone: dimensions and numeric codes (ward, census_tract, zone) become bars, measures get box/correlation/trend panels, date/datetime columns feed the time-series panel (not noisy frequency bars), identifiers / PII / free-text are skipped, and lat/lon feed the map. Field labels are shown as panel subtitles beneath the field-name titles. Columns the dictionary cannot classify still use the statistical heuristic. <src> is one of: \"infer\" to run describegpt on the input now (with description, infer-content-type, two-pass and jsonschema output; requires an LLM configured) and use its output; or a path to an existing describegpt dictionary file (jsonschema or json). With \"infer\", the generated dictionary is saved beside the input as <stem>.schema.json so you can fine-tune it; if that file already exists, it is reused as-is (skipping the LLM) - edit it to fine-tune, or delete it to force a fresh re-infer. Generation/read failures soft-fall back to the stats-only dashboard. The dictionary also drives the KPI overview row via two optional per-field hints in a property's \"x-qsv\" object (edit them in the saved schema to fine-tune). A \"gauge_range\" of [min, max] on a continuous numeric measure renders its KPI tile as a GAUGE on that canonical scale (e.g. [0,1] for a ratio, [0,100] for a percent); qsv keeps it only when the observed data lies within the range, so a mis-scaled range can't draw a misleading dial, and \"infer\" emits it for canonical-scale measures. A \"target\" number on a measure renders a \"vs target\" DELTA against that goal (value minus target) - a GOAL you supply, never a fabricated prior-period baseline, so \"infer\" never emits it; hand-author it. Only affects `smart`."
+        "description": "Use a describegpt Data Dictionary to guide panel selection from each field's semantic role/concept (falling back to its content type) instead of relying on column statistics alone: dimensions and numeric codes (ward, census_tract, zone) become bars, measures get box/correlation/trend panels, date/datetime columns feed the time-series panel (not noisy frequency bars), identifiers / PII / free-text are skipped, and lat/lon feed the map. Field labels are shown as panel subtitles beneath the field-name titles. Columns the dictionary cannot classify still use the statistical heuristic. <src> is one of: \"infer\" to run describegpt on the input now (with description, infer-content-type, two-pass and jsonschema output; requires an LLM configured) and use its output; or a path to an existing describegpt dictionary file (jsonschema or json). With \"infer\", the generated dictionary is saved beside the input as <stem>.schema.json so you can fine-tune it; if that file already exists, it is reused as-is (skipping the LLM) - edit it to fine-tune, or delete it to force a fresh re-infer. Generation/read failures soft-fall back to the stats-only dashboard. The dictionary also drives the KPI overview row via two optional per-field hints in a property's \"x-qsv\" object (edit them in the saved schema to fine-tune). A \"gauge_range\" of [min, max] on a continuous numeric measure renders its KPI tile as a GAUGE on that canonical scale (e.g. [0,1] for a ratio, [0,100] for a percent); qsv keeps it only when the observed data lies within the range, so a mis-scaled range can't draw a misleading dial, and \"infer\" emits it for canonical-scale measures. A \"target\" number on a measure renders a \"vs target\" DELTA against that goal (value minus target) - a GOAL you supply, never a fabricated prior-period baseline, so \"infer\" never emits it; hand-author it. The dictionary is also the ONLY source of the pipeline panel (drawn as a funnel, or as a bridge when the stage totals do not nest), declared in the dataset-level \"x-qsv\" object as a \"relationships\" entry with \"kind\": \"pipeline\". Two encodings, both hand-editable: stages as COLUMNS - \"members\" lists the stage columns in process order, WIDEST/UPSTREAM FIRST (note this is the opposite direction from a \"kind\":\"ordered\" group, which ascends), e.g. {\"kind\":\"pipeline\", \"members\":[\"planned_amt\",\"committed_amt\",\"spent_amt\"]} stages as ROW VALUES - \"stage_column\" names the category column, \"stages\" lists its values in process order, and an optional \"value_column\" names the measure to sum per stage (omit it to count rows), e.g. {\"kind\":\"pipeline\",\"members\":[\"stage\",\"revenue\"], \"stage_column\":\"stage\", \"stages\":[\"Impression\",\"Click\",\"Lead\",\"Conversion\"], \"value_column\":\"revenue\"} Declared order is authoritative and is never re-sorted by size, so a stage that outruns its predecessor stays visible instead of being quietly reordered away - it switches the panel to a bridge rather than drawing a funnel that widens. A declaration naming a missing column, or a stage that is an average/rate rather than a summable amount, is skipped with a note rather than erroring. Only affects `smart`."
       },
       {
         "flag": "--dictionary-context",
@@ -268,6 +269,12 @@
         "flag": "--photos",
         "type": "flag",
         "description": "For the `viz smart` map panel: when a column holds image URLs (detected from the stats cache - an http(s) value ending in a common image extension), embed each point's image URL so that dwelling on a map point for 2 seconds opens that row's photo in a small preview card beside the pointer (arrow keys page through a row with several photos; Escape dismisses the card). Points that have photos say so in their hover label. When the image host allows cross-origin reads, fetched images are cached in the browser's IndexedDB, so re-dwelling a point or reloading the page serves them locally; otherwise the preview falls back to a normal image load served by the ordinary browser cache. OFF by default, and deliberately so: images load from whatever third-party host the DATA names, so enabling this makes everyone who opens the dashboard request those URLs directly (revealing their IP to that host). Nothing is fetched until a viewer dwells. Embedding every mapped point's URLs also grows the HTML. Applies to HTML output only - static image exports (PNG/SVG/PDF) are unaffected - and only on the tile-basemap map panel. Only affects `smart`."
+      },
+      {
+        "flag": "--preview-threshold",
+        "type": "string",
+        "description": "Row threshold for the interactive data viewer drawer of HTML dashboards. Next to the row count in the dashboard metadata, an \"(Explore)\" link opens the underlying table in a bottom drawer (with global, per-column and builder search) when the dataset has at most <n> rows and ALL rows are embedded in the page; above <n>, only the first <n> rows are embedded and the link reads \"(Preview)\". Note that embedded rows grow the HTML file (and browser memory) in proportion to rows x columns. Set to 0 to disable the data viewer entirely (no link, no embedded data). Only affects `smart` HTML output.",
+        "default": "50000"
       },
       {
         "flag": "--projection",
@@ -454,6 +461,10 @@
     {
       "description": "Pie chart of category proportions (counts), as a donut",
       "command": "qsv viz pie data.csv --x category --donut -o pie.html"
+    },
+    {
+      "description": "Funnel of a pipeline whose stages are ROWS (stage column + amount column)",
+      "command": "qsv viz funnel pipeline.csv --x stage --y amount -o funnel.html"
     },
     {
       "description": "Correlation heatmap over all numeric columns",

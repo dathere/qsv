@@ -9,8 +9,9 @@ that steer the dashboard:
     label        title           (shown in the dictionary drawer + hovers)
     description  description      (shown in the dictionary drawer)
 
-As you edit, each column shows a ROUTE preview (Skip / Dimension / Measure /
-Temporal / MapCoord / ProjectedCoord) derived from its concept and role only.
+As you edit, each column shows a ROUTE preview (Skip / Dimension / Temporal /
+MapCoord / ProjectedCoord / Measure, the last carrying its aggregation as
+Measure(sum) or Measure(mean)) derived from its concept and role only.
 This is the concept→role projection BEFORE `viz smart` applies its content_type
 and stats/label guardrails, so the final route can differ (unresolved columns
 show "Defer→stats"). Treat it as guidance on the effect of a concept/role edit,
@@ -80,7 +81,7 @@ FIELDS = ["role", "concept", "label", "description"]
 
 # ─────────────────────────── pure routing preview ───────────────────────────
 # Mirror of src/cmd/viz.rs `route_from_concept` / `route_from_role`
-# (~lines 9313-9355). Precedence is concept → role → (defer to stats). We do NOT
+# (~lines 13187-13240). Precedence is concept → role → (defer to stats). We do NOT
 # reimplement the content_type/stats fallback: those fields are not edited here,
 # so anything unresolved by role/concept is shown as "Defer".
 
@@ -96,7 +97,10 @@ def route_from_concept(concept):
             return "ProjectedCoord"
         return "Dimension"
     if ns == "time":
-        return "Temporal"
+        # a duration is a SPAN, not a point in time: it has no place on a time
+        # axis, so viz routes it to a Mean measure (summing "days to close" is
+        # meaningless in the way a total revenue is not).
+        return "Measure(mean)" if leaf == "duration" else "Temporal"
     if ns in ("id", "pii"):
         return "Skip"
     if ns in ("org", "category", "nyc"):

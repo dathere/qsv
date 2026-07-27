@@ -170,7 +170,16 @@ qsv describegpt "$WORK" \
 
 - `--infer-content-type` is **mandatory here**, not optional: `viz smart` routes
   panels off each field's `role` and `concept`, and those are only inferred under
-  this flag. Without it the dictionary loads and changes nothing.
+  this flag. Without it the dictionary loads and changes nothing. It is also the
+  only way to get the two dictionary hints that unlock extra panels:
+  per-field `x-qsv.gauge_range` (turns a measure's KPI tile into a gauge; kept
+  only when the observed data lies inside the range) and the dataset-level
+  `x-qsv.relationships` array, whose `"kind": "pipeline"` entry is the **only**
+  source of the pipeline funnel/bridge panel.
+- Pass `--context-file <file>` when the user has a glossary, README or codebook.
+  Better context yields better roles, concepts and labels, hence a better
+  dashboard. (`viz --dictionary-context` is the same thing for the `infer` path,
+  which this skill does not take.)
 - `--two-pass` roughly doubles cost and latency. It is what lets the model relate
   fields to one another (`street_no` + `street` + `city` + `zip` = one address),
   which is what makes the routing good.
@@ -189,13 +198,24 @@ Verify the dictionary carries what `viz` needs before spending time on Stage 4:
 ```bash
 python3 - "$SCHEMA" <<'PY'
 import json, sys
-p = json.load(open(sys.argv[1]))["properties"]
+s = json.load(open(sys.argv[1]))
+p = s["properties"]
 have = sum(1 for v in p.values() if v.get("x-qsv", {}).get("role"))
 print(f"role/concept on {have}/{len(p)} columns")
 if have == 0:
     print("WARNING: no roles inferred — was --infer-content-type passed?")
+# panel-unlocking hints, so the user knows up front what will/won't be drawn
+gauges = [k for k, v in p.items() if (v.get("x-qsv") or {}).get("gauge_range")]
+rels = (s.get("x-qsv") or {}).get("relationships") or s.get("relationships") or []
+pipes = [r for r in rels if r.get("kind") == "pipeline"]
+print(f"gauge_range on {len(gauges)} measure(s): {', '.join(gauges) or '(none)'}")
+print(f"relationships: {len(rels)} ({len(pipes)} pipeline -> funnel/bridge panel)")
 PY
 ```
+
+No `gauge_range` and no `pipeline` is a perfectly normal outcome — most datasets
+have neither a canonical-scale measure nor a staged process. Say so and move on;
+both can be hand-added later (see Stage 2.5).
 
 ## Stage 2.5 — Fine-tune the dictionary (optional, TUI)
 
@@ -205,8 +225,10 @@ steer `viz smart` — `x-qsv.role`, `x-qsv.concept`, `title` (label) and
 that should be an `identifier` charted as a `measure`, a `geo.*` key left
 `unknown`, a bland label. `edit_dictionary.py` (beside this `SKILL.md`) is a
 curses UI that walks every column and, as you edit, **previews how `viz smart`
-will route it** (Skip / Dimension / Measure / Temporal / MapCoord /
-ProjectedCoord), so you see the effect before rendering. It touches only those
+will route it** (Skip / Dimension / Temporal / MapCoord / ProjectedCoord /
+Measure — the last showing its aggregation, `Measure(sum)` for an additive
+amount, `Measure(mean)` for a ratio or a duration), so you see the effect before
+rendering. It touches only those
 four fields, preserves every other key, and rewrites the file only if you save.
 
 **Offer it with AskUserQuestion:** *"Hand-tune the data dictionary in a TUI
@@ -248,6 +270,25 @@ untouched byte-for-byte — treat that as a normal "looks good" outcome.
 Scope note: the TUI deliberately does **not** edit null sentinels
 (`--infer-null-values` output). Those are reported-never-applied and have no
 `viz smart` effect, so editing them here would change nothing downstream.
+
+Three keys that *do* affect the dashboard are also outside the TUI, and are
+**hand-edited in the JSON** — this is the supported path for them, not a
+violation of the "never hand-write the schema" rule:
+
+| key | where | effect |
+|---|---|---|
+| `x-qsv.gauge_range` | per property, `[min, max]` | KPI tile becomes a **gauge**. `describegpt` proposes it for canonical-scale measures; qsv drops it if the data falls outside the range |
+| `x-qsv.target` | per property, a number | KPI tile gains a **"vs target" delta**. Never inferred — it is a goal only the user knows |
+| `x-qsv.relationships` | dataset level, `{"kind":"pipeline", …}` | draws the **pipeline** panel |
+
+For a pipeline, both encodings are hand-editable — stages as columns
+(`"members"` in process order, **widest/upstream first**, the opposite direction
+from `"kind":"ordered"`), or stages as row values (`"stage_column"` + an ordered
+`"stages"` list + an optional `"value_column"` to sum). Declared order is
+authoritative: if a stage outruns its predecessor, viz draws a **bridge** of
+signed differences instead of a funnel, rather than a band wider than the one
+above it. Offer these edits only when the Stage 2 check showed a plausible
+candidate; do not invent a target.
 
 ## Stage 3 — GeoJSON (optional)
 
@@ -394,19 +435,50 @@ qsv viz smart "$WORK" \
 ```
 
 - `--smarter` runs `qsv moarstats --advanced` first, enriching the stats cache
-  with distribution shape (bimodality, entropy, skewness, outlier share). Costs
-  one extra pass and writes `<stem>.stats.csv` + sidecars + `.idx`.
-- `--bivariate` adds a normalized-mutual-information heatmap plus a ranked
-  "top relationships" bar. **It implicitly turns on `--dictionary infer` when
-  `--dictionary` is not set** — so passing `$SCHEMA` explicitly is what stops viz
-  from calling the LLM a *second* time. Never pass `--bivariate` without a
-  dictionary in this workflow.
+  with distribution shape (bimodality, entropy, skewness, outlier share, Gini —
+  the last unlocks Lorenz curves for the most unequal additive measures). Costs
+  one extra pass and writes `<stem>.stats.csv` + sidecars + `.idx`. It applies
+  only under default parsing: `--no-headers` or a custom `--delimiter` silently
+  falls back to the standard dashboard.
+- `--bivariate` adds a normalized-mutual-information heatmap plus — only when
+  there are more than 8 chartable columns — a ranked "top relationships" bar.
+  **It implicitly turns on `--dictionary infer` when `--dictionary` is not set**
+  — so passing `$SCHEMA` explicitly is what stops viz from calling the LLM a
+  *second* time. Never pass `--bivariate` without a dictionary in this workflow.
+  Capped at 50 columns; wider datasets skip both panels with a warning.
 - `--dict-info` embeds the dictionary in a side drawer next to the plots, adds an
-  info icon per panel, and a "Data Dictionary" link under the title. **HTML only**
-  — it is ignored with a note when exporting an image.
+  info icon per panel, and a "Data Dictionary" link under the title. The drawer
+  also carries **download buttons for the sidecars this run actually read** —
+  the schema, the charted frequency counts, the stats cache + metadata, and the
+  bivariate CSV — all bundled *into* the HTML, so a recipient needs no access to
+  your machine. Absolute local paths are stripped from the embedded metadata
+  (sharing a dashboard does not disclose your directory layout); sidecars over
+  4 MB are skipped with a note. **HTML only** — ignored with a note when
+  exporting an image.
 - `-o` must end in `.html`. An image extension (`.png`, `.svg`, …) silently
   switches viz to the static-export path, which needs a browser/webdriver and
   drops `--dict-info`.
+
+### The data viewer drawer (`--preview-threshold`, default 50000)
+
+Independent of `--dictionary`/`--dict-info`: an **(Explore)** link beside the row
+count in the metadata table opens the underlying rows in a searchable bottom
+drawer. Every row is embedded while the dataset has at most `<n>` rows; above
+that only the first `<n>` are, and the link reads **(Preview)**.
+
+This is the one flag here with a real cost: **embedded rows grow the HTML — and
+the reader's browser memory — in proportion to rows × columns.** Tell the user
+the size (Stage 5 prints it) rather than letting them discover it. Lower the
+threshold, or pass `--preview-threshold 0` to drop the viewer entirely, when the
+dashboard is meant to be emailed around.
+
+### `--photos` — ask first, never enable silently
+
+If a column holds image URLs, `--photos` makes dwelling on a map point reveal
+that row's photo. It is **off by default and deliberately so**: images load from
+whatever third-party host *the data* names, so every person who opens the
+dashboard requests those URLs directly and reveals their IP to that host. Only
+pass it if the user asks for it after being told that. HTML tile-map panel only.
 
 ## Stage 5 — Verify, then report
 
@@ -417,19 +489,30 @@ emits.
 ```bash
 test -s "$OUT" || { echo "no dashboard written"; exit 1; }
 python3 - "$OUT" <<'PY'
-import sys
+import re, sys
 h = open(sys.argv[1], encoding="utf-8", errors="replace").read()
 print(f"{len(h)/1e6:.1f} MB")
-print("dictionary drawer embedded:", "dict-drawer" in h)
-print("per-panel info icons:", h.count("View chart"), "entries")
+print("dictionary drawer embedded:", "qsv-dict-drawer" in h)
+print("dictionary back-links:", h.count("View chart"))
+m = re.search(r"Data — [^\"<]{0,60}", h)
+print("data viewer:", m.group(0) if m else "disabled / not embedded")
 PY
 ```
+
+`View chart` counts the dictionary's back-links to panels, **not** the panels
+themselves — viz emits one only where a matching panel element exists. Use the
+stderr note for what was drawn and skipped; that is authoritative.
 
 Then tell the user:
 
 - which columns `denull` cleaned, and how many cells were blanked
 - how many columns got a `role`/`concept` from the dictionary
 - which columns `viz smart` **skipped, and why** (its stderr note names them)
+- whether the KPI row, any gauge tile, and the pipeline panel rendered — and if
+  a hint from Stage 2 was dropped, viz says why on stderr (a `gauge_range` whose
+  range excludes the data, a pipeline naming a missing column)
+- the data viewer's state: all rows (Explore) or a truncated preview, and what
+  it costs in file size
 - the GeoJSON coverage note, if any (points that fell outside every region)
 - the path to `$OUT`
 
@@ -442,10 +525,13 @@ If the user can open a browser, offer to render it. Do not assert the dashboard
   `-` (stdin). It refuses both, but don't rely on that.
 - If `denull` confirms nothing, do **not** create a `.denulled.csv`. An empty
   transform step is noise.
-- Never hand-write the JSON Schema. It comes from `describegpt`, and is adjusted
-  only through the Stage 2.5 `edit_dictionary.py` TUI — never by editing the JSON
-  by hand (an off-vocab `role`/`concept` typed into the raw file silently routes a
-  column to the wrong panel; the TUI validates against the vocab and flags drift).
+- Never hand-write the JSON Schema. It comes from `describegpt`. `role`,
+  `concept`, `title` and `description` are adjusted only through the Stage 2.5
+  `edit_dictionary.py` TUI — never by editing the JSON by hand (an off-vocab
+  `role`/`concept` typed into the raw file silently routes a column to the wrong
+  panel; the TUI validates against the vocab and flags drift). The exceptions are
+  the three keys the TUI does not own — `x-qsv.gauge_range`, `x-qsv.target` and
+  the dataset-level `x-qsv.relationships` — which qsv documents as hand-edited.
 - The Stage 2.5 TUI is **out-of-band**: it needs the user's real terminal. Never
   try to launch it through your Bash tool and "drive" it — that shell is not a
   TTY, and the script will refuse. Print the command, wait, then re-read.
@@ -471,8 +557,10 @@ If the user can open a browser, offer to render it. Do not assert the dashboard
    `role`/`concept` on 25/25 columns.
 3. User declines GeoJSON (the file has UTM `Easting`/`Northing`, not lat/lon).
 4. `viz smart --smarter --bivariate --dict-info` writes
-   `NMBGMRManualWaterLevels.html`, charting 31 panels and skipping 4 columns
-   (`_id`, `PointID` — identifiers; `CompletionDate`, `DateMeasured` — dates).
+   `NMBGMRManualWaterLevels.html`, charting the numeric columns and skipping
+   `_id` / `PointID` (identifiers) and the date columns (which feed the
+   time-series panel instead). Report the counts viz actually prints on stderr —
+   panel selection moves with each release, so never quote a remembered number.
 
 Before cleaning, `viz smart` skipped 11 columns and warned that 5 of them looked
 like numeric data held back by a literal `NULL`. That warning is the reason

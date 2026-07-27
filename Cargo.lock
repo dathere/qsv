@@ -4139,9 +4139,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.49.1"
+version = "0.49.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cc9116a0f75b7336e55eb2a2a0ddef86c37cadf02924a571751aa123d5a0290"
+checksum = "f8a77951c56b6a0af03c22af6953d6ffcfba9403c765578921f3f1089b999db6"
 dependencies = [
  "ahash 0.8.12",
  "bytecount",
@@ -4170,18 +4170,18 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-regex"
-version = "0.49.1"
+version = "0.49.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "628a1f02bda4651d9a6088ee6386a92f0ee96255b0c99e9dfe1be91bf83bd838"
+checksum = "a4c2e64f341a1d6a15d2daa3c967e48921cf15b9c7f23a9899e8b63c7f7c4199"
 dependencies = [
  "regex-syntax",
 ]
 
 [[package]]
 name = "jsonschema-value"
-version = "0.49.1"
+version = "0.49.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75d94a372f8d81d070fd405065c6b1168d8248d1d6adad073ac708de254698c6"
+checksum = "94e097778f3e9c6a33862077dbf07aca0360d0b18d2a7abc323da132df49ee83"
 dependencies = [
  "ahash 0.8.12",
  "bytecount",
@@ -5684,7 +5684,7 @@ dependencies = [
 [[package]]
 name = "plotly"
 version = "0.14.1"
-source = "git+https://github.com/plotly/plotly.rs?rev=00fe051#00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d"
+source = "git+https://github.com/plotly/plotly.rs?rev=00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d#00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d"
 dependencies = [
  "askama",
  "async-trait",
@@ -5707,7 +5707,7 @@ dependencies = [
 [[package]]
 name = "plotly_derive"
 version = "0.14.1"
-source = "git+https://github.com/plotly/plotly.rs?rev=00fe051#00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d"
+source = "git+https://github.com/plotly/plotly.rs?rev=00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d#00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -5718,7 +5718,7 @@ dependencies = [
 [[package]]
 name = "plotly_static"
 version = "0.1.0"
-source = "git+https://github.com/plotly/plotly.rs?rev=00fe051#00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d"
+source = "git+https://github.com/plotly/plotly.rs?rev=00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d#00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d"
 dependencies = [
  "anyhow",
  "base64 0.23.0",
@@ -7377,9 +7377,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.49.1"
+version = "0.49.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "978badf4419c9d0e1bc6e7466e99277f829d768257670c46d88121ca75e34bf7"
+checksum = "b772e96f8eb6badd4eb10fbc08b8a98244c09b4af37e72e8fa612c854604b870"
 dependencies = [
  "ahash 0.8.12",
  "fluent-uri",
@@ -7902,9 +7902,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
+checksum = "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a"
 dependencies = [
  "dyn-clone",
  "ref-cast",
@@ -8139,7 +8139,7 @@ dependencies = [
  "indexmap 1.9.3",
  "indexmap 2.14.0",
  "schemars 0.9.0",
- "schemars 1.2.1",
+ "schemars 1.2.2",
  "serde_core",
  "serde_json",
  "serde_with_macros",
@@ -9224,9 +9224,9 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.1.2+spec-1.1.0"
+version = "1.1.3+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2abe9b86193656635d2411dc43050282ca48aa31c2451210f4202550afb7526"
+checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow",
 ]

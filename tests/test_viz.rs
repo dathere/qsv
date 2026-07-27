@@ -12938,6 +12938,10 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     assert!(html.contains("qsv-data-filters"));
     // resizable drawer grip + focus management + stacking above the dictionary drawer
     assert!(html.contains("qsv-data-drawer-grip"));
+    // the scroll region must NOT keep DataTables' .dt-layout-row align-items:center — a
+    // taller-than-viewport table would be vertically centered, hiding the first rows behind
+    // the sticky thead with the top overflow unreachable by scrolling
+    assert!(html.contains("overflow: auto; align-items: flex-start;"));
     // the persisted px height is re-clamped in CSS against the current viewport (roborev #3864)
     assert!(html.contains("--qsv-data-h-eff: clamp(calc(20 * var(--qsv-data-vh))"));
     assert!(html.contains(r#"drawer.setAttribute("tabindex", "-1")"#));

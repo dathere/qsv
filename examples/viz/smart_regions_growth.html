@@ -48,7 +48,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>844 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Preview)</a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>5</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-27 05:21 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-27 07:12 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -645,7 +645,11 @@
      below stay fixed, and the sticky thead pins the title+filter rows inside the scroll region */
   #qsv-data-drawer div.dt-container { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   #qsv-data-drawer div.dt-container > div.dt-layout-row { flex: none; }
-  #qsv-data-drawer div.dt-container > div.dt-layout-table { flex: 1 1 auto; min-height: 0; overflow: auto; }
+  /* align-items MUST override the center that .dt-layout-table inherits from DataTables'
+     .dt-layout-row flex rule: a taller-than-viewport table gets vertically CENTERED in the
+     scrollport, which puts half the overflow ABOVE it — unreachable by scrolling, so the
+     first rows sit hidden behind the sticky thead */
+  #qsv-data-drawer div.dt-container > div.dt-layout-table { flex: 1 1 auto; min-height: 0; overflow: auto; align-items: flex-start; }
   #qsv-data-table thead th { position: sticky; top: 0; z-index: 5; background: var(--qsv-page-bg, #ffffff); }
   #qsv-data-table thead tr.qsv-data-filters th { top: var(--qsv-data-th1-h, 34px); }
   body.qsv-data-open { margin-bottom: var(--qsv-data-h-eff); }

@@ -14260,8 +14260,13 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     drawer.focus({ preventScroll: true });
     revealBottom();
     // opening grows the page (body margin) and the embedding gallery then auto-grows the
-    // iframe; re-align once the drawer transition + the parent's resize-report have settled
-    setTimeout(revealBottom, 450);
+    // iframe; re-align once the drawer transition + the parent's resize-report have settled.
+    // Re-check the drawer is still open first: a close within the settle window has already
+    // revealed the top, and a stale re-align would scroll the parent right back down.
+    setTimeout(function () {
+      var d = document.getElementById("qsv-data-drawer");
+      if (d && d.classList.contains("open")) revealBottom();
+    }, 450);
   }
   function build() {
     var rowsEl = document.getElementById("qsv-data-rows");

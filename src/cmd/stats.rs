@@ -2566,7 +2566,7 @@ impl Args {
     /// thread runs the statistics accumulation, overlapping I/O + CSV parsing
     /// with stats work.
     ///
-    /// Records are processed strictly in arrival (file) order, so the add()
+    /// Records are processed strictly in arrival (file) order, so the `add()`
     /// sequence - and therefore every Stats result, including order-dependent
     /// sortiness and t-digest state - is bit-identical to the single-threaded
     /// `compute`. Batches are recycled through a return channel, so

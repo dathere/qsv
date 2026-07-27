@@ -929,7 +929,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(wtr.flush()?)
 }
 
-/// Returns true if `base_url`'s host is a loopback address (localhost / 127.0.0.1 / ::1).
+/// Returns true if `base_url`'s host is a loopback address (localhost / 127.0.0.1 / `::1`).
 ///
 /// Parses the URL and checks the actual host so values like `https://localhost.evil.com/v1`
 /// are NOT misclassified as local (a naive substring match would). Falls back to a substring

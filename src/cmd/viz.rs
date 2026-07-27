@@ -807,7 +807,7 @@ use crate::{
     util,
 };
 
-/// Plotly's `Layout` exposes typed axis fields only up to x_axis8/y_axis8, which caps a
+/// Plotly's `Layout` exposes typed axis fields only up to `x_axis8`/`y_axis8`, which caps a
 /// single-`Plot` typed subplot grid at 8 panels. HTML dashboards that need more panels are
 /// rendered as an inline-div grid of independent plots instead (see `render_smart_inline`).
 const MAX_SUBPLOTS: usize = 8;
@@ -938,9 +938,10 @@ const PAIR_CURVATURE_MIN: f64 = 0.5;
 /// across a map reads naturally).
 const ANIM_TRAILING_WINDOW: usize = 3;
 
-/// `viz smart` parallel-categories (parcats) panel bounds. parcats is reserved for PARCATS_MIN_DIMS
-/// to PARCATS_MAX_DIMS categorical dimensions: 2-dimension relationships are shown as a directed
-/// Sankey, and beyond 4 dimensions the ribbon flow becomes an unreadable tangle.
+/// `viz smart` parallel-categories (parcats) panel bounds. parcats is reserved for
+/// `PARCATS_MIN_DIMS` to `PARCATS_MAX_DIMS` categorical dimensions: 2-dimension relationships are
+/// shown as a directed Sankey, and beyond 4 dimensions the ribbon flow becomes an unreadable
+/// tangle.
 const PARCATS_MIN_DIMS: usize = 3;
 const PARCATS_MAX_DIMS: usize = 4;
 
@@ -1421,7 +1422,7 @@ const BIVARIATE_MIN_SUPPORT_RATIO: f64 = 0.10;
 /// (NMI's ceiling is 1.0; the small overshoot leaves marker/label room), and enforces only a tiny
 /// `TOPREL_MIN_SPAN` so an all-EXACTLY-tied top-N can't produce a zero-width axis (identical values
 /// legitimately overlap). Category (pair) labels are truncated to `TOPREL_LABEL_MAX_CHARS` on the
-/// y-axis (the full "FieldA × FieldB" rides in the hover) to bound the shared page left-margin.
+/// y-axis (the full "`FieldA` × `FieldB`" rides in the hover) to bound the shared page left-margin.
 const TOPREL_PAD_FRAC: f64 = 0.25;
 const TOPREL_MIN_PAD: f64 = 0.01;
 const TOPREL_MIN_SPAN: f64 = 0.02;
@@ -3180,9 +3181,11 @@ fn mercator_lat_center(min_lat: f64, max_lat: f64) -> f64 {
 /// instead of the naive `floor(log2(360 / max(latSpan, lonSpan)))` that compared the larger span to
 /// the 360°-wide world and ignored the panel aspect (over-zooming square boxes, under-zooming wide
 /// ones).
+/// ```text
 ///   zoom_lon = log2( (width_px  / 512) / (lon_span / 360) )
 ///   zoom_lat = log2( (height_px / 512) / (mercator_y(min_lat) - mercator_y(max_lat)) )
 ///   zoom     = floor( min(zoom_lon, zoom_lat) - log2(MAP_FIT_PAD) ).clamp(1, 16)
+/// ```
 /// A degenerate (single-point) box returns a street-level zoom of 10. `lon_span` is the already-
 /// resolved (antimeridian-aware) span from `lon_center_and_span`, so for a global or dateline-
 /// crossing extent it can approach 360; the math handles that (it just yields a lower zoom, then
@@ -4232,8 +4235,8 @@ fn ring_planar_area(ring: &serde_json::Value) -> f64 {
 /// rings — fewer than 3 distinct vertices, OR zero planar area (a collinear ring whose vertices are
 /// distinct but lie on a line) — and order the survivors largest-area-first so ring[0] is the
 /// exterior. A zero-area ring is non-renderable either way: as an exterior it leaves plotly's
-/// MultiPolygon centroid with no positive-area sub-polygon (the crash this fix prevents), and as a
-/// hole it encloses nothing. Returns `None` when nothing renderable remains. Ring `Value`s are
+/// `MultiPolygon` centroid with no positive-area sub-polygon (the crash this fix prevents), and as
+/// a hole it encloses nothing. Returns `None` when nothing renderable remains. Ring `Value`s are
 /// moved, never rebuilt, so coordinate precision is preserved exactly.
 fn repair_polygon_rings(rings: Vec<serde_json::Value>) -> Option<Vec<serde_json::Value>> {
     let mut kept: Vec<(f64, serde_json::Value)> = rings
@@ -4290,7 +4293,7 @@ fn repair_render_geometry(geom: &mut serde_json::Value) -> Option<serde_json::Va
     }
 }
 
-/// Sanitize a GeoJSON FeatureCollection in place so its polygons render in plotly's choropleth /
+/// Sanitize a GeoJSON `FeatureCollection` in place so its polygons render in plotly's choropleth /
 /// choroplethmap geometry pipeline. That pipeline assumes well-formed polygons — ring[0] is the
 /// exterior and every hole lies inside it — and *throws* (blanking the WHOLE panel, not just the
 /// one region) when a feature violates this. Real-world GeoJSON does: e.g. a zero-area sliver
@@ -4431,7 +4434,7 @@ fn resolve_and_validate_geojson(
     Ok(Some(geojson))
 }
 
-/// Load a GeoJSON FeatureCollection from a local file path or an http(s) URL into a JSON value.
+/// Load a GeoJSON `FeatureCollection` from a local file path or an http(s) URL into a JSON value.
 fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
     let bytes = if spec.starts_with("http://") || spec.starts_with("https://") {
         use std::io::Read as _;
@@ -4486,7 +4489,7 @@ fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
 }
 
 /// One GeoJSON feature reduced to its polygon rings for point-in-polygon binning. `polygons` holds
-/// one entry per polygon (a MultiPolygon yields several); each polygon is a list of linear rings
+/// one entry per polygon (a `MultiPolygon` yields several); each polygon is a list of linear rings
 /// (ring 0 is the exterior, the rest are holes); each ring is a closed list of `[lon, lat]`
 /// vertices. `bbox` is `[min_lon, min_lat, max_lon, max_lat]` over all vertices, for cheap
 /// candidate prefiltering.
@@ -4879,7 +4882,7 @@ fn geojson_rings_to_closed(poly: &[Vec<geojson::Position>]) -> Vec<Vec<[f64; 2]>
 }
 
 /// Flatten a `geojson::GeometryValue` into a list of polygons (each = exterior + hole rings).
-/// Handles Polygon, MultiPolygon, and nested GeometryCollection; other geometry types yield
+/// Handles Polygon, `MultiPolygon`, and nested `GeometryCollection`; other geometry types yield
 /// nothing.
 fn geojson_value_to_polygons(value: &geojson::GeometryValue) -> Vec<Vec<Vec<[f64; 2]>>> {
     match value {
@@ -4957,9 +4960,9 @@ fn unwrap_ring_across_seam(ring: &[[f64; 2]]) -> Option<Vec<[f64; 2]>> {
     Some(out)
 }
 
-/// Parse a GeoJSON FeatureCollection into [`PipFeature`]s keyed by `feature_id_key`. Features
+/// Parse a GeoJSON `FeatureCollection` into [`PipFeature`]s keyed by `feature_id_key`. Features
 /// missing the id key or lacking a Polygon/MultiPolygon geometry are skipped (and counted in a
-/// stderr note). Errors when the input isn't a FeatureCollection or yields no usable features.
+/// stderr note). Errors when the input isn't a `FeatureCollection` or yields no usable features.
 fn build_pip_features(
     geojson: &serde_json::Value,
     feature_id_key: &str,
@@ -7272,7 +7275,7 @@ fn strongest_pair(matrix: &[Vec<f64>]) -> Option<(usize, usize, f64)> {
     best
 }
 
-/// A diverging (RdBu) correlation heatmap trace fixed to the [-1, 1] scale. `axes` assigns
+/// A diverging (`RdBu`) correlation heatmap trace fixed to the [-1, 1] scale. `axes` assigns
 /// the subplot axis refs when used as a `viz smart` panel (None for the standalone chart).
 /// A `hovertemplate` (and trace name) gives a clean `y vs x: r` tooltip instead of plotly's
 /// default "trace 0". `spearman` swaps that hover symbol to rho, so a rank-correlation matrix
@@ -8272,8 +8275,8 @@ fn geo_palette(theme: Option<BuiltinTheme>) -> (&'static str, &'static str, &'st
 /// paper/font colors so a dark theme gets a dark page rather than dark plots floating on white.
 /// Mirrors the values in plotly's `layout::themes` templates. `None` keeps qsv's built-in look.
 /// The geo-meta color is the caption color for "Spatial extent:" shown below map panels. It must
-/// contrast with the light-mode page background: light for dark-bg themes (PlotlyDark,
-/// SeabornDark), dark for light-bg themes.
+/// contrast with the light-mode page background: light for dark-bg themes (`PlotlyDark`,
+/// `SeabornDark`), dark for light-bg themes.
 fn theme_page_chrome(theme: Option<BuiltinTheme>) -> (&'static str, &'static str, &'static str) {
     match theme {
         None => (PAPER_BG, INK, "#4b5563"),
@@ -8290,8 +8293,9 @@ fn theme_page_chrome(theme: Option<BuiltinTheme>) -> (&'static str, &'static str
 }
 
 /// The chart colors `(paper, font, grid, line, zero)` the toggle's runtime LIGHT palette applies
-/// on load. For a light *non-default* theme (seaborn/seaborn_whitegrid/matplotlib/plotnine) this
-/// mirrors that theme's own template colors, so the on-load `Plotly.relayout` keeps the panel
+/// on load. For a light *non-default* theme (`seaborn`, `seaborn_whitegrid`, `matplotlib`,
+/// `plotnine`) this mirrors that theme's own template colors, so the on-load `Plotly.relayout`
+/// keeps the panel
 /// backgrounds consistent with the themed page chrome (`theme_page_chrome`) instead of resetting
 /// them to qsv's generic light look — which left e.g. a `#EAEAF2` seaborn page wrapping `#FFFFFF`
 /// charts. Every other case (no theme, the white `default`/`plotly_white`, or a dark theme whose
@@ -9747,7 +9751,7 @@ fn plotly_cdn_only() -> String {
 /// and map/geo per-point arrays as base64 float32 typed arrays. On by default — it cuts the
 /// fixed plotly.js cost from ~4.8 MB to ~1.9 MB per file and shrinks map payloads 3-4x.
 /// `QSV_VIZ_NO_COMPRESS=1` restores fully readable plain-text HTML: needed for pre-2023 browsers
-/// (no DecompressionStream) and for strict-CSP embeds (the bootstrap installs plotly.js via
+/// (no `DecompressionStream`) and for strict-CSP embeds (the bootstrap installs plotly.js via
 /// `eval`, which requires `unsafe-eval`), and handy when grepping/debugging the emitted HTML.
 fn viz_compress() -> bool {
     !util::get_envvar_flag("QSV_VIZ_NO_COMPRESS")
@@ -9802,7 +9806,7 @@ static PLOTLY_GZ_B64: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| 
 
 /// Queue-stub for `window.Plotly`, emitted (in `<head>`) BEFORE the panels' inline
 /// `Plotly.newPlot(..)` script tags when the bundle is embedded compressed: the real bundle only
-/// exists after an async DecompressionStream pass, so until then `newPlot` calls queue verbatim
+/// exists after an async `DecompressionStream` pass, so until then `newPlot` calls queue verbatim
 /// and `PLOTLY_GZ_BOOTSTRAP` replays them in order — the panel scripts themselves need no
 /// changes, and once the real global is installed later calls go straight through. The
 /// fullscreen-modebar chrome already polls for rendered divs, and the theme toggle re-applies on
@@ -9940,7 +9944,7 @@ fn plotly_js_block() -> String {
     )
 }
 
-/// Vendored DataTables v3 bundle (core + DateTime + SearchBuilder, "DataTables" default styling,
+/// Vendored DataTables v3 bundle (core + `DateTime` + SearchBuilder, "DataTables" default styling,
 /// minified + concatenated by the DataTables download builder). Powers the `viz smart` data
 /// viewer drawer. MIT licensed; the builder header comment in each file records the exact
 /// component versions. To rebuild or bump, fetch the concatenated combination the version consts
@@ -9962,7 +9966,7 @@ const DATATABLES_JS: &str = include_str!("assets/datatables.min.js");
 const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
 
 /// The download-builder combination the vendored bundle was built from: DataTables core 3.0.0 +
-/// Buttons 4.0.0 (for the popover SearchBuilder "Filter" button) + DateTime 2.0.0 + Responsive
+/// Buttons 4.0.0 (for the popover SearchBuilder "Filter" button) + `DateTime` 2.0.0 + Responsive
 /// 4.0.0 + SearchBuilder 2.0.0, default DataTables styling. Also the path segment of the
 /// version-pinned CDN URLs.
 const DATATABLES_CDN_COMBO: &str = "dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0";
@@ -10275,7 +10279,7 @@ fn parse_f64(cell: Option<&[u8]>) -> Option<f64> {
 
 /// `parse_f64` for an already-decoded string: finite-only numeric parse.
 ///
-/// Rejects non-finite literals: Rust's f64::from_str accepts "inf"/"-inf"/"infinity"/"nan", which
+/// Rejects non-finite literals: Rust's `f64::from_str` accepts "inf"/"-inf"/"infinity"/"nan", which
 /// would poison min/max folds (e.g. an infinite axis span collapses a contour grid into one bin),
 /// emit bogus ±inf aggregate bars, serialize as `null` (silently dropped points), or make sort
 /// comparators non-total. Treat them as unparseable.
@@ -10780,8 +10784,10 @@ const MEASURE_BY_DIM_MAX_CANDIDATES: usize = 16;
 /// between- and total-variance are over exactly the same rows. For each measure-present row the
 /// value contributes to that measure's grand (sum, sum-of-squares, n) and, partitioned by each
 /// dimension's category, to that (measure, dimension) group's (sum, count). Then
+/// ```text
 /// η² = SS_between / SS_total where SS_total = Σy² − (Σy)²/n and
 /// SS_between = Σ_g (Σy_g)²/n_g − (Σy)²/n.
+/// ```
 fn measure_by_dim_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
@@ -12516,7 +12522,7 @@ enum PanelKind {
     },
     /// Animated geographic point map: dated points on a `ScatterGeo` projection basemap, revealed
     /// CUMULATIVELY over time buckets (dated events accumulating across the map reads naturally).
-    /// Only built for continental/global extents (where `viz smart` already uses a ScatterGeo
+    /// Only built for continental/global extents (where `viz smart` already uses a `ScatterGeo`
     /// projection, which animates natively — unlike a MapLibre tile map). Its `geo` subplot can't
     /// share the typed x/y grid, so it forces the inline render path and is HTML-only.
     /// `bucket_lats`/`bucket_lons` are parallel-per-bucket point clouds (index = bucket);
@@ -12583,7 +12589,7 @@ enum PanelKind {
     /// heatmap (which shows every survivor pair), the ranking is gated on co-occurrence support
     /// (`BIVARIATE_MIN_SUPPORT_RATIO`) so a technically-perfect NMI backed by only a sparse,
     /// narrow slice of rows can't crowd out a more broadly meaningful association. `labels` are
-    /// "FieldA × FieldB"; `hover_suffix` parallels `labels`/`values` and always leads with the
+    /// "`FieldA` × `FieldB`"; `hover_suffix` parallels `labels`/`values` and always leads with the
     /// pair's co-occurring row count (`<br>n=1234`), followed by the same nonlinearity-warning
     /// convention as `AssocHeatmap::hover_suffix` when applicable. Rendered as a horizontal
     /// multivariate lollipop: `values` (NMI) drives the dot's position on a zoomed value axis,
@@ -13034,8 +13040,8 @@ enum Route {
     Defer,
     /// A categorical/code field -> frequency bar, even when stored as a numeric code or when its
     /// cardinality exceeds the usual bar threshold. This is what lets administrative codes stored
-    /// as numbers (ward, police_zone, census_tract, ...) become bars instead of being misread as
-    /// continuous measures.
+    /// as numbers (ward, `police_zone`, `census_tract`, ...) become bars instead of being misread
+    /// as continuous measures.
     Dimension,
     /// A genuine continuous measure -> box / histogram / correlation / time-series y. This is the
     /// positive "this IS a measure" signal the statistical heuristic cannot express.
@@ -13266,8 +13272,8 @@ fn route_from_content_type(content_type: &str) -> (Route, Option<Agg>) {
 ///
 /// Two thresholds, because the trust owed to the signal differs:
 /// - A *role-defaulted* measure (no `measure.*` concept) is only weakly a measure, so any
-///   categorical-cardinality integer code (ward, police_zone, census_tract, ...) is barred, up to
-///   `CATEGORICAL_MAX_CARDINALITY`.
+///   categorical-cardinality integer code (ward, `police_zone`, `census_tract`, ...) is barred, up
+///   to `CATEGORICAL_MAX_CARDINALITY`.
 /// - An *explicit* `measure.*` concept is a considered LLM verdict, so it is trusted for anything
 ///   with real spread — EXCEPT a tiny fixed integer scale (`RATING_MAX_CARDINALITY`). The measure
 ///   concept vocab has no `rating`/`ordinal` leaf, so a 1-5 satisfaction score lands on
@@ -13463,7 +13469,7 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
 
 /// Distill a column's `StatsData` + optional dictionary `row` into one charting verdict.
 ///
-/// Precedence: **concept -> role -> content_type -> statistics**. `concept` is the most specific,
+/// Precedence: **concept -> role -> `content_type` -> statistics**. `concept` is the most specific,
 /// highest-confidence signal (it fixes a numeric admin code that describegpt defaulted to
 /// `role: measure`); `role` is the coarse fallback; `content_type` is the legacy mapping; and a
 /// column with no usable signal `Defer`s to `classify`. A guardrail wraps every `Measure` verdict.
@@ -13919,7 +13925,7 @@ fn dict_short_hash(s: &str) -> String {
 /// Stable element id for a column's Data Dictionary entry — shared by the dictionary page's
 /// per-column sections and the panel info icons that jump to them. Sanitized for use as an
 /// HTML id / JS string literal; the hash suffix keeps sanitization collisions apart
-/// ("a b" vs "a_b") and non-ASCII names unique.
+/// (`"a b"` vs `"a_b"`) and non-ASCII names unique.
 fn dict_anchor_id(col: &str) -> String {
     let mut slug: String = col
         .chars()
@@ -13953,7 +13959,7 @@ fn dict_info_for_field(dict: Option<&DictData>, field: &str) -> Option<(String, 
 /// tab instead — the title link and every info icon reuse ONE drawer / ONE tab. Both scroll to
 /// (and flash-highlight, via `qsvDictReveal`) the requested per-column anchor; the tab path also
 /// syncs the opener's light/dark mode. The drawer adopts the template's `.qsv-dict-wrap` +
-/// `<style>` via DOMParser (which never executes scripts), strips the standalone page's inline
+/// `<style>` via `DOMParser` (which never executes scripts), strips the standalone page's inline
 /// `onclick` handlers (they target `window.opener`, meaningless in-page), hides "View chart"
 /// links with no matching `data-qsv-dict` panel element (the typed grid is one plot with no
 /// per-panel elements), and handles ToC / "View chart" clicks by delegation. Opening adds
@@ -14129,7 +14135,7 @@ document.addEventListener("keydown", function (e) {
 </script>"##;
 
 /// The data viewer drawer chrome for `viz smart` HTML dashboards (issue #4283): a bottom drawer
-/// holding the underlying rows in a DataTable, opened from the "(Explore)"/"(Preview)" link next
+/// holding the underlying rows in a `DataTable`, opened from the "(Explore)"/"(Preview)" link next
 /// to the metadata row count. Static CSS for the drawer shell + the script that lazily builds it
 /// on first open. `__QSVDATATITLE__` is replaced with the drawer-bar title ("all N rows" /
 /// "first N of M rows (preview)") at page build.
@@ -14942,7 +14948,7 @@ fn dict_role_slug(role: Option<&str>) -> &'static str {
 /// shape-normalized dataset description / grain / provenance. Handles both dictionary shapes
 /// `parse_dictionary_semantics` accepts (JSON Schema `properties` and legacy `fields`). Sections
 /// follow `column_order` (the dataset's header order) so output is deterministic — never the
-/// `rows` HashMap order; dictionary-only columns are appended sorted. Every dynamic string is
+/// `rows` `HashMap` order; dictionary-only columns are appended sorted. Every dynamic string is
 /// `html_escape`d (this is LLM text!), which also guarantees the document can never contain a
 /// literal `</script>` that would terminate the embedding template.
 fn render_dict_page_html(
@@ -16516,7 +16522,7 @@ fn panel_interest(s: &crate::cmd::stats::StatsData, kind: &PanelKind) -> f64 {
 }
 
 /// If `name` (already lower-cased) is a key/code twin of a sibling — ending in `_code`/`_id`/`_key`
-/// — return the base name it twins (e.g. "subject_code" -> "subject"); otherwise None.
+/// — return the base name it twins (e.g. `subject_code` -> `subject`); otherwise None.
 fn code_twin_base(name: &str) -> Option<&str> {
     for suffix in ["_code", "_id", "_key"] {
         if let Some(base) = name.strip_suffix(suffix)
@@ -16528,8 +16534,8 @@ fn code_twin_base(name: &str) -> Option<&str> {
     None
 }
 
-/// Identify "key twin" columns to suppress so a code/label pair (subject + subject_code, street +
-/// street_id) charts only the human-readable member. A column is suppressed when it routes to a
+/// Identify "key twin" columns to suppress so a code/label pair (subject + `subject_code`, street +
+/// `street_id`) charts only the human-readable member. A column is suppressed when it routes to a
 /// frequency bar (`Dimension`) AND its name is `<base>_code`/`_id`/`_key` AND a sibling column
 /// named `<base>` ALSO routes to a Dimension bar. Conservative on purpose: it only fires between
 /// two charted dimensions, so a lone `*_code` (whose label isn't itself charted) is kept; and the
@@ -16762,7 +16768,7 @@ fn one_to_one_categorical_twins(
 
 /// Canonical-timestamp priority for a date column's dictionary concept: a smaller rank wins as the
 /// time-series x-axis. Event/created timestamps lead; closed/updated/due are secondary; a bare date
-/// or no concept is last. Lets `viz smart` trend "requests over created_date" rather than over a
+/// or no concept is last. Lets `viz smart` trend "requests over `created_date`" rather than over a
 /// modified timestamp. Columns without a dictionary all rank 3, so selection falls back to the
 /// first date column, exactly as before.
 fn timestamp_rank(concept: &str) -> u8 {
@@ -16776,9 +16782,9 @@ fn timestamp_rank(concept: &str) -> u8 {
 
 /// Sortedness tiebreak for the canonical-date choice: a date column the file is physically
 /// ordered by (ascending or descending — e.g. an export ordered newest-first) is more likely
-/// the primary event timestamp than an unsorted one (an edited/backfilled modified_date), so
+/// the primary event timestamp than an unsorted one (an edited/backfilled `modified_date`), so
 /// among equal-concept-rank candidates it wins. Matched case-insensitively: stats currently
-/// emits "Ascending"/"Descending"/"Unsorted" (STATS_DEFINITIONS.md documents the uppercase
+/// emits "Ascending"/"Descending"/"Unsorted" (`STATS_DEFINITIONS.md` documents the uppercase
 /// forms). Heuristic caveat: stats' `sort_order` is evaluated on the raw values, so a
 /// chronologically-sorted column in a non-lexicographic date format (e.g. `M/D/YYYY`) may read
 /// unsorted — the tiebreak then simply doesn't fire and selection falls back to column order,
@@ -17576,10 +17582,10 @@ fn cumulative_embedded_points(buckets: &[Vec<f64>]) -> usize {
 
 /// Read dated lat/lon rows in one pass and partition them into calendar buckets for an animated,
 /// cumulative geographic reveal. Only fires for a continental/global extent (where `viz smart`
-/// draws a ScatterGeo projection, which animates natively) — a city-scale cloud returns `None`, so
-/// T2 never tries to animate a MapLibre tile map (blocked by issue #4155). Returns `None` when the
-/// extent isn't global, when fewer than `min_frames` distinct buckets result, or when too few rows
-/// survive.
+/// draws a `ScatterGeo` projection, which animates natively) — a city-scale cloud returns `None`,
+/// so T2 never tries to animate a MapLibre tile map (blocked by issue #4155). Returns `None` when
+/// the extent isn't global, when fewer than `min_frames` distinct buckets result, or when too few
+/// rows survive.
 fn read_geo_anim(
     args: &Args,
     lat_idx: usize,
@@ -18159,7 +18165,7 @@ fn geo_framing(
 /// `CONTINENT_SCOPES`), returns that scope name so the `viz smart` geo panel can frame the map to
 /// that continent instead of a world overview. Returns `None` when the points span no single
 /// continent (world-spanning data) or straddle more than one (e.g. a Europe/Asia mix), leaving the
-/// existing NaturalEarth overview in place.
+/// existing `NaturalEarth` overview in place.
 fn continent_scope(lats: &[f64], lons: &[f64]) -> Option<&'static str> {
     if lats.is_empty() || lats.len() != lons.len() {
         return None;
@@ -18526,7 +18532,7 @@ fn build_smart_pip_choropleth_panel(
 /// left-padded to each numeric feature-id width in `numeric_id_widths` wider than the code —
 /// shortest viable width first — and the first padded form found is returned. This keeps the
 /// matcher correct for the broader geo concepts the summary choropleth accepts (zip/postal, county,
-/// state, census_tract, fips), not just 5-digit zips. `numeric_id_widths` must be the ascending,
+/// state, `census_tract`, fips), not just 5-digit zips. `numeric_id_widths` must be the ascending,
 /// deduped digit-widths of the all-numeric feature ids, precomputed once by the caller so this
 /// stays O(widths) per cell rather than rescanning every feature id. Used by
 /// [`build_smart_summary_choropleth_panels`].
@@ -18901,7 +18907,7 @@ const GEOJSON_OVERLAY_LABEL_MAX: usize = 60;
 /// Remote `--geojson` fetch guards. reqwest's default blocking client has no timeout at all and
 /// `Response::bytes()` buffers the whole body unchecked, so a stalling server hangs qsv forever
 /// and an endless body drives it to OOM. The timeout is a `util::timeout_secs` default (so
-/// QSV_TIMEOUT overrides it); the size cap is a safety CEILING, not a target — real boundary
+/// `QSV_TIMEOUT` overrides it); the size cap is a safety CEILING, not a target — real boundary
 /// files (e.g. census tracts) legitimately run to a few hundred MB.
 const GEOJSON_FETCH_TIMEOUT_SECS: u16 = 30;
 const GEOJSON_MAX_BYTES: usize = 512_000_000;
@@ -18931,7 +18937,7 @@ struct GeoJsonOverlay {
 }
 
 /// Absolute planar (shoelace) area of a polygon ring, in squared degrees. Used only to pick the
-/// largest part of a MultiPolygon for label placement, so the planar/`deg²` approximation is fine
+/// largest part of a `MultiPolygon` for label placement, so the planar/`deg²` approximation is fine
 /// at the local/regional scales this overlay targets. Rings may be open or closed (first==last).
 fn ring_area(ring: &[[f64; 2]]) -> f64 {
     let n = ring.len();
@@ -19030,7 +19036,7 @@ fn representative_point(rings: &[Vec<[f64; 2]>]) -> Option<[f64; 2]> {
 }
 
 /// Label anchor (`[lon, lat]`) for a `--geojson` feature: a representative interior point of its
-/// LARGEST sub-polygon (so a MultiPolygon labels its main part, not the empty gap between parts),
+/// LARGEST sub-polygon (so a `MultiPolygon` labels its main part, not the empty gap between parts),
 /// falling back to the whole-feature bounding-box center when the geometry is degenerate.
 fn feature_label_anchor(feature: &PipFeature) -> [f64; 2] {
     let largest = feature
@@ -19751,7 +19757,7 @@ fn build_map_panel(
 }
 
 /// Vertical paper-coordinate offset below a map subplot's plotting area at which the
-/// consolidated location-summary annotation is anchored (typed-`Plot` grid + GridJson paths).
+/// consolidated location-summary annotation is anchored (typed-`Plot` grid + `GridJson` paths).
 #[cfg(feature = "geocode")]
 const GEO_META_OFFSET: f64 = 0.02;
 
@@ -24895,7 +24901,7 @@ fn render_smart_grid_json(
 
 /// In-cell `r` value annotations for a correlation matrix, referenced to the given axes (use
 /// "x"/"y" for a standalone plot). Undefined correlations (heatmap gaps) get no label; the text
-/// flips to white on dark high-|r| cells for contrast against the RdBu scale.
+/// flips to white on dark high-|r| cells for contrast against the `RdBu` scale.
 fn corr_incell_annotations(matrix: &[Vec<f64>], xref: &str, yref: &str) -> Vec<Annotation> {
     let mut out = Vec::new();
     for (i, row_vals) in matrix.iter().enumerate() {

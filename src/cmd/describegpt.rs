@@ -4172,7 +4172,7 @@ fn build_inference_messages(
 }
 
 /// Build the `content` value for the final user message. When a binary `--context-file`
-/// attachment (PDF or image) is present in the CONTEXT_FILE global, the content becomes a
+/// attachment (PDF or image) is present in the `CONTEXT_FILE` global, the content becomes a
 /// Chat Completions block array `[{text}, {image_url|file}]` so the file rides alongside the
 /// prompt; otherwise it stays a plain string (backward compatible). Text context files need
 /// no block here - their contents are already appended to `text` by `get_prompt`.

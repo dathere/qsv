@@ -14146,7 +14146,12 @@ document.addEventListener("keydown", function (e) {
 /// bottom:50px) are pushed above the open drawer, mirroring the dictionary drawer's `right:`
 /// push of the same widgets.
 const DATA_DRAWER_SCRIPT: &str = r##"<style>
-  #qsv-data-drawer { position: fixed; left: 0; right: 0; bottom: 0; height: var(--qsv-data-h, min(55vh, 560px)); transform: translateY(103%); transition: transform 0.22s ease; z-index: 1120; display: flex; flex-direction: column; color: var(--qsv-page-ink, #1a1a1a); background: var(--qsv-page-bg, #ffffff); border-top: 1px solid rgba(127, 127, 127, 0.4); box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.18); }
+  /* effective drawer height: the grip persists --qsv-data-h in absolute px, so re-clamp it in
+     CSS against the CURRENT viewport — a later window resize / device rotation can otherwise
+     leave the persisted value outside the 20vh-90vh bounds. Every consumer (drawer height,
+     body margin, fixed-widget pushes) uses this one clamped var so they can never disagree. */
+  body { --qsv-data-h-eff: clamp(20vh, var(--qsv-data-h, min(55vh, 560px)), 90vh); }
+  #qsv-data-drawer { position: fixed; left: 0; right: 0; bottom: 0; height: var(--qsv-data-h-eff); transform: translateY(103%); transition: transform 0.22s ease; z-index: 1120; display: flex; flex-direction: column; color: var(--qsv-page-ink, #1a1a1a); background: var(--qsv-page-bg, #ffffff); border-top: 1px solid rgba(127, 127, 127, 0.4); box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.18); }
   #qsv-data-drawer.open { transform: none; }
   #qsv-data-drawer:focus { outline: none; }
   .qsv-data-drawer-grip { flex: none; height: 10px; cursor: ns-resize; touch-action: none; display: flex; align-items: center; justify-content: center; }
@@ -14162,9 +14167,9 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   #qsv-data-drawer div.dt-container > div.dt-layout-table { flex: 1 1 auto; min-height: 0; overflow: auto; }
   #qsv-data-table thead th { position: sticky; top: 0; z-index: 5; background: var(--qsv-page-bg, #ffffff); }
   #qsv-data-table thead tr.qsv-data-filters th { top: var(--qsv-data-th1-h, 34px); }
-  body.qsv-data-open { margin-bottom: var(--qsv-data-h, min(55vh, 560px)); }
-  body.qsv-data-open #qsv-logo { bottom: calc(var(--qsv-data-h, min(55vh, 560px)) + 12px); }
-  body.qsv-data-open #qsv-theme-toggle { bottom: calc(var(--qsv-data-h, min(55vh, 560px)) + 50px); }
+  body.qsv-data-open { margin-bottom: var(--qsv-data-h-eff); }
+  body.qsv-data-open #qsv-logo { bottom: calc(var(--qsv-data-h-eff) + 12px); }
+  body.qsv-data-open #qsv-theme-toggle { bottom: calc(var(--qsv-data-h-eff) + 50px); }
   tr.qsv-data-filters th { padding: 3px 6px; box-shadow: 0 1px 0 rgba(127, 127, 127, 0.35); }
   tr.qsv-data-filters input { width: 100%; box-sizing: border-box; font-size: 11px; padding: 2px 5px; color: inherit; background: transparent; border: 1px solid rgba(127, 127, 127, 0.45); border-radius: 4px; }
   #qsv-data-drawer table.dataTable { color: inherit; }

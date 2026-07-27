@@ -12938,7 +12938,8 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     assert!(html.contains("qsv-data-filters"));
     // resizable drawer grip + focus management + stacking above the dictionary drawer
     assert!(html.contains("qsv-data-drawer-grip"));
-    assert!(html.contains("--qsv-data-h"));
+    // the persisted px height is re-clamped in CSS against the current viewport (roborev #3864)
+    assert!(html.contains("--qsv-data-h-eff: clamp(20vh"));
     assert!(html.contains(r#"drawer.setAttribute("tabindex", "-1")"#));
     assert!(html.contains("z-index: 1120"));
     // plain embed of the vendored library (NO_COMPRESS): bundle header + real <style>

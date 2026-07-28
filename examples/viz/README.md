@@ -27,6 +27,18 @@ them (`smart_dict_treemap.html`, `smart_dict_sunburst.html`, `smart_world_chorop
 `smart_geospatial.html`) are `--dictionary infer` examples that need a local LLM to regenerate,
 so `gen_gallery.py` reuses the committed copies instead of re-running the LLM.
 
+To refresh those four, run the generator with a local LLM up (LM Studio / Ollama) and
+`QSV_LLM_BASE_URL` / `QSV_LLM_MODEL` set:
+
+- `QSV_VIZ_REGEN_LLM=1` rebuilds the four dashboards, but **reuses their existing dictionaries** —
+  `--dictionary infer` reuses the `<stem>.schema.json` sidecar beside each input, and describegpt
+  replays its own disk-cached completion. Use this when only the dashboard *rendering* changed.
+- `QSV_VIZ_REGEN_LLM=2` additionally **re-infers the dictionaries from scratch**: it deletes those
+  four sidecars and sets `QSV_VIZ_DICT_FRESH=1`, which makes viz skip sidecar reuse and pass
+  `--fresh` to describegpt. Use this after a model or prompt-file change. It makes real LLM calls,
+  so the four figures are not byte-stable across runs — review the diff before committing. The
+  curated dictionaries (`*_dict.schema.json`, `boston311`, `pitt311data`) are never touched.
+
 The gallery closes with three clickable **screenshot link-outs** — `smart_nyc311.html`,
 `pitt311data.html` and `smart_boston_311_2025.html` — full `--dict-info` **visual data
 dictionaries** over real municipal 311 data. They are shown as scaled preview images that open

@@ -1,4 +1,8 @@
 <!doctype html>
+<!-- Third-party software used by this page:
+     plotly.js 3.7.0 - (c) 2012-2026 Plotly, Inc. - MIT
+       (bundles MapLibre GL JS - BSD-3-Clause)
+     Full texts: https://github.com/dathere/qsv/blob/master/THIRD_PARTY_NOTICES.md -->
 <html lang="en">
 
 <head>
@@ -269,6 +273,12 @@
 })();
 </script>
 <script>(function(){function r(){parent.postMessage({qsvVizHeight:document.documentElement.scrollHeight},"*");}addEventListener("load",r);addEventListener("resize",r);if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);setTimeout(r,200);setTimeout(r,800);})();</script>
+<style>
+  #qsv-credits { font-size: 11px; line-height: 1.6; text-align: center; padding: 22px 16px 58px; color: var(--qsv-geo-meta, #5b6673); }
+  #qsv-credits a, #qsv-credits a:visited { color: var(--qsv-link, #0a5fb4); text-decoration: none; }
+  #qsv-credits a:hover, #qsv-credits a:focus-visible { color: var(--qsv-link-hover, #084b8f); text-decoration: underline; }
+</style>
+<footer id="qsv-credits">Charts: <a href="https://plotly.com/javascript/" target="_blank" rel="noopener">plotly.js</a> (MIT) &middot; <a href="https://github.com/dathere/qsv/blob/master/THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">notices</a></footer>
 </body>
 
 </html>

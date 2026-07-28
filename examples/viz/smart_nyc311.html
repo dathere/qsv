@@ -1,4 +1,11 @@
 <!doctype html>
+<!-- Third-party software used by this page:
+     plotly.js 3.7.0 - (c) 2012-2026 Plotly, Inc. - MIT
+       (bundles MapLibre GL JS - BSD-3-Clause)
+     DataTables 3.0.0 + Buttons/DateTime/Responsive/SearchBuilder
+       (c) SpryMedia Ltd - MIT
+     Basemap tiles (c) OpenStreetMap contributors (ODbL 1.0), (c) CARTO
+     Full texts: https://github.com/dathere/qsv/blob/master/THIRD_PARTY_NOTICES.md -->
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -6,6 +13,9 @@
 <title>nyc_311.csv — data overview</title>
 <script src="https://cdn.plot.ly/plotly-3.7.0.min.js" integrity="sha384-l4G4qURPwALv583BKlynU/4LiUx0rk9jcTX58Aq+Jc+jgWb52zeH2geZkSS3UPPs" crossorigin="anonymous"></script>
 <style>
+  #qsv-credits { font-size: 11px; line-height: 1.6; text-align: center; padding: 22px 16px 58px; color: var(--qsv-geo-meta, #5b6673); }
+  #qsv-credits a, #qsv-credits a:visited { color: var(--qsv-link, #0a5fb4); text-decoration: none; }
+  #qsv-credits a:hover, #qsv-credits a:focus-visible { color: var(--qsv-link-hover, #084b8f); text-decoration: underline; }
   body { font-family: Helvetica Neue, Helvetica, Arial, sans-serif; color: var(--qsv-page-ink); background: var(--qsv-page-bg); margin: 0; padding: 16px; }
   h1.qsv-viz-title { font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }
   .qsv-viz-geo-meta { font-size: 13px; color: var(--qsv-geo-meta); text-align: center; padding: 8px 4px 4px; }
@@ -2341,5 +2351,6 @@ document.addEventListener("keydown", function (e) {
 })();
 </script>
 <script>(function(){function r(){var b=document.body,c=getComputedStyle(b);parent.postMessage({qsvVizHeight:Math.ceil(b.offsetHeight+(parseFloat(c.marginTop)||0)+(parseFloat(c.marginBottom)||0))},"*");}addEventListener("load",r);addEventListener("resize",r);if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);setTimeout(r,200);setTimeout(r,800);var us=function(){parent.postMessage({qsvUserScroll:1},"*");};["wheel","touchstart","keydown","pointerdown"].forEach(function(t){addEventListener(t,us,{capture:true,passive:true});});})();</script>
+<footer id="qsv-credits">Charts: <a href="https://plotly.com/javascript/" target="_blank" rel="noopener">plotly.js</a> (MIT) &middot; Table: <a href="https://datatables.net/" target="_blank" rel="noopener">DataTables</a> (MIT) &middot; Basemap: &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors, &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> &middot; <a href="https://github.com/dathere/qsv/blob/master/THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">notices</a></footer>
 </body>
 </html>

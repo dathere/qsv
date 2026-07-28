@@ -6,6 +6,16 @@
 - continent uses plotly.js geo `scope` vocabulary (Oceania, North/South America, ...).
 - elevation_m is REAL (GeoNames elevation, falling back to the SRTM dem).
 - avg_annual_temp_c is SYNTHESIZED (rough latitude+elevation model; not measured).
+
+Source & license
+----------------
+GeoNames geographical database -- https://www.geonames.org/
+Licensed under Creative Commons Attribution 4.0 (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+
+CC BY 4.0 REQUIRES attribution, so the generated world_cities.csv must keep its GeoNames credit
+wherever it travels. It is recorded in examples/viz/README.md ("Data sources & licensing") and in
+the repository-root THIRD_PARTY_NOTICES.md -- keep both in step if this script's inputs change.
 """
 import csv
 import sys

@@ -19,6 +19,15 @@ autobins      = false
 include = [
     "src/**/*",
     "LICENSE-MIT",
+    "COPYING",
+    # Third-party attribution. THIRD_PARTY_NOTICES.md is the inventory; the
+    # vendored MIT-licensed assets must ship with their copyright notices, as
+    # their licenses require. (src/cmd/assets/LICENSE-DataTables.txt is already
+    # covered by "src/**/*" above, but luadate's is not — date.lua was being
+    # packaged without its notice.)
+    "THIRD_PARTY_NOTICES.md",
+    "resources/luau/vendor/luadate/LICENSE.txt",
+    "resources/luau/vendor/README.md",
     "README.md",
     "CHANGELOG.md",
     "resources/luau/vendor/luadate/date.lua",
@@ -687,21 +696,38 @@ nightly-polars =[
 
 [package.metadata.deb]
 maintainer           = "Konstantin Sivakov <konstantin@datHere.com>"
-copyright            = "2024, datHere Inc. <www.dathere.com>"
+copyright            = "2015, Andrew Gallant; 2026, datHere Inc. <www.dathere.com>"
+license-file         = ["LICENSE-MIT", "0"]
 extended-description = """A high performance CSV data-wrangling toolkit."""
 depends              = "$auto"
 section              = "utility"
 priority             = "optional"
 
-# Default feature and asset
+# Default feature and asset. THIRD_PARTY_NOTICES.md ships alongside the binary
+# so the vendored MIT/BSD notices travel with the package, as those licenses
+# require; license-file above generates /usr/share/doc/qsv/copyright.
 features = ["feature_capable"]
-assets   = [["target/release/qsv", "/usr/local/bin/", "755"]]
+assets   = [
+    ["target/release/qsv", "/usr/local/bin/", "755"],
+    ["THIRD_PARTY_NOTICES.md", "/usr/share/doc/qsv/", "644"],
+]
 
 # Conditional features and assets
+# qsvlite (`lite = []`) pulls in none of the vendored third-party components — no viz
+# (plotly/DataTables), no luau (LuaDate), no profile (DCAT/geoconnex schemas) — so it ships only
+# qsv's own license, via the inherited `license-file` above. Shipping the notices file here would
+# credit components this binary does not contain.
 [package.metadata.deb.variants.lite]
 features = ["lite"]
 assets   = [["target/release/qsvlite", "/usr/local/bin/", "755"]]
 
+# qsvdp DOES vendor third-party content: `datapusher_plus` enables `profile`, which embeds the
+# DCAT-US (CC0-1.0), DCAT-AP (CC-BY-4.0) and geoconnex (Apache-2.0) schemas. CC-BY-4.0 requires
+# attribution, so the notices must ship with this package too. `assets` REPLACES the parent
+# table's list rather than extending it, hence the explicit repeat.
 [package.metadata.deb.variants.datapusher_plus]
 features = ["datapusher_plus"]
-assets   = [["target/release/qsvdp", "/usr/local/bin/", "755"]]
+assets   = [
+    ["target/release/qsvdp", "/usr/local/bin/", "755"],
+    ["THIRD_PARTY_NOTICES.md", "/usr/share/doc/qsvdp/", "644"],
+]

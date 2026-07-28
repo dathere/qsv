@@ -8458,6 +8458,127 @@ fn logo_markup() -> String {
     )
 }
 
+/// Canonical location of the full third-party license texts, referenced from every generated page.
+const THIRD_PARTY_NOTICES_URL: &str =
+    "https://github.com/dathere/qsv/blob/master/THIRD_PARTY_NOTICES.md";
+
+/// Machine-readable attribution for the third-party software embedded in a generated page, emitted
+/// immediately after `<!doctype html>`.
+///
+/// plotly.js (MIT) always ships — embedded as a gzip+base64 payload, or referenced from the
+/// version-pinned CDN URL — and it bundles MapLibre GL JS (BSD-3-Clause), so both are named
+/// unconditionally. The vendored DataTables bundle (MIT) is only present when the data viewer
+/// drawer is rendered, and OpenStreetMap/CARTO basemap TILES are only fetched when a MapLibre
+/// panel is actually drawn; both clauses are therefore conditional, so the notice always describes
+/// what is genuinely in the file.
+///
+/// This matters because the embedded plotly.js and DataTables payloads are gzipped: their own
+/// copyright banners survive inside the payload but are not human-readable in the delivered
+/// artifact. This comment (and `third_party_footer`) restore that visibility.
+fn third_party_comment(datatables: bool, basemap: bool) -> String {
+    let datatables_line = if datatables {
+        "\n     DataTables 3.0.0 + Buttons/DateTime/Responsive/SearchBuilder\n       (c) SpryMedia \
+         Ltd - MIT"
+    } else {
+        ""
+    };
+    let basemap_line = if basemap {
+        "\n     Basemap tiles (c) OpenStreetMap contributors (ODbL 1.0), (c) CARTO"
+    } else {
+        ""
+    };
+    format!(
+        "<!-- Third-party software used by this page:\n     plotly.js {PLOTLY_CDN_VERSION} - (c) \
+         2012-2026 Plotly, Inc. - MIT\n       (bundles MapLibre GL JS - \
+         BSD-3-Clause){datatables_line}{basemap_line}\n     Full texts: {THIRD_PARTY_NOTICES_URL} \
+         -->"
+    )
+}
+
+/// The human-visible credits line, rendered as a page footer in the normal document flow.
+///
+/// Deliberately NOT a fixed-position widget: `#qsv-logo` and `#qsv-theme-toggle` are a coupled
+/// bottom-right stack that `body.qsv-data-open` / `body.qsv-dict-open` reposition, and adding a
+/// third fixed element would mean duplicating that offset logic in both drawer rulesets. A flow
+/// footer needs none of it.
+fn third_party_footer(datatables: bool, basemap: bool) -> String {
+    let mut parts = vec![
+        r#"Charts: <a href="https://plotly.com/javascript/" target="_blank" rel="noopener">plotly.js</a> (MIT)"#
+            .to_string(),
+    ];
+    if datatables {
+        parts.push(
+            r#"Table: <a href="https://datatables.net/" target="_blank" rel="noopener">DataTables</a> (MIT)"#
+                .to_string(),
+        );
+    }
+    if basemap {
+        parts.push(
+            r#"Basemap: &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors, &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>"#
+                .to_string(),
+        );
+    }
+    format!(
+        r#"<footer id="qsv-credits">{} &middot; <a href="{THIRD_PARTY_NOTICES_URL}" target="_blank" rel="noopener">notices</a></footer>"#,
+        parts.join(" &middot; ")
+    )
+}
+
+/// Styling for `third_party_footer`.
+///
+/// Every color is `var(--qsv-*, <fallback>)`. Inside a `viz smart` dashboard those variables are
+/// defined by `STYLE_TEMPLATE` and re-bound under `body.qsv-dark`, so the footer re-themes with
+/// the rest of the page for free — in both directions, and through the runtime Theme toggle.
+///
+/// The fallbacks are LIGHT-only, deliberately. They apply on exactly one page: the standalone
+/// single-chart output, which reuses plotly's own template — and that template gives `<body>` no
+/// background rule at all, so its paper is always the browser default (white). Even `--theme dark`
+/// only darkens the *plot's* `paper_bgcolor`, never the page. An earlier revision keyed the
+/// fallbacks on `@media (prefers-color-scheme: dark)`, which rendered `#6cb6ff` links and
+/// `#97a2b0` text on that white paper for anyone whose OS is in dark mode — the exact contrast
+/// failure `LINK_ON_LIGHT`/`LINK_ON_DARK` were introduced to fix. Media queries report the
+/// viewer's preference, not the paper actually under the text, so there is nothing to key on here.
+///
+/// The generous bottom padding keeps the last line clear of the fixed `#qsv-logo` /
+/// `#qsv-theme-toggle` stack when the page is scrolled to the end.
+fn third_party_footer_style() -> String {
+    format!(
+        "  #qsv-credits {{ font-size: 11px; line-height: 1.6; text-align: center; padding: 22px \
+         16px 58px; color: var(--qsv-geo-meta, #5b6673); }}\n  #qsv-credits a, #qsv-credits \
+         a:visited {{ color: var(--qsv-link, {LINK_ON_LIGHT}); text-decoration: none; }}\n  \
+         #qsv-credits a:hover, #qsv-credits a:focus-visible {{ color: var(--qsv-link-hover, \
+         {LINK_ON_LIGHT_HOVER}); text-decoration: underline; }}"
+    )
+}
+
+/// Splice the attribution comment + credits footer into an already-rendered document, for the
+/// single-chart path (which reuses plotly's own HTML template rather than `smart_html_page`).
+///
+/// Idempotent: a document that already carries the footer is returned untouched, so re-running
+/// this over generated output can never double up the notice.
+fn inject_third_party_notice(doc: &str, datatables: bool, basemap: bool) -> String {
+    if doc.contains(r#"<footer id="qsv-credits">"#) {
+        return doc.to_string();
+    }
+    let mut out = doc.to_string();
+    if let Some(pos) = out.to_ascii_lowercase().find("<!doctype html>") {
+        let at = pos + "<!doctype html>".len();
+        out.insert_str(
+            at,
+            &format!("\n{}", third_party_comment(datatables, basemap)),
+        );
+    }
+    if let Some(pos) = out.rfind("</body>") {
+        let block = format!(
+            "<style>\n{}\n</style>\n{}\n",
+            third_party_footer_style(),
+            third_party_footer(datatables, basemap)
+        );
+        out.insert_str(pos, &block);
+    }
+    out
+}
+
 /// Accent for actionable page-chrome links (the "Data Dictionary" and "(Explore)"/"(Preview)"
 /// links) on LIGHT page paper. Left at the UA default these render `#0000EE`/`#551A8B`, which is
 /// a contrast failure on dark paper and clashes with every built-in theme on light paper.
@@ -9571,12 +9692,19 @@ fn smart_html_page(
     meta_table: Option<&str>,
     photos: bool,
     data_chrome: Option<&str>,
+    has_basemap: bool,
 ) -> String {
     let js = plotly_js_block();
     let meta_table = meta_table.unwrap_or("");
     // data viewer drawer chrome (issue #4283): empty unless the metadata Rows link is rendered,
     // so dashboards without the viewer stay byte-identical.
     let data_chrome = data_chrome.unwrap_or("");
+    // Attribution for the embedded plotly.js / DataTables / basemap tiles. `data_chrome` being
+    // non-empty is exactly the condition under which the DataTables bundle is embedded, so it
+    // doubles as the "is DataTables in this file" test.
+    let tp_comment = third_party_comment(!data_chrome.is_empty(), has_basemap);
+    let tp_style = third_party_footer_style();
+    let tp_footer = third_party_footer(!data_chrome.is_empty(), has_basemap);
     let title = html_escape(title_text);
     let ToggleChrome {
         style: toggle_style,
@@ -9636,6 +9764,7 @@ fn smart_html_page(
     // fixed-position pattern (bottom-right) and CSS-swap the two logo variants off `body.qsv-dark`.
     format!(
         r#"<!doctype html>
+{tp_comment}
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -9643,6 +9772,7 @@ fn smart_html_page(
 <title>{title}</title>
 {js}
 <style>
+{tp_style}
   body {{ font-family: {FONT_FAMILY}; color: var(--qsv-page-ink); background: var(--qsv-page-bg); margin: 0; padding: 16px; }}
   h1.qsv-viz-title {{ font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}
   .qsv-viz-geo-meta {{ font-size: 13px; color: var(--qsv-geo-meta); text-align: center; padding: 8px 4px 4px; }}
@@ -9685,6 +9815,7 @@ fn smart_html_page(
 {data_chrome}
 {photo_chrome}
 {script}
+{tp_footer}
 </body>
 </html>
 "#
@@ -10006,9 +10137,11 @@ fn plotly_js_block() -> String {
 
 /// Vendored DataTables v3 bundle (core + `DateTime` + SearchBuilder, "DataTables" default styling,
 /// minified + concatenated by the DataTables download builder). Powers the `viz smart` data
-/// viewer drawer. MIT licensed; the builder header comment in each file records the exact
-/// component versions. To rebuild or bump, fetch the concatenated combination the version consts
-/// below pin:
+/// viewer drawer. MIT licensed (Copyright (C) 2008-2026, `SpryMedia` Ltd.) — the full license text
+/// and the component inventory live in `assets/LICENSE-DataTables.txt`, and the builder header
+/// comment in each file records the exact component versions. The bundle's `/*! ... */` copyright
+/// banners MUST be preserved when re-fetching: the MIT license is conditioned on keeping them
+/// intact. To rebuild or bump, fetch the concatenated combination the version consts below pin:
 ///
 /// ```text
 /// curl -sSL -o src/cmd/assets/datatables.min.js \
@@ -10201,6 +10334,13 @@ fn output_html(plot: &Plot, args: &Args) -> CliResult<()> {
         html = html.replacen(&needle, &block, 1);
     }
     let html = inject_fullscreen_chrome(&html);
+    // Single charts never carry the DataTables drawer (a `viz smart` feature); they fetch basemap
+    // tiles only for `viz map` and for `viz choropleth --map` (the MapLibre choropleth variant).
+    let html = inject_third_party_notice(
+        &html,
+        false,
+        args.cmd_map || (args.cmd_choropleth && args.flag_map),
+    );
     output_inline_html(&html, args)
 }
 
@@ -24971,6 +25111,8 @@ fn render_smart_grid_page(
         // the inline render path (see `has_noncartesian`), so it can't reach this typed grid.
         false,
         data_chrome,
+        // ...and for the same reason no MapLibre basemap tile is ever fetched from this page.
+        false,
     )
 }
 
@@ -26409,6 +26551,15 @@ fn render_smart_inline(
         matches!(&p.kind, PanelKind::Map { photos, outlier_photos, .. }
             if !photos.is_empty() || !outlier_photos.is_empty())
     });
+    // Only the two MapLibre panel kinds pull OpenStreetMap/CARTO tiles at view time. `Geo`,
+    // `Choropleth` and `AnimatedGeo` render on plotly's own `geo` subplot (natural-earth /
+    // albers-usa projections) with no tile server involved, so they earn no basemap attribution.
+    let has_basemap = panels.iter().any(|p| {
+        matches!(
+            &p.kind,
+            PanelKind::Map { .. } | PanelKind::ChoroplethMap { .. }
+        )
+    });
     // panels carry no overall title, so the dashboard title is shown as the page <h1>.
     smart_html_page(
         title_text,
@@ -26420,6 +26571,7 @@ fn render_smart_inline(
         meta_table,
         has_photos,
         data_chrome,
+        has_basemap,
     )
 }
 
@@ -32194,6 +32346,35 @@ mod tests {
                 .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'='),
             "digest is not base64: {payload}"
         );
+    }
+
+    #[test]
+    fn generator_scripts_pin_the_same_plotly_version() {
+        // `examples/viz/gen_gallery.py` and `scripts/gen_benchmark_viz.py` build their own pages
+        // (the gallery frame and the benchmark dashboard shell) rather than going through
+        // `smart_html_page`, so they carry a HAND-COPIED third-party notice naming the plotly
+        // version. Nothing else ties those strings to `PLOTLY_CDN_VERSION`: bumping the constant
+        // here would leave both scripts silently claiming the old version in every page they emit.
+        // This assertion is that missing link.
+        //
+        // If this fails after a plotly bump, update the `THIRD_PARTY_COMMENT` literal in both
+        // scripts to the new version.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for rel in [
+            "examples/viz/gen_gallery.py",
+            "scripts/gen_benchmark_viz.py",
+        ] {
+            let path = root.join(rel);
+            let src =
+                std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {rel}: {e}"));
+            let needle = format!("plotly.js {PLOTLY_CDN_VERSION} -");
+            assert!(
+                src.contains(&needle),
+                "{rel} does not pin plotly {PLOTLY_CDN_VERSION}. Its third-party notice is stale \
+                 — update the THIRD_PARTY_COMMENT literal in that script to match \
+                 PLOTLY_CDN_VERSION."
+            );
+        }
     }
 
     #[test]

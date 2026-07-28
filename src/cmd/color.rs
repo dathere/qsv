@@ -132,7 +132,8 @@ struct Colors {
     headers: [ContentStyle; 6],
 }
 
-// colors courtesy of tabiew/monokai
+// Monokai palette, courtesy of tabiew — https://github.com/shshemi/tabiew
+// (MIT, Copyright (c) 2024 Shayan Hashemi). See THIRD_PARTY_NOTICES.md.
 const COLORS_DARK: Colors = Colors {
     chrome:  fg!(hex!("#6a7282")),   // gray-500
     field:   fg!(hex!("#e5e7eb")),   // gray-200
@@ -147,7 +148,8 @@ const COLORS_DARK: Colors = Colors {
     ],
 };
 
-// colors courtesy of tabiew/monokai
+// Monokai palette, courtesy of tabiew — https://github.com/shshemi/tabiew
+// (MIT, Copyright (c) 2024 Shayan Hashemi). See THIRD_PARTY_NOTICES.md.
 const COLORS_LIGHT: Colors = Colors {
     chrome:  fg!(hex!("#6a7282")),   // gray-500
     field:   fg!(hex!("#1e2939")),   // gray-800
@@ -172,8 +174,17 @@ enum Theme {
 }
 
 //
-// Autolayout columns into terminal width. This is copied from the very simple HTML table column
-// algorithm. Returns a vector of column widths.
+// Autolayout columns into terminal width. Returns a vector of column widths.
+//
+// PROVENANCE UNKNOWN. The original comment here read "copied from the very simple HTML table
+// column algorithm" — naming no project, author, URL or license. It has been that way since
+// color.rs was first committed (d8dfda68f) with no further trace in the history, so the upstream
+// could not be identified during the third-party attribution audit. "The very simple HTML table
+// column algorithm" most likely refers to the general width-distribution approach browsers use
+// for <table> layout (a described technique, not a specific codebase), in which case there is
+// nothing to attribute. Deliberately left unattributed rather than credited to a guessed source:
+// an incorrect attribution is worse than an acknowledged gap. If you know the origin, please
+// open an issue so it can be credited properly.
 //
 
 fn autolayout(columns: &[usize], term_width: usize) -> Vec<usize> {

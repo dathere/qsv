@@ -72,6 +72,9 @@ jobs:
       shell: bash
       run: |
         mkdir qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+        # Ship qsv's license and the third-party notices with every archive:
+        # the vendored MIT/BSD components require their notices to travel with copies.
+        cp LICENSE-MIT COPYING THIRD_PARTY_NOTICES.md qsv-${{ needs.analyze-tags.outputs.previous-tag }}/
         # qsv uses release-luau (panic=unwind, qsv #3937) when built with luau, else release; the other bins use release
         for d in release-luau release; do
           rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true

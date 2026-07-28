@@ -570,6 +570,25 @@ cargo t --no-default-features -F all_features,mimalloc
 
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fjqnatividad%2Fqsv.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fjqnatividad%2Fqsv?ref=badge_large)
 
+## Third-Party Software
+
+qsv vendors and redistributes several open source components — among them
+[plotly.js](https://github.com/plotly/plotly.js) and (bundled inside it)
+[MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js), which power `qsv viz`;
+[DataTables](https://datatables.net/), which powers the `viz smart` data viewer;
+[LuaDate](https://github.com/Tieske/date), used by `qsv luau`; and vendored DCAT-US, DCAT-AP and
+geoconnex schemas used by `qsv profile`.
+
+[**THIRD_PARTY_NOTICES.md**](THIRD_PARTY_NOTICES.md) records each component's upstream, version or
+pinned commit, and license, together with the copyright notices and license texts those licenses
+require us to carry. Sample datasets have their own credits in
+[`examples/viz/README.md`](examples/viz/README.md) — note that `world_cities.csv` is GeoNames-derived
+and CC BY 4.0, which **requires attribution** if you reuse it.
+
+If you think something here is attributed incorrectly or not at all, please
+[open an issue](https://github.com/dathere/qsv/issues) — we would rather over-attribute than
+under-attribute.
+
 ## Origins
 
 qsv is a fork of the popular [xsv](https://github.com/BurntSushi/xsv) utility. Building on this solid foundation, it was forked in Sept 2021 and has since evolved to a general purpose data wrangling toolkit, adding numerous commands and features.

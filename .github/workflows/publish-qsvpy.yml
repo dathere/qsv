@@ -106,6 +106,9 @@ jobs:
       shell: bash
       run: |
           mkdir -p qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+          # Ship qsv's license and the third-party notices with every archive:
+          # the vendored MIT/BSD components require their notices to travel with copies.
+          cp LICENSE-MIT COPYING THIRD_PARTY_NOTICES.md qsv-${{ needs.analyze-tags.outputs.previous-tag }}/
           # qsv uses release-luau (panic=unwind, qsv #3937) when built with luau, else release; the other bins use release
           for d in release-luau release; do
             rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
@@ -200,7 +203,7 @@ jobs:
       run: |
         zipsign unsign zip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip
     - name: add/update qsvpy files to zip
-      run: 7z u -tzip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/qsv* -mx=9 -mmt=on
+      run: 7z u -tzip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/qsv* ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/LICENSE-MIT ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/COPYING ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/THIRD_PARTY_NOTICES.md -mx=9 -mmt=on
     - name: re-zipsign zip archive
       run: |
         zipsign sign zip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip qsvpriv.key

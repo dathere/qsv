@@ -45,6 +45,9 @@ jobs:
           cp -r examples/viz/. _site/
           mkdir -p _site/benchmarks
           cp -r benchmarks/. _site/benchmarks/
+          # The published dashboards embed plotly.js and DataTables, so the site
+          # carries qsv's license and the third-party notices those licenses require.
+          cp LICENSE-MIT COPYING THIRD_PARTY_NOTICES.md _site/
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site

@@ -427,3 +427,26 @@ qsv viz smart world_cities.csv --dictionary infer -o world_dashboard.html
 
 > Note: `--ohlc-open` is spelled out (not `--open`) because `--open` already means
 > "open the result in a browser".
+
+## Data sources & licensing
+
+These sample datasets exist to demonstrate `qsv viz`; they are not part of the qsv binary. Where a
+source requires attribution, the credit below **is** that attribution — please carry it along if you
+reuse the file. See [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md) for the full
+third-party inventory.
+
+| File | Source | License |
+|---|---|---|
+| `world_cities.csv` | Derived from [GeoNames](https://www.geonames.org/) (`cities15000` + `countryInfo`) by `gen_world_cities.py`. `elevation_m` is GeoNames data; `avg_annual_temp_c` is synthesized by qsv. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — **attribution required** |
+| `allegheny_dog_licenses.csv` | Allegheny County dog licenses, via the [Western Pennsylvania Regional Data Center](https://data.wprdc.org/) | See the WPRDC dataset page |
+| `nyc_311.csv`, `nyc_capital_projects.csv` | Samples of [NYC Open Data](https://opendata.cityofnewyork.us/) | See the NYC Open Data terms of use |
+| `cms_medicare_providers.csv` | Sample of [CMS](https://data.cms.gov/) provider data | US Government work |
+| `western_states.geojson` | Hand-authored by the qsv project (7 near-rectangular polygons) | MIT, with qsv |
+| Synthetic samples (`sales_sample.csv`, `seismic_events.csv`, `web_flows.csv`, …) | Generated for these examples | MIT, with qsv |
+
+### Boundary GeoJSON — provenance under review
+
+`allegheny_zip_boundaries.geojson`, `nyc_neighborhoods.geojson` and `japan_prefectures.geojson` are
+third-party-derived geographic boundary data whose upstream source and license have **not yet been
+confirmed**. They are deliberately left uncredited rather than credited incorrectly — an unverified
+attribution is worse than an acknowledged gap. If you know their provenance, please open an issue.

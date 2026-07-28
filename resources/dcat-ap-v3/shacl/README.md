@@ -9,6 +9,10 @@ the DCAT-AP v3.0.0 release.
 * Upstream: <https://github.com/SEMICeu/DCAT-AP>
 * Release: `releases/3.0.0/shacl/dcat-ap-SHACL.ttl`
 * Raw URL: <https://raw.githubusercontent.com/SEMICeu/DCAT-AP/master/releases/3.0.0/shacl/dcat-ap-SHACL.ttl>
+* License: CC-BY-4.0 (<https://creativecommons.org/licenses/by/4.0/>) — © SEMIC.eu /
+  European Commission. Attribution is required; the credit is carried in the
+  repository-root `THIRD_PARTY_NOTICES.md`. qsv redistributes the file unmodified
+  and adds no copyright claim over it.
 
 ## Why embedded
 

@@ -96,6 +96,9 @@ jobs:
       shell: bash
       run: |
         mkdir qsv-publish-testing
+        # Ship qsv's license and the third-party notices with every archive:
+        # the vendored MIT/BSD components require their notices to travel with copies.
+        cp LICENSE-MIT COPYING THIRD_PARTY_NOTICES.md qsv-publish-testing/
         # qsv uses release-luau (panic=unwind, qsv #3937) when built with luau, else release; the other bins use release
         for d in release-luau release; do
           rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
@@ -123,7 +126,7 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         fileName: qsv-publish-testing-${{ matrix.job.target }}-testing.zip
     - name: add/update nightly files to zip
-      run: 7z u -tzip qsv-publish-testing-${{ matrix.job.target }}-testing.zip ./qsv-publish-testing/qsv* -mx=9 -mmt=on
+      run: 7z u -tzip qsv-publish-testing-${{ matrix.job.target }}-testing.zip ./qsv-publish-testing/qsv* ./qsv-publish-testing/LICENSE-MIT ./qsv-publish-testing/COPYING ./qsv-publish-testing/THIRD_PARTY_NOTICES.md -mx=9 -mmt=on
     - name: Upload zipped binaries to release
       uses: svenstaro/upload-release-action@v2
       with:

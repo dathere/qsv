@@ -356,6 +356,7 @@ enum OutputMode {
 
 // shamelessly copied from
 // https://github.com/pola-rs/polars-cli/blob/main/src/main.rs
+// polars-cli is MIT licensed, Copyright (c) 2020 Ritchie Vink. See THIRD_PARTY_NOTICES.md.
 impl OutputMode {
     fn execute_query(
         &self,

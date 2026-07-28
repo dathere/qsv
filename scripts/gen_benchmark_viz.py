@@ -188,6 +188,32 @@ RESIZE_LISTENER_JS = (
     "if(Math.abs(f[i].clientHeight-h)>1)f[i].style.height=h+\"px\";break;}});</script>")
 
 
+# Attribution for the third-party software this dashboard loads. The benchmark charts are
+# `qsv viz` output rendered with QSV_VIZ_CDN=1, so plotly.js is referenced from the version-pinned
+# CDN rather than embedded; no DataTables drawer and no MapLibre basemap appear on these pages.
+# Kept in step with `third_party_comment`/`third_party_footer` in src/cmd/viz.rs.
+THIRD_PARTY_NOTICES_URL = "https://github.com/dathere/qsv/blob/master/THIRD_PARTY_NOTICES.md"
+THIRD_PARTY_COMMENT = (
+    "<!-- Third-party software used by this page:\n"
+    "     plotly.js 3.7.0 - (c) 2012-2026 Plotly, Inc. - MIT\n"
+    "       (bundles MapLibre GL JS - BSD-3-Clause)\n"
+    f"     Full texts: {THIRD_PARTY_NOTICES_URL} -->"
+)
+THIRD_PARTY_STYLE = (
+    "<style>\n"
+    "  #qsv-credits { font-size: 11px; line-height: 1.6; text-align: center; padding: 22px 16px 58px; color: var(--qsv-geo-meta, #5b6673); }\n"
+    "  #qsv-credits a, #qsv-credits a:visited { color: var(--qsv-link, #0a5fb4); text-decoration: none; }\n"
+    "  #qsv-credits a:hover, #qsv-credits a:focus-visible { color: var(--qsv-link-hover, #084b8f); text-decoration: underline; }\n"
+    "</style>"
+)
+THIRD_PARTY_FOOTER = (
+    '<footer id="qsv-credits">'
+    'Charts: <a href="https://plotly.com/javascript/" target="_blank" rel="noopener">plotly.js</a> (MIT)'
+    f' &middot; <a href="{THIRD_PARTY_NOTICES_URL}" target="_blank" rel="noopener">notices</a>'
+    "</footer>"
+)
+
+
 def inject_resize_reporter(html):
     html = re.sub(r"<script>[^<]*qsvVizHeight[^<]*</script>\n?", "", html)
     idx = html.rfind("</body>")
@@ -432,10 +458,11 @@ def build_index(figs, info):
     if m:
         chip = m.group(1).strip()
 
-    parts = ["<!doctype html>", "<html lang=en><head><meta charset=utf-8>",
+    parts = ["<!doctype html>", THIRD_PARTY_COMMENT,
+             "<html lang=en><head><meta charset=utf-8>",
              "<meta name=viewport content='width=device-width,initial-scale=1'>",
              "<title>qsv benchmark dashboard</title>",
-             f"<style>{PAGE_CSS}</style></head><body>"]
+             f"<style>{PAGE_CSS}</style>{THIRD_PARTY_STYLE}</head><body>"]
     parts.append("<header>")
     parts.append("<h1>qsv benchmark dashboard</h1>")
     parts.append(f"<p class=sub>Interactive charts of the qsv benchmark suite, rendered with "
@@ -481,6 +508,7 @@ def build_index(figs, info):
         f"Source benchmarks: <a href='https://github.com/dathere/qsv/blob/master/scripts/results/'>"
         "scripts/results</a>.</footer>")
     parts.append(RESIZE_LISTENER_JS)
+    parts.append(THIRD_PARTY_FOOTER)
     parts.append("</body></html>")
     with open(os.path.join(OUT, "index.html"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(parts))

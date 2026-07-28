@@ -20,6 +20,12 @@ src/.DS_Store
 *.svg
 perf.data*
 *.json
+# Exception: vendored third-party license texts must be tracked. The blanket *.txt above would
+# otherwise silently drop them, and a vendored MIT/BSD component whose copyright notice never gets
+# committed is exactly the compliance gap THIRD_PARTY_NOTICES.md exists to close.
+!src/cmd/assets/LICENSE-*.txt
+!resources/**/LICENSE*.txt
+
 # Exception: allow Claude Code settings, skill definition JSON files, npm config, and TypeScript configs
 !.claude/settings.json
 !.claude/skills/qsv/*.json

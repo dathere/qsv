@@ -385,6 +385,85 @@ project ships no `NOTICE` file. qsv redistributes the file unmodified.
 
 ---
 
+## Code adapted from other projects
+
+Beyond whole vendored components, a few places in qsv's own source were copied or adapted from
+other MIT-licensed projects. The code lives in qsv's files (and carries a pointer to this section
+at the site), so their copyright notices are reproduced here.
+
+### tabiew
+
+Upstream: <https://github.com/shshemi/tabiew>
+
+The Monokai light/dark terminal palettes in `src/cmd/color.rs` (`COLORS_DARK` / `COLORS_LIGHT`).
+
+```text
+MIT License
+
+Copyright (c) 2024 Shayan Hashemi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### polars-cli
+
+Upstream: <https://github.com/pola-rs/polars-cli>
+
+The `OutputMode::execute_query` implementation in `src/cmd/sqlp.rs`, copied from `src/main.rs`.
+
+```text
+Copyright (c) 2020 Ritchie Vink
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### Acknowledged influences (not copied)
+
+Two further places name an upstream as an influence rather than a source — the algorithm was
+reimplemented, not copied, so no license text applies:
+
+* `src/odhtcache.rs` — "inspired by" [race604/dedup](https://github.com/race604/dedup)
+* `src/cmd/cat.rs` — the `cat_rowskey` approach, "largely inspired by"
+  [vi/csvcatrow](https://github.com/vi/csvcatrow)
+
+A third, the `autolayout` column-width routine in `src/cmd/color.rs`, is documented in-place as
+**provenance unknown**: its original comment named no project, author, URL or license, and none
+could be identified. It is deliberately left uncredited rather than credited to a guess.
+
+---
+
 ## Sample data
 
 The datasets under [`examples/viz/`](examples/viz/) exist to demonstrate the

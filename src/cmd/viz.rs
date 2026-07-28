@@ -32365,6 +32365,13 @@ mod tests {
             "scripts/gen_benchmark_viz.py",
         ] {
             let path = root.join(rel);
+            // Neither script is in `Cargo.toml`'s package `include` list — they are repo tooling,
+            // not crate content, and shipping them in the tarball would be pointless bloat. So
+            // skip rather than fail when running from packaged sources; in a repo checkout (CI and
+            // local dev — the only places this can actually catch drift) they are always present.
+            if !path.is_file() {
+                continue;
+            }
             let src =
                 std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {rel}: {e}"));
             let needle = format!("plotly.js {PLOTLY_CDN_VERSION} -");

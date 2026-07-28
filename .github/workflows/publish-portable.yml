@@ -247,7 +247,10 @@ jobs:
       run: |
         zipsign unsign zip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip
     - name: add/update portable files to zip
-      run: 7z u -tzip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/qsv* -mx=9 -mmt=on
+      # The "Download latest release zip" step above overwrites the archive this job's own `7z a`
+      # built, so the licences staged for that one are gone by here — they must be re-added by
+      # name (not via a broader glob, which would fold in whatever else is staged).
+      run: 7z u -tzip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/qsv* ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/LICENSE-MIT ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/COPYING ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/THIRD_PARTY_NOTICES.md -mx=9 -mmt=on
     - name: re-zipsign zip archive
       run: |
         zipsign sign zip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip qsvpriv.key

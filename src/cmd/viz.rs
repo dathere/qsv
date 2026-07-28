@@ -11189,7 +11189,9 @@ fn dictionary_sidecar_path(input: &str) -> std::path::PathBuf {
 ///
 /// On unix the resulting mode matches what `fs::write` would have produced: an existing sidecar
 /// keeps its own mode, and a new one gets 0666 minus the process umask. Forcing a fixed mode here
-/// would either widen a deliberately private dictionary or ignore a restrictive umask.
+/// would either widen a deliberately private dictionary or ignore a restrictive umask. The temp
+/// file is created with that same target mode rather than a permissive default, so a private
+/// dictionary's contents are never briefly readable through the temp file mid-write.
 
 fn write_dictionary_sidecar(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
     #[cfg(unix)]
@@ -11209,18 +11211,28 @@ fn write_dictionary_sidecar(path: &std::path::Path, contents: &str) -> std::io::
 
     let mut builder = tempfile::Builder::new();
     builder.prefix(".qsv-dict-").suffix(".json.tmp");
-    // Creating a NEW sidecar: ask for 0666 and let the kernel subtract the process umask, which is
-    // exactly what `fs::write`'s create did. tempfile would otherwise create 0600, narrower than
-    // the umask calls for. An existing sidecar's real mode is restored after the write instead,
-    // since `set_permissions` (unlike creation) is not umask-filtered.
+    // Create the temp file with the mode the FINAL sidecar should have, not a permissive default:
+    // it holds the complete dictionary from the first write, so anything wider would expose the
+    // contents of a private sidecar for the length of the write. Replacing an existing sidecar
+    // reuses its mode; a new one asks for 0666 and lets the kernel subtract the process umask,
+    // exactly as `fs::write`'s create did (tempfile would otherwise use 0600, narrower than the
+    // umask calls for). Creation is umask-filtered, so this can only ever be NARROWER than the
+    // target - never wider - and the exact mode is restored after the write below.
     #[cfg(unix)]
-    builder.permissions(std::fs::Permissions::from_mode(0o666));
+    builder.permissions(
+        existing_perms
+            .clone()
+            .unwrap_or_else(|| std::fs::Permissions::from_mode(0o666)),
+    );
 
     let mut tmpfile = builder.tempfile_in(dir)?;
     tmpfile.write_all(contents.as_bytes())?;
     // flush to disk before the rename, so a crash right after it cannot leave the sidecar
     // pointing at unwritten data
     tmpfile.as_file_mut().sync_all()?;
+    // re-apply the existing mode exactly: creation above was umask-filtered, so bits the umask
+    // stripped (e.g. group-write on a 0660 sidecar) still have to be restored. `set_permissions`
+    // is not umask-filtered.
     #[cfg(unix)]
     if let Some(perms) = existing_perms {
         tmpfile.as_file().set_permissions(perms)?;
@@ -28387,6 +28399,17 @@ mod tests {
             std::fs::metadata(&sidecar).unwrap().permissions().mode() & 0o777,
             0o600,
             "replacing an existing sidecar must not widen its permissions"
+        );
+
+        // A mode with bits the umask would strip at creation time (group-write is removed by the
+        // common 022): the post-write `set_permissions` has to put them back, so this fails if
+        // creation alone is relied on.
+        std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o660)).unwrap();
+        write_dictionary_sidecar(&sidecar, r#"{"c":3}"#).unwrap();
+        assert_eq!(
+            std::fs::metadata(&sidecar).unwrap().permissions().mode() & 0o777,
+            0o660,
+            "a mode carrying bits the umask strips must still be restored exactly"
         );
 
         // the tempfile is renamed into place, never left lying next to the sidecar

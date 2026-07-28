@@ -3953,7 +3953,8 @@ fn viz_smart_metadata_table_always_renders() {
     assert!(html.contains(r#"<table class="qsv-viz-meta">"#));
     // the Rows cell also carries the data viewer's "(Explore)" link (issue #4283)
     assert!(html.contains(r##"<td class="qsv-viz-meta-k">Rows:</td><td>5 <a href="#""##));
-    assert!(html.contains("(Explore)</a></td>"));
+    assert!(html.contains(r#"(Explore)<svg class="qsv-link-icon""#));
+    assert!(html.contains("</svg></a></td>"));
     assert!(html.contains(r#"<td class="qsv-viz-meta-k">Columns:</td><td>3</td>"#));
     // assert on the label, never the timestamp value (it makes output non-deterministic).
     assert!(html.contains(r#"<td class="qsv-viz-meta-k">Compiled:</td>"#));
@@ -7394,8 +7395,11 @@ fn viz_smart_inline_theme_drives_page_chrome() {
     // readable even before body.qsv-dark is applied (regression: was hardcoded #4b5563 = dark
     // gray on dark background, nearly invisible). Assert the full :root block to avoid a false
     // pass from the always-present body.qsv-dark { --qsv-geo-meta: #9aa4b2 } rule.
+    // --qsv-link follows the same paper-not-mode rule: a dark-bg theme gets the light-on-dark
+    // accent in :root too, so the chrome links are readable before body.qsv-dark is applied.
     assert!(html.contains(
-        ":root { --qsv-page-bg: #111111; --qsv-page-ink: #f2f5fa; --qsv-geo-meta: #9aa4b2; }"
+        ":root { --qsv-page-bg: #111111; --qsv-page-ink: #f2f5fa; --qsv-geo-meta: #9aa4b2; \
+         --qsv-link: #6cb6ff; --qsv-link-hover: #9ecbff; }"
     ));
     assert!(html.contains(r#"var themeDefaultMode = "dark""#));
     // and the panels themselves carry the dark template
@@ -7444,6 +7448,12 @@ fn viz_smart_light_theme_palette_matches_chrome() {
     assert!(html.contains(r##"var LIGHT = { paper: "#EAEAF2", plot: "#EAEAF2", font: "#333333""##));
     // ... matching the seaborn page chrome (so page and charts agree), and it opens in light mode.
     assert!(html.contains("--qsv-page-bg: #EAEAF2"));
+    // and a LIGHT-paper theme gets the dark-on-light link accent in :root (the complement of
+    // the dark-paper case asserted in viz_smart_inline_theme_drives_page_chrome).
+    assert!(html.contains(
+        ":root { --qsv-page-bg: #EAEAF2; --qsv-page-ink: #333333; --qsv-geo-meta: #4b5563; \
+         --qsv-link: #0a5fb4; --qsv-link-hover: #084b8f; }"
+    ));
     assert!(html.contains(r#"var themeDefaultMode = "light""#));
     // the dark complement (toggle target) stays the generic fixed-dark set.
     assert!(html.contains(r##"var DARK = { paper: "#111111""##));
@@ -11384,7 +11394,7 @@ fn viz_smart_dict_info_grid_path() {
     );
     assert!(html.contains("qsvOpenDict"), "qsvOpenDict script missing");
     assert!(
-        html.contains("Data Dictionary</a>"),
+        html.contains(r#"Data Dictionary<svg class="qsv-link-icon""#),
         "Data Dictionary link missing"
     );
     // per-column anchors (stable prefix; the trailing hash is an implementation detail)
@@ -13024,7 +13034,10 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     let html = String::from_utf8_lossy(&out.stdout);
 
     // the metadata Rows cell carries the Explore link
-    assert!(html.contains("qsvOpenData()\">(Explore)</a>"));
+    assert!(html.contains("qsvOpenData()\">(Explore)<svg"));
+    // the link must pin :visited too — href="#" means one click would otherwise leave it the
+    // UA's #551A8B forever, unreadable on dark paper
+    assert!(html.contains(".qsv-viz-meta a.qsv-data-link:visited"));
     assert!(!html.contains("(Preview)"));
     // payloads: plain JSON rows + column config, with a recognizable cell value
     assert!(html.contains(r#"id="qsv-data-rows" type="application/json""#));
@@ -13075,7 +13088,7 @@ fn viz_smart_data_viewer_preview_over_threshold() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
 
-    assert!(html.contains("qsvOpenData()\">(Preview)</a>"));
+    assert!(html.contains("qsvOpenData()\">(Preview)<svg"));
     assert!(!html.contains("(Explore)"));
     assert!(html.contains("Data — first 5 of 10 rows (preview)"));
     assert!(html.contains("row5sentinel"));

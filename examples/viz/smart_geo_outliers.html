@@ -10,7 +10,12 @@
   h1.qsv-viz-title { font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }
   .qsv-viz-geo-meta { font-size: 13px; color: var(--qsv-geo-meta); text-align: center; padding: 8px 4px 4px; }
   .qsv-viz-dict-link { font-size: 13px; text-align: center; margin: -12px 0 16px; }
-  .qsv-viz-dict-link a { color: var(--qsv-geo-meta); }
+  /* A bordered pill rather than the muted caption color the geo meta line uses: this is the only
+     way into the dictionary, and as plain --qsv-geo-meta text it read as a caption, not a link. */
+  .qsv-viz-dict-link a, .qsv-viz-dict-link a:visited { display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px; border: 1px solid var(--qsv-link); border-radius: 999px; color: var(--qsv-link); font-weight: 600; text-decoration: none; }
+  .qsv-viz-dict-link a:hover, .qsv-viz-dict-link a:focus-visible { color: var(--qsv-link-hover); border-color: var(--qsv-link-hover); background: color-mix(in srgb, var(--qsv-link) 14%, transparent); }
+  /* sized in em so each glyph tracks the font-size of the link it suffixes */
+  .qsv-link-icon { width: 1.05em; height: 1.05em; flex: none; vertical-align: -0.15em; }
   table.qsv-viz-meta { margin: 0 auto 20px; border-collapse: collapse; font-size: 13px; }
   table.qsv-viz-meta td { padding: 2px 10px; vertical-align: top; }
   table.qsv-viz-meta td.qsv-viz-meta-k { color: var(--qsv-geo-meta); text-align: right; white-space: nowrap; }
@@ -25,8 +30,8 @@
   body.qsv-dark #qsv-logo .qsv-logo-light { display: none; }
   body.qsv-dark #qsv-logo .qsv-logo-dark { display: block; }
   body.qsv-dark #qsv-logo img { filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.6)) drop-shadow(0 0 1px rgba(255, 255, 255, 0.45)); }
-  :root { --qsv-page-bg: #FFFFFF; --qsv-page-ink: #2A3F5F; --qsv-geo-meta: #4b5563; }
-  body.qsv-dark { --qsv-page-bg: #111111; --qsv-page-ink: #f2f5fa; --qsv-geo-meta: #9aa4b2; }
+  :root { --qsv-page-bg: #FFFFFF; --qsv-page-ink: #2A3F5F; --qsv-geo-meta: #4b5563; --qsv-link: #0a5fb4; --qsv-link-hover: #084b8f; }
+  body.qsv-dark { --qsv-page-bg: #111111; --qsv-page-ink: #f2f5fa; --qsv-geo-meta: #9aa4b2; --qsv-link: #6cb6ff; --qsv-link-hover: #9ecbff; }
   /* Bottom-right, stacked just above the #qsv-logo: keeps the toggle clear of the Plotly modebar
      (always top-right, and hover-revealed) — which would otherwise overlap and block the modebar's
      rightmost buttons, including the fullscreen toggle — and of the geo extent menus (top-left). */
@@ -45,10 +50,10 @@
 <h1 class="qsv-viz-title">delivery_stops.csv — data overview</h1>
 
 <table class="qsv-viz-meta">
-<tr><td class="qsv-viz-meta-k">Rows:</td><td>200 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)</a></td></tr>
+<tr><td class="qsv-viz-meta-k">Rows:</td><td>200 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>10</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-28 00:19 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-28 01:57 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -660,7 +665,10 @@
      and `fixed` is not an option — Responsive picks what to collapse by measuring natural
      column widths, which fixed layout flattens. */
   #qsv-data-table td, #qsv-data-table thead th { overflow-wrap: anywhere; }
-  .qsv-viz-meta a.qsv-data-link { font-size: 0.9em; }
+  /* theme-aware: left to the UA default this is #0000EE, then #551A8B once visited — both
+     unreadable on dark paper, and href="#" means one click marks it visited forever */
+  .qsv-viz-meta a.qsv-data-link, .qsv-viz-meta a.qsv-data-link:visited { font-size: 0.9em; font-weight: 600; color: var(--qsv-link, #0a5fb4); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .qsv-viz-meta a.qsv-data-link:hover, .qsv-viz-meta a.qsv-data-link:focus-visible { color: var(--qsv-link-hover, #084b8f); text-decoration: underline; }
 </style>
 <script>
 (function () {

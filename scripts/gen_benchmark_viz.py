@@ -201,7 +201,7 @@ THIRD_PARTY_COMMENT = (
 )
 THIRD_PARTY_STYLE = (
     "<style>\n"
-    "  #qsv-credits { font-size: 11px; line-height: 1.6; text-align: center; padding: 22px 16px 58px; color: var(--qsv-geo-meta, #5b6673); }\n"
+    "  #qsv-credits { font-size: 11px; line-height: 1.6; text-align: center; padding: 10px 16px 12px; color: var(--qsv-geo-meta, #5b6673); }\n"
     "  #qsv-credits a, #qsv-credits a:visited { color: var(--qsv-link, #0a5fb4); text-decoration: none; }\n"
     "  #qsv-credits a:hover, #qsv-credits a:focus-visible { color: var(--qsv-link-hover, #084b8f); text-decoration: underline; }\n"
     "</style>"

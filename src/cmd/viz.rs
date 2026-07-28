@@ -8392,13 +8392,26 @@ fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
 
     // Raw-string templates with token placeholders, so the brace-heavy JS needs no `{{`/`}}`
     // escaping and rustfmt's `format_strings` (regular-string-only) won't reflow/mangle them.
+    // The link accent is keyed on the PAGE PAPER, not on the light/dark mode: the dark built-ins
+    // (PlotlyDark/SeabornDark) put a dark page under `:root` too, so they need the light-on-dark
+    // accent there as well. That is the same rule `--qsv-geo-meta` already follows.
+    let (light_link, light_link_hover) = match theme {
+        Some(BuiltinTheme::PlotlyDark | BuiltinTheme::SeabornDark) => {
+            (LINK_ON_DARK, LINK_ON_DARK_HOVER)
+        },
+        _ => (LINK_ON_LIGHT, LINK_ON_LIGHT_HOVER),
+    };
     let style = STYLE_TEMPLATE
         .replace("__LIGHT_BG__", light_bg)
         .replace("__LIGHT_INK__", light_ink)
         .replace("__LIGHT_GEO_META__", light_geo_meta)
+        .replace("__LIGHT_LINK__", light_link)
+        .replace("__LIGHT_LINK_HOVER__", light_link_hover)
         .replace("__DARK_BG__", dark_paper)
         .replace("__DARK_INK__", dark_font)
         .replace("__DARK_GEO_META__", "#9aa4b2")
+        .replace("__DARK_LINK__", LINK_ON_DARK)
+        .replace("__DARK_LINK_HOVER__", LINK_ON_DARK_HOVER)
         .replace("__FONT_FAMILY__", FONT_FAMILY);
 
     let button = "<button id=\"qsv-theme-toggle\" type=\"button\" aria-label=\"Toggle light/dark \
@@ -8445,10 +8458,30 @@ fn logo_markup() -> String {
     )
 }
 
+/// Accent for actionable page-chrome links (the "Data Dictionary" and "(Explore)"/"(Preview)"
+/// links) on LIGHT page paper. Left at the UA default these render `#0000EE`/`#551A8B`, which is
+/// a contrast failure on dark paper and clashes with every built-in theme on light paper.
+/// AA-contrasting against the whole light range (`#FFFFFF` … `#EAEAF2`).
+const LINK_ON_LIGHT: &str = "#0a5fb4";
+const LINK_ON_LIGHT_HOVER: &str = "#084b8f";
+/// The same accent for DARK page paper (`#111111`/`#222222`, and the runtime `body.qsv-dark`).
+const LINK_ON_DARK: &str = "#6cb6ff";
+const LINK_ON_DARK_HOVER: &str = "#9ecbff";
+
+/// Decorative glyph suffixes that give the two chrome links a visual cue. Both are hand-drawn
+/// (no third-party icon asset, so the generated dashboards carry no attribution obligation),
+/// stroked in `currentColor` so they re-theme with the link they sit in, and `aria-hidden` +
+/// `focusable="false"` so assistive tech announces just the link text.
+///
+/// An open book — the "Data Dictionary" link.
+const DICT_LINK_ICON: &str = r#"<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 4.3C6.9 3.3 5.4 2.8 3.6 2.8c-.6 0-1.1.05-1.5.15v9.6c.4-.1.9-.15 1.5-.15 1.8 0 3.3.5 4.4 1.5 1.1-1 2.6-1.5 4.4-1.5.6 0 1.1.05 1.5.15v-9.6c-.4-.1-.9-.15-1.5-.15-1.8 0-3.3.5-4.4 1.5Z"/><path d="M8 4.3v9.6"/></svg>"#;
+/// A spreadsheet grid — the "(Explore)"/"(Preview)" data-viewer link.
+const DATA_LINK_ICON: &str = r#"<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg>"#;
+
 /// CSS variables + toggle-button rule for `toggle_chrome`. Token placeholders are substituted at
 /// runtime; kept as a raw string so the literal CSS braces stay intact.
-const STYLE_TEMPLATE: &str = r"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page-ink: __LIGHT_INK__; --qsv-geo-meta: __LIGHT_GEO_META__; }
-  body.qsv-dark { --qsv-page-bg: __DARK_BG__; --qsv-page-ink: __DARK_INK__; --qsv-geo-meta: __DARK_GEO_META__; }
+const STYLE_TEMPLATE: &str = r"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page-ink: __LIGHT_INK__; --qsv-geo-meta: __LIGHT_GEO_META__; --qsv-link: __LIGHT_LINK__; --qsv-link-hover: __LIGHT_LINK_HOVER__; }
+  body.qsv-dark { --qsv-page-bg: __DARK_BG__; --qsv-page-ink: __DARK_INK__; --qsv-geo-meta: __DARK_GEO_META__; --qsv-link: __DARK_LINK__; --qsv-link-hover: __DARK_LINK_HOVER__; }
   /* Bottom-right, stacked just above the #qsv-logo: keeps the toggle clear of the Plotly modebar
      (always top-right, and hover-revealed) — which would otherwise overlap and block the modebar's
      rightmost buttons, including the fullscreen toggle — and of the geo extent menus (top-left). */
@@ -9570,9 +9603,10 @@ fn smart_html_page(
     // those dashboards stay byte-identical.
     let (dict_link, dict_chrome) = match dict_page {
         Some(page) => (
-            "<div class=\"qsv-viz-dict-link\"><a href=\"#\" onclick=\"return \
-             qsvOpenDict('')\">Data Dictionary</a></div>"
-                .to_string(),
+            format!(
+                "<div class=\"qsv-viz-dict-link\"><a href=\"#\" onclick=\"return \
+                 qsvOpenDict('')\">Data Dictionary{DICT_LINK_ICON}</a></div>"
+            ),
             format!(
                 "<script type=\"text/html\" id=\"qsv-dict-src\">{page}</script>\n{}",
                 // key on title AND dictionary content: two dashboards can share a title (e.g.
@@ -9613,7 +9647,12 @@ fn smart_html_page(
   h1.qsv-viz-title {{ font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}
   .qsv-viz-geo-meta {{ font-size: 13px; color: var(--qsv-geo-meta); text-align: center; padding: 8px 4px 4px; }}
   .qsv-viz-dict-link {{ font-size: 13px; text-align: center; margin: -12px 0 16px; }}
-  .qsv-viz-dict-link a {{ color: var(--qsv-geo-meta); }}
+  /* A bordered pill rather than the muted caption color the geo meta line uses: this is the only
+     way into the dictionary, and as plain --qsv-geo-meta text it read as a caption, not a link. */
+  .qsv-viz-dict-link a, .qsv-viz-dict-link a:visited {{ display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px; border: 1px solid var(--qsv-link); border-radius: 999px; color: var(--qsv-link); font-weight: 600; text-decoration: none; }}
+  .qsv-viz-dict-link a:hover, .qsv-viz-dict-link a:focus-visible {{ color: var(--qsv-link-hover); border-color: var(--qsv-link-hover); background: color-mix(in srgb, var(--qsv-link) 14%, transparent); }}
+  /* sized in em so each glyph tracks the font-size of the link it suffixes */
+  .qsv-link-icon {{ width: 1.05em; height: 1.05em; flex: none; vertical-align: -0.15em; }}
   table.qsv-viz-meta {{ margin: 0 auto 20px; border-collapse: collapse; font-size: 13px; }}
   table.qsv-viz-meta td {{ padding: 2px 10px; vertical-align: top; }}
   table.qsv-viz-meta td.qsv-viz-meta-k {{ color: var(--qsv-geo-meta); text-align: right; white-space: nowrap; }}
@@ -14290,7 +14329,10 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
      and `fixed` is not an option — Responsive picks what to collapse by measuring natural
      column widths, which fixed layout flattens. */
   #qsv-data-table td, #qsv-data-table thead th { overflow-wrap: anywhere; }
-  .qsv-viz-meta a.qsv-data-link { font-size: 0.9em; }
+  /* theme-aware: left to the UA default this is #0000EE, then #551A8B once visited — both
+     unreadable on dark paper, and href="#" means one click marks it visited forever */
+  .qsv-viz-meta a.qsv-data-link, .qsv-viz-meta a.qsv-data-link:visited { font-size: 0.9em; font-weight: 600; color: var(--qsv-link, #0a5fb4); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .qsv-viz-meta a.qsv-data-link:hover, .qsv-viz-meta a.qsv-data-link:focus-visible { color: var(--qsv-link-hover, #084b8f); text-decoration: underline; }
 </style>
 <script>
 (function () {
@@ -23373,7 +23415,7 @@ impl<'a> SmartCtx<'a> {
             let data_link = match &data_viewer {
                 Some((_, label)) => format!(
                     " <a href=\"#\" class=\"qsv-data-link\" onclick=\"return \
-                     qsvOpenData()\">{label}</a>"
+                     qsvOpenData()\">{label}{DATA_LINK_ICON}</a>"
                 ),
                 None => String::new(),
             };

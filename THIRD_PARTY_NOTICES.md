@@ -1,6 +1,6 @@
 # Third-party notices
 
-qsv is distributed under the MIT license (see [`LICENSE-MIT`](LICENSE-MIT).
+qsv is distributed under the MIT license (see [`LICENSE-MIT`](LICENSE-MIT)).
 
 This file records the third-party open source software and data that qsv
 vendors, embeds, or redistributes, together with the copyright notices and
@@ -68,8 +68,8 @@ THE SOFTWARE.
 
 Upstream: <https://github.com/pola-rs/polars> — version **0.54.4 at latest Python release tag**.
 
-`qsv` compiles polars into the binary via Cargo. The upstream copyright is retained alongside
-datHere's in the project's own license file, reproduced here for completeness.
+`qsv` compiles polars into the binary via Cargo. Its upstream MIT license and copyright notice
+are reproduced here.
 
 ```text
 Copyright (c) 2025 Ritchie Vink

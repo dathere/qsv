@@ -419,7 +419,7 @@ total can be audited against the source-of-truth in [`src/cmd/moarstats.rs`](htt
 
 **Counting convention.** Each conceptual statistical *measure* counts once even when it
 emits multiple companion columns; the count is therefore over distinct concepts, not over
-output column names. Three grouping rules are applied below:
+output column names. Four grouping rules are applied below:
 
 - **Jarque-Bera** (#17) counts as one measure even though it emits two columns
   (`jarque_bera` plus its `jarque_bera_pvalue`); the p-value is a derived companion of the
@@ -431,9 +431,12 @@ output column names. Three grouping rules are applied below:
   measure under two different boundary policies.
 - **Covariance** (bivariate #4) counts as one measure even though it emits two columns
   (`covariance_sample` and `covariance_population`); they differ only in the divisor.
+- **Theil's U** (bivariate #7) counts as one measure even though it emits two columns
+  (`u_field2_given_field1` and `u_field1_given_field2`); the coefficient is asymmetric, so
+  both directions are reported.
 
 A reader regenerating the count by tallying named output columns in `src/cmd/moarstats.rs`
-will arrive at a higher number; arrive at 55 by collapsing the three groups above.
+will arrive at a higher number; arrive at 56 by collapsing the four groups above.
 
 **Univariate measures (25)** — see [Derived Statistics](#derived-statistics), [Advanced Statistics](#advanced-statistics) and [Robust Statistics (Winsorized & Trimmed Means)](#robust-statistics-winsorized--trimmed-means):
 
@@ -487,7 +490,7 @@ will arrive at a higher number; arrive at 55 by collapsing the three groups abov
 | 6 | Normalized Mutual Information (`normalized_mutual_information`) |
 | 7 | Theil's U / uncertainty coefficient (`u_field2_given_field1` + `u_field1_given_field2` — counted as one measure, emits 2 columns) |
 
-**Total: 25 + 24 + 7 = 56 statistical measures.** Note that several measures expand into more than one output column (e.g. Jarque-Bera → 2 columns, Winsorized/Trimmed Means → 12 columns combined, Covariance → 2 columns), so the actual column count in a `<FILESTEM>.stats.csv` extended by `moarstats --advanced` plus its bivariate sidecar is higher than 55.
+**Total: 25 + 24 + 7 = 56 statistical measures.** Note that several measures expand into more than one output column (e.g. Jarque-Bera → 2 columns, Winsorized/Trimmed Means → 12 columns combined, Covariance → 2 columns), so the actual column count in a `<FILESTEM>.stats.csv` extended by `moarstats --advanced` plus its bivariate sidecar is higher than 56.
 
 ### Derived Statistics
 

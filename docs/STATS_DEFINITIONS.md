@@ -413,7 +413,7 @@ The `moarstats` command extends an existing stats CSV file (created by the `stat
 
 ### Count Reference
 
-`moarstats` documentation cites "up to an additional 55 statistical measures." That figure is
+`moarstats` documentation cites "up to an additional 56 statistical measures." That figure is
 the union of the three groups below; each is enumerated explicitly in this document so the
 total can be audited against the source-of-truth in [`src/cmd/moarstats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/moarstats.rs).
 
@@ -475,7 +475,7 @@ will arrive at a higher number; arrive at 55 by collapsing the three groups abov
 | 21–22 | Outlier impact | `outlier_impact`, `outlier_impact_ratio` |
 | 23–24 | Outlier boundary | `lower_outer_fence_zscore`, `upper_outer_fence_zscore` |
 
-**Bivariate measures (6, written to `<FILESTEM>.stats.bivariate.csv` under `--bivariate`)** — see [Bivariate Statistics](#bivariate-statistics):
+**Bivariate measures (7, written to `<FILESTEM>.stats.bivariate.csv` under `--bivariate`)** — see [Bivariate Statistics](#bivariate-statistics):
 
 | # | Measure |
 |---:|:---|
@@ -485,8 +485,9 @@ will arrive at a higher number; arrive at 55 by collapsing the three groups abov
 | 4 | Covariance (`covariance_sample` + `covariance_population` — counted as one measure, emits 2 columns) |
 | 5 | Mutual Information (`mutual_information`) |
 | 6 | Normalized Mutual Information (`normalized_mutual_information`) |
+| 7 | Theil's U / uncertainty coefficient (`u_field2_given_field1` + `u_field1_given_field2` — counted as one measure, emits 2 columns) |
 
-**Total: 25 + 24 + 6 = 55 statistical measures.** Note that several measures expand into more than one output column (e.g. Jarque-Bera → 2 columns, Winsorized/Trimmed Means → 12 columns combined, Covariance → 2 columns), so the actual column count in a `<FILESTEM>.stats.csv` extended by `moarstats --advanced` plus its bivariate sidecar is higher than 55.
+**Total: 25 + 24 + 7 = 56 statistical measures.** Note that several measures expand into more than one output column (e.g. Jarque-Bera → 2 columns, Winsorized/Trimmed Means → 12 columns combined, Covariance → 2 columns), so the actual column count in a `<FILESTEM>.stats.csv` extended by `moarstats --advanced` plus its bivariate sidecar is higher than 55.
 
 ### Derived Statistics
 
@@ -552,10 +553,12 @@ These statistics examine relationships between pairs of columns in a dataset. Th
 | `covariance_population` | Pairwise | Population covariance. Same as sample covariance but uses population formula (divides by n instead of n-1). | Computed using Welford's online algorithm. Formula: `sum((x - mean_x) * (y - mean_y)) / n`. Requires both fields to be numeric or date types. |
 | `mutual_information` | Pairwise | Mutual Information. Measures the amount of information obtained about one field by observing another. Values range from 0 (independent) to positive infinity. Works for **all field types** (numeric, date, string). | Computed from joint and marginal probability distributions. Formula: `MI(X,Y) = sum(p(x,y) * log2(p(x,y) / (p(x) * p(y))))`. Higher values indicate stronger relationship. Can be expensive for high-cardinality fields (use `--cardinality-threshold` to skip). See: [Mutual Information](https://en.wikipedia.org/wiki/Mutual_information) |
 | `normalized_mutual_information` | Pairwise | Normalized Mutual Information. Normalized version of mutual information, scaled by the geometric mean of individual entropies. Values range from 0 (independent) to 1 (perfectly dependent). | Computed as `MI(X,Y) / sqrt(H(X) * H(Y))` where H(X) and H(Y) are Shannon entropies of individual fields. Requires mutual information computation. See: [Normalized Mutual Information](https://en.wikipedia.org/wiki/Mutual_information#Normalized_variants) |
+| `u_field2_given_field1` | Pairwise | Theil's U (uncertainty coefficient) for field2 given field1. Directed measure of how much knowing field1 reduces uncertainty about field2. Values range from 0 (no reduction) to 1 (fully determined). | `mutual_information / H(field2)`. Emitted when `u` is selected. |
+| `u_field1_given_field2` | Pairwise | Theil's U (uncertainty coefficient) for field1 given field2. The reverse direction — Theil's U is asymmetric, so both are emitted. | `mutual_information / H(field1)`. Emitted when `u` is selected. |
 | `n_pairs` | Pairwise | Number of valid pairs used in computation. Indicates how many non-null value pairs were available for computing the relationship statistics. | Count of records where both fields have non-empty values. |
 
 **Configuration Options:**
-- `--bivariate-stats`: Select specific statistics (pearson, spearman, kendall, covariance, mi, nmi) or use "all" or "fast" (pearson + covariance). Default: `fast`.
+- `--bivariate-stats`: Select specific statistics (pearson, spearman, kendall, covariance, mi, nmi, u) or use "all" or "fast" (pearson + covariance). Default: `fast`.
 - `--cardinality-threshold`: Skip mutual information for field pairs where either field exceeds cardinality threshold (default: 1,000,000)
 - `--join-inputs`: Join multiple datasets before computing bivariate statistics
 - `--join-keys`: Specify join keys for each dataset

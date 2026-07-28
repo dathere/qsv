@@ -197,7 +197,7 @@ If you do not specify a prompt file, default prompts will be used.
 | `prompt`                 | The base prompt prepended to the per-option prompts.                                        |
 | `dictionary_refine_prompt` | The prompt for the second pass of `--two-pass` Data Dictionary inference.                 |
 
-All fields must be present in your prompt file. If you do not want to use a certain prompt, you can set it to an empty string.
+All fields except those with a serde default must be present in your prompt file. If you do not want to use a certain prompt, you can set it to an empty string.
 
 > [!IMPORTANT]
 > `language` and `prompt` have no serde default — omitting either causes a TOML deserialization

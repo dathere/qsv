@@ -1,7 +1,6 @@
 # Third-party notices
 
-qsv is distributed under the MIT license (see [`LICENSE-MIT`](LICENSE-MIT) and
-[`COPYING`](COPYING)).
+qsv is distributed under the MIT license (see [`LICENSE-MIT`](LICENSE-MIT).
 
 This file records the third-party open source software and data that qsv
 vendors, embeds, or redistributes, together with the copyright notices and
@@ -18,6 +17,7 @@ run `cargo tree` or a tool such as `cargo-about` for that inventory.
 | Component | Version / pin | License | How qsv ships it |
 |---|---|---|---|
 | [xsv](https://github.com/BurntSushi/xsv) | fork point, Sept 2021 | MIT | qsv is a fork; upstream copyright retained in `LICENSE-MIT` |
+| [polars](https://github.com/pola-rs/polars) | 0.54.4 at latest Python release tag | MIT | Cargo dependency, compiled into the `qsv` binary |
 | [plotly.js](https://github.com/plotly/plotly.js) | 3.7.0 | MIT | embedded in `qsv viz` HTML output (gzip+base64), or referenced by CDN |
 | [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js) | as bundled in plotly.js 3.7.0 | BSD-3-Clause | bundled *inside* plotly.js; ships wherever plotly.js does |
 | [plotly.rs](https://github.com/plotly/plotly.rs) | git rev `00fe051` | MIT | Cargo dependency, compiled into the `qsv` binary |
@@ -26,7 +26,7 @@ run `cargo tree` or a tool such as `cargo-about` for that inventory.
 | [DCAT-US v3 schemas](https://github.com/GSA/dcat-us) | commit `cf87890` | CC0-1.0 | vendored in `resources/dcat-us-v3/`, compiled into the binary |
 | [DCAT-AP v3 SHACL](https://github.com/SEMICeu/DCAT-AP) | release 3.0.0 | CC-BY-4.0 | vendored in `resources/dcat-ap-v3/`, compiled into the binary |
 | [geoconnex SHACL](https://github.com/internetofwater/nabu) | commit `e5d6ad3` | Apache-2.0 | vendored in `resources/geoconnex/`, compiled into the binary |
-| [GeoNames](https://www.geonames.org/) | `cities15000` + `countryInfo` | CC-BY-4.0 | source for the `examples/viz/world_cities.csv` sample |
+| [GeoNames](https://www.geonames.org/) | `cities15000` + `countryInfo` | CC-BY-4.0 | powers the `geocode` command and source for the `examples/viz/world_cities.csv` sample |
 | OpenStreetMap / CARTO basemap tiles | n/a | ODbL 1.0 / CARTO terms | fetched at view time by MapLibre; not redistributed |
 
 ---
@@ -64,6 +64,36 @@ THE SOFTWARE.
 
 ---
 
+## polars
+
+Upstream: <https://github.com/pola-rs/polars> — version **0.54.4 at latest Python release tag**.
+
+`qsv` compiles polars into the binary via Cargo. The upstream copyright is retained alongside
+datHere's in the project's own license file, reproduced here for completeness.
+
+```text
+Copyright (c) 2025 Ritchie Vink
+Copyright (c) 2024 (Some portions) NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## plotly.js
 
 Upstream: <https://github.com/plotly/plotly.js> — version **3.7.0**.
@@ -73,7 +103,7 @@ Upstream: <https://github.com/plotly/plotly.js> — version **3.7.0**.
 self-contained and works offline. With `QSV_VIZ_CDN` set, the bundle is
 referenced from a version-pinned CDN URL with Subresource Integrity instead.
 
-The bundle reaches qsv through the `plotly` Rust crate's bundled resource; its
+The bundle reaches qsv through the [`plotly.rs`](https://github.com/plotly/plotly.rs) crate's bundled resource; its
 own copyright header (`plotly.js v3.7.0 / Copyright 2012-2026, Plotly, Inc. /
 Licensed under the MIT license`) is preserved intact in the embedded payload.
 

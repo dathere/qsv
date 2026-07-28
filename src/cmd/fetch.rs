@@ -30,7 +30,8 @@ Set the --disk-cache-dir option and the environment variables QSV_DISKCACHE_TTL_
 QSV_DISKCACHE_TTL_REFRESH to change default DiskCache settings.
 
 Redis Cache:
-Another persistent, inter-session cache option is a Redis cache enabled with the --redis flag.
+Another persistent, inter-session cache option is a Redis cache, enabled with
+the --redis-cache flag.
 By default, it will connect to a local Redis instance at redis://127.0.0.1:6379/1,
 with a cache expiry Time-to-Live (TTL) of 2,419,200 seconds (28 days),
 and cache hits NOT refreshing the TTL of cached values.

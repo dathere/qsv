@@ -20,7 +20,9 @@ Note that this command uses LLMs for inferencing and is therefore prone to inacc
 
 ## Dictionary Options
 
-When using the `--dictionary` option, the following option controls what the Data Dictionary includes:
+When using the `--dictionary` option, the following options control what the Data Dictionary
+includes: `--num-examples` (default 5), `--truncate-str` (default 25), `--infer-content-type`,
+`--infer-null-values`, `--two-pass`, `--addl-cols` and `--addl-cols-list`.
 
 ### `--infer-content-type`
 
@@ -28,9 +30,9 @@ By default, the Data Dictionary's LLM pass only infers a human-friendly **Label*
 
 The Content Type is chosen from a fixed, curated vocabulary so the value stays stable and machine-mappable:
 
-`first_name`, `last_name`, `full_name`, `username`, `password`, `email`, `phone`, `street_address`, `building_number`, `secondary_address`, `city`, `state`, `state_abbr`, `zip_code`, `country`, `country_code`, `latitude`, `longitude`, `time_zone`, `company_name`, `job_title`, `uuid`, `credit_card`, `currency_code`, `isbn`, `ip_address`, `mac_address`, `url`, `user_agent`, `file_name`, `file_path`, `mime_type`, `color_hex`, `time`, `category`, `lorem_word`, `lorem_sentence`, `lorem_paragraph`, `free_text`, `unknown`
+`first_name`, `last_name`, `full_name`, `username`, `password`, `email`, `phone`, `street_address`, `building_number`, `secondary_address`, `city`, `state`, `state_abbr`, `zip_code`, `country`, `country_code`, `latitude`, `longitude`, `time_zone`, `company_name`, `job_title`, `uuid`, `credit_card`, `currency_code`, `isbn`, `ip_address`, `mac_address`, `url`, `user_agent`, `file_name`, `file_path`, `mime_type`, `color_hex`, `time`, `category`, `lorem_word`, `lorem_sentence`, `lorem_paragraph`, `free_text`, `street_name`, `industry`, `profession`, `unique_id`, `ipv6_address`, `license_plate`, `date`, `datetime`, `duration`, `unknown`
 
-Primitive types (`integer`, `decimal`, `boolean`, `date`, `datetime`) are intentionally **not** in the vocabulary — they are already covered by the Data Dictionary's deterministic `Type` column. Plain numeric, temporal, or boolean fields with no specific semantic meaning are classified as `unknown`, and any value the LLM returns outside the vocabulary is coerced to `unknown`.
+Primitive types (`integer`, `decimal`, `boolean`) are intentionally **not** in the vocabulary — they are already covered by the Data Dictionary's deterministic `Type` column. `date` and `datetime` *are* in the vocabulary, and may carry an optional LLM-inferred strftime suffix (e.g. `date:%Y-%m-%d`). Plain numeric or boolean fields with no specific semantic meaning are classified as `unknown`, and any value the LLM returns outside the vocabulary is coerced to `unknown`.
 
 When `--infer-content-type` is not set, the Data Dictionary output is unchanged.
 
@@ -125,7 +127,7 @@ qsv describegpt data.csv --tags --tag-vocab tags.csv --num-tags 5
 
 ## QSV_LLM_APIKEY
 
-When working with a cloud-based LLM, `describegpt` requires an API key. You can set this key using the `QSV_LLM_APIKEY` environment variable. Check [/docs/ENVIRONMENT_VARIABLES.md](/docs/ENVIRONMENT_VARIABLES.md) for more info.
+When working with a cloud-based LLM, `describegpt` requires an API key. You can set this key using the `QSV_LLM_APIKEY` environment variable. Check [/docs/ENVIRONMENT_VARIABLES.md](ENVIRONMENT_VARIABLES.md) for more info.
 
 When working with a Local LLM (i.e. if `--base-url` or `QSV_LLM_BASE_URL` contains "localhost"), `describegpt` will NOT require an API key.
 
@@ -139,7 +141,9 @@ the `QSV_LLM_APIKEY` environment variable. Pass `--api-key NONE` to suppress the
 ## `--format <format>`
 
 Use the `--format` option to set the output format. Supported values are `Markdown` (the default), `TSV`,
-`JSON`, `TOON`, `JSONSchema`, and `SemanticMd`.
+`JSON`, `TOON`, `JSONSchema`, `SemanticMd`, and `OKF`. `OKF` emits the Data Dictionary as an
+Open Knowledge Format document; its frontmatter `type` key is set with `--okf-type`
+(default `"CSV Table"`).
 
 - `Markdown` - human-readable Markdown (default).
 - `TSV` - tab-separated values.
@@ -176,7 +180,7 @@ If you do not specify a prompt file, default prompts will be used.
 | `author`                 | Your name.                                                                                  |
 | `version`                | The version of your prompt file.                                                            |
 | `tokens`                 | The maximum number of tokens in the completion output.                                      |
-| `format`                 | Output format: `Markdown`, `TSV`, `JSON`, `TOON`, `JSONSchema`, or `SemanticMd` (default `markdown`). The `--format` CLI flag takes precedence over this field. |
+| `format`                 | Output format: `Markdown`, `TSV`, `JSON`, `TOON`, `JSONSchema`, `SemanticMd`, or `OKF` (default `markdown`). The `--format` CLI flag takes precedence over this field. |
 | `system_prompt`          | Overall guidance prompt to the LLM.                                                         |
 | `dictionary_prompt`      | The prompt for the `--dictionary` option.                                                   |
 | `description_prompt`     | The prompt for the `--description` option.                                                  |
@@ -189,8 +193,16 @@ If you do not specify a prompt file, default prompts will be used.
 | `polars_sql_guidance`    | Polars-specific SQL generation guidelines.                                                  |
 | `dd_fewshot_examples`    | DuckDB "few-shot" examples. See https://www.promptingguide.ai/techniques/fewshot            |
 | `p_fewshot_examples`     | Polars "few-shot" examples.                                                                 |
+| `language`               | The natural language the LLM should respond in.                                             |
+| `prompt`                 | The base prompt prepended to the per-option prompts.                                        |
+| `dictionary_refine_prompt` | The prompt for the second pass of `--two-pass` Data Dictionary inference.                 |
 
 All fields must be present in your prompt file. If you do not want to use a certain prompt, you can set it to an empty string.
+
+> [!IMPORTANT]
+> `language` and `prompt` have no serde default — omitting either causes a TOML deserialization
+> error. `dictionary_refine_prompt` does have a default, so omitting it is harmless.
+> See `resources/describegpt_defaults.toml` for a complete, working reference file.
 
 Within your prompts, you can use the following MiniJinja variables (use `{{ variable }}` syntax).
 These are replaced in the prompt sent to the LLM with their respective values at run-time:

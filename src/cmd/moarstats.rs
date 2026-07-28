@@ -115,13 +115,18 @@ Currently computes the following 25 additional univariate statistics:
 24. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.
     https://en.wikipedia.org/wiki/Winsorized_mean
-    Also computes: winsorized_stddev, winsorized_variance, winsorized_cv, winsorized_range,
-    and winsorized_stddev_ratio (winsorized_stddev / overall_stddev).
+    Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):
+    winsorized_stddev_<PCT>, winsorized_variance_<PCT>, winsorized_cv_<PCT>,
+    winsorized_range_<PCT>, and winsorized_<PCT>_stddev_ratio
+    (winsorized stddev / overall stddev). Note the ratio column interpolates <PCT>
+    before _stddev_ratio, unlike the others.
 25. Trimmed Mean: Excludes values outside thresholds, then computes mean.
     Only values within thresholds are included in the calculation.
     https://en.wikipedia.org/wiki/Truncated_mean
-    Also computes: trimmed_stddev, trimmed_variance, trimmed_cv, trimmed_range,
-    and trimmed_stddev_ratio (trimmed_stddev / overall_stddev).
+    Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):
+    trimmed_stddev_<PCT>, trimmed_variance_<PCT>, trimmed_cv_<PCT>, trimmed_range_<PCT>,
+    and trimmed_<PCT>_stddev_ratio (trimmed stddev / overall stddev). Note the ratio
+    column interpolates <PCT> before _stddev_ratio, unlike the others.
     By default, uses Q1 and Q3 as thresholds (25% winsorization/trimming).
     With --use-percentiles, uses configurable percentiles (e.g., 5th/95th) as thresholds
     with --pct-thresholds.
@@ -179,7 +184,7 @@ all values for computation.
 
 BIVARIATE STATISTICS:
 
-The `moarstats` command also computes the following 6 bivariate statistics:
+The `moarstats` command also computes the following 7 bivariate statistics:
  1. Pearson's correlation
     Measures linear correlation between two numeric/date fields.
     Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation).
@@ -208,6 +213,12 @@ The `moarstats` command also computes the following 6 bivariate statistics:
     Normalized version of mutual information, scaled by the geometric mean of individual entropies.
     Values range from 0 (independent) to 1 (perfectly dependent).
     https://en.wikipedia.org/wiki/Mutual_information#Normalized_variants
+ 7. Theil's U (uncertainty coefficient)
+    Directed measure of how much knowing one field reduces uncertainty about the other.
+    Asymmetric, so two columns are emitted: u_field2_given_field1 and u_field1_given_field2.
+    Values range from 0 (no reduction) to 1 (fully determined).
+    Selected with `u` in --bivariate-stats (or via "all").
+    https://en.wikipedia.org/wiki/Uncertainty_coefficient
 
 These bivariate statistics are computed when the `--bivariate` flag is used
 and require an indexed CSV file (index will be auto-created if missing).

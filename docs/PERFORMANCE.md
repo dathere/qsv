@@ -65,6 +65,11 @@ Over time, we realized that the cached stats can be used to make other commands 
 - `pivotp` uses the cache extensively to automatically infer the best aggregation function to use based on the attributes of the pivot and value columns.
 - `sample` uses the cache to skip unnecessary scanning and to inform its sampling strategies.
 - `pragmastat` uses the cache to automatically filter out non-numeric columns and to support Date/DateTime columns by converting them to epoch milliseconds for analysis.
+- `viz` uses the cache (together with the frequency cache) to drive `viz smart` chart selection.
+- `describegpt` uses summary statistics to give the LLM context about each column.
+- `scoresql` analyzes queries against the stats, moarstats & frequency caches to produce performance scores.
+- `profile` uses the cache for DCAT/Croissant metadata extraction.
+- `synthesize` uses the cache to model each column's distribution.
 
 For the most part, the default caching behavior works transparently, though you will notice several files with the same file stem will start appearing in the same location as your CSV files. As metadata is tiny by nature and very useful on its own, a conscious decision was made not to hide them.
 
@@ -124,10 +129,13 @@ compiler can lay out and inline hot code optimally. PGO measurably improves qsv 
 commands (see [issue #1448](https://github.com/dathere/qsv/issues/1448)).
 
 The prebuilt qsv binaries for **native targets** are PGO-optimized: `x86_64-unknown-linux-gnu`,
-`aarch64-unknown-linux-gnu`, `x86_64-pc-windows-msvc`, `x86_64-pc-windows-gnu`, and
-`aarch64-apple-darwin`. These show `prebuilt-pgo` as their `QSV_KIND` in `qsv --version`.
+`aarch64-unknown-linux-gnu`, `x86_64-pc-windows-msvc`, and `aarch64-apple-darwin`.
+These show `prebuilt-pgo` as their `QSV_KIND` in `qsv --version`.
 Cross-compiled / emulated targets (and `x86_64-unknown-linux-musl`) are **not** PGO-optimized, because
 the instrumented binary cannot be run on the build host to collect a training profile.
+`x86_64-pc-windows-gnu` is also **not** PGO-optimized, for a different reason: rustup's stable
+`rust-std` for that target ships no profiler runtime, so an instrumented build fails with
+`can't find crate for 'profiler_builtins'`.
 
 ### Building a PGO-optimized qsv yourself
 
@@ -354,7 +362,7 @@ nightly release build zip files, should you need to pin Rust to a specific night
 
 ## Benchmarking for Performance
 
-Use and fine-tune the [benchmark script](scripts/benchmarks.sh) when tweaking qsv's performance to your environment.
+Use and fine-tune the [benchmark script](../scripts/benchmarks.sh) when tweaking qsv's performance to your environment.
 Don't be afraid to change the benchmark data and the qsv commands to something that is more representative of your
 workloads.
 

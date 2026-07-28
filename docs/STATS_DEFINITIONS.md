@@ -32,8 +32,12 @@
     - [Outlier Impact Statistics](#outlier-impact-statistics)
     - [Outlier Boundary Statistics](#outlier-boundary-statistics)
 - [pragmastat](#pragmastat)
-  - [One-Sample Mode (Default)](#one-sample-mode-default)
-  - [Two-Sample Mode](#two-sample-mode)
+  - [Modes](#modes)
+    - [Default Mode (Stats Cache Append)](#default-mode-stats-cache-append)
+    - [Standalone Mode (`--standalone`)](#standalone-mode---standalone)
+    - [Two-Sample Mode (`-t` / `--twosample`)](#two-sample-mode--t----twosample)
+    - [Compare1 Mode (`--compare1 <spec>`)](#compare1-mode---compare1-spec)
+    - [Compare2 Mode (`--compare2 <spec>`)](#compare2-mode---compare2-spec)
   - [Options](#options)
   - [Performance Characteristics](#performance-characteristics)
   - [When Values Are Blank](#when-values-are-blank)
@@ -134,7 +138,7 @@ The command supports various caching options to improve performance on subsequen
 | 47 | `percentiles` | `--percentiles` (single column containing the comma-separated values listed in `--percentile-list`) |
 | 48 | `zero_padded_numeric` | `--zero-padded-numeric` (`true` when leading/padding zeros would be lost if the column were cast to a number: the inferred `type` is `String` — a leading zero is exactly what forces an otherwise-numeric column to infer as `String` — and every non-null value is numeric-shaped: an all-digit integer (zip codes, barcodes, padded IDs), a zero-padded decimal code such as `007.1`/`05.10` (ICD-9, Dewey Decimal, Harmonized System codes), or a plain number mixed in; empty otherwise. Only `String`-typed columns are ever flagged) |
 
-**Total: 48 statistics** (27 streaming + 21 non-streaming, beyond the `field`/`type` identifiers). 48 is the *maximum* — it's the size of the union across all flag combinations. The actual emitted column count for any particular run depends on which flags are set: any single run emits at most 48 stats columns because `median` (#28) and `q2_median` (#33) are mutually exclusive — `median` is only emitted under `--median` alone, while `q2_median` replaces it whenever `--quartiles` or `--everything` is set. Runs without `--everything` emit fewer columns (only the streaming 27 plus whichever opt-in groups are enabled). The non-streaming statistics that retain per-column samples (every stat in this group except `zero_padded_numeric`, which is streaming/constant-memory) use memory-aware chunking for large files, dynamically calculating chunk size based on available memory and record sampling. The enumeration above is the source-of-truth for the "48 summary statistics" count quoted in `README.md` and `docs/help/stats.md`; it is sourced from the `Stats::stat_headers` builder in [`src/cmd/stats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs).
+**Total: 48 statistics** (27 streaming + 21 non-streaming, beyond the `field`/`type` identifiers). 48 is the *maximum* — it's the size of the union across all flag combinations. The actual emitted column count for any particular run depends on which flags are set: any single run emits at most 47 stats columns because `median` (#28) and `q2_median` (#33) are mutually exclusive — `median` is only emitted under `--median` alone, while `q2_median` replaces it whenever `--quartiles` or `--everything` is set. Runs without `--everything` emit fewer columns (only the streaming 27 plus whichever opt-in groups are enabled). The non-streaming statistics that retain per-column samples (every stat in this group except `zero_padded_numeric`, which is streaming/constant-memory) use memory-aware chunking for large files, dynamically calculating chunk size based on available memory and record sampling. The enumeration above is the source-of-truth for the "48 summary statistics" count quoted in `README.md` and `docs/help/stats.md`; it is sourced from the `Stats::stat_headers` builder in [`src/cmd/stats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs).
 
 ### Weighted Statistics
 
@@ -573,22 +577,30 @@ These statistics require scanning the original CSV file. They provide robust alt
 - Default mode: Requires `q1` and `q3` in baseline stats
 - Percentile mode: Requires `percentiles` in baseline stats and `--use-percentiles` flag
 
+> [!NOTE]
+> `<PCT>` below is the threshold suffix carried by the corresponding mean column — `25pct` by
+> default, or `5pct` (or whatever `--pct-thresholds` specifies) under `--use-percentiles`. The
+> suffix is **structural, never optional**: the derived names are built from the mean column name,
+> so `winsorized_stddev` on its own is never emitted. Note also that the two `*_stddev_ratio`
+> columns interpolate `<PCT>` *before* `_stddev_ratio` (e.g. `trimmed_25pct_stddev_ratio`),
+> unlike the others, which append it.
+
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
 | `winsorized_mean_25pct` | Variable | Winsorized mean using Q1/Q3 thresholds (25% winsorization). | All values are included, but values below Q1 are set to Q1 and values above Q3 are set to Q3, then mean is computed. For dates/datetimes, returned in RFC3339 format. |
 | `winsorized_mean_5pct` | Variable | Winsorized mean using percentile thresholds (5th/95th percentiles). | Only computed when `--use-percentiles` is set. Column name varies based on `--pct-thresholds` (e.g., `winsorized_mean_10pct` for 10th/90th percentiles). |
-| `winsorized_stddev` | Variable | Standard deviation of winsorized values. | Sample standard deviation computed from winsorized values. |
-| `winsorized_variance` | Variable | Variance of winsorized values. | Sample variance computed from winsorized values. |
-| `winsorized_cv` | Variable | Coefficient of variation for winsorized values. | `winsorized_stddev / winsorized_mean`. Returns `None` if mean is zero. |
-| `winsorized_range` | Variable | Range of winsorized values. | `max_winsorized - min_winsorized`. |
-| `winsorized_stddev_ratio` | Variable | Ratio of winsorized stddev to overall stddev. | `winsorized_stddev / stddev`. Compares robust vs non-robust spread. Returns `None` if overall stddev is zero. |
+| `winsorized_stddev_<PCT>` | Variable | Standard deviation of winsorized values. | Sample standard deviation computed from winsorized values. |
+| `winsorized_variance_<PCT>` | Variable | Variance of winsorized values. | Sample variance computed from winsorized values. |
+| `winsorized_cv_<PCT>` | Variable | Coefficient of variation for winsorized values. | `winsorized_stddev / winsorized_mean`. Returns `None` if mean is zero. |
+| `winsorized_range_<PCT>` | Variable | Range of winsorized values. | `max_winsorized - min_winsorized`. |
+| `winsorized_<PCT>_stddev_ratio` | Variable | Ratio of winsorized stddev to overall stddev. | `winsorized_stddev / stddev`. Compares robust vs non-robust spread. Returns `None` if overall stddev is zero. |
 | `trimmed_mean_25pct` | Variable | Trimmed mean using Q1/Q3 thresholds (25% trimming). | Only values within Q1 and Q3 are included in the mean calculation. For dates/datetimes, returned in RFC3339 format. |
 | `trimmed_mean_5pct` | Variable | Trimmed mean using percentile thresholds (5th/95th percentiles). | Only computed when `--use-percentiles` is set. Column name varies based on `--pct-thresholds`. |
-| `trimmed_stddev` | Variable | Standard deviation of trimmed values. | Sample standard deviation computed from trimmed values (only values within thresholds). |
-| `trimmed_variance` | Variable | Variance of trimmed values. | Sample variance computed from trimmed values. |
-| `trimmed_cv` | Variable | Coefficient of variation for trimmed values. | `trimmed_stddev / trimmed_mean`. Returns `None` if mean is zero. |
-| `trimmed_range` | Variable | Range of trimmed values. | `max_trimmed - min_trimmed`. |
-| `trimmed_stddev_ratio` | Variable | Ratio of trimmed stddev to overall stddev. | `trimmed_stddev / stddev`. Compares robust vs non-robust spread. Returns `None` if overall stddev is zero. |
+| `trimmed_stddev_<PCT>` | Variable | Standard deviation of trimmed values. | Sample standard deviation computed from trimmed values (only values within thresholds). |
+| `trimmed_variance_<PCT>` | Variable | Variance of trimmed values. | Sample variance computed from trimmed values. |
+| `trimmed_cv_<PCT>` | Variable | Coefficient of variation for trimmed values. | `trimmed_stddev / trimmed_mean`. Returns `None` if mean is zero. |
+| `trimmed_range_<PCT>` | Variable | Range of trimmed values. | `max_trimmed - min_trimmed`. |
+| `trimmed_<PCT>_stddev_ratio` | Variable | Ratio of trimmed stddev to overall stddev. | `trimmed_stddev / stddev`. Compares robust vs non-robust spread. Returns `None` if overall stddev is zero. |
 
 See: [Winsorized Mean](https://en.wikipedia.org/wiki/Winsorized_mean), [Truncated Mean](https://en.wikipedia.org/wiki/Truncated_mean)
 
@@ -1336,4 +1348,4 @@ If you maintain qsv on a big-endian platform, the practical large-file toolkit i
 The DataSketches fallback applies to `stats` and `frequency` only. Two adjacent commands have their own characteristics:
 
 - **`moarstats`** computes the [Advanced](#advanced-statistics), [Bivariate](#bivariate-statistics), [Robust](#robust-statistics-winsorized--trimmed-means), and [Outlier](#outlier-statistics) statistic families. Most require either two passes or a full in-memory column (e.g., outlier detection needs the IQR + every value; correlation needs paired columns held together). There is no sketch fallback — for very large inputs, sample first with `qsv sample` and run `moarstats` on the sample, or pre-filter columns to the ones you actually need.
-- **`pragmastat`** ([one-sample mode](#one-sample-mode-default) and [two-sample mode](#two-sample-mode)) computes deterministic robust estimators that require full-sample residuals. It is designed for inputs that fit comfortably in memory; for very large inputs, sample down first.
+- **`pragmastat`** ([default mode](#default-mode-stats-cache-append) and [two-sample mode](#two-sample-mode--t----twosample)) computes deterministic robust estimators that require full-sample residuals. It is designed for inputs that fit comfortably in memory; for very large inputs, sample down first.

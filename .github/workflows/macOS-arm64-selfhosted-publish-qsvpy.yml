@@ -146,7 +146,7 @@ jobs:
     - name: install 7zip
       run: brew install sevenzip
     - name: add/update qsvpy files to zip
-      run: 7zz u -tzip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/* -mx=9 -mmt=on
+      run: 7zz u -tzip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/qsv* ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/LICENSE-MIT ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/COPYING ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/THIRD_PARTY_NOTICES.md -mx=9 -mmt=on
     - name: re-zipsign zip archive
       run: |
         zipsign sign zip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip qsvpriv.key

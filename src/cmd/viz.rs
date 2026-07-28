@@ -550,6 +550,9 @@ smart options:
                            beside the input as <stem>.schema.json so you can fine-tune it; if that
                            file already exists, it is reused as-is (skipping the LLM) - edit it to
                            fine-tune, or delete it to force a fresh re-infer.
+                           Set QSV_VIZ_DICT_FRESH=1 to ignore an existing sidecar and bypass
+                           describegpt's completion cache, forcing a genuinely fresh inference
+                           that overwrites the sidecar on success.
                            Generation/read failures soft-fall back to the stats-only dashboard.
                            The dictionary also drives the KPI overview row via two optional
                            per-field hints in a property's "x-qsv" object (edit them in the saved
@@ -9769,6 +9772,24 @@ fn viz_cdn() -> bool {
     util::get_envvar_flag("QSV_VIZ_CDN")
 }
 
+/// Whether `viz smart --dictionary infer` forces a genuinely FRESH Data Dictionary inference.
+/// Off by default: reuse is the cheap, documented behavior.
+///
+/// Two independent layers cache an inferred dictionary, and this bypasses BOTH — defeating only
+/// one leaves the other silently serving the old dictionary:
+///   1. the `<stem>.schema.json` sidecar beside the input, normally reused as-is (skipping the LLM
+///      entirely), and
+///   2. describegpt's own completion cache (`~/.qsv-cache/describegpt`, 28-day TTL), bypassed by
+///      passing it `--fresh`.
+///
+/// Intended for regenerating dictionary-driven artifacts (e.g. the `examples/viz` gallery's
+/// `--dictionary infer` dashboards) after a describegpt or prompt-file change. Note a successful
+/// re-infer OVERWRITES the sidecar, including a hand-edited one; a failed infer leaves it untouched
+/// and soft-falls back to the stats-only dashboard.
+fn viz_dict_fresh() -> bool {
+    util::get_envvar_flag("QSV_VIZ_DICT_FRESH")
+}
+
 /// gzip (at `level`) + standard-base64 encode, for `<script type="application/gzip-b64">`
 /// payloads. Base64's alphabet has no `<`, so the payload can never contain `</script>` and
 /// embeds into HTML with no further escaping. Returns an empty string on failure (callers fall
@@ -15466,9 +15487,10 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
 
     let json_text = if is_infer {
         let sidecar = dictionary_sidecar_path(input);
-        if sidecar.exists() {
+        if sidecar.exists() && !viz_dict_fresh() {
             // Reuse the on-disk dictionary from a prior infer (or the user's fine-tuned edit),
-            // skipping the LLM entirely.
+            // skipping the LLM entirely. `QSV_VIZ_DICT_FRESH` opts out of this reuse (see
+            // `viz_dict_fresh`), re-inferring even when the sidecar is present.
             match std::fs::read_to_string(&sidecar) {
                 Ok(text) => {
                     // surface the model the reused dictionary was generated with, when it carries
@@ -15481,6 +15503,8 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
                          '{}'{model_note} (delete it to re-infer).",
                         sidecar.display()
                     ));
+                    // (only reachable on the reuse path, so a `QSV_VIZ_DICT_FRESH` run - which
+                    // skips reuse entirely - honors --dictionary-context rather than ignoring it.)
                     if args.flag_dictionary_context.is_some() {
                         viz_note(&format!(
                             "viz smart --dictionary-context: ignored when reusing the existing \
@@ -15515,6 +15539,12 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
             if let Some(ctx) = args.flag_dictionary_context.as_deref() {
                 dg_args.push("--context-file");
                 dg_args.push(ctx);
+            }
+            if viz_dict_fresh() {
+                // Bypass describegpt's completion cache too, not just the sidecar — otherwise a
+                // re-infer replays the cached completion and yields a byte-identical dictionary,
+                // making the whole re-infer a silent no-op.
+                dg_args.push("--fresh");
             }
             let infer_start = Instant::now();
             match util::run_qsv_cmd(
@@ -15577,8 +15607,9 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
 
     // Persist a freshly-inferred dictionary next to the input so users can fine-tune it and later
     // runs can reuse it. Only when the parse succeeded (never persist output the loader can't read)
-    // and only for a fresh infer (never clobber a reused/hand-edited file). Best-effort: warn on a
-    // write failure, matching this function's soft-fail-to-stats philosophy.
+    // and only for a fresh infer (never clobber a reused/hand-edited file) - except under
+    // `QSV_VIZ_DICT_FRESH`, whose whole point is to re-infer and overwrite the sidecar in place.
+    // Best-effort: warn on a write failure, matching this function's soft-fail-to-stats philosophy.
     if let (Some(path), Some(_)) = (persist_to.as_ref(), data.as_ref()) {
         match std::fs::write(path, &json_text) {
             Ok(()) => viz_note(&format!(

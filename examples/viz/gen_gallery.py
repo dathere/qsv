@@ -69,11 +69,18 @@ SMART_IFRAME = {
 # so a normal `gen_gallery.py` run stays LLM-free and deterministic. To refresh them in-place, run
 # with QSV_VIZ_REGEN_LLM=1 and your local LLM up (LM Studio / Ollama) — main() then treats this set
 # as empty so these `--dictionary infer` figures are regenerated and re-cdnified like the others.
-# NOTE: because they are reused as-is, these figures intentionally LAG new smart-dashboard features
-# until an LLM-backed regen — e.g. they do not yet show the KPI/Completeness overview row that the
-# deterministic dashboards above carry. This is deferred on purpose: they will be regenerated in one
-# pass once describegpt emits the gauge_range/target dictionary hints, so the KPI row lands with its
-# gauges/deltas rather than as bare number tiles now.
+#
+# LEVEL 1 IS NOT ENOUGH TO ACTUALLY REACH THE LLM. Two caches short-circuit it independently, so a
+# =1 run can rebuild these dashboards from a dictionary no LLM was consulted for:
+#   1. `viz smart --dictionary infer` REUSES an existing `<stem>.schema.json` sidecar beside the
+#      input, skipping describegpt entirely; and
+#   2. describegpt replays its own disk-cached completion (~/.qsv-cache/describegpt, 28-day TTL).
+# QSV_VIZ_REGEN_LLM=2 defeats both: it deletes these four dashboards' inferred sidecars (see
+# `llm_dictionary_sidecars`) and exports QSV_VIZ_DICT_FRESH=1, which makes viz skip sidecar reuse
+# AND pass `--fresh` to describegpt. Use =2 when the dictionaries themselves must be re-inferred
+# (a model/prompt change); =1 remains right when only the dashboard rendering changed.
+# NOTE: =2 makes real LLM calls, so these four figures are NOT byte-stable across runs — review the
+# diff by hand before committing, and never wire =2 into an automated/CI regen.
 PREGENERATED = {
     "smart_dict_treemap.html",
     "smart_dict_sunburst.html",
@@ -1221,6 +1228,49 @@ def cleanup_sidecars():
     return removed
 
 
+def regen_llm_level():
+    """0 = off, 1 = regenerate the LLM dashboards, 2 = also force a genuinely FRESH inference.
+
+    Only explicit values enable it, so QSV_VIZ_REGEN_LLM=0/false/off (or empty) stays off rather
+    than enabling LLM work just because the var is present. Note "2" is deliberately matched
+    before the truthy set -- it is not a member of it, so a plain truthiness test would read
+    QSV_VIZ_REGEN_LLM=2 as OFF and silently disable LLM regen entirely.
+    """
+    raw = os.environ.get("QSV_VIZ_REGEN_LLM", "").strip().lower()
+    if raw == "2":
+        return 2
+    return 1 if raw in {"1", "true", "t", "yes", "y", "on"} else 0
+
+
+def llm_dictionary_sidecars():
+    """The `<stem>.schema.json` sidecars belonging to the LLM (`--dictionary infer`) dashboards.
+
+    Derived from PREGENERATED -> SMART_IFRAME (reversed to iframe->title) -> FIGURES -> input CSV.
+    NOT from scanning argv for `--dictionary infer`: seismic_events.csv reaches inference via
+    `--bivariate` implying it, with no `--dictionary` in its args, so an argv scan finds only 3 of
+    the 4 and would silently leave the geospatial dashboard's sidecar in place.
+
+    A blanket `*.schema.json` sweep is FORBIDDEN: the curated dictionaries beside these
+    (allegheny_dogs_dict, nyc311_dict, sales_kpi_dict, onboarding_funnel_dict,
+    nyc_capital_projects_dict, boston311, pitt311data) are hand-authored, reviewed and tracked in
+    git, and drive several other figures via an explicit `--dictionary <path>`.
+    """
+    iframe_to_title = {v: k for k, v in SMART_IFRAME.items()}
+    args_by_title = {t: a for (t, _d, _f, a) in FIGURES}
+    paths = []
+    for iframe in sorted(PREGENERATED):
+        args = args_by_title.get(iframe_to_title.get(iframe, ""), None)
+        if args and len(args) >= 2 and args[0] == "smart" and args[1].endswith(".csv"):
+            paths.append(os.path.join(VIZ_DIR, os.path.splitext(args[1])[0] + ".schema.json"))
+    # Fail closed: a retitled figure would otherwise quietly shrink this list and reintroduce the
+    # exact silent no-op (a "fresh" run reusing a cached dictionary) this mode exists to fix.
+    if len(paths) != len(PREGENERATED):
+        raise SystemExit(
+            f"gen_gallery.py: mapped only {len(paths)} of {len(PREGENERATED)} PREGENERATED "
+            "dashboards back to an input CSV -- SMART_IFRAME/FIGURES titles are out of step")
+    return paths
+
+
 # Counting words as README.md writes them. Only the range the gallery can plausibly reach.
 _NUM_WORDS = {
     1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
@@ -1305,12 +1355,27 @@ def main():
         )
     # QSV_VIZ_REGEN_LLM opts into regenerating the `--dictionary infer` dashboards live (needs a
     # local LLM up); otherwise their committed HTML is reused so a normal run stays LLM-free.
-    # Only an explicit truthy value enables it, so QSV_VIZ_REGEN_LLM=0/false/off (or empty) stays
-    # off rather than enabling LLM work just because the var is present.
-    regen_llm = os.environ.get("QSV_VIZ_REGEN_LLM", "").strip().lower() in {"1", "true", "yes", "on"}
-    pregenerated = set() if regen_llm else PREGENERATED
+    # Level 2 additionally forces the DICTIONARIES to be re-inferred -- see `regen_llm_level` and
+    # the PREGENERATED block comment for why level 1 alone never reaches the LLM.
+    regen_level = regen_llm_level()
+    if regen_level >= 2:
+        # Drives off module-level PREGENERATED, NOT the `pregenerated` local below: that local is
+        # deliberately EMPTY in regen mode, so sweeping from it would delete nothing in the only
+        # mode where the sweep matters.
+        os.environ["QSV_VIZ_DICT_FRESH"] = "1"
+        swept = 0
+        for sidecar in llm_dictionary_sidecars():
+            if os.path.exists(sidecar):
+                os.unlink(sidecar)
+                swept += 1
+        sys.stderr.write(
+            f"QSV_VIZ_REGEN_LLM=2: deleted {swept} inferred dictionary sidecar(s) and set "
+            "QSV_VIZ_DICT_FRESH=1 -- dictionaries will be re-inferred from scratch\n"
+        )
+    pregenerated = set() if regen_level else PREGENERATED
     if not pregenerated:
-        sys.stderr.write("QSV_VIZ_REGEN_LLM set: regenerating LLM dashboards (local LLM required)\n")
+        sys.stderr.write(
+            f"QSV_VIZ_REGEN_LLM={regen_level}: regenerating LLM dashboards (local LLM required)\n")
     # reuse the existing scaffold verbatim: everything up to and including `<div class="grid">`,
     # minus any previous banner (re-added below so it stays a single, current copy)
     with open(GALLERY, encoding="utf-8") as fh:

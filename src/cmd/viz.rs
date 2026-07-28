@@ -8497,11 +8497,12 @@ fn third_party_comment(datatables: bool, basemap: bool) -> String {
 
 /// The human-visible credits line, rendered as a page footer in the normal document flow.
 ///
-/// Deliberately NOT a fixed-position widget: `#qsv-logo` and `#qsv-theme-toggle` are a coupled
-/// bottom-right stack that `body.qsv-data-open` / `body.qsv-dict-open` reposition, and adding a
-/// third fixed element would mean duplicating that offset logic in both drawer rulesets. A flow
-/// footer needs none of it.
-fn third_party_footer(datatables: bool, basemap: bool) -> String {
+/// Deliberately does NOT credit the basemap tiles: MapLibre draws its own always-visible
+/// attribution control ("(c) CARTO, (c) OpenStreetMap contributors") in the corner of every tile
+/// panel, so the ODbL/CARTO obligation is already discharged *inside the map*, where it belongs.
+/// Repeating it down in the footer was pure duplication. The machine-readable
+/// `third_party_comment` still names the tile sources unconditionally.
+fn third_party_footer(datatables: bool) -> String {
     let mut parts = vec![
         r#"Charts: <a href="https://plotly.com/javascript/" target="_blank" rel="noopener">plotly.js</a> (MIT)"#
             .to_string(),
@@ -8509,12 +8510,6 @@ fn third_party_footer(datatables: bool, basemap: bool) -> String {
     if datatables {
         parts.push(
             r#"Table: <a href="https://datatables.net/" target="_blank" rel="noopener">DataTables</a> (MIT)"#
-                .to_string(),
-        );
-    }
-    if basemap {
-        parts.push(
-            r#"Basemap: &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors, &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>"#
                 .to_string(),
         );
     }
@@ -8539,12 +8534,14 @@ fn third_party_footer(datatables: bool, basemap: bool) -> String {
 /// failure `LINK_ON_LIGHT`/`LINK_ON_DARK` were introduced to fix. Media queries report the
 /// viewer's preference, not the paper actually under the text, so there is nothing to key on here.
 ///
-/// The generous bottom padding keeps the last line clear of the fixed `#qsv-logo` /
-/// `#qsv-theme-toggle` stack when the page is scrolled to the end.
+/// Padding is deliberately tight. An earlier revision reserved 58px below the last line to clear
+/// a fixed `#qsv-logo` / `#qsv-theme-toggle` stack pinned to the bottom-right; both now sit in
+/// this same footer row (see `.qsv-page-foot`), so that reserved band was dead space on every
+/// page — and on the single-chart page, which never had the fixed stack, it always was.
 fn third_party_footer_style() -> String {
     format!(
-        "  #qsv-credits {{ font-size: 11px; line-height: 1.6; text-align: center; padding: 22px \
-         16px 58px; color: var(--qsv-geo-meta, #5b6673); }}\n  #qsv-credits a, #qsv-credits \
+        "  #qsv-credits {{ font-size: 11px; line-height: 1.6; text-align: center; padding: 10px \
+         16px 12px; color: var(--qsv-geo-meta, #5b6673); }}\n  #qsv-credits a, #qsv-credits \
          a:visited {{ color: var(--qsv-link, {LINK_ON_LIGHT}); text-decoration: none; }}\n  \
          #qsv-credits a:hover, #qsv-credits a:focus-visible {{ color: var(--qsv-link-hover, \
          {LINK_ON_LIGHT_HOVER}); text-decoration: underline; }}"
@@ -8572,7 +8569,7 @@ fn inject_third_party_notice(doc: &str, datatables: bool, basemap: bool) -> Stri
         let block = format!(
             "<style>\n{}\n</style>\n{}\n",
             third_party_footer_style(),
-            third_party_footer(datatables, basemap)
+            third_party_footer(datatables)
         );
         out.insert_str(pos, &block);
     }
@@ -8603,10 +8600,11 @@ const DATA_LINK_ICON: &str = r#"<svg class="qsv-link-icon" viewBox="0 0 16 16" f
 /// runtime; kept as a raw string so the literal CSS braces stay intact.
 const STYLE_TEMPLATE: &str = r"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page-ink: __LIGHT_INK__; --qsv-geo-meta: __LIGHT_GEO_META__; --qsv-link: __LIGHT_LINK__; --qsv-link-hover: __LIGHT_LINK_HOVER__; }
   body.qsv-dark { --qsv-page-bg: __DARK_BG__; --qsv-page-ink: __DARK_INK__; --qsv-geo-meta: __DARK_GEO_META__; --qsv-link: __DARK_LINK__; --qsv-link-hover: __DARK_LINK_HOVER__; }
-  /* Bottom-right, stacked just above the #qsv-logo: keeps the toggle clear of the Plotly modebar
-     (always top-right, and hover-revealed) — which would otherwise overlap and block the modebar's
-     rightmost buttons, including the fullscreen toggle — and of the geo extent menus (top-left). */
-  #qsv-theme-toggle { position: fixed; bottom: 50px; right: 12px; z-index: 1000; font: 13px __FONT_FAMILY__; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--qsv-page-ink); background: var(--qsv-page-bg); color: var(--qsv-page-ink); cursor: pointer; opacity: 0.85; }
+  /* In the normal document flow, inside the footer row (.qsv-page-foot) beside the credits and
+     the logo. It used to be pinned bottom-right, which cost a 58px reserved band under the
+     credits plus per-drawer offset rules; riding in the footer needs neither, and it can no
+     longer collide with the Plotly modebar (top-right) or the geo extent menus (top-left). */
+  #qsv-theme-toggle { font: 13px __FONT_FAMILY__; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--qsv-page-ink); background: var(--qsv-page-bg); color: var(--qsv-page-ink); cursor: pointer; opacity: 0.85; }
   #qsv-theme-toggle:hover { opacity: 1; }";
 
 /// The light/dark toggle `<script>` for `toggle_chrome`. Token placeholders are substituted at
@@ -9704,7 +9702,7 @@ fn smart_html_page(
     // doubles as the "is DataTables in this file" test.
     let tp_comment = third_party_comment(!data_chrome.is_empty(), has_basemap);
     let tp_style = third_party_footer_style();
-    let tp_footer = third_party_footer(!data_chrome.is_empty(), has_basemap);
+    let tp_footer = third_party_footer(!data_chrome.is_empty());
     let title = html_escape(title_text);
     let ToggleChrome {
         style: toggle_style,
@@ -9760,8 +9758,8 @@ fn smart_html_page(
     // A RAW-string template (actual newlines, not `\n` escapes) so rustfmt's `format_strings` can't
     // split an escape across a line wrap and corrupt the output — it once mangled `\n{script}` into
     // a stray `\` + `n` in every page. `format!` still doubles the literal CSS braces (`{{`/`}}`)
-    // and substitutes each placeholder in a single pass. The `#qsv-logo` rules mirror the toggle's
-    // fixed-position pattern (bottom-right) and CSS-swap the two logo variants off `body.qsv-dark`.
+    // and substitutes each placeholder in a single pass. The `#qsv-logo` rules CSS-swap the two
+    // logo variants off `body.qsv-dark`; the logo itself rides in the `.qsv-page-foot` flow row.
     format!(
         r#"<!doctype html>
 {tp_comment}
@@ -9786,7 +9784,19 @@ fn smart_html_page(
   table.qsv-viz-meta {{ margin: 0 auto 20px; border-collapse: collapse; font-size: 13px; }}
   table.qsv-viz-meta td {{ padding: 2px 10px; vertical-align: top; }}
   table.qsv-viz-meta td.qsv-viz-meta-k {{ color: var(--qsv-geo-meta); text-align: right; white-space: nowrap; }}
-  #qsv-logo {{ position: fixed; bottom: 12px; right: 12px; z-index: 999; opacity: 0.95; line-height: 0; }}
+  /* One flow row at the foot of the page: credits centered, Theme toggle + logo right-aligned.
+     Keeping all three in the footer (rather than pinning the toggle + logo bottom-right) is what
+     lets the page end right after the credits, and it drops the drawer-offset rules both fixed
+     widgets used to need.
+     A 1fr/auto/1fr GRID, not a flex row: the credits must be centered on the PAGE, and in a flex
+     row they would instead center in the space the right-hand group leaves over — visibly
+     off-center. The empty first column mirrors the third, so column 2 lands on the true midpoint
+     regardless of how wide the toggle + logo are. Below 700px the columns stack and center. */
+  .qsv-page-foot {{ display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px 16px; padding: 4px 16px 12px; }}
+  .qsv-page-foot #qsv-credits {{ grid-column: 2; padding: 0; }}
+  .qsv-page-foot-right {{ grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }}
+  @media (max-width: 700px) {{ .qsv-page-foot {{ grid-template-columns: 1fr; }} .qsv-page-foot #qsv-credits, .qsv-page-foot-right {{ grid-column: 1; }} .qsv-page-foot-right {{ justify-content: center; }} }}
+  #qsv-logo {{ opacity: 0.95; line-height: 0; }}
   #qsv-logo:hover {{ opacity: 1; }}
   /* Theme-aware halo so the logo stays legible on any paper color: a faint dark
      outline on light themes, a light outline under body.qsv-dark so the navy
@@ -9803,8 +9813,6 @@ fn smart_html_page(
 </style>
 </head>
 <body>
-{button}
-{logo}
 {heading}
 {dict_link}
 {meta_table}
@@ -9815,7 +9823,7 @@ fn smart_html_page(
 {data_chrome}
 {photo_chrome}
 {script}
-{tp_footer}
+<div class="qsv-page-foot">{tp_footer}<div class="qsv-page-foot-right">{button}{logo}</div></div>
 </body>
 </html>
 "#
@@ -14415,9 +14423,8 @@ document.addEventListener("keydown", function (e) {
 /// on different axes and compose. Everything is lazy: the DataTables library (when gzip-embedded)
 /// is inflated and installed only on first open, so an unused drawer costs no page-load time.
 ///
-/// The fixed bottom-right widgets (`#qsv-logo` at bottom:12px, `#qsv-theme-toggle` at
-/// bottom:50px) are pushed above the open drawer, mirroring the dictionary drawer's `right:`
-/// push of the same widgets.
+/// The page footer (credits + Theme toggle + logo) is in the normal flow, so `body.qsv-data-open`'s
+/// `margin-bottom` lifts it clear of the open drawer on its own — no per-widget offsets.
 const DATA_DRAWER_SCRIPT: &str = r##"<style>
   /* effective drawer height: the grip persists --qsv-data-h in absolute px, so re-clamp it in
      CSS against the CURRENT viewport — a later window resize / device rotation can otherwise
@@ -14454,9 +14461,9 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   #qsv-data-drawer div.dt-container > div.dt-layout-table { flex: 1 1 auto; min-height: 0; overflow: auto; align-items: flex-start; }
   #qsv-data-table thead th { position: sticky; top: 0; z-index: 5; background: var(--qsv-page-bg, #ffffff); }
   #qsv-data-table thead tr.qsv-data-filters th { top: var(--qsv-data-th1-h, 34px); }
+  /* the footer row (credits + Theme toggle + logo) is in flow, so this one margin lifts it clear
+     of the open drawer — no per-widget offset rules needed */
   body.qsv-data-open { margin-bottom: var(--qsv-data-h-eff); }
-  body.qsv-data-open #qsv-logo { bottom: calc(var(--qsv-data-h-eff) + 12px); }
-  body.qsv-data-open #qsv-theme-toggle { bottom: calc(var(--qsv-data-h-eff) + 50px); }
   tr.qsv-data-filters th { padding: 3px 6px; box-shadow: 0 1px 0 rgba(127, 127, 127, 0.35); }
   tr.qsv-data-filters input { width: 100%; box-sizing: border-box; font-size: 11px; padding: 2px 5px; color: inherit; background: transparent; border: 1px solid rgba(127, 127, 127, 0.45); border-radius: 4px; }
   #qsv-data-drawer table.dataTable { color: inherit; }
@@ -15659,11 +15666,10 @@ fn render_dict_page_html(
   .qsv-dict-drawer-content .qsv-dict-wrap {{ max-width: none; }}
   /* the drawer bar already titles the panel; the page header (h1 + back link) is tab-only */
   .qsv-dict-embedded .qsv-dict-head {{ display: none; }}
+  /* the footer row (credits + Theme toggle + logo) is in flow, so this one margin keeps it — and
+     the whole page — beside the open drawer rather than under it */
   body.qsv-dict-open {{ margin-right: min(480px, 42vw); }}
-  /* keep the fixed bottom-right chrome (theme toggle + logo) usable beside the open drawer
-     instead of buried under it */
-  body.qsv-dict-open #qsv-theme-toggle, body.qsv-dict-open #qsv-logo {{ right: calc(min(480px, 42vw) + 12px); }}
-  @media (max-width: 900px) {{ body.qsv-dict-open {{ margin-right: 0; }} body.qsv-dict-open #qsv-theme-toggle, body.qsv-dict-open #qsv-logo {{ right: 12px; }} #qsv-dict-drawer {{ width: min(480px, 94vw); }} }}
+  @media (max-width: 900px) {{ body.qsv-dict-open {{ margin-right: 0; }} #qsv-dict-drawer {{ width: min(480px, 94vw); }} }}
 </style>
 </head>
 <body id="qsv-dict-root" class="qsv-dict-body">

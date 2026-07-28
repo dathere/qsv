@@ -464,16 +464,18 @@ THIRD_PARTY_COMMENT = (
 )
 THIRD_PARTY_STYLE = (
     "<style>\n"
-    "  #qsv-credits { font-size: 11px; line-height: 1.6; text-align: center; padding: 22px 16px 58px; color: var(--qsv-geo-meta, #5b6673); }\n"
+    "  #qsv-credits { font-size: 11px; line-height: 1.6; text-align: center; padding: 10px 16px 12px; color: var(--qsv-geo-meta, #5b6673); }\n"
     "  #qsv-credits a, #qsv-credits a:visited { color: var(--qsv-link, #0a5fb4); text-decoration: none; }\n"
     "  #qsv-credits a:hover, #qsv-credits a:focus-visible { color: var(--qsv-link-hover, #084b8f); text-decoration: underline; }\n"
     "</style>"
 )
+# No basemap clause, matching `third_party_footer` in src/cmd/viz.rs: every MapLibre panel draws
+# its own always-visible "(c) CARTO, (c) OpenStreetMap contributors" control in-map, so the tile
+# attribution is already discharged where the tiles are. THIRD_PARTY_COMMENT above still names
+# them unconditionally.
 THIRD_PARTY_FOOTER = (
     '<footer id="qsv-credits">'
     'Charts: <a href="https://plotly.com/javascript/" target="_blank" rel="noopener">plotly.js</a> (MIT)'
-    ' &middot; Basemap: &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors,'
-    ' &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>'
     f' &middot; <a href="{THIRD_PARTY_NOTICES_URL}" target="_blank" rel="noopener">notices</a>'
     "</footer>"
 )
@@ -861,7 +863,7 @@ SCREENSHOTS = [
             "(<code>moarstats --advanced</code>) and <code>--bivariate</code> adds the NMI "
             "association heatmap plus the ranked top-relationships panel, while "
             "<code>--dataset-pid</code> adds a clickable citation link back to the source dataset. "
-            "The standalone page is a ~6.8&nbsp;MB self-contained dashboard &mdash; too large to embed "
+            "The standalone page is a ~10.4&nbsp;MB self-contained dashboard &mdash; too large to embed "
             "inline &mdash; so this is a screenshot: <b>click it to open the fully interactive "
             "dashboard in a new window</b>."),
         "image": "pitt311data-visual-datadic.webp",

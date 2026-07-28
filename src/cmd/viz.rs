@@ -11186,28 +11186,44 @@ fn dictionary_sidecar_path(input: &str) -> std::path::PathBuf {
 /// The temp file is created in the destination's own directory so the rename stays within one
 /// filesystem (a cross-device rename is not atomic and would fail), and is removed automatically if
 /// anything fails before the rename.
+///
+/// On unix the resulting mode matches what `fs::write` would have produced: an existing sidecar
+/// keeps its own mode, and a new one gets 0666 minus the process umask. Forcing a fixed mode here
+/// would either widen a deliberately private dictionary or ignore a restrictive umask.
+
 fn write_dictionary_sidecar(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
     let dir = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| std::path::Path::new("."));
-    let mut tmpfile = tempfile::Builder::new()
-        .prefix(".qsv-dict-")
-        .suffix(".json.tmp")
-        .tempfile_in(dir)?;
+
+    // Mode of an existing sidecar. `fs::write` wrote in place and never altered the mode of a file
+    // that already existed, so an atomic replace has to restore it explicitly - otherwise a
+    // deliberately private (e.g. 0600) dictionary would be silently widened. None when creating a
+    // new sidecar.
+    #[cfg(unix)]
+    let existing_perms = std::fs::metadata(path).ok().map(|m| m.permissions());
+
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(".qsv-dict-").suffix(".json.tmp");
+    // Creating a NEW sidecar: ask for 0666 and let the kernel subtract the process umask, which is
+    // exactly what `fs::write`'s create did. tempfile would otherwise create 0600, narrower than
+    // the umask calls for. An existing sidecar's real mode is restored after the write instead,
+    // since `set_permissions` (unlike creation) is not umask-filtered.
+    #[cfg(unix)]
+    builder.permissions(std::fs::Permissions::from_mode(0o666));
+
+    let mut tmpfile = builder.tempfile_in(dir)?;
     tmpfile.write_all(contents.as_bytes())?;
     // flush to disk before the rename, so a crash right after it cannot leave the sidecar
     // pointing at unwritten data
     tmpfile.as_file_mut().sync_all()?;
-    // tempfile creates 0600; `fs::write` created the sidecar with the umask default (typically
-    // 0644). Restore that so switching to an atomic write does not silently make dictionaries
-    // unreadable to other users - they are meant to be shared, committed and hand-edited.
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        tmpfile
-            .as_file()
-            .set_permissions(std::fs::Permissions::from_mode(0o644))?;
+    if let Some(perms) = existing_perms {
+        tmpfile.as_file().set_permissions(perms)?;
     }
     tmpfile.persist(path).map_err(|e| e.error)?;
     Ok(())
@@ -28331,6 +28347,57 @@ fn geo_ref(pos: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The atomic sidecar write must be mode-transparent: replacing `fs::write` with a
+    // tempfile+rename must not change what permissions the sidecar ends up with, in EITHER
+    // direction. tempfile creates 0600, so a naive port narrows a new sidecar; forcing a fixed
+    // 0644 instead would widen a deliberately private one and ignore a restrictive umask.
+    #[cfg(unix)]
+    #[test]
+    fn dictionary_sidecar_write_is_mode_transparent() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+
+        // What `fs::write` produces for a NEW file here, measured rather than assumed so the
+        // test holds under any umask.
+        let probe = dir.path().join("probe.json");
+        std::fs::write(&probe, "{}").unwrap();
+        let want_new_mode = std::fs::metadata(&probe).unwrap().permissions().mode();
+
+        let sidecar = dir.path().join("data.schema.json");
+        write_dictionary_sidecar(&sidecar, r#"{"a":1}"#).unwrap();
+        assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), r#"{"a":1}"#);
+        assert_eq!(
+            std::fs::metadata(&sidecar).unwrap().permissions().mode(),
+            want_new_mode,
+            "a new sidecar should land with the same mode fs::write would have given it"
+        );
+
+        // An EXISTING sidecar the user deliberately made private must survive the replace with
+        // its mode intact.
+        std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o600)).unwrap();
+        write_dictionary_sidecar(&sidecar, r#"{"b":2}"#).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&sidecar).unwrap(),
+            r#"{"b":2}"#,
+            "the replace should fully overwrite the previous contents"
+        );
+        assert_eq!(
+            std::fs::metadata(&sidecar).unwrap().permissions().mode() & 0o777,
+            0o600,
+            "replacing an existing sidecar must not widen its permissions"
+        );
+
+        // the tempfile is renamed into place, never left lying next to the sidecar
+        let strays: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with(".qsv-dict-"))
+            .collect();
+        assert!(strays.is_empty(), "temp files left behind: {strays:?}");
+    }
 
     fn stat(ty: &str, cardinality: u64, uniqueness: Option<f64>) -> crate::cmd::stats::StatsData {
         crate::cmd::stats::StatsData {

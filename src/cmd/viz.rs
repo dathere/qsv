@@ -11174,6 +11174,45 @@ fn dictionary_sidecar_path(input: &str) -> std::path::PathBuf {
     parent.join(format!("{fstem}.schema.json"))
 }
 
+/// Write the inferred Data Dictionary to its sidecar ATOMICALLY: fill a temp file in the same
+/// directory, then rename it over the destination.
+///
+/// `fs::write` truncates the destination up front, so an I/O failure partway through would leave a
+/// previously saved - possibly hand-edited - dictionary empty or half-written. That was harmless
+/// while a fresh infer only ever ran when no sidecar existed, but `QSV_VIZ_DICT_FRESH` re-infers
+/// over an existing one, so the destination must never be observable in a partial state: after
+/// this, it is either the old dictionary or the complete new one.
+///
+/// The temp file is created in the destination's own directory so the rename stays within one
+/// filesystem (a cross-device rename is not atomic and would fail), and is removed automatically if
+/// anything fails before the rename.
+fn write_dictionary_sidecar(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
+    let dir = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let mut tmpfile = tempfile::Builder::new()
+        .prefix(".qsv-dict-")
+        .suffix(".json.tmp")
+        .tempfile_in(dir)?;
+    tmpfile.write_all(contents.as_bytes())?;
+    // flush to disk before the rename, so a crash right after it cannot leave the sidecar
+    // pointing at unwritten data
+    tmpfile.as_file_mut().sync_all()?;
+    // tempfile creates 0600; `fs::write` created the sidecar with the umask default (typically
+    // 0644). Restore that so switching to an atomic write does not silently make dictionaries
+    // unreadable to other users - they are meant to be shared, committed and hand-edited.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tmpfile
+            .as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o644))?;
+    }
+    tmpfile.persist(path).map_err(|e| e.error)?;
+    Ok(())
+}
+
 /// Largest sidecar `collect_sidecar_downloads` will embed in the Data Dictionary page. The bytes
 /// ride as a base64 `data:` URI (4/3 inflation) inside the dashboard HTML, so an unbounded
 /// embed would balloon the file. Most sidecars are bounded by COLUMN count and stay tiny, but the
@@ -15610,8 +15649,10 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
     // and only for a fresh infer (never clobber a reused/hand-edited file) - except under
     // `QSV_VIZ_DICT_FRESH`, whose whole point is to re-infer and overwrite the sidecar in place.
     // Best-effort: warn on a write failure, matching this function's soft-fail-to-stats philosophy.
+    // The write is atomic (see `write_dictionary_sidecar`) so a failure here leaves any existing
+    // dictionary intact rather than truncated.
     if let (Some(path), Some(_)) = (persist_to.as_ref(), data.as_ref()) {
-        match std::fs::write(path, &json_text) {
+        match write_dictionary_sidecar(path, &json_text) {
             Ok(()) => viz_note(&format!(
                 "viz smart --dictionary infer: saved inferred dictionary to '{}' (edit it to \
                  fine-tune; reused on later runs).",

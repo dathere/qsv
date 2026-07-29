@@ -1209,7 +1209,18 @@ fn build_language_detection_sample(analysis_results: &AnalysisResults) -> String
         if !sample.is_empty() {
             sample.push(' ');
         }
-        sample.push_str(value);
+        // Enforce the byte budget while appending: a single oversized value must not
+        // blow past the cap, and truncation must land on a UTF-8 char boundary.
+        let remaining = MAX_SAMPLE_BYTES.saturating_sub(sample.len());
+        if value.len() <= remaining {
+            sample.push_str(value);
+        } else {
+            let mut end = remaining;
+            while end > 0 && !value.is_char_boundary(end) {
+                end -= 1;
+            }
+            sample.push_str(&value[..end]);
+        }
     };
 
     for record in &freq_records {
@@ -9137,6 +9148,30 @@ description_md_template = "OVERRIDDEN: {{ llm_response }}"
             build_language_detection_sample(&broken),
             "edad importe cantidad"
         );
+    }
+
+    #[test]
+    #[cfg(feature = "whatlang")]
+    fn language_detection_sample_respects_byte_cap() {
+        // A single oversized multibyte value must be truncated to the 8 KB cap on a
+        // valid UTF-8 char boundary (a mid-char slice would panic in debug builds).
+        let huge_value = "café con leche y churros calientes ".repeat(400); // ~14 KB
+        let analysis_results = AnalysisResults {
+            stats:     "field,type,cardinality,nullcount\ncomentario,String,1,0\n".to_string(),
+            frequency: format!(
+                "field,value,count,percentage,rank\ncomentario,\"{huge_value}\",5,50.0,1\n"
+            ),
+            headers:   "comentario".to_string(),
+            file_hash: String::new(),
+            delimiter: ',',
+        };
+        let sample = build_language_detection_sample(&analysis_results);
+        assert!(
+            sample.len() <= 8_192,
+            "sample overflows cap: {}",
+            sample.len()
+        );
+        assert!(sample.starts_with("café con leche"));
     }
 
     #[test]

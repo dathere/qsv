@@ -14708,6 +14708,10 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       drawer.appendChild(bar);
       drawer.appendChild(content);
       document.body.appendChild(drawer);
+      // Whether Responsive's column collapsing is currently on, toggled by the button at the
+      // right of the controls row. Held here rather than read back off the button's label so
+      // the state does not depend on the rendered text.
+      var responsiveOn = true;
       dt = new DataTable(table, {
         data: rows,
         // render.text(): cell values are DATA, not markup — without it DataTables injects them
@@ -14800,12 +14804,37 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
             { target: 1, content: [["searchList"]] }
           ] } : null;
         }).filter(Boolean),
-        // SearchBuilder rides in a Buttons popover ("Filter (n)") on the same controls row as
-        // the page-length selector and the global search box, instead of a permanent pane. It
-        // stays alongside ColumnControl: the per-column widgets cannot express the cross-column
-        // AND/OR logic SearchBuilder is for.
-        language: { searchBuilder: { button: { 0: "Filter", _: "Filter (%d)" } } },
+        // SearchBuilder rides in a Buttons popover ("Advanced Filter (n)") on the same controls
+        // row as the page-length selector and the global search box, instead of a permanent
+        // pane. It stays alongside ColumnControl: the per-column widgets cannot express the
+        // cross-column AND/OR logic SearchBuilder is for — which is what "Advanced" names.
+        language: {
+          searchBuilder: { button: { 0: "Advanced Filter", _: "Advanced Filter (%d)" } }
+        },
         layout: { topStart: ["pageLength", { buttons: ["searchBuilder", {
+          text: "Clear Filters",
+          className: "qsv-clear-filters",
+          // Resets EVERY filter the drawer offers, because a reader who has narrowed the table
+          // three different ways should not have to remember which three. The three live in
+          // separate places and none of them clears the others:
+          //   - the global search box            -> search("")
+          //   - ColumnControl's per-column widgets -> columnControl.searchClear()
+          //   - SearchBuilder's criteria          -> searchBuilder.rebuild({})
+          // columns().search("") is NOT redundant with searchClear(): ColumnControl applies its
+          // own search through its own mechanism (a filtered column still reports an empty
+          // column().search()), so clearing one leaves the other standing. Belt and braces.
+          action: function (e, dt) {
+            dt.search("");
+            dt.columns().search("");
+            if (dt.columns().columnControl) {
+              dt.columns().columnControl.searchClear();
+            }
+            if (dt.searchBuilder) {
+              dt.searchBuilder.rebuild({});
+            }
+            dt.draw();
+          }
+        }, {
           extend: "csv",
           text: "__QSVDATAEXPORTTEXT__",
           // substituted as a complete JS string literal: the stem is a user-supplied file name
@@ -14842,6 +14871,33 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
                 });
               });
             }
+          }
+        }, {
+          // Responsive on/off, to the right of the export button.
+          //
+          // Responsive has no enable()/disable() — its whole API is recalc, rebuild, hasHidden,
+          // index and responsiveHidden — so this drives the one lever it does expose: the `all`
+          // class means "never hide this column", and rebuild() re-reads the class information
+          // off the column header cells. Setting `all` on every header and rebuilding therefore
+          // switches collapsing off in place, with no destroy()/re-init: the filters, ordering
+          // and page position all survive the toggle, which a re-init would throw away.
+          //
+          // With it off, a wide table exceeds the drawer — the scroll container is `overflow:
+          // auto`, so it scrolls horizontally rather than clipping. Measured on the 41-column
+          // NYC 311 dashboard: 22 of 41 columns shown with Responsive on, all 41 with it off
+          // (scrollWidth 2501 vs clientWidth 1369). The child-row expansion control belongs to
+          // Responsive, so it comes and goes with it.
+          text: "Responsive: on",
+          className: "qsv-responsive-toggle",
+          action: function (e, dt, node) {
+            responsiveOn = !responsiveOn;
+            dt.columns().every(function () {
+              this.header().classList.toggle("all", !responsiveOn);
+            });
+            dt.responsive.rebuild();
+            dt.responsive.recalc();
+            dt.columns.adjust();
+            dt.button(node).text("Responsive: " + (responsiveOn ? "on" : "off"));
           }
         }] }] }
       });

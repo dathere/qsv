@@ -13049,7 +13049,7 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     // SearchBuilder rides in a Buttons popover ("Filter (n)") on the controls row, not a
     // permanent pane; ColumnControl's in-header widgets + Responsive column collapse are on
     assert!(html.contains("searchBuilder"));
-    assert!(html.contains(r#"button: { 0: "Filter", _: "Filter (%d)" }"#));
+    assert!(html.contains(r#"button: { 0: "Advanced Filter", _: "Advanced Filter (%d)" }"#));
     assert!(!html.contains(r#"top1: "searchBuilder""#));
     assert!(html.contains("responsive: true"));
     assert!(!html.contains("scrollX: true"));
@@ -13248,6 +13248,91 @@ fn viz_smart_data_viewer_csv_export_button() {
     // supplying exportOptions replaces csvHtml5's own default object, so the CSV-injection
     // guard has to be restated rather than inherited
     assert!(html.contains("escapeExcelFormula: true"));
+}
+
+// The controls row carries four buttons in a fixed left-to-right order: the SearchBuilder
+// popover, Clear Filters, the CSV export, and the Responsive toggle to its right.
+#[test]
+fn viz_smart_data_viewer_toolbar_button_order() {
+    let wrk = Workdir::new("viz_smart_data_viewer_toolbar_button_order");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    let at = |needle: &str| {
+        html.find(needle)
+            .unwrap_or_else(|| panic!("data viewer HTML is missing {needle}"))
+    };
+    // positions in the emitted buttons array, which is the rendered order
+    let sb = at(r#"buttons: ["searchBuilder""#);
+    let clear = at(r#"text: "Clear Filters""#);
+    let csv = at(r#"extend: "csv""#);
+    let responsive = at(r#"text: "Responsive: on""#);
+    assert!(
+        sb < clear && clear < csv && csv < responsive,
+        "controls-row buttons are out of order: searchBuilder@{sb} Clear@{clear} csv@{csv} \
+         Responsive@{responsive} — expected searchBuilder < Clear Filters < CSV < Responsive"
+    );
+}
+
+// Clear Filters has to reset every filter the drawer offers, and they live in three separate
+// places that do not clear each other. columns().search("") is NOT redundant with ColumnControl's
+// searchClear(): ColumnControl applies its search through its own mechanism, so a column filtered
+// by the widget still reports an empty column().search() and clearing one leaves the other.
+#[test]
+fn viz_smart_data_viewer_clear_filters_resets_all_three_sources() {
+    let wrk = Workdir::new("viz_smart_data_viewer_clear_filters_resets_all_three_sources");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"text: "Clear Filters""#));
+    // global search box
+    assert!(html.contains(r#"dt.search("");"#));
+    // raw per-column search AND ColumnControl's own widget state
+    assert!(html.contains(r#"dt.columns().search("");"#));
+    assert!(html.contains("dt.columns().columnControl.searchClear();"));
+    // SearchBuilder criteria
+    assert!(html.contains("dt.searchBuilder.rebuild({});"));
+}
+
+// Responsive has no enable()/disable(), so the toggle drives the one lever it exposes: the `all`
+// class ("never hide this column") plus rebuild(), which re-reads class info off the header
+// cells. That switches collapsing off IN PLACE -- a destroy()/re-init would discard the filters,
+// ordering and page position the reader already set up.
+#[test]
+fn viz_smart_data_viewer_responsive_toggle_uses_all_class_and_rebuild() {
+    let wrk = Workdir::new("viz_smart_data_viewer_responsive_toggle_uses_all_class_and_rebuild");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"text: "Responsive: on""#));
+    assert!(html.contains(r#"this.header().classList.toggle("all", !responsiveOn);"#));
+    assert!(html.contains("dt.responsive.rebuild();"));
+    assert!(html.contains("dt.responsive.recalc();"));
+    // label reflects state, and state is held in a variable rather than parsed back out of it
+    assert!(html.contains("var responsiveOn = true;"));
+    assert!(
+        html.contains(r#"dt.button(node).text("Responsive: " + (responsiveOn ? "on" : "off"));"#)
+    );
+    // the table must NOT be torn down to switch modes
+    assert!(!html.contains("dt.destroy()"));
 }
 
 // A truncated preview must not hand back a file that looks complete: both the button label and

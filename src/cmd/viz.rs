@@ -9744,15 +9744,20 @@ const MAP_SELECT_CHROME: &str = r##"<script>
   }
   function applySelection(gd, ids) {
     if (!gd.__qsvSelTraces || !gd.__qsvSelTraces.length) return;
-    var per = {};
+    var per = {}, hits = 0;
     gd.__qsvSelTraces.forEach(function (ti) { per[ti] = []; });
     ids.forEach(function (id) {
       var loc = gd.__qsvSelIndex.get(String(id));
-      if (loc) per[loc.t].push(loc.p);
+      if (loc) { per[loc.t].push(loc.p); hits++; }
     });
-    // plotly needs `null`, not `[]`, for "nothing selected in this trace": an empty array dims
-    // every point as unselected with no selection to show for it
-    var sel = gd.__qsvSelTraces.map(function (ti) { return per[ti].length ? per[ti] : null; });
+    // `[]` and `null` mean different things to plotly and BOTH are needed here. `[]` is "a
+    // selection is active but nothing in THIS trace matched", which dims the trace's points as
+    // unselected — the right treatment for the outlier call-out trace while a core point is
+    // selected, since leaving its markers at full amber would read as though they were selected
+    // too. `null` is "no selection at all" and restores normal styling; it is also what EVERY
+    // trace gets when the selection maps to no plotted point (all the chosen rows lack usable
+    // coordinates), because dimming the whole map with nothing highlighted just looks broken.
+    var sel = gd.__qsvSelTraces.map(function (ti) { return hits ? per[ti] : null; });
     try {
       Plotly.restyle(gd, { selectedpoints: sel }, gd.__qsvSelTraces);
     } catch (e) {}

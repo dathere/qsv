@@ -74,7 +74,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>332 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>6</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-29 06:41 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-29 07:17 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -1327,15 +1327,20 @@
   }
   function applySelection(gd, ids) {
     if (!gd.__qsvSelTraces || !gd.__qsvSelTraces.length) return;
-    var per = {};
+    var per = {}, hits = 0;
     gd.__qsvSelTraces.forEach(function (ti) { per[ti] = []; });
     ids.forEach(function (id) {
       var loc = gd.__qsvSelIndex.get(String(id));
-      if (loc) per[loc.t].push(loc.p);
+      if (loc) { per[loc.t].push(loc.p); hits++; }
     });
-    // plotly needs `null`, not `[]`, for "nothing selected in this trace": an empty array dims
-    // every point as unselected with no selection to show for it
-    var sel = gd.__qsvSelTraces.map(function (ti) { return per[ti].length ? per[ti] : null; });
+    // `[]` and `null` mean different things to plotly and BOTH are needed here. `[]` is "a
+    // selection is active but nothing in THIS trace matched", which dims the trace's points as
+    // unselected — the right treatment for the outlier call-out trace while a core point is
+    // selected, since leaving its markers at full amber would read as though they were selected
+    // too. `null` is "no selection at all" and restores normal styling; it is also what EVERY
+    // trace gets when the selection maps to no plotted point (all the chosen rows lack usable
+    // coordinates), because dimming the whole map with nothing highlighted just looks broken.
+    var sel = gd.__qsvSelTraces.map(function (ti) { return hits ? per[ti] : null; });
     try {
       Plotly.restyle(gd, { selectedpoints: sel }, gd.__qsvSelTraces);
     } catch (e) {}

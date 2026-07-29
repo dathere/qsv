@@ -73,7 +73,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>12,587 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Preview)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>7</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>98.8%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-29 03:36 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-29 06:41 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -707,10 +707,110 @@
      unreadable on dark paper, and href="#" means one click marks it visited forever */
   .qsv-viz-meta a.qsv-data-link, .qsv-viz-meta a.qsv-data-link:visited { font-size: 0.9em; font-weight: 600; color: var(--qsv-link, #0a5fb4); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
   .qsv-viz-meta a.qsv-data-link:hover, .qsv-viz-meta a.qsv-data-link:focus-visible { color: var(--qsv-link-hover, #084b8f); text-decoration: underline; }
+  /* Selected rows. Derived from --qsv-link with color-mix rather than hardcoded, so the tint
+     tracks the theme automatically (the link color flips with body.qsv-dark) instead of needing
+     a separate dark-mode rule that could drift. DataTables' own Select CSS paints a solid grey
+     that is nearly invisible on the dark theme, hence the override; the !important is needed
+     because that rule is more specific and ships inside the vendored bundle. The left border
+     is the redundant, non-color cue: a row stays identifiable as selected when the tint is lost
+     to a colorblind reader, a high-contrast mode, or a print stylesheet. */
+  #qsv-data-table tbody tr.selected > *, #qsv-data-table tbody tr.selected:hover > * { box-shadow: none !important; background: color-mix(in srgb, var(--qsv-link, #0a5fb4) 22%, transparent) !important; color: inherit !important; }
+  #qsv-data-table tbody tr.selected:hover > * { background: color-mix(in srgb, var(--qsv-link, #0a5fb4) 30%, transparent) !important; }
+  #qsv-data-table tbody tr.selected > *:first-child, #qsv-data-table tbody tr.selected:hover > *:first-child { box-shadow: inset 3px 0 0 0 var(--qsv-link, #0a5fb4) !important; }
+  /* count of selected rows, appended to DataTables' own info line */
+  .qsv-data-selinfo { opacity: 0.85; }
+  /* Transient note (e.g. a clicked map point whose row is past the preview prefix). Sits in the
+     drawer bar, not over the table, so it never covers data; aria-live lets a screen reader
+     announce it, since it is the only feedback that a click did something. */
+  .qsv-data-note { margin-left: 10px; margin-right: auto; font-weight: 400; font-size: 12px; opacity: 0; transition: opacity 0.15s ease; color: var(--qsv-link, #0a5fb4); pointer-events: none; }
+  .qsv-data-note.show { opacity: 1; }
 </style>
 <script>
 (function () {
   var dt = null;
+  // ---------------------------------------------------------------------------------------
+  // Row selection.
+  //
+  // Hand-rolled rather than using the DataTables Select extension, which hard-requires a global
+  // jQuery at every published version (2.1.0 through 3.1.0, plus the standalone and ESM builds)
+  // while this page runs DataTables in vanilla mode — loading it throws `ReferenceError: jQuery
+  // is not defined` and it silently never registers, leaving `rows({selected:true})` to return
+  // EVERY row rather than none. See DATATABLES_CDN_COMBO.
+  //
+  // Selection is stored as DATA row indexes (`row().index()`), never DOM nodes: `deferRender`
+  // discards off-page rows, and sorting/filtering/paging all reshuffle the DOM, so a node-based
+  // set would silently lose rows. The visual state is therefore re-applied on every `draw`.
+  var selRows = new Set();
+  // data index of the last non-shift click, the fixed end of a shift-range
+  var selAnchor = null;
+
+  // Repaint the `selected` class on the rows currently in the DOM. Cheap: only the current page.
+  function paintSelection() {
+    if (!dt) return;
+    dt.rows({page: "current"}).every(function () {
+      var node = this.node();
+      if (node) node.classList.toggle("selected", selRows.has(this.index()));
+    });
+  }
+
+  // Append/refresh the "N rows selected" count on DataTables' own info line, which is where a
+  // user already looks for row counts — and the only feedback when a selected row is on another
+  // page or filtered out of view.
+  function paintSelectionInfo() {
+    var info = document.querySelector("#qsv-data-drawer div.dt-info");
+    if (!info) return;
+    var el = info.querySelector(".qsv-data-selinfo");
+    if (!selRows.size) { if (el) el.remove(); return; }
+    if (!el) {
+      el = document.createElement("span");
+      el.className = "qsv-data-selinfo";
+      info.appendChild(el);
+    }
+    el.textContent = " — " + selRows.size + (selRows.size === 1 ? " row selected" : " rows selected");
+  }
+
+  // Single funnel for every selection change, so the map bridge sees exactly one event per
+  // change regardless of which side caused it. `source` lets a listener ignore its own echo.
+  function selectionChanged(source) {
+    paintSelection();
+    paintSelectionInfo();
+    document.dispatchEvent(new CustomEvent("qsv-data-selection", {
+      detail: { indexes: Array.from(selRows), source: source }
+    }));
+  }
+
+  // --- public seam, used by the map<->rows bridge (MAP_SELECT_CHROME) ---
+  // Replace (or extend) the selection with the given DATA indexes. Out-of-range indexes are
+  // dropped and reported, so a map point past the drawer's preview prefix cannot select row 0.
+  window.__qsvDataSelect = function (indexes, extend) {
+    if (!dt) return 0;
+    var list = Array.isArray(indexes) ? indexes : [indexes];
+    // rows().count(), NOT data().count() — the latter counts CELLS (rows x columns), so on a
+    // 41-column preview it reported 20500 for 500 rows and waved through every out-of-range index
+    var total = dt.rows().count();
+    if (!extend) selRows.clear();
+    var kept = 0;
+    list.forEach(function (i) {
+      i = +i;
+      if (Number.isInteger(i) && i >= 0 && i < total) { selRows.add(i); selAnchor = i; kept++; }
+    });
+    selectionChanged("map");
+    return kept;
+  };
+  window.__qsvDataSelectedRows = function () { return Array.from(selRows); };
+  // Page to the row with this DATA index, in the CURRENT sort/filter. Returns false when the row
+  // is filtered out (caller decides whether to explain) — never clears the user's filters.
+  window.__qsvDataPageTo = function (i) {
+    if (!dt) return false;
+    var order = dt.rows({order: "applied", search: "applied"}).indexes().toArray();
+    var pos = order.indexOf(+i);
+    if (pos < 0) return false;
+    var len = dt.page.len();
+    // len is -1 when the user picked "All" — everything is already on one page
+    if (len > 0) dt.page(Math.floor(pos / len)).draw(false);
+    return true;
+  };
+
   // DataTables' native dark palette keys on `:root.dark` (the <html> element); qsv's theme
   // toggle flips `body.qsv-dark`. Mirror the body class onto <html> so the drawer widgets
   // follow the qsv theme — nothing else in the page styles off `html.dark`.
@@ -902,6 +1002,13 @@
       close.setAttribute("aria-label", "Close data viewer");
       close.addEventListener("click", function (ev) { ev.preventDefault(); window.qsvCloseData(); });
       bar.appendChild(title);
+      // transient status line, flashed by window.__qsvDataNote (see below). `margin-right: auto`
+      // keeps it beside the title and still pushes the close button to the far right.
+      var note = document.createElement("span");
+      note.className = "qsv-data-note";
+      note.id = "qsv-data-note";
+      note.setAttribute("aria-live", "polite");
+      bar.appendChild(note);
       bar.appendChild(close);
       var content = document.createElement("div");
       content.className = "qsv-data-drawer-content";
@@ -1109,6 +1216,12 @@
           // applied for display. Over a markup/entity/quote/tab/emoji fixture "display" was
           // 10/10 exact where "export" corrupted 4/10. Row scope is the default too: search
           // applies, paging does not, so the file holds every filtered row, not the page.
+          //
+          // NOTE: this default is only safe because the DataTables **Select extension is not
+          // loaded** (it requires jQuery; see DATATABLES_CDN_COMBO). With Select present, Buttons
+          // silently narrows the export to "the selected rows, if any" — so if it is ever added,
+          // this button MUST pin `exportOptions.modifier.selected = null`. The hand-rolled row
+          // selection below deliberately does not hook Buttons, so the export stays all-rows.
           exportOptions: {
             // csvHtml5 carries this in its OWN default exportOptions, and supplying the object
             // replaces that default rather than merging into it. Restated so the CSV-injection
@@ -1135,6 +1248,48 @@
           }
         }] }] }
       });
+      // Row selection, "os" idiom: plain click replaces the selection (and clicking the only
+      // selected row clears it), ctrl/cmd-click toggles one row, shift-click extends a range.
+      // Delegated from the table so it keeps working as deferRender recycles row nodes, and
+      // scoped to tbody so the ColumnControl search row in the thead is untouched.
+      table.addEventListener("click", function (ev) {
+        var tr = ev.target.closest("tbody tr");
+        if (!tr || !dt || !table.contains(tr)) return;
+        var idx = dt.row(tr).index();
+        // the "no matching records" placeholder is a tbody tr with no backing data row
+        if (idx === undefined || idx === null) return;
+        if (ev.shiftKey && selAnchor !== null) {
+          // range over the CURRENT sort+filter, so it matches what the user sees
+          var order = dt.rows({order: "applied", search: "applied"}).indexes().toArray();
+          var a = order.indexOf(selAnchor), b = order.indexOf(idx);
+          if (a >= 0 && b >= 0) {
+            selRows.clear();
+            for (var i = Math.min(a, b); i <= Math.max(a, b); i++) selRows.add(order[i]);
+          }
+          // shift-click also starts a native text selection across the rows; drop it so the
+          // range reads as a row selection rather than a smear of highlighted text
+          var ws = window.getSelection();
+          if (ws) ws.removeAllRanges();
+        } else if (ev.ctrlKey || ev.metaKey) {
+          if (selRows.has(idx)) selRows.delete(idx); else selRows.add(idx);
+          selAnchor = idx;
+        } else {
+          var onlyThis = selRows.size === 1 && selRows.has(idx);
+          selRows.clear();
+          if (!onlyThis) selRows.add(idx);
+          selAnchor = idx;
+        }
+        selectionChanged("rows");
+      });
+      // deferRender builds row nodes on demand and every draw re-writes the tbody, so the
+      // `selected` class has to be re-applied rather than set once at click time.
+      dt.on("draw", function () { paintSelection(); paintSelectionInfo(); });
+      // Publish the table for the map<->rows selection bridge. The drawer is built LAZILY on
+      // first open, so a bridge that merely read `window.__qsvDataDT` at page load would always
+      // find nothing — it listens for this event instead (and re-checks the global, in case it
+      // hooked after the drawer was already built).
+      window.__qsvDataDT = dt;
+      document.dispatchEvent(new CustomEvent("qsv-data-dt-ready"));
       // let the just-appended drawer paint once closed, so the open transition animates
       requestAnimationFrame(function () { show(drawer); });
     });
@@ -1151,6 +1306,18 @@
     }
     build().catch(function (e) { console.error("qsv viz: data viewer failed:", e); });
     return false;
+  };
+  // Flash a short message in the drawer bar for ~2s. Used by the map<->rows bridge to explain a
+  // click that could not do anything visible (a map point whose row lies past the preview
+  // prefix). A no-op before the drawer is built, so callers need no guard.
+  var noteTimer = null;
+  window.__qsvDataNote = function (msg) {
+    var el = document.getElementById("qsv-data-note");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { el.classList.remove("show"); }, 2000);
   };
   window.qsvCloseData = function () {
     var drawer = document.getElementById("qsv-data-drawer");
@@ -1180,6 +1347,7 @@
   });
 })();
 </script>
+
 
 <script>
 (function () {
@@ -1299,6 +1467,13 @@
           if (gd.__qsvPhotoHooked && window.__qsvPhotoRehook && np && np.then) {
             var prehook = function () { gd.__qsvPhotoHooked = false; window.__qsvPhotoRehook.tries = 0; window.__qsvPhotoRehook(); };
             np.then(prehook, prehook);
+          }
+          // and for the map<->rows selection bridge (see MAP_SELECT_CHROME): this newPlot drops
+          // its plotly_click listener AND repaints the points unselected, so the rehook also
+          // re-applies the current selection.
+          if (gd.__qsvSelHooked && window.__qsvSelRehook && np && np.then) {
+            var srehook = function () { gd.__qsvSelHooked = false; window.__qsvSelRehook.tries = 0; window.__qsvSelRehook(); };
+            np.then(srehook, srehook);
           }
         } else {
           Plotly.relayout(gd, u);

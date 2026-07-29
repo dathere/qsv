@@ -795,7 +795,11 @@ use plotly::{
     sankey::{Arrangement, Link, Node},
     splom::SplomDimension,
     sunburst::InsideTextOrientation,
-    traces::{icicle::BranchValues as IcicleBranchValues, scatter_map::Cluster},
+    traces::{
+        icicle::BranchValues as IcicleBranchValues,
+        scatter_geo::Selection as GeoSelection,
+        scatter_map::{Cluster, Selection as MapSelection},
+    },
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
     violin::{MeanLine, SpanMode, ViolinBox, ViolinPoints},
     waterfall::{Marker as WaterfallMarker, Measure, MeasureStyle},
@@ -1172,6 +1176,18 @@ const SMART_GEO_OUTLIER_CAP: usize = 5_000;
 /// than the `--heatmap-density` threshold rows). Mild transparency reveals overlapping points
 /// instead of a flat blob.
 const MAP_POINT_OPACITY: f64 = 0.4;
+
+/// Styling for map points whose data-viewer row is selected (see `PanelKind::Map::row_ids`).
+///
+/// Size and color do the work, not opacity: the core markers already draw at `MAP_POINT_OPACITY`
+/// (0.4), so there is little headroom to make a point stand out by becoming *more* opaque. The
+/// selected fill is a magenta chosen to sit outside both the categorical palette (blues/greens)
+/// and `GEO_OUTLIER_COLOR` (amber), so a selected outlier still reads as selected.
+const MAP_SELECTED_POINT_SIZE: usize = 14;
+const MAP_SELECTED_POINT_COLOR: &str = "#ff2d95";
+/// Points *not* in the selection dim to this while a selection is active, so the selected few
+/// stay findable in a dense cloud. Restores to `MAP_POINT_OPACITY` when the selection clears.
+const MAP_UNSELECTED_POINT_OPACITY: f64 = 0.12;
 
 /// At or above this many rendered core points, the `viz smart` map panel enables native MapLibre
 /// point clustering on the core marker trace (unless a density heatmap or bubble-size encoding is
@@ -8728,6 +8744,13 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
             var prehook = function () { gd.__qsvPhotoHooked = false; window.__qsvPhotoRehook.tries = 0; window.__qsvPhotoRehook(); };
             np.then(prehook, prehook);
           }
+          // and for the map<->rows selection bridge (see MAP_SELECT_CHROME): this newPlot drops
+          // its plotly_click listener AND repaints the points unselected, so the rehook also
+          // re-applies the current selection.
+          if (gd.__qsvSelHooked && window.__qsvSelRehook && np && np.then) {
+            var srehook = function () { gd.__qsvSelHooked = false; window.__qsvSelRehook.tries = 0; window.__qsvSelRehook(); };
+            np.then(srehook, srehook);
+          }
         } else {
           Plotly.relayout(gd, u);
         }
@@ -9680,6 +9703,162 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
 </script>
 "##;
 
+/// Cross-link between the data viewer drawer's rows and the map panel's points, emitted only when
+/// BOTH exist (a `Map`/`Geo` panel carrying `row_ids`, and the drawer chrome).
+///
+/// Both directions travel over the trace's plotly `ids` — the 0-based data-row ordinal that
+/// `build_map_panel` attaches to the core and outlier point traces ONLY. The extent and
+/// `--geojson` overlay traces carry no `ids`, so a click on a boundary can never select a row.
+/// An id of `""` means the row exists but sits past the drawer's preview prefix.
+///
+/// The drawer side is reached exclusively through the small public seam that
+/// `DATA_DRAWER_SCRIPT` publishes (`__qsvDataSelect` / `__qsvDataPageTo` / `__qsvDataNote` and the
+/// `qsv-data-selection` event) rather than by touching DataTables directly — the drawer is built
+/// lazily on first open, so there is nothing to talk to at page load.
+///
+/// Hooking follows the `PHOTO_CHROME` idiom: poll until the panel has rendered, wait for the
+/// fullscreen script's one-time `Plotly.newPlot` (`__qsvFs`) so the click listener is not dropped
+/// by it, and publish `__qsvSelRehook` for the theme toggle to call after ITS re-render.
+const MAP_SELECT_CHROME: &str = r##"<script>
+(function () {
+  function isPointTrace(t) {
+    return !!(t && (t.type === "scattermap" || t.type === "scattergeo") && t.ids && t.ids.length);
+  }
+  function hasPointTrace(gd) {
+    return !!(gd.data && gd.data.some(isPointTrace));
+  }
+  // id string -> {t: traceIndex, p: pointIndex}. Built once per hook so applying a selection is
+  // O(selected) rather than O(points) — the core trace can carry 150k of them.
+  function buildIndex(gd) {
+    var index = new Map(), traces = [];
+    gd.data.forEach(function (t, ti) {
+      if (!isPointTrace(t)) return;
+      traces.push(ti);
+      for (var p = 0; p < t.ids.length; p++) {
+        // "" marks a point whose row is past the preview prefix: nothing to select
+        if (t.ids[p]) index.set(t.ids[p], { t: ti, p: p });
+      }
+    });
+    gd.__qsvSelIndex = index;
+    gd.__qsvSelTraces = traces;
+  }
+  function applySelection(gd, ids) {
+    if (!gd.__qsvSelTraces || !gd.__qsvSelTraces.length) return;
+    var per = {};
+    gd.__qsvSelTraces.forEach(function (ti) { per[ti] = []; });
+    ids.forEach(function (id) {
+      var loc = gd.__qsvSelIndex.get(String(id));
+      if (loc) per[loc.t].push(loc.p);
+    });
+    // plotly needs `null`, not `[]`, for "nothing selected in this trace": an empty array dims
+    // every point as unselected with no selection to show for it
+    var sel = gd.__qsvSelTraces.map(function (ti) { return per[ti].length ? per[ti] : null; });
+    try {
+      Plotly.restyle(gd, { selectedpoints: sel }, gd.__qsvSelTraces);
+    } catch (e) {}
+  }
+  // `Plotly.newPlot` detaches every listener on the graph div, and for MapLibre map traces it
+  // does so AGAIN on a deferred pass that runs after its own promise has already resolved — so a
+  // listener attached from that promise's callback is silently dropped (observed directly: after
+  // a theme flip the panel still reported itself hooked while its click handler was gone, and
+  // map clicks stopped selecting rows).
+  //
+  // Rather than guess a safe delay, attach at several and let a token retire every superseded
+  // binding, so exactly one fires no matter which pass ends up owning the emitter.
+  function bindClick(gd) {
+    var token = (gd.__qsvSelToken || 0) + 1;
+    gd.__qsvSelToken = token;
+    gd.on("plotly_click", function (ev) {
+      if (gd.__qsvSelToken !== token) return;
+      onClick(gd, ev);
+    });
+  }
+  function bindClickSettled(gd) {
+    bindClick(gd);
+    setTimeout(function () { bindClick(gd); }, 250);
+    setTimeout(function () { bindClick(gd); }, 1200);
+  }
+  // last selection seen from the drawer, so a re-render (theme flip, fullscreen) can restore it
+  var current = [];
+  function eachHooked(fn) {
+    document.querySelectorAll('#qsv-viz-smart-grid, [id^="qsv-viz-panel-"]').forEach(function (gd) {
+      if (gd.__qsvSelHooked) fn(gd);
+    });
+  }
+  // rows -> map
+  document.addEventListener("qsv-data-selection", function (ev) {
+    current = (ev.detail && ev.detail.indexes) || [];
+    eachHooked(function (gd) { applySelection(gd, current); });
+  });
+  // map -> rows
+  function onClick(gd, ev) {
+    // with the drawer closed there is no visible selection, so a click keeps its old meaning
+    if (!document.body.classList.contains("qsv-data-open")) return;
+    var p = ev && ev.points && ev.points[0];
+    if (!p) return;
+    var t = gd.data[p.curveNumber];
+    if (!isPointTrace(t)) return;
+    var id = t.ids[p.pointNumber];
+    // guard BEFORE any numeric coercion: +"" is 0, which would silently select the first row
+    if (!id || !window.__qsvDataSelect) {
+      if (id === "" && window.__qsvDataNote) window.__qsvDataNote("row not in preview");
+      return;
+    }
+    if (!window.__qsvDataSelect(id, false)) {
+      if (window.__qsvDataNote) window.__qsvDataNote("row not in preview");
+      return;
+    }
+    // Page to the row, but only if it survives the drawer's current filters. When it does not,
+    // the selection still shows in the "N rows selected" count — the user's filters are NEVER
+    // cleared to reveal it.
+    if (window.__qsvDataPageTo && !window.__qsvDataPageTo(id) && window.__qsvDataNote) {
+      window.__qsvDataNote("row is filtered out");
+    }
+  }
+  function hook() {
+    var tries = hook.tries || 0;
+    var gds = document.querySelectorAll('#qsv-viz-smart-grid, [id^="qsv-viz-panel-"]');
+    var pending = false;
+    gds.forEach(function (gd) {
+      if (gd.__qsvSelHooked || gd.__qsvSelSkip) return;
+      if (!gd.on || (!gd.__qsvFs && tries < 100)) { pending = true; return; }
+      // decided once the panel has rendered: a panel with no id-bearing point trace is marked
+      // skipped so it never keeps the poll alive
+      if (!hasPointTrace(gd)) { gd.__qsvSelSkip = true; return; }
+      gd.__qsvSelHooked = true;
+      buildIndex(gd);
+      bindClickSettled(gd);
+      // Re-arm on our OWN triggers rather than trusting the theme toggle to call the rehook it
+      // publishes. Two observed failure modes make that dependency unreliable: the toggle wraps
+      // its whole per-panel body in `try {} catch {}`, so an earlier helper throwing (seen on a
+      // map with no cluster toggle) silently skips every rehook AFTER the newPlot has already
+      // detached the listeners; and even when the rehook does run, the newPlot promise can
+      // resolve before the emitter is final. These two DOM listeners live on the toggle button
+      // and on `document`, which plotly never re-renders, so they always survive.
+      if (!gd.__qsvSelWatch) {
+        gd.__qsvSelWatch = true;
+        var rearm = function () {
+          bindClickSettled(gd);
+          // the re-render repaints from gd.data; re-assert the selection once it has settled
+          if (current.length) setTimeout(function () { applySelection(gd, current); }, 1300);
+        };
+        var tb = document.getElementById("qsv-theme-toggle");
+        if (tb) tb.addEventListener("click", rearm);
+        document.addEventListener("fullscreenchange", rearm);
+      }
+      // a re-render drops both the listener above and the painted selection; restoring it here
+      // is what makes a theme flip mid-selection look seamless
+      if (current.length) applySelection(gd, current);
+    });
+    hook.tries = tries + 1;
+    if (pending && hook.tries < 200) setTimeout(hook, 100);
+  }
+  window.__qsvSelRehook = hook;
+  hook();
+})();
+</script>
+"##;
+
 fn smart_html_page(
     title_text: &str,
     theme: Option<BuiltinTheme>,
@@ -9691,6 +9870,9 @@ fn smart_html_page(
     photos: bool,
     data_chrome: Option<&str>,
     has_basemap: bool,
+    // A `Map`/`Geo` panel carries per-point row ordinals, so the rows<->points bridge is worth
+    // emitting. Still gated on the drawer actually being present (see `map_select_chrome`).
+    map_select: bool,
 ) -> String {
     let js = plotly_js_block();
     let meta_table = meta_table.unwrap_or("");
@@ -9754,6 +9936,14 @@ fn smart_html_page(
         PHOTO_CHROME.replace("__QSVDWELLMS__", &PHOTO_DWELL_MS.to_string())
     } else {
         String::new()
+    };
+    // rows<->points bridge: needs BOTH ends to exist. `map_select` says the map carries row
+    // ordinals; a non-empty `data_chrome` is exactly the "drawer is on this page" test (same
+    // condition the DataTables bundle is embedded under).
+    let map_select_chrome = if map_select && !data_chrome.is_empty() {
+        MAP_SELECT_CHROME
+    } else {
+        ""
     };
     // A RAW-string template (actual newlines, not `\n` escapes) so rustfmt's `format_strings` can't
     // split an escape across a line wrap and corrupt the output — it once mangled `\n{script}` into
@@ -9822,6 +10012,7 @@ fn smart_html_page(
 {dict_chrome}
 {data_chrome}
 {photo_chrome}
+{map_select_chrome}
 {script}
 <div class="qsv-page-foot">{tp_footer}<div class="qsv-page-foot-right">{button}{logo}</div></div>
 </body>
@@ -10169,8 +10360,16 @@ const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
 
 /// The download-builder combination the vendored bundle was built from: DataTables core 3.0.0 +
 /// Buttons 4.0.0 (for the popover SearchBuilder "Filter" button) + `ColumnControl` 2.0.0 (the
-/// in-header per-column search widgets) + `DateTime` 2.0.0 + Responsive 4.0.0 + SearchBuilder
-/// 2.0.0, default DataTables styling. Also the path segment of the version-pinned CDN URLs.
+/// in-header per-column search widgets) + `DateTime` 2.0.0 + SearchBuilder 2.0.0, default
+/// DataTables styling. Also the path segment of the version-pinned CDN URLs.
+///
+/// Two components are deliberately ABSENT and must not be added back when re-fetching:
+/// - **Responsive**, dropped when horizontal scrolling (`scrollX`) replaced it.
+/// - **Select**, which would be the obvious way to implement the data viewer's row selection but
+///   hard-requires a global `jQuery` at every published version (checked 2.1.0 through 3.1.0, plus
+///   the standalone and ESM builds) — this page runs DataTables in vanilla mode, so the extension
+///   throws `ReferenceError: jQuery is not defined` and silently never registers. Row selection is
+///   hand-rolled in `DATA_DRAWER_SCRIPT` instead.
 const DATATABLES_CDN_COMBO: &str = "dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/sb-2.0.0";
 const DATATABLES_CDN_JS_SRI: &str =
     "sha384-B90pTMf63769NHSc70ShJk7oZumO6CZr5p389024KoPfbeXhfdyTGFe3AODnkPwu";
@@ -13041,6 +13240,15 @@ enum PanelKind {
         /// third-party URLs and its viewers' browsers request nothing off-origin.
         photos:             Vec<String>,
         outlier_photos:     Vec<String>,
+        /// Join key to the data viewer drawer: each point's 0-based DATA-row ordinal as a string,
+        /// row-aligned to `lats`/`lons` (and `outlier_row_ids` to the outlier coords), emitted as
+        /// the trace's plotly `ids`. An EMPTY string means the row exists but sits past the
+        /// drawer's `--preview-threshold` prefix, so it has no row to select — distinct from a
+        /// trace with no `ids` at all (the extent/geojson overlays), which is not selectable.
+        /// BOTH vectors are empty when the cross-link is off (image export, or the drawer
+        /// disabled), and no `ids` is emitted at all.
+        row_ids:            Vec<String>,
+        outlier_row_ids:    Vec<String>,
     },
     /// Geographic point map drawn on a `ScatterGeo` projection basemap (coastlines/land/countries,
     /// no network tiles) instead of a MapLibre tile map — used for `viz smart` when the coordinates
@@ -13060,6 +13268,10 @@ enum PanelKind {
         outlier_hover_text: Vec<String>,
         /// Row-aligned RAW measure per CORE point for bubble sizing; see `Map::sizes`.
         sizes:              Option<Vec<f64>>,
+        /// Data viewer join key; see `Map::row_ids`. Empty for the static-image `Map` -> `Geo`
+        /// coercion, which renders without any JS.
+        row_ids:            Vec<String>,
+        outlier_row_ids:    Vec<String>,
     },
     /// Filled-region `Choropleth` aggregate drawn on the projection `geo` subplot — added beside
     /// the point Map/Geo panel when geocode resolves the coordinates to 2+ distinct countries,
@@ -14492,10 +14704,110 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
      unreadable on dark paper, and href="#" means one click marks it visited forever */
   .qsv-viz-meta a.qsv-data-link, .qsv-viz-meta a.qsv-data-link:visited { font-size: 0.9em; font-weight: 600; color: var(--qsv-link, #0a5fb4); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
   .qsv-viz-meta a.qsv-data-link:hover, .qsv-viz-meta a.qsv-data-link:focus-visible { color: var(--qsv-link-hover, #084b8f); text-decoration: underline; }
+  /* Selected rows. Derived from --qsv-link with color-mix rather than hardcoded, so the tint
+     tracks the theme automatically (the link color flips with body.qsv-dark) instead of needing
+     a separate dark-mode rule that could drift. DataTables' own Select CSS paints a solid grey
+     that is nearly invisible on the dark theme, hence the override; the !important is needed
+     because that rule is more specific and ships inside the vendored bundle. The left border
+     is the redundant, non-color cue: a row stays identifiable as selected when the tint is lost
+     to a colorblind reader, a high-contrast mode, or a print stylesheet. */
+  #qsv-data-table tbody tr.selected > *, #qsv-data-table tbody tr.selected:hover > * { box-shadow: none !important; background: color-mix(in srgb, var(--qsv-link, #0a5fb4) 22%, transparent) !important; color: inherit !important; }
+  #qsv-data-table tbody tr.selected:hover > * { background: color-mix(in srgb, var(--qsv-link, #0a5fb4) 30%, transparent) !important; }
+  #qsv-data-table tbody tr.selected > *:first-child, #qsv-data-table tbody tr.selected:hover > *:first-child { box-shadow: inset 3px 0 0 0 var(--qsv-link, #0a5fb4) !important; }
+  /* count of selected rows, appended to DataTables' own info line */
+  .qsv-data-selinfo { opacity: 0.85; }
+  /* Transient note (e.g. a clicked map point whose row is past the preview prefix). Sits in the
+     drawer bar, not over the table, so it never covers data; aria-live lets a screen reader
+     announce it, since it is the only feedback that a click did something. */
+  .qsv-data-note { margin-left: 10px; margin-right: auto; font-weight: 400; font-size: 12px; opacity: 0; transition: opacity 0.15s ease; color: var(--qsv-link, #0a5fb4); pointer-events: none; }
+  .qsv-data-note.show { opacity: 1; }
 </style>
 <script>
 (function () {
   var dt = null;
+  // ---------------------------------------------------------------------------------------
+  // Row selection.
+  //
+  // Hand-rolled rather than using the DataTables Select extension, which hard-requires a global
+  // jQuery at every published version (2.1.0 through 3.1.0, plus the standalone and ESM builds)
+  // while this page runs DataTables in vanilla mode — loading it throws `ReferenceError: jQuery
+  // is not defined` and it silently never registers, leaving `rows({selected:true})` to return
+  // EVERY row rather than none. See DATATABLES_CDN_COMBO.
+  //
+  // Selection is stored as DATA row indexes (`row().index()`), never DOM nodes: `deferRender`
+  // discards off-page rows, and sorting/filtering/paging all reshuffle the DOM, so a node-based
+  // set would silently lose rows. The visual state is therefore re-applied on every `draw`.
+  var selRows = new Set();
+  // data index of the last non-shift click, the fixed end of a shift-range
+  var selAnchor = null;
+
+  // Repaint the `selected` class on the rows currently in the DOM. Cheap: only the current page.
+  function paintSelection() {
+    if (!dt) return;
+    dt.rows({page: "current"}).every(function () {
+      var node = this.node();
+      if (node) node.classList.toggle("selected", selRows.has(this.index()));
+    });
+  }
+
+  // Append/refresh the "N rows selected" count on DataTables' own info line, which is where a
+  // user already looks for row counts — and the only feedback when a selected row is on another
+  // page or filtered out of view.
+  function paintSelectionInfo() {
+    var info = document.querySelector("#qsv-data-drawer div.dt-info");
+    if (!info) return;
+    var el = info.querySelector(".qsv-data-selinfo");
+    if (!selRows.size) { if (el) el.remove(); return; }
+    if (!el) {
+      el = document.createElement("span");
+      el.className = "qsv-data-selinfo";
+      info.appendChild(el);
+    }
+    el.textContent = " — " + selRows.size + (selRows.size === 1 ? " row selected" : " rows selected");
+  }
+
+  // Single funnel for every selection change, so the map bridge sees exactly one event per
+  // change regardless of which side caused it. `source` lets a listener ignore its own echo.
+  function selectionChanged(source) {
+    paintSelection();
+    paintSelectionInfo();
+    document.dispatchEvent(new CustomEvent("qsv-data-selection", {
+      detail: { indexes: Array.from(selRows), source: source }
+    }));
+  }
+
+  // --- public seam, used by the map<->rows bridge (MAP_SELECT_CHROME) ---
+  // Replace (or extend) the selection with the given DATA indexes. Out-of-range indexes are
+  // dropped and reported, so a map point past the drawer's preview prefix cannot select row 0.
+  window.__qsvDataSelect = function (indexes, extend) {
+    if (!dt) return 0;
+    var list = Array.isArray(indexes) ? indexes : [indexes];
+    // rows().count(), NOT data().count() — the latter counts CELLS (rows x columns), so on a
+    // 41-column preview it reported 20500 for 500 rows and waved through every out-of-range index
+    var total = dt.rows().count();
+    if (!extend) selRows.clear();
+    var kept = 0;
+    list.forEach(function (i) {
+      i = +i;
+      if (Number.isInteger(i) && i >= 0 && i < total) { selRows.add(i); selAnchor = i; kept++; }
+    });
+    selectionChanged("map");
+    return kept;
+  };
+  window.__qsvDataSelectedRows = function () { return Array.from(selRows); };
+  // Page to the row with this DATA index, in the CURRENT sort/filter. Returns false when the row
+  // is filtered out (caller decides whether to explain) — never clears the user's filters.
+  window.__qsvDataPageTo = function (i) {
+    if (!dt) return false;
+    var order = dt.rows({order: "applied", search: "applied"}).indexes().toArray();
+    var pos = order.indexOf(+i);
+    if (pos < 0) return false;
+    var len = dt.page.len();
+    // len is -1 when the user picked "All" — everything is already on one page
+    if (len > 0) dt.page(Math.floor(pos / len)).draw(false);
+    return true;
+  };
+
   // DataTables' native dark palette keys on `:root.dark` (the <html> element); qsv's theme
   // toggle flips `body.qsv-dark`. Mirror the body class onto <html> so the drawer widgets
   // follow the qsv theme — nothing else in the page styles off `html.dark`.
@@ -14687,6 +14999,13 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       close.setAttribute("aria-label", "Close data viewer");
       close.addEventListener("click", function (ev) { ev.preventDefault(); window.qsvCloseData(); });
       bar.appendChild(title);
+      // transient status line, flashed by window.__qsvDataNote (see below). `margin-right: auto`
+      // keeps it beside the title and still pushes the close button to the far right.
+      var note = document.createElement("span");
+      note.className = "qsv-data-note";
+      note.id = "qsv-data-note";
+      note.setAttribute("aria-live", "polite");
+      bar.appendChild(note);
       bar.appendChild(close);
       var content = document.createElement("div");
       content.className = "qsv-data-drawer-content";
@@ -14894,6 +15213,12 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
           // applied for display. Over a markup/entity/quote/tab/emoji fixture "display" was
           // 10/10 exact where "export" corrupted 4/10. Row scope is the default too: search
           // applies, paging does not, so the file holds every filtered row, not the page.
+          //
+          // NOTE: this default is only safe because the DataTables **Select extension is not
+          // loaded** (it requires jQuery; see DATATABLES_CDN_COMBO). With Select present, Buttons
+          // silently narrows the export to "the selected rows, if any" — so if it is ever added,
+          // this button MUST pin `exportOptions.modifier.selected = null`. The hand-rolled row
+          // selection below deliberately does not hook Buttons, so the export stays all-rows.
           exportOptions: {
             // csvHtml5 carries this in its OWN default exportOptions, and supplying the object
             // replaces that default rather than merging into it. Restated so the CSV-injection
@@ -14920,6 +15245,48 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
           }
         }] }] }
       });
+      // Row selection, "os" idiom: plain click replaces the selection (and clicking the only
+      // selected row clears it), ctrl/cmd-click toggles one row, shift-click extends a range.
+      // Delegated from the table so it keeps working as deferRender recycles row nodes, and
+      // scoped to tbody so the ColumnControl search row in the thead is untouched.
+      table.addEventListener("click", function (ev) {
+        var tr = ev.target.closest("tbody tr");
+        if (!tr || !dt || !table.contains(tr)) return;
+        var idx = dt.row(tr).index();
+        // the "no matching records" placeholder is a tbody tr with no backing data row
+        if (idx === undefined || idx === null) return;
+        if (ev.shiftKey && selAnchor !== null) {
+          // range over the CURRENT sort+filter, so it matches what the user sees
+          var order = dt.rows({order: "applied", search: "applied"}).indexes().toArray();
+          var a = order.indexOf(selAnchor), b = order.indexOf(idx);
+          if (a >= 0 && b >= 0) {
+            selRows.clear();
+            for (var i = Math.min(a, b); i <= Math.max(a, b); i++) selRows.add(order[i]);
+          }
+          // shift-click also starts a native text selection across the rows; drop it so the
+          // range reads as a row selection rather than a smear of highlighted text
+          var ws = window.getSelection();
+          if (ws) ws.removeAllRanges();
+        } else if (ev.ctrlKey || ev.metaKey) {
+          if (selRows.has(idx)) selRows.delete(idx); else selRows.add(idx);
+          selAnchor = idx;
+        } else {
+          var onlyThis = selRows.size === 1 && selRows.has(idx);
+          selRows.clear();
+          if (!onlyThis) selRows.add(idx);
+          selAnchor = idx;
+        }
+        selectionChanged("rows");
+      });
+      // deferRender builds row nodes on demand and every draw re-writes the tbody, so the
+      // `selected` class has to be re-applied rather than set once at click time.
+      dt.on("draw", function () { paintSelection(); paintSelectionInfo(); });
+      // Publish the table for the map<->rows selection bridge. The drawer is built LAZILY on
+      // first open, so a bridge that merely read `window.__qsvDataDT` at page load would always
+      // find nothing — it listens for this event instead (and re-checks the global, in case it
+      // hooked after the drawer was already built).
+      window.__qsvDataDT = dt;
+      document.dispatchEvent(new CustomEvent("qsv-data-dt-ready"));
       // let the just-appended drawer paint once closed, so the open transition animates
       requestAnimationFrame(function () { show(drawer); });
     });
@@ -14936,6 +15303,18 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     }
     build().catch(function (e) { console.error("qsv viz: data viewer failed:", e); });
     return false;
+  };
+  // Flash a short message in the drawer bar for ~2s. Used by the map<->rows bridge to explain a
+  // click that could not do anything visible (a map point whose row lies past the preview
+  // prefix). A no-op before the drawer is built, so callers need no guard.
+  var noteTimer = null;
+  window.__qsvDataNote = function (msg) {
+    var el = document.getElementById("qsv-data-note");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { el.classList.remove("show"); }, 2000);
   };
   window.qsvCloseData = function () {
     var drawer = document.getElementById("qsv-data-drawer");
@@ -19652,10 +20031,19 @@ fn build_map_panel(
     coord_hint: Option<(usize, usize)>,
     cluster_mode: ClusterMode,
     loaded_geojson: Option<&serde_json::Value>,
+    // Emit each plotted point's 0-based DATA-row ordinal as the trace's `ids`, so the data viewer
+    // drawer can cross-link rows and map points. Off for image export (no JS) and when the drawer
+    // is disabled (`--preview-threshold 0`), which keeps those payloads byte-identical.
+    capture_row_ids: bool,
 ) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize), usize)>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
     };
+    // Rows past the drawer's preview prefix have no row to select, so their ordinal is emitted as
+    // an empty string rather than a number: same positional alignment, far fewer bytes on a big
+    // map, and the bridge can still tell "beyond the preview" (empty entry, worth a note) from
+    // "not a selectable trace at all" (no `ids` array — the extent/geojson overlays).
+    let row_id_cap = args.flag_preview_threshold as u64;
 
     // pick the hover fields once: [identifier, extras...] (extras only under --smarter). When this
     // is empty AND no point reverse-geocodes, the trace keeps plotly's default lat/lon hover.
@@ -19713,9 +20101,19 @@ fn build_map_panel(
     // for multi-photo cells) and row-aligned with lats/lons. Empty string for a row with no photo,
     // and the whole vector stays empty when the flag is off.
     let mut photo_urls: Vec<String> = Vec::new();
+    // 0-based DATA-row ordinal of each kept point, row-aligned with lats/lons. Empty unless
+    // `capture_row_ids`. This is the join key to the drawer's DataTable, whose row order is the
+    // same single pass over the same Config (see `collect_datatable_rows`).
+    let mut row_ids: Vec<u64> = Vec::new();
     let build_dataset_lines = id_idx.is_some() || !extra_idxs.is_empty();
     let mut record = csv::ByteRecord::new();
+    // counts EVERY data row read, including ones dropped below for unparseable/out-of-range
+    // coordinates — those rows still occupy an ordinal in the drawer, so skipping them here
+    // would shift every subsequent point onto the wrong row.
+    let mut row_ordinal: u64 = 0;
     while rdr.read_byte_record(&mut record)? {
+        let ordinal = row_ordinal;
+        row_ordinal += 1;
         let (Some(lat), Some(lon)) = (
             parse_f64(record.get(lat_idx)),
             parse_f64(record.get(lon_idx)),
@@ -19725,6 +20123,9 @@ fn build_map_panel(
         if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon) {
             lats.push(lat);
             lons.push(lon);
+            if capture_row_ids {
+                row_ids.push(ordinal);
+            }
             if let Some(si) = size_idx {
                 sizes_raw.push(parse_f64(record.get(si)).unwrap_or(f64::NAN));
             }
@@ -19823,6 +20224,20 @@ fn build_map_panel(
     };
     let core_photos_raw = photos_or_blank(&core_idx, core_lats.len());
     let out_photos_raw = photos_or_blank(&out_idx, out_lats.len());
+    // row ordinals follow the SAME index partition (and, below, the same downsample stride) as
+    // the hover lines and photos — one packing path, so a point can never acquire another row's
+    // ordinal. Filler zeros when the feature is off; they are discarded after downsampling.
+    let gather_u64 =
+        |idx: &[usize], src: &[u64]| -> Vec<u64> { idx.iter().map(|&i| src[i]).collect() };
+    let ids_or_blank = |idx: &[usize], n: usize| -> Vec<u64> {
+        if capture_row_ids {
+            gather_u64(idx, &row_ids)
+        } else {
+            vec![0_u64; n]
+        }
+    };
+    let core_ids_raw = ids_or_blank(&core_idx, core_lats.len());
+    let out_ids_raw = ids_or_blank(&out_idx, out_lats.len());
 
     // reverse-geocode the CORE bounding box into the spatial-extent overlay + summary, plus a
     // representative sample of the outliers for the call-out (one batched engine load). Degrades to
@@ -19846,13 +20261,14 @@ fn build_map_panel(
     };
     // move the lines in rather than cloning the whole set: `core_lines` is rebuilt from the
     // downsampled result below, so the original vector is dead after this
-    let core_packed: Vec<(f64, String, f64, String)> = core_lons
+    let core_packed: Vec<(f64, String, f64, String, u64)> = core_lons
         .iter()
         .copied()
         .zip(core_lines)
         .zip(core_sizes_raw.iter().copied())
         .zip(core_photos_raw)
-        .map(|(((lo, line), sz), photo)| (lo, line, sz, photo))
+        .zip(core_ids_raw)
+        .map(|((((lo, line), sz), photo), rid)| (lo, line, sz, photo, rid))
         .collect();
     let (lats, core_pl) = downsample_pair(&core_lats, &core_packed, *MAX_SMART_POINTS);
     let lons: Vec<f64> = core_pl.iter().map(|t| t.0).collect();
@@ -19862,12 +20278,13 @@ fn build_map_panel(
     let core_sizes: Option<Vec<f64>> = size_idx
         .map(|_| core_pl.iter().map(|t| t.2).collect::<Vec<f64>>())
         .filter(|v| v.iter().any(|x| x.is_finite()));
-    let out_packed: Vec<(f64, String, String)> = out_lons
+    let out_packed: Vec<(f64, String, String, u64)> = out_lons
         .iter()
         .copied()
         .zip(out_lines)
         .zip(out_photos_raw)
-        .map(|((lo, line), photo)| (lo, line, photo))
+        .zip(out_ids_raw)
+        .map(|(((lo, line), photo), rid)| (lo, line, photo, rid))
         .collect();
     let (outlier_lats, out_pl) = downsample_pair(&out_lats, &out_packed, SMART_GEO_OUTLIER_CAP);
     let outlier_lons: Vec<f64> = out_pl.iter().map(|t| t.0).collect();
@@ -19881,6 +20298,24 @@ fn build_map_panel(
             core_pl.iter().map(|t| t.3.clone()).collect(),
             out_pl.iter().map(|t| t.2.clone()).collect(),
         )
+    };
+    // Resolved AFTER downsampling, like the photos, so each surviving point keeps its OWN
+    // ordinal. Rendered here (not at emit time) because the preview cap is what turns an ordinal
+    // into either a selectable id or the empty "beyond the preview" marker.
+    let row_id_label = |ordinal: u64| -> String {
+        if ordinal < row_id_cap {
+            ordinal.to_string()
+        } else {
+            String::new()
+        }
+    };
+    let (core_row_ids, outlier_row_ids): (Vec<String>, Vec<String>) = if capture_row_ids {
+        (
+            core_pl.iter().map(|t| row_id_label(t.4)).collect(),
+            out_pl.iter().map(|t| row_id_label(t.3)).collect(),
+        )
+    } else {
+        (Vec::new(), Vec::new())
     };
 
     // per-point reverse-geocoded place (City, County, Admin1, Country [+ FIPS under --smarter]),
@@ -20126,6 +20561,8 @@ fn build_map_panel(
             hover_text,
             outlier_hover_text,
             sizes: core_sizes,
+            row_ids: core_row_ids,
+            outlier_row_ids,
         }
     } else {
         PanelKind::Map {
@@ -20141,6 +20578,8 @@ fn build_map_panel(
             pan_bounds,
             photos: core_photos,
             outlier_photos,
+            row_ids: core_row_ids,
+            outlier_row_ids,
         }
     };
     Ok(Some((
@@ -21574,6 +22013,10 @@ impl<'a> SmartCtx<'a> {
                 coord_hint,
                 cluster_mode,
                 loaded_geojson,
+                // the cross-link is pure JS chrome: an image export has no drawer to link to, and
+                // `--preview-threshold 0` disables the drawer outright. Gating here keeps both
+                // payloads byte-identical to before the feature existed.
+                matches!(out_format, OutFormat::Html) && args.flag_preview_threshold != 0,
             )? {
                 None => (None, None),
                 Some((p, choro, cols, mappable_count)) => {
@@ -21596,6 +22039,10 @@ impl<'a> SmartCtx<'a> {
                                 hover_text,
                                 outlier_hover_text,
                                 sizes,
+                                // a static image has no drawer to cross-link to; `capture_row_ids`
+                                // is already false on this path, so these are empty either way
+                                row_ids: Vec::new(),
+                                outlier_row_ids: Vec::new(),
                             },
                             other => other,
                         };
@@ -24842,6 +25289,8 @@ fn smart_grid_parts(
             hover_text,
             outlier_hover_text,
             sizes,
+            // static-export path only: no drawer, so no cross-link ids to emit
+            ..
         } = &panel.kind
         {
             let geom = geoms[n].clone();
@@ -25239,6 +25688,8 @@ fn render_smart_grid_page(
         data_chrome,
         // ...and for the same reason no MapLibre basemap tile is ever fetched from this page.
         false,
+        // ...nor is there a map panel to cross-link the data viewer's rows to.
+        false,
     )
 }
 
@@ -25420,6 +25871,8 @@ fn smart_inline_panel_plot(
         pan_bounds,
         photos,
         outlier_photos,
+        row_ids,
+        outlier_row_ids,
     } = &panel.kind
     {
         // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
@@ -25478,6 +25931,21 @@ fn smart_inline_panel_plot(
             if !photos.is_empty() {
                 core_trace = core_trace.custom_data(photos.clone());
             }
+            // Data-viewer cross-link: the row ordinal per point rides in `ids`, NOT `customdata`
+            // (which `--photos` already owns as a flat string array). `ids` is inert to rendering
+            // and to the hover template — plotly only uses it for animation object-constancy —
+            // and the bridge reads it as `gd.data[curve].ids[pointNumber]`. The selected/
+            // unselected styles are baked here so the bridge only has to set `selectedpoints`.
+            if !row_ids.is_empty() {
+                core_trace = core_trace
+                    .ids(row_ids.clone())
+                    .selected(
+                        MapSelection::new()
+                            .size(MAP_SELECTED_POINT_SIZE)
+                            .color(MAP_SELECTED_POINT_COLOR),
+                    )
+                    .unselected(MapSelection::new().opacity(MAP_UNSELECTED_POINT_OPACITY));
+            }
             if *cluster {
                 // native MapLibre client-side clustering, configured but DISABLED at load so the
                 // map opens on individual points; the "Clusters/Points" toggle (see
@@ -25507,6 +25975,18 @@ fn smart_inline_panel_plot(
             }
             if !outlier_photos.is_empty() {
                 out_trace = out_trace.custom_data(outlier_photos.clone());
+            }
+            // outliers are selectable too; the base amber identity is untouched, only the
+            // selected/unselected states differ (see the core trace above)
+            if !outlier_row_ids.is_empty() {
+                out_trace = out_trace
+                    .ids(outlier_row_ids.clone())
+                    .selected(
+                        MapSelection::new()
+                            .size(MAP_SELECTED_POINT_SIZE)
+                            .color(MAP_SELECTED_POINT_COLOR),
+                    )
+                    .unselected(MapSelection::new().opacity(MAP_UNSELECTED_POINT_OPACITY));
             }
             plot.add_trace(out_trace);
         }
@@ -25570,6 +26050,8 @@ fn smart_inline_panel_plot(
         hover_text,
         outlier_hover_text,
         sizes,
+        row_ids,
+        outlier_row_ids,
     } = &panel.kind
     {
         let mut plot = Plot::new();
@@ -25592,6 +26074,18 @@ fn smart_inline_panel_plot(
                 .text_array(map_hover_text_values(hover_text))
                 .hover_template(MAP_HOVER_TEMPLATE);
         }
+        // data-viewer cross-link; see the ScatterMap core trace above. ScatterGeo renders as SVG
+        // rather than WebGL, so selection restyling here is ordinary plotly behavior.
+        if !row_ids.is_empty() {
+            core_trace = core_trace
+                .ids(row_ids.clone())
+                .selected(
+                    GeoSelection::new()
+                        .size(MAP_SELECTED_POINT_SIZE)
+                        .color(MAP_SELECTED_POINT_COLOR),
+                )
+                .unselected(GeoSelection::new().opacity(MAP_UNSELECTED_POINT_OPACITY));
+        }
         plot.add_trace(core_trace);
         // geographic outliers as a distinct amber/X marker trace on top of the core points
         if !outlier_lats.is_empty() {
@@ -25604,6 +26098,16 @@ fn smart_inline_panel_plot(
                 out_trace = out_trace
                     .text_array(map_hover_text_values(outlier_hover_text))
                     .hover_template(MAP_HOVER_TEMPLATE);
+            }
+            if !outlier_row_ids.is_empty() {
+                out_trace = out_trace
+                    .ids(outlier_row_ids.clone())
+                    .selected(
+                        GeoSelection::new()
+                            .size(MAP_SELECTED_POINT_SIZE)
+                            .color(MAP_SELECTED_POINT_COLOR),
+                    )
+                    .unselected(GeoSelection::new().opacity(MAP_UNSELECTED_POINT_OPACITY));
             }
             plot.add_trace(out_trace);
         }
@@ -26686,6 +27190,13 @@ fn render_smart_inline(
             PanelKind::Map { .. } | PanelKind::ChoroplethMap { .. }
         )
     });
+    // Whether any point panel carries the per-point row ordinals the rows<->map bridge joins on.
+    // Both panel kinds can have them; `row_ids` is empty when the cross-link was gated off.
+    let has_map_select = panels.iter().any(|p| {
+        matches!(&p.kind, PanelKind::Map { row_ids, outlier_row_ids, .. }
+            | PanelKind::Geo { row_ids, outlier_row_ids, .. }
+            if !row_ids.is_empty() || !outlier_row_ids.is_empty())
+    });
     // panels carry no overall title, so the dashboard title is shown as the page <h1>.
     smart_html_page(
         title_text,
@@ -26698,6 +27209,7 @@ fn render_smart_inline(
         has_photos,
         data_chrome,
         has_basemap,
+        has_map_select,
     )
 }
 
@@ -33705,6 +34217,8 @@ mod tests {
             hover_text:         vec![String::new(), String::new()],
             outlier_hover_text: vec![],
             sizes:              None,
+            row_ids:            vec![],
+            outlier_row_ids:    vec![],
         };
         // an animated map adds the control-band allowance on top of the map row
         let anim = PanelKind::AnimatedGeo {

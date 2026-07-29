@@ -4,12 +4,13 @@ DataTables — license and attribution
 The files `datatables.min.js` and `datatables.min.css` in this directory are a
 vendored, unmodified copy of the DataTables download-builder bundle:
 
-    dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0
+    dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/r-4.0.0/sb-2.0.0
 
 comprising:
 
     DataTables    3.0.0
     Buttons       4.0.0
+    ColumnControl 2.0.0
     DateTime      2.0.0
     Responsive    4.0.0
     SearchBuilder 2.0.0

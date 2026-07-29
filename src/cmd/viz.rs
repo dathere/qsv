@@ -8477,8 +8477,8 @@ const THIRD_PARTY_NOTICES_URL: &str =
 /// artifact. This comment (and `third_party_footer`) restore that visibility.
 fn third_party_comment(datatables: bool, basemap: bool) -> String {
     let datatables_line = if datatables {
-        "\n     DataTables 3.0.0 + Buttons/DateTime/Responsive/SearchBuilder\n       (c) SpryMedia \
-         Ltd - MIT"
+        "\n     DataTables 3.0.0 + Buttons/ColumnControl/DateTime/Responsive/SearchBuilder\n       \
+         (c) SpryMedia Ltd - MIT"
     } else {
         ""
     };
@@ -10143,7 +10143,8 @@ fn plotly_js_block() -> String {
     )
 }
 
-/// Vendored DataTables v3 bundle (core + `DateTime` + SearchBuilder, "DataTables" default styling,
+/// Vendored DataTables v3 bundle (core + `ColumnControl` + `DateTime` + SearchBuilder, "DataTables"
+/// default styling,
 /// minified + concatenated by the DataTables download builder). Powers the `viz smart` data
 /// viewer drawer. MIT licensed (Copyright (C) 2008-2026, `SpryMedia` Ltd.) — the full license text
 /// and the component inventory live in `assets/LICENSE-DataTables.txt`, and the builder header
@@ -10167,22 +10168,22 @@ const DATATABLES_JS: &str = include_str!("assets/datatables.min.js");
 const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
 
 /// The download-builder combination the vendored bundle was built from: DataTables core 3.0.0 +
-/// Buttons 4.0.0 (for the popover SearchBuilder "Filter" button) + `DateTime` 2.0.0 + Responsive
-/// 4.0.0 + SearchBuilder 2.0.0, default DataTables styling. Also the path segment of the
-/// version-pinned CDN URLs.
-const DATATABLES_CDN_COMBO: &str = "dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0";
+/// Buttons 4.0.0 (for the popover SearchBuilder "Filter" button) + `ColumnControl` 2.0.0 (the
+/// in-header per-column search widgets) + `DateTime` 2.0.0 + Responsive 4.0.0 + SearchBuilder
+/// 2.0.0, default DataTables styling. Also the path segment of the version-pinned CDN URLs.
+const DATATABLES_CDN_COMBO: &str = "dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/r-4.0.0/sb-2.0.0";
 const DATATABLES_CDN_JS_SRI: &str =
-    "sha384-qsj+q+OqjwnpWR0ndlkUd+MsQd7oqHncAjb1PSxWIMH5ZStyVauUryBapGSlkcap";
+    "sha384-Rigm/apWaogS4bmpVlIXZHojkwkzXDoR3X2yp+39q7BqvJrb2OdEAV8L9lsojpVb";
 const DATATABLES_CDN_CSS_SRI: &str =
-    "sha384-ZtgaXPGRw8cZoyioB/MnlrKGlzPp58fYlI9z6CaPbGwG8kjkKPHju1nluTbJCNai";
+    "sha384-wapK3v+gtBHxObzqQYJKD1fe158vqRF6ToKTrrgaU/ez0IBKRQWtwArXz+jL7mnx";
 
-/// The DataTables bundle gzipped at max compression + base64 (~281 KB -> ~106 KB b64), computed
+/// The DataTables bundle gzipped at max compression + base64 (~317 KB -> ~118 KB b64), computed
 /// once per process like `PLOTLY_GZ_B64`. Empty on (never-expected) gzip failure — callers then
 /// emit the plain bundle.
 static DATATABLES_GZ_B64: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| gzip_b64(DATATABLES_JS.as_bytes(), flate2::Compression::best()));
 
-/// Like `DATATABLES_GZ_B64` but for the stylesheet (~67 KB -> ~12 KB b64).
+/// Like `DATATABLES_GZ_B64` but for the stylesheet (~80 KB -> ~15 KB b64).
 static DATATABLES_CSS_GZ_B64: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| gzip_b64(DATATABLES_CSS.as_bytes(), flate2::Compression::best()));
 
@@ -14451,7 +14452,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   .qsv-data-drawer-bar a:hover { opacity: 1; }
   .qsv-data-drawer-content { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 14px 10px 14px; }
   /* only the table's own layout row scrolls; the controls row above and the info/paging row
-     below stay fixed, and the sticky thead pins the title+filter rows inside the scroll region */
+     below stay fixed, and the sticky thead pins the header row inside the scroll region */
   #qsv-data-drawer div.dt-container { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   #qsv-data-drawer div.dt-container > div.dt-layout-row { flex: none; }
   /* align-items MUST override the center that .dt-layout-table inherits from DataTables'
@@ -14459,13 +14460,20 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
      scrollport, which puts half the overflow ABOVE it — unreachable by scrolling, so the
      first rows sit hidden behind the sticky thead */
   #qsv-data-drawer div.dt-container > div.dt-layout-table { flex: 1 1 auto; min-height: 0; overflow: auto; align-items: flex-start; }
-  #qsv-data-table thead th { position: sticky; top: 0; z-index: 5; background: var(--qsv-page-bg, #ffffff); }
-  #qsv-data-table thead tr.qsv-data-filters th { top: var(--qsv-data-th1-h, 34px); }
+  /* Sticky on the THEAD, not per cell. The header is two rows now (titles + ColumnControl's
+     search row), and pinning cells individually means every row after the first needs a top
+     offset equal to the measured height of the ones above it — JS measurement that silently
+     leaves a see-through gap the moment a row's height changes (font swap, column adjust).
+     Sticking the thead as one element pins both rows together with no measurement at all.
+     It also sidesteps ColumnControl building its row out of `td` cells, which a `thead th`
+     selector would skip entirely, leaving that row static and scrolling under the titles. */
+  #qsv-data-table thead { position: sticky; top: 0; z-index: 5; background: var(--qsv-page-bg, #ffffff); }
   /* the footer row (credits + Theme toggle + logo) is in flow, so this one margin lifts it clear
      of the open drawer — no per-widget offset rules needed */
   body.qsv-data-open { margin-bottom: var(--qsv-data-h-eff); }
-  tr.qsv-data-filters th { padding: 3px 6px; box-shadow: 0 1px 0 rgba(127, 127, 127, 0.35); }
-  tr.qsv-data-filters input { width: 100%; box-sizing: border-box; font-size: 11px; padding: 2px 5px; color: inherit; background: transparent; border: 1px solid rgba(127, 127, 127, 0.45); border-radius: 4px; }
+  /* ColumnControl's dropdown is positioned against the viewport but rendered inside the drawer,
+     which is itself a stacking context above the page — keep the panel over the sticky thead */
+  div.dtcc-dropdown { z-index: 20; }
   #qsv-data-drawer table.dataTable { color: inherit; }
   /* An unbroken long token (URL, base64 blob, hash) has no wrap opportunity, so the column
      grows to the token's full width and the table overflows the drawer — which has no
@@ -14682,31 +14690,18 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       table.id = "qsv-data-table";
       table.className = "display compact";
       table.style.width = "100%";
-      // two header rows: titles (ordering) + per-column filter inputs. `data-dt-order="disable"`
-      // keeps DataTables from attaching ordering listeners to the filter row.
+      // ONE header row: ColumnControl puts the ordering and per-column search widgets inside the
+      // title cell itself, so there is no second filter row to build, keep aligned with
+      // Responsive's column collapse, offset for sticky positioning, or strip back out of the
+      // CSV export.
       var thead = document.createElement("thead");
       var titleRow = document.createElement("tr");
-      var filterRow = document.createElement("tr");
-      filterRow.className = "qsv-data-filters";
-      filterRow.setAttribute("data-dt-order", "disable");
-      cols.forEach(function (c, i) {
+      cols.forEach(function (c) {
         var th = document.createElement("th");
         th.textContent = c.title;
         titleRow.appendChild(th);
-        var fth = document.createElement("th");
-        var input = document.createElement("input");
-        input.type = "search";
-        input.placeholder = "Filter…";
-        input.setAttribute("aria-label", "Filter " + c.title);
-        input.addEventListener("input", function () {
-          var col = dt.column(i);
-          if (col.search() !== input.value) col.search(input.value).draw();
-        });
-        fth.appendChild(input);
-        filterRow.appendChild(fth);
       });
       thead.appendChild(titleRow);
-      thead.appendChild(filterRow);
       table.appendChild(thead);
       content.appendChild(table);
       drawer.appendChild(grip);
@@ -14720,23 +14715,50 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
         columns: cols.map(function (c) {
           var text = DataTable.render.text();
           // A date cell may arrive as [raw, sortKey] when its source text is not one the
-          // browser's Date.parse orders correctly (see collect_datatable_rows). Split it back
-          // apart: ordering takes the key, everything the reader sees or searches takes the
-          // source text. Plain-string cells in the same column pass straight through, so this
-          // has to handle both shapes.
+          // browser's Date.parse reads correctly (see collect_datatable_rows). Split it back
+          // apart: the reader still sees the source text, while ordering AND searching take the
+          // ISO key. Plain-string cells in the same column pass straight through, so this has to
+          // handle both shapes. Only date columns are ever paired, so the array branch stays
+          // inside this arm — every other column keeps the plain escaping renderer.
           if (c.type !== "date") return { type: c.type, render: text };
           // render.text() is an ORTHOGONAL MAP ({display, filter}), not a callable, so the
           // date column supplies a map too. "_" is the fallback the un-keyed types ("type",
           // and the "export" Buttons could ask for) resolve through, which keeps them on the
           // source text exactly as an un-rendered column would be.
           var raw = function (d) { return Array.isArray(d) ? d[0] : d; };
+          var key = function (d) { return Array.isArray(d) ? d[1] : d; };
+          // The YYYY-MM-DD prefix of an ISO-leading value, or null for anything else (a blank,
+          // or a cell this column's typing did not produce a key for). Mirrors the Rust
+          // `is_iso_leading_date`, and the anchored digit pattern is what makes the slice safe
+          // to hand back unescaped: what it returns is only ever digits and dashes.
+          var isoDay = function (v) {
+            return typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null;
+          };
           return { type: c.type, render: {
             _: raw,
-            sort: function (d) { return Array.isArray(d) ? d[1] : d; },
-            // display and filter stay inside render.text() — dropping it here would put an
-            // unescaped cell value back into the page
+            sort: key,
+            // display stays inside render.text() — dropping it here would put an unescaped cell
+            // value back into the page.
             display: function (d) { return text.display(raw(d)); },
-            filter: function (d) { return text.filter(raw(d)); }
+            // FILTER TAKES THE ISO DAY, NOT THE SOURCE TEXT. ColumnControl's searchDateTime
+            // compares epochs: it parses its picker value as ISO (UTC midnight) and the cell
+            // through Date.parse. A slash-formatted cell parses as LOCAL midnight, so the two
+            // differ by the viewer's UTC offset and NOTHING ever matches; a day-first cell
+            // (25/07/2026) is month 25 and parses to NaN. Feeding the ISO key puts both sides
+            // on UTC midnight, which is what makes equals/before/after work on non-ISO date
+            // columns at all.
+            //
+            // Truncating to the DAY matters for DateTime columns. The picker is a bare calendar
+            // with no time input, so the only value a reader can express is a day; comparing it
+            // against a full timestamp makes `equals` unsatisfiable (2011-02-05T22:25:21 is
+            // never 2011-02-05T00:00:00) and a picked day would silently return nothing. Both
+            // branches truncate, so an all-ISO DateTime column — whose cells are never paired,
+            // because they are already ISO-leading — behaves the same as a month-first one.
+            // Ordering is unaffected: `sort` keeps the full-precision key.
+            filter: function (d) {
+              var day = isoDay(key(d));
+              return day === null ? text.filter(raw(d)) : day;
+            }
           } };
         }),
         deferRender: true,
@@ -14746,8 +14768,42 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
         lengthMenu: [10, 25, 50, 100],
         // collapse the columns that don't fit into an expandable child-row control per row
         responsive: true,
+        // ColumnControl across TWO header rows, the layout its own manual demonstrates: row 0
+        // keeps the column title and the ordering control, row 1 holds the search widget.
+        // Crowding all of it into one cell squeezes the title into a two- or three-line stack
+        // as soon as the icons and the label compete for the same width. `target: 1` is a row
+        // ColumnControl creates itself (one cell per column) — unlike the hand-rolled filter
+        // row this replaced, it owns that row, so it also keeps it in step with Responsive's
+        // column collapse and with ordering.
+        //
+        // "search" auto-detects the widget from the column's `type` — searchDateTime (a calendar
+        // picker) for dates, searchNumber for numerics, searchText otherwise.
+        columnControl: [
+          { target: 0, content: ["order"] },
+          { target: 1, content: ["search"] }
+        ],
+        // DataTables' own sort arrows would duplicate the ordering control now sitting in row 0,
+        // so the indicators are off; clicking the header still sorts (handler left on).
+        ordering: { indicators: false },
+        // Auto-detect never chooses searchList on its own, so the columns qsv's stats say are
+        // low-cardinality categoricals ask for it explicitly: a checkbox dropdown of the
+        // distinct values, which beats typing a substring you have to already know. A per-column
+        // columnControl REPLACES the table-wide one rather than merging, so the override has to
+        // restate row 0. `list` is only set when the preview holds every row
+        // (see datatable_columns_json).
+        columnDefs: cols.map(function (c, i) {
+          // The value list goes in a DROPDOWN (the nested array), not inline like the text and
+          // date inputs: rendered flat it puts "Select / Deselect / Search…" in the header cell
+          // and forces the column as wide as those three controls.
+          return c.list ? { targets: i, columnControl: [
+            { target: 0, content: ["order"] },
+            { target: 1, content: [["searchList"]] }
+          ] } : null;
+        }).filter(Boolean),
         // SearchBuilder rides in a Buttons popover ("Filter (n)") on the same controls row as
-        // the page-length selector and the global search box, instead of a permanent pane.
+        // the page-length selector and the global search box, instead of a permanent pane. It
+        // stays alongside ColumnControl: the per-column widgets cannot express the cross-column
+        // AND/OR logic SearchBuilder is for.
         language: { searchBuilder: { button: { 0: "Filter", _: "Filter (%d)" } } },
         layout: { topStart: ["pageLength", { buttons: ["searchBuilder", {
           extend: "csv",
@@ -14768,38 +14824,27 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
             // replaces that default rather than merging into it. Restated so the CSV-injection
             // guard (a leading =, +, - or @ in a cell) cannot be lost by accident.
             escapeExcelFormula: true,
-            // The header is the one default that is wrong for this table. The drawer's thead
-            // has TWO rows — the titles and the per-column filter inputs — and the CSV writer
-            // serializes every row of headerStructure, so the filter row landed in the file as
-            // a blank line between the header and the first record. Drop the rows belonging to
-            // it, matched by its class rather than by index or emptiness so this keeps working
-            // if the header gains rows later. Note this hook belongs to exportData's options,
-            // NOT to the button config: sitting a level up it is silently never called.
+            // The thead has TWO rows — the titles and ColumnControl's search row — and the CSV
+            // writer serializes every row of headerStructure, so the search row lands in the
+            // file as a blank line between the header and the first record. Drop it.
+            //
+            // Matched on `data-dt-order="disable"`, which ColumnControl sets on the row it
+            // creates (that row must not attach ordering handlers). That is a semantic marker
+            // rather than a row index or an emptiness test, so it keeps working if the header
+            // gains further rows. Note this hook belongs to exportData's options, NOT to the
+            // button config: sitting a level up it is silently never called.
             customizeData: function (d) {
               if (!d.headerStructure) return;
               d.headerStructure = d.headerStructure.filter(function (row) {
                 return !row.some(function (c) {
                   return c.cell && c.cell.parentNode &&
-                    c.cell.parentNode.classList.contains("qsv-data-filters");
+                    c.cell.parentNode.getAttribute("data-dt-order") === "disable";
                 });
               });
             }
           }
         }] }] }
       });
-      // keep the filter-input row aligned with Responsive's column collapse
-      function syncFilters(visible) {
-        for (var i = 0; i < filterRow.children.length; i++) {
-          filterRow.children[i].style.display = visible[i] === false ? "none" : "";
-        }
-      }
-      dt.on("responsive-resize", function (e, api, visible) { if (visible) syncFilters(visible); });
-      try { syncFilters(dt.columns().responsiveHidden().toArray()); } catch (e) {}
-      // the filter row's sticky offset = the rendered height of the title row
-      var th1 = titleRow.getBoundingClientRect().height;
-      // floor, so the filter row overlaps the title row by the fractional pixel rather than
-      // leaving a see-through gap between the two sticky rows
-      if (th1 > 0) drawer.style.setProperty("--qsv-data-th1-h", Math.floor(th1) + "px");
       // let the just-appended drawer paint once closed, so the open transition animates
       requestAnimationFrame(function () { show(drawer); });
     });
@@ -27712,11 +27757,23 @@ fn is_iso_leading_date(text: &str) -> bool {
             .all(u8::is_ascii_digit)
 }
 
-/// The per-column DataTables config for the data viewer: `[{"title":..,"type":..},..]`. Column
-/// types come from the whole-dataset stats — client-side type detection would only see the
-/// (possibly partial) embedded subset. The `type` values are DataTables', driving both sorting
-/// and the SearchBuilder condition set per column.
-fn datatable_columns_json(stats: &[crate::cmd::stats::StatsData]) -> String {
+/// The per-column DataTables config for the data viewer: `[{"title":..,"type":..,"list":..},..]`.
+/// Column types come from the whole-dataset stats — client-side type detection would only see the
+/// (possibly partial) embedded subset. The `type` values are DataTables', driving sorting, the
+/// SearchBuilder condition set, and which `ColumnControl` search widget the header offers.
+///
+/// `list` opts a column into `ColumnControl`'s `searchList` (a checkbox dropdown of the distinct
+/// values) instead of a text box. It is deliberately conservative on two axes:
+///
+/// - **Cardinality**: only low-cardinality (`CATEGORICAL_MAX_CARDINALITY`) string columns. Dates
+///   get the date picker and numbers get the numeric conditions, both of which beat a value list; a
+///   high-cardinality list would be a thousand-entry dropdown.
+/// - **Preview completeness** (`full_preview`): `searchList` builds its options client-side from
+///   the EMBEDDED rows, while `cardinality` is a whole-dataset statistic. On a truncated preview
+///   the two disagree — a column with 12 distinct values dataset-wide might show 4 in the list,
+///   with nothing to tell the reader the dropdown is short. So a truncated preview gets text search
+///   on every column, which is honest about being a substring match over what is present.
+fn datatable_columns_json(stats: &[crate::cmd::stats::StatsData], full_preview: bool) -> String {
     let mut cols = String::with_capacity(stats.len() * 32);
     cols.push('[');
     for (i, s) in stats.iter().enumerate() {
@@ -27728,8 +27785,12 @@ fn datatable_columns_json(stats: &[crate::cmd::stats::StatsData]) -> String {
             "Date" | "DateTime" => "date",
             _ => "string",
         };
+        let list = full_preview
+            && dt_type == "string"
+            && s.cardinality > 0
+            && s.cardinality <= CATEGORICAL_MAX_CARDINALITY;
         cols.push_str(&format!(
-            "{{\"title\":{},\"type\":\"{dt_type}\"}}",
+            "{{\"title\":{},\"type\":\"{dt_type}\",\"list\":{list}}}",
             serde_json::to_string(&s.field).unwrap_or_else(|_| "\"\"".to_string())
         ));
     }
@@ -27833,7 +27894,7 @@ fn build_data_viewer_chrome(
     if rows_tag.is_empty() {
         rows_tag = inline_json_script("qsv-data-rows", &rows_json);
     }
-    let cols_tag = inline_json_script("qsv-data-cols", &datatable_columns_json(stats));
+    let cols_tag = inline_json_script("qsv-data-cols", &datatable_columns_json(stats, full));
 
     let chrome = format!(
         "{lib}\n{rows_tag}\n{cols_tag}\n{script}",
@@ -32440,6 +32501,7 @@ mod tests {
             let name = match code {
                 "dt" => "DataTables",
                 "b" => "Buttons",
+                "cc" => "ColumnControl",
                 "date" => "DateTime",
                 "r" => "Responsive",
                 "sb" => "SearchBuilder",

@@ -13047,13 +13047,24 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     assert!(html.contains("Data — all 5 rows"));
     assert!(html.contains("new DataTable"));
     // SearchBuilder rides in a Buttons popover ("Filter (n)") on the controls row, not a
-    // permanent pane; per-column filter inputs + Responsive column collapse are on
+    // permanent pane; ColumnControl's in-header widgets + Responsive column collapse are on
     assert!(html.contains("searchBuilder"));
     assert!(html.contains(r#"button: { 0: "Filter", _: "Filter (%d)" }"#));
     assert!(!html.contains(r#"top1: "searchBuilder""#));
     assert!(html.contains("responsive: true"));
     assert!(!html.contains("scrollX: true"));
-    assert!(html.contains("qsv-data-filters"));
+    // ColumnControl owns both header rows: titles + ordering in row 0, the per-column search
+    // widget in a row 1 it creates itself. Cramming both into one cell squeezes the title into
+    // a multi-line stack, which is why the search is on its own row (as ColumnControl's own
+    // demo does). The hand-rolled filter row and everything that kept it in step are gone --
+    // ColumnControl keeps its own row aligned with Responsive and with ordering.
+    assert!(html.contains(r#"{ target: 0, content: ["order"] }"#));
+    assert!(html.contains(r#"{ target: 1, content: ["search"] }"#));
+    assert!(!html.contains("qsv-data-filters"));
+    assert!(!html.contains("syncFilters"));
+    // the two sticky rows pin as ONE element (sticky on thead), so no measured per-row offset
+    assert!(!html.contains("--qsv-data-th1-h"));
+    assert!(html.contains("#qsv-data-table thead { position: sticky; top: 0;"));
     // resizable drawer grip + focus management + stacking above the dictionary drawer
     assert!(html.contains("qsv-data-drawer-grip"));
     // the scroll region must NOT keep DataTables' .dt-layout-row align-items:center — a
@@ -13093,6 +13104,109 @@ fn viz_smart_data_viewer_preview_over_threshold() {
     assert!(html.contains("Data — first 5 of 10 rows (preview)"));
     assert!(html.contains("row5sentinel"));
     assert!(!html.contains("row6sentinel"));
+    // `grade` is a 2-value categorical, so on a COMPLETE preview it would get ColumnControl's
+    // searchList. It must not here: searchList builds its options from the EMBEDDED rows, and
+    // on a truncated preview that list silently omits values present in the dataset. Every
+    // column falls back to text search, which is honest about matching only what is shown.
+    assert!(html.contains(r#""title":"grade","type":"string","list":false"#));
+    assert!(!html.contains(r#""list":true"#));
+}
+
+// On a COMPLETE preview the low-cardinality string columns opt into ColumnControl's searchList
+// (a checkbox dropdown of the distinct values); high-cardinality strings, dates and numerics do
+// not — the value list is only useful, and only correct, for categoricals.
+#[test]
+fn viz_smart_data_viewer_searchlist_only_for_low_cardinality_strings() {
+    let wrk = Workdir::new("viz_smart_data_viewer_searchlist_only_for_low_cardinality_strings");
+    let mut csv = String::from("uniq,grade,amt,when\n");
+    for i in 1..=40 {
+        let grade = if i % 2 == 0 { "A" } else { "B" };
+        csv.push_str(&format!(
+            "uniqueval{i},{grade},{i},2026-01-{:02}\n",
+            (i % 28) + 1
+        ));
+    }
+    wrk.create_from_string("card.csv", &csv);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "card.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // 2 distinct values -> list; 40 distinct values -> no list even though it is a string
+    assert!(html.contains(r#""title":"grade","type":"string","list":true"#));
+    assert!(html.contains(r#""title":"uniq","type":"string","list":false"#));
+    // numerics get searchNumber and dates get the picker, both better than a value list
+    assert!(html.contains(r#""title":"amt","type":"num","list":false"#));
+    assert!(html.contains(r#""title":"when","type":"date","list":false"#));
+    // the listed columns are wired through columnDefs. The value list is NESTED (a dropdown):
+    // rendered flat it puts Select/Deselect/Search in the header cell and forces the column as
+    // wide as those three controls. A per-column columnControl replaces the table-wide one
+    // rather than merging, so the override restates row 0 too.
+    assert!(html.contains(r#"{ target: 1, content: [["searchList"]] }"#));
+    assert!(html.contains(r#"{ target: 0, content: ["order"] }"#));
+}
+
+// B': a date column's `filter` orthogonal must hand back the ISO sort key, NOT the source text.
+// ColumnControl's searchDateTime compares epochs, and Date.parse reads a slash-formatted date as
+// LOCAL midnight while its own picker value is ISO/UTC midnight — so source text never matches
+// (and a day-first date parses to NaN outright). The key puts both sides on UTC midnight.
+#[test]
+fn viz_smart_data_viewer_date_filter_uses_iso_sort_key() {
+    let wrk = Workdir::new("viz_smart_data_viewer_date_filter_uses_iso_sort_key");
+    let mut csv = String::from("when,amt\n");
+    for i in 1..=12 {
+        csv.push_str(&format!("{:02}/03/2026,{i}\n", i + 10));
+    }
+    wrk.create_from_string("dmy.csv", &csv);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.env("QSV_PREFER_DMY", "1");
+    cmd.args(["smart", "dmy.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // filter takes the ISO DAY of the key; display still routes through the escaper
+    assert!(html.contains("var day = isoDay(key(d));"));
+    assert!(html.contains("return day === null ? text.filter(raw(d)) : day;"));
+    assert!(html.contains(r#"display: function (d) { return text.display(raw(d)); }"#));
+    // the day-first source text is what the reader sees, and the ISO key rides alongside it
+    assert!(html.contains(r#"["11/03/2026","2026-03-11T00:00:00+00:00"]"#));
+}
+
+// The day truncation has to apply to the UNPAIRED branch too. An ISO datetime cell is already
+// ISO-leading, so collect_datatable_rows never pairs it -- if only the paired branch truncated,
+// an all-ISO DateTime column would keep a full timestamp as its filter value and `equals <day>`
+// would be unsatisfiable there while working fine on a month-first column. Same rule, both
+// branches: `isoDay` is applied to whatever the cell resolves to.
+#[test]
+fn viz_smart_data_viewer_iso_datetime_filter_truncates_to_day() {
+    let wrk = Workdir::new("viz_smart_data_viewer_iso_datetime_filter_truncates_to_day");
+    let mut csv = String::from("seen,amt\n");
+    for i in 1..=12 {
+        csv.push_str(&format!("2026-03-{:02}T{:02}:15:00,{i}\n", i, (i % 12) + 8));
+    }
+    wrk.create_from_string("isodt.csv", &csv);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "isodt.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // stats typed it as a datetime, and the cells stay UNPAIRED (already ISO-leading): the cell
+    // sits directly beside the next column's value, with no [raw, key] pair around it
+    assert!(html.contains(r#""title":"seen","type":"date""#));
+    assert!(html.contains(r#"["2026-03-01T09:15:00","1"]"#));
+    assert!(!html.contains(r#""2026-03-01T09:15:00+00:00""#));
+    // the single truncation path covers them: isoDay is applied to the resolved cell value
+    assert!(html.contains("var day = isoDay(key(d));"));
+    assert!(html.contains(r#"/^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null"#));
 }
 
 // The drawer's controls row carries a CSV export button next to the SearchBuilder popover.
@@ -13122,12 +13236,15 @@ fn viz_smart_data_viewer_csv_export_button() {
     assert!(!html.contains(r#"columns: ":all""#));
     // the XSS guard the export fidelity depends on is still on the columns
     assert!(html.contains("DataTable.render.text()"));
-    // the thead's second row is the per-column filter inputs, and the CSV writer serializes
-    // every header row -- it must be dropped or the file gets a blank line under the header.
-    // The hook has to sit INSIDE exportOptions; a level up it is silently never called.
+    // The thead has TWO rows -- titles and ColumnControl's search row -- and the CSV writer
+    // serializes every header row, so the search row would land in the file as a blank line
+    // under the header. It is matched by the `data-dt-order="disable"` attribute ColumnControl
+    // puts on the row it creates: that row is built from `td` cells, so a class- or th-based
+    // matcher misses it entirely. The hook must sit INSIDE exportOptions; a level up it is
+    // silently never called.
     assert!(html.contains("exportOptions: {"));
     assert!(html.contains("customizeData: function (d) {"));
-    assert!(html.contains(r#"classList.contains("qsv-data-filters")"#));
+    assert!(html.contains(r#"getAttribute("data-dt-order") === "disable""#));
     // supplying exportOptions replaces csvHtml5's own default object, so the CSV-injection
     // guard has to be restated rather than inherited
     assert!(html.contains("escapeExcelFormula: true"));
@@ -13244,9 +13361,12 @@ fn viz_smart_data_viewer_date_sort_keys() {
     assert!(html.contains(r#"["30/11/2025","2025-11-30T00:00:00+00:00"]"#));
     // the ISO column pays nothing: its cells stay plain strings
     assert!(!html.contains(r#"["2026-07-25","#));
-    // the split render keeps display/filter inside render.text()'s escaping
+    // display keeps the source text inside render.text()'s escaping; filter deliberately does
+    // NOT -- it hands back the ISO day so ColumnControl's epoch comparison can match (B').
+    // text.filter survives only as the fallback for a cell with no ISO day to offer (a blank).
     assert!(html.contains("text.display(raw(d))"));
-    assert!(html.contains("text.filter(raw(d))"));
+    assert!(html.contains("var day = isoDay(key(d));"));
+    assert!(html.contains("return day === null ? text.filter(raw(d)) : day;"));
 }
 
 // A column stats typed as a date can still hold blanks (a cell that fails to parse would have
@@ -13312,10 +13432,10 @@ fn viz_smart_data_viewer_column_types_from_stats() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
 
-    assert!(html.contains(r#"{"title":"name","type":"string"}"#));
-    assert!(html.contains(r#"{"title":"amt","type":"num"}"#));
-    assert!(html.contains(r#"{"title":"when","type":"date"}"#));
-    assert!(html.contains(r#"{"title":"grade","type":"string"}"#));
+    assert!(html.contains(r#"{"title":"name","type":"string","list":true}"#));
+    assert!(html.contains(r#"{"title":"amt","type":"num","list":false}"#));
+    assert!(html.contains(r#"{"title":"when","type":"date","list":false}"#));
+    assert!(html.contains(r#"{"title":"grade","type":"string","list":true}"#));
 }
 
 // By default (compression on) a non-trivial rows payload embeds as gzip+base64 — no plaintext
@@ -13403,8 +13523,8 @@ fn viz_smart_data_viewer_no_headers_labels() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
 
-    assert!(html.contains(r#"{"title":"0","type":"num"}"#));
-    assert!(html.contains(r#"{"title":"1","type":"string"}"#));
+    assert!(html.contains(r#"{"title":"0","type":"num","list":false}"#));
+    assert!(html.contains(r#"{"title":"1","type":"string","list":true}"#));
 }
 
 // Under QSV_VIZ_CDN the DataTables bundle is version-pinned CDN tags with Subresource Integrity
@@ -13422,10 +13542,10 @@ fn viz_smart_data_viewer_cdn_tags_carry_sri() {
     let html = String::from_utf8_lossy(&out.stdout);
 
     assert!(html.contains(
-        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.js"
+        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.js"
     ));
     assert!(html.contains(
-        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.css"
+        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.css"
     ));
     // both tags carry integrity + crossorigin; no embedded library payloads remain
     assert_eq!(html.matches("cdn.datatables.net").count(), 2);

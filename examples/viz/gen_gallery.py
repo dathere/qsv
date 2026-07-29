@@ -1272,6 +1272,72 @@ def regen_llm_level():
     return 1 if raw in {"1", "true", "t", "yes", "y", "on"} else 0
 
 
+# Every identifier the data-viewer chrome namespaces under `qsv-data-` — element ids, CSS class
+# names and custom properties. Emitted as PLAIN TEXT in the drawer's own <style>/<script>, so this
+# is readable even on pages that inline the DataTables bundle gzip+base64 (where the bundle's own
+# builder header is unreadable, and a bundle-version comparison sees nothing at all).
+QSV_DATA_MARK_RE = r"qsv-data-[a-z0-9-]+"
+
+
+def data_viewer_markers(html):
+    """The set of `qsv-data-*` identifiers a generated page's data viewer uses, or None if it has
+    no viewer. Two pages built by the same qsv agree exactly; a chrome change that adds or removes
+    a drawer element, class or custom property shows up as a set difference."""
+    marks = set(re.findall(QSV_DATA_MARK_RE, html))
+    return marks or None
+
+
+def warn_stale_data_viewers(linked_pages):
+    """Warn when a committed dashboard's data viewer lags the one the current qsv binary emits.
+
+    Every figure this script regenerates picks up the current viewer for free. Two linked pages
+    cannot be: `pitt311data.html` and `smart_boston_311_2025.html` are built from datasets that are
+    NOT in the repo (`boston311-2025.tsv` alone is 153 MB, and `*.tsv*` is gitignored), so they are
+    committed artifacts carrying whatever chrome they were last built with. That is why their
+    SCREENSHOTS entries have `cmd` (a display string) and no `args`.
+
+    A change to the drawer therefore refreshes every other page and silently leaves those two
+    showing a viewer the binary no longer produces. Deliberately a WARNING, not a SystemExit:
+    refusing to build would break the gallery for everyone without the 153 MB source data, which
+    is the normal case. Refreshing them needs the datasets and the entry's documented `cmd`.
+
+    Compares the `qsv-data-*` identifier set rather than any single hand-picked marker, so it stays
+    honest across future chrome changes without being re-taught what "current" looks like — and
+    unlike the DataTables bundle version, that set is plain text even when the bundle is
+    compressed, which is exactly the case for the two pages this exists to watch.
+    """
+    ref_name = ref = None
+    for name in sorted(SMART_IFRAME.values()):
+        path = os.path.join(VIZ_DIR, name)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            marks = data_viewer_markers(fh.read())
+        if marks:
+            ref_name, ref = name, marks
+            break
+    if not ref:
+        return
+
+    stale = []
+    for name in linked_pages:
+        path = os.path.join(VIZ_DIR, name)
+        if not os.path.exists(path) or name == ref_name:
+            continue
+        with open(path, encoding="utf-8") as fh:
+            marks = data_viewer_markers(fh.read())
+        if marks is not None and marks != ref:
+            missing = ", ".join(sorted(ref - marks)) or "-"
+            extra = ", ".join(sorted(marks - ref)) or "-"
+            stale.append(f"{name}: missing [{missing}] stale [{extra}]")
+    if stale:
+        sys.stderr.write(
+            "WARNING: these committed pages ship a data viewer that differs from the one "
+            f"{ref_name} was just built with:\n  " + "\n  ".join(stale) +
+            "\n  They are built from datasets that are not committed (see the SCREENSHOTS entry "
+            "for the command), so this script cannot refresh them.\n")
+
+
 def llm_dictionary_sidecars():
     """The `<stem>.schema.json` sidecars belonging to the LLM (`--dictionary infer`) dashboards.
 
@@ -1538,6 +1604,13 @@ def main():
         # entries with `args` are regenerated from a committed dataset (same helpers as the iframe
         # figures, so the linked page stays deterministic and plaintext-validated); the rest are
         # committed artifacts reused as-is.
+        #
+        # `cmd`-only is not a style choice — those entries CANNOT be regenerated here, because
+        # their inputs are not in the repo (`boston311-2025.tsv` is 153 MB and `*.tsv*` is
+        # gitignored; likewise `pittsburgh_311.tsv`). The consequence worth knowing: a change to
+        # the data-viewer chrome refreshes every `args` page and silently leaves these behind on
+        # the old one. `warn_stale_data_viewers` reports that at the end of a run rather than
+        # letting it pass unnoticed; refreshing them needs the datasets and this entry's `cmd`.
         if shot.get("args"):
             sys.stderr.write(f"[shot] {shot['title']}: qsv viz {' '.join(shot['args'])} "
                              f"-> {shot['href']}\n")
@@ -1649,6 +1722,8 @@ def main():
         raise SystemExit(
             "refusing to write the gallery: these pages load plotly from the CDN without "
             "Subresource Integrity:\n  " + "\n  ".join(unprotected))
+
+    warn_stale_data_viewers(linked_pages)
 
     with open(GALLERY, "w", encoding="utf-8") as fh:
         fh.write(body)

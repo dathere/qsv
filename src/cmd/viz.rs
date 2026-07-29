@@ -32592,12 +32592,22 @@ mod tests {
                      the notice's component inventory omits it (or pins another version)."
                 );
             }
-            // The in-page line is deliberately terse: it carries the core version once and then
-            // slash-joins the extension names, so only the NAME is required of each component.
+            // The in-page line is deliberately terse: it prints the CORE version once and then
+            // slash-joins the extension names without versions. So the core is held to the full
+            // "DataTables <version>" marker — that version is a hardcoded literal in
+            // `third_party_comment` and is the one number a reader sees on the page, so a
+            // name-only check there would let it drift from the combo unnoticed. Extensions,
+            // whose versions the line genuinely omits, are checked by name.
+            let expected = if code == "dt" {
+                marker.clone()
+            } else {
+                name.to_string()
+            };
             assert!(
-                in_page.contains(name),
-                "third_party_comment's DataTables credit omits \"{name}\", so a dashboard would \
-                 attribute fewer components than it embeds. Line was: {in_page}"
+                in_page.contains(&expected),
+                "third_party_comment's DataTables credit is missing \"{expected}\" — a dashboard \
+                 would attribute a different component set (or DataTables version) than it \
+                 actually embeds. Line was: {in_page}"
             );
         }
     }

@@ -2362,6 +2362,148 @@ fn describegpt_process_response_produces_output() {
     );
 }
 
+/// Run --prepare-context then --process-response (with a canned Dictionary response)
+/// on `data.csv` in `wrk`, returning the parsed total JSON output. LLM-free.
+#[cfg(feature = "whatlang")]
+fn process_response_dictionary_output(wrk: &Workdir, format: &str) -> serde_json::Value {
+    use std::{io::Write, process::Stdio};
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context")
+        .arg("--dictionary")
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let prep_json: String = wrk.stdout(&mut cmd);
+    let prep: serde_json::Value = serde_json::from_str(&prep_json).unwrap();
+
+    let phases: Vec<serde_json::Value> = prep["phases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "kind": p["kind"],
+                "response": "Field: a\nLabel: A\nDescription: First column",
+                "reasoning": "Test reasoning",
+                "token_usage": {"prompt": 100, "completion": 50, "total": 150, "elapsed": 500}
+            })
+        })
+        .collect();
+
+    let process_input = serde_json::json!({
+        "phases": phases,
+        "analysis_results": prep["analysis_results"],
+        "model": prep["model"]
+    });
+
+    let mut cmd_2 = wrk.command("describegpt");
+    cmd_2
+        .arg("--process-response")
+        .arg("--dictionary")
+        .arg("--format")
+        .arg(format)
+        .arg("--no-cache")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd_2.spawn().unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(process_input.to_string().as_bytes())
+        .unwrap();
+
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "process-response should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[cfg(feature = "whatlang")]
+fn spanish_rows() -> Vec<Vec<String>> {
+    vec![
+        svec!["comentario", "id"],
+        svec![
+            "El rápido zorro marrón salta sobre el perro perezoso todos los días",
+            "1"
+        ],
+        svec![
+            "La biblioteca municipal abre todos los días excepto los domingos",
+            "2"
+        ],
+        svec![
+            "Los estudiantes presentaron sus proyectos durante la reunión anual",
+            "3"
+        ],
+    ]
+}
+
+#[test]
+#[cfg(feature = "whatlang")]
+fn describegpt_dictionary_detects_dataset_language() {
+    let wrk = Workdir::new("describegpt_dict_lang");
+    wrk.create_indexed("data.csv", spanish_rows());
+
+    let json = process_response_dictionary_output(&wrk, "json");
+    let response = &json["Dictionary"]["response"];
+
+    assert_eq!(response["detected_language"], "Spanish");
+    assert_eq!(response["detected_language_code"], "spa");
+    let confidence = response["detected_language_confidence"].as_f64().unwrap();
+    assert!(
+        confidence > 0.0 && confidence <= 1.0,
+        "confidence out of range: {confidence}"
+    );
+}
+
+#[test]
+#[cfg(feature = "whatlang")]
+fn describegpt_dictionary_no_language_fields_when_undetectable() {
+    let wrk = Workdir::new("describegpt_dict_lang_none");
+    // No String columns and headers under the 10-char detection minimum:
+    // detection deterministically yields nothing, so the legacy output shape
+    // is preserved with no detected_language fields.
+    wrk.create_indexed(
+        "data.csv",
+        vec![svec!["a", "b"], svec!["1", "2"], svec!["3", "4"]],
+    );
+
+    let json = process_response_dictionary_output(&wrk, "json");
+    let response = json["Dictionary"]["response"].as_object().unwrap();
+
+    assert!(!response.contains_key("detected_language"));
+    assert!(!response.contains_key("detected_language_code"));
+    assert!(!response.contains_key("detected_language_confidence"));
+}
+
+#[test]
+#[cfg(feature = "whatlang")]
+fn describegpt_dictionary_jsonschema_language_in_x_qsv() {
+    let wrk = Workdir::new("describegpt_dict_lang_schema");
+    wrk.create_indexed("data.csv", spanish_rows());
+
+    // With --format jsonschema, stdout is the (meta-validated) schema document itself.
+    let schema = process_response_dictionary_output(&wrk, "jsonschema");
+
+    // The language fields live in the dataset-level x-qsv object, keeping the
+    // document a valid draft 2020-12 schema at the root.
+    assert_eq!(schema["x-qsv"]["detected_language"], "Spanish");
+    assert_eq!(schema["x-qsv"]["detected_language_code"], "spa");
+    assert!(schema["x-qsv"]["detected_language_confidence"].is_f64());
+    assert!(
+        !schema
+            .as_object()
+            .unwrap()
+            .contains_key("detected_language")
+    );
+}
+
 #[test]
 fn describegpt_prepare_context_analysis_results_structure() {
     let wrk = Workdir::new("describegpt_prep_analysis");

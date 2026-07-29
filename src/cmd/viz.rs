@@ -32521,6 +32521,87 @@ mod tests {
         }
     }
 
+    /// The bundle's component inventory is written out in THREE places that have to agree, and
+    /// nothing tied them together — so bumping the bundle to add `ColumnControl` updated two of
+    /// them and silently left the third describing the old combo (roborev 3916):
+    ///
+    /// 1. `THIRD_PARTY_NOTICES.md` — the repo-root notice, and the one that matters most: it is
+    ///    what `THIRD_PARTY_NOTICES_URL` points at, which every generated dashboard carries in its
+    ///    footer and HTML comment. Stale here means the notice readers are *sent to* under-reports
+    ///    what the page actually ships.
+    /// 2. `src/cmd/assets/LICENSE-DataTables.txt` — the vendored license + inventory.
+    /// 3. `third_party_comment` — the short in-page attribution line.
+    ///
+    /// `DATATABLES_CDN_COMBO` is the source of truth; `datatables_bundle_is_plain_embed_safe`
+    /// already pins it to the vendored builder header, so checking the prose against the combo
+    /// transitively checks it against the actual bytes.
+    #[test]
+    fn datatables_attribution_matches_the_pinned_combo() {
+        // Whitespace is normalised before matching because these are prose/tabular files: the
+        // license aligns its inventory into columns ("DataTables    3.0.0") and the notices
+        // markdown wraps mid-list, so a literal "Name X.Y.Z" would not match either as written.
+        fn flatten(s: &str) -> String {
+            s.split_whitespace().collect::<Vec<_>>().join(" ")
+        }
+
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let notices_raw = std::fs::read_to_string(format!("{manifest}/THIRD_PARTY_NOTICES.md"))
+            .expect("THIRD_PARTY_NOTICES.md is readable");
+        let license_raw =
+            std::fs::read_to_string(format!("{manifest}/src/cmd/assets/LICENSE-DataTables.txt"))
+                .expect("src/cmd/assets/LICENSE-DataTables.txt is readable");
+        let notices = flatten(&notices_raw);
+        let license = flatten(&license_raw);
+        // `datatables: true` is the branch that emits the DataTables credit line
+        let in_page = flatten(&third_party_comment(true, false));
+
+        for (label, text) in [
+            ("THIRD_PARTY_NOTICES.md", &notices),
+            ("src/cmd/assets/LICENSE-DataTables.txt", &license),
+        ] {
+            assert!(
+                text.contains(DATATABLES_CDN_COMBO),
+                "{label} does not name the pinned download-builder combination \
+                 \"{DATATABLES_CDN_COMBO}\" — it still describes an older bundle. Update it to \
+                 match DATATABLES_CDN_COMBO."
+            );
+        }
+
+        for component in DATATABLES_CDN_COMBO.split('/') {
+            let (code, version) = component
+                .split_once('-')
+                .expect("combo segments are code-version");
+            // same code -> display-name mapping as datatables_bundle_is_plain_embed_safe
+            let name = match code {
+                "dt" => "DataTables",
+                "b" => "Buttons",
+                "cc" => "ColumnControl",
+                "date" => "DateTime",
+                "r" => "Responsive",
+                "sb" => "SearchBuilder",
+                other => panic!("unknown combo component {other}"),
+            };
+            let marker = format!("{name} {version}");
+            for (label, text) in [
+                ("THIRD_PARTY_NOTICES.md", &notices),
+                ("src/cmd/assets/LICENSE-DataTables.txt", &license),
+            ] {
+                assert!(
+                    text.contains(&marker),
+                    "{label} does not list \"{marker}\" — the bundle ships {name} {version} but \
+                     the notice's component inventory omits it (or pins another version)."
+                );
+            }
+            // The in-page line is deliberately terse: it carries the core version once and then
+            // slash-joins the extension names, so only the NAME is required of each component.
+            assert!(
+                in_page.contains(name),
+                "third_party_comment's DataTables credit omits \"{name}\", so a dashboard would \
+                 attribute fewer components than it embeds. Line was: {in_page}"
+            );
+        }
+    }
+
     #[test]
     fn datatables_cdn_sri_matches_the_vendored_bundle() {
         use base64_simd::STANDARD as BASE64;

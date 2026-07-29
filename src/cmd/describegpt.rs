@@ -147,6 +147,13 @@ describegpt options:
                            Frequency Distribution data, and only the human-friendly Label and Description
                            (and Content Type when --infer-content-type is set) are populated by the LLM
                            using the same statistical context.
+                           The dataset's content language is also auto-detected locally (using
+                           whatlang, not the LLM) from sampled values of its text columns,
+                           and emitted as detected_language, detected_language_code (ISO 639-3) and
+                           detected_language_confidence in the JSON dictionary (top-level) and JSON
+                           Schema ("x-qsv" object) outputs when detection confidence >= 80%
+                           (tunable with a float value in the --language option); the fields are
+                           omitted when detection is not confident.
     --description          Infer a general Description of the dataset based on detailed statistical context.
                            An Attribution signature is embedded in the Description.
     --tags                 Infer Tags that categorize the dataset based on detailed statistical context.
@@ -823,6 +830,13 @@ static SAMPLE_FILE: OnceLock<String> = OnceLock::new();
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
 
+/// Dataset-content language detection result for --dictionary output, as
+/// (English name, ISO 639-3 code, confidence). `Some(None)` = detection ran but was
+/// below threshold; unset = never ran (whatlang feature absent, or a non-dictionary
+/// invocation). Deliberately separate from `DETECTED_LANGUAGE`/`_CONFIDENCE` above, which
+/// are first-set-wins and feed the --prompt attribution display.
+static DATASET_LANGUAGE: OnceLock<Option<(String, String, f64)>> = OnceLock::new();
+
 /// Maximum `--context-file` size (bytes) accepted. Mirrors the OpenAI ~32 MB per-request
 /// file-content ceiling for multimodal inputs; larger files are rejected with guidance.
 const CONTEXT_FILE_MAX_BYTES: u64 = 32 * 1024 * 1024;
@@ -1151,6 +1165,108 @@ fn detect_language_from_prompt(prompt: &str, threshold: f64) -> Option<String> {
     let _ = DETECTED_LANGUAGE_CONFIDENCE.set(lang_confidence);
 
     (lang_confidence >= threshold).then(|| detected_lang.to_string())
+}
+
+/// Build the text sample used for dataset-content language detection from the
+/// already-gathered analysis results (zero extra I/O): the top frequent values of
+/// String-typed columns (skipping frequency aggregation bucket rows — rank == 0.0,
+/// i.e. "Other…"/NULL/`<ALL_UNIQUE>` buckets), plus each String column's min/max values
+/// from stats. The stats min/max matter because high-cardinality free-text columns —
+/// exactly where language detection is most useful — collapse to an `<ALL_UNIQUE>`
+/// bucket in frequency output and would otherwise contribute nothing. Falls back to
+/// the headers when the collected text is trivially short (e.g. an all-numeric
+/// dataset) or when parsing fails (detection is best-effort; errors are never
+/// propagated).
+#[cfg(feature = "whatlang")]
+fn build_language_detection_sample(analysis_results: &AnalysisResults) -> String {
+    const MAX_SAMPLE_BYTES: usize = 8_192;
+    const MIN_SAMPLE_CHARS: usize = 10;
+
+    let header_fallback = || {
+        analysis_results
+            .headers
+            .replace(analysis_results.delimiter, " ")
+    };
+
+    let Ok((stats_records, _)) = parse_stats_csv(&analysis_results.stats) else {
+        return header_fallback();
+    };
+    let Ok(freq_records) = parse_frequency_csv(&analysis_results.frequency) else {
+        return header_fallback();
+    };
+
+    let string_fields: HashSet<&str> = stats_records
+        .iter()
+        .filter(|r| r.r#type == "String")
+        .map(|r| r.field.as_str())
+        .collect();
+
+    let mut sample = String::with_capacity(4_096);
+    let mut push_value = |value: &str| {
+        if sample.len() >= MAX_SAMPLE_BYTES || value.is_empty() {
+            return;
+        }
+        if !sample.is_empty() {
+            sample.push(' ');
+        }
+        // Enforce the byte budget while appending: a single oversized value must not
+        // blow past the cap, and truncation must land on a UTF-8 char boundary.
+        let remaining = MAX_SAMPLE_BYTES.saturating_sub(sample.len());
+        if value.len() <= remaining {
+            sample.push_str(value);
+        } else {
+            let mut end = remaining;
+            while end > 0 && !value.is_char_boundary(end) {
+                end -= 1;
+            }
+            sample.push_str(&value[..end]);
+        }
+    };
+
+    for record in &freq_records {
+        if record.rank == 0.0 || !string_fields.contains(record.field.as_str()) {
+            continue;
+        }
+        push_value(&record.value);
+    }
+    for record in &stats_records {
+        if record.r#type == "String" {
+            push_value(&record.min);
+            push_value(&record.max);
+        }
+    }
+
+    if sample.chars().count() < MIN_SAMPLE_CHARS {
+        return header_fallback();
+    }
+    sample
+}
+
+/// Detect the natural language of `text` using whatlang.
+/// Returns (English name, ISO 639-3 code, confidence) only when the text is
+/// non-trivial and the detection confidence clears `threshold`.
+#[cfg(feature = "whatlang")]
+fn detect_language_in_text(text: &str, threshold: f64) -> Option<(String, String, f64)> {
+    if text.chars().count() < 10 {
+        return None;
+    }
+    let lang_info = detect(text)?;
+    let confidence = lang_info.confidence();
+    (confidence >= threshold).then(|| {
+        (
+            lang_info.lang().eng_name().to_string(),
+            lang_info.lang().code().to_string(),
+            confidence,
+        )
+    })
+}
+
+/// Detect the dataset's content language from the analysis results and record it in
+/// `DATASET_LANGUAGE` for structured dictionary output.
+#[cfg(feature = "whatlang")]
+fn detect_dataset_language(analysis_results: &AnalysisResults, threshold: f64) {
+    let sample = build_language_detection_sample(analysis_results);
+    let _ = DATASET_LANGUAGE.set(detect_language_in_text(&sample, threshold));
 }
 
 /// Parse the --language option: if it's autodetect, a threshold, or an explicit language
@@ -3472,13 +3588,40 @@ fn build_first_pass_dictionary_json_string(
     serde_json::to_string_pretty(&dictionary_json).unwrap_or_default()
 }
 
-fn emit_dictionary_context_only(
+/// Insert `detected_language` / `detected_language_code` / `detected_language_confidence`
+/// into a dictionary JSON object when dataset-content language detection succeeded.
+/// No-op otherwise, preserving byte-identical legacy output (same contract as the
+/// conditional `relationships` emission).
+fn inject_detected_language(obj: &mut serde_json::Map<String, serde_json::Value>) {
+    inject_detected_language_value(obj, DATASET_LANGUAGE.get().and_then(Option::as_ref));
+}
+
+/// Pure worker for `inject_detected_language`, split out so unit tests can exercise
+/// both branches without setting the process-wide `DATASET_LANGUAGE` `OnceLock`.
+fn inject_detected_language_value(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    detected: Option<&(String, String, f64)>,
+) {
+    if let Some((lang, code, confidence)) = detected {
+        obj.insert("detected_language".to_string(), json!(lang));
+        obj.insert("detected_language_code".to_string(), json!(code));
+        obj.insert(
+            "detected_language_confidence".to_string(),
+            json!((confidence * 10_000.0).round() / 10_000.0),
+        );
+    }
+}
+
+/// Build the user-facing dictionary JSON document: the `format_dictionary_json` shape
+/// plus the conditionally-emitted dataset-language fields. All user-facing dictionary
+/// emit paths go through this; `build_first_pass_dictionary_json_string` deliberately
+/// does NOT (the refine-prompt context and its cache-key fingerprint must stay free of
+/// bookkeeping fields).
+fn build_output_dictionary_json(
     args: &Args,
     combined_entries: &[dictionary::DictionaryEntry],
     relationships: &[serde_json::Value],
-    model: &str,
-    base_url: &str,
-) -> CliResult<()> {
+) -> serde_json::Value {
     let mut dictionary_json = formatters::format_dictionary_json(
         combined_entries,
         args.flag_enum_threshold,
@@ -3487,6 +3630,20 @@ fn emit_dictionary_context_only(
         args.flag_infer_content_type,
         relationships,
     );
+    if let Some(obj) = dictionary_json.as_object_mut() {
+        inject_detected_language(obj);
+    }
+    dictionary_json
+}
+
+fn emit_dictionary_context_only(
+    args: &Args,
+    combined_entries: &[dictionary::DictionaryEntry],
+    relationships: &[serde_json::Value],
+    model: &str,
+    base_url: &str,
+) -> CliResult<()> {
+    let mut dictionary_json = build_output_dictionary_json(args, combined_entries, relationships);
     if let Some(attribution) = dictionary_json.get_mut("attribution")
         && let Some(attr_str) = attribution.as_str()
     {
@@ -3551,14 +3708,7 @@ fn format_dictionary_phase(
         // `{{ dictionary }}` Mini-Jinja variable, whose contract is the dictionary-entries
         // shape from `format_dictionary_json` — cache it regardless of output format so
         // `--description`/`--tags --format semanticmd` feed the LLM the same context.
-        let dictionary_json = formatters::format_dictionary_json(
-            combined_entries,
-            args.flag_enum_threshold,
-            args.flag_num_examples,
-            args.flag_truncate_str,
-            args.flag_infer_content_type,
-            relationships,
-        );
+        let dictionary_json = build_output_dictionary_json(args, combined_entries, relationships);
         DATA_DICTIONARY_JSON
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
         // Stash the rendered doc for `finalize_structured_output` to post-process and emit.
@@ -3606,6 +3756,7 @@ fn format_dictionary_phase(
             .and_then(serde_json::Value::as_object_mut)
         {
             x_qsv.insert("generated_by".to_string(), json!(attribution));
+            inject_detected_language(x_qsv);
         }
         // Downstream Description/Tags prompts read `DATA_DICTIONARY_JSON` as the
         // `{{ dictionary }}` Mini-Jinja variable, and that variable's contract is the
@@ -3615,14 +3766,7 @@ fn format_dictionary_phase(
         // feed the LLM the same context every other format does. The schema document
         // stays in `total_json_output[Dictionary]["response"]` for
         // `finalize_structured_output` to consume.
-        let dictionary_json = formatters::format_dictionary_json(
-            combined_entries,
-            args.flag_enum_threshold,
-            args.flag_num_examples,
-            args.flag_truncate_str,
-            args.flag_infer_content_type,
-            relationships,
-        );
+        let dictionary_json = build_output_dictionary_json(args, combined_entries, relationships);
         DATA_DICTIONARY_JSON
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
         total_json_output[kind.to_string()] = json!({
@@ -3631,14 +3775,8 @@ fn format_dictionary_phase(
             "token_usage": completion_response.token_usage,
         });
     } else if output_format == OutputFormat::Json || output_format == OutputFormat::Toon {
-        let mut dictionary_json = formatters::format_dictionary_json(
-            combined_entries,
-            args.flag_enum_threshold,
-            args.flag_num_examples,
-            args.flag_truncate_str,
-            args.flag_infer_content_type,
-            relationships,
-        );
+        let mut dictionary_json =
+            build_output_dictionary_json(args, combined_entries, relationships);
         if let Some(attribution) = dictionary_json.get_mut("attribution")
             && let Some(attr_str) = attribution.as_str()
         {
@@ -3665,14 +3803,7 @@ fn format_dictionary_phase(
             &completion_response.reasoning,
             &completion_response.token_usage,
         ));
-        let dictionary_json = formatters::format_dictionary_json(
-            combined_entries,
-            args.flag_enum_threshold,
-            args.flag_num_examples,
-            args.flag_truncate_str,
-            args.flag_infer_content_type,
-            relationships,
-        );
+        let dictionary_json = build_output_dictionary_json(args, combined_entries, relationships);
         DATA_DICTIONARY_JSON
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
         if let Some(output) = &args.flag_output {
@@ -3714,14 +3845,7 @@ fn format_dictionary_phase(
             base_url,
             &shared,
         )?;
-        let dictionary_json = formatters::format_dictionary_json(
-            combined_entries,
-            args.flag_enum_threshold,
-            args.flag_num_examples,
-            args.flag_truncate_str,
-            args.flag_infer_content_type,
-            relationships,
-        );
+        let dictionary_json = build_output_dictionary_json(args, combined_entries, relationships);
         DATA_DICTIONARY_JSON
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
         if let Some(output) = &args.flag_output {
@@ -4227,6 +4351,14 @@ fn run_dictionary_phase(
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<CompletionResponse> {
+    // Detect the dataset's content language (whatlang, local & deterministic) so the
+    // dictionary output can carry detected_language/_code/_confidence.
+    #[cfg(feature = "whatlang")]
+    {
+        let (_, threshold, _) = parse_language_option(args.flag_language.as_ref());
+        detect_dataset_language(analysis_results, threshold);
+    }
+
     // --- Pass 1: existing single-pass behavior, prompt = PromptType::Dictionary. ---
     let (prompt, system_prompt, _) =
         get_prompt(PromptType::Dictionary, Some(analysis_results), args)?;
@@ -6312,6 +6444,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let output_format = get_output_format(&args)?;
 
         let mut total_json_output: serde_json::Value = json!({});
+
+        // Mirror the run_dictionary_phase detection trigger so --process-response
+        // (MCP sampling) dictionary output also carries the dataset-language fields.
+        #[cfg(feature = "whatlang")]
+        if input.phases.iter().any(|p| p.kind == "Dictionary") {
+            let (_, threshold, _) = parse_language_option(args.flag_language.as_ref());
+            detect_dataset_language(&input.analysis_results, threshold);
+        }
 
         for phase in &input.phases {
             let kind: PromptType = phase
@@ -8949,5 +9089,127 @@ description_md_template = "OVERRIDDEN: {{ llm_response }}"
         assert_eq!(merged.tags_md_template, base_tags_md);
         assert_eq!(merged.dictionary_md_body_template, base_dict_body);
         assert_eq!(merged.custom_prompt_md_template, base_custom_md);
+    }
+
+    #[cfg(feature = "whatlang")]
+    fn language_detection_fixture() -> AnalysisResults {
+        AnalysisResults {
+            stats:     "field,type,cardinality,nullcount,min,max\ncomentario,String,3,0,ayer \
+                        llovió mucho,mañana saldrá el \
+                        sol\nedad,Integer,10,0,18,65\nfecha,Date,10,0,2020-01-01,2024-12-31\n"
+                .to_string(),
+            frequency: "field,value,count,percentage,rank\ncomentario,el rápido zorro marrón \
+                        salta sobre el perro perezoso,5,50.0,1\ncomentario,Other \
+                        (3),3,30.0,0\nedad,42,4,40.0,1\nfecha,2024-01-01,4,40.0,1\n"
+                .to_string(),
+            headers:   "comentario,edad,fecha".to_string(),
+            file_hash: String::new(),
+            delimiter: ',',
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "whatlang")]
+    fn language_detection_sample_uses_string_columns_only() {
+        let sample = build_language_detection_sample(&language_detection_fixture());
+        assert!(sample.contains("el rápido zorro marrón"));
+        // String columns also contribute their stats min/max values (vital for
+        // high-cardinality free-text columns that frequency buckets as <ALL_UNIQUE>).
+        assert!(sample.contains("ayer llovió mucho"));
+        assert!(sample.contains("mañana saldrá el sol"));
+        // Non-String columns and rank == 0.0 aggregation buckets are excluded.
+        assert!(!sample.contains("42"));
+        assert!(!sample.contains("18"));
+        assert!(!sample.contains("2024-01-01"));
+        assert!(!sample.contains("Other (3)"));
+    }
+
+    #[test]
+    #[cfg(feature = "whatlang")]
+    fn language_detection_sample_falls_back_to_headers() {
+        // All-numeric dataset: no String columns -> trivially short sample -> headers.
+        let analysis_results = AnalysisResults {
+            stats:     "field,type,cardinality,nullcount\nedad,Integer,10,0\n".to_string(),
+            frequency: "field,value,count,percentage,rank\nedad,42,4,40.0,1\n".to_string(),
+            headers:   "edad,importe,cantidad".to_string(),
+            file_hash: String::new(),
+            delimiter: ',',
+        };
+        assert_eq!(
+            build_language_detection_sample(&analysis_results),
+            "edad importe cantidad"
+        );
+        // Unparseable analysis results also fall back to headers (best-effort).
+        let broken = AnalysisResults {
+            stats: "no field or type columns here\n".to_string(),
+            ..analysis_results
+        };
+        assert_eq!(
+            build_language_detection_sample(&broken),
+            "edad importe cantidad"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "whatlang")]
+    fn language_detection_sample_respects_byte_cap() {
+        // A single oversized multibyte value must be truncated to the 8 KB cap on a
+        // valid UTF-8 char boundary (a mid-char slice would panic in debug builds).
+        let huge_value = "café con leche y churros calientes ".repeat(400); // ~14 KB
+        let analysis_results = AnalysisResults {
+            stats:     "field,type,cardinality,nullcount\ncomentario,String,1,0\n".to_string(),
+            frequency: format!(
+                "field,value,count,percentage,rank\ncomentario,\"{huge_value}\",5,50.0,1\n"
+            ),
+            headers:   "comentario".to_string(),
+            file_hash: String::new(),
+            delimiter: ',',
+        };
+        let sample = build_language_detection_sample(&analysis_results);
+        assert!(
+            sample.len() <= 8_192,
+            "sample overflows cap: {}",
+            sample.len()
+        );
+        assert!(sample.starts_with("café con leche"));
+    }
+
+    #[test]
+    #[cfg(feature = "whatlang")]
+    fn detect_language_in_text_spanish_and_thresholds() {
+        let spanish = "El rápido zorro marrón salta sobre el perro perezoso. La biblioteca \
+                       municipal abre todos los días excepto los domingos y festivos.";
+        let (lang, code, confidence) =
+            detect_language_in_text(spanish, DEFAULT_LANGDETECTION_THRESHOLD).unwrap();
+        assert_eq!(lang, "Spanish");
+        assert_eq!(code, "spa");
+        assert!((DEFAULT_LANGDETECTION_THRESHOLD..=1.0).contains(&confidence));
+
+        // Trivially short text is never detected.
+        assert_eq!(detect_language_in_text("hola", 0.0), None);
+        // A threshold above any possible confidence yields None.
+        assert_eq!(detect_language_in_text(spanish, 1.1), None);
+    }
+
+    #[test]
+    fn inject_detected_language_value_branches() {
+        let base = json!({"fields": [], "attribution": "sig"});
+        let base_obj = base.as_object().unwrap();
+
+        // No detection -> byte-identical output (legacy shape preserved).
+        let mut untouched = base_obj.clone();
+        inject_detected_language_value(&mut untouched, None);
+        assert_eq!(
+            serde_json::to_string(&untouched).unwrap(),
+            serde_json::to_string(base_obj).unwrap()
+        );
+
+        // Detection present -> the three fields appear, confidence rounded to 4 decimals.
+        let mut injected = base_obj.clone();
+        let detected = ("Spanish".to_string(), "spa".to_string(), 0.912_345_6_f64);
+        inject_detected_language_value(&mut injected, Some(&detected));
+        assert_eq!(injected["detected_language"], json!("Spanish"));
+        assert_eq!(injected["detected_language_code"], json!("spa"));
+        assert_eq!(injected["detected_language_confidence"], json!(0.9123));
     }
 }

@@ -13051,8 +13051,12 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     assert!(html.contains("searchBuilder"));
     assert!(html.contains(r#"button: { 0: "Advanced Filter", _: "Advanced Filter (%d)" }"#));
     assert!(!html.contains(r#"top1: "searchBuilder""#));
-    assert!(html.contains("responsive: true"));
-    assert!(!html.contains("scrollX: true"));
+    // scrollX, NOT Responsive: Responsive collapses a column together with its ColumnControl
+    // search widget, so on a wide table the per-column controls the drawer exists to offer are
+    // exactly the ones a reader cannot reach. The two options are mutually exclusive.
+    assert!(html.contains("scrollX: true"));
+    // scoped to the emitted indentation: plotly's own config also carries `responsive: true`
+    assert!(!html.contains("\n        responsive: true,"));
     // ColumnControl owns both header rows: titles + ordering in row 0, the per-column search
     // widget in a row 1 it creates itself. Cramming both into one cell squeezes the title into
     // a multi-line stack, which is why the search is on its own row (as ColumnControl's own
@@ -13064,7 +13068,7 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     assert!(!html.contains("syncFilters"));
     // the two sticky rows pin as ONE element (sticky on thead), so no measured per-row offset
     assert!(!html.contains("--qsv-data-th1-h"));
-    assert!(html.contains("#qsv-data-table thead { position: sticky; top: 0;"));
+    assert!(html.contains("#qsv-data-drawer div.dt-scroll-head { position: sticky !important;"));
     // resizable drawer grip + focus management + stacking above the dictionary drawer
     assert!(html.contains("qsv-data-drawer-grip"));
     // the scroll region must NOT keep DataTables' .dt-layout-row align-items:center — a
@@ -13250,8 +13254,8 @@ fn viz_smart_data_viewer_csv_export_button() {
     assert!(html.contains("escapeExcelFormula: true"));
 }
 
-// The controls row carries four buttons in a fixed left-to-right order: the SearchBuilder
-// popover, Clear Filters, the CSV export, and the Responsive toggle to its right.
+// The controls row carries three buttons in a fixed left-to-right order: the SearchBuilder
+// popover, Clear Filters, and the CSV export.
 #[test]
 fn viz_smart_data_viewer_toolbar_button_order() {
     let wrk = Workdir::new("viz_smart_data_viewer_toolbar_button_order");
@@ -13272,11 +13276,10 @@ fn viz_smart_data_viewer_toolbar_button_order() {
     let sb = at(r#"buttons: ["searchBuilder""#);
     let clear = at(r#"text: "Clear Filters""#);
     let csv = at(r#"extend: "csv""#);
-    let responsive = at(r#"text: "Responsive: on""#);
     assert!(
-        sb < clear && clear < csv && csv < responsive,
-        "controls-row buttons are out of order: searchBuilder@{sb} Clear@{clear} csv@{csv} \
-         Responsive@{responsive} — expected searchBuilder < Clear Filters < CSV < Responsive"
+        sb < clear && clear < csv,
+        "controls-row buttons are out of order: searchBuilder@{sb} Clear@{clear} csv@{csv} — \
+         expected searchBuilder < Clear Filters < CSV"
     );
 }
 
@@ -13306,13 +13309,12 @@ fn viz_smart_data_viewer_clear_filters_resets_all_three_sources() {
     assert!(html.contains("dt.searchBuilder.rebuild({});"));
 }
 
-// Responsive has no enable()/disable(), so the toggle drives the one lever it exposes: the `all`
-// class ("never hide this column") plus rebuild(), which re-reads class info off the header
-// cells. That switches collapsing off IN PLACE -- a destroy()/re-init would discard the filters,
-// ordering and page position the reader already set up.
+// scrollX replaced Responsive outright, so the drawer must carry neither the collapsing option
+// nor the toggle that used to switch it off -- and the header, which scrollX lifts into its own
+// div.dt-scroll-head above the body, has to be pinned there instead of on the body table's thead.
 #[test]
-fn viz_smart_data_viewer_responsive_toggle_uses_all_class_and_rebuild() {
-    let wrk = Workdir::new("viz_smart_data_viewer_responsive_toggle_uses_all_class_and_rebuild");
+fn viz_smart_data_viewer_scrollx_replaces_responsive() {
+    let wrk = Workdir::new("viz_smart_data_viewer_scrollx_replaces_responsive");
     data_viewer_csv(&wrk);
 
     let mut cmd = wrk.command("viz");
@@ -13322,17 +13324,19 @@ fn viz_smart_data_viewer_responsive_toggle_uses_all_class_and_rebuild() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
 
-    assert!(html.contains(r#"text: "Responsive: on""#));
-    assert!(html.contains(r#"this.header().classList.toggle("all", !responsiveOn);"#));
-    assert!(html.contains("dt.responsive.rebuild();"));
-    assert!(html.contains("dt.responsive.recalc();"));
-    // label reflects state, and state is held in a variable rather than parsed back out of it
-    assert!(html.contains("var responsiveOn = true;"));
-    assert!(
-        html.contains(r#"dt.button(node).text("Responsive: " + (responsiveOn ? "on" : "off"));"#)
-    );
-    // the table must NOT be torn down to switch modes
-    assert!(!html.contains("dt.destroy()"));
+    assert!(html.contains("scrollX: true"));
+    // scoped to the emitted indentation: plotly's own config also carries `responsive: true`
+    // (as `{ responsive: true, scrollZoom: ... }`), so a bare substring test always matches
+    assert!(!html.contains("\n        responsive: true,"));
+    // no toggle, and none of the machinery it needed
+    assert!(!html.contains(r#"text: "Responsive""#));
+    assert!(!html.contains("var responsiveOn"));
+    assert!(!html.contains("dt.responsive.rebuild()"));
+    assert!(!html.contains("qsv-responsive-toggle"));
+    // the header is pinned on .dt-scroll-head, and `!important` is required because DataTables
+    // writes `position: relative` INLINE on that element, which outranks any selector
+    assert!(html.contains("#qsv-data-drawer div.dt-scroll-head { position: sticky !important;"));
+    assert!(!html.contains("#qsv-data-table thead { position: sticky"));
 }
 
 // A truncated preview must not hand back a file that looks complete: both the button label and
@@ -13627,10 +13631,10 @@ fn viz_smart_data_viewer_cdn_tags_carry_sri() {
     let html = String::from_utf8_lossy(&out.stdout);
 
     assert!(html.contains(
-        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.js"
+        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/sb-2.0.0/datatables.min.js"
     ));
     assert!(html.contains(
-        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/r-4.0.0/sb-2.0.0/datatables.min.css"
+        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/sb-2.0.0/datatables.min.css"
     ));
     // both tags carry integrity + crossorigin; no embedded library payloads remain
     assert_eq!(html.matches("cdn.datatables.net").count(), 2);

@@ -8477,8 +8477,8 @@ const THIRD_PARTY_NOTICES_URL: &str =
 /// artifact. This comment (and `third_party_footer`) restore that visibility.
 fn third_party_comment(datatables: bool, basemap: bool) -> String {
     let datatables_line = if datatables {
-        "\n     DataTables 3.0.0 + Buttons/ColumnControl/DateTime/Responsive/SearchBuilder\n       \
-         (c) SpryMedia Ltd - MIT"
+        "\n     DataTables 3.0.0 + Buttons/ColumnControl/DateTime/SearchBuilder\n       (c) \
+         SpryMedia Ltd - MIT"
     } else {
         ""
     };
@@ -10171,19 +10171,19 @@ const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
 /// Buttons 4.0.0 (for the popover SearchBuilder "Filter" button) + `ColumnControl` 2.0.0 (the
 /// in-header per-column search widgets) + `DateTime` 2.0.0 + Responsive 4.0.0 + SearchBuilder
 /// 2.0.0, default DataTables styling. Also the path segment of the version-pinned CDN URLs.
-const DATATABLES_CDN_COMBO: &str = "dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/r-4.0.0/sb-2.0.0";
+const DATATABLES_CDN_COMBO: &str = "dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/sb-2.0.0";
 const DATATABLES_CDN_JS_SRI: &str =
-    "sha384-Rigm/apWaogS4bmpVlIXZHojkwkzXDoR3X2yp+39q7BqvJrb2OdEAV8L9lsojpVb";
+    "sha384-B90pTMf63769NHSc70ShJk7oZumO6CZr5p389024KoPfbeXhfdyTGFe3AODnkPwu";
 const DATATABLES_CDN_CSS_SRI: &str =
-    "sha384-wapK3v+gtBHxObzqQYJKD1fe158vqRF6ToKTrrgaU/ez0IBKRQWtwArXz+jL7mnx";
+    "sha384-F2flyIQJh3hqy53lxTgcrVhhjCx7+oZJjioSBIuyljZAHTNhyCXsrT8iOIoylGMu";
 
-/// The DataTables bundle gzipped at max compression + base64 (~317 KB -> ~118 KB b64), computed
+/// The DataTables bundle gzipped at max compression + base64 (~300 KB -> ~112 KB b64), computed
 /// once per process like `PLOTLY_GZ_B64`. Empty on (never-expected) gzip failure — callers then
 /// emit the plain bundle.
 static DATATABLES_GZ_B64: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| gzip_b64(DATATABLES_JS.as_bytes(), flate2::Compression::best()));
 
-/// Like `DATATABLES_GZ_B64` but for the stylesheet (~80 KB -> ~15 KB b64).
+/// Like `DATATABLES_GZ_B64` but for the stylesheet (~74 KB -> ~14 KB b64).
 static DATATABLES_CSS_GZ_B64: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| gzip_b64(DATATABLES_CSS.as_bytes(), flate2::Compression::best()));
 
@@ -14460,14 +14460,20 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
      scrollport, which puts half the overflow ABOVE it — unreachable by scrolling, so the
      first rows sit hidden behind the sticky thead */
   #qsv-data-drawer div.dt-container > div.dt-layout-table { flex: 1 1 auto; min-height: 0; overflow: auto; align-items: flex-start; }
-  /* Sticky on the THEAD, not per cell. The header is two rows now (titles + ColumnControl's
-     search row), and pinning cells individually means every row after the first needs a top
-     offset equal to the measured height of the ones above it — JS measurement that silently
-     leaves a see-through gap the moment a row's height changes (font swap, column adjust).
-     Sticking the thead as one element pins both rows together with no measurement at all.
-     It also sidesteps ColumnControl building its row out of `td` cells, which a `thead th`
-     selector would skip entirely, leaving that row static and scrolling under the titles. */
-  #qsv-data-table thead { position: sticky; top: 0; z-index: 5; background: var(--qsv-page-bg, #ffffff); }
+  /* Under scrollX the header is no longer inside the body table: DataTables lifts it into its
+     own `div.dt-scroll-head` sitting above `div.dt-scroll-body`, and keeps the two aligned by
+     mirroring the body's horizontal scroll onto the head. So the head handles the horizontal
+     axis itself — but only the body scrolls, and the drawer's vertical scroller is the OUTER
+     `.dt-layout-table`, which would carry the whole head off the top with it. Pinning the head
+     restores a fixed header on the vertical axis while leaving DataTables' horizontal mirroring
+     untouched. Sticking this one element also pins both header rows (titles + ColumnControl's
+     search row) together, with none of the per-row offset measurement that pinning cells
+     individually would need.
+
+     `!important` is load-bearing, not cargo cult: DataTables writes `position: relative` as an
+     INLINE style on this element ("overflow: hidden; position: relative; border: 0; width:
+     100%"), and an inline declaration outranks any selector, however specific. */
+  #qsv-data-drawer div.dt-scroll-head { position: sticky !important; top: 0 !important; z-index: 5; background: var(--qsv-page-bg, #ffffff); }
   /* the footer row (credits + Theme toggle + logo) is in flow, so this one margin lifts it clear
      of the open drawer — no per-widget offset rules needed */
   body.qsv-data-open { margin-bottom: var(--qsv-data-h-eff); }
@@ -14476,13 +14482,11 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   div.dtcc-dropdown { z-index: 20; }
   #qsv-data-drawer table.dataTable { color: inherit; }
   /* An unbroken long token (URL, base64 blob, hash) has no wrap opportunity, so the column
-     grows to the token's full width and the table overflows the drawer — which has no
-     horizontal scroll (Responsive and scrollX are mutually exclusive), leaving those columns
-     simply unreachable. `anywhere` lets such a token break mid-token; ordinary prose is
-     unaffected because it still wraps at its spaces first. Note this cannot be done with
-     `max-width`: browsers treat that as advisory on table cells under `table-layout: auto`,
-     and `fixed` is not an option — Responsive picks what to collapse by measuring natural
-     column widths, which fixed layout flattens. */
+     grows to the token's full width. Under scrollX that is reachable — it just makes one column
+     absurdly wide and pushes everything else out past it. `anywhere` lets such a token break
+     mid-token; ordinary prose is unaffected because it still wraps at its spaces first. Note
+     this cannot be done with `max-width`: browsers treat that as advisory on table cells under
+     `table-layout: auto`. */
   #qsv-data-table td, #qsv-data-table thead th { overflow-wrap: anywhere; }
   /* theme-aware: left to the UA default this is #0000EE, then #551A8B once visited — both
      unreadable on dark paper, and href="#" means one click marks it visited forever */
@@ -14692,7 +14696,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       table.style.width = "100%";
       // ONE header row: ColumnControl puts the ordering and per-column search widgets inside the
       // title cell itself, so there is no second filter row to build, keep aligned with
-      // Responsive's column collapse, offset for sticky positioning, or strip back out of the
+      // offset for sticky positioning, or strip back out of the
       // CSV export.
       var thead = document.createElement("thead");
       var titleRow = document.createElement("tr");
@@ -14708,10 +14712,6 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       drawer.appendChild(bar);
       drawer.appendChild(content);
       document.body.appendChild(drawer);
-      // Whether Responsive's column collapsing is currently on, toggled by the button at the
-      // right of the controls row. Held here rather than read back off the button's label so
-      // the state does not depend on the rendered text.
-      var responsiveOn = true;
       dt = new DataTable(table, {
         data: rows,
         // render.text(): cell values are DATA, not markup — without it DataTables injects them
@@ -14770,15 +14770,22 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
         order: [],
         pageLength: 25,
         lengthMenu: [10, 25, 50, 100],
-        // collapse the columns that don't fit into an expandable child-row control per row
-        responsive: true,
+        // Horizontal scrolling rather than Responsive's collapse-into-a-child-row.
+        //
+        // Responsive and scrollX are mutually exclusive, and Responsive is the one that had to
+        // go: it fights ColumnControl. Every column it collapses takes that column's search
+        // widget off the screen with it, so on a wide table the per-column controls the drawer
+        // exists to offer are exactly the ones a reader cannot reach — they are only available
+        // by widening the window until Responsive gives the column back. Its child-row detail
+        // view shows the values but carries no widgets at all. scrollX keeps every column, and
+        // every column's widget, permanently reachable by scrolling.
+        scrollX: true,
         // ColumnControl across TWO header rows, the layout its own manual demonstrates: row 0
         // keeps the column title and the ordering control, row 1 holds the search widget.
         // Crowding all of it into one cell squeezes the title into a two- or three-line stack
         // as soon as the icons and the label compete for the same width. `target: 1` is a row
         // ColumnControl creates itself (one cell per column) — unlike the hand-rolled filter
-        // row this replaced, it owns that row, so it also keeps it in step with Responsive's
-        // column collapse and with ordering.
+        // row this replaced, it owns that row, so it also keeps it in step with ordering.
         //
         // "search" auto-detects the widget from the column's `type` — searchDateTime (a calendar
         // picker) for dates, searchNumber for numerics, searchText otherwise.
@@ -14841,8 +14848,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
           filename: __QSVDATAEXPORTNAME__,
           // Columns and orthogonal are deliberately left at their defaults, because the two
           // overrides that look obviously right are both wrong. columns=":visible" already
-          // means every column: Responsive keeps its collapsed set in its own state and leaves
-          // DataTables' visibility alone. orthogonal="display" is the fidelity-preserving
+          // means every column. orthogonal="display" is the fidelity-preserving
           // choice, not "export": Buttons strips markup and decodes entities on the way out,
           // which mangles a raw cell but exactly inverts the escaping DataTable.render.text()
           // applied for display. Over a markup/entity/quote/tab/emoji fixture "display" was
@@ -14871,33 +14877,6 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
                 });
               });
             }
-          }
-        }, {
-          // Responsive on/off, to the right of the export button.
-          //
-          // Responsive has no enable()/disable() — its whole API is recalc, rebuild, hasHidden,
-          // index and responsiveHidden — so this drives the one lever it does expose: the `all`
-          // class means "never hide this column", and rebuild() re-reads the class information
-          // off the column header cells. Setting `all` on every header and rebuilding therefore
-          // switches collapsing off in place, with no destroy()/re-init: the filters, ordering
-          // and page position all survive the toggle, which a re-init would throw away.
-          //
-          // With it off, a wide table exceeds the drawer — the scroll container is `overflow:
-          // auto`, so it scrolls horizontally rather than clipping. Measured on the 41-column
-          // NYC 311 dashboard: 22 of 41 columns shown with Responsive on, all 41 with it off
-          // (scrollWidth 2501 vs clientWidth 1369). The child-row expansion control belongs to
-          // Responsive, so it comes and goes with it.
-          text: "Responsive: on",
-          className: "qsv-responsive-toggle",
-          action: function (e, dt, node) {
-            responsiveOn = !responsiveOn;
-            dt.columns().every(function () {
-              this.header().classList.toggle("all", !responsiveOn);
-            });
-            dt.responsive.rebuild();
-            dt.responsive.recalc();
-            dt.columns.adjust();
-            dt.button(node).text("Responsive: " + (responsiveOn ? "on" : "off"));
           }
         }] }] }
       });

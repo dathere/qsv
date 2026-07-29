@@ -13273,7 +13273,7 @@ fn viz_smart_data_viewer_toolbar_button_order() {
             .unwrap_or_else(|| panic!("data viewer HTML is missing {needle}"))
     };
     // positions in the emitted buttons array, which is the rendered order
-    let sb = at(r#"buttons: ["searchBuilder""#);
+    let sb = at(r#"extend: "searchBuilder""#);
     let clear = at(r#"text: "Clear Filters""#);
     let csv = at(r#"extend: "csv""#);
     assert!(
@@ -13307,6 +13307,37 @@ fn viz_smart_data_viewer_clear_filters_resets_all_three_sources() {
     assert!(html.contains("dt.columns().columnControl.searchClear();"));
     // SearchBuilder criteria
     assert!(html.contains("dt.searchBuilder.rebuild({});"));
+}
+
+// Clear Filters is enabled only while there is something to clear, and its label counts the
+// active filters across all three sources. Each source is watched through the only channel
+// that actually exposes it: SearchBuilder through its filterChanged hook (criteria edits do
+// not always redraw, and the stock button leaves the hook unused), ColumnControl through the
+// named fixed searches it applies ("dtcc"/"dtcc-list" — column().search() stays empty, the
+// same test its own ccSearchClear button runs), and the global box plus the widgets re-read
+// on every draw.
+#[test]
+fn viz_smart_data_viewer_clear_filters_enablement_and_count() {
+    let wrk = Workdir::new("viz_smart_data_viewer_clear_filters_enablement_and_count");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // SearchBuilder's share arrives through the filterChanged config hook
+    assert!(html.contains("config: { filterChanged: function (n) {"));
+    assert!(html.contains("sbCount = n;"));
+    // ColumnControl's share is read off the named fixed searches its widgets apply
+    assert!(html.contains(r#"this.search.fixed("dtcc") || this.search.fixed("dtcc-list")"#));
+    // enablement and the counted label, with the plain label as the zero state
+    assert!(html.contains("btn.enable(n > 0);"));
+    assert!(html.contains(r#"btn.text(n > 0 ? "Clear Filters (" + n + ")" : "Clear Filters");"#));
+    // the global box and the widgets are re-read on every draw
+    assert!(html.contains("dt.on(\"draw\", updateClearFilters);"));
 }
 
 // scrollX replaced Responsive outright, so the drawer must carry neither the collapsing option

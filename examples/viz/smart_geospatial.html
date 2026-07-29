@@ -74,7 +74,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>417 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>9</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-29 03:00 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-29 03:36 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -945,6 +945,12 @@
       drawer.appendChild(bar);
       drawer.appendChild(content);
       document.body.appendChild(drawer);
+      // Clear Filters enablement: the button lights up only while there is something to clear,
+      // and its label counts the active filters across all three sources. SearchBuilder pushes
+      // its share through the filterChanged hook below (criteria edits do not always redraw);
+      // the global box and the ColumnControl widgets are re-read on every draw.
+      var sbCount = 0;
+      var updateClearFilters = null;
       dt = new DataTable(table, {
         data: rows,
         // render.text(): cell values are DATA, not markup — without it DataTables injects them
@@ -1051,9 +1057,43 @@
         language: {
           searchBuilder: { button: { 0: "Advanced Filter", _: "Advanced Filter (%d)" } }
         },
-        layout: { topStart: ["pageLength", { buttons: ["searchBuilder", {
+        layout: { topStart: ["pageLength", { buttons: [{
+          extend: "searchBuilder",
+          // filterChanged hands over the same criteria count the button's own "(n)" shows
+          // (topGroup.count() — incomplete rows included, which is right for Clear Filters
+          // too: rebuild({}) removes those as well, so they ARE something to clear). The
+          // stock button never uses this hook — it re-reads the count itself on draw — so
+          // taking it clobbers nothing. It fires on criteria edits that do not redraw
+          // (adding or deleting a still-incomplete row), which draw-only recounting misses.
+          config: { filterChanged: function (n) {
+            sbCount = n;
+            if (updateClearFilters) updateClearFilters();
+          } }
+        }, {
           text: "Clear Filters",
           className: "qsv-clear-filters",
+          init: function (dt, node, conf) {
+            var btn = this;
+            updateClearFilters = function () {
+              var n = (dt.search() ? 1 : 0) + sbCount;
+              dt.columns().every(function () {
+                // ColumnControl applies a widget's search as a NAMED FIXED search on the
+                // column — "dtcc" for the text/number/date inputs, "dtcc-list" for
+                // searchList — which is the only place the widget state is visible:
+                // column().search() stays empty. This is the same test ColumnControl's own
+                // ccSearchClear button runs (minus its __ccSearch/__ccList init flags,
+                // which are its serverSide path — the drawer embeds its data). A cleared
+                // widget leaves "" behind, which is falsy, so it does not count.
+                if (this.search.fixed("dtcc") || this.search.fixed("dtcc-list")) n++;
+              });
+              btn.enable(n > 0);
+              btn.text(n > 0 ? "Clear Filters (" + n + ")" : "Clear Filters");
+            };
+            // every filter source redraws when it applies a change, so draw is the one
+            // signal that sees the global box and the ColumnControl widgets
+            dt.on("draw", updateClearFilters);
+            updateClearFilters();
+          },
           // Resets EVERY filter the drawer offers, because a reader who has narrowed the table
           // three different ways should not have to remember which three. The three live in
           // separate places and none of them clears the others:

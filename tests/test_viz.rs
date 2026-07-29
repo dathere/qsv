@@ -13675,3 +13675,173 @@ fn viz_smart_data_viewer_cdn_tags_carry_sri() {
     assert!(html.contains(r#"id="qsv-data-rows""#));
     assert!(html.contains(r#"id="qsv-data-cols""#));
 }
+
+// ---------------------------------------------------------------------------------------------
+// Data viewer <-> map point selection (rows <-> points cross-link)
+// ---------------------------------------------------------------------------------------------
+
+/// Local-extent coordinates -> a MapLibre `scattermap` panel. Row 2 has an EMPTY latitude and row
+/// 4 an out-of-range one, so both are dropped from the map while still consuming a data-row
+/// ordinal — which is exactly what the emitted `ids` have to prove.
+fn map_select_csv(wrk: &Workdir) {
+    wrk.create_from_string(
+        "ms.csv",
+        "name,lat,lon,val\na,40.70,-74.00,1\nb,40.71,-74.01,2\nc,,-74.02,3\nd,40.73,-74.03,4\ne,\
+         999,-74.04,5\nf,40.75,-74.05,6\n",
+    );
+}
+
+// The map trace carries each point's 0-based data-row ordinal in `ids`, and the page carries the
+// bridge that joins those to the drawer's rows.
+#[test]
+fn viz_smart_map_select_ids_emitted() {
+    let wrk = Workdir::new("viz_smart_map_select_ids_emitted");
+    map_select_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "ms.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // ORDINAL ALIGNMENT: rows 2 (empty lat) and 4 (lat out of range) never reach the map, but
+    // they still occupy an ordinal — so the ids skip them rather than renumbering 0..3.
+    assert!(
+        html.contains(r#""ids":["0","1","3","5"]"#),
+        "map trace ids are not the data-row ordinals with the unmappable rows skipped"
+    );
+    // the selected/unselected styling is baked into the trace so the bridge only sets
+    // `selectedpoints`
+    assert!(html.contains(r##""selected":{"marker":{"color":"#ff2d95","size":14}}"##));
+    assert!(html.contains(r#""unselected":{"marker":{"opacity":0.12}}"#));
+    // the bridge itself. `__qsvSelIndex` is unique to MAP_SELECT_CHROME — `__qsvSelRehook` is
+    // NOT, since the theme toggle references it unconditionally.
+    assert!(html.contains("gd.__qsvSelIndex = index;"));
+    assert!(html.contains("window.__qsvSelRehook = hook;"));
+    // and the drawer's half of the seam
+    assert!(html.contains("window.__qsvDataSelect = function (indexes, extend)"));
+    assert!(html.contains(r#"document.dispatchEvent(new CustomEvent("qsv-data-selection""#));
+}
+
+// With the drawer disabled there is nothing to cross-link to, so neither the ids nor the bridge
+// are emitted — the map payload stays exactly as it was before the feature existed.
+#[test]
+fn viz_smart_map_select_gated_off_without_drawer() {
+    let wrk = Workdir::new("viz_smart_map_select_gated_off_without_drawer");
+    map_select_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "ms.csv", "--preview-threshold", "0"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // Assert on the ORDINAL pattern, not on `"ids":[` alone: sunburst/treemap/icicle traces carry
+    // their own unrelated `ids` (plotly node identity), which is also why the bridge type-gates on
+    // scattermap/scattergeo rather than on the mere presence of the key.
+    assert!(
+        !html.contains(r#""ids":["0","1","3","5"]"#),
+        "row ids leaked into a drawer-less page"
+    );
+    assert!(
+        !html.contains("gd.__qsvSelIndex = index;"),
+        "bridge emitted with no drawer"
+    );
+    // the drawer really is absent (guards against the assertions above passing vacuously)
+    assert!(!html.contains(r#"id="qsv-data-rows""#));
+}
+
+// A dashboard with a drawer but NO map gets the row-selection machinery (it is part of the
+// drawer) but no bridge — there are no points to link to.
+#[test]
+fn viz_smart_drawer_select_without_map() {
+    let wrk = Workdir::new("viz_smart_drawer_select_without_map");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"id="qsv-data-rows""#));
+    assert!(html.contains("window.__qsvDataSelect = function (indexes, extend)"));
+    assert!(
+        !html.contains("gd.__qsvSelIndex = index;"),
+        "map<->rows bridge emitted on a dashboard with no map panel"
+    );
+}
+
+// Points whose row lies past the drawer's preview prefix get an EMPTY id: they keep their slot
+// (so every other point stays aligned) but cannot select anything.
+#[test]
+fn viz_smart_map_select_ids_empty_beyond_preview() {
+    let wrk = Workdir::new("viz_smart_map_select_ids_empty_beyond_preview");
+    map_select_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    // only the first 2 data rows are in the drawer; mappable rows 3 and 5 are past it
+    cmd.args(["smart", "ms.csv", "--preview-threshold", "2"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        html.contains(r#""ids":["0","1","",""]"#),
+        "ids past the preview prefix are not blanked (a bridge would select the wrong row)"
+    );
+}
+
+// The same cross-link on the projection basemap: a global extent renders `scattergeo` instead of
+// `scattermap`, through a separate build arm that has to emit ids too.
+#[test]
+fn viz_smart_map_select_scattergeo_variant() {
+    let wrk = Workdir::new("viz_smart_map_select_scattergeo_variant");
+    wrk.create_from_string(
+        "geo.csv",
+        "city,lat,lon,val\nnyc,40.7,-74.0,1\nlondon,51.5,-0.12,2\ntokyo,35.6,139.7,3\nsydney,-33.\
+         8,151.2,4\nsaopaulo,-23.5,-46.6,5\nmoscow,55.7,37.6,6\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "geo.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // scoped to the scattergeo trace so the assertion cannot pass on some other trace type
+    assert!(html.contains(r#""type":"scattergeo""#));
+    assert!(html.contains(r#""ids":["0","1","2","3","4","5"]"#));
+    assert!(html.contains("gd.__qsvSelIndex = index;"));
+}
+
+// The DataTables Select extension must stay OUT of the bundle. It requires a global jQuery that
+// this page does not load (it would throw `ReferenceError: jQuery is not defined` and silently
+// never register), and its mere presence would also re-scope the CSV export to "the selected rows,
+// if any". The export button is deliberately left on Buttons' default row scope, which is correct
+// ONLY while Select is absent — this test is what keeps that precondition true. (The export scope
+// itself is not asserted here; it follows from the Buttons default plus this absence.)
+#[test]
+fn viz_smart_data_viewer_has_no_select_extension() {
+    let wrk = Workdir::new("viz_smart_data_viewer_has_no_select_extension");
+    map_select_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "ms.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the jQuery-requiring Select extension must not have crept back into the bundle
+    assert!(
+        !html.contains("DataTable.select.version"),
+        "the DataTables Select extension is present — it requires jQuery, which this page does \
+         not load, and it silently changes the CSV export scope"
+    );
+}

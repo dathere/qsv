@@ -11584,7 +11584,6 @@ fn dictionary_sidecar_path(input: &str) -> std::path::PathBuf {
 /// would either widen a deliberately private dictionary or ignore a restrictive umask. The temp
 /// file is created with that same target mode rather than a permissive default, so a private
 /// dictionary's contents are never briefly readable through the temp file mid-write.
-
 fn write_dictionary_sidecar(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;

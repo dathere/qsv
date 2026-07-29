@@ -8459,7 +8459,7 @@ fn viz_smart_parcats_caps_paths() {
     let mut rows = String::from("d1,d2,d3,d4\n");
     // deterministic LCG so the fixture (and its tuple spread) is reproducible across runs.
     let mut s: u64 = 0x9E37_79B9_7F4A_7C15;
-    let mut next = |m: u64, s: &mut u64| {
+    let next = |m: u64, s: &mut u64| {
         *s = s
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);

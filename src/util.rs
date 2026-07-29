@@ -1688,7 +1688,7 @@ pub fn qsv_check_for_update(_check_only: bool, _no_confirm: bool) -> Result<bool
 
 // how often a background (non-flag) update check is allowed to hit GitHub: ~twice a month
 #[cfg(feature = "self_update")]
-const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(15 * 24 * 60 * 60);
+const UPDATE_CHECK_INTERVAL: Duration = Duration::from_hours(360);
 
 /// Background update check, throttled to at most twice a month via a persisted stamp file.
 ///

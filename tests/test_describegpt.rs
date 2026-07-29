@@ -2677,6 +2677,31 @@ fn describegpt_attribution_never_shows_threshold_float() {
     );
 }
 
+/// In the MCP two-step flow, --prepare-context resolves a detection threshold to the detected
+/// language and builds the prompt in it. --process-response must reach the same conclusion, so
+/// the attribution on the final output names the language the step-1 prompt actually asked for
+/// rather than falling back to the prompt file's language.
+#[test]
+#[cfg(feature = "whatlang")]
+fn describegpt_process_response_attribution_uses_detected_language() {
+    let wrk = Workdir::new("describegpt_procresp_detected_lang");
+    wrk.create_indexed("data.csv", spanish_rows());
+
+    let json = process_response_dictionary_output_with(&wrk, "json", &["--language", "0.9"]);
+    let attribution = json["Dictionary"]["response"]["attribution"]
+        .as_str()
+        .unwrap();
+    let language_line = attribution
+        .lines()
+        .find(|l| l.starts_with("Language:"))
+        .unwrap_or("");
+
+    assert!(
+        language_line.contains("Spanish") && language_line.contains("dataset-detected"),
+        "process-response should report the detected language: {language_line:?}"
+    );
+}
+
 /// An explicit --language must not be annotated as dataset-detected, even when it happens to
 /// equal the language detection independently found (detection still runs, to populate the
 /// reported detected_language fields).

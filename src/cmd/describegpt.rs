@@ -1288,6 +1288,31 @@ fn detect_dataset_language(analysis_results: &AnalysisResults, threshold: f64) {
     let _ = DATASET_LANGUAGE.set(detect_language_in_text(&sample, threshold));
 }
 
+/// Resolve `flag_language` into the actual output language for the inference phases,
+/// consuming any dataset-content detection result already recorded in `DATASET_LANGUAGE`.
+///
+/// Shared by the live path and `--process-response` so the two cannot drift. Must be called
+/// AFTER detection and BEFORE any prompt or attribution is built. Idempotent in practice:
+/// re-parsing an already-resolved explicit language yields the same value.
+///
+/// - explicit `--language <string>` always wins over detection
+/// - unset or a bare threshold float resolves to the detected language, or to `None` (the model
+///   default) when detection did not clear the threshold — this is what keeps a threshold float
+///   from leaking into prompts and attribution
+fn resolve_output_language(args: &mut Args) {
+    let (is_autodetect, _, explicit_language) = parse_language_option(args.flag_language.as_ref());
+    if is_autodetect {
+        args.flag_language = None;
+        #[cfg(feature = "whatlang")]
+        if let Some(Some((name, _, _))) = DATASET_LANGUAGE.get() {
+            args.flag_language = Some(name.clone());
+            LANGUAGE_FROM_DETECTION.store(true, Ordering::Relaxed);
+        }
+    } else {
+        args.flag_language = explicit_language;
+    }
+}
+
 /// Parse the --language option: if it's autodetect, a threshold, or an explicit language
 /// Returns (`is_autodetect`, threshold, `explicit_language`)
 /// - `is_autodetect`: true if language should be auto-detected
@@ -6471,13 +6496,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         let mut total_json_output: serde_json::Value = json!({});
 
-        // Mirror the run_dictionary_phase detection trigger so --process-response
-        // (MCP sampling) dictionary output also carries the dataset-language fields.
+        // Mirror the live path's detection & output-language resolution so --process-response
+        // (MCP sampling) agrees with the --prepare-context run that produced these responses:
+        // the dictionary output carries the dataset-language fields, and attribution reports
+        // the same language the step-1 prompt asked for.
+        //
+        // Detection stays gated on a Dictionary phase because the dataset-language fields and
+        // the attribution block are BOTH dictionary-only on this path — description/tags
+        // responses are emitted verbatim, with no attribution. Resolution is ungated so a
+        // bare threshold float can never reach attribution regardless of which phases ran.
         #[cfg(feature = "whatlang")]
         if input.phases.iter().any(|p| p.kind == "Dictionary") {
             let (_, threshold, _) = parse_language_option(args.flag_language.as_ref());
             detect_dataset_language(&input.analysis_results, threshold);
         }
+        resolve_output_language(&mut args);
 
         for phase in &input.phases {
             let kind: PromptType = phase
@@ -6785,22 +6818,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Resolve the output `language` template variable for the inference phases.
     // Chat mode (--prompt) already resolved it from the prompt text above.
     if args.flag_prompt.is_none() {
-        let (is_autodetect, _, explicit_language) =
-            parse_language_option(args.flag_language.as_ref());
-        if is_autodetect {
-            // Never let a bare detection-threshold float (e.g. `--language 0.9`) leak into
-            // prompts; fall back to the model default unless dataset detection cleared the
-            // threshold.
-            args.flag_language = None;
-            #[cfg(feature = "whatlang")]
-            if let Some(Some((name, _, _))) = DATASET_LANGUAGE.get() {
-                args.flag_language = Some(name.clone());
-                LANGUAGE_FROM_DETECTION.store(true, Ordering::Relaxed);
-            }
-        } else {
-            // an explicit language string always wins over detection
-            args.flag_language = explicit_language;
-        }
+        resolve_output_language(&mut args);
     }
 
     // --prepare-context mode: output prompts and cache state as JSON, then exit

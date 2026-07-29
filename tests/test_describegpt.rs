@@ -2366,13 +2366,26 @@ fn describegpt_process_response_produces_output() {
 /// on `data.csv` in `wrk`, returning the parsed total JSON output. LLM-free.
 #[cfg(feature = "whatlang")]
 fn process_response_dictionary_output(wrk: &Workdir, format: &str) -> serde_json::Value {
+    process_response_dictionary_output_with(wrk, format, &[])
+}
+
+/// As above, but passes `extra_args` to BOTH the --prepare-context and --process-response
+/// runs, so flags like --language are exercised on the same path a real invocation takes.
+fn process_response_dictionary_output_with(
+    wrk: &Workdir,
+    format: &str,
+    extra_args: &[&str],
+) -> serde_json::Value {
     use std::{io::Write, process::Stdio};
 
     let mut cmd = wrk.command("describegpt");
     cmd.arg("--prepare-context")
         .arg("--dictionary")
-        .arg("--no-cache")
-        .arg("data.csv");
+        .arg("--no-cache");
+    for arg in extra_args {
+        cmd.arg(arg);
+    }
+    cmd.arg("data.csv");
 
     let prep_json: String = wrk.stdout(&mut cmd);
     let prep: serde_json::Value = serde_json::from_str(&prep_json).unwrap();
@@ -2403,7 +2416,11 @@ fn process_response_dictionary_output(wrk: &Workdir, format: &str) -> serde_json
         .arg("--dictionary")
         .arg("--format")
         .arg(format)
-        .arg("--no-cache")
+        .arg("--no-cache");
+    for arg in extra_args {
+        cmd_2.arg(arg);
+    }
+    cmd_2
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -2632,6 +2649,64 @@ fn describegpt_language_custom_threshold_honored() {
     );
 }
 
+/// The attribution block reports the output language. It must NOT show a bare detection
+/// threshold there either — `--process-response` returns before run()'s language-resolution
+/// block, so the raw `--language` value is still a float on that path.
+///
+/// Ungated: with or without whatlang, a float must never surface as a language.
+#[test]
+fn describegpt_attribution_never_shows_threshold_float() {
+    let wrk = Workdir::new("describegpt_attr_no_float");
+    wrk.create_indexed(
+        "data.csv",
+        vec![svec!["a", "b"], svec!["1", "2"], svec!["3", "4"]],
+    );
+
+    let json = process_response_dictionary_output_with(&wrk, "json", &["--language", "0.9"]);
+    let attribution = json["Dictionary"]["response"]["attribution"]
+        .as_str()
+        .unwrap();
+    let language_line = attribution
+        .lines()
+        .find(|l| l.starts_with("Language:"))
+        .unwrap_or("");
+
+    assert!(
+        !language_line.contains("0.9"),
+        "threshold float leaked into the attribution language line: {language_line:?}"
+    );
+}
+
+/// An explicit --language must not be annotated as dataset-detected, even when it happens to
+/// equal the language detection independently found (detection still runs, to populate the
+/// reported detected_language fields).
+#[test]
+#[cfg(feature = "whatlang")]
+fn describegpt_attribution_explicit_language_not_marked_detected() {
+    let wrk = Workdir::new("describegpt_attr_explicit_lang");
+    wrk.create_indexed("data.csv", spanish_rows());
+
+    let json = process_response_dictionary_output_with(&wrk, "json", &["--language", "Spanish"]);
+    let response = &json["Dictionary"]["response"];
+
+    // detection still ran and is still reported
+    assert_eq!(response["detected_language"], "Spanish");
+
+    let attribution = response["attribution"].as_str().unwrap();
+    let language_line = attribution
+        .lines()
+        .find(|l| l.starts_with("Language:"))
+        .unwrap_or("");
+    assert!(
+        !language_line.contains("dataset-detected"),
+        "an explicit --language must not be labeled dataset-detected: {language_line:?}"
+    );
+    assert!(
+        language_line.contains("Spanish"),
+        "the explicit language should still be reported: {language_line:?}"
+    );
+}
+
 /// Detection now happens in `run()` rather than in `run_dictionary_phase`, so this pins the
 /// seam between the two: a LIVE inference run must still emit the detected_language fields,
 /// which are injected at output time from the `DATASET_LANGUAGE` OnceLock that `run()` sets.
@@ -2661,7 +2736,10 @@ fn describegpt_dictionary_language_fields_on_live_run() {
         .args(["--format", "json"])
         .arg("--no-cache");
 
-    let got: String = wrk.stdout(&mut cmd);
+    // stdout_on_success asserts and captures in ONE run — wrk.stdout followed by
+    // wrk.assert_success would spawn the command twice, doubling the live LLM request
+    // and asserting against a different run than the JSON being inspected.
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let json: serde_json::Value = serde_json::from_str(&got)
         .unwrap_or_else(|e| panic!("dictionary output should be JSON: {e}\n{got}"));
     let response = &json["Dictionary"]["response"];
@@ -2673,8 +2751,6 @@ fn describegpt_dictionary_language_fields_on_live_run() {
         confidence > 0.0 && confidence <= 1.0,
         "confidence out of range: {confidence}"
     );
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

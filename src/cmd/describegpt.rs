@@ -553,7 +553,10 @@ use std::{
     env, fmt, fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::{LazyLock, OnceLock},
+    sync::{
+        LazyLock, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -846,6 +849,12 @@ static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
 /// invocation). Deliberately separate from `DETECTED_LANGUAGE`/`_CONFIDENCE` above, which
 /// are first-set-wins and feed the --prompt attribution display.
 static DATASET_LANGUAGE: OnceLock<Option<(String, String, f64)>> = OnceLock::new();
+
+/// True only when the output language was set FROM dataset-content detection, as opposed to
+/// an explicit `--language`. Detection runs even when an explicit language is given (its
+/// result is still reported in the dictionary output), so `DATASET_LANGUAGE` alone cannot
+/// tell the two apart when an explicit language happens to equal the detected one.
+static LANGUAGE_FROM_DETECTION: AtomicBool = AtomicBool::new(false);
 
 /// Maximum `--context-file` size (bytes) accepted. Mirrors the OpenAI ~32 MB per-request
 /// file-content ceiling for multimodal inputs; larger files are rejected with guidance.
@@ -2072,13 +2081,21 @@ fn replace_attribution_placeholder(
         } else {
             format!("{detected_lang} ({:.1}%)", detected_confidence * 100.0)
         }
-    } else if let Some(lang) = args.flag_language.as_ref() {
-        match DATASET_LANGUAGE.get() {
-            Some(Some((name, _, conf))) if name == lang => {
-                format!("{lang} (dataset-detected, {:.1}%)", conf * 100.0)
-            },
-            _ => lang.clone(),
-        }
+    } else if LANGUAGE_FROM_DETECTION.load(Ordering::Relaxed)
+        && let Some(lang) = args.flag_language.as_ref()
+        && let Some(Some((_, _, conf))) = DATASET_LANGUAGE.get()
+    {
+        // Only annotate as dataset-detected when detection actually chose the output
+        // language — detection also runs when an explicit --language is given, so an
+        // explicit language equal to the detected one must not be labeled as detected.
+        format!("{lang} (dataset-detected, {:.1}%)", conf * 100.0)
+    } else if let Some(lang) = args.flag_language.as_ref()
+        && let (false, _, Some(explicit)) = parse_language_option(Some(lang))
+    {
+        // An explicit language. Routing through parse_language_option keeps a bare
+        // detection threshold (e.g. `--language 0.9`) out of the attribution on paths
+        // that return before run()'s language resolution, such as --process-response.
+        explicit
     } else {
         prompt_file_lang
     };
@@ -6778,6 +6795,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             #[cfg(feature = "whatlang")]
             if let Some(Some((name, _, _))) = DATASET_LANGUAGE.get() {
                 args.flag_language = Some(name.clone());
+                LANGUAGE_FROM_DETECTION.store(true, Ordering::Relaxed);
             }
         } else {
             // an explicit language string always wins over detection

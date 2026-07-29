@@ -2632,6 +2632,51 @@ fn describegpt_language_custom_threshold_honored() {
     );
 }
 
+/// Detection now happens in `run()` rather than in `run_dictionary_phase`, so this pins the
+/// seam between the two: a LIVE inference run must still emit the detected_language fields,
+/// which are injected at output time from the `DATASET_LANGUAGE` OnceLock that `run()` sets.
+/// The other language tests cover the halves separately — `--prepare-context` proves `run()`
+/// populates the OnceLock, and the `--process-response` tests cover the injection — but only
+/// a live run exercises both together.
+///
+/// The asserted fields are computed locally by whatlang, not by the LLM, so they are
+/// deterministic even though the surrounding dictionary content is not.
+///
+/// NOTE: like every other live-LLM test in this file, this SKIPS unless QSV_TEST_DESCRIBEGPT
+/// is set and a local LLM answers on QSV_LLM_BASE_URL. It does not run in CI.
+#[test]
+#[serial]
+#[cfg(feature = "whatlang")]
+fn describegpt_dictionary_language_fields_on_live_run() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_live_lang_fields");
+    wrk.create_indexed("data.csv", spanish_rows());
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("data.csv")
+        .arg("--dictionary")
+        .args(["--format", "json"])
+        .arg("--no-cache");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value = serde_json::from_str(&got)
+        .unwrap_or_else(|e| panic!("dictionary output should be JSON: {e}\n{got}"));
+    let response = &json["Dictionary"]["response"];
+
+    assert_eq!(response["detected_language"], "Spanish");
+    assert_eq!(response["detected_language_code"], "spa");
+    let confidence = response["detected_language_confidence"].as_f64().unwrap();
+    assert!(
+        confidence > 0.0 && confidence <= 1.0,
+        "confidence out of range: {confidence}"
+    );
+
+    wrk.assert_success(&mut cmd);
+}
+
 #[test]
 fn describegpt_prepare_context_analysis_results_structure() {
     let wrk = Workdir::new("describegpt_prep_analysis");

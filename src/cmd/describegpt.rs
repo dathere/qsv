@@ -153,7 +153,10 @@ describegpt options:
                            detected_language_confidence in the JSON dictionary (top-level) and JSON
                            Schema ("x-qsv" object) outputs when detection confidence >= 80%
                            (tunable with a float value in the --language option); the fields are
-                           omitted when detection is not confident.
+                           omitted when detection is not confident. When detection is confident,
+                           the LLM is also asked to generate its output (Labels, Descriptions,
+                           Tags and the dataset Description) in the detected language, unless
+                           an explicit language is given with the --language option.
     --description          Infer a general Description of the dataset based on detailed statistical context.
                            An Attribution signature is embedded in the Description.
     --tags                 Infer Tags that categorize the dataset based on detailed statistical context.
@@ -402,13 +405,20 @@ describegpt options:
     --language <lang>      The output language/dialect/tone to use for the response. (e.g., "Spanish", "French",
                            "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin",
                            "Valley Girl", "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", etc.)
+                           If set to a string, that language/dialect is ALWAYS used for the response,
+                           overriding auto-detection. If set to a float (0.0 to 1.0), it specifies the
+                           auto-detection confidence threshold. If not set, auto-detection runs with
+                           an 80% confidence threshold.
     
-                             CHAT MODE (--prompt) LANGUAGE DETECTION BEHAVIOR:
-                             When --prompt is used and --language is not set, automatically detects
-                             the language of the prompt with an 80% confidence threshold using whatlang.
-                             If the threshold is met, it will specify the detected language in its response.
-                             If set to a float (0.0 to 1.0), specifies the detection confidence threshold.
-                             If set to a string, specifies the language/dialect to use for the response.
+                             INFERENCE MODE (--dictionary, --description & --tags) DETECTION:
+                             The dataset's content language is auto-detected locally (using whatlang,
+                             not the LLM) from sampled values of its text columns. When the confidence
+                             threshold is met, the LLM is asked to respond in the detected language;
+                             otherwise the model's default language is used.
+    
+                             CHAT MODE (--prompt) DETECTION:
+                             The language of the prompt itself is auto-detected. If the threshold is
+                             met, it will specify the detected language in its response.
                              Note that LLMs often detect the language independently, but will often respond
                              in the model's default language. This option is here to ensure responses are
                              in the detected language of the prompt.
@@ -2061,6 +2071,13 @@ fn replace_attribution_placeholder(
             prompt_file_lang
         } else {
             format!("{detected_lang} ({:.1}%)", detected_confidence * 100.0)
+        }
+    } else if let Some(lang) = args.flag_language.as_ref() {
+        match DATASET_LANGUAGE.get() {
+            Some(Some((name, _, conf))) if name == lang => {
+                format!("{lang} (dataset-detected, {:.1}%)", conf * 100.0)
+            },
+            _ => lang.clone(),
         }
     } else {
         prompt_file_lang
@@ -4351,14 +4368,6 @@ fn run_dictionary_phase(
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<CompletionResponse> {
-    // Detect the dataset's content language (whatlang, local & deterministic) so the
-    // dictionary output can carry detected_language/_code/_confidence.
-    #[cfg(feature = "whatlang")]
-    {
-        let (_, threshold, _) = parse_language_option(args.flag_language.as_ref());
-        detect_dataset_language(analysis_results, threshold);
-    }
-
     // --- Pass 1: existing single-pass behavior, prompt = PromptType::Dictionary. ---
     let (prompt, system_prompt, _) =
         get_prompt(PromptType::Dictionary, Some(analysis_results), args)?;
@@ -6745,6 +6754,37 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // hard error here. `.set` only fails if already set (run() is once-per-process); ignore.
     let _ = CONTEXT_FILE.set(load_context_file(&args)?);
 
+    // Dataset-content language detection & output-language resolution.
+    // Runs ONCE here — after analysis, before any prompt is built — so every prompt-building
+    // path (--prepare-context and the live --dictionary/--description/--tags phases) sees the
+    // same resolved output language, and the dictionary output's detected_language/_code/
+    // _confidence fields are populated regardless of which phases run.
+    #[cfg(feature = "whatlang")]
+    {
+        let (_, threshold, _) = parse_language_option(args.flag_language.as_ref());
+        detect_dataset_language(&analysis_results, threshold);
+    }
+
+    // Resolve the output `language` template variable for the inference phases.
+    // Chat mode (--prompt) already resolved it from the prompt text above.
+    if args.flag_prompt.is_none() {
+        let (is_autodetect, _, explicit_language) =
+            parse_language_option(args.flag_language.as_ref());
+        if is_autodetect {
+            // Never let a bare detection-threshold float (e.g. `--language 0.9`) leak into
+            // prompts; fall back to the model default unless dataset detection cleared the
+            // threshold.
+            args.flag_language = None;
+            #[cfg(feature = "whatlang")]
+            if let Some(Some((name, _, _))) = DATASET_LANGUAGE.get() {
+                args.flag_language = Some(name.clone());
+            }
+        } else {
+            // an explicit language string always wins over detection
+            args.flag_language = explicit_language;
+        }
+    }
+
     // --prepare-context mode: output prompts and cache state as JSON, then exit
     if args.flag_prepare_context {
         let prompt_file = get_prompt_file(&args)?;
@@ -7051,6 +7091,37 @@ fn get_cached_analysis(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_language_option_classifies_thresholds_and_explicit_languages() {
+        // unset -> autodetect at the default threshold
+        assert_eq!(
+            parse_language_option(None),
+            (true, DEFAULT_LANGDETECTION_THRESHOLD, None)
+        );
+
+        // in-range floats are detection thresholds, never output languages
+        for (input, expected) in [("0.9", 0.9_f64), ("0.0", 0.0), ("1.0", 1.0)] {
+            let (is_autodetect, threshold, explicit) =
+                parse_language_option(Some(&input.to_string()));
+            assert!(is_autodetect, "{input} should enable autodetection");
+            assert!((threshold - expected).abs() < f64::EPSILON, "{input}");
+            assert!(explicit.is_none(), "{input} must not become a language");
+        }
+
+        // out-of-range floats and plain strings are explicit languages
+        for input in ["1.5", "-0.1", "Spanish", "Pirate"] {
+            assert_eq!(
+                parse_language_option(Some(&input.to_string())),
+                (
+                    false,
+                    DEFAULT_LANGDETECTION_THRESHOLD,
+                    Some(input.to_string())
+                ),
+                "{input} should be treated as an explicit language"
+            );
+        }
+    }
 
     #[test]
     fn is_blank_completion_detects_empty_and_whitespace() {

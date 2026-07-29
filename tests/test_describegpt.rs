@@ -2504,6 +2504,134 @@ fn describegpt_dictionary_jsonschema_language_in_x_qsv() {
     );
 }
 
+// ====== Output-language resolution tests ======
+// All LLM-free: --prepare-context emits the prompts that WOULD be sent, so we can
+// assert on the rendered `language` clause without an API key.
+
+/// Run `--prepare-context` with the given extra args and return the phases array.
+fn prepare_context_phases(
+    wrk: &Workdir,
+    rows: Vec<Vec<String>>,
+    extra_args: &[&str],
+) -> Vec<serde_json::Value> {
+    wrk.create_indexed("data.csv", rows);
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context").arg("--no-cache");
+    for arg in extra_args {
+        cmd.arg(arg);
+    }
+    cmd.arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value = serde_json::from_str(&got).unwrap();
+    json["phases"].as_array().unwrap().clone()
+}
+
+#[test]
+#[cfg(feature = "whatlang")]
+fn describegpt_inference_language_follows_dataset_detection() {
+    let wrk = Workdir::new("describegpt_lang_follows_detection");
+    let phases = prepare_context_phases(&wrk, spanish_rows(), &["--all"]);
+
+    assert!(!phases.is_empty(), "expected at least one phase");
+    for phase in &phases {
+        let prompt = phase["user_prompt"].as_str().unwrap();
+        assert!(
+            prompt.contains("Spanish"),
+            "phase {} prompt should request Spanish output:\n{prompt}",
+            phase["kind"]
+        );
+    }
+}
+
+#[test]
+#[cfg(feature = "whatlang")]
+fn describegpt_description_only_gets_detected_language() {
+    // Proves detection no longer depends on the dictionary phase running.
+    let wrk = Workdir::new("describegpt_lang_description_only");
+    let phases = prepare_context_phases(&wrk, spanish_rows(), &["--description"]);
+
+    assert_eq!(phases.len(), 1);
+    assert_eq!(phases[0]["kind"], "Description");
+    let prompt = phases[0]["user_prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains("Spanish"),
+        "Description prompt should request Spanish output:\n{prompt}"
+    );
+}
+
+#[test]
+fn describegpt_language_threshold_float_does_not_leak_into_prompts() {
+    // A bare threshold float must never reach the prompt as an output "language".
+    // Undetectable data (numeric columns, sub-10-char headers) so this is
+    // deterministic with AND without the whatlang feature.
+    let wrk = Workdir::new("describegpt_lang_float_no_leak");
+    let phases = prepare_context_phases(
+        &wrk,
+        vec![svec!["a", "b"], svec!["1", "2"], svec!["3", "4"]],
+        &["--all", "--language", "0.9"],
+    );
+
+    assert!(!phases.is_empty(), "expected at least one phase");
+    for phase in &phases {
+        let prompt = phase["user_prompt"].as_str().unwrap();
+        // Anchor on the rendered template clause, not a bare "0.9" — the embedded
+        // summary statistics legitimately contain numbers like 0.9.
+        assert!(
+            !prompt.contains("Generate 0.9"),
+            "threshold float leaked into phase {} prompt:\n{prompt}",
+            phase["kind"]
+        );
+    }
+
+    let dictionary = phases
+        .iter()
+        .find(|p| p["kind"] == "Dictionary")
+        .expect("Dictionary phase");
+    let prompt = dictionary["user_prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains("Generate Labels"),
+        "Dictionary prompt should have no language clause:\n{prompt}"
+    );
+}
+
+#[test]
+#[cfg(feature = "whatlang")]
+fn describegpt_explicit_language_wins_over_detection() {
+    let wrk = Workdir::new("describegpt_lang_explicit_wins");
+    let phases = prepare_context_phases(&wrk, spanish_rows(), &["--all", "--language", "Klingon"]);
+
+    assert!(!phases.is_empty(), "expected at least one phase");
+    for phase in &phases {
+        let prompt = phase["user_prompt"].as_str().unwrap();
+        assert!(
+            prompt.contains("Klingon"),
+            "phase {} prompt should request Klingon output:\n{prompt}",
+            phase["kind"]
+        );
+        assert!(
+            !prompt.contains("Generate Spanish"),
+            "detection should not override an explicit --language:\n{prompt}"
+        );
+    }
+}
+
+#[test]
+#[cfg(feature = "whatlang")]
+fn describegpt_language_custom_threshold_honored() {
+    let wrk = Workdir::new("describegpt_lang_custom_threshold");
+    let phases =
+        prepare_context_phases(&wrk, spanish_rows(), &["--dictionary", "--language", "0.1"]);
+
+    assert_eq!(phases.len(), 1);
+    let prompt = phases[0]["user_prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains("Spanish"),
+        "a lowered threshold should still yield Spanish:\n{prompt}"
+    );
+}
+
 #[test]
 fn describegpt_prepare_context_analysis_results_structure() {
     let wrk = Workdir::new("describegpt_prep_analysis");

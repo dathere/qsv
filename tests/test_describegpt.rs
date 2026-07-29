@@ -2611,7 +2611,7 @@ fn describegpt_explicit_language_wins_over_detection() {
             phase["kind"]
         );
         assert!(
-            !prompt.contains("Generate Spanish"),
+            !prompt.contains("Spanish"),
             "detection should not override an explicit --language:\n{prompt}"
         );
     }

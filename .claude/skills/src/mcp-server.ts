@@ -1160,6 +1160,12 @@ class QsvMcpServer {
    * Only runs in plugin mode. Silently skips if the file already exists or on any error.
    */
   private async deployWorkflowGuide(): Promise<void> {
+    // Honor the QSV_NO_COWORK_SETUP=1 opt-out, matching the cowork-setup.cjs
+    // SessionStart hook this path replaces in Cowork.
+    if (process.env.QSV_NO_COWORK_SETUP === "1") {
+      console.error("[Deploy] QSV_NO_COWORK_SETUP=1 — skipping workflow guide deployment");
+      return;
+    }
     try {
       const workingDir = this.executor.getWorkingDirectory();
 

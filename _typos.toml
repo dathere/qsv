@@ -28,6 +28,8 @@ nd            = "nd"
 Pn            = "Pn"
 tripel        = "tripel"
 sems          = "sems"
+# Spanish for "annual" — "reunión anual" in a describegpt language-detection fixture
+anual         = "anual"
 
 [files]
 extend-exclude = [

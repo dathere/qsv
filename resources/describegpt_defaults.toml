@@ -1,11 +1,11 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "qsv team"
-version = "7.2.0"
+version = "8.0.0"
 tokens = 20000
 base_url = "http://localhost:1234/v1"
-model = "openai/gpt-oss-20b"
-timeout = 300
+model = "google/gemma-4-26b-a4b"
+timeout = 500
 format = "markdown"
 # responses will be in this language/dialect, or model default if not set
 # Can be set to "traditional" languages like Spanish, German,French, Hindi, Mandarin, etc.
@@ -351,6 +351,10 @@ Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "durati
     "content_type": "..."{% endif %}{% raw %}
   }
 }{% endraw %}
+{%- if language %}
+
+IMPORTANT: Write every Label and Description in this language: {{ language|trim|title }}. This applies to ALL fields, including the ones you carry over unchanged from the first pass.
+{%- endif %}
 
 Let's think step by step, correcting yourself as needed.
 """

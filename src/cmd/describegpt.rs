@@ -1503,6 +1503,10 @@ Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "durati
     "content_type": "..."{% endif %}{% raw %}
   }
 }{% endraw %}
+{%- if language %}
+
+IMPORTANT: Write every Label and Description in this language: {{ language|trim|title }}. This applies to ALL fields, including the ones you carry over unchanged from the first pass.
+{%- endif %}
 
 Let's think step by step, correcting yourself as needed.
 "#;

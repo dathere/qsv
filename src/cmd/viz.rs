@@ -33890,6 +33890,68 @@ mod tests {
         );
     }
 
+    /// Pins the rust-i18n interpolation semantics that localizing a hover template depends on.
+    /// `t!` substitutes its arguments via `rust_i18n::replace_patterns`, which uses the SAME
+    /// `%{...}` token syntax plotly does -- so a localized hover template is parsed twice: once by
+    /// rust-i18n when the dashboard is rendered, once by plotly in the browser. Three properties
+    /// make that cohabitation safe. The fourth is a trap, and it fails silently.
+    #[test]
+    fn rust_i18n_interpolation_cohabits_with_plotly_tokens() {
+        use rust_i18n::replace_patterns;
+
+        // 1. a token rust-i18n was given no argument for is emitted verbatim, so plotly's own
+        //    tokens survive a `t!` round trip untouched. This is what makes the `q_` argument
+        //    prefix sufficient to keep the two namespaces from colliding.
+        assert_eq!(
+            replace_patterns(
+                "%{q_col}: %{x:.3s}<br>%{z:,} rows",
+                &["q_col"],
+                &["Revenue".to_string()]
+            ),
+            "Revenue: %{x:.3s}<br>%{z:,} rows"
+        );
+
+        // 2. a doubled literal `%` -- what `escape_template_pct` emits -- passes through untouched,
+        //    so the existing `%`-escaping composition still means what it meant before.
+        assert_eq!(
+            replace_patterns("50%% of %{q_col}", &["q_col"], &["total".to_string()]),
+            "50%% of total"
+        );
+
+        // 3. an argument VALUE is never re-scanned, so a token-shaped column header interpolated as
+        //    an argument cannot smuggle in a second round of substitution.
+        assert_eq!(
+            replace_patterns("%{q_col} rows", &["q_col"], &["%{x}".to_string()]),
+            "%{x} rows"
+        );
+
+        // 4. THE TRAP. The scanner resets to "seeking `{`" on EVERY `%`, so a plotly token carrying
+        //    a literal `%` inside its own braces -- `%{x:.0%}`, the Lorenz axis format -- never
+        //    registers its closing brace and mis-pairs with the NEXT `{` in the string. Every
+        //    `%{q_*}` argument downstream of such a token is then silently left unsubstituted: no
+        //    panic, no warning, no failing key-coverage check, just the raw key in a user's
+        //    tooltip. Argument tokens MUST precede any percent-formatted plotly token.
+        assert_eq!(
+            replace_patterns(
+                "bottom %{x:.0%} of %{q_col}",
+                &["q_col"],
+                &["sales".to_string()]
+            ),
+            "bottom %{x:.0%} of %{q_col}",
+            "known hazard: an argument placed after a percent-formatted plotly token is NOT \
+             substituted -- keep `%{{q_*}}` ahead of any `%{{..%}}` token"
+        );
+        // the same argument ahead of that token resolves normally -- ordering is the whole fix
+        assert_eq!(
+            replace_patterns(
+                "%{q_col}: bottom %{x:.0%}",
+                &["q_col"],
+                &["sales".to_string()]
+            ),
+            "sales: bottom %{x:.0%}"
+        );
+    }
+
     #[test]
     fn complement_marker_warns_but_does_not_veto() {
         // `unspent_balance` is the one bad declaration that disclosing containment cannot catch:

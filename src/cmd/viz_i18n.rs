@@ -291,6 +291,135 @@ mod tests {
         }
     }
 
+    /// Byte offsets of the `{` in every `%{...}` token that `rust_i18n::replace_patterns` would
+    /// actually offer for substitution. This deliberately REPLICATES that function's scanner rather
+    /// than approximating it: the whole point is to model the quirk, not a tidied-up version of it.
+    /// The scanner resets to "seeking `{`" on every `%`, including one INSIDE a token's braces.
+    fn substitutable_open_braces(value: &str) -> Vec<usize> {
+        let mut positions: Vec<usize> = Vec::new();
+        let mut stage = 0u8;
+        for (i, &b) in value.as_bytes().iter().enumerate() {
+            match (stage, b) {
+                (1, b'{') => {
+                    stage = 2;
+                    positions.push(i);
+                },
+                (2, b'}') => {
+                    stage = 0;
+                    positions.push(i);
+                },
+                (_, b'%') => stage = 1,
+                _ => {},
+            }
+        }
+        positions.chunks_exact(2).map(|pair| pair[0]).collect()
+    }
+
+    /// The `%{q_*}` argument tokens in `value` that `replace_patterns` would silently skip. Matched
+    /// by POSITION, not by name, so a key appearing twice -- once reachable, once stranded -- still
+    /// reports the stranded one.
+    fn unsubstitutable_arg_tokens(value: &str) -> Vec<&str> {
+        let reachable = substitutable_open_braces(value);
+        let mut missed = Vec::new();
+        let mut cursor = 0usize;
+        while let Some(rel) = value[cursor..].find("%{q_") {
+            let open = cursor + rel + 1; // index of the `{`
+            let Some(close_rel) = value[open..].find('}') else {
+                break;
+            };
+            let close = open + close_rel;
+            if !reachable.contains(&open) {
+                missed.push(&value[open + 1..close]);
+            }
+            cursor = close + 1;
+        }
+        missed
+    }
+
+    /// Guards the one localization failure that is invisible to every other check.
+    ///
+    /// A plotly token carrying a literal `%` inside its braces (`%{x:.0%}`, the Lorenz axis format)
+    /// swallows its own closing brace in rust-i18n's scanner and mis-pairs with the next `{`. Any
+    /// `%{q_*}` argument AFTER such a token is then left unsubstituted -- and rust-i18n reports
+    /// nothing, so the raw key ships straight into a user's tooltip.
+    ///
+    /// Key-set parity between locales cannot see this (both locales can be wrong in the same
+    /// place), and the English golden fixtures cannot see it either, because the constraint is
+    /// about token ORDER within a sentence and every language orders its sentences differently. A
+    /// translator moving the measure name to the end of a Lorenz tooltip -- which is exactly what
+    /// Spanish word order wants -- reintroduces it with no signal at all.
+    ///
+    /// Reads the YAML from disk rather than the compiled catalog on purpose: editing only a locale
+    /// file may not trigger a rebuild, so a compiled-catalog check could pass against stale bytes.
+    #[test]
+    fn no_catalog_value_strands_an_argument_behind_a_percent_formatted_token() {
+        // the detector must actually detect -- a no-op implementation would sail through the
+        // catalog sweep below and look exactly like a clean bill of health
+        assert_eq!(
+            unsubstitutable_arg_tokens("bottom %{x:.0%} of %{q_label}"),
+            vec!["q_label"],
+            "detector must flag an argument stranded behind a percent-formatted plotly token"
+        );
+        assert!(
+            unsubstitutable_arg_tokens("%{q_label}: bottom %{x:.0%}").is_empty(),
+            "an argument ahead of the percent-formatted token is fine -- ordering is the fix"
+        );
+        assert!(
+            unsubstitutable_arg_tokens("%{q_col}: %{x:.3s}<br>%{z:,} rows").is_empty(),
+            "ordinary plotly tokens must not be mistaken for the hazard"
+        );
+
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cmd/locales");
+        let mut checked = 0usize;
+        let mut files = 0usize;
+        for entry in std::fs::read_dir(&dir).expect("src/cmd/locales must be readable") {
+            let path = entry.expect("readable dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("yml") {
+                continue;
+            }
+            files += 1;
+            let locale = path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let text = std::fs::read_to_string(&path).expect("readable locale file");
+            for (idx, line) in text.lines().enumerate() {
+                let trimmed = line.trim_start();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                let Some((key, rest)) = trimmed.split_once(':') else {
+                    continue;
+                };
+                let value = rest.trim();
+                // a nesting parent (`viz:`) or the `_version: 1` scalar carries no message text
+                if !value.starts_with('"') {
+                    continue;
+                }
+                checked += 1;
+                let missed = unsubstitutable_arg_tokens(value);
+                assert!(
+                    missed.is_empty(),
+                    "{locale}.yml:{} key '{key}' strands argument(s) {missed:?} behind a \
+                     percent-formatted plotly token -- they will render as literal text. Move \
+                     every %{{q_*}} ahead of any %{{..%}} token in this value:\n  {value}",
+                    idx + 1
+                );
+            }
+        }
+        // a silently-empty sweep is the failure mode this floor exists to catch
+        assert!(
+            files >= 2,
+            "expected at least en.yml and es.yml, saw {files}"
+        );
+        assert!(
+            checked >= 100,
+            "only {checked} catalog values were inspected -- the line extractor has probably \
+             stopped matching the YAML shape"
+        );
+    }
+
     #[test]
     fn english_name_round_trips_through_parse_lang() {
         // viz forwards `english_name` to describegpt's --language. Requiring it to also be

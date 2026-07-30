@@ -295,6 +295,12 @@ phf = { version = "0.13", features = ["macros"] }
 # HTML self-contained, and `static_export_default` (via `viz_static`) adds PNG/SVG/PDF
 # export through a webdriver-managed headless browser. NO polars dependency. See #302.
 plotly = { version = "0.14.1", default-features = false, optional = true }
+# viz UI localization. Locale YAMLs live under src/cmd/locales/ (NOT a top-level
+# locales/ dir) so the existing "src/**/*" package include covers them; rust-i18n
+# resolves the path relative to CARGO_MANIFEST_DIR at compile time.
+# NOTE: the `i18n!` init MUST be invoked at a crate root (src/main.rs) because the
+# `t!` macro expands to `crate::_rust_i18n_t!`. See src/cmd/viz_i18n.rs.
+rust-i18n = { version = "4.2.1", optional = true }
 pragmastat = "14.0"
 polars = { version = "0.54.4", features = [
     "asof_join",
@@ -655,6 +661,7 @@ viz = [
     "dep:plotly",
     "dep:opener",
     "dep:geojson",
+    "dep:rust-i18n",
     "plotly/plotly_embed_js",
     "base64-simd",
 ]

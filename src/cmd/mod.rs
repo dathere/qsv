@@ -141,3 +141,5 @@ pub mod transpose;
 pub mod validate;
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub mod viz;
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+pub mod viz_i18n;

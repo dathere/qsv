@@ -738,6 +738,11 @@ smart options:
                            seaborn_dark, matplotlib, plotnine (case-insensitive;
                            hyphens accepted). When omitted, qsv's built-in look
                            is used. Applies to all chart types, including `smart`.
+    --language <lang>      Render the dashboard UI in this language. Accepts a
+                           BCP-47/ISO 639 code (es, spa) or an English language
+                           name (Spanish). Overrides the language detected in a
+                           data dictionary, and is also forwarded to describegpt
+                           when inferring one. Curated: en, es. [default: auto]
     --width <n>            Image width in pixels for static export. Default 1000;
                            for `smart`, auto-scaled to the grid's column count.
     --height <n>           Image height in pixels for static export. Default 600;
@@ -805,10 +810,12 @@ use plotly::{
     waterfall::{Marker as WaterfallMarker, Measure, MeasureStyle},
 };
 use rayon::prelude::*;
+use rust_i18n::t;
 use serde::Deserialize;
 
 use crate::{
     CliResult,
+    cmd::viz_i18n,
     config::{Config, Delimiter},
     select::SelectColumns,
     util,
@@ -1611,6 +1618,10 @@ struct Args {
     flag_slider_cumulative:  bool,
     flag_annotation:         Option<String>,
     flag_theme:              Option<String>,
+    // Dashboard UI language. "auto" (the default) means "follow the data dictionary's
+    // detected language, else English"; an explicit value always wins. Resolved once in
+    // run() via viz_i18n::resolve.
+    flag_language:           Option<String>,
     // width/height/scale only affect static image export (the viz_static feature). width
     // and height are optional: when unset, `viz smart` derives them from its grid shape and
     // other charts fall back to the defaults below.
@@ -1667,6 +1678,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!(
             "Unknown --theme '{name}'. Valid themes: {VALID_THEMES}."
         );
+    }
+
+    // Validate --language up front, before any work: an explicit request we cannot honor
+    // is a usage error, not something to silently anglicize. The dictionary-detected
+    // language is resolved later (in the smart path, once the dictionary is parsed) since
+    // it can only lower the precedence, never raise it.
+    match viz_i18n::resolve(args.flag_language.as_deref(), None) {
+        viz_i18n::Resolution::UnknownRequested(requested) => {
+            return fail_incorrectusage_clierror!(
+                "Unknown --language '{requested}'. Curated languages: {}.",
+                viz_i18n::curated_list()
+            );
+        },
+        viz_i18n::Resolution::Curated(row) => viz_i18n::set_active(row),
+        // Unreachable with `detected: None`, but resolving rather than ignoring keeps the
+        // match exhaustive if the dictionary language is ever folded in here.
+        viz_i18n::Resolution::UncuratedDetected(_) => {},
     }
 
     // --snap-max-dist semantics are shared by the `viz choropleth` command and the `viz smart`
@@ -8430,9 +8458,11 @@ fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
         .replace("__DARK_LINK_HOVER__", LINK_ON_DARK_HOVER)
         .replace("__FONT_FAMILY__", FONT_FAMILY);
 
-    let button = "<button id=\"qsv-theme-toggle\" type=\"button\" aria-label=\"Toggle light/dark \
-                  mode\">\u{1F313} Theme</button>"
-        .to_string();
+    let button = format!(
+        "<button id=\"qsv-theme-toggle\" type=\"button\" aria-label=\"{aria}\">{label}</button>",
+        aria = t!("viz.chrome.theme_toggle_aria"),
+        label = t!("viz.chrome.theme_toggle"),
+    );
 
     // `buildUpdate` only sets keys present on a given graph's layout, so axis-less plots (pie) and
     // arbitrary subplot counts both work without knowing div ids.
@@ -8469,8 +8499,11 @@ fn logo_markup() -> String {
     use base64_simd::STANDARD as BASE64;
     let light = BASE64.encode_to_string(include_bytes!("assets/qsv_logo_light.png"));
     let dark = BASE64.encode_to_string(include_bytes!("assets/qsv_logo_dark.png"));
+    // One key drives the aria-label and both `alt`s -- they are the same sentence, and
+    // letting them drift would give a screen reader two different names for one link.
+    let brand = t!("viz.chrome.logo_alt");
     format!(
-        r#"<a id="qsv-logo" href="https://qsv.dathere.com/" target="_blank" rel="noopener" aria-label="qsv by datHere"><img class="qsv-logo-light" alt="qsv by datHere" src="data:image/png;base64,{light}" /><img class="qsv-logo-dark" alt="qsv by datHere" src="data:image/png;base64,{dark}" /></a>"#
+        r#"<a id="qsv-logo" href="https://qsv.dathere.com/" target="_blank" rel="noopener" aria-label="{brand}"><img class="qsv-logo-light" alt="{brand}" src="data:image/png;base64,{light}" /><img class="qsv-logo-dark" alt="{brand}" src="data:image/png;base64,{dark}" /></a>"#
     )
 }
 
@@ -8519,19 +8552,22 @@ fn third_party_comment(datatables: bool, basemap: bool) -> String {
 /// Repeating it down in the footer was pure duplication. The machine-readable
 /// `third_party_comment` still names the tile sources unconditionally.
 fn third_party_footer(datatables: bool) -> String {
-    let mut parts = vec![
-        r#"Charts: <a href="https://plotly.com/javascript/" target="_blank" rel="noopener">plotly.js</a> (MIT)"#
-            .to_string(),
-    ];
+    // Only the label words are translatable; the anchors stay in Rust so no markup (and no
+    // escaping question) enters the locale files. "(MIT)" is a licence identifier, not prose.
+    let mut parts = vec![format!(
+        r#"{} <a href="https://plotly.com/javascript/" target="_blank" rel="noopener">plotly.js</a> (MIT)"#,
+        t!("viz.chrome.credits_charts")
+    )];
     if datatables {
-        parts.push(
-            r#"Table: <a href="https://datatables.net/" target="_blank" rel="noopener">DataTables</a> (MIT)"#
-                .to_string(),
-        );
+        parts.push(format!(
+            r#"{} <a href="https://datatables.net/" target="_blank" rel="noopener">DataTables</a> (MIT)"#,
+            t!("viz.chrome.credits_table")
+        ));
     }
     format!(
-        r#"<footer id="qsv-credits">{} &middot; <a href="{THIRD_PARTY_NOTICES_URL}" target="_blank" rel="noopener">notices</a></footer>"#,
-        parts.join(" &middot; ")
+        r#"<footer id="qsv-credits">{} &middot; <a href="{THIRD_PARTY_NOTICES_URL}" target="_blank" rel="noopener">{}</a></footer>"#,
+        parts.join(" &middot; "),
+        t!("viz.chrome.credits_notices")
     )
 }
 
@@ -8825,12 +8861,46 @@ const FULLSCREEN_STYLE: &str =
 /// only once its `gd.data` is populated (marked with a `__qsvFs` flag so it's done exactly once),
 /// retrying briefly until every div is ready (capped so a render error can't loop forever). Raw
 /// string (like `SCRIPT_TEMPLATE`) so the brace-heavy JS needs no escaping.
+/// Localize a `const` JS block's `__QSVI18N_*__` placeholders.
+///
+/// Placeholders sit in BARE (unquoted) JS positions: `js_string_literal` supplies the
+/// surrounding quotes along with the escaping, so a translation containing an apostrophe
+/// (fr "l'ensemble"), a quote, or a `<` cannot break out of its string literal or smuggle a
+/// `</script>` into the page. Substitution is UNCONDITIONAL -- English takes exactly the same
+/// path as every other locale, so there is no English-only branch that could drift.
+fn fullscreen_script() -> String {
+    FULLSCREEN_SCRIPT
+        .replace(
+            "__QSVI18N_FULLSCREEN__",
+            &js_string_literal(&t!("viz.chrome.toggle_fullscreen")),
+        )
+        .replace(
+            "__QSVI18N_LEGEND__",
+            &js_string_literal(&t!("viz.chrome.toggle_legend")),
+        )
+        // Singular/plural are two explicit keys because the JS already branches on `n === 1`;
+        // that deliberately does NOT generalize to languages with more than two plural forms,
+        // which would need the count formatted in Rust or an Intl.PluralRules rewrite.
+        .replace(
+            "__QSVI18N_POINT_ONE__",
+            &js_string_literal(&t!("viz.map.cluster_point_one")),
+        )
+        .replace(
+            "__QSVI18N_POINT_MANY__",
+            &js_string_literal(&t!("viz.map.cluster_point_many")),
+        )
+        .replace(
+            "__QSVI18N_CLICK_ZOOM__",
+            &js_string_literal(&t!("viz.map.cluster_click_to_zoom")),
+        )
+}
+
 const FULLSCREEN_SCRIPT: &str = r#"<script>
 (function () {
   var icon = { width: 512, height: 512, path: "M512 512v-208l-80 80-96-96-48 48 96 96-80 80z M512 0h-208l80 80-96 96 48 48 96-96 80 80z M0 512h208l-80-80 96-96-48-48-96 96-80-80z M0 0v208l80-80 96 96 48-48-96-96 80-80z" };
   var button = {
     name: "qsv-fullscreen",
-    title: "Toggle fullscreen",
+    title: __QSVI18N_FULLSCREEN__,
     icon: icon,
     click: function (gd) {
       try {
@@ -8846,7 +8916,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
   var legendIcon = { width: 512, height: 512, path: "M0 96h96v64H0z M160 112h352v32H160z M0 224h96v64H0z M160 240h352v32H160z M0 352h96v64H0z M160 368h352v32H160z" };
   var legendButton = {
     name: "qsv-legend",
-    title: "Toggle legend",
+    title: __QSVI18N_LEGEND__,
     icon: legendIcon,
     click: function (gd) {
       try {
@@ -9122,7 +9192,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       var f = clusterAt(e.point);
       var n = f && f.properties && f.properties.point_count;
       if (typeof n !== "number") { hide(); return; }
-      tip.textContent = n.toLocaleString() + (n === 1 ? " point" : " points") + " - click to zoom in";
+      tip.textContent = n.toLocaleString() + (n === 1 ? __QSVI18N_POINT_ONE__ : __QSVI18N_POINT_MANY__) + __QSVI18N_CLICK_ZOOM__;
       tip.style.display = "block";
       tip.style.left = (e.point.x + 12) + "px";
       tip.style.top = (e.point.y + 12) + "px";
@@ -9293,7 +9363,8 @@ fn assumed_map_dims_prelude(width_px: f64, height_px: f64) -> String {
 /// template changes).
 fn inject_fullscreen_chrome(doc: &str) -> String {
     let prelude = assumed_map_dims_prelude(DEFAULT_IMG_WIDTH as f64, DEFAULT_IMG_HEIGHT as f64);
-    let chrome = format!("<style>\n{FULLSCREEN_STYLE}\n</style>\n{prelude}\n{FULLSCREEN_SCRIPT}\n");
+    let fullscreen_script = fullscreen_script();
+    let chrome = format!("<style>\n{FULLSCREEN_STYLE}\n</style>\n{prelude}\n{fullscreen_script}\n");
     match doc.rfind("</body>") {
         Some(idx) => {
             let mut out = String::with_capacity(doc.len() + chrome.len());
@@ -9341,6 +9412,70 @@ const PHOTO_DWELL_MS: u32 = 2000;
 /// `Plotly.newPlot` would drop a listener attached before it (hence the `__qsvFs` wait, with a
 /// ~10s fallback so a render error doesn't disable photos permanently). `__qsvPhotoRehook` is
 /// published for the theme toggle, whose MapLibre re-render silently drops `gd.on` listeners.
+/// Localize `PHOTO_CHROME`.
+///
+/// This block mixes BOTH escaping conventions, so read the placeholder's position before
+/// changing one: `__QSVI18N_PHOTO_{ALT,CLOSE,ENLARGE*,PREV,NEXT}__` sit inside HTML attributes
+/// written within single-quoted JS strings and use [`html_in_js_text`] (no added quotes), while
+/// the `*_JS`/`*_UNAVAIL*`/`*_SHRINK*` ones are plain JS values passed to `setAttribute`/`.title`
+/// and use [`js_string_literal`] (quotes included). The `_ARIA`/`_ARIA_JS` and
+/// `_ENLARGE`/`_ENLARGE_JS` pairs are the SAME message in the two different positions -- they
+/// share one locale key so the markup and the DOM update can never disagree.
+fn photo_chrome() -> String {
+    PHOTO_CHROME
+        .replace("__QSVDWELLMS__", &PHOTO_DWELL_MS.to_string())
+        // HTML-attribute positions
+        .replace(
+            "__QSVI18N_PHOTO_ALT__",
+            &html_in_js_text(&t!("viz.photo.alt")),
+        )
+        .replace(
+            "__QSVI18N_PHOTO_CLOSE__",
+            &html_in_js_text(&t!("viz.photo.close")),
+        )
+        .replace(
+            "__QSVI18N_PHOTO_ENLARGE_ARIA__",
+            &html_in_js_text(&t!("viz.photo.enlarge_aria")),
+        )
+        .replace(
+            "__QSVI18N_PHOTO_ENLARGE__",
+            &html_in_js_text(&t!("viz.photo.enlarge")),
+        )
+        .replace(
+            "__QSVI18N_PHOTO_PREV__",
+            &html_in_js_text(&t!("viz.photo.previous")),
+        )
+        .replace(
+            "__QSVI18N_PHOTO_NEXT__",
+            &html_in_js_text(&t!("viz.photo.next")),
+        )
+        // plain JS string positions
+        .replace(
+            "__QSVI18N_PHOTO_UNAVAIL_SUFFIX__",
+            &js_string_literal(&t!("viz.photo.unavailable_suffix")),
+        )
+        .replace(
+            "__QSVI18N_PHOTO_UNAVAIL__",
+            &js_string_literal(&t!("viz.photo.unavailable")),
+        )
+        .replace(
+            "__QSVI18N_PHOTO_SHRINK_ARIA__",
+            &js_string_literal(&t!("viz.photo.shrink_aria")),
+        )
+        .replace(
+            "__QSVI18N_PHOTO_ENLARGE_ARIA_JS__",
+            &js_string_literal(&t!("viz.photo.enlarge_aria")),
+        )
+        .replace(
+            "__QSVI18N_PHOTO_SHRINK__",
+            &js_string_literal(&t!("viz.photo.shrink")),
+        )
+        .replace(
+            "__QSVI18N_PHOTO_ENLARGE_JS__",
+            &js_string_literal(&t!("viz.photo.enlarge")),
+        )
+}
+
 const PHOTO_CHROME: &str = r##"<style>
 #qsv-photo-box { position: fixed; z-index: 1000; display: none; left: 0; top: 0; }
 #qsv-photo-box.open { display: block; }
@@ -9499,11 +9634,11 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
     box = document.createElement("div");
     box.id = "qsv-photo-box";
     box.innerHTML = '<div class="qsv-photo-inner">' +
-      '<img alt="Photo for the hovered map point" />' +
-      '<button type="button" class="qsv-photo-close" aria-label="Close">&#215;</button>' +
-      '<button type="button" class="qsv-photo-zoom" aria-label="Enlarge photo" title="Enlarge">&#10530;</button>' +
-      '<button type="button" class="qsv-photo-prev" aria-label="Previous photo">&#8249;</button>' +
-      '<button type="button" class="qsv-photo-next" aria-label="Next photo">&#8250;</button>' +
+      '<img alt="__QSVI18N_PHOTO_ALT__" />' +
+      '<button type="button" class="qsv-photo-close" aria-label="__QSVI18N_PHOTO_CLOSE__">&#215;</button>' +
+      '<button type="button" class="qsv-photo-zoom" aria-label="__QSVI18N_PHOTO_ENLARGE_ARIA__" title="__QSVI18N_PHOTO_ENLARGE__">&#10530;</button>' +
+      '<button type="button" class="qsv-photo-prev" aria-label="__QSVI18N_PHOTO_PREV__">&#8249;</button>' +
+      '<button type="button" class="qsv-photo-next" aria-label="__QSVI18N_PHOTO_NEXT__">&#8250;</button>' +
       '<div class="qsv-photo-cap"></div></div>';
     document.body.appendChild(box);
     box.querySelector(".qsv-photo-close").addEventListener("click", close);
@@ -9529,7 +9664,7 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
       box.classList.remove("qsv-photo-loading");
       box.classList.add("qsv-photo-err");
       box.querySelector(".qsv-photo-cap").textContent =
-        urls.length > 1 ? (at + 1) + " / " + urls.length + " - unavailable" : "image unavailable";
+        urls.length > 1 ? (at + 1) + " / " + urls.length + __QSVI18N_PHOTO_UNAVAIL_SUFFIX__ : __QSVI18N_PHOTO_UNAVAIL__;
       place();
     });
     // moving onto the card keeps it up (its arrows are the reason to go there); moving off it
@@ -9559,8 +9694,8 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
     var z = box.querySelector(".qsv-photo-zoom");
     if (z) {
       z.innerHTML = enlarged ? "&#10529;" : "&#10530;";
-      z.setAttribute("aria-label", enlarged ? "Shrink photo" : "Enlarge photo");
-      z.title = enlarged ? "Shrink" : "Enlarge";
+      z.setAttribute("aria-label", enlarged ? __QSVI18N_PHOTO_SHRINK_ARIA__ : __QSVI18N_PHOTO_ENLARGE_ARIA_JS__);
+      z.title = enlarged ? __QSVI18N_PHOTO_SHRINK__ : __QSVI18N_PHOTO_ENLARGE_JS__;
     }
   }
   // Anchor beside the MARKER without covering it: vertically centered on the point and offset
@@ -9719,6 +9854,20 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
 /// Hooking follows the `PHOTO_CHROME` idiom: poll until the panel has rendered, wait for the
 /// fullscreen script's one-time `Plotly.newPlot` (`__qsvFs`) so the click listener is not dropped
 /// by it, and publish `__qsvSelRehook` for the theme toggle to call after ITS re-render.
+/// Localize `MAP_SELECT_CHROME`. Same contract as [`fullscreen_script`]: bare placeholders,
+/// unconditional substitution, `js_string_literal` for quoting + escaping.
+fn map_select_chrome() -> String {
+    MAP_SELECT_CHROME
+        .replace(
+            "__QSVI18N_ROW_NOT_IN_PREVIEW__",
+            &js_string_literal(&t!("viz.map.row_not_in_preview")),
+        )
+        .replace(
+            "__QSVI18N_ROW_FILTERED_OUT__",
+            &js_string_literal(&t!("viz.map.row_is_filtered_out")),
+        )
+}
+
 const MAP_SELECT_CHROME: &str = r##"<script>
 (function () {
   function isPointTrace(t) {
@@ -9806,18 +9955,18 @@ const MAP_SELECT_CHROME: &str = r##"<script>
     var id = t.ids[p.pointNumber];
     // guard BEFORE any numeric coercion: +"" is 0, which would silently select the first row
     if (!id || !window.__qsvDataSelect) {
-      if (id === "" && window.__qsvDataNote) window.__qsvDataNote("row not in preview");
+      if (id === "" && window.__qsvDataNote) window.__qsvDataNote(__QSVI18N_ROW_NOT_IN_PREVIEW__);
       return;
     }
     if (!window.__qsvDataSelect(id, false)) {
-      if (window.__qsvDataNote) window.__qsvDataNote("row not in preview");
+      if (window.__qsvDataNote) window.__qsvDataNote(__QSVI18N_ROW_NOT_IN_PREVIEW__);
       return;
     }
     // Page to the row, but only if it survives the drawer's current filters. When it does not,
     // the selection still shows in the "N rows selected" count — the user's filters are NEVER
     // cleared to reveal it.
     if (window.__qsvDataPageTo && !window.__qsvDataPageTo(id) && window.__qsvDataNote) {
-      window.__qsvDataNote("row is filtered out");
+      window.__qsvDataNote(__QSVI18N_ROW_FILTERED_OUT__);
     }
   }
   function hook() {
@@ -9914,11 +10063,12 @@ fn smart_html_page(
     // page shows an <h1>, since the typed-grid page bakes its title into the plot) plus the
     // embedded dictionary document + `qsvOpenDict` script. All empty when --dict-info is off, so
     // those dashboards stay byte-identical.
+    let dict_link_text = t!("viz.dict.title");
     let (dict_link, dict_chrome) = match dict_page {
         Some(page) => (
             format!(
                 "<div class=\"qsv-viz-dict-link\"><a href=\"#\" onclick=\"return \
-                 qsvOpenDict('')\">Data Dictionary{DICT_LINK_ICON}</a></div>"
+                 qsvOpenDict('')\">{dict_link_text}{DICT_LINK_ICON}</a></div>"
             ),
             format!(
                 "<script type=\"text/html\" id=\"qsv-dict-src\">{page}</script>\n{}",
@@ -9927,7 +10077,7 @@ fn smart_html_page(
                 // rewriting an existing dict tab — a title-only key would then show the
                 // FIRST dashboard's dictionary for both. Hashing the page in keeps the tab
                 // per-dictionary while a same-content reload still reuses it.
-                DICT_SCRIPT_TEMPLATE.replace(
+                dict_script_template().replace(
                     "__QSVDICTKEY__",
                     &dict_short_hash(&format!("{title_text}\n{page}"))
                 )
@@ -9938,7 +10088,7 @@ fn smart_html_page(
     // --photos chrome: empty (so no off-origin URL is ever referenced) unless the flag was given
     // AND a map panel actually embedded per-point image URLs.
     let photo_chrome = if photos {
-        PHOTO_CHROME.replace("__QSVDWELLMS__", &PHOTO_DWELL_MS.to_string())
+        photo_chrome()
     } else {
         String::new()
     };
@@ -9946,19 +10096,21 @@ fn smart_html_page(
     // ordinals; a non-empty `data_chrome` is exactly the "drawer is on this page" test (same
     // condition the DataTables bundle is embedded under).
     let map_select_chrome = if map_select && !data_chrome.is_empty() {
-        MAP_SELECT_CHROME
+        map_select_chrome()
     } else {
-        ""
+        String::new()
     };
     // A RAW-string template (actual newlines, not `\n` escapes) so rustfmt's `format_strings` can't
     // split an escape across a line wrap and corrupt the output — it once mangled `\n{script}` into
     // a stray `\` + `n` in every page. `format!` still doubles the literal CSS braces (`{{`/`}}`)
     // and substitutes each placeholder in a single pass. The `#qsv-logo` rules CSS-swap the two
     // logo variants off `body.qsv-dark`; the logo itself rides in the `.qsv-page-foot` flow row.
+    let ui_lang = viz_i18n::active_locale().bcp47;
+    let fullscreen_script = fullscreen_script();
     format!(
         r#"<!doctype html>
 {tp_comment}
-<html lang="en">
+<html lang="{ui_lang}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10013,7 +10165,7 @@ fn smart_html_page(
 {meta_table}
 {body}
 {fs_prelude}
-{FULLSCREEN_SCRIPT}
+{fullscreen_script}
 {dict_chrome}
 {data_chrome}
 {photo_chrome}
@@ -10285,7 +10437,7 @@ const PLOTLY_GZ_BOOTSTRAP: &str = r##"<script>
     var q = window.__qsvPlotQ || [];
     window.__qsvPlotQ = null;
     delete window.Plotly;
-    (0, eval)(src);
+    (0, eval)(src);__QSVI18N_PLOTLY_SETLOCALE__
     q.forEach(function (args) {
       // per-panel isolation: one failed (or forever-pending) render must not block the rest
       try {
@@ -10311,6 +10463,56 @@ const PLOTLY_GZ_BOOTSTRAP: &str = r##"<script>
 /// bootstrap, ~2.9 MB smaller per page.
 ///
 /// Never emits the MathJax (tex-svg) bundle in any mode — see `plotly_js_only`.
+/// The vendored plotly.js locale bundle for the active language, or empty for English.
+///
+/// The file self-registers: `typeof Plotly === "undefined" ? window.PlotlyLocales.push(locale) :
+/// Plotly.register(locale)`. That makes it safe to emit BEFORE the bundle (the deferred
+/// gzip path) and after it (CDN / plain inline) alike.
+///
+/// Registering a locale does not select it — `Plotly.setPlotConfig({locale})` does, and it only
+/// affects renders that come after. See [`plotly_setlocale_js`] for the two placements.
+fn plotly_locale_block() -> String {
+    let row = viz_i18n::active_locale();
+    match row.bcp47 {
+        // English is plotly's built-in default: nothing to register, nothing to select, so an
+        // English page is byte-identical to one built before viz learned to localize.
+        "en" => String::new(),
+        "es" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-es.js")
+        ),
+        // A curated language whose plotly locale has not been vendored yet: the chrome is still
+        // translated, only the modebar tooltips stay English.
+        _ => String::new(),
+    }
+}
+
+/// `Plotly.setPlotConfig({locale})` for the active language, or empty for English.
+///
+/// Emitted in TWO places because plotly arrives on two different schedules, and the call must
+/// land after `Plotly` exists but before any `newPlot`:
+///  * CDN / plain-inline: `Plotly` is defined by the time the next `<script>` runs, so the call
+///    goes straight after the library block;
+///  * gzip-inline: the real global only appears when `PLOTLY_GZ_BOOTSTRAP` evals the inflated
+///    bundle, and the queued `newPlot` calls are replayed immediately afterwards — so the call is
+///    substituted into that bootstrap between the eval and the replay. Anywhere later (e.g. the
+///    `qsv:plotly-ready` event) would be too late: the panels would already have rendered with the
+///    English modebar.
+fn plotly_setlocale_js() -> String {
+    let row = viz_i18n::active_locale();
+    if row.bcp47 == "en" || plotly_locale_block().is_empty() {
+        return String::new();
+    }
+    // Leading newline + indent are part of the VALUE, not the template: the placeholder sits
+    // flush against `(0, eval)(src);` so that substituting an empty string for English restores
+    // the bootstrap byte-for-byte. A placeholder on its own line would leave a stray indented
+    // blank line in every English page -- which is exactly what the golden check caught.
+    format!(
+        "\n    if (window.Plotly && Plotly.setPlotConfig) Plotly.setPlotConfig({{locale: {}}});",
+        js_string_literal(row.bcp47)
+    )
+}
+
 fn plotly_js_block() -> String {
     if viz_cdn() {
         // A classic (non-deferred, non-module) `<script src>` runs to completion before any
@@ -10319,24 +10521,55 @@ fn plotly_js_block() -> String {
         // whenever figure payloads are gzipped, since `map_panel_inline_html` emits
         // `qsvNewPlotGz(..)` calls that need `__qsvGunzip`/`__qsvReady`.
         let cdn = plotly_cdn_only();
+        let loc = plotly_locale_suffix();
         return if viz_compress() {
-            format!("{cdn}\n{GZ_PRELUDE_SCRIPT}")
+            format!("{cdn}\n{GZ_PRELUDE_SCRIPT}{loc}")
         } else {
-            cdn
+            format!("{cdn}{loc}")
         };
     }
     let plain = plotly_js_only();
+    let loc = plotly_locale_suffix();
     if !viz_compress() {
-        return plain;
+        return format!("{plain}{loc}");
     }
     let b64 = PLOTLY_GZ_B64.as_str();
     if b64.is_empty() {
-        return plain;
+        return format!("{plain}{loc}");
     }
+    // Deferred path: the locale bundle self-registers into `window.PlotlyLocales` before the real
+    // Plotly exists, and the SELECTION is spliced into the bootstrap (between eval and replay).
+    let bootstrap =
+        PLOTLY_GZ_BOOTSTRAP.replace("__QSVI18N_PLOTLY_SETLOCALE__", &plotly_setlocale_js());
+    // The separator is part of the VALUE so that English (empty block) reproduces the original
+    // byte sequence exactly -- a literal `\n{}` here would add a stray blank line to every
+    // English page. Same trap as the bootstrap placeholder above; the golden check caught both.
+    // The locale bundle MUST precede `PLOTLY_STUB_SCRIPT`. Its self-registration branches on
+    // `typeof Plotly === "undefined"`: emitted after the stub it sees the stub's `window.Plotly`,
+    // calls `register()` on a queue object that discards it, and the dictionary is lost when the
+    // bootstrap deletes the stub — `setPlotConfig` still reports locale "es" while every built-in
+    // modebar tooltip stays English. Emitted first, `Plotly` really is undefined, so it queues
+    // into `window.PlotlyLocales`, which the real bundle drains on load. (Found only by opening
+    // the page: every static check — file embedded, setPlotConfig present, correct ordering —
+    // passed while the feature did nothing.)
+    let locale_block = match plotly_locale_block() {
+        b if b.is_empty() => String::new(),
+        b => format!("{b}\n"),
+    };
     format!(
-        "{PLOTLY_STUB_SCRIPT}\n{GZ_PRELUDE_SCRIPT}\n<script id=\"qsv-plotly-gz\" \
-         type=\"application/gzip-b64\">{b64}</script>\n{PLOTLY_GZ_BOOTSTRAP}"
+        "{locale_block}{PLOTLY_STUB_SCRIPT}\n{GZ_PRELUDE_SCRIPT}\n<script id=\"qsv-plotly-gz\" \
+         type=\"application/gzip-b64\">{b64}</script>\n{bootstrap}"
     )
+}
+
+/// Locale bundle + immediate selection, for the paths where `Plotly` is already defined.
+/// Empty for English, so those pages keep their exact previous bytes.
+fn plotly_locale_suffix() -> String {
+    let block = plotly_locale_block();
+    if block.is_empty() {
+        return String::new();
+    }
+    format!("\n{block}\n<script>{}</script>", plotly_setlocale_js())
 }
 
 /// Vendored DataTables v3 bundle (core + `ColumnControl` + `DateTime` + SearchBuilder, "DataTables"
@@ -13677,6 +13910,12 @@ struct DictData {
     dataset_description: Option<String>,
     /// Provenance blurb from the jsonschema top-level `x-qsv.generated_by` (model, timestamp).
     generated_by:        Option<String>,
+    /// ISO 639-3 language code that describegpt's whatlang pass detected for the dataset
+    /// (jsonschema top-level `x-qsv.detected_language_code`, e.g. "spa"). describegpt OMITS
+    /// the field entirely below its 0.8 confidence threshold, so absence is normal and
+    /// presence already implies confidence -- viz applies no threshold of its own. Drives the
+    /// dashboard UI language unless `--language` overrides it.
+    detected_language:   Option<String>,
 }
 
 /// Map a `concept` token (the most specific, highest-confidence signal) to a route. Returns `None`
@@ -14352,12 +14591,17 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
             .map(|d| strip_dataset_attribution(&d))
             .filter(|s| !s.is_empty());
         let generated_by = top_str(v.get("x-qsv").and_then(|x| x.get("generated_by")));
+        // describegpt writes this only when whatlang cleared its confidence threshold, so a
+        // missing field means "unknown", never "English".
+        let detected_language =
+            top_str(v.get("x-qsv").and_then(|x| x.get("detected_language_code")));
         return Some(DictData {
             rows,
             grain,
             pipelines: xq_pipelines(&v),
             dataset_description,
             generated_by,
+            detected_language,
         });
     }
 
@@ -14464,6 +14708,31 @@ fn dict_info_for_field(dict: Option<&DictData>, field: &str) -> Option<(String, 
 /// after render (capped so a render error can't loop forever). `__QSVDICTKEY__` is substituted
 /// at page-build time so two open dashboards don't clobber each other's dictionary tab. Raw
 /// string (like `SCRIPT_TEMPLATE`) so the brace-heavy JS needs no escaping.
+/// Localize `DICT_SCRIPT_TEMPLATE`'s drawer-bar chrome. All three placeholders are HTML written
+/// inside single-quoted JS strings, so all three use [`html_in_js_text`].
+fn dict_script_template() -> String {
+    DICT_SCRIPT_TEMPLATE
+        .replace(
+            "__QSVI18N_DICT_TITLE__",
+            &html_in_js_text(&t!("viz.dict.title")),
+        )
+        .replace(
+            "__QSVI18N_DICT_POPOUT__",
+            &html_in_js_text(&t!("viz.dict.open_own_tab")),
+        )
+        .replace(
+            "__QSVI18N_DICT_CLOSE__",
+            &html_in_js_text(&t!("viz.dict.close_esc")),
+        )
+        // Same message as __QSVI18N_DICT_TITLE__ but in a JS-value position (setAttribute), so
+        // it takes js_string_literal instead. One key, two positions -- the bar heading and the
+        // accessible name must never disagree.
+        .replace(
+            "__QSVI18N_DICT_TITLE_JS__",
+            &js_string_literal(&t!("viz.dict.title")),
+        )
+}
+
 const DICT_SCRIPT_TEMPLATE: &str = r##"<script>
 function qsvOpenDictTab(anchor) {
   var src = document.getElementById("qsv-dict-src");
@@ -14514,12 +14783,12 @@ function qsvDictDrawer() {
   }
   drawer = document.createElement("aside");
   drawer.id = "qsv-dict-drawer";
-  drawer.setAttribute("aria-label", "Data Dictionary");
+  drawer.setAttribute("aria-label", __QSVI18N_DICT_TITLE_JS__);
   var bar = document.createElement("div");
   bar.className = "qsv-dict-drawer-bar";
-  bar.innerHTML = '<span>Data Dictionary</span><span class="qsv-dict-drawer-btns">' +
-    '<a href="#" class="qsv-dict-pop" title="Open in its own tab">&#x29c9;</a>' +
-    '<a href="#" class="qsv-dict-hide" title="Close (Esc)">&#x2715;</a></span>';
+  bar.innerHTML = '<span>__QSVI18N_DICT_TITLE__</span><span class="qsv-dict-drawer-btns">' +
+    '<a href="#" class="qsv-dict-pop" title="__QSVI18N_DICT_POPOUT__">&#x29c9;</a>' +
+    '<a href="#" class="qsv-dict-hide" title="__QSVI18N_DICT_CLOSE__">&#x2715;</a></span>';
   var content = document.createElement("div");
   content.className = "qsv-dict-drawer-content qsv-dict-doc qsv-dict-embedded";
   content.appendChild(document.adoptNode(wrap));
@@ -14642,6 +14911,109 @@ document.addEventListener("keydown", function (e) {
 ///
 /// The page footer (credits + Theme toggle + logo) is in the normal flow, so `body.qsv-data-open`'s
 /// `margin-bottom` lifts it clear of the open drawer on its own — no per-widget offsets.
+/// The DataTables `language:` block inside [`DATA_DRAWER_SCRIPT`], captured verbatim.
+///
+/// §4 of the localization plan splices a vendored DataTables i18n JSON in here by replacing this
+/// exact text. That has NOT happened yet, so the two `searchBuilder.button` strings are
+/// deliberately still English literals rather than `t!` calls: converting them now would change
+/// the very text this needle has to match, and the mismatch would be silent. Convert them in the
+/// same commit that introduces the vendored JSON, and keep DataTables' own `%d` verbatim in the
+/// locale values — that is a DataTables placeholder, not a rust-i18n one.
+///
+/// `assert_data_drawer_lang_needle_is_current` fails if anyone edits that block, so the needle can
+/// never silently stop matching.
+///
+/// Now consumed in production by [`datatables_language_block`] as well as by the guard test.
+const DT_LANG_NEEDLE: &str = r#"        language: {
+          searchBuilder: { button: { 0: "Advanced Filter", _: "Advanced Filter (%d)" } }
+        },"#;
+
+/// Localize the qsv-authored strings in `DATA_DRAWER_SCRIPT`.
+///
+/// All placeholders sit in BARE JS-value positions, so they use [`js_string_literal`] (see
+/// [`fullscreen_script`] for the convention). The DataTables-supplied strings (pagination,
+/// search, "no data") are NOT here — they come from the library and stay English until the §4
+/// vendored i18n JSON lands.
+/// The DataTables `language:` block for the active locale, spliced over [`DT_LANG_NEEDLE`].
+///
+/// English returns `None` and the block in `DATA_DRAWER_SCRIPT` is left exactly as written — the
+/// library's own defaults ARE English, so there is nothing to vendor and an English page keeps
+/// its previous bytes. For a curated language the vendored file supplies every DataTables string
+/// (pagination, search, "no matching records"), and qsv overrides ONE key: `searchBuilder.button`,
+/// which the vendored file calls "Constructor de busqueda" (a literal "search builder"). qsv
+/// deliberately names that control "Advanced Filter" instead, because it sits alongside the
+/// per-column `ColumnControl` widgets and what distinguishes it is the cross-column AND/OR
+/// logic --
+/// so the qsv-authored name is translated from qsv's own catalog, not taken from DataTables.
+///
+/// DataTables' `%d` in the counted form is a DataTables placeholder, NOT a rust-i18n one; it must
+/// reach the page verbatim. rust-i18n only interpolates `%{name}`, so it passes through untouched.
+fn datatables_language_block() -> Option<String> {
+    let row = viz_i18n::active_locale();
+    let vendored = match row.bcp47 {
+        "en" => return None,
+        "es" => include_str!("assets/i18n/datatables/es.json"),
+        // Curated language with no vendored DataTables file yet: keep the English defaults
+        // rather than emitting a half-translated table.
+        _ => return None,
+    };
+
+    let mut lang: serde_json::Value = serde_json::from_str(vendored).ok()?;
+    // Overriding through `get_mut` (rather than rebuilding the object) keeps every other key the
+    // vendored file provides, including ones added by future DataTables versions.
+    let obj = lang.as_object_mut()?;
+    obj.entry("searchBuilder")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()?
+        .insert(
+            "button".to_string(),
+            serde_json::json!({
+                "0": t!("viz.drawer.advanced_filter"),
+                "_": t!("viz.drawer.advanced_filter_counted"),
+            }),
+        );
+    Some(format!(
+        "        language: {},",
+        serde_json::to_string(&lang).ok()?
+    ))
+}
+
+fn data_drawer_script() -> String {
+    let mut script = DATA_DRAWER_SCRIPT
+        .replace(
+            "__QSVI18N_ROW_SELECTED_ONE__",
+            &js_string_literal(&t!("viz.drawer.row_selected_one")),
+        )
+        .replace(
+            "__QSVI18N_ROW_SELECTED_MANY__",
+            &js_string_literal(&t!("viz.drawer.row_selected_many")),
+        )
+        .replace(
+            "__QSVI18N_CLOSE_VIEWER__",
+            &js_string_literal(&t!("viz.drawer.close_viewer")),
+        )
+        // The "(n)" counter form is built by JS concatenation, so the key carries the opening
+        // paren and the closing one stays in the template.
+        .replace(
+            "__QSVI18N_CLEAR_FILTERS_PREFIX__",
+            &js_string_literal(&t!("viz.drawer.clear_filters_prefix")),
+        )
+        .replace(
+            "__QSVI18N_CLEAR_FILTERS__",
+            &js_string_literal(&t!("viz.drawer.clear_filters")),
+        )
+        .replace(
+            "__QSVI18N_VIEWER_FAILED__",
+            &js_string_literal(&t!("viz.drawer.viewer_failed")),
+        );
+    // Splice the vendored DataTables i18n over the English `language:` block. English returns
+    // None and the block is left byte-for-byte as authored.
+    if let Some(lang) = datatables_language_block() {
+        script = script.replace(DT_LANG_NEEDLE, &lang);
+    }
+    script
+}
+
 const DATA_DRAWER_SCRIPT: &str = r##"<style>
   /* effective drawer height: the grip persists --qsv-data-h in absolute px, so re-clamp it in
      CSS against the CURRENT viewport — a later window resize / device rotation can otherwise
@@ -14767,7 +15139,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       el.className = "qsv-data-selinfo";
       info.appendChild(el);
     }
-    el.textContent = " — " + selRows.size + (selRows.size === 1 ? " row selected" : " rows selected");
+    el.textContent = " — " + selRows.size + (selRows.size === 1 ? __QSVI18N_ROW_SELECTED_ONE__ : __QSVI18N_ROW_SELECTED_MANY__);
   }
 
   // Single funnel for every selection change, so the map bridge sees exactly one event per
@@ -15000,7 +15372,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       var close = document.createElement("a");
       close.href = "#";
       close.textContent = "✕";
-      close.setAttribute("aria-label", "Close data viewer");
+      close.setAttribute("aria-label", __QSVI18N_CLOSE_VIEWER__);
       close.addEventListener("click", function (ev) { ev.preventDefault(); window.qsvCloseData(); });
       bar.appendChild(title);
       // transient status line, flashed by window.__qsvDataNote (see below). `margin-right: auto`
@@ -15160,7 +15532,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
             if (updateClearFilters) updateClearFilters();
           } }
         }, {
-          text: "Clear Filters",
+          text: __QSVI18N_CLEAR_FILTERS__,
           className: "qsv-clear-filters",
           init: function (dt, node, conf) {
             var btn = this;
@@ -15177,7 +15549,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
                 if (this.search.fixed("dtcc") || this.search.fixed("dtcc-list")) n++;
               });
               btn.enable(n > 0);
-              btn.text(n > 0 ? "Clear Filters (" + n + ")" : "Clear Filters");
+              btn.text(n > 0 ? __QSVI18N_CLEAR_FILTERS_PREFIX__ + n + ")" : __QSVI18N_CLEAR_FILTERS__);
             };
             // every filter source redraws when it applies a change, so draw is the one
             // signal that sees the global box and the ColumnControl widgets
@@ -15305,7 +15677,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       if (window.__qsvNoDecompress) window.__qsvNoDecompress();
       return false;
     }
-    build().catch(function (e) { console.error("qsv viz: data viewer failed:", e); });
+    build().catch(function (e) { console.error(__QSVI18N_VIEWER_FAILED__, e); });
     return false;
   };
   // Flash a short message in the drawer bar for ~2s. Used by the map<->rows bridge to explain a
@@ -15862,6 +16234,31 @@ fn render_dict_page_html(
 
     let mut sections = String::new();
     let mut toc = String::new();
+    // Hoisted above the per-column loop: these nine labels are identical for every column, so
+    // looking them up per column would be ~9xN catalog lookups and allocations on a wide
+    // dictionary. Borrowed as &str below, which also keeps `meta` allocation-free for labels.
+    let (
+        lbl_type,
+        lbl_content_type,
+        lbl_role,
+        lbl_concept,
+        lbl_range,
+        lbl_cardinality,
+        lbl_null_count,
+        lbl_values,
+        lbl_examples,
+    ) = (
+        t!("viz.dict.field_type"),
+        t!("viz.dict.field_content_type"),
+        t!("viz.dict.field_role"),
+        t!("viz.dict.field_concept"),
+        t!("viz.dict.field_range"),
+        t!("viz.dict.field_cardinality"),
+        t!("viz.dict.field_null_count"),
+        t!("viz.dict.field_values"),
+        t!("viz.dict.field_examples"),
+    );
+    let role_unknown = t!("viz.dict.role_unknown");
     for col in &order {
         let Some(entry) = entry_for(col) else {
             continue;
@@ -15880,19 +16277,21 @@ fn render_dict_page_html(
             .and_then(Value::as_str)
             .unwrap_or_default();
 
+        // Labels borrow from the hoisted locals above (no longer `&'static`, since they now
+        // come from the message catalog rather than being literals).
         let mut meta: Vec<(&str, String)> = Vec::new();
         if let Some(v) = get(&["type"]) {
-            meta.push(("Type", disp(v)));
+            meta.push((&lbl_type, disp(v)));
         }
         if let Some(v) = get_xq("content_type").or_else(|| get(&["content_type"])) {
-            meta.push(("Content type", disp(v)));
+            meta.push((&lbl_content_type, disp(v)));
         }
         let role = get_xq("role").or_else(|| get(&["role"])).map(disp);
         if let Some(role) = &role {
-            meta.push(("Role", role.clone()));
+            meta.push((&lbl_role, role.clone()));
         }
         if let Some(v) = get_xq("concept").or_else(|| get(&["concept"])) {
-            meta.push(("Concept", disp(v)));
+            meta.push((&lbl_concept, disp(v)));
         }
         // jsonschema numerics ride as minimum/maximum; dates as x-qsv.min/max; legacy as min/max.
         let min = get(&["minimum", "min"]).or_else(|| get_xq("min"));
@@ -15908,7 +16307,7 @@ fn render_dict_page_html(
                 .is_some_and(|r| r.eq_ignore_ascii_case("measure"));
             let fmt_range = |v: &Value| if group_range { disp_num(v) } else { disp(v) };
             meta.push((
-                "Range",
+                &lbl_range,
                 format!(
                     "{} \u{2013} {}",
                     min.map(fmt_range).unwrap_or_default(),
@@ -15917,20 +16316,23 @@ fn render_dict_page_html(
             ));
         }
         if let Some(v) = get_xq("cardinality").or_else(|| get(&["cardinality"])) {
-            meta.push(("Cardinality", disp_num(v)));
+            meta.push((&lbl_cardinality, disp_num(v)));
         }
         if let Some(v) = get_xq("null_count").or_else(|| get(&["null_count"])) {
-            meta.push(("Null count", disp_num(v)));
+            meta.push((&lbl_null_count, disp_num(v)));
         }
         if let Some(v) = get(&["enum", "enumeration"]) {
-            meta.push(("Values", disp(v)));
+            meta.push((&lbl_values, disp(v)));
         }
         if let Some(v) = get(&["examples"]) {
             let raw_counts = get_xq("example_counts")
                 .or_else(|| get(&["example_counts"]))
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            meta.push(("Examples", disp_examples(v, &example_count_map(raw_counts))));
+            meta.push((
+                &lbl_examples,
+                disp_examples(v, &example_count_map(raw_counts)),
+            ));
         }
 
         let anchor = dict_anchor_id(col);
@@ -15939,7 +16341,7 @@ fn render_dict_page_html(
         toc.push_str(&format!(
             "<a class=\"qsv-dict-chip qsv-dict-role-{}\" href=\"#{anchor}\" title=\"{}\">{}</a>\n",
             dict_role_slug(role.as_deref()),
-            html_escape(role.as_deref().unwrap_or("role unknown")),
+            html_escape(role.as_deref().unwrap_or(&role_unknown)),
             html_escape(col)
         ));
         // "View chart ↗" — reverse navigation to the panel built from this column, rendered
@@ -15954,8 +16356,9 @@ fn render_dict_page_html(
                 "<a class=\"qsv-dict-viewchart\" data-anchor=\"{anchor}\" href=\"#\" \
                  onclick=\"var o=window.opener;if(o){{try{{var \
                  p=o.document.querySelector('[data-qsv-dict={anchor}]');if(p)p.\
-                 scrollIntoView({{block:'center'}});}}catch(e){{}}o.focus();}}return false\">View \
-                 chart &#8599;</a>\n"
+                 scrollIntoView({{block:'center'}});}}catch(e){{}}o.focus();}}return \
+                 false\">{}&#8599;</a>\n",
+                t!("viz.dict.view_chart")
             )
         } else {
             String::new()
@@ -15999,7 +16402,8 @@ fn render_dict_page_html(
     }
     if let Some(grain) = dict.grain.as_deref() {
         intro.push_str(&format!(
-            "<p class=\"qsv-dict-grain\"><strong>Grain:</strong> {}</p>\n",
+            "<p class=\"qsv-dict-grain\"><strong>{}</strong> {}</p>\n",
+            t!("viz.dict.grain"),
             html_escape(grain)
         ));
     }
@@ -16052,9 +16456,12 @@ fn render_dict_page_html(
         );
         format!(
             "<a class=\"qsv-dict-export\" download=\"{fname}\" \
-             href=\"data:application/json;base64,{b64}\" title=\"Download this Data Dictionary as \
-             JSON Schema\">&#x2913; <span class=\"qsv-dict-export-label\">Export \
-             JSONSchema</span><span class=\"qsv-dict-export-short\">schema</span></a>\n"
+             href=\"data:application/json;base64,{b64}\" title=\"{tip}\">&#x2913; <span \
+             class=\"qsv-dict-export-label\">{label}</span><span \
+             class=\"qsv-dict-export-short\">{short}</span></a>\n",
+            tip = html_escape(&t!("viz.dict.export_tooltip")),
+            label = t!("viz.dict.export_label"),
+            short = t!("viz.dict.export_short")
         )
     } else {
         String::new()
@@ -16069,11 +16476,18 @@ fn render_dict_page_html(
         let fname = html_escape(&sc.fname);
         sidecar_links.push_str(&format!(
             "<a class=\"qsv-dict-export\" download=\"{fname}\" href=\"data:{};base64,{b64}\" \
-             title=\"Download {fname}, a sidecar this dashboard was built from\">&#x2913; <span \
-             class=\"qsv-dict-export-label\">{fname}</span><span \
+             title=\"{tip}\">&#x2913; <span class=\"qsv-dict-export-label\">{fname}</span><span \
              class=\"qsv-dict-export-short\">{}</span></a>\n",
             sc.mime,
-            html_escape(sc.short)
+            html_escape(sc.short),
+            // Interpolate the RAW file name and escape once, at the end. Feeding the
+            // already-escaped `fname` in here would escape it twice, so a file named `a&b.csv`
+            // would surface a literal `&amp;` in the rendered tooltip. `fname` stays escaped for
+            // the `download=` attribute and the label span, which are separate contexts.
+            tip = html_escape(&t!(
+                "viz.dict.sidecar_download_tooltip",
+                q_file = sc.fname.clone()
+            ))
         ));
     }
 
@@ -16096,13 +16510,16 @@ fn render_dict_page_html(
     // `</script>` (it is embedded in a `<script type="text/html">` template), so it is
     // script-tag-free by design — standalone-tab interactivity is inline `onclick` handlers
     // only, which the drawer strips.
+    let ui_lang = viz_i18n::active_locale().bcp47;
+    let dict_page_title = t!("viz.dict.title");
+    let back_to_dashboard = t!("viz.dict.back_to_dashboard");
     format!(
         r##"<!doctype html>
-<html lang="en">
+<html lang="{ui_lang}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Data Dictionary — {title}</title>
+<title>{dict_page_title} — {title}</title>
 <style>
   body.qsv-dict-body {{ font-family: {FONT_FAMILY}; margin: 0; padding: 24px; background: #ffffff; color: #222222; }}
   body.qsv-dict-body.qsv-dark {{ background: #14171c; color: #d7dce2; }}
@@ -16178,8 +16595,8 @@ fn render_dict_page_html(
 <body id="qsv-dict-root" class="qsv-dict-body">
 <div class="qsv-dict-wrap qsv-dict-doc">
 <header class="qsv-dict-head">
-<a class="qsv-dict-back" href="#" onclick="var o=window.opener;if(o&&!o.closed){{try{{o.focus();}}catch(e){{}}}}window.close();return false">&#8592; Back to dashboard</a>
-<h1>Data Dictionary — {title}</h1>
+<a class="qsv-dict-back" href="#" onclick="var o=window.opener;if(o&&!o.closed){{try{{o.focus();}}catch(e){{}}}}window.close();return false">&#8592; {back_to_dashboard}</a>
+<h1>{dict_page_title} — {title}</h1>
 </header>
 {downloads}{intro}{toc_nav}{sections}{provenance}</div>
 </body>
@@ -16297,6 +16714,26 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
             if let Some(ctx) = args.flag_dictionary_context.as_deref() {
                 dg_args.push("--context-file");
                 dg_args.push(ctx);
+            }
+            // An explicit --language must reach describegpt too, or the inferred field
+            // titles/descriptions come back in the dataset's own language while the chrome
+            // renders in the requested one -- a worse result than either alone. Only
+            // forwarded when the user asked: left to itself, describegpt autodetects, which
+            // is exactly the behavior the "auto" default wants. describegpt documents
+            // language NAMES ("Spanish"), so forward that rather than the BCP-47 tag.
+            // Keyed on "was the flag explicitly set", NOT on "is it non-English": an
+            // explicit `--language en` over a Spanish dataset must also pin describegpt to
+            // English, or the labels come back Spanish inside English chrome.
+            if args
+                .flag_language
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|f| !f.is_empty() && !f.eq_ignore_ascii_case("auto"))
+                && let viz_i18n::Resolution::Curated(row) =
+                    viz_i18n::resolve(args.flag_language.as_deref(), None)
+            {
+                dg_args.push("--language");
+                dg_args.push(row.english_name);
             }
             if viz_dict_fresh() {
                 // Bypass describegpt's completion cache too, not just the sidecar — otherwise a
@@ -21959,6 +22396,40 @@ impl<'a> SmartCtx<'a> {
             Some((data, json_text)) => (Some(data), Some(json_text)),
             None => (None, None),
         };
+
+        // Second (lower-precedence) half of the language resolution begun in run(): now that a
+        // dictionary exists, let its detected language pick the UI language -- but only if
+        // --language was not given, which `resolve` enforces by checking the flag first.
+        //
+        // ORDERING INVARIANT: this must stay ahead of ALL HTML assembly. The locale is
+        // process-global, so anything that calls `t!` or `active_locale()` before this point
+        // renders in the pre-dictionary language, and the failure is invisible -- English
+        // strings inside a Spanish page read as a missing translation, not as a bug. Both
+        // `<html lang>` sites and every chrome string are built downstream of here;
+        // viz_smart_dict_page_shares_the_dashboard_language pins that for both pages.
+        //
+        // A
+        // language qsv has no translations for is a note, not an error: the data being in
+        // Vietnamese is not a user mistake.
+        match viz_i18n::resolve(
+            args.flag_language.as_deref(),
+            dict_data
+                .as_ref()
+                .and_then(|d| d.detected_language.as_deref()),
+        ) {
+            viz_i18n::Resolution::Curated(row) => viz_i18n::set_active(row),
+            viz_i18n::Resolution::UncuratedDetected(code) => {
+                progress.suspend(|| {
+                    winfo!(
+                        "Note: detected language '{code}' is not in the curated localization set \
+                         ({}); rendering the dashboard in English.",
+                        viz_i18n::curated_list()
+                    );
+                });
+            },
+            // Already rejected in run() before any work started.
+            viz_i18n::Resolution::UnknownRequested(_) => {},
+        }
         let col_sems: Vec<ColSemantics> = stats
             .iter()
             .map(|s| derive_semantics(s, dict_data.as_ref().and_then(|d| d.rows.get(&s.field))))
@@ -24105,7 +24576,7 @@ impl<'a> SmartCtx<'a> {
         // scope). Rows/Columns/Compiled always render, so the table always has >=3 rows;
         // Description and PID are conditional. Image-export paths carry no table (would require
         // Plotly-layout annotations).
-        let mut data_viewer: Option<(String, &'static str)> = None;
+        let mut data_viewer: Option<(String, String)> = None;
         let metadata_html: Option<String> = if matches!(self.out_format, OutFormat::Html) {
             let mut rows = String::new();
             // Description: first paragraph of the dictionary's dataset-level description, only when
@@ -24119,7 +24590,8 @@ impl<'a> SmartCtx<'a> {
                 let first_para = first_description_paragraph(desc);
                 if !first_para.is_empty() {
                     rows.push_str(&format!(
-                        "<tr><td class=\"qsv-viz-meta-k\">Description:</td><td>{}</td></tr>\n",
+                        "<tr><td class=\"qsv-viz-meta-k\">{}</td><td>{}</td></tr>\n",
+                        t!("viz.meta.description"),
                         html_escape(&first_para)
                     ));
                 }
@@ -24137,12 +24609,14 @@ impl<'a> SmartCtx<'a> {
                 None => String::new(),
             };
             rows.push_str(&format!(
-                "<tr><td class=\"qsv-viz-meta-k\">Rows:</td><td>{}{data_link}</td></tr>\n",
+                "<tr><td class=\"qsv-viz-meta-k\">{}</td><td>{}{data_link}</td></tr>\n",
+                t!("viz.meta.rows"),
                 HumanCount(n)
             ));
             // Columns
             rows.push_str(&format!(
-                "<tr><td class=\"qsv-viz-meta-k\">Columns:</td><td>{}</td></tr>\n",
+                "<tr><td class=\"qsv-viz-meta-k\">{}</td><td>{}</td></tr>\n",
+                t!("viz.meta.columns"),
                 HumanCount(self.stats.len() as u64)
             ));
             // Completeness: share of non-empty cells across the whole dataset. A quiet header stat
@@ -24154,14 +24628,16 @@ impl<'a> SmartCtx<'a> {
                 let total_null: f64 = self.stats.iter().map(|s| s.nullcount as f64).sum();
                 let completeness = (1.0 - total_null / total_cells).clamp(0.0, 1.0);
                 rows.push_str(&format!(
-                    "<tr><td class=\"qsv-viz-meta-k\">Completeness:</td><td>{:.1}%</td></tr>\n",
+                    "<tr><td class=\"qsv-viz-meta-k\">{}</td><td>{:.1}%</td></tr>\n",
+                    t!("viz.meta.completeness"),
                     completeness * 100.0
                 ));
             }
             // Compiled: dashboard build timestamp (makes smart HTML output non-deterministic by
             // design).
             rows.push_str(&format!(
-                "<tr><td class=\"qsv-viz-meta-k\">Compiled:</td><td>{}</td></tr>\n",
+                "<tr><td class=\"qsv-viz-meta-k\">{}</td><td>{}</td></tr>\n",
+                t!("viz.meta.compiled"),
                 chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
             ));
             // PID: a clickable link, only when --dataset-pid is set. A full URL such as a DOI is
@@ -24180,7 +24656,8 @@ impl<'a> SmartCtx<'a> {
                     None => pid_esc,
                 };
                 rows.push_str(&format!(
-                    "<tr><td class=\"qsv-viz-meta-k\">PID:</td><td>{cell}</td></tr>\n"
+                    "<tr><td class=\"qsv-viz-meta-k\">{}</td><td>{cell}</td></tr>\n",
+                    t!("viz.meta.pid")
                 ));
             }
             Some(format!("<table class=\"qsv-viz-meta\">\n{rows}</table>"))
@@ -27225,6 +27702,32 @@ fn html_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Escape a translated string destined for HTML markup that is itself written inside a
+/// **single-quoted JS string literal** — the `innerHTML` builders in `PHOTO_CHROME` and
+/// `DICT_SCRIPT_TEMPLATE`.
+///
+/// There are really THREE nested contexts (JS string literal -> HTML parse -> attribute or text
+/// node), and HTML entities neutralize all of them at once:
+///
+/// * `"` would close the HTML attribute,
+/// * `'` would close the JS string literal — the character fr/it translations are full of
+///   ("l'ensemble"), and the one `html_escape` does not cover,
+/// * `\` is consumed by the JS string literal *before HTML ever sees it*, so a translation
+///   containing a Windows path or a regex would silently lose it — `'C:\backup'` parses as `C:` +
+///   U+0008 BACKSPACE. This is invisible in the rendered page rather than an error, which is
+///   exactly why it is escaped here rather than left to reviewer vigilance.
+/// * `<`/`>`/`&` could restructure the markup.
+///
+/// Ordering matters: `html_escape` runs first so its `&` pass cannot double-escape the `&#39;`
+/// and `&#92;` entities introduced afterwards.
+///
+/// NOTE the difference from [`js_string_literal`]: this adds **no** surrounding quotes, because
+/// the placeholder sits *inside* quotes that already exist in the template. The two helpers are
+/// therefore not interchangeable — see each JS block's localizer for which convention it uses.
+fn html_in_js_text(s: &str) -> String {
+    html_escape(s).replace('\'', "&#39;").replace('\\', "&#92;")
+}
+
 /// Extract the first meaningful paragraph from a Markdown dataset description for
 /// the top-of-dashboard metadata cell.
 ///
@@ -28419,7 +28922,7 @@ fn build_data_viewer_chrome(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     total_rows: u64,
-) -> CliResult<Option<(String, &'static str)>> {
+) -> CliResult<Option<(String, String)>> {
     let threshold = args.flag_preview_threshold as u64;
     if threshold == 0 || total_rows == 0 || stats.is_empty() {
         return Ok(None);
@@ -28433,15 +28936,26 @@ fn build_data_viewer_chrome(
     let (rows_json, embedded) =
         collect_datatable_rows(args, total_rows.min(threshold), &date_cols)?;
     let full = embedded >= total_rows;
-    let link_label = if full { "(Explore)" } else { "(Preview)" };
-    let title = if full {
-        format!("Data — all {} rows", HumanCount(embedded))
+    // Two whole-sentence keys rather than a shared prefix plus an "of N" fragment: the word
+    // order of "first X of Y rows" is not universal, so a translator needs the full sentence.
+    let link_label = if full {
+        t!("viz.viewer.link_explore")
     } else {
-        format!(
-            "Data — first {} of {} rows (preview)",
-            HumanCount(embedded),
-            HumanCount(total_rows)
+        t!("viz.viewer.link_preview")
+    };
+    let title = if full {
+        t!(
+            "viz.viewer.title_all",
+            q_rows = HumanCount(embedded).to_string()
         )
+        .to_string()
+    } else {
+        t!(
+            "viz.viewer.title_preview",
+            q_shown = HumanCount(embedded).to_string(),
+            q_total = HumanCount(total_rows).to_string()
+        )
+        .to_string()
     };
     // The CSV export can only ever contain the rows that were embedded, so when the viewer is
     // showing a truncated preview both the button and the file name have to say so — a
@@ -28471,7 +28985,11 @@ fn build_data_viewer_chrome(
     } else {
         format!("{export_stem}-preview")
     };
-    let export_text = if full { "CSV" } else { "CSV (preview)" };
+    let export_text = if full {
+        t!("viz.viewer.export_csv")
+    } else {
+        t!("viz.viewer.export_csv_preview")
+    };
 
     let mut rows_tag = String::new();
     if viz_compress() && rows_json.len() >= DATATABLE_GZ_MIN_BYTES {
@@ -28490,12 +29008,12 @@ fn build_data_viewer_chrome(
     let chrome = format!(
         "{lib}\n{rows_tag}\n{cols_tag}\n{script}",
         lib = datatables_lib_block(),
-        script = DATA_DRAWER_SCRIPT
+        script = data_drawer_script()
             .replace("__QSVDATATITLE__", &title)
-            .replace("__QSVDATAEXPORTTEXT__", export_text)
+            .replace("__QSVDATAEXPORTTEXT__", &export_text)
             .replace("__QSVDATAEXPORTNAME__", &js_string_literal(&export_name)),
     );
-    Ok(Some((chrome, link_label)))
+    Ok(Some((chrome, link_label.into_owned())))
 }
 
 /// The plotly axis reference string for subplot `pos` (1-based): "x"/"y" for the first,
@@ -30944,6 +31462,9 @@ mod tests {
 
     #[test]
     fn render_dict_page_html_groups_stats_and_guards_sci_notation() {
+        // Renders localized strings -- must share LOCALE_LOCK with the locale-mutating
+        // tests, or a concurrent Spanish test flips the labels asserted below.
+        let _guard = viz_i18n::lock_locale();
         // Range min/max grouping is role-gated: only genuine `measure` columns get thousands
         // separators on their range. Identifiers, geo codes (ZIP) and years are dimensions, so
         // their ranges render verbatim (a ZIP 15003 must never read "15,003", a year 2099 never
@@ -31050,6 +31571,9 @@ mod tests {
 
     #[test]
     fn render_dict_page_html_legacy_fields_dict_has_no_jsonschema_export() {
+        // Renders localized strings -- must share LOCALE_LOCK with the locale-mutating
+        // tests, or a concurrent Spanish test flips the labels asserted below.
+        let _guard = viz_i18n::lock_locale();
         // A legacy `fields` dictionary is NOT JSON Schema, so the "Export JSONSchema" control
         // must not appear (the label would be a lie); only top-level `properties` dicts get it.
         let legacy = r#"{
@@ -31086,7 +31610,68 @@ mod tests {
     }
 
     #[test]
+    fn sidecar_tooltip_escapes_the_filename_exactly_once() {
+        // Regression guard. The tooltip is built by interpolating the file name into a
+        // TRANSLATED sentence and escaping the result. An earlier version fed in the
+        // already-escaped `fname`, so the name was escaped twice and a file called `a&b.csv`
+        // rendered a visible `a&amp;b` in the browser tooltip. Only the raw name may enter
+        // `t!`; `fname` stays escaped for the `download=` attribute and the label span, which
+        // are different contexts and must keep their own single escaping.
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+
+        let schema = r#"{ "properties": { "account_id": { "type": "integer" } } }"#;
+        let dict_json: serde_json::Value = serde_json::from_str(schema).unwrap();
+        let order = vec!["account_id".to_string()];
+        // both hazards at once: `&` starts an entity, `"` would close the title attribute
+        let sidecars = vec![SidecarDownload {
+            fname: r#"a&b "q".stats.csv"#.to_string(),
+            short: "stats",
+            mime:  "text/csv",
+            bytes: b"a,b\n1,2\n".to_vec(),
+        }];
+        let html = render_dict_page_html(
+            &dict_json,
+            schema,
+            &DictData::default(),
+            "Accounts",
+            &order,
+            &std::collections::HashSet::new(),
+            &sidecars,
+        );
+
+        assert!(
+            html.contains(r#"title="Download a&amp;b &quot;q&quot;.stats.csv, a sidecar this dashboard was built from""#),
+            "the tooltip should escape the file name exactly once; all title= values were: {:?}",
+            // report EVERY tooltip: the page also carries the JSONSchema export tooltip, and
+            // naively taking the first match reports that one and misleads the reader.
+            html.match_indices("title=\"")
+                .map(|(i, m)| {
+                    let rest = &html[i + m.len()..];
+                    rest.split('"').next().unwrap_or("")
+                })
+                .collect::<Vec<_>>()
+        );
+        for double in ["&amp;amp;", "&amp;quot;"] {
+            assert!(
+                !html.contains(double),
+                "found a double-escaped sequence ({double}) -- the file name is being escaped \
+                 twice somewhere in the download row"
+            );
+        }
+        // the OTHER contexts must still be escaped (once): `"` cannot be left raw in an
+        // attribute, or it would terminate `download="..."` early.
+        assert!(
+            html.contains(r#"download="a&amp;b &quot;q&quot;.stats.csv""#),
+            "the download attribute keeps its own single escaping"
+        );
+    }
+
+    #[test]
     fn render_dict_page_html_renders_a_download_row_per_sidecar() {
+        // Renders localized strings -- must share LOCALE_LOCK with the locale-mutating
+        // tests, or a concurrent Spanish test flips the labels asserted below.
+        let _guard = viz_i18n::lock_locale();
         // Every consumed sidecar joins the JSONSchema export inside ONE `.qsv-dict-downloads`
         // container — the container is what `qsvDictDrawer` relocates into the drawer's button
         // bar, so links outside it (or a per-anchor move) would be dropped there.
@@ -36643,5 +37228,273 @@ mod tests {
             point_in_polygon(&large, lon, lat),
             "anchor ({lon},{lat}) not in large part"
         );
+    }
+
+    #[test]
+    fn localized_js_placeholders_are_all_substituted() {
+        // A leaked `__QSVI18N_*__` renders as literal garbage in the page rather than
+        // failing a build, so the only guard is a test. This one covers every JS-const
+        // block that carries placeholders.
+        for (name, rendered) in [
+            ("FULLSCREEN_SCRIPT", fullscreen_script()),
+            ("MAP_SELECT_CHROME", map_select_chrome()),
+            ("PHOTO_CHROME", photo_chrome()),
+            ("DICT_SCRIPT_TEMPLATE", dict_script_template()),
+            ("DATA_DRAWER_SCRIPT", data_drawer_script()),
+        ] {
+            assert!(
+                !rendered.contains("__QSVI18N"),
+                "an i18n placeholder survived substitution into {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_t_key_used_in_this_file_exists_in_the_catalog() {
+        // rust-i18n renders the KEY ITSELF when a key is missing -- no panic, no warning, no
+        // compile error. A real instance: three keys were appended to the wrong YAML section, so
+        // the dictionary page shipped the literal text "viz.dict.back_to_dashboard" to users.
+        //
+        // Key-set parity between en.yml and es.yml cannot catch this (both locales agreed, and
+        // both were wrong). The only reliable check is call-site-driven: scan this file for the
+        // keys actually passed to `t!` and confirm each resolves to something other than itself.
+        //
+        // The scan must tolerate rustfmt putting the key on its own line -- an earlier version
+        // keyed on the literal `t!("` and silently skipped all three multi-line calls, one of
+        // which was the very key whose omission motivated this test. So rather than trusting a
+        // count floor, this asserts FULL coverage: every `t!(` site in the file must present a
+        // string-literal first argument, and every such literal must resolve.
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+
+        // Scan PRODUCTION code only. This module's own source contains a `t!` call with a
+        // runtime key (the resolution check below) and the literal "t!(" the scanner searches
+        // for, both of which would register as unverifiable sites.
+        let whole = include_str!("viz.rs");
+        let src = whole
+            .split_once("\n#[cfg(test)]\nmod tests {")
+            .map_or(whole, |(before, _)| before);
+        let bytes = src.as_bytes();
+        let (mut checked, mut sites) = (0usize, 0usize);
+        let mut missing: Vec<&str> = Vec::new();
+        let mut non_literal: Vec<usize> = Vec::new();
+
+        for (idx, _) in src.match_indices("t!(") {
+            // skip `assert!(`, `debug_assert!(` and friends, which contain `t!(` as a substring
+            if idx > 0 && matches!(bytes[idx - 1], b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_') {
+                continue;
+            }
+            sites += 1;
+            let rest = src[idx + 3..].trim_start();
+            let Some(after_quote) = rest.strip_prefix('"') else {
+                // a non-literal first argument cannot be verified statically; there are none
+                // today, and the assertion below makes adding one a deliberate decision.
+                non_literal.push(idx);
+                continue;
+            };
+            let Some(key) = after_quote.split('"').next() else {
+                continue;
+            };
+            checked += 1;
+            if rust_i18n::t!(key) == key {
+                missing.push(key);
+            }
+        }
+
+        assert!(
+            non_literal.is_empty(),
+            "{} `t!` call(s) use a non-literal key and are therefore unverifiable here; if that \
+             is intentional, exempt them explicitly rather than letting coverage drop silently",
+            non_literal.len()
+        );
+        assert_eq!(
+            checked, sites,
+            "every `t!` site should have yielded a literal key to check"
+        );
+        assert!(
+            sites > 60,
+            "expected many `t!` sites by scanning the source, found {sites} — the scan probably \
+             broke rather than the catalog shrinking"
+        );
+        assert!(
+            missing.is_empty(),
+            "these t! keys are missing from the catalog and would render as their own key name in \
+             the page: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn english_emits_no_localization_artifacts() {
+        let _guard = viz_i18n::lock_locale();
+        // The single most important property of the whole feature: an English page must be
+        // byte-identical to one built before viz learned to localize. Both vendored-asset
+        // injections are empty-for-English, and BOTH of them shipped a bug where the empty
+        // substitution still left a separator behind (a stray blank line) -- caught only by the
+        // golden check. These assertions make that class of regression fail here instead.
+        viz_i18n::reset_active();
+        assert!(plotly_locale_block().is_empty());
+        assert!(plotly_setlocale_js().is_empty());
+        assert!(datatables_language_block().is_none());
+
+        // ...and the placeholder must vanish without disturbing the surrounding bytes.
+        let bootstrap = PLOTLY_GZ_BOOTSTRAP.replace("__QSVI18N_PLOTLY_SETLOCALE__", "");
+        assert!(
+            bootstrap.contains("    (0, eval)(src);\n    q.forEach(function (args) {"),
+            "an empty locale substitution must restore the bootstrap byte-for-byte"
+        );
+        assert!(!bootstrap.contains("__QSVI18N"));
+    }
+
+    #[test]
+    fn plotly_locale_bundle_precedes_the_queue_stub() {
+        // REGRESSION GUARD. The locale file self-registers by branching on
+        // `typeof Plotly === "undefined"`. Emitted AFTER `PLOTLY_STUB_SCRIPT` it sees the stub's
+        // `window.Plotly`, calls `register()` on a queue object that throws the dictionary away,
+        // and the bootstrap then deletes the stub -- leaving `setPlotConfig` reporting locale
+        // "es" while every built-in modebar tooltip renders in English.
+        //
+        // This shipped and passed EVERY static check (asset embedded, setPlotConfig emitted,
+        // eval<setLocale<replay ordering); only opening the page in a browser revealed it. Hence
+        // an explicit ordering assertion rather than a presence one.
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::set_active(viz_i18n::parse_lang("es").unwrap());
+
+        let block = plotly_js_block();
+        let locale_at = block
+            .find(r#"name:"es""#)
+            .expect("the vendored locale bundle should be present for es");
+        let stub_at = block
+            .find("__qsvPlotQ")
+            .expect("the gzip path should emit the queue stub");
+        assert!(
+            locale_at < stub_at,
+            "the plotly locale bundle must precede the queue stub, else it registers against the \
+             stub and is silently discarded (locale@{locale_at}, stub@{stub_at})"
+        );
+
+        viz_i18n::reset_active();
+    }
+
+    #[test]
+    fn spanish_injects_both_vendored_assets() {
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::set_active(viz_i18n::parse_lang("es").unwrap());
+
+        let locale = plotly_locale_block();
+        assert!(
+            locale.contains(r#"name:"es""#),
+            "the vendored plotly locale bundle should be emitted"
+        );
+        assert!(
+            plotly_setlocale_js().contains(r#"setPlotConfig({locale: "es"})"#),
+            "registering a locale does not select it -- setPlotConfig must be emitted too"
+        );
+
+        let lang = datatables_language_block().expect("es has a vendored DataTables file");
+        let parsed: serde_json::Value = serde_json::from_str(
+            lang.trim_start()
+                .trim_start_matches("language:")
+                .trim_end_matches(','),
+        )
+        .expect("the spliced language block must be valid JSON");
+        // vendored strings survive...
+        assert!(parsed.get("zeroRecords").is_some());
+        // ...and qsv's own name for SearchBuilder overrides the vendored "search builder" wording,
+        // with DataTables' %d placeholder intact.
+        let button = &parsed["searchBuilder"]["button"];
+        assert_eq!(button["0"], "Filtro avanzado");
+        assert_eq!(button["_"], "Filtro avanzado (%d)");
+
+        viz_i18n::reset_active();
+    }
+
+    #[test]
+    fn assert_data_drawer_lang_needle_is_current() {
+        // DT_LANG_NEEDLE must keep matching DATA_DRAWER_SCRIPT verbatim: the vendored
+        // DataTables i18n JSON will be spliced in by replacing exactly this text, and a needle
+        // that silently stopped matching would leave the table strings English forever with no
+        // error. If this fails, someone edited the `language:` block -- re-copy it into the const.
+        assert!(
+            DATA_DRAWER_SCRIPT.contains(DT_LANG_NEEDLE),
+            "DT_LANG_NEEDLE no longer matches DATA_DRAWER_SCRIPT's `language:` block"
+        );
+        // ...and DataTables' own %d placeholder must survive verbatim -- it is NOT a rust-i18n
+        // token (rust-i18n only interpolates %{name}), so nothing may "helpfully" rewrite it.
+        assert!(
+            DT_LANG_NEEDLE.contains("Advanced Filter (%d)"),
+            "DataTables' %d placeholder must stay verbatim"
+        );
+    }
+
+    #[test]
+    fn html_in_js_text_neutralizes_both_nesting_levels() {
+        // Used where translated text lands in HTML markup that is itself inside a
+        // SINGLE-quoted JS string. A `"` would close the HTML attribute, a `'` would close the
+        // JS string, and a `\` is swallowed by the JS string literal before the HTML parser
+        // ever runs -- `'C:\backup'` parses as "C:" + U+0008 BACKSPACE, losing text silently
+        // with no error anywhere. All must become entities -- and unlike js_string_literal,
+        // this helper must NOT add surrounding quotes.
+        let out = html_in_js_text(r#"l'ensemble "des" <b>& C:\backup"#);
+        assert!(!out.starts_with('"'), "must not add quotes: {out}");
+        for bad in ['\'', '"', '<', '>', '\\'] {
+            assert!(
+                !out.contains(bad),
+                "{bad:?} survived escaping and could break out of its context: {out}"
+            );
+        }
+        assert!(
+            out.contains("&#39;"),
+            "apostrophe should become &#39;: {out}"
+        );
+        assert!(
+            out.contains("&quot;"),
+            "double quote should become &quot;: {out}"
+        );
+        // A bare `&` must be escaped FIRST so the other entities are not double-escaped.
+        assert!(
+            out.contains("&amp;"),
+            "ampersand should become &amp;: {out}"
+        );
+        assert!(
+            out.contains("&#92;"),
+            "backslash should become &#92; or it is eaten by the JS string: {out}"
+        );
+        for entity in ["&amp;#39;", "&amp;#92;", "&amp;quot;"] {
+            assert!(
+                !out.contains(entity),
+                "entities must not be double-escaped ({entity}): {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn js_string_literal_neutralizes_translation_hostile_characters() {
+        // The whole JS-const localization scheme rests on this: placeholders sit in BARE
+        // positions and `js_string_literal` supplies the quotes AND the escaping. Real
+        // translations routinely contain apostrophes (fr "l'ensemble"), and a value able to
+        // emit a raw `<` could close the surrounding `<script>`.
+        let apostrophe = js_string_literal("l'ensemble des donnees");
+        assert!(
+            apostrophe.starts_with('"') && apostrophe.ends_with('"'),
+            "the helper must supply its own surrounding quotes: {apostrophe}"
+        );
+        assert!(
+            apostrophe.contains("l'ensemble"),
+            "an apostrophe is safe inside a double-quoted JS string and must survive intact"
+        );
+
+        let quoted = js_string_literal(r#"say "hi""#);
+        assert!(
+            quoted.contains(r#"\""#),
+            "an embedded double quote must be backslash-escaped, got {quoted}"
+        );
+
+        // `<`/`>`/`&` become \u00XX so no translation can smuggle a closing script tag.
+        let tagish = js_string_literal("</script><b>&");
+        assert!(
+            !tagish.contains('<') && !tagish.contains('>') && !tagish.contains('&'),
+            "angle brackets and ampersands must be unicode-escaped, got {tagish}"
+        );
+        assert!(tagish.contains("\\u003c") && tagish.contains("\\u003e"));
     }
 }

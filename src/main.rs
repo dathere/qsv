@@ -20,6 +20,17 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
+// `viz` localizes its dashboard UI with rust-i18n. This init MUST live at a crate
+// root: the `t!` macro expands to `crate::_rust_i18n_t!`, and `i18n!` emits that
+// macro as a module-scoped `pub(crate) use` -- invoking it from a submodule (e.g.
+// cmd/viz_i18n.rs) compiles the init but leaves every `t!` call site unresolved.
+// The locale YAMLs live under src/cmd/locales/ so the "src/**/*" package include
+// in Cargo.toml ships them; the path is resolved relative to CARGO_MANIFEST_DIR at
+// compile time. qsvlite/qsvdp have their own crate roots (mainlite.rs/maindp.rs)
+// and never compile viz, so they need no init and do not pull in rust-i18n.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+rust_i18n::i18n!("src/cmd/locales", fallback = "en");
+
 mod clitypes;
 mod cmd;
 mod config;

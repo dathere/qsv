@@ -31610,6 +31610,64 @@ mod tests {
     }
 
     #[test]
+    fn sidecar_tooltip_escapes_the_filename_exactly_once() {
+        // Regression guard. The tooltip is built by interpolating the file name into a
+        // TRANSLATED sentence and escaping the result. An earlier version fed in the
+        // already-escaped `fname`, so the name was escaped twice and a file called `a&b.csv`
+        // rendered a visible `a&amp;b` in the browser tooltip. Only the raw name may enter
+        // `t!`; `fname` stays escaped for the `download=` attribute and the label span, which
+        // are different contexts and must keep their own single escaping.
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+
+        let schema = r#"{ "properties": { "account_id": { "type": "integer" } } }"#;
+        let dict_json: serde_json::Value = serde_json::from_str(schema).unwrap();
+        let order = vec!["account_id".to_string()];
+        // both hazards at once: `&` starts an entity, `"` would close the title attribute
+        let sidecars = vec![SidecarDownload {
+            fname: r#"a&b "q".stats.csv"#.to_string(),
+            short: "stats",
+            mime:  "text/csv",
+            bytes: b"a,b\n1,2\n".to_vec(),
+        }];
+        let html = render_dict_page_html(
+            &dict_json,
+            schema,
+            &DictData::default(),
+            "Accounts",
+            &order,
+            &std::collections::HashSet::new(),
+            &sidecars,
+        );
+
+        assert!(
+            html.contains(r#"title="Download a&amp;b &quot;q&quot;.stats.csv, a sidecar this dashboard was built from""#),
+            "the tooltip should escape the file name exactly once; all title= values were: {:?}",
+            // report EVERY tooltip: the page also carries the JSONSchema export tooltip, and
+            // naively taking the first match reports that one and misleads the reader.
+            html.match_indices("title=\"")
+                .map(|(i, m)| {
+                    let rest = &html[i + m.len()..];
+                    rest.split('"').next().unwrap_or("")
+                })
+                .collect::<Vec<_>>()
+        );
+        for double in ["&amp;amp;", "&amp;quot;"] {
+            assert!(
+                !html.contains(double),
+                "found a double-escaped sequence ({double}) -- the file name is being escaped \
+                 twice somewhere in the download row"
+            );
+        }
+        // the OTHER contexts must still be escaped (once): `"` cannot be left raw in an
+        // attribute, or it would terminate `download="..."` early.
+        assert!(
+            html.contains(r#"download="a&amp;b &quot;q&quot;.stats.csv""#),
+            "the download attribute keeps its own single escaping"
+        );
+    }
+
+    #[test]
     fn render_dict_page_html_renders_a_download_row_per_sidecar() {
         // Renders localized strings -- must share LOCALE_LOCK with the locale-mutating
         // tests, or a concurrent Spanish test flips the labels asserted below.

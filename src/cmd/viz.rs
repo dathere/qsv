@@ -36437,6 +36437,93 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    // The SPANISH counterpart of `smart_pip_panel_caps_snap`, and the reason it has
+    // to exist: an English-pinned test cannot guard localization. Revert any `t!`
+    // below to the `format!` it replaced and every English assertion still passes,
+    // because English IS the catalog's value -- so the pin proves byte-identity, not
+    // that the string is localized at all (roborev 3959). This test fails on that
+    // revert. It covers the panel title, the count measure label, the snapped-in
+    // hover suffix, and the pct/rank hover lines.
+    #[test]
+    fn smart_pip_panel_localizes_title_and_hover() {
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::set_active(viz_i18n::parse_lang("es").unwrap());
+
+        // same geometry as the English test: regions A (lon 0..4) and C (lon 16..20)
+        // separated by a wide gap, plus one point in the gap at lon 10.
+        let gj = r#"{"type":"FeatureCollection","features":[
+            {"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon",
+             "coordinates":[[[0.0,0.0],[0.0,10.0],[4.0,10.0],[4.0,0.0],[0.0,0.0]]]}},
+            {"type":"Feature","properties":{"id":"C"},"geometry":{"type":"Polygon",
+             "coordinates":[[[16.0,0.0],[16.0,10.0],[20.0,10.0],[20.0,0.0],[16.0,0.0]]]}}]}"#;
+        // a DISTINCT temp path: this runs in parallel with the English test, which
+        // removes its own file at the end.
+        let path = std::env::temp_dir().join("qsv_smart_pip_es_test.geojson");
+        std::fs::write(&path, gj).unwrap();
+        let spec = path.to_str().unwrap();
+        let lats = vec![5.0, 4.0, 5.0, 4.0, 5.0];
+        let lons = vec![2.0, 3.0, 18.0, 17.0, 10.0];
+
+        let build = |snap: bool, cap: Option<f64>| {
+            build_smart_pip_choropleth_panel(
+                spec,
+                "properties.id",
+                None,
+                &lats,
+                &lons,
+                snap,
+                cap,
+                None,
+                None,
+            )
+            .unwrap()
+            .expect("2 regions keep points, so a panel renders")
+        };
+
+        // dropped branch: title shell, the drop clause and the ">N km" reason all localized
+        assert_eq!(
+            build(true, Some(10.0)).name,
+            "Regiones (1 de 5 descartados, >10 km)"
+        );
+
+        // snapped branch: the snap clause, plus every localized hover fragment
+        let snapped = build(true, Some(f64::INFINITY));
+        assert!(
+            snapped.name.starts_with("Regiones (1 ajustados"),
+            "the snap clause must be localized, got {:?}",
+            snapped.name
+        );
+        let PanelKind::Choropleth { hover_text, .. } = &snapped.kind else {
+            panic!("continental extent builds a projection Choropleth");
+        };
+        let hover = hover_text.join("\n");
+        for expected in [
+            "recuento:",                       // viz.chart.count, the measure label
+            "incluye 1 ajustados desde fuera", // viz.hover.snap_includes
+            "del total",                       // viz.hover.pct_of_total
+            "puesto ",                         // viz.hover.rank_of
+        ] {
+            assert!(
+                hover.contains(expected),
+                "hover should contain localized {expected:?}, got {hover:?}"
+            );
+        }
+        assert!(
+            !hover.contains("count:") && !hover.contains("snapped from outside"),
+            "no English hover fragment should survive, got {hover:?}"
+        );
+
+        // `--no-snap` is a FLAG NAME, not a word: it must survive verbatim in every
+        // locale, or the title would name a flag that does not exist.
+        assert_eq!(
+            build(false, Some(10.0)).name,
+            "Regiones (1 de 5 descartados, --no-snap)"
+        );
+
+        let _ = std::fs::remove_file(&path);
+        viz_i18n::reset_active();
+    }
+
     // a metro-scale `--geojson` choropleth (matched regions span < SMART_CHOROPLETH_MIN_SPAN_DEG in
     // BOTH dims) switches to the MapLibre tile basemap (`ChoroplethMap`), framed to the region
     // bbox, so city-scale coastline/street detail isn't lost on the coarse projection basemap.

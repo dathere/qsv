@@ -15046,12 +15046,18 @@ const DT_LANG_NEEDLE: &str = r#"        language: {
 /// English returns `None` and the block in `DATA_DRAWER_SCRIPT` is left exactly as written — the
 /// library's own defaults ARE English, so there is nothing to vendor and an English page keeps
 /// its previous bytes. For a curated language the vendored file supplies every DataTables string
-/// (pagination, search, "no matching records"), and qsv overrides ONE key: `searchBuilder.button`,
-/// which the vendored file calls "Constructor de busqueda" (a literal "search builder"). qsv
-/// deliberately names that control "Advanced Filter" instead, because it sits alongside the
-/// per-column `ColumnControl` widgets and what distinguishes it is the cross-column AND/OR
-/// logic --
-/// so the qsv-authored name is translated from qsv's own catalog, not taken from DataTables.
+/// (pagination, search, "no matching records"), and qsv applies TWO splice-time overrides on top:
+///
+///  * `searchBuilder.button`, for EVERY locale. The vendored files render it as a literal "search
+///    builder" ("Constructor de busqueda" in es); qsv deliberately names that control "Advanced
+///    Filter" instead, because it sits alongside the per-column `ColumnControl` widgets and what
+///    distinguishes it is the cross-column AND/OR logic -- so the qsv-authored name is translated
+///    from qsv's own catalog, not taken from DataTables.
+///  * `searchBuilder.conditions.date.{after,before}`, for `zh-CN` ONLY. That one is a correction
+///    rather than a preference: upstream ships the two inverted. See the comment at the override.
+///
+/// Both live here rather than in the vendored files, which must stay byte-faithful copies of the
+/// CDN -- `assets/i18n/VENDORED.md` explains why, and how to send such a fix upstream.
 ///
 /// DataTables' `%d` in the counted form is a DataTables placeholder, NOT a rust-i18n one; it must
 /// reach the page verbatim. rust-i18n only interpolates `%{name}`, so it passes through untouched.

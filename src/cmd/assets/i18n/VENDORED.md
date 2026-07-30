@@ -36,11 +36,14 @@ Note that plotly's locale files are genuinely version-specific: `plotly-locale-e
 * Supplies every DataTables-authored string in the data-viewer drawer: pagination, search,
   "no matching records", and the `columnControl` widget strings (the pinned combo includes
   `cc-2.0.0`, and this file covers it).
-* **qsv overrides exactly one key** at assembly time: `searchBuilder.button`. The vendored file
-  renders it literally as "Constructor de búsqueda"; qsv deliberately names that control
-  "Advanced Filter" (translated from qsv's own catalog, `viz.drawer.advanced_filter*`) because it
-  sits alongside the per-column ColumnControl widgets and what distinguishes it is the
-  cross-column AND/OR logic. See `datatables_language_block` in `src/cmd/viz.rs`.
+* **qsv overrides `searchBuilder.button` in this file** at assembly time, as it does for every
+  locale. The vendored file renders it literally as "Constructor de búsqueda"; qsv deliberately
+  names that control "Advanced Filter" (translated from qsv's own catalog,
+  `viz.drawer.advanced_filter*`) because it sits alongside the per-column ColumnControl widgets and
+  what distinguishes it is the cross-column AND/OR logic. See `datatables_language_block` in
+  `src/cmd/viz.rs`. It is **not** the only splice-time override in play — see
+  [Fixing a bad string in a vendored DataTables locale](#fixing-a-bad-string-in-a-vendored-datatables-locale)
+  for the rule and for the `zh-CN` date-condition correction.
 * `%d` in the counted form is a **DataTables** placeholder, not a rust-i18n one, and must reach
   the page verbatim. rust-i18n only interpolates `%{name}`, so it passes through untouched;
   `assert_data_drawer_lang_needle_is_current` guards this.

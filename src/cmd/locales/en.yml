@@ -105,6 +105,38 @@ viz:
     log_axis_value: "log scale"
     null_bucket: "(NULL)"
     other_bucket: "Other (%{q_count})"
+  title:
+    # PANEL TITLES. Every value here is a WHOLE rendered title (or a suffix that
+    # only ever attaches to one of them), never a fragment spliced into a
+    # sentence -- a title assembled from several `format!` calls must be
+    # localized as one unit, or a translation renders half in each language.
+    #
+    # `top_n` is shared deliberately: it is the overflow suffix for BOTH
+    # `measure_by_dim` and `distribution_by` and attaches to nothing else, so
+    # both of its bases are localized here alongside it.
+    #
+    # Panel titles are pure DISPLAY text and safe to translate: panel identity
+    # never rides on the name. The Data Dictionary anchor comes from the raw
+    # field name (`dict_anchor_id`), the stats rejoin uses `Panel::stat_idx`,
+    # and the dictionary's "View chart" link targets that anchor -- see the
+    # field docs on `Panel::dict_info` / `Panel::stat_idx`, which call out that
+    # `name` is decorated after construction ("foo (sampled)") and so cannot
+    # carry identity.
+    data_overview: "%{q_dataset} — data overview"
+    map: "Map"
+    distribution_by: "%{q_measure} distribution by %{q_dim}"
+    measure_by_dim: "%{q_measure} by %{q_dim} (%{q_agg}, explains %{q_pct}% of variance)"
+    top_n: " — top %{q_n}"
+    # The aggregate word inside `measure_by_dim`'s parenthetical. A closed set of
+    # two, and it sits in a slot of its own rather than mid-clause, so a bare
+    # noun translates cleanly. NOT yet used by the time-series title
+    # ("%{y} (sum) over %{date}"), which is still English -- wiring these in
+    # there without localizing that title too would render it half-Spanish.
+    agg_sum: "sum"
+    agg_mean: "mean"
+    # Suffixes decorating a title whose base is a column name.
+    sampled: "%{q_name} (sampled)"
+    dominated_by: "(dominated by %{q_value}, %{q_pct}%)"
   notes:
     # Box/histogram title hints. These are a COMMA-SEPARATED LIST of noun phrases,
     # not a sentence, so each translates independently. At most two ever appear.

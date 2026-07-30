@@ -83,6 +83,20 @@ viz:
     log_axis_value: "escala log"
     null_bucket: "(NULO)"
     other_bucket: "Otros (%{q_count})"
+  title:
+    # TITULOS DE PANEL. Cada valor es un titulo COMPLETO (o un sufijo que solo se
+    # une a uno de ellos), nunca un fragmento insertado en una frase.
+    # `top_n` se comparte a proposito: es el sufijo de desborde de
+    # `measure_by_dim` y de `distribution_by`, y de nada mas.
+    data_overview: "%{q_dataset} — resumen de datos"
+    map: "Mapa"
+    distribution_by: "distribución de %{q_measure} por %{q_dim}"
+    measure_by_dim: "%{q_measure} por %{q_dim} (%{q_agg}, explica el %{q_pct}% de la varianza)"
+    top_n: " — %{q_n} principales"
+    agg_sum: "suma"
+    agg_mean: "media"
+    sampled: "%{q_name} (muestreado)"
+    dominated_by: "(dominado por %{q_value}, %{q_pct}%)"
   notes:
     # Lista separada por comas, no una frase: cada elemento se traduce por separado.
     box_null: "%{q_pct}% nulos"

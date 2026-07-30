@@ -11589,7 +11589,11 @@ fn measure_by_dim_panel(
         },
         None => Agg::Mean,
     };
-    let agg_word = if agg == Agg::Sum { "sum" } else { "mean" };
+    let agg_word = if agg == Agg::Sum {
+        t!("viz.title.agg_sum")
+    } else {
+        t!("viz.title.agg_mean")
+    };
 
     // aggregate each category, then sort by value descending and cap to the top-N
     let gmap = &groups[mi * n_d + di];
@@ -11613,14 +11617,16 @@ fn measure_by_dim_panel(
     // (issue #4220). A bare "η²=0.17" reads as a headline effect size to anyone who doesn't hold
     // Cohen's conventions in their head; "explains 17% of variance" says the same thing and lets
     // the reader weigh the ranking for themselves.
-    let mut title = format!(
-        "{} by {} ({agg_word}, explains {:.0}% of variance)",
-        label(measures[mi]),
-        label(dims[di]),
-        eta2 * 100.0
-    );
+    let mut title = t!(
+        "viz.title.measure_by_dim",
+        q_measure = label(measures[mi]),
+        q_dim = label(dims[di]),
+        q_agg = agg_word,
+        q_pct = format!("{:.0}", eta2 * 100.0)
+    )
+    .into_owned();
     if truncated {
-        title.push_str(&format!(" \u{2014} top {}", rows.len()));
+        title.push_str(&t!("viz.title.top_n", q_n = rows.len()));
     }
 
     let (labels, values): (Vec<String>, Vec<f64>) = rows.into_iter().unzip();
@@ -11763,9 +11769,14 @@ fn grouped_violin_panel(
             stats[idx].field.clone()
         }
     };
-    let mut title = format!("{} distribution by {}", label(m_idx), label(d_idx));
+    let mut title = t!(
+        "viz.title.distribution_by",
+        q_measure = label(m_idx),
+        q_dim = label(d_idx)
+    )
+    .into_owned();
     if total_cats > kept_cats {
-        title.push_str(&format!(" \u{2014} top {kept_cats}"));
+        title.push_str(&t!("viz.title.top_n", q_n = kept_cats));
     }
 
     Ok(Some(Panel::new(
@@ -21041,7 +21052,7 @@ fn build_map_panel(
     };
     Ok(Some((
         Panel {
-            name: "Map".to_string(),
+            name: t!("viz.title.map").into_owned(),
             subtitle: sample_note,
             kind,
             value_log: false,
@@ -22876,7 +22887,7 @@ impl<'a> SmartCtx<'a> {
                     // an honesty cue for violins drawn from a stride sample rather than every value
                     let name = if matches!(&kind, PanelKind::Violin { sample_stride, .. } if *sample_stride > 1)
                     {
-                        format!("{name} (sampled)")
+                        t!("viz.title.sampled", q_name = name).into_owned()
                     } else {
                         name
                     };
@@ -24520,7 +24531,7 @@ impl<'a> SmartCtx<'a> {
                 .file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or("data");
-            format!("{dataset} \u{2014} data overview")
+            t!("viz.title.data_overview", q_dataset = dataset).into_owned()
         });
 
         // --dict-info: render the embedded Data Dictionary page when a usable dictionary is present
@@ -25049,7 +25060,7 @@ fn panel_trace(
                 .name(panel.name.clone())
                 .marker(marker)
                 .hover_text_array(hover_labels)
-                .hover_template(t!("viz.hover.count_by_label").into_owned())
+                .hover_template(&t!("viz.hover.count_by_label"))
                 // value labels above each bar, SI-formatted ("258k", "1.05M") to match
                 // the axis ticks
                 .text_template("%{y:.3s}")
@@ -26862,7 +26873,7 @@ fn smart_inline_panel_plot(
                 .mode(Mode::LinesMarkers)
                 .fill(Fill::ToSelf)
                 .name(panel.name.clone())
-                .hover_template(t!("viz.hover.polar_records").into_owned()),
+                .hover_template(&t!("viz.hover.polar_records")),
         );
         // A polar subplot draws its angular tick labels ("06h", "Mon", "Jan") OUTSIDE its plot
         // area — ~22px past the top and bottom edges — and this plotly version's `LayoutPolar`
@@ -27949,11 +27960,12 @@ fn dominant_category_hint(bars: &[FreqBar], row_count: impl FnOnce() -> u64) -> 
     #[allow(clippy::cast_precision_loss)]
     let share = top.count as f64 / total as f64;
     (share >= DOMINANT_MIN_SHARE).then(|| {
-        format!(
-            "(dominated by {}, {:.0}%)",
-            truncate_label(&top.label, BAR_LABEL_MAX_CHARS),
-            share * 100.0
+        t!(
+            "viz.title.dominated_by",
+            q_value = truncate_label(&top.label, BAR_LABEL_MAX_CHARS),
+            q_pct = format!("{:.0}", share * 100.0)
         )
+        .into_owned()
     })
 }
 
@@ -32911,6 +32923,9 @@ mod tests {
 
     #[test]
     fn dominant_category_hint_fires_only_on_real_dominance() {
+        // `dominant_category_hint` is localized -- pin English, or this races the
+        // Spanish-setting tests on the process-global locale.
+        let _locale = english_locale();
         let bar = |label: &str, count: u64, kind: FreqBarKind| FreqBar {
             x_key: label.to_string(),
             label: label.to_string(),

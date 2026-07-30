@@ -7917,41 +7917,22 @@ fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str, labels: (&str, &str)) -
     )
 }
 
-/// Hover text for one cell of a 2D density contour: the two measures at the cell's bin center,
-/// plus how many rows landed in it.
-///
-/// Plotly's default contour hover is a bare `x`/`y`/`z` triple labeled with an auto-generated
-/// "trace N" — which names neither measure nor says what `z` counts, so the reader is left to
-/// guess that the third number is a row count rather than a third variable. `<extra></extra>`
-/// drops that "trace N" box entirely.
-///
-/// The bin centers are RAW values (`bin_2d` un-logs geometric centers before returning them), so
-/// `.3s` SI formatting reads in the data's own units on both linear and log axes. Shared by
-/// `viz contour` and `viz smart`'s density panel so the two hovers can never drift apart.
-///
-/// The labels are raw column headers interpolated into a template that itself parses `%{...}`, so
-/// they take the full `escape_template_pct(escape_hover(..))` composition — a header like
-/// `"% of total"` must reach the tooltip as text, not as a half-parsed template token.
 fn contour_hover_template(x_label: &str, y_label: &str) -> String {
-    format!(
-        "{}: %{{x:.3s}}<br>{}: %{{y:.3s}}<br>%{{z:,}} rows<extra></extra>",
-        escape_template_pct(&escape_hover(x_label)),
-        escape_template_pct(&escape_hover(y_label))
+    t!(
+        "viz.hover.contour",
+        q_x = escape_template_pct(&escape_hover(x_label)),
+        q_y = escape_template_pct(&escape_hover(y_label))
     )
+    .into_owned()
 }
 
-/// Hover text for a point on a Lorenz curve: the measure, its CACHED Gini, and the concentration
-/// stated in plain terms — the bottom X% of records hold Y% of the total.
-///
-/// Kept beside `contour_hover_template` because the two share the hazard that motivates both: a
-/// raw column label interpolated into a string plotly parses for `%{...}` tokens, so each label
-/// needs the full `escape_template_pct(escape_hover(..))` composition. Extracting this out of the
-/// render match arm is also what makes the escaping unit-testable without building a dashboard.
 fn lorenz_hover_template(label: &str, gini: f64) -> String {
-    format!(
-        "{} (Gini {gini:.2})<br>bottom %{{x:.0%}} of records hold %{{y:.0%}}<extra></extra>",
-        escape_template_pct(&escape_hover(label))
+    t!(
+        "viz.hover.lorenz",
+        q_label = escape_template_pct(&escape_hover(label)),
+        q_gini = format!("{gini:.2}")
     )
+    .into_owned()
 }
 
 /// Build a `Contour` trace: the 2D density of two numeric columns (--x and --y), binned into a

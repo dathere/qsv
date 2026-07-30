@@ -13,6 +13,15 @@ _version: 1
 # syntax for their own tokens (%{x}, %{y:,.0f}, %{customdata}); rust-i18n
 # leaves any token it was not given an argument for untouched, so the `q_`
 # prefix guarantees the two namespaces can never collide.
+#
+# ORDERING RULE for hover templates -- read this before translating one:
+# a plotly token with a literal `%` INSIDE its braces (`%{x:.0%}`) breaks
+# rust-i18n's scanner, and every `%{q_*}` placed AFTER such a token is left
+# unsubstituted, rendering as literal text in the tooltip with no error
+# anywhere. Keep every `%{q_*}` AHEAD of any `%{..%}` token. Reordering a
+# sentence during translation is the realistic way to break this, so it is
+# enforced by
+# viz_i18n::tests::no_catalog_value_strands_an_argument_behind_a_percent_formatted_token.
 # ---------------------------------------------------------------------------
 viz:
   chrome:
@@ -85,3 +94,9 @@ viz:
     viewer_failed: "qsv viz: data viewer failed:"
     advanced_filter: "Advanced Filter"
     advanced_filter_counted: "Advanced Filter (%d)"
+  hover:
+    # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` are PLOTLY tokens -- leave them exactly
+    # as they are. Only the surrounding words get translated. See the ORDERING
+    # RULE above before moving `%{q_label}` or `%{q_gini}` in `lorenz`.
+    contour: "%{q_x}: %{x:.3s}<br>%{q_y}: %{y:.3s}<br>%{z:,} rows<extra></extra>"
+    lorenz: "%{q_label} (Gini %{q_gini})<br>bottom %{x:.0%} of records hold %{y:.0%}<extra></extra>"

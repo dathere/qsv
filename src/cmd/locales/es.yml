@@ -75,3 +75,9 @@ viz:
     viewer_failed: "qsv viz: fallo el visor de datos:"
     advanced_filter: "Filtro avanzado"
     advanced_filter_counted: "Filtro avanzado (%d)"
+  hover:
+    # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` son tokens de PLOTLY: no los traduzcas.
+    # `%{q_label}` y `%{q_gini}` deben ir ANTES de `%{x:.0%}` (ver la ORDERING
+    # RULE en en.yml); si se mueven detras, no se sustituyen.
+    contour: "%{q_x}: %{x:.3s}<br>%{q_y}: %{y:.3s}<br>%{z:,} filas<extra></extra>"
+    lorenz: "%{q_label} (Gini %{q_gini})<br>el %{x:.0%} inferior de los registros posee el %{y:.0%}<extra></extra>"

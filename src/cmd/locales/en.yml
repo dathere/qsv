@@ -53,6 +53,14 @@ viz:
     cluster_click_to_zoom: " - click to zoom in"
     row_not_in_preview: "row not in preview"
     row_is_filtered_out: "row is filtered out"
+    # Legend / trace names for the map's geo overlay. Each is emitted from THREE
+    # places (the static map, the inline map and the animated-geo path), so a
+    # change here moves all three; they were found by grepping RENDERED Spanish
+    # output for English-looking text, not by grepping for known phrases.
+    extent_points: "extent points"
+    spatial_extent: "spatial extent"
+    full_extent: "full extent (incl. outliers)"
+    geographic_outliers: "geographic outliers"
   photo:
     alt: "Photo for the hovered map point"
     close: "Close"
@@ -111,6 +119,12 @@ viz:
     #   * the animated-bubble size label, when the dataset has no third numeric to
     #     size by, where it names the bubble-size dimension in the per-point hover.
     records: "records"
+    # Heatmap TRACE names (plotly `.name`), naming the coefficient a cell holds.
+    # The paired SYMBOL (`r`, `ρ`, `NMI`) is interpolated into the cell hover and
+    # stays literal in every locale; only these names are words.
+    trace_correlation: "correlation"
+    trace_rank_correlation: "rank correlation"
+    trace_association: "association"
   title:
     # PANEL TITLES. Every value here is a WHOLE rendered title (or a suffix that
     # only ever attaches to one of them), never a fragment spliced into a
@@ -135,9 +149,9 @@ viz:
     top_n: " — top %{q_n}"
     # The aggregate word inside `measure_by_dim`'s parenthetical. A closed set of
     # two, and it sits in a slot of its own rather than mid-clause, so a bare
-    # noun translates cleanly. NOT yet used by the time-series title
-    # ("%{y} (sum) over %{date}"), which is still English -- wiring these in
-    # there without localizing that title too would render it half-Spanish.
+    # noun translates cleanly. Used by BOTH `measure_by_dim` and the trend
+    # panel's `trend_agg` title + `trend_axis_agg` y-axis, so a change here
+    # moves four rendered strings.
     agg_sum: "sum"
     agg_mean: "mean"
     # Suffixes decorating a title whose base is a column name.
@@ -196,13 +210,26 @@ viz:
     # Deliberately NOT unified with `trend_count`'s grain-derived unit -- this
     # title has always said "Records" regardless of grain, and English
     # byte-identity forbids changing that here.
-    # ASSOCIATION HEATMAP + 3D drill-down. Three standalone whole titles: nothing
-    # decorates them (the only generic name-decorating pass is gated on
-    # `PanelKind::FreqBar`), and they share no key with anything above.
+    # CORRELATION HEATMAP (`PanelKind::CorrHeatmap`) + the 3D drill-down. Three
+    # standalone whole titles: nothing decorates them (the only generic
+    # name-decorating pass is gated on `PanelKind::FreqBar`), and they share no
+    # key with anything above.
     # `ρ` / `r` are statistical symbols and `(3D)` is a convention -- all literal.
+    # NOTE: the `--bivariate` ASSOCIATION heatmap is a DIFFERENT panel with its
+    # own title -- see `assoc_heatmap` / `top_relationships` below.
     corr_spearman: "Correlation (Spearman ρ — rank, robust to outliers)"
     corr_pearson: "Correlation (Pearson r)"
     scatter3d: "%{q_x} / %{q_y} / %{q_z} (3D)"
+    # `--bivariate` panels. NMI = normalized mutual information, an acronym that
+    # stays literal.
+    assoc_heatmap: "Association (NMI)"
+    top_relationships: "Top Relationships (NMI)"
+    # KPI ROW TILES. Whole strings rather than a "Mean"/"Total" prefix plus a
+    # slot, so a translation can put the qualifier where its grammar wants
+    # ("Media de X"). Which one is used is decided by the extensive/intensive
+    # verdict, never by the locale.
+    kpi_mean: "Mean %{q_label}"
+    kpi_total: "Total %{q_label}"
     cyclic_records_by: "Records by %{q_axis} (%{q_date})"
     cyclic_hour_of_day: "hour of day"
     cyclic_day_of_week: "day of week"

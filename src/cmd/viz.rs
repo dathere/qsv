@@ -7363,9 +7363,9 @@ fn corr_heatmap_trace(
     spearman: bool,
 ) -> Box<dyn Trace> {
     let (symbol, name) = if spearman {
-        ("\u{3c1}", "rank correlation")
+        ("\u{3c1}", t!("viz.chart.trace_rank_correlation"))
     } else {
-        ("r", "correlation")
+        ("r", t!("viz.chart.trace_correlation"))
     };
     heatmap_trace_with_range(
         labels,
@@ -7377,7 +7377,7 @@ fn corr_heatmap_trace(
         Some(0.0),
         ColorScalePalette::RdBu,
         symbol,
-        name,
+        &name,
         None,
     )
 }
@@ -7402,7 +7402,7 @@ fn assoc_heatmap_trace(
         None,
         ColorScalePalette::Viridis,
         "NMI",
-        "association",
+        &t!("viz.chart.trace_association"),
         Some(hover_suffix),
     )
 }
@@ -12506,7 +12506,7 @@ fn bivariate_panels(
         }
         let labels: Vec<String> = idxs.iter().map(|&idx| label_of(idx)).collect();
         Some(Panel::new(
-            "Association (NMI)".to_string(),
+            t!("viz.title.assoc_heatmap").into_owned(),
             PanelKind::AssocHeatmap {
                 labels,
                 matrix: mask_to_lower_triangle(matrix),
@@ -12563,7 +12563,7 @@ fn bivariate_panels(
                 })
                 .collect();
             Some(Panel::new(
-                "Top Relationships (NMI)".to_string(),
+                t!("viz.title.top_relationships").into_owned(),
                 PanelKind::TopRelationships {
                     labels,
                     values,
@@ -21775,7 +21775,7 @@ fn add_extent_overlay_map(plot: &mut Plot, meta: &GeoMeta) {
         let (flat, flon) = dashed_box_latlon(full);
         plot.add_trace(
             ScatterMap::new(flat, flon)
-                .name("full extent (incl. outliers)")
+                .name(&t!("viz.map.full_extent"))
                 .mode(Mode::Lines)
                 .line(full_extent_box_line())
                 .hover_info(HoverInfo::Skip)
@@ -21785,7 +21785,7 @@ fn add_extent_overlay_map(plot: &mut Plot, meta: &GeoMeta) {
     let (blat, blon) = extent_box_latlon(&meta.extent);
     plot.add_trace(
         ScatterMap::new(blat, blon)
-            .name("spatial extent")
+            .name(&t!("viz.map.spatial_extent"))
             .mode(Mode::Lines)
             .line(extent_box_line())
             .fill(plotly::traces::scatter_map::Fill::ToSelf)
@@ -21798,7 +21798,7 @@ fn add_extent_overlay_map(plot: &mut Plot, meta: &GeoMeta) {
     let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
     plot.add_trace(
         ScatterMap::new(mlat, mlon)
-            .name("extent points")
+            .name(&t!("viz.map.extent_points"))
             .mode(Mode::Markers)
             .marker(extent_marker_map())
             .hover_text_array(htext)
@@ -21818,7 +21818,7 @@ fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
         let (flat, flon) = extent_box_latlon(full);
         plot.add_trace(
             ScatterGeo::new(flat, flon)
-                .name("full extent (incl. outliers)")
+                .name(&t!("viz.map.full_extent"))
                 .mode(Mode::Lines)
                 .line(full_extent_box_line())
                 .hover_info(HoverInfo::Skip)
@@ -21828,7 +21828,7 @@ fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
     let (blat, blon) = extent_box_latlon(&meta.extent);
     plot.add_trace(
         ScatterGeo::new(blat, blon)
-            .name("spatial extent")
+            .name(&t!("viz.map.spatial_extent"))
             .mode(Mode::Lines)
             .line(extent_box_line())
             .fill(plotly::traces::scatter_geo::Fill::ToSelf)
@@ -21841,7 +21841,7 @@ fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
     let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
     plot.add_trace(
         ScatterGeo::new(mlat, mlon)
-            .name("extent points")
+            .name(&t!("viz.map.extent_points"))
             .mode(Mode::Markers)
             .marker(extent_marker_geo())
             .hover_text_array(htext)
@@ -22046,7 +22046,12 @@ fn build_kpi_row(
             .filter(|[lo, hi]| lo < hi && value >= *lo && value <= *hi);
         let target = row.and_then(|r| r.target).filter(|t| t.is_finite());
         tiles.push(KpiTile {
-            label: format!("{} {label}", if intensive { "Mean" } else { "Total" }),
+            label: if intensive {
+                t!("viz.title.kpi_mean", q_label = label)
+            } else {
+                t!("viz.title.kpi_total", q_label = label)
+            }
+            .into_owned(),
             value,
             format: kpi_number_format(value),
             gauge,
@@ -25963,7 +25968,7 @@ fn smart_grid_parts(
             // geographic outliers as a distinct amber/X marker trace on top of the core points
             if !outlier_lats.is_empty() {
                 let mut out_trace = ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
-                    .name("geographic outliers")
+                    .name(&t!("viz.map.geographic_outliers"))
                     .mode(Mode::Markers)
                     .marker(outlier_marker_geo())
                     .show_legend(false)
@@ -25985,7 +25990,7 @@ fn smart_grid_parts(
                     let (flat, flon) = extent_box_latlon(full);
                     traces.push(
                         ScatterGeo::new(flat, flon)
-                            .name("full extent (incl. outliers)")
+                            .name(&t!("viz.map.full_extent"))
                             .mode(Mode::Lines)
                             .line(full_extent_box_line())
                             .hover_info(HoverInfo::Skip)
@@ -25996,7 +26001,7 @@ fn smart_grid_parts(
                 let (blat, blon) = extent_box_latlon(&meta.extent);
                 traces.push(
                     ScatterGeo::new(blat, blon)
-                        .name("spatial extent")
+                        .name(&t!("viz.map.spatial_extent"))
                         .mode(Mode::Lines)
                         .line(extent_box_line())
                         .fill(plotly::traces::scatter_geo::Fill::ToSelf)
@@ -26010,7 +26015,7 @@ fn smart_grid_parts(
                 let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
                 traces.push(
                     ScatterGeo::new(mlat, mlon)
-                        .name("extent points")
+                        .name(&t!("viz.map.extent_points"))
                         .mode(Mode::Markers)
                         .marker(extent_marker_geo())
                         .hover_text_array(htext)
@@ -26544,7 +26549,7 @@ fn smart_inline_panel_plot(
         // Outliers are always markers (even in density mode), so they carry hover labels too.
         if !outlier_lats.is_empty() {
             let mut out_trace = ScatterMap::new(outlier_lats.clone(), outlier_lons.clone())
-                .name("geographic outliers")
+                .name(&t!("viz.map.geographic_outliers"))
                 .mode(Mode::Markers)
                 .marker(outlier_marker_map())
                 .show_legend(false);
@@ -26670,7 +26675,7 @@ fn smart_inline_panel_plot(
         // geographic outliers as a distinct amber/X marker trace on top of the core points
         if !outlier_lats.is_empty() {
             let mut out_trace = ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
-                .name("geographic outliers")
+                .name(&t!("viz.map.geographic_outliers"))
                 .mode(Mode::Markers)
                 .marker(outlier_marker_geo())
                 .show_legend(false);
@@ -34294,6 +34299,9 @@ mod tests {
 
     #[test]
     fn build_kpi_row_joins_on_stat_idx_not_decorated_title() {
+        // KPI tile labels are localized -- pin English, or the "Total amount"
+        // assertion below races the Spanish-setting tests on the global locale.
+        let _locale = english_locale();
         // `build_smart` decorates a panel title AFTER construction ("amount (right-skewed)" from
         // `box_shape_hint`, "(sampled)" for strided violins), so a name-based stats join silently
         // missed and the KPI tile — often the whole KPI row — disappeared.

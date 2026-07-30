@@ -357,6 +357,43 @@ mod tests {
         false
     }
 
+    /// Whether `value` contains a numeric escape (`\xNN`, `\uNNNN`, `\UNNNNNNNN`) decoding to one
+    /// of the three characters the hazard sweep reasons about structurally: `%`, `{` or `}`.
+    ///
+    /// Such an escape would make the raw text and the runtime text disagree about where the tokens
+    /// are, which is precisely the assumption `unsubstitutable_arg_tokens` rests on.
+    fn has_structural_escape(value: &str) -> bool {
+        let bytes = value.as_bytes();
+        let mut i = 0usize;
+        while i + 1 < bytes.len() {
+            if bytes[i] != b'\\' {
+                i += 1;
+                continue;
+            }
+            let digits = match bytes[i + 1] {
+                b'x' => 2usize,
+                b'u' => 4,
+                b'U' => 8,
+                // any other escape (`\\`, `\"`, `\n`, ...) consumes exactly its own character
+                _ => {
+                    i += 2;
+                    continue;
+                },
+            };
+            let start = i + 2;
+            let end = start + digits;
+            if end <= bytes.len()
+                && let Ok(hex) = std::str::from_utf8(&bytes[start..end])
+                && let Ok(cp) = u32::from_str_radix(hex, 16)
+                && matches!(cp, 0x25 | 0x7B | 0x7D)
+            {
+                return true;
+            }
+            i = end.min(bytes.len());
+        }
+        false
+    }
+
     /// Guards the one localization failure that is invisible to every other check.
     ///
     /// A plotly token carrying a literal `%` inside its braces (`%{x:.0%}`, the Lorenz axis format)
@@ -418,8 +455,10 @@ mod tests {
                 if value.is_empty() {
                     continue;
                 }
-                // the one non-message scalar in these files
-                if key == "_version" {
+                // The one non-message scalar in these files -- exempted by POSITION as well as by
+                // name. A nested key that happened to be called `_version` would be a real message
+                // and still needs checking, so the exemption is anchored to column 0.
+                if key == "_version" && line.len() == trimmed.len() {
                     continue;
                 }
                 // Every message value must be a double-quoted scalar that closes on its own line,
@@ -441,6 +480,21 @@ mod tests {
                      line. Message catalogs must use that one style: every other YAML scalar \
                      style can continue onto a following line, where this line-wise hazard sweep \
                      cannot see it. Rewrite as: {key}: \"...\"\n  got: {value}",
+                    idx + 1
+                );
+                // The detector reads the RAW line, which is only sound while what a translator
+                // types is what rust-i18n ends up seeing. A double-quoted YAML scalar can spell any
+                // character numerically -- `%` IS `%` -- so `%{q_label}` would reach the
+                // runtime as a live token while reading as inert text here. These catalogs already
+                // use `—` and `\U0001F313`, so the mechanism is in active use, not theoretical.
+                // Decoding YAML would need a parser this feature does not have, so escapes that can
+                // spell the three structural characters are refused instead: nothing in a message
+                // needs to write `%`, `{` or `}` the long way.
+                assert!(
+                    !has_structural_escape(value),
+                    "{locale}.yml:{} key '{key}' encodes `%`, `{{` or `}}` as a numeric escape. \
+                     Write those characters literally -- escaped, they read as inert text to the \
+                     hazard sweep while rust-i18n sees a real token.\n  got: {value}",
                     idx + 1
                 );
                 checked += 1;

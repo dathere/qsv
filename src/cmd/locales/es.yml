@@ -1,0 +1,74 @@
+_version: 1
+
+# Spanish (es) -- viz dashboard UI.
+# TODO: native-speaker review before release. Accents ARE included (this file is
+# UTF-8); the pending review is about wording and register, not encoding.
+# Keys missing here fall back to en (see `fallback = "en"` in src/main.rs).
+viz:
+  chrome:
+    theme_toggle: "\U0001F313 Tema"
+    theme_toggle_aria: "Alternar modo claro/oscuro"
+    toggle_fullscreen: "Alternar pantalla completa"
+    toggle_legend: "Alternar leyenda"
+    logo_alt: "qsv de datHere"
+    credits_charts: "Gráficos:"
+    credits_table: "Tabla:"
+    credits_notices: "avisos"
+  meta:
+    description: "Descripción:"
+    rows: "Filas:"
+    columns: "Columnas:"
+    completeness: "Integridad:"
+    compiled: "Compilado:"
+    pid: "PID:"
+  viewer:
+    link_explore: "(Explorar)"
+    link_preview: "(Vista previa)"
+    title_all: "Datos \u2014 %{q_rows} filas en total"
+    title_preview: "Datos \u2014 primeras %{q_shown} de %{q_total} filas (vista previa)"
+    export_csv: "CSV"
+    export_csv_preview: "CSV (vista previa)"
+  map:
+    cluster_point_one: " punto"
+    cluster_point_many: " puntos"
+    cluster_click_to_zoom: " - haz clic para ampliar"
+    row_not_in_preview: "fila no incluida en la vista previa"
+    row_is_filtered_out: "fila excluida por el filtro"
+  photo:
+    alt: "Foto del punto señalado en el mapa"
+    close: "Cerrar"
+    enlarge: "Ampliar"
+    enlarge_aria: "Ampliar foto"
+    shrink: "Reducir"
+    shrink_aria: "Reducir foto"
+    previous: "Foto anterior"
+    next: "Foto siguiente"
+    unavailable: "imagen no disponible"
+    unavailable_suffix: " - no disponible"
+  dict:
+    title: "Diccionario de datos"
+    open_own_tab: "Abrir en su propia pestaña"
+    close_esc: "Cerrar (Esc)"
+    field_type: "Tipo"
+    field_content_type: "Tipo de contenido"
+    field_role: "Rol"
+    field_concept: "Concepto"
+    field_range: "Rango"
+    field_cardinality: "Cardinalidad"
+    field_null_count: "Valores nulos"
+    field_values: "Valores"
+    field_examples: "Ejemplos"
+    role_unknown: "rol desconocido"
+    grain: "Granularidad:"
+    export_tooltip: "Descargar este diccionario de datos como JSON Schema"
+    export_label: "Exportar JSONSchema"
+    export_short: "esquema"
+  drawer:
+    row_selected_one: " fila seleccionada"
+    row_selected_many: " filas seleccionadas"
+    close_viewer: "Cerrar el visor de datos"
+    clear_filters: "Borrar filtros"
+    clear_filters_prefix: "Borrar filtros ("
+    viewer_failed: "qsv viz: fallo el visor de datos:"
+    advanced_filter: "Filtro avanzado"
+    advanced_filter_counted: "Filtro avanzado (%d)"

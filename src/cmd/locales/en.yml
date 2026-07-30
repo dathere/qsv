@@ -1,0 +1,84 @@
+_version: 1
+
+# ---------------------------------------------------------------------------
+# English source strings for the `viz` dashboard UI.
+#
+# CONTRACT: every value here MUST be byte-identical to the literal it replaced
+# in src/cmd/viz.rs. English output is covered by golden fixtures
+# (scripts/viz-golden-check.sh) and ~384 integration tests -- a golden diff
+# after an edit here is a BUG, not something to regenerate.
+#
+# Placeholder convention: qsv-supplied interpolation args are ALWAYS prefixed
+# with `q_` (%{q_col}, %{q_label}). plotly hover templates use the same %{...}
+# syntax for their own tokens (%{x}, %{y:,.0f}, %{customdata}); rust-i18n
+# leaves any token it was not given an argument for untouched, so the `q_`
+# prefix guarantees the two namespaces can never collide.
+# ---------------------------------------------------------------------------
+viz:
+  chrome:
+    theme_toggle: "\U0001F313 Theme"
+    theme_toggle_aria: "Toggle light/dark mode"
+    toggle_fullscreen: "Toggle fullscreen"
+    toggle_legend: "Toggle legend"
+    logo_alt: "qsv by datHere"
+    credits_charts: "Charts:"
+    credits_table: "Table:"
+    credits_notices: "notices"
+  meta:
+    description: "Description:"
+    rows: "Rows:"
+    columns: "Columns:"
+    completeness: "Completeness:"
+    compiled: "Compiled:"
+    pid: "PID:"
+  viewer:
+    link_explore: "(Explore)"
+    link_preview: "(Preview)"
+    title_all: "Data \u2014 all %{q_rows} rows"
+    title_preview: "Data \u2014 first %{q_shown} of %{q_total} rows (preview)"
+    export_csv: "CSV"
+    export_csv_preview: "CSV (preview)"
+  map:
+    cluster_point_one: " point"
+    cluster_point_many: " points"
+    cluster_click_to_zoom: " - click to zoom in"
+    row_not_in_preview: "row not in preview"
+    row_is_filtered_out: "row is filtered out"
+  photo:
+    alt: "Photo for the hovered map point"
+    close: "Close"
+    enlarge: "Enlarge"
+    enlarge_aria: "Enlarge photo"
+    shrink: "Shrink"
+    shrink_aria: "Shrink photo"
+    previous: "Previous photo"
+    next: "Next photo"
+    unavailable: "image unavailable"
+    unavailable_suffix: " - unavailable"
+  dict:
+    title: "Data Dictionary"
+    open_own_tab: "Open in its own tab"
+    close_esc: "Close (Esc)"
+    field_type: "Type"
+    field_content_type: "Content type"
+    field_role: "Role"
+    field_concept: "Concept"
+    field_range: "Range"
+    field_cardinality: "Cardinality"
+    field_null_count: "Null count"
+    field_values: "Values"
+    field_examples: "Examples"
+    role_unknown: "role unknown"
+    grain: "Grain:"
+    export_tooltip: "Download this Data Dictionary as JSON Schema"
+    export_label: "Export JSONSchema"
+    export_short: "schema"
+  drawer:
+    row_selected_one: " row selected"
+    row_selected_many: " rows selected"
+    close_viewer: "Close data viewer"
+    clear_filters: "Clear Filters"
+    clear_filters_prefix: "Clear Filters ("
+    viewer_failed: "qsv viz: data viewer failed:"
+    advanced_filter: "Advanced Filter"
+    advanced_filter_counted: "Advanced Filter (%d)"

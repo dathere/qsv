@@ -13845,3 +13845,331 @@ fn viz_smart_data_viewer_has_no_select_extension() {
          not load, and it silently changes the CSV export scope"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Dashboard UI localization (--language / dictionary-detected language).
+//
+// The dashboard chrome follows the dataset's language: describegpt's whatlang pass
+// records `x-qsv.detected_language_code` in the dictionary, and `--language`
+// overrides it. English output must stay byte-identical -- the rest of this file
+// (and the golden fixtures) is the assertion for that.
+// ---------------------------------------------------------------------------
+
+/// A dictionary carrying the top-level `x-qsv` language block describegpt emits when
+/// whatlang clears its 0.8 confidence threshold. Mirrors the producer-side shape
+/// pinned by tests/test_describegpt.rs.
+fn spanish_dictionary() -> &'static str {
+    r#"{
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "x-qsv": {
+        "detected_language": "Spanish",
+        "detected_language_code": "spa",
+        "detected_language_confidence": 0.9912
+      },
+      "properties": {
+        "region": { "type": "string", "title": "Region",
+          "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+        "revenue": { "type": "integer", "title": "Revenue",
+          "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+      }
+    }"#
+}
+
+fn localization_rows() -> &'static str {
+    "region,revenue\nNorte,100\nSur,220\nEste,150\nOeste,90\nNorte,180\nSur,130\nEste,175\nOeste,\
+     142\n"
+}
+
+#[test]
+fn viz_smart_follows_dictionary_detected_language() {
+    let wrk = Workdir::new("viz_smart_follows_dictionary_detected_language");
+    wrk.create_from_string("rev.csv", localization_rows());
+    wrk.create_from_string("dict.schema.json", spanish_dictionary());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rev.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#"<html lang="es">"#),
+        "a dictionary detecting Spanish should set the document language to es"
+    );
+    assert!(
+        html.contains("\u{1F313} Tema"),
+        "dashboard chrome should be translated, not just the lang attribute"
+    );
+    assert!(
+        !html.contains("\u{1F313} Theme"),
+        "the English chrome string should be replaced, not duplicated alongside the translation"
+    );
+}
+
+#[test]
+fn viz_smart_dict_page_shares_the_dashboard_language() {
+    // The dictionary page is the SECOND `<html lang>` site and is assembled separately from
+    // the dashboard. Both are rendered in one process off one process-global locale, and the
+    // locale is only settled after the dictionary is read -- so this pins the ordering
+    // invariant: nothing may assemble HTML before the dictionary's language is resolved.
+    let wrk = Workdir::new("viz_smart_dict_page_shares_the_dashboard_language");
+    wrk.create_from_string("rev.csv", localization_rows());
+    wrk.create_from_string("dict.schema.json", spanish_dictionary());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rev.csv",
+        "-o",
+        &out_html,
+        "--dict-info",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("qsv-dict-doc"),
+        "--dict-info should embed the dictionary page (otherwise this test proves nothing)"
+    );
+    assert_eq!(
+        html.matches(r#"<html lang="es">"#).count(),
+        2,
+        "both the dashboard and the embedded dictionary page should carry lang=es"
+    );
+    assert!(
+        !html.contains(r#"<html lang="en">"#),
+        "no page in a Spanish dashboard should still declare English"
+    );
+}
+
+#[test]
+fn viz_smart_language_flag_overrides_dictionary() {
+    let wrk = Workdir::new("viz_smart_language_flag_overrides_dictionary");
+    wrk.create_from_string("rev.csv", localization_rows());
+    wrk.create_from_string("dict.schema.json", spanish_dictionary());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rev.csv",
+        "-o",
+        &out_html,
+        "--language",
+        "en",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#"<html lang="en">"#),
+        "an explicit --language must win over the dictionary's detected language"
+    );
+    assert!(html.contains("\u{1F313} Theme"), "chrome should be English");
+}
+
+#[test]
+fn viz_smart_language_flag_works_without_a_dictionary() {
+    let wrk = Workdir::new("viz_smart_language_flag_works_without_a_dictionary");
+    wrk.create_from_string("rev.csv", localization_rows());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rev.csv", "-o", &out_html, "--language", "es"]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#"<html lang="es">"#) && html.contains("\u{1F313} Tema"),
+        "--language should localize a stats-only dashboard, with no dictionary involved"
+    );
+}
+
+#[test]
+fn viz_smart_language_accepts_iso639_3_and_english_names() {
+    // describegpt writes ISO 639-3 ("spa"); a human is far likelier to type "Spanish".
+    for lang in ["spa", "Spanish", "es-MX"] {
+        // Distinct workdir per iteration: a shared name would put all three in one temp
+        // directory, which is benign only as long as the loop stays sequential.
+        let wrk = Workdir::new(&format!("viz_smart_language_alias_{lang}"));
+        wrk.create_from_string("rev.csv", localization_rows());
+
+        let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "rev.csv", "-o", &out_html, "--language", lang]);
+        wrk.assert_success(&mut cmd);
+
+        let html = wrk.read_to_string("dash.html").unwrap();
+        assert!(
+            html.contains(r#"<html lang="es">"#),
+            "--language {lang} should resolve to the es locale"
+        );
+    }
+}
+
+#[test]
+fn viz_smart_unknown_language_is_a_usage_error() {
+    let wrk = Workdir::new("viz_smart_unknown_language_is_a_usage_error");
+    wrk.create_from_string("rev.csv", localization_rows());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rev.csv", "-o", &out_html, "--language", "klingon"]);
+
+    // Silently anglicizing an explicit request would hide the typo until someone
+    // opened the dashboard, so this fails fast and names the curated set.
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("Unknown --language 'klingon'") && stderr.contains("en, es"),
+        "the error should name the bad value and list the curated languages, got: {stderr}"
+    );
+}
+
+#[test]
+fn viz_smart_uncurated_detected_language_falls_back_to_english() {
+    let wrk = Workdir::new("viz_smart_uncurated_detected_language_falls_back_to_english");
+    wrk.create_from_string("rev.csv", localization_rows());
+    wrk.create_from_string(
+        "dict.schema.json",
+        &spanish_dictionary().replace("\"spa\"", "\"vie\""),
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rev.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    // A language qsv has no translations for is not a user error -- the dashboard
+    // still renders, in English, with a note.
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#"<html lang="en">"#) && html.contains("\u{1F313} Theme"),
+        "an uncurated detected language should render English chrome"
+    );
+}
+
+#[test]
+fn viz_smart_default_and_explicit_english_agree() {
+    // NOTE: this does NOT prove English output is unchanged from before localization --
+    // both paths resolve to the same locale, so identical bytes are near-tautological.
+    // The real English-stability evidence is the rest of this file (every pre-existing viz
+    // test still passing) plus scripts/viz-golden-check.sh. What this DOES catch is the
+    // default path diverging from the explicit one, e.g. if "auto" ever stopped meaning
+    // English in the absence of a detected language.
+    let dict_without_language = r#"{
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "region": { "type": "string", "title": "Region",
+          "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+        "revenue": { "type": "integer", "title": "Revenue",
+          "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+      }
+    }"#;
+
+    let wrk = Workdir::new("viz_smart_dict_no_language");
+    wrk.create_from_string("rev.csv", localization_rows());
+    wrk.create_from_string("plain.schema.json", dict_without_language);
+    wrk.create_from_string("english.schema.json", dict_without_language);
+
+    let no_lang = wrk.path("no_lang.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rev.csv", "-o", &no_lang, "--dictionary"])
+        .arg(wrk.path("plain.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let explicit_en = wrk.path("explicit_en.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rev.csv",
+        "-o",
+        &explicit_en,
+        "--language",
+        "en",
+        "--dictionary",
+    ])
+    .arg(wrk.path("english.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    assert_eq!(
+        wrk.read_to_string("no_lang.html").unwrap(),
+        wrk.read_to_string("explicit_en.html").unwrap(),
+        "defaulting to English and asking for English must produce identical output"
+    );
+}
+
+#[test]
+fn viz_smart_spanish_embeds_vendored_library_locales() {
+    // End-to-end proof that the vendored DataTables i18n JSON and plotly locale bundle actually
+    // reach the page — the unit tests cover the builders, this covers the wiring.
+    let wrk = Workdir::new("viz_smart_spanish_embeds_vendored_library_locales");
+    wrk.create_from_string("rev.csv", localization_rows());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rev.csv", "-o", &out_html, "--language", "es"]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#"name:"es""#),
+        "the vendored plotly locale bundle should be embedded"
+    );
+    assert!(
+        html.contains(r#"setPlotConfig({locale: "es"})"#),
+        "plotly needs setPlotConfig to actually select the registered locale"
+    );
+    assert!(
+        html.contains("No se encontraron resultados"),
+        "vendored DataTables strings should reach the drawer"
+    );
+    assert!(
+        html.contains("Filtro avanzado (%d)"),
+        "qsv's own SearchBuilder name should override the vendored wording, %d intact"
+    );
+}
+
+#[test]
+fn viz_smart_english_embeds_no_library_locale_assets() {
+    // The byte-stability guard, stated as behavior: nothing locale-related may appear on an
+    // English page. Both vendored injections are empty-for-English, and both once left a stray
+    // separator behind when substituted empty.
+    let wrk = Workdir::new("viz_smart_english_embeds_no_library_locale_assets");
+    wrk.create_from_string("rev.csv", localization_rows());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rev.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    for marker in [
+        r#"name:"es""#,
+        r#"setPlotConfig({locale: "es"})"#,
+        "No se encontraron resultados",
+        "Filtro avanzado",
+        "__QSVI18N",
+    ] {
+        assert!(
+            !html.contains(marker),
+            "an English dashboard must not contain '{marker}'"
+        );
+    }
+    // The English DataTables block must survive exactly as authored (nothing spliced over it).
+    assert!(
+        html.contains(
+            r#"searchBuilder: { button: { 0: "Advanced Filter", _: "Advanced Filter (%d)" } }"#
+        ),
+        "the English language block should be left byte-for-byte as written"
+    );
+}

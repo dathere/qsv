@@ -116,8 +116,10 @@ pub static LOCALES: &[LocaleRow] = &[
     // pt-BR, not pt: plotly publishes no generic `pt` locale, only `plotly-locale-pt-br` whose
     // internal id is "pt-BR". `plotly_setlocale_js` hands `bcp47` straight to
     // `Plotly.setPlotConfig`, so a "pt" row would register a locale plotly never selects --
-    // silently leaving an English modebar. The `pt` alias keeps `--language pt` working, and
-    // `parse_lang`'s regional fallback resolves `pt-PT` here too.
+    // silently leaving an English modebar. The `pt` alias keeps `--language pt` working; other
+    // Portuguese regions (`pt-PT`, `pt-AO`) deliberately do NOT resolve here -- this catalog is
+    // specifically Brazilian, so answering an explicit European request with it would be a silent
+    // dialect swap. See the alias caveat on `parse_lang`'s regional fallback.
     LocaleRow {
         bcp47:        "pt-BR",
         english_name: "Brazilian Portuguese",
@@ -151,14 +153,20 @@ pub fn parse_lang(input: &str) -> Option<&'static LocaleRow> {
     LOCALES
         .iter()
         .find(|row| row.bcp47.to_lowercase() == needle || row.aliases.contains(&needle.as_str()))
-        // A regional tag with no curated regional variant falls back to its base
-        // language, matching rust-i18n's own territory fallback (zh-CN -> zh).
+        // A regional tag with no curated regional variant falls back to its BASE LANGUAGE row,
+        // matching rust-i18n's own territory fallback (es-MX -> es).
+        //
+        // Matches `bcp47` ONLY, never an alias, and that restriction is load-bearing. A curated
+        // row whose own tag carries a region (`pt-BR`) lists the bare language as an alias so
+        // `--language pt` still works -- but honouring that alias *here* would pull every other
+        // region of that language into it, so `pt-PT` would silently render the Brazilian
+        // catalog. For Portuguese that is a dialect swap; for a `zh-CN` row with a `zh` alias it
+        // would return `zh-Hant` in the wrong SCRIPT. An explicit regional request we do not
+        // curate is better surfaced as a usage error than quietly answered with a neighbour.
         .or_else(|| {
-            needle.split_once('-').and_then(|(base, _)| {
-                LOCALES
-                    .iter()
-                    .find(|row| row.bcp47.to_lowercase() == base || row.aliases.contains(&base))
-            })
+            needle
+                .split_once('-')
+                .and_then(|(base, _)| LOCALES.iter().find(|row| row.bcp47.to_lowercase() == base))
         })
 }
 
@@ -300,6 +308,48 @@ mod tests {
         // A regional variant with no curated regional row falls back to its base.
         assert_eq!(parse_lang("es_MX").unwrap().bcp47, "es");
         assert_eq!(parse_lang("es-419").unwrap().bcp47, "es");
+    }
+
+    #[test]
+    fn regional_fallback_never_crosses_into_another_region() {
+        // `es-MX` -> `es` is BASE-LANGUAGE fallback: the `es` catalog is region-neutral, so the
+        // request is genuinely honoured. `pt-PT` -> `pt-BR` would not be -- it answers an explicit
+        // European Portuguese request with a specifically Brazilian catalog. The bare `pt` alias
+        // on the pt-BR row exists so `--language pt` works; letting the FALLBACK honour that alias
+        // dragged every other Portuguese region along with it (roborev 3964).
+        assert_eq!(parse_lang("pt").unwrap().bcp47, "pt-BR");
+        assert_eq!(parse_lang("pt-BR").unwrap().bcp47, "pt-BR");
+        assert_eq!(parse_lang("por").unwrap().bcp47, "pt-BR");
+        assert!(
+            parse_lang("pt-PT").is_none(),
+            "European Portuguese is not curated -- it must not silently resolve to the Brazilian \
+             catalog"
+        );
+        assert!(parse_lang("pt-AO").is_none());
+
+        // The general property, so this keeps holding for languages added later: no regional
+        // needle may land on a row whose OWN tag carries a region. This is the guard that matters
+        // for Chinese -- a `zh-CN` row with a `zh` alias (which it needs, for the same plotly
+        // reason pt-BR does) would otherwise resolve `zh-Hant` to Simplified, i.e. the wrong
+        // script rather than merely the wrong dialect.
+        let mut regioned = 0_usize;
+        for row in LOCALES {
+            let Some((base, _)) = row.bcp47.split_once('-') else {
+                continue;
+            };
+            regioned += 1;
+            let other = format!("{base}-ZZ");
+            assert!(
+                parse_lang(&other).is_none_or(|hit| hit.bcp47 != row.bcp47),
+                "'{other}' resolved to the regioned row '{}' -- a different region of the same \
+                 language must not inherit it",
+                row.bcp47
+            );
+        }
+        assert!(
+            regioned > 0,
+            "no curated row carries a region, so the property above went untested"
+        );
     }
 
     #[test]

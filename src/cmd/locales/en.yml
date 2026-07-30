@@ -100,3 +100,7 @@ viz:
     # RULE above before moving `%{q_label}` or `%{q_gini}` in `lorenz`.
     contour: "%{q_x}: %{x:.3s}<br>%{q_y}: %{y:.3s}<br>%{z:,} rows<extra></extra>"
     lorenz: "%{q_label} (Gini %{q_gini})<br>bottom %{x:.0%} of records hold %{y:.0%}<extra></extra>"
+    ohlc: "Open: %{open}<br>High: %{high}<br>Low: %{low}<br>Close: %{close}<extra></extra>"
+    count_by_label: "%{hovertext}<br>count: %{y:,}<extra></extra>"
+    histogram: "%{q_col}: %{x:,.3f}<br>count: %{y:,}<extra></extra>"
+    polar_records: "%{theta}<br>records: %{r:,.0f}<extra></extra>"

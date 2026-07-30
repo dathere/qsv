@@ -8014,7 +8014,7 @@ fn build_candlestick(args: &Args, ohlc: bool) -> CliResult<(Box<dyn Trace>, Stri
     // `x unified` hover mode (build_layout) already renders x as the tooltip header.
     // `hover_template_fallback` is defensive: financial traces have known gaps resolving
     // the per-point %{open|high|low|close} variables.
-    let hover = "Open: %{open}<br>High: %{high}<br>Low: %{low}<br>Close: %{close}<extra></extra>";
+    let hover = t!("viz.hover.ohlc").into_owned();
     let trace: Box<dyn Trace> = if ohlc {
         Box::new(
             Ohlc::new(xs, open, high, low, close)
@@ -25014,7 +25014,7 @@ fn panel_trace(
                 .name(panel.name.clone())
                 .marker(marker)
                 .hover_text_array(hover_labels)
-                .hover_template("%{hovertext}<br>count: %{y:,}<extra></extra>")
+                .hover_template(t!("viz.hover.count_by_label").into_owned())
                 // value labels above each bar, SI-formatted ("258k", "1.05M") to match
                 // the axis ticks
                 .text_template("%{y:.3s}")
@@ -25034,10 +25034,11 @@ fn panel_trace(
             let values = hist.get(idx).cloned().unwrap_or_default();
             // the cell has no x-axis title (panel.name is only a cell annotation), so name the
             // binned value and its count in the hover, both comma-grouped.
-            let hover = format!(
-                "{}: %{{x:,.3f}}<br>count: %{{y:,}}<extra></extra>",
-                escape_hover(&panel.name)
-            );
+            // NOTE: `escape_hover` only, no `escape_template_pct` -- preserved from before this
+            // string was localized. A `%` in the panel name is mis-read by plotly here, unlike in
+            // the contour/Lorenz hovers which take the full composition. Pre-existing; changing it
+            // would be a behavior change, not a translation.
+            let hover = t!("viz.hover.histogram", q_col = escape_hover(&panel.name)).into_owned();
             let mut h = Histogram::new(values)
                 .name(panel.name.clone())
                 .marker(Marker::new().color(color))
@@ -26826,7 +26827,7 @@ fn smart_inline_panel_plot(
                 .mode(Mode::LinesMarkers)
                 .fill(Fill::ToSelf)
                 .name(panel.name.clone())
-                .hover_template("%{theta}<br>records: %{r:,.0f}<extra></extra>"),
+                .hover_template(t!("viz.hover.polar_records").into_owned()),
         );
         // A polar subplot draws its angular tick labels ("06h", "Mon", "Jan") OUTSIDE its plot
         // area — ~22px past the top and bottom edges — and this plotly version's `LayoutPolar`

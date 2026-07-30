@@ -81,3 +81,7 @@ viz:
     # RULE en en.yml); si se mueven detras, no se sustituyen.
     contour: "%{q_x}: %{x:.3s}<br>%{q_y}: %{y:.3s}<br>%{z:,} filas<extra></extra>"
     lorenz: "%{q_label} (Gini %{q_gini})<br>el %{x:.0%} inferior de los registros posee el %{y:.0%}<extra></extra>"
+    ohlc: "Apertura: %{open}<br>Máximo: %{high}<br>Mínimo: %{low}<br>Cierre: %{close}<extra></extra>"
+    count_by_label: "%{hovertext}<br>recuento: %{y:,}<extra></extra>"
+    histogram: "%{q_col}: %{x:,.3f}<br>recuento: %{y:,}<extra></extra>"
+    polar_records: "%{theta}<br>registros: %{r:,.0f}<extra></extra>"

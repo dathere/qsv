@@ -13,6 +13,15 @@ _version: 1
 # syntax for their own tokens (%{x}, %{y:,.0f}, %{customdata}); rust-i18n
 # leaves any token it was not given an argument for untouched, so the `q_`
 # prefix guarantees the two namespaces can never collide.
+#
+# ORDERING RULE for hover templates -- read this before translating one:
+# a plotly token with a literal `%` INSIDE its braces (`%{x:.0%}`) breaks
+# rust-i18n's scanner, and every `%{q_*}` placed AFTER such a token is left
+# unsubstituted, rendering as literal text in the tooltip with no error
+# anywhere. Keep every `%{q_*}` AHEAD of any `%{..%}` token. Reordering a
+# sentence during translation is the realistic way to break this, so it is
+# enforced by
+# viz_i18n::tests::no_catalog_value_strands_an_argument_behind_a_percent_formatted_token.
 # ---------------------------------------------------------------------------
 viz:
   chrome:
@@ -44,6 +53,40 @@ viz:
     cluster_click_to_zoom: " - click to zoom in"
     row_not_in_preview: "row not in preview"
     row_is_filtered_out: "row is filtered out"
+    # Legend / trace names for the map's geo overlay. Each is emitted from THREE
+    # places (the static map, the inline map and the animated-geo path), so a
+    # change here moves all three; they were found by grepping RENDERED Spanish
+    # output for English-looking text, not by grepping for known phrases.
+    extent_points: "extent points"
+    spatial_extent: "spatial extent"
+    full_extent: "full extent (incl. outliers)"
+    geographic_outliers: "geographic outliers"
+    # The reverse-geocoded caption BELOW a map panel, emitted twice (a plotly
+    # annotation in the typed grid, an HTML <div> in the inline path). Its
+    # `%{q_summary}` is built by `consolidate_geo` + `outlier_summary` from the
+    # keys below, so all of these are ONE rendered string and must stay together
+    # -- localizing only the prefix leaves "… — 9 outliers (Pennsylvania)".
+    #
+    # In the HTML path the COMPOSED caption is html-escaped, so a translator may
+    # safely use `&` here; do not pre-escape the slot value.
+    geo_extent_caption: "Spatial extent: %{q_summary}"
+    # Outlier call-out appended to the caption. `%{q_n}` arrives already
+    # thousands-separated. The noun is a one/many pair, matching
+    # `cluster_point_one` / `row_selected_one` above.
+    geo_outlier_one: "outlier"
+    geo_outlier_many: "outliers"
+    geo_outliers: "%{q_core} — %{q_n} %{q_noun}"
+    geo_outliers_where: "%{q_core} — %{q_n} %{q_noun} (%{q_where})"
+    # Jurisdiction roll-ups, used only when more than 3 are distinct (so all
+    # three are always plural). `%{q_suffix}` is a ", <country>" tail, already
+    # composed. `geo_n_areas` is the roll-up inside the outlier parenthetical --
+    # a THIRD one, in `outlier_jurisdictions` rather than `consolidate_geo`; it
+    # feeds `%{q_where}` above, so missing it left "— 9 atípicos (5 areas)".
+    # None of the three is reachable from any golden fixture; the unit tests
+    # below are their only coverage, and they must pin English.
+    geo_n_countries: "%{q_n} countries"
+    geo_n_regions: "%{q_n} regions%{q_suffix}"
+    geo_n_areas: "%{q_n} areas"
   photo:
     alt: "Photo for the hovered map point"
     close: "Close"
@@ -85,3 +128,267 @@ viz:
     viewer_failed: "qsv viz: data viewer failed:"
     advanced_filter: "Advanced Filter"
     advanced_filter_counted: "Advanced Filter (%d)"
+  cycle:
+    # POLAR AXIS TICK LABELS for the cyclic-seasonality panel. These are plotly
+    # `ticktext` values, NOT a `"text"`/`"name"` field, which is why four rounds
+    # of JSON-shape sweeps never saw them -- they were found by loading a Spanish
+    # dashboard in a browser and reading the chart.
+    #
+    # plotly's registered locale cannot supply these: we hand it an explicit
+    # `ticktext` array, so its own month/day names are never consulted.
+    #
+    # Keep them SHORT. They ring a polar chart and plotly does not wrap or elide
+    # them, so a long form collides with its neighbours. Abbreviate the way the
+    # target language abbreviates, and do not add a trailing period unless the
+    # language requires one.
+    #
+    # The hour-of-day labels ("00h".."23h") are generated numerically and need no
+    # keys.
+    day_mon: "Mon"
+    day_tue: "Tue"
+    day_wed: "Wed"
+    day_thu: "Thu"
+    day_fri: "Fri"
+    day_sat: "Sat"
+    day_sun: "Sun"
+    month_jan: "Jan"
+    month_feb: "Feb"
+    month_mar: "Mar"
+    month_apr: "Apr"
+    month_may: "May"
+    month_jun: "Jun"
+    month_jul: "Jul"
+    month_aug: "Aug"
+    month_sep: "Sep"
+    month_oct: "Oct"
+    month_nov: "Nov"
+    month_dec: "Dec"
+  menu:
+    # ON-GRAPH `updatemenus` BUTTON LABELS (group 5). Deferred through phase 2
+    # per roborev 3936 finding 1, then done deliberately at the maintainer's
+    # request.
+    #
+    # SAFE to translate: no Rust or JS ever locates one of these menus by its
+    # label text. The theme-flip handler in `theme_script` finds the basemap
+    # toggle by testing for a `map.style` key in the button's baked args
+    # (`typeof a[0]["map.style"] === "string"`), and every other menu is reached
+    # by iterating `gd.layout.updatemenus` structurally. Verified by grep: there
+    # is no `===`/`indexOf`/`includes` against any of these strings.
+    #
+    # KEEP THE LEADING GLYPH. `▶` (U+25B6), `⏸` (U+23F8) and `⇅` (U+21C5) are
+    # part of the control's visual identity, not words -- translate only the
+    # text after them, and do not add or drop the space.
+    play: "▶ Play"
+    pause: "⏸ Pause"
+    category_order: "⇅ category order"
+    node_order: "⇅ node order"
+    # Map controls. `extent_core` / `extent_full` are the two zoom buttons on an
+    # outlier map; the wording deliberately echoes `viz.map.full_extent`, the
+    # legend name for the same box.
+    extent_core: "Core extent"
+    extent_full: "Full extent"
+    cluster_toggle: "Clusters/Points"
+    basemap_labels: "Basemap labels"
+  chart:
+    # `null_bucket` and `other_bucket` are chart DATA labels, not chrome: they appear
+    # as axis category values. Translating them is deliberate (see the commit that
+    # added this section). `null_bucket` doubles as a grouping key in the hierarchy
+    # and parcats panels, so a category whose literal value equals this text merges
+    # into the null bucket -- true of "(NULL)" in English today, just with a
+    # different trigger string per locale.
+    log_axis_count: "count (log)"
+    log_axis_value: "log scale"
+    null_bucket: "(NULL)"
+    other_bucket: "Other (%{q_count})"
+    # The row-count unit, used in TWO places, both localized together:
+    #   * `count_unit_from_grain`'s fallback, feeding the `trend_count` title and
+    #     the `trend_axis_count` axis title, when no dictionary grain is available;
+    #   * the animated-bubble size label, when the dataset has no third numeric to
+    #     size by, where it names the bubble-size dimension in the per-point hover.
+    records: "records"
+    # The measure label when a panel counts rows rather than aggregating a
+    # column: a colorbar title, a histogram y-axis title, and the choropleth
+    # hover measure. NINE display sites share this one key.
+    #
+    # DO NOT wire this into `--agg` parsing (`"count" => Agg::Count`, viz.rs
+    # ~10969) or the agg-resolution match (~6441). Those compare against the
+    # USER'S flag value, which is CLI syntax and stays English in every locale --
+    # localizing them would break `--agg count` for everyone.
+    count: "count"
+    # Heatmap TRACE names (plotly `.name`), naming the coefficient a cell holds.
+    # The paired SYMBOL (`r`, `ρ`, `NMI`) is interpolated into the cell hover and
+    # stays literal in every locale; only these names are words.
+    trace_correlation: "correlation"
+    trace_rank_correlation: "rank correlation"
+    trace_association: "association"
+  title:
+    # PANEL TITLES. Every value here is a WHOLE rendered title (or a suffix that
+    # only ever attaches to one of them), never a fragment spliced into a
+    # sentence -- a title assembled from several `format!` calls must be
+    # localized as one unit, or a translation renders half in each language.
+    #
+    # `top_n` is shared deliberately: it is the overflow suffix for BOTH
+    # `measure_by_dim` and `distribution_by` and attaches to nothing else, so
+    # both of its bases are localized here alongside it.
+    #
+    # Panel titles are pure DISPLAY text and safe to translate: panel identity
+    # never rides on the name. The Data Dictionary anchor comes from the raw
+    # field name (`dict_anchor_id`), the stats rejoin uses `Panel::stat_idx`,
+    # and the dictionary's "View chart" link targets that anchor -- see the
+    # field docs on `Panel::dict_info` / `Panel::stat_idx`, which call out that
+    # `name` is decorated after construction ("foo (sampled)") and so cannot
+    # carry identity.
+    data_overview: "%{q_dataset} — data overview"
+    map: "Map"
+    distribution_by: "%{q_measure} distribution by %{q_dim}"
+    measure_by_dim: "%{q_measure} by %{q_dim} (%{q_agg}, explains %{q_pct}% of variance)"
+    top_n: " — top %{q_n}"
+    # The aggregate word inside `measure_by_dim`'s parenthetical. A closed set of
+    # two, and it sits in a slot of its own rather than mid-clause, so a bare
+    # noun translates cleanly. Used by BOTH `measure_by_dim` and the trend
+    # panel's `trend_agg` title + `trend_axis_agg` y-axis, so a change here
+    # moves four rendered strings.
+    agg_sum: "sum"
+    agg_mean: "mean"
+    # Suffixes decorating a title whose base is a column name.
+    sampled: "%{q_name} (sampled)"
+    dominated_by: "(dominated by %{q_value}, %{q_pct}%)"
+    # NUMERIC-PAIR DRILL-DOWN. `pair_r` / `pair_r_nonlinear` are SHARED by two
+    # different rendered titles and must always be localized together with both:
+    #   * the ANIMATED pair, which wraps the base in `pair_over_time`;
+    #   * the STATIC pair, which appends `pair_size` and then one `pair_log_*`.
+    # The contour branch of the static path uses the bare base with no suffix.
+    # `r` and the Greek rho are statistical symbols, not words -- leave them.
+    pair_r: "%{q_x} vs %{q_y} (r=%{q_r})"
+    pair_r_nonlinear: "%{q_x} vs %{q_y} (r=%{q_r}, ρ=%{q_rho} — nonlinear)"
+    pair_over_time: "%{q_pair} over time"
+    pair_size: "%{q_name} · size: %{q_col}"
+    # Three separate keys, NOT one composed from an axis letter: `x` and `y` are
+    # plotly axis identifiers, so they stay literal in every locale. These panels
+    # carry no axis titles, which is why the log cue names the axis here.
+    pair_log_x: "%{q_name} · log x"
+    pair_log_y: "%{q_name} · log y"
+    pair_log_xy: "%{q_name} · log x/y"
+    # The other two animated panels. Independent whole titles -- they share no key
+    # with the pair titles above, but a Spanish dashboard showing these in English
+    # beside a translated animated pair reads as a bug, so they travel together.
+    bubble_over_time: "%{q_y} vs %{q_x} by %{q_entity} over time"
+    locations_over_time: "locations over time"
+    # The contour branch's log-space retry (`log_contour_panel`) appends one of
+    # these to the SAME pair base, so they belong with `pair_r` -- leaving them
+    # English rendered "… (r=0.39, ρ=0.80 — no lineal) · log scale, positive
+    # values only (<1% of rows omitted)", half in each language.
+    # `q_share` arrives as "<1%" or "12%". Its `%` is safe: rust-i18n never
+    # re-scans an argument VALUE, only the template (see §6a property 3).
+    pair_log_scale: "%{q_name} · log scale"
+    pair_log_scale_positive: "%{q_name} · log scale, positive values only (%{q_share} of rows omitted)"
+    # TREND (time-series) PANELS. Three mutually exclusive titles -- raw values,
+    # an aggregate per period, or a record count per period -- each with its own
+    # y-axis title. `trend_agg` / `trend_axis_agg` are where `agg_sum` /
+    # `agg_mean` above are finally consumed.
+    #
+    # `q_unit` is EITHER the localized `viz.chart.records` fallback OR text parsed
+    # out of the dictionary's grain phrase. The latter is LLM output and is
+    # already in the target language under `--dictionary infer --language xx`, so
+    # it is passed through untranslated, like a column name.
+    trend_raw: "%{q_y} over %{q_date}"
+    trend_agg: "%{q_y} (%{q_agg}) over %{q_date}"
+    trend_count: "%{q_unit} over %{q_date}"
+    trend_axis_agg: "%{q_y} (%{q_agg}/%{q_bucket})"
+    trend_axis_count: "%{q_unit} per %{q_bucket}"
+    # Time-bucket nouns, used only inside the two trend axis titles above.
+    bucket_day: "day"
+    bucket_week: "week"
+    bucket_month: "month"
+    # CYCLIC (polar seasonality) PANEL. Its phase noun is a separate key set from
+    # `bucket_*`: these name a position WITHIN a cycle ("month of year"), not a
+    # bucket width, and languages need not spell the two the same way.
+    # Deliberately NOT unified with `trend_count`'s grain-derived unit -- this
+    # title has always said "Records" regardless of grain, and English
+    # byte-identity forbids changing that here.
+    # CORRELATION HEATMAP (`PanelKind::CorrHeatmap`) + the 3D drill-down. Three
+    # standalone whole titles: nothing decorates them (the only generic
+    # name-decorating pass is gated on `PanelKind::FreqBar`), and they share no
+    # key with anything above.
+    # `ρ` / `r` are statistical symbols and `(3D)` is a convention -- all literal.
+    # NOTE: the `--bivariate` ASSOCIATION heatmap is a DIFFERENT panel with its
+    # own title -- see `assoc_heatmap` / `top_relationships` below.
+    corr_spearman: "Correlation (Spearman ρ — rank, robust to outliers)"
+    corr_pearson: "Correlation (Pearson r)"
+    scatter3d: "%{q_x} / %{q_y} / %{q_z} (3D)"
+    # `--bivariate` panels. NMI = normalized mutual information, an acronym that
+    # stays literal.
+    assoc_heatmap: "Association (NMI)"
+    top_relationships: "Top Relationships (NMI)"
+    # Choropleth panel titles. `us_states` / `countries` are the two branches of
+    # the reverse-geocoded region choropleth (all-USA vs mixed); `count_by_region`
+    # titles the `--geojson` point-in-polygon panel.
+    us_states: "US states"
+    countries: "Countries"
+    count_by_region: "count by %{q_region}"
+    # The `--geojson` point-in-polygon panel (`build_smart_pip_choropleth_panel`).
+    # Its title states the snap/drop accounting beside the map: e.g.
+    # "Regions (110 snapped ≤0.36 km; 10 of 7,464 dropped, >0.36 km)", with the
+    # parts joined by "; ".
+    #
+    # `≤` / `>` are math symbols and `km` is SI -- all literal. So is `--no-snap`,
+    # which appears as the `q_why` value: it is a FLAG NAME the user typed, not a
+    # word, and translating it would print a flag that does not exist.
+    regions: "Regions"
+    regions_with: "Regions (%{q_parts})"
+    snap_snapped: "%{q_n} snapped ≤%{q_km} km"
+    snap_dropped: "%{q_n} of %{q_total} dropped, %{q_why}"
+    snap_why_over: ">%{q_km} km"
+    # Parcats (category-flow) panel. `%{q_dims}` is the dimension names already
+    # joined with " · ".
+    category_flow: "Category flow: %{q_dims}"
+    # KPI ROW TILES. Whole strings rather than a "Mean"/"Total" prefix plus a
+    # slot, so a translation can put the qualifier where its grammar wants
+    # ("Media de X"). Which one is used is decided by the extensive/intensive
+    # verdict, never by the locale.
+    kpi_mean: "Mean %{q_label}"
+    kpi_total: "Total %{q_label}"
+    cyclic_records_by: "Records by %{q_axis} (%{q_date})"
+    cyclic_hour_of_day: "hour of day"
+    cyclic_day_of_week: "day of week"
+    cyclic_month: "month"
+  notes:
+    # Box/histogram title hints. These are a COMMA-SEPARATED LIST of noun phrases,
+    # not a sentence, so each translates independently. At most two ever appear.
+    box_null: "%{q_pct}% null"
+    box_zeros: "%{q_pct}% zeros"
+    box_right_skewed: "right-skewed"
+    box_left_skewed: "left-skewed"
+    box_outliers: "%{q_pct}% outliers"
+    box_heavy_tails: "heavy tails"
+    box_mean_impact: "mean %{q_pct}% from outliers"
+    box_gini: "Gini %{q_gini}"
+    # Lorenz caveat. `lorenz_zeros` takes the unit clause as %{q_unit} rather than
+    # repeating it, so a translation can put it wherever its grammar wants.
+    lorenz_unit: "concentration is expected unless rows are comparable units"
+    lorenz_zeros: "flat run = %{q_pct}% zeros, not small values · %{q_unit}"
+    # Funnel caveat clauses, joined with " · ". Each is a whole clause: the
+    # stage names are slots, so word order is the translator's to choose.
+    funnel_complete: "n = %{q_n} complete cases (%{q_pct}% of rows)"
+    funnel_violation: "%{q_here} exceeds %{q_prev} in %{q_pct}% of rows"
+    funnel_bridge: "stages do not nest — bridged, not funnelled"
+    funnel_inverted: "%{q_here} total exceeds %{q_prev} — overruns, not leakage"
+  hover:
+    # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` are PLOTLY tokens -- leave them exactly
+    # as they are. Only the surrounding words get translated. See the ORDERING
+    # RULE above before moving `%{q_label}` or `%{q_gini}` in `lorenz`.
+    contour: "%{q_x}: %{x:.3s}<br>%{q_y}: %{y:.3s}<br>%{z:,} rows<extra></extra>"
+    lorenz: "%{q_label} (Gini %{q_gini})<br>bottom %{x:.0%} of records hold %{y:.0%}<extra></extra>"
+    ohlc: "Open: %{open}<br>High: %{high}<br>Low: %{low}<br>Close: %{close}<extra></extra>"
+    count_by_label: "%{hovertext}<br>count: %{y:,}<extra></extra>"
+    histogram: "%{q_col}: %{x:,.3f}<br>count: %{y:,}<extra></extra>"
+    polar_records: "%{theta}<br>records: %{r:,.0f}<extra></extra>"
+    # Choropleth per-region hover lines, appended under "<label>: <value>". These
+    # are built in Rust (not a plotly template), so the `%` in `pct_of_total` is a
+    # LITERAL percent sign directly after a slot -- which is safe, and is the one
+    # shape the ORDERING RULE above explicitly permits.
+    pct_of_total: "%{q_pct}% of total"
+    rank_of: "rank %{q_rank} of %{q_total}"
+    # Appended to a PIP region's hover when some of its points were snapped in
+    # from outside the polygon. The "<br>" separator stays in the code.
+    snap_includes: "includes %{q_n} snapped from outside"

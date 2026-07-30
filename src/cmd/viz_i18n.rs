@@ -291,6 +291,235 @@ mod tests {
         }
     }
 
+    /// Byte offsets of the `{` in every `%{...}` token that `rust_i18n::replace_patterns` would
+    /// actually offer for substitution. This deliberately REPLICATES that function's scanner rather
+    /// than approximating it: the whole point is to model the quirk, not a tidied-up version of it.
+    /// The scanner resets to "seeking `{`" on every `%`, including one INSIDE a token's braces.
+    fn substitutable_open_braces(value: &str) -> Vec<usize> {
+        let mut positions: Vec<usize> = Vec::new();
+        let mut stage = 0u8;
+        for (i, &b) in value.as_bytes().iter().enumerate() {
+            match (stage, b) {
+                (1, b'{') => {
+                    stage = 2;
+                    positions.push(i);
+                },
+                (2, b'}') => {
+                    stage = 0;
+                    positions.push(i);
+                },
+                (_, b'%') => stage = 1,
+                _ => {},
+            }
+        }
+        positions.chunks_exact(2).map(|pair| pair[0]).collect()
+    }
+
+    /// The `%{q_*}` argument tokens in `value` that `replace_patterns` would silently skip. Matched
+    /// by POSITION, not by name, so a key appearing twice -- once reachable, once stranded -- still
+    /// reports the stranded one.
+    fn unsubstitutable_arg_tokens(value: &str) -> Vec<&str> {
+        let reachable = substitutable_open_braces(value);
+        let mut missed = Vec::new();
+        let mut cursor = 0usize;
+        while let Some(rel) = value[cursor..].find("%{q_") {
+            let open = cursor + rel + 1; // index of the `{`
+            let Some(close_rel) = value[open..].find('}') else {
+                break;
+            };
+            let close = open + close_rel;
+            if !reachable.contains(&open) {
+                missed.push(&value[open + 1..close]);
+            }
+            cursor = close + 1;
+        }
+        missed
+    }
+
+    /// Whether `value` is a double-quoted YAML scalar whose closing quote lands on the same line (a
+    /// trailing comment after it is fine). Backslash escapes are honored, so a `\"` inside the
+    /// string is not mistaken for the terminator.
+    fn is_single_line_double_quoted(value: &str) -> bool {
+        let mut chars = value.chars();
+        if chars.next() != Some('"') {
+            return false;
+        }
+        let mut escaped = false;
+        for c in chars {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Whether `value` contains a numeric escape (`\xNN`, `\uNNNN`, `\UNNNNNNNN`) decoding to one
+    /// of the three characters the hazard sweep reasons about structurally: `%`, `{` or `}`.
+    ///
+    /// Such an escape would make the raw text and the runtime text disagree about where the tokens
+    /// are, which is precisely the assumption `unsubstitutable_arg_tokens` rests on.
+    fn has_structural_escape(value: &str) -> bool {
+        let bytes = value.as_bytes();
+        let mut i = 0usize;
+        while i + 1 < bytes.len() {
+            if bytes[i] != b'\\' {
+                i += 1;
+                continue;
+            }
+            let digits = match bytes[i + 1] {
+                b'x' => 2usize,
+                b'u' => 4,
+                b'U' => 8,
+                // any other escape (`\\`, `\"`, `\n`, ...) consumes exactly its own character
+                _ => {
+                    i += 2;
+                    continue;
+                },
+            };
+            let start = i + 2;
+            let end = start + digits;
+            if end <= bytes.len()
+                && let Ok(hex) = std::str::from_utf8(&bytes[start..end])
+                && let Ok(cp) = u32::from_str_radix(hex, 16)
+                && matches!(cp, 0x25 | 0x7B | 0x7D)
+            {
+                return true;
+            }
+            i = end.min(bytes.len());
+        }
+        false
+    }
+
+    /// Guards the one localization failure that is invisible to every other check.
+    ///
+    /// A plotly token carrying a literal `%` inside its braces (`%{x:.0%}`, the Lorenz axis format)
+    /// swallows its own closing brace in rust-i18n's scanner and mis-pairs with the next `{`. Any
+    /// `%{q_*}` argument AFTER such a token is then left unsubstituted -- and rust-i18n reports
+    /// nothing, so the raw key ships straight into a user's tooltip.
+    ///
+    /// Key-set parity between locales cannot see this (both locales can be wrong in the same
+    /// place), and the English golden fixtures cannot see it either, because the constraint is
+    /// about token ORDER within a sentence and every language orders its sentences differently. A
+    /// translator moving the measure name to the end of a Lorenz tooltip -- which is exactly what
+    /// Spanish word order wants -- reintroduces it with no signal at all.
+    ///
+    /// Reads the YAML from disk rather than the compiled catalog on purpose: editing only a locale
+    /// file may not trigger a rebuild, so a compiled-catalog check could pass against stale bytes.
+    #[test]
+    fn no_catalog_value_strands_an_argument_behind_a_percent_formatted_token() {
+        // the detector must actually detect -- a no-op implementation would sail through the
+        // catalog sweep below and look exactly like a clean bill of health
+        assert_eq!(
+            unsubstitutable_arg_tokens("bottom %{x:.0%} of %{q_label}"),
+            vec!["q_label"],
+            "detector must flag an argument stranded behind a percent-formatted plotly token"
+        );
+        assert!(
+            unsubstitutable_arg_tokens("%{q_label}: bottom %{x:.0%}").is_empty(),
+            "an argument ahead of the percent-formatted token is fine -- ordering is the fix"
+        );
+        assert!(
+            unsubstitutable_arg_tokens("%{q_col}: %{x:.3s}<br>%{z:,} rows").is_empty(),
+            "ordinary plotly tokens must not be mistaken for the hazard"
+        );
+
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cmd/locales");
+        let mut checked = 0usize;
+        let mut files = 0usize;
+        for entry in std::fs::read_dir(&dir).expect("src/cmd/locales must be readable") {
+            let path = entry.expect("readable dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("yml") {
+                continue;
+            }
+            files += 1;
+            let locale = path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let text = std::fs::read_to_string(&path).expect("readable locale file");
+            for (idx, line) in text.lines().enumerate() {
+                let trimmed = line.trim_start();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                let Some((key, rest)) = trimmed.split_once(':') else {
+                    continue;
+                };
+                let value = rest.trim();
+                // a nesting parent (`viz:`) has no scalar on this line at all
+                if value.is_empty() {
+                    continue;
+                }
+                // The one non-message scalar in these files -- exempted by POSITION as well as by
+                // name. A nested key that happened to be called `_version` would be a real message
+                // and still needs checking, so the exemption is anchored to column 0.
+                if key == "_version" && line.len() == trimmed.len() {
+                    continue;
+                }
+                // Every message value must be a double-quoted scalar that closes on its own line,
+                // and that is ENFORCED here rather than assumed.
+                //
+                // This sweep reads one line at a time, and several YAML scalar styles may legally
+                // continue onto the NEXT line: block (`|`, `>`), single-quoted, and even plain. A
+                // continuation line carries no `key:`, so it is skipped -- and a `%{q_*}` sitting
+                // on it would slip past the hazard check while the `checked` floor below still
+                // read as healthy. Recognizing those styles line-wise is not possible without a
+                // real YAML parser, and yaml_serde is gated on the `profile` feature, not `viz`.
+                //
+                // So the sweep demands the one style it can fully see. Both catalogs already use
+                // it for every value, so this costs nothing today while making the coverage claim
+                // total rather than partial.
+                assert!(
+                    is_single_line_double_quoted(value),
+                    "{locale}.yml:{} key '{key}' is not a double-quoted scalar closed on its own \
+                     line. Message catalogs must use that one style: every other YAML scalar \
+                     style can continue onto a following line, where this line-wise hazard sweep \
+                     cannot see it. Rewrite as: {key}: \"...\"\n  got: {value}",
+                    idx + 1
+                );
+                // The detector reads the RAW line, which is only sound while what a translator
+                // types is what rust-i18n ends up seeing. A double-quoted YAML scalar can spell any
+                // character numerically -- `%` IS `%` -- so `%{q_label}` would reach the
+                // runtime as a live token while reading as inert text here. These catalogs already
+                // use `—` and `\U0001F313`, so the mechanism is in active use, not theoretical.
+                // Decoding YAML would need a parser this feature does not have, so escapes that can
+                // spell the three structural characters are refused instead: nothing in a message
+                // needs to write `%`, `{` or `}` the long way.
+                assert!(
+                    !has_structural_escape(value),
+                    "{locale}.yml:{} key '{key}' encodes `%`, `{{` or `}}` as a numeric escape. \
+                     Write those characters literally -- escaped, they read as inert text to the \
+                     hazard sweep while rust-i18n sees a real token.\n  got: {value}",
+                    idx + 1
+                );
+                checked += 1;
+                let missed = unsubstitutable_arg_tokens(value);
+                assert!(
+                    missed.is_empty(),
+                    "{locale}.yml:{} key '{key}' strands argument(s) {missed:?} behind a \
+                     percent-formatted plotly token -- they will render as literal text. Move \
+                     every %{{q_*}} ahead of any %{{..%}} token in this value:\n  {value}",
+                    idx + 1
+                );
+            }
+        }
+        // a silently-empty sweep is the failure mode this floor exists to catch
+        assert!(
+            files >= 2,
+            "expected at least en.yml and es.yml, saw {files}"
+        );
+        assert!(
+            checked >= 100,
+            "only {checked} catalog values were inspected -- the line extractor has probably \
+             stopped matching the YAML shape"
+        );
+    }
+
     #[test]
     fn english_name_round_trips_through_parse_lang() {
         // viz forwards `english_name` to describegpt's --language. Requiring it to also be

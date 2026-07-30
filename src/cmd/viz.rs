@@ -1393,10 +1393,17 @@ const DEFAULT_LEFT_MARGIN_PX: usize = 60;
 /// `--log-scale`). It's the visual cue that the axis is log, not linear; linear panels stay
 /// title-less to keep the cells compact. The rotated title needs a little extra left margin
 /// (`LOG_AXIS_TITLE_MARGIN_PX`) so it isn't clipped against the page edge.
-const LOG_AXIS_TITLE: &str = "count (log)";
+///
+/// A function rather than a `const` because the text is localized and the catalog resolves at
+/// runtime.
+fn log_axis_title() -> String {
+    t!("viz.chart.log_axis_count").into_owned()
+}
 /// The log-cue y-axis title for a VALUE axis (a log box panel), where "count (log)" would be
 /// wrong — the axis carries the column's values, not frequencies.
-const VALUE_LOG_AXIS_TITLE: &str = "log scale";
+fn value_log_axis_title() -> String {
+    t!("viz.chart.log_axis_value").into_owned()
+}
 const LOG_AXIS_TITLE_MARGIN_PX: usize = 20;
 
 /// `viz smart` correlation-heatmap panel tuning. Long numeric-column names would clip against
@@ -1472,8 +1479,29 @@ const BAR_LABEL_MAX_CHARS: usize = 20;
 /// frequency`'s defaults: the `(NULL)` bar collects empty cells and `Other (N)` collects the
 /// categories beyond `--limit` (N = the count of those distinct categories). Suppressed by
 /// `--no-nulls` / `--no-other` respectively.
-const NULL_TEXT: &str = "(NULL)";
-const OTHER_TEXT: &str = "Other";
+///
+/// Functions rather than `const`s because both are localized. For the frequency bars these are
+/// purely DISPLAY text: `FreqBar::x_key` carries axis identity (via `AGG_KEY_SENTINEL`, extended
+/// until provably unique) and `FreqBar::kind` carries the aggregate/category distinction, so
+/// translating cannot change how bars collide or how they are colored.
+///
+/// `null_text` is ALSO used as a real grouping key in the hierarchy and parcats paths, where it
+/// gets no sentinel. There, a category whose literal value equals the translated text merges into
+/// the null bucket -- exactly as a category literally named "(NULL)" does in English today. The
+/// trigger string changes with the locale; the behavior does not.
+fn null_text() -> String {
+    t!("viz.chart.null_bucket").into_owned()
+}
+
+/// The `Other (N)` bucket label. The count is part of the localized string rather than appended
+/// to it, so a translation can put it wherever its grammar wants.
+fn other_text(distinct: u64) -> String {
+    t!(
+        "viz.chart.other_bucket",
+        q_count = HumanCount(distinct).to_string()
+    )
+    .into_owned()
+}
 
 /// Muted grey for the aggregate `(NULL)` / `Other (N)` frequency bars so they read as summary
 /// buckets, visually distinct from the palette-colored real categories.
@@ -2076,7 +2104,7 @@ fn build_plot(
         Chart::Histogram => {
             let (trace, x_label) = build_histogram(args)?;
             plot.add_trace(trace);
-            (Some(x_label), Some("count".to_string()))
+            (Some(x_label), Some(t!("viz.chart.count").into_owned()))
         },
         Chart::Box => {
             let (trace, y_label, x_label) = build_box(args)?;
@@ -2845,7 +2873,7 @@ fn slider_control(col_label: &str, frame_values: &[String], speed_ms: u64) -> Cl
 /// A top-left Play/Pause button row that runs / halts the frame animation.
 fn play_pause_menu(speed_ms: u64) -> CliResult<UpdateMenu> {
     let play = ButtonBuilder::new()
-        .label("▶ Play")
+        .label(&t!("viz.menu.play"))
         .animation(Animation::all_frames().options(slider_anim_options(speed_ms).fromcurrent(true)))
         .build();
     let play = match play {
@@ -2853,7 +2881,7 @@ fn play_pause_menu(speed_ms: u64) -> CliResult<UpdateMenu> {
         Err(e) => return fail_clierror!("failed to build play button: {e}"),
     };
     let pause = ButtonBuilder::new()
-        .label("⏸ Pause")
+        .label(&t!("viz.menu.pause"))
         .animation(Animation::pause())
         .build();
     let pause = match pause {
@@ -4751,9 +4779,15 @@ fn choropleth_hover_text(
             }
             lines.push(format!("{label}: {}", fmt_measure(z[i])));
             if include_pct && total > 0.0 {
-                lines.push(format!("{:.1}% of total", z[i] / total * 100.0));
+                lines.push(
+                    t!(
+                        "viz.hover.pct_of_total",
+                        q_pct = format!("{:.1}", z[i] / total * 100.0)
+                    )
+                    .into_owned(),
+                );
             }
-            lines.push(format!("rank {} of {n}", rank[i]));
+            lines.push(t!("viz.hover.rank_of", q_rank = rank[i], q_total = n).into_owned());
             lines.join("<br>")
         })
         .collect()
@@ -5886,7 +5920,7 @@ fn choropleth_literal_locations(
     };
     let measure_label = match value_idx {
         Some(i) => col_label(&headers, i, nh),
-        None => "count".to_string(),
+        None => t!("viz.chart.count").into_owned(),
     };
 
     let mut raw_locs: Vec<String> = Vec::new();
@@ -5959,7 +5993,7 @@ fn choropleth_pip_locations(
     };
     let measure_label = match value_idx {
         Some(i) => col_label(&headers, i, nh),
-        None => "count".to_string(),
+        None => t!("viz.chart.count").into_owned(),
     };
 
     let feature_id_key = args.flag_feature_id_key.as_deref().unwrap_or("id");
@@ -6069,7 +6103,7 @@ fn choropleth_pip_locations(
         if let Some(&c) = snapped_by_id.get(loc)
             && c > 0
         {
-            h.push_str(&format!("<br>includes {c} snapped from outside"));
+            h.push_str(&format!("<br>{}", t!("viz.hover.snap_includes", q_n = c)));
         }
     }
 
@@ -6134,7 +6168,7 @@ fn choropleth_geocoded_locations(
     };
     let measure_label = match value_idx {
         Some(i) => col_label(&headers, i, nh),
-        None => "count".to_string(),
+        None => t!("viz.chart.count").into_owned(),
     };
 
     // Collect the per-row geocode query + aligned measure, skipping rows missing inputs.
@@ -6665,7 +6699,7 @@ fn parcats_order_toggle_menu(ordered: &[Vec<String>]) -> UpdateMenu {
     let alpha_args = serde_json::json!([serde_json::Value::Object(alpha), [0]]);
     let array_args = serde_json::json!([serde_json::Value::Object(array_state), [0]]);
     let toggle = Button::new()
-        .label("⇅ category order")
+        .label(&t!("viz.menu.category_order"))
         .method(ButtonMethod::Restyle)
         .args(alpha_args)
         .args2(array_args);
@@ -6799,7 +6833,11 @@ fn parcats_panel(
     let counts: Vec<f64> = paths.iter().map(|(_, c)| *c).collect();
     let tuples: Vec<Vec<String>> = paths.into_iter().map(|(t, _)| t).collect();
     let dim_labels: Vec<String> = dims.into_iter().map(|(.., name)| name).collect();
-    let title = format!("Category flow: {}", dim_labels.join(" \u{b7} "));
+    let title = t!(
+        "viz.title.category_flow",
+        q_dims = dim_labels.join(" \u{b7} ")
+    )
+    .into_owned();
     let panel = Panel::new(
         title,
         PanelKind::Parcats {
@@ -7335,9 +7373,9 @@ fn corr_heatmap_trace(
     spearman: bool,
 ) -> Box<dyn Trace> {
     let (symbol, name) = if spearman {
-        ("\u{3c1}", "rank correlation")
+        ("\u{3c1}", t!("viz.chart.trace_rank_correlation"))
     } else {
-        ("r", "correlation")
+        ("r", t!("viz.chart.trace_correlation"))
     };
     heatmap_trace_with_range(
         labels,
@@ -7349,7 +7387,7 @@ fn corr_heatmap_trace(
         Some(0.0),
         ColorScalePalette::RdBu,
         symbol,
-        name,
+        &name,
         None,
     )
 }
@@ -7374,7 +7412,7 @@ fn assoc_heatmap_trace(
         None,
         ColorScalePalette::Viridis,
         "NMI",
-        "association",
+        &t!("viz.chart.trace_association"),
         Some(hover_suffix),
     )
 }
@@ -7891,7 +7929,7 @@ fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str, labels: (&str, &str)) -
     // disclosed, so a handful of zeros in thousands of rows reads as `<1% of rows omitted`, never
     // the bare "log scale" cue reserved for a genuinely all-positive pair.
     let title = if dropped <= 0.0 {
-        format!("{name} \u{b7} log scale")
+        t!("viz.title.pair_log_scale", q_name = name).into_owned()
     } else {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let dropped_pct = (dropped * 100.0).round() as u32;
@@ -7900,7 +7938,12 @@ fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str, labels: (&str, &str)) -
         } else {
             format!("{dropped_pct}%")
         };
-        format!("{name} \u{b7} log scale, positive values only ({share} of rows omitted)")
+        t!(
+            "viz.title.pair_log_scale_positive",
+            q_name = name,
+            q_share = share
+        )
+        .into_owned()
     };
     Some(
         Panel::new(
@@ -7917,41 +7960,22 @@ fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str, labels: (&str, &str)) -
     )
 }
 
-/// Hover text for one cell of a 2D density contour: the two measures at the cell's bin center,
-/// plus how many rows landed in it.
-///
-/// Plotly's default contour hover is a bare `x`/`y`/`z` triple labeled with an auto-generated
-/// "trace N" — which names neither measure nor says what `z` counts, so the reader is left to
-/// guess that the third number is a row count rather than a third variable. `<extra></extra>`
-/// drops that "trace N" box entirely.
-///
-/// The bin centers are RAW values (`bin_2d` un-logs geometric centers before returning them), so
-/// `.3s` SI formatting reads in the data's own units on both linear and log axes. Shared by
-/// `viz contour` and `viz smart`'s density panel so the two hovers can never drift apart.
-///
-/// The labels are raw column headers interpolated into a template that itself parses `%{...}`, so
-/// they take the full `escape_template_pct(escape_hover(..))` composition — a header like
-/// `"% of total"` must reach the tooltip as text, not as a half-parsed template token.
 fn contour_hover_template(x_label: &str, y_label: &str) -> String {
-    format!(
-        "{}: %{{x:.3s}}<br>{}: %{{y:.3s}}<br>%{{z:,}} rows<extra></extra>",
-        escape_template_pct(&escape_hover(x_label)),
-        escape_template_pct(&escape_hover(y_label))
+    t!(
+        "viz.hover.contour",
+        q_x = escape_template_pct(&escape_hover(x_label)),
+        q_y = escape_template_pct(&escape_hover(y_label))
     )
+    .into_owned()
 }
 
-/// Hover text for a point on a Lorenz curve: the measure, its CACHED Gini, and the concentration
-/// stated in plain terms — the bottom X% of records hold Y% of the total.
-///
-/// Kept beside `contour_hover_template` because the two share the hazard that motivates both: a
-/// raw column label interpolated into a string plotly parses for `%{...}` tokens, so each label
-/// needs the full `escape_template_pct(escape_hover(..))` composition. Extracting this out of the
-/// render match arm is also what makes the escaping unit-testable without building a dashboard.
 fn lorenz_hover_template(label: &str, gini: f64) -> String {
-    format!(
-        "{} (Gini {gini:.2})<br>bottom %{{x:.0%}} of records hold %{{y:.0%}}<extra></extra>",
-        escape_template_pct(&escape_hover(label))
+    t!(
+        "viz.hover.lorenz",
+        q_label = escape_template_pct(&escape_hover(label)),
+        q_gini = format!("{gini:.2}")
     )
+    .into_owned()
 }
 
 /// Build a `Contour` trace: the 2D density of two numeric columns (--x and --y), binned into a
@@ -8033,7 +8057,7 @@ fn build_candlestick(args: &Args, ohlc: bool) -> CliResult<(Box<dyn Trace>, Stri
     // `x unified` hover mode (build_layout) already renders x as the tooltip header.
     // `hover_template_fallback` is defensive: financial traces have known gaps resolving
     // the per-point %{open|high|low|close} variables.
-    let hover = "Open: %{open}<br>High: %{high}<br>Low: %{low}<br>Close: %{close}<extra></extra>";
+    let hover = t!("viz.hover.ohlc").into_owned();
     let trace: Box<dyn Trace> = if ohlc {
         Box::new(
             Ohlc::new(xs, open, high, low, close)
@@ -11479,7 +11503,7 @@ fn measure_by_dim_panel(
             let raw = cell_to_string(record.get(d_idx));
             let trimmed = raw.trim();
             row_keys.push(if trimmed.is_empty() {
-                NULL_TEXT.to_string()
+                null_text()
             } else {
                 trimmed.to_string()
             });
@@ -11580,7 +11604,11 @@ fn measure_by_dim_panel(
         },
         None => Agg::Mean,
     };
-    let agg_word = if agg == Agg::Sum { "sum" } else { "mean" };
+    let agg_word = if agg == Agg::Sum {
+        t!("viz.title.agg_sum")
+    } else {
+        t!("viz.title.agg_mean")
+    };
 
     // aggregate each category, then sort by value descending and cap to the top-N
     let gmap = &groups[mi * n_d + di];
@@ -11604,14 +11632,16 @@ fn measure_by_dim_panel(
     // (issue #4220). A bare "η²=0.17" reads as a headline effect size to anyone who doesn't hold
     // Cohen's conventions in their head; "explains 17% of variance" says the same thing and lets
     // the reader weigh the ranking for themselves.
-    let mut title = format!(
-        "{} by {} ({agg_word}, explains {:.0}% of variance)",
-        label(measures[mi]),
-        label(dims[di]),
-        eta2 * 100.0
-    );
+    let mut title = t!(
+        "viz.title.measure_by_dim",
+        q_measure = label(measures[mi]),
+        q_dim = label(dims[di]),
+        q_agg = agg_word,
+        q_pct = format!("{:.0}", eta2 * 100.0)
+    )
+    .into_owned();
     if truncated {
-        title.push_str(&format!(" \u{2014} top {}", rows.len()));
+        title.push_str(&t!("viz.title.top_n", q_n = rows.len()));
     }
 
     let (labels, values): (Vec<String>, Vec<f64>) = rows.into_iter().unzip();
@@ -11676,7 +11706,7 @@ fn grouped_violin_panel(
         };
         let raw = cell_to_string(record.get(d_idx));
         let key = if raw.trim().is_empty() {
-            NULL_TEXT.to_string()
+            null_text()
         } else {
             raw.trim().to_string()
         };
@@ -11754,9 +11784,14 @@ fn grouped_violin_panel(
             stats[idx].field.clone()
         }
     };
-    let mut title = format!("{} distribution by {}", label(m_idx), label(d_idx));
+    let mut title = t!(
+        "viz.title.distribution_by",
+        q_measure = label(m_idx),
+        q_dim = label(d_idx)
+    )
+    .into_owned();
     if total_cats > kept_cats {
-        title.push_str(&format!(" \u{2014} top {kept_cats}"));
+        title.push_str(&t!("viz.title.top_n", q_n = kept_cats));
     }
 
     Ok(Some(Panel::new(
@@ -12481,7 +12516,7 @@ fn bivariate_panels(
         }
         let labels: Vec<String> = idxs.iter().map(|&idx| label_of(idx)).collect();
         Some(Panel::new(
-            "Association (NMI)".to_string(),
+            t!("viz.title.assoc_heatmap").into_owned(),
             PanelKind::AssocHeatmap {
                 labels,
                 matrix: mask_to_lower_triangle(matrix),
@@ -12538,7 +12573,7 @@ fn bivariate_panels(
                 })
                 .collect();
             Some(Panel::new(
-                "Top Relationships (NMI)".to_string(),
+                t!("viz.title.top_relationships").into_owned(),
                 PanelKind::TopRelationships {
                     labels,
                     values,
@@ -17333,38 +17368,42 @@ fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
     const MAD_STDDEV_HEAVY_TAILS_MAX: f64 = 0.4;
     const MAX_PARTS: usize = 2;
 
+    // The parts form a comma-separated LIST of noun phrases, not a sentence, so each is its own
+    // catalog string and the ", " joiner stays literal.
     let mut parts: Vec<String> = Vec::new();
     if let Some(sp) = s.sparsity
         && (NULL_SHARE_MIN..=1.0).contains(&sp)
     {
-        parts.push(format!("{:.0}% null", sp * 100.0));
+        parts.push(t!("viz.notes.box_null", q_pct = format!("{:.0}", sp * 100.0)).into_owned());
     }
     if let Some(z) = zero_share(s)
         && z >= ZERO_SHARE_MIN
     {
-        parts.push(format!("{:.0}% zeros", z * 100.0));
+        parts.push(t!("viz.notes.box_zeros", q_pct = format!("{:.0}", z * 100.0)).into_owned());
     }
     if let Some(skew) = pearson_skewness_stat(s)
         && skew.abs() >= SKEW_MIN_ABS
     {
         parts.push(
             if skew > 0.0 {
-                "right-skewed"
+                t!("viz.notes.box_right_skewed")
             } else {
-                "left-skewed"
+                t!("viz.notes.box_left_skewed")
             }
-            .to_string(),
+            .into_owned(),
         );
     }
     match s.outliers_percentage {
-        Some(pct) if pct >= OUTLIER_MIN_PCT => parts.push(format!("{pct:.1}% outliers")),
+        Some(pct) if pct >= OUTLIER_MIN_PCT => {
+            parts.push(t!("viz.notes.box_outliers", q_pct = format!("{pct:.1}")).into_owned());
+        },
         Some(_) => {},
         None => {
             if let Some(r) = s.mad_stddev_ratio
                 && r > 0.0
                 && r <= MAD_STDDEV_HEAVY_TAILS_MAX
             {
-                parts.push("heavy tails".to_string());
+                parts.push(t!("viz.notes.box_heavy_tails").into_owned());
             }
         },
     }
@@ -17372,12 +17411,18 @@ fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
         && r.is_finite()
         && r.abs() >= MEAN_IMPACT_MIN_ABS
     {
-        parts.push(format!("mean {:+.0}% from outliers", r * 100.0));
+        parts.push(
+            t!(
+                "viz.notes.box_mean_impact",
+                q_pct = format!("{:+.0}", r * 100.0)
+            )
+            .into_owned(),
+        );
     }
     if let Some(g) = s.gini_coefficient
         && g >= GINI_MIN
     {
-        parts.push(format!("Gini {g:.2}"));
+        parts.push(t!("viz.notes.box_gini", q_gini = format!("{g:.2}")).into_owned());
     }
     parts.truncate(MAX_PARTS);
     if parts.is_empty() {
@@ -17434,38 +17479,20 @@ fn is_inequality_candidate(sem: &ColSemantics, s: &crate::cmd::stats::StatsData)
     additive && s.gini_coefficient.is_some_and(|g| g >= LORENZ_GINI_MIN)
 }
 
-/// The caveat line shown beneath a Lorenz panel's title (issue #4222), guarding against the
-/// dominant misread of the inequality vocabulary.
-///
-/// Two independent hazards, both of which the curve's geometry alone cannot disclose:
-///
-/// 1. **Unit heterogeneity (always shown).** A Gini over rows that are not comparable units is
-///    close to tautological — a subway extension SHOULD cost a thousand times a playground
-///    resurfacing — yet "Gini 0.96" reads to a general audience as unfairness. There is no row-unit
-///    signal anywhere in the stats cache: whether a row is a person, a household, a geography or a
-///    heterogeneous capital project is semantics, not a statistic. Rather than invent a
-///    name-heuristic proxy — which would either delete a legitimate equity finding or silently keep
-///    a misleading one — the caveat is UNCONDITIONAL and the reader is told what the number does
-///    and does not license. No gate, so no false negatives.
-/// 2. **Zero inflation (shown when it applies).** At or above `ZERO_SHARE_MIN`, the flat opening
-///    run of the curve IS the zeros, not a mass of small-but-nonzero records — commonly a pipeline
-///    stage (nothing committed/spent YET) rather than a have-not population. Those are two
-///    different populations and the curve draws them identically.
-///
-/// The zero share comes from `zero_share` (base stats cache, non-null denominator), the same
-/// helper and the same `ZERO_SHARE_MIN` threshold behind the "% zeros" box-title hint, so the two
-/// annotations agree whenever both appear on one dashboard. Nothing here is recomputed from the
-/// data: the panel's Gini remains the CACHED coefficient, untouched.
 fn lorenz_caveat(s: &crate::cmd::stats::StatsData) -> String {
-    const UNIT_CAVEAT: &str = "concentration is expected unless rows are comparable units";
+    // The zero-inflation variant takes the unit clause as a SLOT rather than repeating it, so a
+    // translation keeps one copy of the sentence and still controls where it sits.
+    let unit_caveat = t!("viz.notes.lorenz_unit");
 
     zero_share(s).filter(|z| *z >= ZERO_SHARE_MIN).map_or_else(
-        || UNIT_CAVEAT.to_string(),
+        || unit_caveat.to_string(),
         |z| {
-            format!(
-                "flat run = {:.0}% zeros, not small values \u{b7} {UNIT_CAVEAT}",
-                z * 100.0
+            t!(
+                "viz.notes.lorenz_zeros",
+                q_pct = format!("{:.0}", z * 100.0),
+                q_unit = unit_caveat.to_string()
             )
+            .into_owned()
         },
     )
 }
@@ -17622,11 +17649,16 @@ fn funnel_subtitle(
     complete_frac: f64,
     form: &PipelineForm,
 ) -> Option<String> {
-    let mut parts: Vec<String> = vec![format!(
-        "n = {} complete cases ({}% of rows)",
-        HumanCount(n_complete as u64),
-        complete_pct_str(complete_frac)
-    )];
+    // Each clause is a whole sentence with the stage names as slots, so word order belongs to the
+    // translator; only the " · " joiner stays literal.
+    let mut parts: Vec<String> = vec![
+        t!(
+            "viz.notes.funnel_complete",
+            q_n = HumanCount(n_complete as u64).to_string(),
+            q_pct = complete_pct_str(complete_frac)
+        )
+        .into_owned(),
+    ];
 
     // worst per-row violation, if any is worth naming
     if let Some((k, v)) = violations
@@ -17637,16 +17669,21 @@ fn funnel_subtitle(
         .filter(|(_, v)| **v >= FUNNEL_VIOLATION_NOTE_MIN)
         && let (Some(here), Some(prev)) = (stages.get(k), stages.get(k - 1))
     {
-        parts.push(format!(
-            "{here} exceeds {prev} in {:.0}% of rows",
-            v * 100.0
-        ));
+        parts.push(
+            t!(
+                "viz.notes.funnel_violation",
+                q_here = here.clone(),
+                q_prev = prev.clone(),
+                q_pct = format!("{:.0}", v * 100.0)
+            )
+            .into_owned(),
+        );
     }
 
     // On a bridge, name the form choice: a reader who expected the declared "pipeline" to be a
     // funnel is owed the reason it is not one, in the same line that reports the violation.
     if matches!(form, PipelineForm::Bridge) {
-        parts.push("stages do not nest \u{2014} bridged, not funnelled".to_string());
+        parts.push(t!("viz.notes.funnel_bridge").into_owned());
     }
 
     // a stage whose TOTAL outruns its predecessor: the bar order is kept (vocabulary order is
@@ -17654,9 +17691,14 @@ fn funnel_subtitle(
     if let Some(k) = (1..totals.len()).find(|&k| totals[k] > totals[k - 1])
         && let (Some(here), Some(prev)) = (stages.get(k), stages.get(k - 1))
     {
-        parts.push(format!(
-            "{here} total exceeds {prev} \u{2014} overruns, not leakage"
-        ));
+        parts.push(
+            t!(
+                "viz.notes.funnel_inverted",
+                q_here = here.clone(),
+                q_prev = prev.clone()
+            )
+            .into_owned(),
+        );
     }
 
     parts.truncate(3);
@@ -18070,21 +18112,22 @@ fn ts_bucket_label(key: chrono::NaiveDate, bucket: TsBucket) -> String {
 }
 
 /// A short word for the bucket granularity, used in axis titles ("records per day").
-fn ts_bucket_word(bucket: TsBucket) -> &'static str {
+fn ts_bucket_word(bucket: TsBucket) -> String {
     match bucket {
-        TsBucket::Day => "day",
-        TsBucket::Week => "week",
-        TsBucket::Month => "month",
+        TsBucket::Day => t!("viz.title.bucket_day"),
+        TsBucket::Week => t!("viz.title.bucket_week"),
+        TsBucket::Month => t!("viz.title.bucket_month"),
     }
+    .into_owned()
 }
 
 /// Best-effort entity name for a count-over-time panel, distilled from the dataset `grain`
 /// ("one row = one 311 service request" -> "311 service request"). Falls back to "records" when
 /// grain is absent or doesn't fit the "... one <X>" shape, so the label is always sensible.
 fn count_unit_from_grain(grain: Option<&str>) -> String {
-    const FALLBACK: &str = "records";
+    let fallback = || t!("viz.chart.records").into_owned();
     let Some(g) = grain else {
-        return FALLBACK.to_string();
+        return fallback();
     };
     // describegpt phrases grain as "one row = one <X>" / "each row is one <X>"; take the text after
     // the last " one ".
@@ -18096,7 +18139,7 @@ fn count_unit_from_grain(grain: Option<&str>) -> String {
         .trim_end_matches('.')
         .trim();
     if entity.is_empty() || entity.len() > 40 {
-        FALLBACK.to_string()
+        fallback()
     } else {
         entity.to_string()
     }
@@ -18263,7 +18306,7 @@ fn build_timeseries_panel(
         };
         return Ok(Some(
             Panel::new(
-                format!("{y_label} over {date_label}"),
+                t!("viz.title.trend_raw", q_y = y_label, q_date = date_label).into_owned(),
                 PanelKind::TimeSeries { y_label, xs, ys },
             )
             .with_dict_info(dict_info),
@@ -18327,9 +18370,9 @@ fn build_timeseries_panel(
     match mode {
         Mode::AggValue(y_idx, agg) => {
             let y_label = label_for(y_idx);
-            let (agg_word, ys): (&str, Vec<f64>) = if agg == Agg::Mean {
+            let (agg_word, ys): (String, Vec<f64>) = if agg == Agg::Mean {
                 (
-                    "mean",
+                    t!("viz.title.agg_mean").into_owned(),
                     buckets
                         .values()
                         .map(|&(s, n)| if n > 0 { s / n as f64 } else { 0.0 })
@@ -18337,13 +18380,28 @@ fn build_timeseries_panel(
                 )
             } else {
                 // counts/amounts are additive -> sum per period
-                ("sum", buckets.values().map(|&(s, _)| s).collect())
+                (
+                    t!("viz.title.agg_sum").into_owned(),
+                    buckets.values().map(|&(s, _)| s).collect(),
+                )
             };
             Ok(Some(
                 Panel::new(
-                    format!("{y_label} ({agg_word}) over {date_label}"),
+                    t!(
+                        "viz.title.trend_agg",
+                        q_y = y_label,
+                        q_agg = agg_word,
+                        q_date = date_label
+                    )
+                    .into_owned(),
                     PanelKind::TimeSeries {
-                        y_label: format!("{y_label} ({agg_word}/{word})"),
+                        y_label: t!(
+                            "viz.title.trend_axis_agg",
+                            q_y = y_label,
+                            q_agg = agg_word,
+                            q_bucket = word
+                        )
+                        .into_owned(),
                         xs,
                         ys,
                     },
@@ -18357,9 +18415,10 @@ fn build_timeseries_panel(
             let ys: Vec<f64> = buckets.values().map(|&(_, n)| n as f64).collect();
             Ok(Some(
                 Panel::new(
-                    format!("{unit} over {date_label}"),
+                    t!("viz.title.trend_count", q_unit = unit, q_date = date_label).into_owned(),
                     PanelKind::TimeSeries {
-                        y_label: format!("{unit} per {word}"),
+                        y_label: t!("viz.title.trend_axis_count", q_unit = unit, q_bucket = word)
+                            .into_owned(),
                         xs,
                         ys,
                     },
@@ -19141,26 +19200,47 @@ impl CyclicAxis {
     fn labels(self) -> Vec<String> {
         match self {
             CyclicAxis::HourOfDay => (0..24).map(|h| format!("{h:02}h")).collect(),
-            CyclicAxis::DayOfWeek => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-                .iter()
-                .map(ToString::to_string)
-                .collect(),
-            CyclicAxis::MonthOfYear => [
-                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-            ]
-            .iter()
-            .map(ToString::to_string)
-            .collect(),
+            // Spelled out with LITERAL keys rather than mapping a runtime key over
+            // a `&str` array: `every_t_key_used_in_this_file_exists_in_the_catalog`
+            // scans for literal keys, and a runtime one slips past it -- leaving a
+            // typo to render as raw key text on the axis with no error anywhere.
+            // (That guard reads this file as TEXT, so don't write the macro-call
+            // token in a comment either; doing so is itself reported as a
+            // non-literal call site.)
+            CyclicAxis::DayOfWeek => vec![
+                t!("viz.cycle.day_mon").into_owned(),
+                t!("viz.cycle.day_tue").into_owned(),
+                t!("viz.cycle.day_wed").into_owned(),
+                t!("viz.cycle.day_thu").into_owned(),
+                t!("viz.cycle.day_fri").into_owned(),
+                t!("viz.cycle.day_sat").into_owned(),
+                t!("viz.cycle.day_sun").into_owned(),
+            ],
+            CyclicAxis::MonthOfYear => vec![
+                t!("viz.cycle.month_jan").into_owned(),
+                t!("viz.cycle.month_feb").into_owned(),
+                t!("viz.cycle.month_mar").into_owned(),
+                t!("viz.cycle.month_apr").into_owned(),
+                t!("viz.cycle.month_may").into_owned(),
+                t!("viz.cycle.month_jun").into_owned(),
+                t!("viz.cycle.month_jul").into_owned(),
+                t!("viz.cycle.month_aug").into_owned(),
+                t!("viz.cycle.month_sep").into_owned(),
+                t!("viz.cycle.month_oct").into_owned(),
+                t!("viz.cycle.month_nov").into_owned(),
+                t!("viz.cycle.month_dec").into_owned(),
+            ],
         }
     }
 
     /// Word for the panel title.
-    fn word(self) -> &'static str {
+    fn word(self) -> String {
         match self {
-            CyclicAxis::HourOfDay => "hour of day",
-            CyclicAxis::DayOfWeek => "day of week",
-            CyclicAxis::MonthOfYear => "month",
+            CyclicAxis::HourOfDay => t!("viz.title.cyclic_hour_of_day"),
+            CyclicAxis::DayOfWeek => t!("viz.title.cyclic_day_of_week"),
+            CyclicAxis::MonthOfYear => t!("viz.title.cyclic_month"),
         }
+        .into_owned()
     }
 }
 
@@ -19257,7 +19337,12 @@ fn build_cyclic_panel(
 
     Ok(Some(
         Panel::new(
-            format!("Records by {} ({date_label})", axis.word()),
+            t!(
+                "viz.title.cyclic_records_by",
+                q_axis = axis.word(),
+                q_date = date_label
+            )
+            .into_owned(),
             PanelKind::CyclicProfile { theta, r },
         )
         // --dict-info: like the trend panel, anchor on the driving date column's entry
@@ -19512,7 +19597,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             return None;
         }
         (
-            "US states",
+            t!("viz.title.us_states").into_owned(),
             LocationMode::UsaStates,
             state_order,
             state_counts,
@@ -19523,7 +19608,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             return None;
         }
         (
-            "Countries",
+            t!("viz.title.countries").into_owned(),
             LocationMode::Iso3,
             country_order,
             country_counts,
@@ -19531,7 +19616,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
     };
 
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
-    let hover_text = choropleth_hover_text(&order, &z, None, "count", true);
+    let hover_text = choropleth_hover_text(&order, &z, None, &t!("viz.chart.count"), true);
     Some(Panel::new(
         name.to_string(),
         PanelKind::Choropleth {
@@ -19541,7 +19626,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             geojson: None,
             feature_id_key: None,
             hover_text,
-            measure_label: "count".to_string(),
+            measure_label: t!("viz.chart.count").into_owned(),
         },
     ))
 }
@@ -19654,41 +19739,49 @@ fn build_smart_pip_choropleth_panel(
     }
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
     let names = aligned_region_names(&features, &order);
-    let mut hover_text = choropleth_hover_text(&order, &z, names.as_deref(), "count", true);
+    let mut hover_text =
+        choropleth_hover_text(&order, &z, names.as_deref(), &t!("viz.chart.count"), true);
     // flag each region's snapped-in points as a subset of its count (matches the command path).
     for (h, loc) in hover_text.iter_mut().zip(&order) {
         if let Some(&c) = snapped_by_id.get(loc)
             && c > 0
         {
-            h.push_str(&format!("<br>includes {c} snapped from outside"));
+            h.push_str(&format!("<br>{}", t!("viz.hover.snap_includes", q_n = c)));
         }
     }
     // a sub-panel can't carry a below-map annotation, so surface the snap metadata (count + the
     // cap applied) and dropped points in the panel title — beside the map, never over it.
     let mut title_parts: Vec<String> = Vec::new();
     if snapped > 0 {
-        title_parts.push(format!(
-            "{} snapped ≤{} km",
-            HumanCount(snapped as u64),
-            fmt_measure(cap.km)
-        ));
+        title_parts.push(
+            t!(
+                "viz.title.snap_snapped",
+                q_n = HumanCount(snapped as u64).to_string(),
+                q_km = fmt_measure(cap.km)
+            )
+            .into_owned(),
+        );
     }
     if dropped > 0 {
         let why = if snap {
-            format!(">{} km", fmt_measure(cap.km))
+            t!("viz.title.snap_why_over", q_km = fmt_measure(cap.km)).into_owned()
         } else {
             "--no-snap".to_string()
         };
-        title_parts.push(format!(
-            "{} of {} dropped, {why}",
-            HumanCount(dropped as u64),
-            HumanCount(total as u64)
-        ));
+        title_parts.push(
+            t!(
+                "viz.title.snap_dropped",
+                q_n = HumanCount(dropped as u64).to_string(),
+                q_total = HumanCount(total as u64).to_string(),
+                q_why = why
+            )
+            .into_owned(),
+        );
     }
     let panel_name = if title_parts.is_empty() {
-        "Regions".to_string()
+        t!("viz.title.regions").into_owned()
     } else {
-        format!("Regions ({})", title_parts.join("; "))
+        t!("viz.title.regions_with", q_parts = title_parts.join("; ")).into_owned()
     };
     // Frame the basemap to the matched regions' bbox union (PipFeature::bbox is
     // [min_lon, min_lat, max_lon, max_lat]). A metro-scale extent — under
@@ -19737,7 +19830,7 @@ fn build_smart_pip_choropleth_panel(
                 MAP_PANEL_ASSUMED_WIDTH_PX,
                 MAP_PANEL_USABLE_HEIGHT_PX,
             )),
-            measure_label: "count".to_string(),
+            measure_label: t!("viz.chart.count").into_owned(),
         }
     } else {
         PanelKind::Choropleth {
@@ -19747,7 +19840,7 @@ fn build_smart_pip_choropleth_panel(
             geojson: Some(geojson.clone()),
             feature_id_key: Some(feature_id_key.to_string()),
             hover_text,
-            measure_label: "count".to_string(),
+            measure_label: t!("viz.chart.count").into_owned(),
         }
     };
     Ok(Some(Panel::new(panel_name, kind)))
@@ -20086,9 +20179,9 @@ fn build_smart_summary_choropleth_panels(
     let mut out = vec![make_panel(
         count_locs,
         count_z,
-        "count".to_string(),
+        t!("viz.chart.count").into_owned(),
         true,
-        format!("count by {region_label}"),
+        t!("viz.title.count_by_region", q_region = region_label).into_owned(),
     )];
 
     // median-measure panel (when a measure column exists): per-region median of the buffered
@@ -21025,7 +21118,7 @@ fn build_map_panel(
     };
     Ok(Some((
         Panel {
-            name: "Map".to_string(),
+            name: t!("viz.title.map").into_owned(),
             subtitle: sample_note,
             kind,
             value_log: false,
@@ -21236,8 +21329,8 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
         .ty(UpdateMenuType::Buttons)
         .direction(UpdateMenuDirection::Right)
         .buttons(vec![
-            button("Core extent", core),
-            button("Full extent", full),
+            button(&t!("viz.menu.extent_core"), core),
+            button(&t!("viz.menu.extent_full"), full),
         ])
         .x(0.02)
         .x_anchor(Anchor::Left)
@@ -21263,7 +21356,7 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
 /// the points-first default. Added only when the core is cluster-eligible.
 fn cluster_toggle_menu() -> UpdateMenu {
     let toggle = Button::new()
-        .label("Clusters/Points")
+        .label(&t!("viz.menu.cluster_toggle"))
         .method(ButtonMethod::Restyle)
         .args(serde_json::json!([{ "cluster.enabled": true }, [0]]))
         .args2(serde_json::json!([{ "cluster.enabled": false }, [0]]));
@@ -21298,7 +21391,7 @@ fn cluster_toggle_menu() -> UpdateMenu {
 /// the `-nolabels` suffix (see `SCRIPT_TEMPLATE`).
 fn basemap_labels_toggle_menu(labeled_style: MapStyle, nolabels_style: MapStyle) -> UpdateMenu {
     let toggle = Button::new()
-        .label("Basemap labels")
+        .label(&t!("viz.menu.basemap_labels"))
         .method(ButtonMethod::Relayout)
         .args(serde_json::json!([{ "map.style": labeled_style }]))
         .args2(serde_json::json!([{ "map.style": nolabels_style }]));
@@ -21414,7 +21507,7 @@ fn outlier_jurisdictions(labels: &[Option<crate::cmd::geocode::GeoLabel>]) -> St
     };
     match names.len() {
         0 => String::new(),
-        n if n > 3 => format!("{n} areas"),
+        n if n > 3 => t!("viz.map.geo_n_areas", q_n = n).into_owned(),
         _ => join_jurisdictions(&names),
     }
 }
@@ -21480,15 +21573,28 @@ fn outlier_summary(core: &str, n_outliers: usize, jurisdictions: &str) -> String
         return core.to_string();
     }
     let noun = if n_outliers == 1 {
-        "outlier"
+        t!("viz.map.geo_outlier_one")
     } else {
-        "outliers"
+        t!("viz.map.geo_outlier_many")
     };
     let n_outliers = HumanCount(n_outliers as u64);
     if jurisdictions.is_empty() {
-        format!("{core} \u{2014} {n_outliers} {noun}")
+        t!(
+            "viz.map.geo_outliers",
+            q_core = core,
+            q_n = n_outliers.to_string(),
+            q_noun = noun
+        )
+        .into_owned()
     } else {
-        format!("{core} \u{2014} {n_outliers} {noun} ({jurisdictions})")
+        t!(
+            "viz.map.geo_outliers_where",
+            q_core = core,
+            q_n = n_outliers.to_string(),
+            q_noun = noun,
+            q_where = jurisdictions
+        )
+        .into_owned()
     }
 }
 
@@ -21505,7 +21611,7 @@ fn consolidate_geo(points: &[GeoPoint]) -> String {
 
     let countries = distinct_jurisdictions(labels.iter().map(|l| l.country.as_str()));
     if countries.len() > 3 {
-        return format!("{} countries", countries.len());
+        return t!("viz.map.geo_n_countries", q_n = countries.len()).into_owned();
     }
     if countries.len() >= 2 {
         return join_jurisdictions(&countries);
@@ -21519,7 +21625,12 @@ fn consolidate_geo(points: &[GeoPoint]) -> String {
         return country.cloned().unwrap_or_default();
     }
     if admin1s.len() > 3 {
-        return format!("{} regions{suffix}", admin1s.len());
+        return t!(
+            "viz.map.geo_n_regions",
+            q_n = admin1s.len(),
+            q_suffix = suffix
+        )
+        .into_owned();
     }
     if admin1s.len() >= 2 {
         return format!("{}{suffix}", join_jurisdictions(&admin1s));
@@ -21720,7 +21831,7 @@ fn add_extent_overlay_map(plot: &mut Plot, meta: &GeoMeta) {
         let (flat, flon) = dashed_box_latlon(full);
         plot.add_trace(
             ScatterMap::new(flat, flon)
-                .name("full extent (incl. outliers)")
+                .name(&t!("viz.map.full_extent"))
                 .mode(Mode::Lines)
                 .line(full_extent_box_line())
                 .hover_info(HoverInfo::Skip)
@@ -21730,7 +21841,7 @@ fn add_extent_overlay_map(plot: &mut Plot, meta: &GeoMeta) {
     let (blat, blon) = extent_box_latlon(&meta.extent);
     plot.add_trace(
         ScatterMap::new(blat, blon)
-            .name("spatial extent")
+            .name(&t!("viz.map.spatial_extent"))
             .mode(Mode::Lines)
             .line(extent_box_line())
             .fill(plotly::traces::scatter_map::Fill::ToSelf)
@@ -21743,7 +21854,7 @@ fn add_extent_overlay_map(plot: &mut Plot, meta: &GeoMeta) {
     let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
     plot.add_trace(
         ScatterMap::new(mlat, mlon)
-            .name("extent points")
+            .name(&t!("viz.map.extent_points"))
             .mode(Mode::Markers)
             .marker(extent_marker_map())
             .hover_text_array(htext)
@@ -21763,7 +21874,7 @@ fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
         let (flat, flon) = extent_box_latlon(full);
         plot.add_trace(
             ScatterGeo::new(flat, flon)
-                .name("full extent (incl. outliers)")
+                .name(&t!("viz.map.full_extent"))
                 .mode(Mode::Lines)
                 .line(full_extent_box_line())
                 .hover_info(HoverInfo::Skip)
@@ -21773,7 +21884,7 @@ fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
     let (blat, blon) = extent_box_latlon(&meta.extent);
     plot.add_trace(
         ScatterGeo::new(blat, blon)
-            .name("spatial extent")
+            .name(&t!("viz.map.spatial_extent"))
             .mode(Mode::Lines)
             .line(extent_box_line())
             .fill(plotly::traces::scatter_geo::Fill::ToSelf)
@@ -21786,7 +21897,7 @@ fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
     let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
     plot.add_trace(
         ScatterGeo::new(mlat, mlon)
-            .name("extent points")
+            .name(&t!("viz.map.extent_points"))
             .mode(Mode::Markers)
             .marker(extent_marker_geo())
             .hover_text_array(htext)
@@ -21991,7 +22102,12 @@ fn build_kpi_row(
             .filter(|[lo, hi]| lo < hi && value >= *lo && value <= *hi);
         let target = row.and_then(|r| r.target).filter(|t| t.is_finite());
         tiles.push(KpiTile {
-            label: format!("{} {label}", if intensive { "Mean" } else { "Total" }),
+            label: if intensive {
+                t!("viz.title.kpi_mean", q_label = label)
+            } else {
+                t!("viz.title.kpi_total", q_label = label)
+            }
+            .into_owned(),
             value,
             format: kpi_number_format(value),
             gauge,
@@ -22860,7 +22976,7 @@ impl<'a> SmartCtx<'a> {
                     // an honesty cue for violins drawn from a stride sample rather than every value
                     let name = if matches!(&kind, PanelKind::Violin { sample_stride, .. } if *sample_stride > 1)
                     {
-                        format!("{name} (sampled)")
+                        t!("viz.title.sampled", q_name = name).into_owned()
                     } else {
                         name
                     };
@@ -23017,7 +23133,7 @@ impl<'a> SmartCtx<'a> {
                         .filter(|l| !l.is_empty())
                         .map_or_else(|| self.stats[date_idx].field.clone(), ToString::to_string);
                     self.geo_anim_panel = Some(Panel::new(
-                        "locations over time".to_string(),
+                        t!("viz.title.locations_over_time").into_owned(),
                         PanelKind::AnimatedGeo {
                             bucket_lats: data.bucket_lats,
                             bucket_lons: data.bucket_lons,
@@ -23151,15 +23267,25 @@ impl<'a> SmartCtx<'a> {
                         .map_or_else(|| col_label(&headers, date_idx, nh), ToString::to_string);
                     let rho = spearman_rho(&columns[i], &columns[j]);
                     let rel = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
-                        format!(
-                            "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
-                            labels[i], labels[j]
+                        t!(
+                            "viz.title.pair_r_nonlinear",
+                            q_x = labels[i],
+                            q_y = labels[j],
+                            q_r = format!("{r:.2}"),
+                            q_rho = format!("{rho:.2}")
                         )
+                        .into_owned()
                     } else {
-                        format!("{} vs {} (r={r:.2})", labels[i], labels[j])
+                        t!(
+                            "viz.title.pair_r",
+                            q_x = labels[i],
+                            q_y = labels[j],
+                            q_r = format!("{r:.2}")
+                        )
+                        .into_owned()
                     };
                     let panel = Panel::new(
-                        format!("{rel} over time"),
+                        t!("viz.title.pair_over_time", q_pair = rel).into_owned(),
                         PanelKind::AnimatedScatterPair {
                             xs: data.xs,
                             ys: data.ys,
@@ -23221,7 +23347,7 @@ impl<'a> SmartCtx<'a> {
                             let size_idx = size_k.map(|k| kept_indices[k]);
                             let size_label = size_k
                                 .map(|k| labels[k].clone())
-                                .unwrap_or_else(|| "records".to_string());
+                                .unwrap_or_else(|| t!("viz.chart.records").into_owned());
                             let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
                             if let Some(data) = read_entity_bucket_agg(
                                 self.args,
@@ -23245,7 +23371,13 @@ impl<'a> SmartCtx<'a> {
                                         ToString::to_string,
                                     );
                                 self.bubble_panel = Some(Panel::new(
-                                    format!("{y_label} vs {x_label} by {entity_label} over time"),
+                                    t!(
+                                        "viz.title.bubble_over_time",
+                                        q_y = y_label,
+                                        q_x = x_label,
+                                        q_entity = entity_label
+                                    )
+                                    .into_owned(),
                                     PanelKind::AnimatedBubble {
                                         entities: data.entities,
                                         xs: data.xs,
@@ -23285,12 +23417,22 @@ impl<'a> SmartCtx<'a> {
                     .and_then(|(i, j, r)| {
                         let rho = spearman_rho(&columns[i], &columns[j]);
                         let name = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
-                            format!(
-                                "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
-                                labels[i], labels[j]
+                            t!(
+                                "viz.title.pair_r_nonlinear",
+                                q_x = labels[i],
+                                q_y = labels[j],
+                                q_r = format!("{r:.2}"),
+                                q_rho = format!("{rho:.2}")
                             )
+                            .into_owned()
                         } else {
-                            format!("{} vs {} (r={r:.2})", labels[i], labels[j])
+                            t!(
+                                "viz.title.pair_r",
+                                q_x = labels[i],
+                                q_y = labels[j],
+                                q_r = format!("{r:.2}")
+                            )
+                            .into_owned()
                         };
                         if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
                             // A density grid that collapses into one cell is dropped outright (or
@@ -23356,7 +23498,12 @@ impl<'a> SmartCtx<'a> {
                                             *MAX_SMART_POINTS,
                                         );
                                         (
-                                            format!("{name} \u{b7} size: {}", labels[k]),
+                                            t!(
+                                                "viz.title.pair_size",
+                                                q_name = name,
+                                                q_col = labels[k]
+                                            )
+                                            .into_owned(),
                                             Some(sizes),
                                             Some(labels[k].clone()),
                                         )
@@ -23367,9 +23514,15 @@ impl<'a> SmartCtx<'a> {
                             // title), so the log cue goes in the title too — naming WHICH axis,
                             // which a bare axis-side "log scale" label could not.
                             let name = match axis_log {
-                                (true, true) => format!("{name} \u{b7} log x/y"),
-                                (true, false) => format!("{name} \u{b7} log x"),
-                                (false, true) => format!("{name} \u{b7} log y"),
+                                (true, true) => {
+                                    t!("viz.title.pair_log_xy", q_name = name).into_owned()
+                                },
+                                (true, false) => {
+                                    t!("viz.title.pair_log_x", q_name = name).into_owned()
+                                },
+                                (false, true) => {
+                                    t!("viz.title.pair_log_y", q_name = name).into_owned()
+                                },
                                 (false, false) => name,
                             };
                             Some(
@@ -23430,7 +23583,13 @@ impl<'a> SmartCtx<'a> {
                                 return None;
                             }
                             Some(Panel::new(
-                                format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
+                                t!(
+                                    "viz.title.scatter3d",
+                                    q_x = labels[i],
+                                    q_y = labels[j],
+                                    q_z = labels[k]
+                                )
+                                .into_owned(),
                                 PanelKind::Scatter3D {
                                     xs,
                                     ys,
@@ -23453,14 +23612,14 @@ impl<'a> SmartCtx<'a> {
                 // The coefficient is named in the title (and in every cell's hover): a Spearman
                 // matrix reported as plain "Correlation" would be read as Pearson's r.
                 let corr_title = if spearman_corr {
-                    "Correlation (Spearman \u{3c1} \u{2014} rank, robust to outliers)"
+                    t!("viz.title.corr_spearman")
                 } else {
-                    "Correlation (Pearson r)"
+                    t!("viz.title.corr_pearson")
                 };
                 self.panels.insert(
                     0,
                     Panel::new(
-                        corr_title.to_string(),
+                        corr_title.into_owned(),
                         PanelKind::CorrHeatmap {
                             labels,
                             matrix: mask_to_lower_triangle(matrix),
@@ -24504,7 +24663,7 @@ impl<'a> SmartCtx<'a> {
                 .file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or("data");
-            format!("{dataset} \u{2014} data overview")
+            t!("viz.title.data_overview", q_dataset = dataset).into_owned()
         });
 
         // --dict-info: render the embedded Data Dictionary page when a usable dictionary is present
@@ -25033,7 +25192,7 @@ fn panel_trace(
                 .name(panel.name.clone())
                 .marker(marker)
                 .hover_text_array(hover_labels)
-                .hover_template("%{hovertext}<br>count: %{y:,}<extra></extra>")
+                .hover_template(&t!("viz.hover.count_by_label"))
                 // value labels above each bar, SI-formatted ("258k", "1.05M") to match
                 // the axis ticks
                 .text_template("%{y:.3s}")
@@ -25053,10 +25212,11 @@ fn panel_trace(
             let values = hist.get(idx).cloned().unwrap_or_default();
             // the cell has no x-axis title (panel.name is only a cell annotation), so name the
             // binned value and its count in the hover, both comma-grouped.
-            let hover = format!(
-                "{}: %{{x:,.3f}}<br>count: %{{y:,}}<extra></extra>",
-                escape_hover(&panel.name)
-            );
+            // NOTE: `escape_hover` only, no `escape_template_pct` -- preserved from before this
+            // string was localized. A `%` in the panel name is mis-read by plotly here, unlike in
+            // the contour/Lorenz hovers which take the full composition. Pre-existing; changing it
+            // would be a behavior change, not a translation.
+            let hover = t!("viz.hover.histogram", q_col = escape_hover(&panel.name)).into_owned();
             let mut h = Histogram::new(values)
                 .name(panel.name.clone())
                 .marker(Marker::new().color(color))
@@ -25864,7 +26024,7 @@ fn smart_grid_parts(
             // geographic outliers as a distinct amber/X marker trace on top of the core points
             if !outlier_lats.is_empty() {
                 let mut out_trace = ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
-                    .name("geographic outliers")
+                    .name(&t!("viz.map.geographic_outliers"))
                     .mode(Mode::Markers)
                     .marker(outlier_marker_geo())
                     .show_legend(false)
@@ -25886,7 +26046,7 @@ fn smart_grid_parts(
                     let (flat, flon) = extent_box_latlon(full);
                     traces.push(
                         ScatterGeo::new(flat, flon)
-                            .name("full extent (incl. outliers)")
+                            .name(&t!("viz.map.full_extent"))
                             .mode(Mode::Lines)
                             .line(full_extent_box_line())
                             .hover_info(HoverInfo::Skip)
@@ -25897,7 +26057,7 @@ fn smart_grid_parts(
                 let (blat, blon) = extent_box_latlon(&meta.extent);
                 traces.push(
                     ScatterGeo::new(blat, blon)
-                        .name("spatial extent")
+                        .name(&t!("viz.map.spatial_extent"))
                         .mode(Mode::Lines)
                         .line(extent_box_line())
                         .fill(plotly::traces::scatter_geo::Fill::ToSelf)
@@ -25911,7 +26071,7 @@ fn smart_grid_parts(
                 let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
                 traces.push(
                     ScatterGeo::new(mlat, mlon)
-                        .name("extent points")
+                        .name(&t!("viz.map.extent_points"))
                         .mode(Mode::Markers)
                         .marker(extent_marker_geo())
                         .hover_text_array(htext)
@@ -25922,7 +26082,7 @@ fn smart_grid_parts(
                 if !meta.summary.is_empty() {
                     annotations.push(
                         Annotation::new()
-                            .text(format!("Spatial extent: {}", meta.summary))
+                            .text(&t!("viz.map.geo_extent_caption", q_summary = meta.summary))
                             .x(geom.title_x)
                             .y((geom.y_domain[0] - GEO_META_OFFSET).max(0.0))
                             .x_ref("paper")
@@ -26445,7 +26605,7 @@ fn smart_inline_panel_plot(
         // Outliers are always markers (even in density mode), so they carry hover labels too.
         if !outlier_lats.is_empty() {
             let mut out_trace = ScatterMap::new(outlier_lats.clone(), outlier_lons.clone())
-                .name("geographic outliers")
+                .name(&t!("viz.map.geographic_outliers"))
                 .mode(Mode::Markers)
                 .marker(outlier_marker_map())
                 .show_legend(false);
@@ -26571,7 +26731,7 @@ fn smart_inline_panel_plot(
         // geographic outliers as a distinct amber/X marker trace on top of the core points
         if !outlier_lats.is_empty() {
             let mut out_trace = ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
-                .name("geographic outliers")
+                .name(&t!("viz.map.geographic_outliers"))
                 .mode(Mode::Markers)
                 .marker(outlier_marker_geo())
                 .show_legend(false);
@@ -26845,7 +27005,7 @@ fn smart_inline_panel_plot(
                 .mode(Mode::LinesMarkers)
                 .fill(Fill::ToSelf)
                 .name(panel.name.clone())
-                .hover_template("%{theta}<br>records: %{r:,.0f}<extra></extra>"),
+                .hover_template(&t!("viz.hover.polar_records")),
         );
         // A polar subplot draws its angular tick labels ("06h", "Mon", "Jan") OUTSIDE its plot
         // area — ~22px past the top and bottom edges — and this plotly version's `LayoutPolar`
@@ -27636,10 +27796,14 @@ fn render_smart_inline(
         if let Some(meta) = &panel.geo_meta
             && !meta.summary.is_empty()
         {
+            // escape the COMPOSED caption, not just the summary: that keeps the
+            // escaping exactly-once (the English prefix has no metacharacters, so
+            // this stays byte-identical) while also covering a translation that
+            // legitimately contains `&`.
             cells.push_str(&format!(
-                r#"      <div class="qsv-viz-geo-meta">Spatial extent: {}</div>
+                r#"      <div class="qsv-viz-geo-meta">{}</div>
 "#,
-                html_escape(&meta.summary)
+                html_escape(&t!("viz.map.geo_extent_caption", q_summary = meta.summary))
             ));
         }
         cells.push_str("    </div>\n");
@@ -27932,11 +28096,12 @@ fn dominant_category_hint(bars: &[FreqBar], row_count: impl FnOnce() -> u64) -> 
     #[allow(clippy::cast_precision_loss)]
     let share = top.count as f64 / total as f64;
     (share >= DOMINANT_MIN_SHARE).then(|| {
-        format!(
-            "(dominated by {}, {:.0}%)",
-            truncate_label(&top.label, BAR_LABEL_MAX_CHARS),
-            share * 100.0
+        t!(
+            "viz.title.dominated_by",
+            q_value = truncate_label(&top.label, BAR_LABEL_MAX_CHARS),
+            q_pct = format!("{:.0}", share * 100.0)
         )
+        .into_owned()
     })
 }
 
@@ -27981,13 +28146,13 @@ fn finalize_freq_bars(
     let mut used: std::collections::HashSet<String> =
         bars.iter().map(|b| b.x_key.clone()).collect();
     if !no_nulls && null_count > 0 {
-        push_aggregate_bar(&mut bars, &mut used, NULL_TEXT.to_string(), null_count);
+        push_aggregate_bar(&mut bars, &mut used, null_text(), null_count);
     }
     if !no_other && other_count > 0 {
         push_aggregate_bar(
             &mut bars,
             &mut used,
-            format!("{OTHER_TEXT} ({})", HumanCount(other_unique as u64)),
+            other_text(other_unique as u64),
             other_count,
         );
     }
@@ -28139,12 +28304,12 @@ fn accumulate_hierarchy_counts(
                 Some(cell) => {
                     let cell = crate::cmd::frequency::trim_bs_whitespace(cell);
                     if cell.is_empty() {
-                        NULL_TEXT.to_string()
+                        null_text()
                     } else {
                         String::from_utf8_lossy(cell).into_owned()
                     }
                 },
-                None => NULL_TEXT.to_string(),
+                None => null_text(),
             };
             path.push(seg);
         }
@@ -28411,7 +28576,7 @@ fn hierarchy_arrays(
         // always emit the Other bucket when dropping, so kept children + Other == parent
         // (keeps `branchvalues="total"` consistent; otherwise plotly shows a phantom gap).
         if other_drops > 0 {
-            labels.push(format!("{OTHER_TEXT} ({})", HumanCount(other_drops as u64)));
+            labels.push(other_text(other_drops as u64));
             parents.push(prefix_id.clone());
             values.push(other_value);
             ids.push(unique_id(format!(
@@ -28623,7 +28788,7 @@ fn sankey_order_toggle_menu(xs: &[f64], ys: &[f64], value_order_initial: bool) -
         (value_args, snap_args)
     };
     let toggle = Button::new()
-        .label("⇅ node order")
+        .label(&t!("viz.menu.node_order"))
         .method(ButtonMethod::Restyle)
         .args(args)
         .args2(args2);
@@ -29553,9 +29718,9 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
             title_font = title_font.family(FONT_FAMILY);
         }
         let cue = if headroom_max.is_some() {
-            LOG_AXIS_TITLE
+            log_axis_title()
         } else {
-            VALUE_LOG_AXIS_TITLE
+            value_log_axis_title()
         };
         a = a.title(Title::with_text(cue).font(title_font));
     }
@@ -29729,6 +29894,24 @@ fn geo_ref(pos: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Pin the process-global locale to English for a test that ASSERTS on localized output.
+    ///
+    /// Observers need this as much as mutators do. The locale is process-global, cargo runs unit
+    /// tests on parallel threads, and one test calls `set_active(spanish)` -- so a test asserting
+    /// English can interleave with it, pass in isolation, and fail only in the full suite. Every
+    /// time a helper gained a `t!` call during localization, the tests reading its output silently
+    /// acquired this dependency; that has now happened four separate times, which is why this is a
+    /// named helper rather than two lines copied around.
+    ///
+    /// Bind the result -- `let _locale = english_locale();`. Dropping it immediately (`let _ =`)
+    /// releases the lock and reinstates exactly the race it exists to prevent.
+    #[must_use = "bind this guard to a named variable; dropping it immediately reinstates the race"]
+    fn english_locale() -> std::sync::MutexGuard<'static, ()> {
+        let guard = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+        guard
+    }
 
     // The atomic sidecar write must be mode-transparent: replacing `fs::write` with a
     // tempfile+rename must not change what permissions the sidecar ends up with, in EITHER
@@ -29936,6 +30119,32 @@ mod tests {
             gp("NE", "Vancouver", "British Columbia", "Canada"),
         ];
         assert_eq!(consolidate_geo(&pts), "United States & Canada");
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn consolidate_geo_rolls_up_beyond_three_distinct() {
+        // Both roll-up branches are localized and NO golden fixture reaches
+        // either, so this is their only coverage -- hence the English pin
+        // (roborev 3955).
+        let _locale = english_locale();
+        // >3 distinct countries -> the country roll-up, no region tail
+        let countries = vec![
+            gp("A", "Seattle", "Washington", "United States"),
+            gp("B", "Vancouver", "British Columbia", "Canada"),
+            gp("C", "Mexico City", "CDMX", "Mexico"),
+            gp("D", "Lima", "Lima", "Peru"),
+        ];
+        assert_eq!(consolidate_geo(&countries), "4 countries");
+        // >3 distinct admin1s inside ONE country -> the region roll-up, which
+        // keeps the ", <country>" tail
+        let regions = vec![
+            gp("A", "Seattle", "Washington", "United States"),
+            gp("B", "Portland", "Oregon", "United States"),
+            gp("C", "Boise", "Idaho", "United States"),
+            gp("D", "Reno", "Nevada", "United States"),
+        ];
+        assert_eq!(consolidate_geo(&regions), "4 regions, United States");
     }
 
     #[cfg(feature = "geocode")]
@@ -30162,6 +30371,9 @@ mod tests {
     #[cfg(feature = "geocode")]
     #[test]
     fn outlier_summary_count_and_jurisdiction() {
+        // the outlier call-out is localized -- pin English, or these assertions
+        // race the Spanish-setting tests on the process-global locale.
+        let _locale = english_locale();
         let core = "New York & New Jersey, United States";
         // zero outliers -> core summary unchanged
         assert_eq!(outlier_summary(core, 0, "Pennsylvania"), core);
@@ -30221,6 +30433,30 @@ mod tests {
         );
         // nothing resolved -> empty
         assert_eq!(outlier_jurisdictions(&[None, None]), "");
+        // more than 3 distinct -> the localized "N areas" roll-up rather than a
+        // long list. This value is interpolated into `geo_outliers_where`'s
+        // parenthetical, so an unlocalized roll-up here would leave English
+        // inside an otherwise-translated caption (roborev 3955).
+        let _locale = english_locale();
+        assert_eq!(
+            outlier_jurisdictions(&[
+                label("Pennsylvania", "United States"),
+                label("Ohio", "United States"),
+                label("Maine", "United States"),
+                label("Nevada", "United States"),
+            ]),
+            "4 areas"
+        );
+        // the same roll-up on the country fallback path
+        assert_eq!(
+            outlier_jurisdictions(&[
+                label("", "Canada"),
+                label("", "Mexico"),
+                label("", "Brazil"),
+                label("", "Peru"),
+            ]),
+            "4 areas"
+        );
     }
 
     #[cfg(feature = "geocode")]
@@ -30274,6 +30510,9 @@ mod tests {
     #[cfg(feature = "geocode")]
     #[test]
     fn extent_zoom_menu_core_and_full_buttons() {
+        // the zoom-button labels are localized -- pin English, or the label
+        // assertions below race the Spanish-setting tests on the global locale.
+        let _locale = english_locale();
         let core = MapExtent {
             min_lat: 40.70,
             max_lat: 40.80,
@@ -31464,7 +31703,7 @@ mod tests {
     fn render_dict_page_html_groups_stats_and_guards_sci_notation() {
         // Renders localized strings -- must share LOCALE_LOCK with the locale-mutating
         // tests, or a concurrent Spanish test flips the labels asserted below.
-        let _guard = viz_i18n::lock_locale();
+        let _locale = english_locale();
         // Range min/max grouping is role-gated: only genuine `measure` columns get thousands
         // separators on their range. Identifiers, geo codes (ZIP) and years are dimensions, so
         // their ranges render verbatim (a ZIP 15003 must never read "15,003", a year 2099 never
@@ -31573,7 +31812,7 @@ mod tests {
     fn render_dict_page_html_legacy_fields_dict_has_no_jsonschema_export() {
         // Renders localized strings -- must share LOCALE_LOCK with the locale-mutating
         // tests, or a concurrent Spanish test flips the labels asserted below.
-        let _guard = viz_i18n::lock_locale();
+        let _locale = english_locale();
         // A legacy `fields` dictionary is NOT JSON Schema, so the "Export JSONSchema" control
         // must not appear (the label would be a lie); only top-level `properties` dicts get it.
         let legacy = r#"{
@@ -31617,8 +31856,7 @@ mod tests {
         // rendered a visible `a&amp;b` in the browser tooltip. Only the raw name may enter
         // `t!`; `fname` stays escaped for the `download=` attribute and the label span, which
         // are different contexts and must keep their own single escaping.
-        let _guard = viz_i18n::lock_locale();
-        viz_i18n::reset_active();
+        let _locale = english_locale();
 
         let schema = r#"{ "properties": { "account_id": { "type": "integer" } } }"#;
         let dict_json: serde_json::Value = serde_json::from_str(schema).unwrap();
@@ -31671,7 +31909,7 @@ mod tests {
     fn render_dict_page_html_renders_a_download_row_per_sidecar() {
         // Renders localized strings -- must share LOCALE_LOCK with the locale-mutating
         // tests, or a concurrent Spanish test flips the labels asserted below.
-        let _guard = viz_i18n::lock_locale();
+        let _locale = english_locale();
         // Every consumed sidecar joins the JSONSchema export inside ONE `.qsv-dict-downloads`
         // container — the container is what `qsvDictDrawer` relocates into the drawer's button
         // bar, so links outside it (or a per-anchor move) would be dropped there.
@@ -32318,6 +32556,9 @@ mod tests {
 
     #[test]
     fn count_unit_from_grain_extracts_or_falls_back() {
+        // the "records" fallback is localized -- pin English, or this races the
+        // Spanish-setting tests on the process-global locale.
+        let _locale = english_locale();
         assert_eq!(
             count_unit_from_grain(Some("one row = one 311 service request")),
             "311 service request"
@@ -32631,6 +32872,8 @@ mod tests {
 
     #[test]
     fn finalize_freq_bars_appends_null_and_other() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // 12 distinct categories (a..l), descending counts, plus 7 empty cells. With top_n=10,
         // the top 10 are kept and the remaining 2 distinct roll up into "Other (2)"; the null
         // bucket becomes "(NULL)". Both are appended after the real categories, tagged Aggregate.
@@ -32710,6 +32953,8 @@ mod tests {
 
     #[test]
     fn finalize_freq_bars_names_lone_leftover_category() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // 11 distinct categories with top_n=10: the single leftover ("k") is charted under its
         // own name as a real category, NOT as an opaque "Other (1)" aggregate.
         let counts: Vec<(String, u64)> = (0..11)
@@ -32750,6 +32995,8 @@ mod tests {
 
     #[test]
     fn finalize_freq_bars_aggregate_key_never_collides() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // pathological data: a real category whose value already equals the sentinel-suffixed
         // form of the NULL bucket's key. The aggregate key must extend its sentinel until it is
         // distinct, so the synthetic (NULL) bar can never collapse onto that real category.
@@ -32772,6 +33019,8 @@ mod tests {
 
     #[test]
     fn box_shape_hint_reports_skew_and_outliers() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         let mut s = stat("Float", 100, Some(0.8));
         s.pearson_skewness = Some(1.2); // right skew
         s.outliers_percentage = Some(4.2);
@@ -32792,6 +33041,8 @@ mod tests {
 
     #[test]
     fn box_shape_hint_derives_skew_from_base_stats() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // no moarstats pearson_skewness: derived from the base cache as 3*(mean-median)/stddev
         let mut s = stat("Float", 100, Some(0.8));
         s.mean = Some(100.0);
@@ -32817,6 +33068,8 @@ mod tests {
 
     #[test]
     fn box_shape_hint_puts_data_quality_first_and_caps_parts() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // nulls + zeros outrank (and, at the 2-part cap, crowd out) the shape parts
         let mut s = stat("Integer", 500, Some(0.5));
         s.sparsity = Some(0.40);
@@ -32839,6 +33092,8 @@ mod tests {
 
     #[test]
     fn box_shape_hint_reports_moarstats_extras() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // outliers inflating the mean
         let mut s = stat("Float", 100, Some(0.8));
         s.outlier_impact_ratio = Some(0.07);
@@ -32863,6 +33118,9 @@ mod tests {
 
     #[test]
     fn dominant_category_hint_fires_only_on_real_dominance() {
+        // `dominant_category_hint` is localized -- pin English, or this races the
+        // Spanish-setting tests on the process-global locale.
+        let _locale = english_locale();
         let bar = |label: &str, count: u64, kind: FreqBarKind| FreqBar {
             x_key: label.to_string(),
             label: label.to_string(),
@@ -33842,6 +34100,11 @@ mod tests {
 
     #[test]
     fn contour_hover_template_neutralizes_percent_bearing_headers() {
+        // this helper reads the process-global locale now that its template lives in the catalog,
+        // so an English assertion has to pin the locale -- cargo runs unit tests on parallel
+        // threads and a locale-mutating test would otherwise make this fail nondeterministically
+        let _locale = english_locale();
+
         // the labels are raw column headers dropped into a template that parses `%{...}`, so a
         // header carrying `%` -- or one that already looks like a token -- must be neutralized
         // rather than honored, and markup must be escaped before the `%`-doubling
@@ -33864,6 +34127,10 @@ mod tests {
 
     #[test]
     fn lorenz_hover_template_neutralizes_percent_bearing_labels() {
+        // same process-global locale dependency as the contour test above -- pin it before
+        // asserting English
+        let _locale = english_locale();
+
         // the Lorenz hover interpolates a raw measure label into a template that parses `%{...}`,
         // exactly as the contour hover does -- `%` in a header is NOT an intensive-measure token
         // (tokenization splits on non-alphanumerics), so such a column really can reach a Lorenz
@@ -33887,6 +34154,68 @@ mod tests {
         assert!(
             t.ends_with("bottom %{x:.0%} of records hold %{y:.0%}<extra></extra>"),
             "got: {t}"
+        );
+    }
+
+    /// Pins the rust-i18n interpolation semantics that localizing a hover template depends on.
+    /// `t!` substitutes its arguments via `rust_i18n::replace_patterns`, which uses the SAME
+    /// `%{...}` token syntax plotly does -- so a localized hover template is parsed twice: once by
+    /// rust-i18n when the dashboard is rendered, once by plotly in the browser. Three properties
+    /// make that cohabitation safe. The fourth is a trap, and it fails silently.
+    #[test]
+    fn rust_i18n_interpolation_cohabits_with_plotly_tokens() {
+        use rust_i18n::replace_patterns;
+
+        // 1. a token rust-i18n was given no argument for is emitted verbatim, so plotly's own
+        //    tokens survive a `t!` round trip untouched. This is what makes the `q_` argument
+        //    prefix sufficient to keep the two namespaces from colliding.
+        assert_eq!(
+            replace_patterns(
+                "%{q_col}: %{x:.3s}<br>%{z:,} rows",
+                &["q_col"],
+                &["Revenue".to_string()]
+            ),
+            "Revenue: %{x:.3s}<br>%{z:,} rows"
+        );
+
+        // 2. a doubled literal `%` -- what `escape_template_pct` emits -- passes through untouched,
+        //    so the existing `%`-escaping composition still means what it meant before.
+        assert_eq!(
+            replace_patterns("50%% of %{q_col}", &["q_col"], &["total".to_string()]),
+            "50%% of total"
+        );
+
+        // 3. an argument VALUE is never re-scanned, so a token-shaped column header interpolated as
+        //    an argument cannot smuggle in a second round of substitution.
+        assert_eq!(
+            replace_patterns("%{q_col} rows", &["q_col"], &["%{x}".to_string()]),
+            "%{x} rows"
+        );
+
+        // 4. THE TRAP. The scanner resets to "seeking `{`" on EVERY `%`, so a plotly token carrying
+        //    a literal `%` inside its own braces -- `%{x:.0%}`, the Lorenz axis format -- never
+        //    registers its closing brace and mis-pairs with the NEXT `{` in the string. Every
+        //    `%{q_*}` argument downstream of such a token is then silently left unsubstituted: no
+        //    panic, no warning, no failing key-coverage check, just the raw key in a user's
+        //    tooltip. Argument tokens MUST precede any percent-formatted plotly token.
+        assert_eq!(
+            replace_patterns(
+                "bottom %{x:.0%} of %{q_col}",
+                &["q_col"],
+                &["sales".to_string()]
+            ),
+            "bottom %{x:.0%} of %{q_col}",
+            "known hazard: an argument placed after a percent-formatted plotly token is NOT \
+             substituted -- keep `%{{q_*}}` ahead of any `%{{..%}}` token"
+        );
+        // the same argument ahead of that token resolves normally -- ordering is the whole fix
+        assert_eq!(
+            replace_patterns(
+                "%{q_col}: bottom %{x:.0%}",
+                &["q_col"],
+                &["sales".to_string()]
+            ),
+            "sales: bottom %{x:.0%}"
         );
     }
 
@@ -34086,6 +34415,9 @@ mod tests {
 
     #[test]
     fn build_kpi_row_joins_on_stat_idx_not_decorated_title() {
+        // KPI tile labels are localized -- pin English, or the "Total amount"
+        // assertion below races the Spanish-setting tests on the global locale.
+        let _locale = english_locale();
         // `build_smart` decorates a panel title AFTER construction ("amount (right-skewed)" from
         // `box_shape_hint`, "(sampled)" for strided violins), so a name-based stats join silently
         // missed and the KPI tile — often the whole KPI row — disappeared.
@@ -35074,6 +35406,11 @@ mod tests {
 
     #[test]
     fn smart_contour_panel_honors_log_scale_mode() {
+        // the log-space retry's title is localized -- pin English, or this races the
+        // Spanish-setting tests on the process-global locale. The "a vs b" passed in
+        // below is arbitrary fixture data, not observed output; the assertions on
+        // `.name` are what need the pin.
+        let _locale = english_locale();
         // a collapsed linear pair: 1200 zeros pile into one bin (0.6 > gate), plus 800 strictly-
         // positive points spread across three decades so the log-space grid is legible.
         let mut xs = vec![0.0_f64; 1200];
@@ -35686,6 +36023,8 @@ mod tests {
 
     #[test]
     fn hierarchy_arrays_folds_remainder_into_other() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // parent "R" has 4 children; top_n = 2 keeps a,b and folds c,d into "Other (2)".
         let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
         for (seg, v) in [("a", 40.0), ("b", 30.0), ("c", 20.0), ("d", 10.0)] {
@@ -35710,6 +36049,8 @@ mod tests {
 
     #[test]
     fn hierarchy_arrays_names_lone_dropped_child() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // parent "R" has 3 children with top_n = 2: the single leftover ("c") is emitted under
         // its own name rather than as an "Other (1)" tile, and still expands to its own child.
         let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
@@ -36014,6 +36355,10 @@ mod tests {
     // brittle; this calls the panel builder directly with explicit coordinates.
     #[test]
     fn smart_pip_panel_caps_snap() {
+        // the "Regions (...)" panel title is localized -- pin English. `--no-snap`
+        // inside it is a FLAG NAME and stays literal in every locale, which is
+        // why the third assertion below still expects it verbatim.
+        let _locale = english_locale();
         // two regions separated by a wide gap: A at lon 0..4, C at lon 16..20 (both lat 0..10).
         let gj = r#"{"type":"FeatureCollection","features":[
             {"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon",
@@ -36090,6 +36435,93 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    // The SPANISH counterpart of `smart_pip_panel_caps_snap`, and the reason it has
+    // to exist: an English-pinned test cannot guard localization. Revert any `t!`
+    // below to the `format!` it replaced and every English assertion still passes,
+    // because English IS the catalog's value -- so the pin proves byte-identity, not
+    // that the string is localized at all (roborev 3959). This test fails on that
+    // revert. It covers the panel title, the count measure label, the snapped-in
+    // hover suffix, and the pct/rank hover lines.
+    #[test]
+    fn smart_pip_panel_localizes_title_and_hover() {
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::set_active(viz_i18n::parse_lang("es").unwrap());
+
+        // same geometry as the English test: regions A (lon 0..4) and C (lon 16..20)
+        // separated by a wide gap, plus one point in the gap at lon 10.
+        let gj = r#"{"type":"FeatureCollection","features":[
+            {"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon",
+             "coordinates":[[[0.0,0.0],[0.0,10.0],[4.0,10.0],[4.0,0.0],[0.0,0.0]]]}},
+            {"type":"Feature","properties":{"id":"C"},"geometry":{"type":"Polygon",
+             "coordinates":[[[16.0,0.0],[16.0,10.0],[20.0,10.0],[20.0,0.0],[16.0,0.0]]]}}]}"#;
+        // a DISTINCT temp path: this runs in parallel with the English test, which
+        // removes its own file at the end.
+        let path = std::env::temp_dir().join("qsv_smart_pip_es_test.geojson");
+        std::fs::write(&path, gj).unwrap();
+        let spec = path.to_str().unwrap();
+        let lats = vec![5.0, 4.0, 5.0, 4.0, 5.0];
+        let lons = vec![2.0, 3.0, 18.0, 17.0, 10.0];
+
+        let build = |snap: bool, cap: Option<f64>| {
+            build_smart_pip_choropleth_panel(
+                spec,
+                "properties.id",
+                None,
+                &lats,
+                &lons,
+                snap,
+                cap,
+                None,
+                None,
+            )
+            .unwrap()
+            .expect("2 regions keep points, so a panel renders")
+        };
+
+        // dropped branch: title shell, the drop clause and the ">N km" reason all localized
+        assert_eq!(
+            build(true, Some(10.0)).name,
+            "Regiones (1 de 5 descartados, >10 km)"
+        );
+
+        // snapped branch: the snap clause, plus every localized hover fragment
+        let snapped = build(true, Some(f64::INFINITY));
+        assert!(
+            snapped.name.starts_with("Regiones (1 ajustados"),
+            "the snap clause must be localized, got {:?}",
+            snapped.name
+        );
+        let PanelKind::Choropleth { hover_text, .. } = &snapped.kind else {
+            panic!("continental extent builds a projection Choropleth");
+        };
+        let hover = hover_text.join("\n");
+        for expected in [
+            "recuento:",                       // viz.chart.count, the measure label
+            "incluye 1 ajustados desde fuera", // viz.hover.snap_includes
+            "del total",                       // viz.hover.pct_of_total
+            "puesto ",                         // viz.hover.rank_of
+        ] {
+            assert!(
+                hover.contains(expected),
+                "hover should contain localized {expected:?}, got {hover:?}"
+            );
+        }
+        assert!(
+            !hover.contains("count:") && !hover.contains("snapped from outside"),
+            "no English hover fragment should survive, got {hover:?}"
+        );
+
+        // `--no-snap` is a FLAG NAME, not a word: it must survive verbatim in every
+        // locale, or the title would name a flag that does not exist.
+        assert_eq!(
+            build(false, Some(10.0)).name,
+            "Regiones (1 de 5 descartados, --no-snap)"
+        );
+
+        let _ = std::fs::remove_file(&path);
+        viz_i18n::reset_active();
     }
 
     // a metro-scale `--geojson` choropleth (matched regions span < SMART_CHOROPLETH_MIN_SPAN_DEG in
@@ -36484,6 +36916,9 @@ mod tests {
 
     #[test]
     fn choropleth_hover_text_content_and_alignment() {
+        // the "% of total" / "rank N of N" lines are localized -- pin English.
+        // The "count" label is passed IN below and so needs no pin itself.
+        let _locale = english_locale();
         // z deliberately unsorted so rank (by descending z) differs from index order
         let locs = vec!["JP01".to_string(), "JP02".to_string(), "JP03".to_string()];
         let z = vec![10.0, 30.0, 60.0];
@@ -36509,6 +36944,9 @@ mod tests {
 
     #[test]
     fn choropleth_hover_text_no_pct_when_not_count_or_sum() {
+        // asserts the localized "rank N of N" line and the ABSENCE of the
+        // localized "% of total" line -- both need English pinned.
+        let _locale = english_locale();
         let locs = vec!["A".to_string(), "B".to_string()];
         let z = vec![3.5, 1.5];
         // include_pct = false (mean/min/max): no "% of total" line, value still labeled + ranked
@@ -37264,8 +37702,7 @@ mod tests {
         // which was the very key whose omission motivated this test. So rather than trusting a
         // count floor, this asserts FULL coverage: every `t!(` site in the file must present a
         // string-literal first argument, and every such literal must resolve.
-        let _guard = viz_i18n::lock_locale();
-        viz_i18n::reset_active();
+        let _locale = english_locale();
 
         // Scan PRODUCTION code only. This module's own source contains a `t!` call with a
         // runtime key (the resolution check below) and the literal "t!(" the scanner searches
@@ -37325,7 +37762,7 @@ mod tests {
 
     #[test]
     fn english_emits_no_localization_artifacts() {
-        let _guard = viz_i18n::lock_locale();
+        let _locale = english_locale();
         // The single most important property of the whole feature: an English page must be
         // byte-identical to one built before viz learned to localize. Both vendored-asset
         // injections are empty-for-English, and BOTH of them shipped a bug where the empty

@@ -34,6 +34,18 @@ viz:
     cluster_click_to_zoom: " - haz clic para ampliar"
     row_not_in_preview: "fila no incluida en la vista previa"
     row_is_filtered_out: "fila excluida por el filtro"
+    extent_points: "puntos de extensión"
+    spatial_extent: "extensión espacial"
+    full_extent: "extensión completa (incl. atípicos)"
+    geographic_outliers: "atípicos geográficos"
+    geo_extent_caption: "Extensión espacial: %{q_summary}"
+    geo_outlier_one: "atípico"
+    geo_outlier_many: "atípicos"
+    geo_outliers: "%{q_core} — %{q_n} %{q_noun}"
+    geo_outliers_where: "%{q_core} — %{q_n} %{q_noun} (%{q_where})"
+    geo_n_countries: "%{q_n} países"
+    geo_n_regions: "%{q_n} regiones%{q_suffix}"
+    geo_n_areas: "%{q_n} áreas"
   photo:
     alt: "Foto del punto señalado en el mapa"
     close: "Cerrar"
@@ -75,3 +87,142 @@ viz:
     viewer_failed: "qsv viz: fallo el visor de datos:"
     advanced_filter: "Filtro avanzado"
     advanced_filter_counted: "Filtro avanzado (%d)"
+  cycle:
+    # Etiquetas del eje polar: CORTAS, sin punto final. Rodean el grafico y
+    # plotly no las ajusta ni recorta, asi que una forma larga choca con la
+    # vecina. Las horas ("00h".."23h") se generan numericamente.
+    day_mon: "lun"
+    day_tue: "mar"
+    day_wed: "mié"
+    day_thu: "jue"
+    day_fri: "vie"
+    day_sat: "sáb"
+    day_sun: "dom"
+    month_jan: "ene"
+    month_feb: "feb"
+    month_mar: "mar"
+    month_apr: "abr"
+    month_may: "may"
+    month_jun: "jun"
+    month_jul: "jul"
+    month_aug: "ago"
+    month_sep: "sep"
+    month_oct: "oct"
+    month_nov: "nov"
+    month_dec: "dic"
+  menu:
+    # Etiquetas de los botones `updatemenus`. CONSERVA el glifo inicial
+    # (`▶`, `⏸`, `⇅`): forma parte del control, no es una palabra.
+    play: "▶ Reproducir"
+    pause: "⏸ Pausa"
+    category_order: "⇅ orden de categorías"
+    node_order: "⇅ orden de nodos"
+    extent_core: "Extensión principal"
+    extent_full: "Extensión completa"
+    cluster_toggle: "Clústeres/Puntos"
+    basemap_labels: "Etiquetas del mapa base"
+  chart:
+    # `null_bucket` y `other_bucket` son etiquetas de DATOS: aparecen como valores de
+    # categoria en los ejes. `null_bucket` tambien se usa como clave de agrupacion en
+    # los paneles de jerarquia y parcats.
+    log_axis_count: "recuento (log)"
+    log_axis_value: "escala log"
+    null_bucket: "(NULO)"
+    other_bucket: "Otros (%{q_count})"
+    records: "registros"
+    # NO conectar con el analisis de `--agg`: ese valor es sintaxis de CLI.
+    count: "recuento"
+    # Nombres de traza: el simbolo emparejado (`r`, `ρ`, `NMI`) no se traduce.
+    trace_correlation: "correlación"
+    trace_rank_correlation: "correlación por rangos"
+    trace_association: "asociación"
+  title:
+    # TITULOS DE PANEL. Cada valor es un titulo COMPLETO (o un sufijo que solo se
+    # une a uno de ellos), nunca un fragmento insertado en una frase.
+    # `top_n` se comparte a proposito: es el sufijo de desborde de
+    # `measure_by_dim` y de `distribution_by`, y de nada mas.
+    data_overview: "%{q_dataset} — resumen de datos"
+    map: "Mapa"
+    distribution_by: "distribución de %{q_measure} por %{q_dim}"
+    measure_by_dim: "%{q_measure} por %{q_dim} (%{q_agg}, explica el %{q_pct}% de la varianza)"
+    top_n: " — %{q_n} principales"
+    agg_sum: "suma"
+    agg_mean: "media"
+    sampled: "%{q_name} (muestreado)"
+    dominated_by: "(dominado por %{q_value}, %{q_pct}%)"
+    # `pair_r` y `pair_r_nonlinear` los comparten DOS titulos distintos (el par
+    # animado y el par estatico); se traducen siempre junto con ambos.
+    # `r`, `ρ`, `x` e `y` son simbolos/identificadores: no se traducen.
+    pair_r: "%{q_x} vs %{q_y} (r=%{q_r})"
+    pair_r_nonlinear: "%{q_x} vs %{q_y} (r=%{q_r}, ρ=%{q_rho} — no lineal)"
+    pair_over_time: "%{q_pair} a lo largo del tiempo"
+    pair_size: "%{q_name} · tamaño: %{q_col}"
+    pair_log_x: "%{q_name} · log x"
+    pair_log_y: "%{q_name} · log y"
+    pair_log_xy: "%{q_name} · log x/y"
+    bubble_over_time: "%{q_y} vs %{q_x} por %{q_entity} a lo largo del tiempo"
+    locations_over_time: "ubicaciones a lo largo del tiempo"
+    pair_log_scale: "%{q_name} · escala log"
+    pair_log_scale_positive: "%{q_name} · escala log, solo valores positivos (%{q_share} de las filas omitidas)"
+    # Paneles de tendencia. `q_unit` puede ser `viz.chart.records` o texto derivado
+    # del grano del diccionario (salida del LLM, ya traducida): no se traduce aqui.
+    trend_raw: "%{q_y} a lo largo de %{q_date}"
+    trend_agg: "%{q_y} (%{q_agg}) a lo largo de %{q_date}"
+    trend_count: "%{q_unit} a lo largo de %{q_date}"
+    trend_axis_agg: "%{q_y} (%{q_agg}/%{q_bucket})"
+    trend_axis_count: "%{q_unit} por %{q_bucket}"
+    bucket_day: "día"
+    bucket_week: "semana"
+    bucket_month: "mes"
+    corr_spearman: "Correlación (Spearman ρ — por rangos, robusta a atípicos)"
+    corr_pearson: "Correlación (Pearson r)"
+    scatter3d: "%{q_x} / %{q_y} / %{q_z} (3D)"
+    # NMI es una sigla: no se traduce.
+    assoc_heatmap: "Asociación (NMI)"
+    top_relationships: "Relaciones principales (NMI)"
+    us_states: "Estados de EE. UU."
+    countries: "Países"
+    count_by_region: "recuento por %{q_region}"
+    # `≤`, `>`, `km` y `--no-snap` no se traducen (simbolos, unidad SI y nombre
+    # de opcion de la CLI).
+    regions: "Regiones"
+    regions_with: "Regiones (%{q_parts})"
+    snap_snapped: "%{q_n} ajustados ≤%{q_km} km"
+    snap_dropped: "%{q_n} de %{q_total} descartados, %{q_why}"
+    snap_why_over: ">%{q_km} km"
+    category_flow: "Flujo de categorías: %{q_dims}"
+    kpi_mean: "Media de %{q_label}"
+    kpi_total: "Total de %{q_label}"
+    cyclic_records_by: "Registros por %{q_axis} (%{q_date})"
+    cyclic_hour_of_day: "hora del día"
+    cyclic_day_of_week: "día de la semana"
+    cyclic_month: "mes"
+  notes:
+    # Lista separada por comas, no una frase: cada elemento se traduce por separado.
+    box_null: "%{q_pct}% nulos"
+    box_zeros: "%{q_pct}% ceros"
+    box_right_skewed: "asimetría derecha"
+    box_left_skewed: "asimetría izquierda"
+    box_outliers: "%{q_pct}% atípicos"
+    box_heavy_tails: "colas pesadas"
+    box_mean_impact: "media %{q_pct}% por atípicos"
+    box_gini: "Gini %{q_gini}"
+    lorenz_unit: "la concentración es esperable salvo que las filas sean unidades comparables"
+    lorenz_zeros: "tramo plano = %{q_pct}% ceros, no valores pequeños · %{q_unit}"
+    funnel_complete: "n = %{q_n} casos completos (%{q_pct}% de las filas)"
+    funnel_violation: "%{q_here} supera a %{q_prev} en %{q_pct}% de las filas"
+    funnel_bridge: "las etapas no se anidan — puente, no embudo"
+    funnel_inverted: "el total de %{q_here} supera a %{q_prev} — excesos, no fugas"
+  hover:
+    # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` son tokens de PLOTLY: no los traduzcas.
+    # `%{q_label}` y `%{q_gini}` deben ir ANTES de `%{x:.0%}` (ver la ORDERING
+    # RULE en en.yml); si se mueven detras, no se sustituyen.
+    contour: "%{q_x}: %{x:.3s}<br>%{q_y}: %{y:.3s}<br>%{z:,} filas<extra></extra>"
+    lorenz: "%{q_label} (Gini %{q_gini})<br>el %{x:.0%} inferior de los registros posee el %{y:.0%}<extra></extra>"
+    ohlc: "Apertura: %{open}<br>Máximo: %{high}<br>Mínimo: %{low}<br>Cierre: %{close}<extra></extra>"
+    count_by_label: "%{hovertext}<br>recuento: %{y:,}<extra></extra>"
+    histogram: "%{q_col}: %{x:,.3f}<br>recuento: %{y:,}<extra></extra>"
+    polar_records: "%{theta}<br>registros: %{r:,.0f}<extra></extra>"
+    pct_of_total: "%{q_pct}% del total"
+    rank_of: "puesto %{q_rank} de %{q_total}"
+    snap_includes: "incluye %{q_n} ajustados desde fuera"

@@ -29747,6 +29747,24 @@ fn geo_ref(pos: usize) -> String {
 mod tests {
     use super::*;
 
+    /// Pin the process-global locale to English for a test that ASSERTS on localized output.
+    ///
+    /// Observers need this as much as mutators do. The locale is process-global, cargo runs unit
+    /// tests on parallel threads, and one test calls `set_active(spanish)` -- so a test asserting
+    /// English can interleave with it, pass in isolation, and fail only in the full suite. Every
+    /// time a helper gained a `t!` call during localization, the tests reading its output silently
+    /// acquired this dependency; that has now happened four separate times, which is why this is a
+    /// named helper rather than two lines copied around.
+    ///
+    /// Bind the result -- `let _locale = english_locale();`. Dropping it immediately (`let _ =`)
+    /// releases the lock and reinstates exactly the race it exists to prevent.
+    #[must_use = "bind this guard to a named variable; dropping it immediately reinstates the race"]
+    fn english_locale() -> std::sync::MutexGuard<'static, ()> {
+        let guard = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+        guard
+    }
+
     // The atomic sidecar write must be mode-transparent: replacing `fs::write` with a
     // tempfile+rename must not change what permissions the sidecar ends up with, in EITHER
     // direction. tempfile creates 0600, so a naive port narrows a new sidecar; forcing a fixed
@@ -31481,7 +31499,7 @@ mod tests {
     fn render_dict_page_html_groups_stats_and_guards_sci_notation() {
         // Renders localized strings -- must share LOCALE_LOCK with the locale-mutating
         // tests, or a concurrent Spanish test flips the labels asserted below.
-        let _guard = viz_i18n::lock_locale();
+        let _locale = english_locale();
         // Range min/max grouping is role-gated: only genuine `measure` columns get thousands
         // separators on their range. Identifiers, geo codes (ZIP) and years are dimensions, so
         // their ranges render verbatim (a ZIP 15003 must never read "15,003", a year 2099 never
@@ -31590,7 +31608,7 @@ mod tests {
     fn render_dict_page_html_legacy_fields_dict_has_no_jsonschema_export() {
         // Renders localized strings -- must share LOCALE_LOCK with the locale-mutating
         // tests, or a concurrent Spanish test flips the labels asserted below.
-        let _guard = viz_i18n::lock_locale();
+        let _locale = english_locale();
         // A legacy `fields` dictionary is NOT JSON Schema, so the "Export JSONSchema" control
         // must not appear (the label would be a lie); only top-level `properties` dicts get it.
         let legacy = r#"{
@@ -31634,8 +31652,7 @@ mod tests {
         // rendered a visible `a&amp;b` in the browser tooltip. Only the raw name may enter
         // `t!`; `fname` stays escaped for the `download=` attribute and the label span, which
         // are different contexts and must keep their own single escaping.
-        let _guard = viz_i18n::lock_locale();
-        viz_i18n::reset_active();
+        let _locale = english_locale();
 
         let schema = r#"{ "properties": { "account_id": { "type": "integer" } } }"#;
         let dict_json: serde_json::Value = serde_json::from_str(schema).unwrap();
@@ -31688,7 +31705,7 @@ mod tests {
     fn render_dict_page_html_renders_a_download_row_per_sidecar() {
         // Renders localized strings -- must share LOCALE_LOCK with the locale-mutating
         // tests, or a concurrent Spanish test flips the labels asserted below.
-        let _guard = viz_i18n::lock_locale();
+        let _locale = english_locale();
         // Every consumed sidecar joins the JSONSchema export inside ONE `.qsv-dict-downloads`
         // container — the container is what `qsvDictDrawer` relocates into the drawer's button
         // bar, so links outside it (or a per-anchor move) would be dropped there.
@@ -32648,6 +32665,8 @@ mod tests {
 
     #[test]
     fn finalize_freq_bars_appends_null_and_other() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // 12 distinct categories (a..l), descending counts, plus 7 empty cells. With top_n=10,
         // the top 10 are kept and the remaining 2 distinct roll up into "Other (2)"; the null
         // bucket becomes "(NULL)". Both are appended after the real categories, tagged Aggregate.
@@ -32727,6 +32746,8 @@ mod tests {
 
     #[test]
     fn finalize_freq_bars_names_lone_leftover_category() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // 11 distinct categories with top_n=10: the single leftover ("k") is charted under its
         // own name as a real category, NOT as an opaque "Other (1)" aggregate.
         let counts: Vec<(String, u64)> = (0..11)
@@ -32767,6 +32788,8 @@ mod tests {
 
     #[test]
     fn finalize_freq_bars_aggregate_key_never_collides() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // pathological data: a real category whose value already equals the sentinel-suffixed
         // form of the NULL bucket's key. The aggregate key must extend its sentinel until it is
         // distinct, so the synthetic (NULL) bar can never collapse onto that real category.
@@ -32789,6 +32812,8 @@ mod tests {
 
     #[test]
     fn box_shape_hint_reports_skew_and_outliers() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         let mut s = stat("Float", 100, Some(0.8));
         s.pearson_skewness = Some(1.2); // right skew
         s.outliers_percentage = Some(4.2);
@@ -32809,6 +32834,8 @@ mod tests {
 
     #[test]
     fn box_shape_hint_derives_skew_from_base_stats() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // no moarstats pearson_skewness: derived from the base cache as 3*(mean-median)/stddev
         let mut s = stat("Float", 100, Some(0.8));
         s.mean = Some(100.0);
@@ -32834,6 +32861,8 @@ mod tests {
 
     #[test]
     fn box_shape_hint_puts_data_quality_first_and_caps_parts() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // nulls + zeros outrank (and, at the 2-part cap, crowd out) the shape parts
         let mut s = stat("Integer", 500, Some(0.5));
         s.sparsity = Some(0.40);
@@ -32856,6 +32885,8 @@ mod tests {
 
     #[test]
     fn box_shape_hint_reports_moarstats_extras() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // outliers inflating the mean
         let mut s = stat("Float", 100, Some(0.8));
         s.outlier_impact_ratio = Some(0.07);
@@ -33862,8 +33893,7 @@ mod tests {
         // this helper reads the process-global locale now that its template lives in the catalog,
         // so an English assertion has to pin the locale -- cargo runs unit tests on parallel
         // threads and a locale-mutating test would otherwise make this fail nondeterministically
-        let _guard = viz_i18n::lock_locale();
-        viz_i18n::reset_active();
+        let _locale = english_locale();
 
         // the labels are raw column headers dropped into a template that parses `%{...}`, so a
         // header carrying `%` -- or one that already looks like a token -- must be neutralized
@@ -33889,8 +33919,7 @@ mod tests {
     fn lorenz_hover_template_neutralizes_percent_bearing_labels() {
         // same process-global locale dependency as the contour test above -- pin it before
         // asserting English
-        let _guard = viz_i18n::lock_locale();
-        viz_i18n::reset_active();
+        let _locale = english_locale();
 
         // the Lorenz hover interpolates a raw measure label into a template that parses `%{...}`,
         // exactly as the contour hover does -- `%` in a header is NOT an intensive-measure token
@@ -35776,6 +35805,8 @@ mod tests {
 
     #[test]
     fn hierarchy_arrays_folds_remainder_into_other() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // parent "R" has 4 children; top_n = 2 keeps a,b and folds c,d into "Other (2)".
         let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
         for (seg, v) in [("a", 40.0), ("b", 30.0), ("c", 20.0), ("d", 10.0)] {
@@ -35800,6 +35831,8 @@ mod tests {
 
     #[test]
     fn hierarchy_arrays_names_lone_dropped_child() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
         // parent "R" has 3 children with top_n = 2: the single leftover ("c") is emitted under
         // its own name rather than as an "Other (1)" tile, and still expands to its own child.
         let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
@@ -37354,8 +37387,7 @@ mod tests {
         // which was the very key whose omission motivated this test. So rather than trusting a
         // count floor, this asserts FULL coverage: every `t!(` site in the file must present a
         // string-literal first argument, and every such literal must resolve.
-        let _guard = viz_i18n::lock_locale();
-        viz_i18n::reset_active();
+        let _locale = english_locale();
 
         // Scan PRODUCTION code only. This module's own source contains a `t!` call with a
         // runtime key (the resolution check below) and the literal "t!(" the scanner searches
@@ -37415,7 +37447,7 @@ mod tests {
 
     #[test]
     fn english_emits_no_localization_artifacts() {
-        let _guard = viz_i18n::lock_locale();
+        let _locale = english_locale();
         // The single most important property of the whole feature: an English page must be
         // byte-identical to one built before viz learned to localize. Both vendored-asset
         // injections are empty-for-English, and BOTH of them shipped a bug where the empty

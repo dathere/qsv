@@ -16356,8 +16356,9 @@ fn render_dict_page_html(
                 "<a class=\"qsv-dict-viewchart\" data-anchor=\"{anchor}\" href=\"#\" \
                  onclick=\"var o=window.opener;if(o){{try{{var \
                  p=o.document.querySelector('[data-qsv-dict={anchor}]');if(p)p.\
-                 scrollIntoView({{block:'center'}});}}catch(e){{}}o.focus();}}return false\">View \
-                 chart &#8599;</a>\n"
+                 scrollIntoView({{block:'center'}});}}catch(e){{}}o.focus();}}return \
+                 false\">{}&#8599;</a>\n",
+                t!("viz.dict.view_chart")
             )
         } else {
             String::new()
@@ -16475,11 +16476,16 @@ fn render_dict_page_html(
         let fname = html_escape(&sc.fname);
         sidecar_links.push_str(&format!(
             "<a class=\"qsv-dict-export\" download=\"{fname}\" href=\"data:{};base64,{b64}\" \
-             title=\"Download {fname}, a sidecar this dashboard was built from\">&#x2913; <span \
-             class=\"qsv-dict-export-label\">{fname}</span><span \
+             title=\"{tip}\">&#x2913; <span class=\"qsv-dict-export-label\">{fname}</span><span \
              class=\"qsv-dict-export-short\">{}</span></a>\n",
             sc.mime,
-            html_escape(sc.short)
+            html_escape(sc.short),
+            // attribute position, so escape -- and `fname` is already html_escape'd above,
+            // which is what the tooltip names.
+            tip = html_escape(&t!(
+                "viz.dict.sidecar_download_tooltip",
+                q_file = fname.clone()
+            ))
         ));
     }
 
@@ -16504,6 +16510,7 @@ fn render_dict_page_html(
     // only, which the drawer strips.
     let ui_lang = viz_i18n::active_locale().bcp47;
     let dict_page_title = t!("viz.dict.title");
+    let back_to_dashboard = t!("viz.dict.back_to_dashboard");
     format!(
         r##"<!doctype html>
 <html lang="{ui_lang}">
@@ -16586,7 +16593,7 @@ fn render_dict_page_html(
 <body id="qsv-dict-root" class="qsv-dict-body">
 <div class="qsv-dict-wrap qsv-dict-doc">
 <header class="qsv-dict-head">
-<a class="qsv-dict-back" href="#" onclick="var o=window.opener;if(o&&!o.closed){{try{{o.focus();}}catch(e){{}}}}window.close();return false">&#8592; Back to dashboard</a>
+<a class="qsv-dict-back" href="#" onclick="var o=window.opener;if(o&&!o.closed){{try{{o.focus();}}catch(e){{}}}}window.close();return false">&#8592; {back_to_dashboard}</a>
 <h1>{dict_page_title} — {title}</h1>
 </header>
 {downloads}{intro}{toc_nav}{sections}{provenance}</div>
@@ -37180,6 +37187,49 @@ mod tests {
                 "an i18n placeholder survived substitution into {name}"
             );
         }
+    }
+
+    #[test]
+    fn every_t_key_used_in_this_file_exists_in_the_catalog() {
+        // rust-i18n renders the KEY ITSELF when a key is missing -- no panic, no warning, no
+        // compile error. A real instance: three keys were appended to the wrong YAML section, so
+        // the dictionary page shipped the literal text "viz.dict.back_to_dashboard" to users.
+        //
+        // Key-set parity between en.yml and es.yml cannot catch this (both locales agreed, and
+        // both were wrong). The only reliable check is call-site-driven: scan this file for the
+        // keys actually passed to `t!` and confirm each resolves to something other than itself.
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+
+        let src = include_str!("viz.rs");
+        let mut checked = 0usize;
+        let mut missing: Vec<&str> = Vec::new();
+        for (i, part) in src.split("t!(\"").enumerate() {
+            if i == 0 {
+                continue;
+            }
+            let Some(key) = part.split('"').next() else {
+                continue;
+            };
+            // only literal dotted keys; anything else is not a key we can resolve statically
+            if !key.starts_with("viz.") {
+                continue;
+            }
+            checked += 1;
+            if rust_i18n::t!(key) == key {
+                missing.push(key);
+            }
+        }
+        assert!(
+            checked > 40,
+            "expected to find many t! keys by scanning the source, found {checked} — the scan \
+             probably broke rather than the catalog shrinking"
+        );
+        assert!(
+            missing.is_empty(),
+            "these t! keys are missing from the catalog and would render as their own key name in \
+             the page: {missing:?}"
+        );
     }
 
     #[test]

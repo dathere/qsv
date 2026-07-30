@@ -63,6 +63,9 @@ viz:
     export_tooltip: "Descargar este diccionario de datos como JSON Schema"
     export_label: "Exportar JSONSchema"
     export_short: "esquema"
+    view_chart: "Ver gráfico "
+    back_to_dashboard: "Volver al panel"
+    sidecar_download_tooltip: "Descargar %{q_file}, un archivo complementario con el que se construyó este panel"
   drawer:
     row_selected_one: " fila seleccionada"
     row_selected_many: " filas seleccionadas"

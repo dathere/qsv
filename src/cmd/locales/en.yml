@@ -73,6 +73,9 @@ viz:
     export_tooltip: "Download this Data Dictionary as JSON Schema"
     export_label: "Export JSONSchema"
     export_short: "schema"
+    view_chart: "View chart "
+    back_to_dashboard: "Back to dashboard"
+    sidecar_download_tooltip: "Download %{q_file}, a sidecar this dashboard was built from"
   drawer:
     row_selected_one: " row selected"
     row_selected_many: " rows selected"

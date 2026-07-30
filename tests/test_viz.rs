@@ -14101,9 +14101,38 @@ fn viz_smart_default_and_explicit_english_agree() {
     .arg(wrk.path("english.schema.json"));
     wrk.assert_success(&mut cmd);
 
+    // `viz smart` stamps a minute-granular "Compiled:" wall clock into the metadata table, so two
+    // invocations that straddle a minute boundary differ by exactly those bytes. Comparing the
+    // raw files would make this test fail roughly once per however-long-the-two-runs-take, for a
+    // reason that has nothing to do with locale resolution — so normalize the stamp first and
+    // keep the whole-output comparison, which is the actual point of the test.
+    let strip_compiled = |html: String| {
+        let mut out = String::with_capacity(html.len());
+        for (i, chunk) in html.split("<td>").enumerate() {
+            if i > 0 {
+                out.push_str("<td>");
+            }
+            // "2026-07-30 00:07 UTC" — fixed shape, so a prefix check is enough to spot it.
+            match chunk.find(" UTC</td>") {
+                Some(end) if end == 16 => {
+                    out.push_str("COMPILED_TIMESTAMP");
+                    out.push_str(&chunk[end..]);
+                },
+                _ => out.push_str(chunk),
+            }
+        }
+        out
+    };
+
+    let a = strip_compiled(wrk.read_to_string("no_lang.html").unwrap());
+    let b = strip_compiled(wrk.read_to_string("explicit_en.html").unwrap());
+    assert!(
+        a.contains("COMPILED_TIMESTAMP"),
+        "the Compiled: stamp should have been found and normalized; if the metadata format \
+         changed, update this normalizer rather than dropping it"
+    );
     assert_eq!(
-        wrk.read_to_string("no_lang.html").unwrap(),
-        wrk.read_to_string("explicit_en.html").unwrap(),
+        a, b,
         "defaulting to English and asking for English must produce identical output"
     );
 }

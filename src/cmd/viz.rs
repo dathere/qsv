@@ -23522,7 +23522,13 @@ impl<'a> SmartCtx<'a> {
                                 return None;
                             }
                             Some(Panel::new(
-                                format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
+                                t!(
+                                    "viz.title.scatter3d",
+                                    q_x = labels[i],
+                                    q_y = labels[j],
+                                    q_z = labels[k]
+                                )
+                                .into_owned(),
                                 PanelKind::Scatter3D {
                                     xs,
                                     ys,
@@ -23545,14 +23551,14 @@ impl<'a> SmartCtx<'a> {
                 // The coefficient is named in the title (and in every cell's hover): a Spearman
                 // matrix reported as plain "Correlation" would be read as Pearson's r.
                 let corr_title = if spearman_corr {
-                    "Correlation (Spearman \u{3c1} \u{2014} rank, robust to outliers)"
+                    t!("viz.title.corr_spearman")
                 } else {
-                    "Correlation (Pearson r)"
+                    t!("viz.title.corr_pearson")
                 };
                 self.panels.insert(
                     0,
                     Panel::new(
-                        corr_title.to_string(),
+                        corr_title.into_owned(),
                         PanelKind::CorrHeatmap {
                             labels,
                             matrix: mask_to_lower_triangle(matrix),

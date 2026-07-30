@@ -196,6 +196,13 @@ viz:
     # Deliberately NOT unified with `trend_count`'s grain-derived unit -- this
     # title has always said "Records" regardless of grain, and English
     # byte-identity forbids changing that here.
+    # ASSOCIATION HEATMAP + 3D drill-down. Three standalone whole titles: nothing
+    # decorates them (the only generic name-decorating pass is gated on
+    # `PanelKind::FreqBar`), and they share no key with anything above.
+    # `ρ` / `r` are statistical symbols and `(3D)` is a convention -- all literal.
+    corr_spearman: "Correlation (Spearman ρ — rank, robust to outliers)"
+    corr_pearson: "Correlation (Pearson r)"
+    scatter3d: "%{q_x} / %{q_y} / %{q_z} (3D)"
     cyclic_records_by: "Records by %{q_axis} (%{q_date})"
     cyclic_hour_of_day: "hour of day"
     cyclic_day_of_week: "day of week"

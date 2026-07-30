@@ -119,7 +119,7 @@ branch) a Traditional request would have silently returned Simplified — a wron
 merely a wrong dialect.
 
 **Neither file has `columnControl`**, and both also omit `lengthLabels` and `orderClear`, so those
-controls keep DataTables' English defaults — the same shape as `pt-BR.json`. Of the six vendored
+controls keep DataTables' English defaults — the same shape as `pt-BR.json`. Of the seven vendored
 DataTables locales only `es`, `fr` and `de` are complete.
 
 ## Fixing a bad string in a vendored DataTables locale

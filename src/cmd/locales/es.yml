@@ -75,6 +75,14 @@ viz:
     viewer_failed: "qsv viz: fallo el visor de datos:"
     advanced_filter: "Filtro avanzado"
     advanced_filter_counted: "Filtro avanzado (%d)"
+  chart:
+    # `null_bucket` y `other_bucket` son etiquetas de DATOS: aparecen como valores de
+    # categoria en los ejes. `null_bucket` tambien se usa como clave de agrupacion en
+    # los paneles de jerarquia y parcats.
+    log_axis_count: "recuento (log)"
+    log_axis_value: "escala log"
+    null_bucket: "(NULO)"
+    other_bucket: "Otros (%{q_count})"
   hover:
     # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` son tokens de PLOTLY: no los traduzcas.
     # `%{q_label}` y `%{q_gini}` deben ir ANTES de `%{x:.0%}` (ver la ORDERING

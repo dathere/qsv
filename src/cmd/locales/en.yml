@@ -94,6 +94,17 @@ viz:
     viewer_failed: "qsv viz: data viewer failed:"
     advanced_filter: "Advanced Filter"
     advanced_filter_counted: "Advanced Filter (%d)"
+  chart:
+    # `null_bucket` and `other_bucket` are chart DATA labels, not chrome: they appear
+    # as axis category values. Translating them is deliberate (see the commit that
+    # added this section). `null_bucket` doubles as a grouping key in the hierarchy
+    # and parcats panels, so a category whose literal value equals this text merges
+    # into the null bucket -- true of "(NULL)" in English today, just with a
+    # different trigger string per locale.
+    log_axis_count: "count (log)"
+    log_axis_value: "log scale"
+    null_bucket: "(NULL)"
+    other_bucket: "Other (%{q_count})"
   hover:
     # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` are PLOTLY tokens -- leave them exactly
     # as they are. Only the surrounding words get translated. See the ORDERING

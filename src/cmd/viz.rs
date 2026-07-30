@@ -1393,10 +1393,17 @@ const DEFAULT_LEFT_MARGIN_PX: usize = 60;
 /// `--log-scale`). It's the visual cue that the axis is log, not linear; linear panels stay
 /// title-less to keep the cells compact. The rotated title needs a little extra left margin
 /// (`LOG_AXIS_TITLE_MARGIN_PX`) so it isn't clipped against the page edge.
-const LOG_AXIS_TITLE: &str = "count (log)";
+///
+/// A function rather than a `const` because the text is localized and the catalog resolves at
+/// runtime.
+fn log_axis_title() -> String {
+    t!("viz.chart.log_axis_count").into_owned()
+}
 /// The log-cue y-axis title for a VALUE axis (a log box panel), where "count (log)" would be
 /// wrong — the axis carries the column's values, not frequencies.
-const VALUE_LOG_AXIS_TITLE: &str = "log scale";
+fn value_log_axis_title() -> String {
+    t!("viz.chart.log_axis_value").into_owned()
+}
 const LOG_AXIS_TITLE_MARGIN_PX: usize = 20;
 
 /// `viz smart` correlation-heatmap panel tuning. Long numeric-column names would clip against
@@ -1472,8 +1479,29 @@ const BAR_LABEL_MAX_CHARS: usize = 20;
 /// frequency`'s defaults: the `(NULL)` bar collects empty cells and `Other (N)` collects the
 /// categories beyond `--limit` (N = the count of those distinct categories). Suppressed by
 /// `--no-nulls` / `--no-other` respectively.
-const NULL_TEXT: &str = "(NULL)";
-const OTHER_TEXT: &str = "Other";
+///
+/// Functions rather than `const`s because both are localized. For the frequency bars these are
+/// purely DISPLAY text: `FreqBar::x_key` carries axis identity (via `AGG_KEY_SENTINEL`, extended
+/// until provably unique) and `FreqBar::kind` carries the aggregate/category distinction, so
+/// translating cannot change how bars collide or how they are colored.
+///
+/// `null_text` is ALSO used as a real grouping key in the hierarchy and parcats paths, where it
+/// gets no sentinel. There, a category whose literal value equals the translated text merges into
+/// the null bucket -- exactly as a category literally named "(NULL)" does in English today. The
+/// trigger string changes with the locale; the behavior does not.
+fn null_text() -> String {
+    t!("viz.chart.null_bucket").into_owned()
+}
+
+/// The `Other (N)` bucket label. The count is part of the localized string rather than appended
+/// to it, so a translation can put it wherever its grammar wants.
+fn other_text(distinct: u64) -> String {
+    t!(
+        "viz.chart.other_bucket",
+        q_count = HumanCount(distinct).to_string()
+    )
+    .into_owned()
+}
 
 /// Muted grey for the aggregate `(NULL)` / `Other (N)` frequency bars so they read as summary
 /// buckets, visually distinct from the palette-colored real categories.
@@ -11460,7 +11488,7 @@ fn measure_by_dim_panel(
             let raw = cell_to_string(record.get(d_idx));
             let trimmed = raw.trim();
             row_keys.push(if trimmed.is_empty() {
-                NULL_TEXT.to_string()
+                null_text()
             } else {
                 trimmed.to_string()
             });
@@ -11657,7 +11685,7 @@ fn grouped_violin_panel(
         };
         let raw = cell_to_string(record.get(d_idx));
         let key = if raw.trim().is_empty() {
-            NULL_TEXT.to_string()
+            null_text()
         } else {
             raw.trim().to_string()
         };
@@ -27963,13 +27991,13 @@ fn finalize_freq_bars(
     let mut used: std::collections::HashSet<String> =
         bars.iter().map(|b| b.x_key.clone()).collect();
     if !no_nulls && null_count > 0 {
-        push_aggregate_bar(&mut bars, &mut used, NULL_TEXT.to_string(), null_count);
+        push_aggregate_bar(&mut bars, &mut used, null_text(), null_count);
     }
     if !no_other && other_count > 0 {
         push_aggregate_bar(
             &mut bars,
             &mut used,
-            format!("{OTHER_TEXT} ({})", HumanCount(other_unique as u64)),
+            other_text(other_unique as u64),
             other_count,
         );
     }
@@ -28121,12 +28149,12 @@ fn accumulate_hierarchy_counts(
                 Some(cell) => {
                     let cell = crate::cmd::frequency::trim_bs_whitespace(cell);
                     if cell.is_empty() {
-                        NULL_TEXT.to_string()
+                        null_text()
                     } else {
                         String::from_utf8_lossy(cell).into_owned()
                     }
                 },
-                None => NULL_TEXT.to_string(),
+                None => null_text(),
             };
             path.push(seg);
         }
@@ -28393,7 +28421,7 @@ fn hierarchy_arrays(
         // always emit the Other bucket when dropping, so kept children + Other == parent
         // (keeps `branchvalues="total"` consistent; otherwise plotly shows a phantom gap).
         if other_drops > 0 {
-            labels.push(format!("{OTHER_TEXT} ({})", HumanCount(other_drops as u64)));
+            labels.push(other_text(other_drops as u64));
             parents.push(prefix_id.clone());
             values.push(other_value);
             ids.push(unique_id(format!(
@@ -29535,9 +29563,9 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
             title_font = title_font.family(FONT_FAMILY);
         }
         let cue = if headroom_max.is_some() {
-            LOG_AXIS_TITLE
+            log_axis_title()
         } else {
-            VALUE_LOG_AXIS_TITLE
+            value_log_axis_title()
         };
         a = a.title(Title::with_text(cue).font(title_font));
     }

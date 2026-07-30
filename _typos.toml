@@ -52,4 +52,5 @@ extend-exclude = [
     "src/cmd/assets/i18n/*",
     "src/cmd/locales/*",
     "tests/test_viz.rs",
+    "src/cmd/viz.rs",
 ]

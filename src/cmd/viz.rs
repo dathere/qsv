@@ -21469,7 +21469,7 @@ fn outlier_jurisdictions(labels: &[Option<crate::cmd::geocode::GeoLabel>]) -> St
     };
     match names.len() {
         0 => String::new(),
-        n if n > 3 => format!("{n} areas"),
+        n if n > 3 => t!("viz.map.geo_n_areas", q_n = n).into_owned(),
         _ => join_jurisdictions(&names),
     }
 }
@@ -30084,6 +30084,32 @@ mod tests {
     }
 
     #[cfg(feature = "geocode")]
+    #[test]
+    fn consolidate_geo_rolls_up_beyond_three_distinct() {
+        // Both roll-up branches are localized and NO golden fixture reaches
+        // either, so this is their only coverage -- hence the English pin
+        // (roborev 3955).
+        let _locale = english_locale();
+        // >3 distinct countries -> the country roll-up, no region tail
+        let countries = vec![
+            gp("A", "Seattle", "Washington", "United States"),
+            gp("B", "Vancouver", "British Columbia", "Canada"),
+            gp("C", "Mexico City", "CDMX", "Mexico"),
+            gp("D", "Lima", "Lima", "Peru"),
+        ];
+        assert_eq!(consolidate_geo(&countries), "4 countries");
+        // >3 distinct admin1s inside ONE country -> the region roll-up, which
+        // keeps the ", <country>" tail
+        let regions = vec![
+            gp("A", "Seattle", "Washington", "United States"),
+            gp("B", "Portland", "Oregon", "United States"),
+            gp("C", "Boise", "Idaho", "United States"),
+            gp("D", "Reno", "Nevada", "United States"),
+        ];
+        assert_eq!(consolidate_geo(&regions), "4 regions, United States");
+    }
+
+    #[cfg(feature = "geocode")]
     fn gp_county(
         tag: &'static str,
         city: &str,
@@ -30369,6 +30395,30 @@ mod tests {
         );
         // nothing resolved -> empty
         assert_eq!(outlier_jurisdictions(&[None, None]), "");
+        // more than 3 distinct -> the localized "N areas" roll-up rather than a
+        // long list. This value is interpolated into `geo_outliers_where`'s
+        // parenthetical, so an unlocalized roll-up here would leave English
+        // inside an otherwise-translated caption (roborev 3955).
+        let _locale = english_locale();
+        assert_eq!(
+            outlier_jurisdictions(&[
+                label("Pennsylvania", "United States"),
+                label("Ohio", "United States"),
+                label("Maine", "United States"),
+                label("Nevada", "United States"),
+            ]),
+            "4 areas"
+        );
+        // the same roll-up on the country fallback path
+        assert_eq!(
+            outlier_jurisdictions(&[
+                label("", "Canada"),
+                label("", "Mexico"),
+                label("", "Brazil"),
+                label("", "Peru"),
+            ]),
+            "4 areas"
+        );
     }
 
     #[cfg(feature = "geocode")]

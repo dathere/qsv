@@ -77,10 +77,16 @@ viz:
     geo_outlier_many: "outliers"
     geo_outliers: "%{q_core} — %{q_n} %{q_noun}"
     geo_outliers_where: "%{q_core} — %{q_n} %{q_noun} (%{q_where})"
-    # Jurisdiction roll-ups, used only when more than 3 are distinct (so both are
-    # always plural). `%{q_suffix}` is a ", <country>" tail, already composed.
+    # Jurisdiction roll-ups, used only when more than 3 are distinct (so all
+    # three are always plural). `%{q_suffix}` is a ", <country>" tail, already
+    # composed. `geo_n_areas` is the roll-up inside the outlier parenthetical --
+    # a THIRD one, in `outlier_jurisdictions` rather than `consolidate_geo`; it
+    # feeds `%{q_where}` above, so missing it left "— 9 atípicos (5 areas)".
+    # None of the three is reachable from any golden fixture; the unit tests
+    # below are their only coverage, and they must pin English.
     geo_n_countries: "%{q_n} countries"
     geo_n_regions: "%{q_n} regions%{q_suffix}"
+    geo_n_areas: "%{q_n} areas"
   photo:
     alt: "Photo for the hovered map point"
     close: "Close"

@@ -45,6 +45,7 @@ viz:
     geo_outliers_where: "%{q_core} — %{q_n} %{q_noun} (%{q_where})"
     geo_n_countries: "%{q_n} países"
     geo_n_regions: "%{q_n} regiones%{q_suffix}"
+    geo_n_areas: "%{q_n} áreas"
   photo:
     alt: "Foto del punto señalado en el mapa"
     close: "Cerrar"

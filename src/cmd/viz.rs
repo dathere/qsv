@@ -21535,15 +21535,28 @@ fn outlier_summary(core: &str, n_outliers: usize, jurisdictions: &str) -> String
         return core.to_string();
     }
     let noun = if n_outliers == 1 {
-        "outlier"
+        t!("viz.map.geo_outlier_one")
     } else {
-        "outliers"
+        t!("viz.map.geo_outlier_many")
     };
     let n_outliers = HumanCount(n_outliers as u64);
     if jurisdictions.is_empty() {
-        format!("{core} \u{2014} {n_outliers} {noun}")
+        t!(
+            "viz.map.geo_outliers",
+            q_core = core,
+            q_n = n_outliers.to_string(),
+            q_noun = noun
+        )
+        .into_owned()
     } else {
-        format!("{core} \u{2014} {n_outliers} {noun} ({jurisdictions})")
+        t!(
+            "viz.map.geo_outliers_where",
+            q_core = core,
+            q_n = n_outliers.to_string(),
+            q_noun = noun,
+            q_where = jurisdictions
+        )
+        .into_owned()
     }
 }
 
@@ -21560,7 +21573,7 @@ fn consolidate_geo(points: &[GeoPoint]) -> String {
 
     let countries = distinct_jurisdictions(labels.iter().map(|l| l.country.as_str()));
     if countries.len() > 3 {
-        return format!("{} countries", countries.len());
+        return t!("viz.map.geo_n_countries", q_n = countries.len()).into_owned();
     }
     if countries.len() >= 2 {
         return join_jurisdictions(&countries);
@@ -21574,7 +21587,12 @@ fn consolidate_geo(points: &[GeoPoint]) -> String {
         return country.cloned().unwrap_or_default();
     }
     if admin1s.len() > 3 {
-        return format!("{} regions{suffix}", admin1s.len());
+        return t!(
+            "viz.map.geo_n_regions",
+            q_n = admin1s.len(),
+            q_suffix = suffix
+        )
+        .into_owned();
     }
     if admin1s.len() >= 2 {
         return format!("{}{suffix}", join_jurisdictions(&admin1s));
@@ -26026,7 +26044,7 @@ fn smart_grid_parts(
                 if !meta.summary.is_empty() {
                     annotations.push(
                         Annotation::new()
-                            .text(format!("Spatial extent: {}", meta.summary))
+                            .text(&t!("viz.map.geo_extent_caption", q_summary = meta.summary))
                             .x(geom.title_x)
                             .y((geom.y_domain[0] - GEO_META_OFFSET).max(0.0))
                             .x_ref("paper")
@@ -27740,10 +27758,14 @@ fn render_smart_inline(
         if let Some(meta) = &panel.geo_meta
             && !meta.summary.is_empty()
         {
+            // escape the COMPOSED caption, not just the summary: that keeps the
+            // escaping exactly-once (the English prefix has no metacharacters, so
+            // this stays byte-identical) while also covering a translation that
+            // legitimately contains `&`.
             cells.push_str(&format!(
-                r#"      <div class="qsv-viz-geo-meta">Spatial extent: {}</div>
+                r#"      <div class="qsv-viz-geo-meta">{}</div>
 "#,
-                html_escape(&meta.summary)
+                html_escape(&t!("viz.map.geo_extent_caption", q_summary = meta.summary))
             ));
         }
         cells.push_str("    </div>\n");
@@ -30285,6 +30307,9 @@ mod tests {
     #[cfg(feature = "geocode")]
     #[test]
     fn outlier_summary_count_and_jurisdiction() {
+        // the outlier call-out is localized -- pin English, or these assertions
+        // race the Spanish-setting tests on the process-global locale.
+        let _locale = english_locale();
         let core = "New York & New Jersey, United States";
         // zero outliers -> core summary unchanged
         assert_eq!(outlier_summary(core, 0, "Pennsylvania"), core);

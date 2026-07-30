@@ -38,6 +38,13 @@ viz:
     spatial_extent: "extensión espacial"
     full_extent: "extensión completa (incl. atípicos)"
     geographic_outliers: "atípicos geográficos"
+    geo_extent_caption: "Extensión espacial: %{q_summary}"
+    geo_outlier_one: "atípico"
+    geo_outlier_many: "atípicos"
+    geo_outliers: "%{q_core} — %{q_n} %{q_noun}"
+    geo_outliers_where: "%{q_core} — %{q_n} %{q_noun} (%{q_where})"
+    geo_n_countries: "%{q_n} países"
+    geo_n_regions: "%{q_n} regiones%{q_suffix}"
   photo:
     alt: "Foto del punto señalado en el mapa"
     close: "Cerrar"

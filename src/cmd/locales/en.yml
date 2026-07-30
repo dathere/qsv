@@ -61,6 +61,26 @@ viz:
     spatial_extent: "spatial extent"
     full_extent: "full extent (incl. outliers)"
     geographic_outliers: "geographic outliers"
+    # The reverse-geocoded caption BELOW a map panel, emitted twice (a plotly
+    # annotation in the typed grid, an HTML <div> in the inline path). Its
+    # `%{q_summary}` is built by `consolidate_geo` + `outlier_summary` from the
+    # keys below, so all of these are ONE rendered string and must stay together
+    # -- localizing only the prefix leaves "… — 9 outliers (Pennsylvania)".
+    #
+    # In the HTML path the COMPOSED caption is html-escaped, so a translator may
+    # safely use `&` here; do not pre-escape the slot value.
+    geo_extent_caption: "Spatial extent: %{q_summary}"
+    # Outlier call-out appended to the caption. `%{q_n}` arrives already
+    # thousands-separated. The noun is a one/many pair, matching
+    # `cluster_point_one` / `row_selected_one` above.
+    geo_outlier_one: "outlier"
+    geo_outlier_many: "outliers"
+    geo_outliers: "%{q_core} — %{q_n} %{q_noun}"
+    geo_outliers_where: "%{q_core} — %{q_n} %{q_noun} (%{q_where})"
+    # Jurisdiction roll-ups, used only when more than 3 are distinct (so both are
+    # always plural). `%{q_suffix}` is a ", <country>" tail, already composed.
+    geo_n_countries: "%{q_n} countries"
+    geo_n_regions: "%{q_n} regions%{q_suffix}"
   photo:
     alt: "Photo for the hovered map point"
     close: "Close"

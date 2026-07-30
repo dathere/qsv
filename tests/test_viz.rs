@@ -9365,6 +9365,83 @@ fn viz_choropleth_pip_auto_snap_cap_ward_scale() {
     );
 }
 
+// --language es localizes the below-map coverage note. This is the guard the English assertions
+// above CANNOT provide: English is the catalog's own value, so reverting either coverage sentence
+// to its old `format!` leaves every English assertion passing. Uses the ward-scale fixture because
+// it is the one case where the snap sentence and the cap-drop sentence fire together.
+//
+// It also pins the deliberate asymmetry: the dashboard note is translated, the stderr diagnostic
+// is NOT. Every one of this command's stderr messages is English, so localizing only the phrase
+// they share would emit a half-Spanish English sentence.
+#[test]
+fn viz_choropleth_pip_coverage_note_localizes() {
+    let wrk = Workdir::new("viz_choropleth_pip_coverage_note_localizes");
+    wrk.create_from_string(
+        "pts.csv",
+        "lat,lon\n0.01234,0.01234\n0.01234,0.03123\n0.02100,0.01000\n0.03800,0.01000\n",
+    );
+    wrk.create_from_string(
+        "wards.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,0.02],[0.02,0.02],[0.02,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[0.02,0],[0.02,0.02],[0.04,0.02],[0.04,0],[0.02,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "wards.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--language",
+        "es",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(
+            "1 de 4 puntos se ajustaron a la región más cercana (≤0.31 km, derivado del tamaño de \
+             las regiones y de la precisión de las coordenadas)."
+        ),
+        "missing localized snap note; html was: {html}"
+    );
+    assert!(
+        html.contains(
+            "1 de 4 puntos estaban a más de 0.31 km de cualquier región y se descartaron."
+        ),
+        "missing localized cap-drop note; html was: {html}"
+    );
+    // no English fragment of either sentence survives, and no raw catalog key leaked
+    for english in [
+        "points snapped to the nearest region",
+        "auto-derived from region size",
+        "were farther than",
+        "viz.notes.snap_coverage",
+        "viz.notes.drop_coverage",
+        "viz.notes.snap_basis_region_precision",
+        "%{q_",
+    ] {
+        assert!(
+            !html.contains(english),
+            "{english:?} survived into the Spanish dashboard"
+        );
+    }
+    // the stderr diagnostic stays English on purpose -- it is not part of the dashboard
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(
+            "points were snapped to the nearest region (cap 0.31 km, auto-derived from region \
+             size and coordinate precision)."
+        ),
+        "stderr should stay English; stderr was: {stderr}"
+    );
+}
+
 // --no-snap drops points outside every region (instead of snapping to nearest) and reports coverage
 // on stderr.
 #[test]

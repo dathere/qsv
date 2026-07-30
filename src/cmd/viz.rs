@@ -5279,8 +5279,13 @@ struct SnapCap {
 }
 
 impl SnapCap {
-    /// Short provenance phrase for coverage notes ("cap 3.2 km, {phrase}").
-    const fn basis_phrase(&self) -> &'static str {
+    /// Short provenance phrase for the **stderr** coverage notes ("cap 3.2 km, {phrase}").
+    ///
+    /// Deliberately NOT localized: every one of this command's stderr diagnostics is English, so
+    /// substituting a translated phrase here would emit a half-Spanish English sentence. The
+    /// dashboard's own below-map note uses [`SnapCap::basis_phrase_localized`] instead; the two
+    /// are pinned byte-identical under English by `snap_basis_catalog_matches_english_phrase`.
+    const fn basis_phrase_en(&self) -> &'static str {
         match self.basis {
             SnapCapBasis::Explicit => "--snap-max-dist",
             SnapCapBasis::Auto {
@@ -5303,6 +5308,35 @@ impl SnapCap {
             }
             | SnapCapBasis::Fallback => "default",
         }
+    }
+
+    /// Same provenance phrase, in the dashboard's language, for the below-map coverage note.
+    ///
+    /// The keys are spelled out per arm rather than mapped over a runtime key, because
+    /// `every_t_key_used_in_this_file_exists_in_the_catalog` only verifies literal keys and hard-
+    /// fails on a computed one -- a typo would otherwise render as raw key text under the map.
+    fn basis_phrase_localized(&self) -> String {
+        match self.basis {
+            SnapCapBasis::Explicit => t!("viz.notes.snap_basis_explicit"),
+            SnapCapBasis::Auto {
+                region_km: Some(_),
+                precision_km: Some(_),
+            } => t!("viz.notes.snap_basis_region_precision"),
+            SnapCapBasis::Auto {
+                region_km: Some(_),
+                precision_km: None,
+            } => t!("viz.notes.snap_basis_region"),
+            SnapCapBasis::Auto {
+                region_km: None,
+                precision_km: Some(_),
+            } => t!("viz.notes.snap_basis_precision"),
+            SnapCapBasis::Auto {
+                region_km: None,
+                precision_km: None,
+            }
+            | SnapCapBasis::Fallback => t!("viz.notes.snap_basis_default"),
+        }
+        .into_owned()
     }
 }
 
@@ -6082,7 +6116,7 @@ fn choropleth_pip_locations(
             "viz choropleth: {snapped} of {total} points were snapped to the nearest region (cap \
              {} km, {}).",
             fmt_measure(cap.km),
-            cap.basis_phrase()
+            cap.basis_phrase_en()
         ));
     }
     if dropped > 0 {
@@ -6111,25 +6145,35 @@ fn choropleth_pip_locations(
     // Whenever anything snapped, the note states the snap metadata (count, cap, cap provenance).
     let mut note_parts: Vec<String> = Vec::new();
     if snapped > 0 {
-        note_parts.push(format!(
-            "{snapped} of {total} points snapped to the nearest region (≤{} km, {}).",
-            fmt_measure(cap.km),
-            cap.basis_phrase()
-        ));
+        note_parts.push(
+            t!(
+                "viz.notes.snap_coverage",
+                q_n = snapped,
+                q_total = total,
+                q_km = fmt_measure(cap.km),
+                q_basis = cap.basis_phrase_localized()
+            )
+            .into_owned(),
+        );
     }
     if dropped > 0 {
-        note_parts.push(if snap {
-            format!(
-                "{dropped} of {total} points were farther than {} km from any region and were \
-                 dropped.",
-                fmt_measure(cap.km)
-            )
-        } else {
-            format!(
-                "--no-snap: {dropped} of {total} points fell outside every GeoJSON region and \
-                 were dropped."
-            )
-        });
+        note_parts.push(
+            if snap {
+                t!(
+                    "viz.notes.drop_coverage",
+                    q_n = dropped,
+                    q_total = total,
+                    q_km = fmt_measure(cap.km)
+                )
+            } else {
+                t!(
+                    "viz.notes.drop_coverage_no_snap",
+                    q_n = dropped,
+                    q_total = total
+                )
+            }
+            .into_owned(),
+        );
     }
     let below_note = (!note_parts.is_empty()).then(|| note_parts.join(" "));
 
@@ -19723,7 +19767,7 @@ fn build_smart_pip_choropleth_panel(
             "viz smart: {snapped} of {total} points were snapped to the nearest region (cap {} \
              km, {}).",
             fmt_measure(cap.km),
-            cap.basis_phrase()
+            cap.basis_phrase_en()
         ));
     }
     if dropped > 0 {
@@ -36687,6 +36731,43 @@ mod tests {
             "1-decimal coords should floor the cap at ~16 km, got {}",
             cap.km
         );
+    }
+
+    // The stderr phrase keeps its literals in Rust; the below-map note reads the catalog. Nothing
+    // but this assertion stops the two from drifting apart, and only ONE of the five phrases is
+    // asserted by an integration test -- the other four rest solely here. A missing or misspelled
+    // key fails too: rust-i18n renders the key itself, which never equals the literal.
+    #[test]
+    fn snap_basis_catalog_matches_english_phrase() {
+        let _locale = english_locale();
+        for basis in [
+            SnapCapBasis::Explicit,
+            SnapCapBasis::Auto {
+                region_km:    Some(12.0),
+                precision_km: Some(3.0),
+            },
+            SnapCapBasis::Auto {
+                region_km:    Some(12.0),
+                precision_km: None,
+            },
+            SnapCapBasis::Auto {
+                region_km:    None,
+                precision_km: Some(3.0),
+            },
+            // never leaves resolve_snap_cap (it returns Fallback); covered for exhaustiveness.
+            SnapCapBasis::Auto {
+                region_km:    None,
+                precision_km: None,
+            },
+            SnapCapBasis::Fallback,
+        ] {
+            let cap = SnapCap { km: 1.0, basis };
+            assert_eq!(
+                cap.basis_phrase_localized(),
+                cap.basis_phrase_en(),
+                "catalog value drifted from the English literal for {basis:?}"
+            );
+        }
     }
 
     // with neither signal available the cap falls back to the fixed default.

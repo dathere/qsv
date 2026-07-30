@@ -373,6 +373,20 @@ viz:
     funnel_violation: "%{q_here} exceeds %{q_prev} in %{q_pct}% of rows"
     funnel_bridge: "stages do not nest — bridged, not funnelled"
     funnel_inverted: "%{q_here} total exceeds %{q_prev} — overruns, not leakage"
+    # Choropleth point-in-polygon coverage, rendered as a caption beneath the map (a saved
+    # HTML has no stderr to fall back on). The matching stderr diagnostics stay English --
+    # see `SnapCap::basis_phrase_en`. `--no-snap` is a COMMAND-LINE FLAG: keep it verbatim,
+    # do not translate it. `≤` is U+2264. `%{q_basis}` receives one of the `snap_basis_*`
+    # values below.
+    snap_coverage: "%{q_n} of %{q_total} points snapped to the nearest region (≤%{q_km} km, %{q_basis})."
+    drop_coverage: "%{q_n} of %{q_total} points were farther than %{q_km} km from any region and were dropped."
+    drop_coverage_no_snap: "--no-snap: %{q_n} of %{q_total} points fell outside every GeoJSON region and were dropped."
+    # How the snap-distance cap was chosen. `--snap-max-dist` is a FLAG NAME: keep it verbatim.
+    snap_basis_explicit: "--snap-max-dist"
+    snap_basis_region_precision: "auto-derived from region size and coordinate precision"
+    snap_basis_region: "auto-derived from region size"
+    snap_basis_precision: "auto-derived from coordinate precision"
+    snap_basis_default: "default"
   hover:
     # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` are PLOTLY tokens -- leave them exactly
     # as they are. Only the surrounding words get translated. See the ORDERING

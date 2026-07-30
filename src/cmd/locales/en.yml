@@ -128,6 +128,32 @@ viz:
     viewer_failed: "qsv viz: data viewer failed:"
     advanced_filter: "Advanced Filter"
     advanced_filter_counted: "Advanced Filter (%d)"
+  menu:
+    # ON-GRAPH `updatemenus` BUTTON LABELS (group 5). Deferred through phase 2
+    # per roborev 3936 finding 1, then done deliberately at the maintainer's
+    # request.
+    #
+    # SAFE to translate: no Rust or JS ever locates one of these menus by its
+    # label text. The theme-flip handler in `theme_script` finds the basemap
+    # toggle by testing for a `map.style` key in the button's baked args
+    # (`typeof a[0]["map.style"] === "string"`), and every other menu is reached
+    # by iterating `gd.layout.updatemenus` structurally. Verified by grep: there
+    # is no `===`/`indexOf`/`includes` against any of these strings.
+    #
+    # KEEP THE LEADING GLYPH. `▶` (U+25B6), `⏸` (U+23F8) and `⇅` (U+21C5) are
+    # part of the control's visual identity, not words -- translate only the
+    # text after them, and do not add or drop the space.
+    play: "▶ Play"
+    pause: "⏸ Pause"
+    category_order: "⇅ category order"
+    node_order: "⇅ node order"
+    # Map controls. `extent_core` / `extent_full` are the two zoom buttons on an
+    # outlier map; the wording deliberately echoes `viz.map.full_extent`, the
+    # legend name for the same box.
+    extent_core: "Core extent"
+    extent_full: "Full extent"
+    cluster_toggle: "Clusters/Points"
+    basemap_labels: "Basemap labels"
   chart:
     # `null_bucket` and `other_bucket` are chart DATA labels, not chrome: they appear
     # as axis category values. Translating them is deliberate (see the commit that

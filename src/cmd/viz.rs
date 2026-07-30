@@ -2873,7 +2873,7 @@ fn slider_control(col_label: &str, frame_values: &[String], speed_ms: u64) -> Cl
 /// A top-left Play/Pause button row that runs / halts the frame animation.
 fn play_pause_menu(speed_ms: u64) -> CliResult<UpdateMenu> {
     let play = ButtonBuilder::new()
-        .label("▶ Play")
+        .label(&t!("viz.menu.play"))
         .animation(Animation::all_frames().options(slider_anim_options(speed_ms).fromcurrent(true)))
         .build();
     let play = match play {
@@ -2881,7 +2881,7 @@ fn play_pause_menu(speed_ms: u64) -> CliResult<UpdateMenu> {
         Err(e) => return fail_clierror!("failed to build play button: {e}"),
     };
     let pause = ButtonBuilder::new()
-        .label("⏸ Pause")
+        .label(&t!("viz.menu.pause"))
         .animation(Animation::pause())
         .build();
     let pause = match pause {
@@ -6693,7 +6693,7 @@ fn parcats_order_toggle_menu(ordered: &[Vec<String>]) -> UpdateMenu {
     let alpha_args = serde_json::json!([serde_json::Value::Object(alpha), [0]]);
     let array_args = serde_json::json!([serde_json::Value::Object(array_state), [0]]);
     let toggle = Button::new()
-        .label("⇅ category order")
+        .label(&t!("viz.menu.category_order"))
         .method(ButtonMethod::Restyle)
         .args(alpha_args)
         .args2(array_args);
@@ -21291,8 +21291,8 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
         .ty(UpdateMenuType::Buttons)
         .direction(UpdateMenuDirection::Right)
         .buttons(vec![
-            button("Core extent", core),
-            button("Full extent", full),
+            button(&t!("viz.menu.extent_core"), core),
+            button(&t!("viz.menu.extent_full"), full),
         ])
         .x(0.02)
         .x_anchor(Anchor::Left)
@@ -21318,7 +21318,7 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
 /// the points-first default. Added only when the core is cluster-eligible.
 fn cluster_toggle_menu() -> UpdateMenu {
     let toggle = Button::new()
-        .label("Clusters/Points")
+        .label(&t!("viz.menu.cluster_toggle"))
         .method(ButtonMethod::Restyle)
         .args(serde_json::json!([{ "cluster.enabled": true }, [0]]))
         .args2(serde_json::json!([{ "cluster.enabled": false }, [0]]));
@@ -21353,7 +21353,7 @@ fn cluster_toggle_menu() -> UpdateMenu {
 /// the `-nolabels` suffix (see `SCRIPT_TEMPLATE`).
 fn basemap_labels_toggle_menu(labeled_style: MapStyle, nolabels_style: MapStyle) -> UpdateMenu {
     let toggle = Button::new()
-        .label("Basemap labels")
+        .label(&t!("viz.menu.basemap_labels"))
         .method(ButtonMethod::Relayout)
         .args(serde_json::json!([{ "map.style": labeled_style }]))
         .args2(serde_json::json!([{ "map.style": nolabels_style }]));
@@ -28750,7 +28750,7 @@ fn sankey_order_toggle_menu(xs: &[f64], ys: &[f64], value_order_initial: bool) -
         (value_args, snap_args)
     };
     let toggle = Button::new()
-        .label("⇅ node order")
+        .label(&t!("viz.menu.node_order"))
         .method(ButtonMethod::Restyle)
         .args(args)
         .args2(args2);
@@ -30472,6 +30472,9 @@ mod tests {
     #[cfg(feature = "geocode")]
     #[test]
     fn extent_zoom_menu_core_and_full_buttons() {
+        // the zoom-button labels are localized -- pin English, or the label
+        // assertions below race the Spanish-setting tests on the global locale.
+        let _locale = english_locale();
         let core = MapExtent {
             min_lat: 40.70,
             max_lat: 40.80,

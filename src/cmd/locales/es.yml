@@ -87,6 +87,17 @@ viz:
     viewer_failed: "qsv viz: fallo el visor de datos:"
     advanced_filter: "Filtro avanzado"
     advanced_filter_counted: "Filtro avanzado (%d)"
+  menu:
+    # Etiquetas de los botones `updatemenus`. CONSERVA el glifo inicial
+    # (`▶`, `⏸`, `⇅`): forma parte del control, no es una palabra.
+    play: "▶ Reproducir"
+    pause: "⏸ Pausa"
+    category_order: "⇅ orden de categorías"
+    node_order: "⇅ orden de nodos"
+    extent_core: "Extensión principal"
+    extent_full: "Extensión completa"
+    cluster_toggle: "Clústeres/Puntos"
+    basemap_labels: "Etiquetas del mapa base"
   chart:
     # `null_bucket` y `other_bucket` son etiquetas de DATOS: aparecen como valores de
     # categoria en los ejes. `null_bucket` tambien se usa como clave de agrupacion en

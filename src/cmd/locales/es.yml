@@ -83,6 +83,7 @@ viz:
     log_axis_value: "escala log"
     null_bucket: "(NULO)"
     other_bucket: "Otros (%{q_count})"
+    records: "registros"
   title:
     # TITULOS DE PANEL. Cada valor es un titulo COMPLETO (o un sufijo que solo se
     # une a uno de ellos), nunca un fragmento insertado en una frase.
@@ -111,6 +112,20 @@ viz:
     locations_over_time: "ubicaciones a lo largo del tiempo"
     pair_log_scale: "%{q_name} · escala log"
     pair_log_scale_positive: "%{q_name} · escala log, solo valores positivos (%{q_share} de las filas omitidas)"
+    # Paneles de tendencia. `q_unit` puede ser `viz.chart.records` o texto derivado
+    # del grano del diccionario (salida del LLM, ya traducida): no se traduce aqui.
+    trend_raw: "%{q_y} a lo largo de %{q_date}"
+    trend_agg: "%{q_y} (%{q_agg}) a lo largo de %{q_date}"
+    trend_count: "%{q_unit} a lo largo de %{q_date}"
+    trend_axis_agg: "%{q_y} (%{q_agg}/%{q_bucket})"
+    trend_axis_count: "%{q_unit} por %{q_bucket}"
+    bucket_day: "día"
+    bucket_week: "semana"
+    bucket_month: "mes"
+    cyclic_records_by: "Registros por %{q_axis} (%{q_date})"
+    cyclic_hour_of_day: "hora del día"
+    cyclic_day_of_week: "día de la semana"
+    cyclic_month: "mes"
   notes:
     # Lista separada por comas, no una frase: cada elemento se traduce por separado.
     box_null: "%{q_pct}% nulos"

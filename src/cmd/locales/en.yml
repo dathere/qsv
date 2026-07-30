@@ -105,6 +105,12 @@ viz:
     log_axis_value: "log scale"
     null_bucket: "(NULL)"
     other_bucket: "Other (%{q_count})"
+    # The row-count unit, used in TWO places, both localized together:
+    #   * `count_unit_from_grain`'s fallback, feeding the `trend_count` title and
+    #     the `trend_axis_count` axis title, when no dictionary grain is available;
+    #   * the animated-bubble size label, when the dataset has no third numeric to
+    #     size by, where it names the bubble-size dimension in the per-point hover.
+    records: "records"
   title:
     # PANEL TITLES. Every value here is a WHOLE rendered title (or a suffix that
     # only ever attaches to one of them), never a fragment spliced into a
@@ -166,6 +172,34 @@ viz:
     # re-scans an argument VALUE, only the template (see §6a property 3).
     pair_log_scale: "%{q_name} · log scale"
     pair_log_scale_positive: "%{q_name} · log scale, positive values only (%{q_share} of rows omitted)"
+    # TREND (time-series) PANELS. Three mutually exclusive titles -- raw values,
+    # an aggregate per period, or a record count per period -- each with its own
+    # y-axis title. `trend_agg` / `trend_axis_agg` are where `agg_sum` /
+    # `agg_mean` above are finally consumed.
+    #
+    # `q_unit` is EITHER the localized `viz.chart.records` fallback OR text parsed
+    # out of the dictionary's grain phrase. The latter is LLM output and is
+    # already in the target language under `--dictionary infer --language xx`, so
+    # it is passed through untranslated, like a column name.
+    trend_raw: "%{q_y} over %{q_date}"
+    trend_agg: "%{q_y} (%{q_agg}) over %{q_date}"
+    trend_count: "%{q_unit} over %{q_date}"
+    trend_axis_agg: "%{q_y} (%{q_agg}/%{q_bucket})"
+    trend_axis_count: "%{q_unit} per %{q_bucket}"
+    # Time-bucket nouns, used only inside the two trend axis titles above.
+    bucket_day: "day"
+    bucket_week: "week"
+    bucket_month: "month"
+    # CYCLIC (polar seasonality) PANEL. Its phase noun is a separate key set from
+    # `bucket_*`: these name a position WITHIN a cycle ("month of year"), not a
+    # bucket width, and languages need not spell the two the same way.
+    # Deliberately NOT unified with `trend_count`'s grain-derived unit -- this
+    # title has always said "Records" regardless of grain, and English
+    # byte-identity forbids changing that here.
+    cyclic_records_by: "Records by %{q_axis} (%{q_date})"
+    cyclic_hour_of_day: "hour of day"
+    cyclic_day_of_week: "day of week"
+    cyclic_month: "month"
   notes:
     # Box/histogram title hints. These are a COMMA-SEPARATED LIST of noun phrases,
     # not a sentence, so each translates independently. At most two ever appear.

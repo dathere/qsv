@@ -18102,21 +18102,22 @@ fn ts_bucket_label(key: chrono::NaiveDate, bucket: TsBucket) -> String {
 }
 
 /// A short word for the bucket granularity, used in axis titles ("records per day").
-fn ts_bucket_word(bucket: TsBucket) -> &'static str {
+fn ts_bucket_word(bucket: TsBucket) -> String {
     match bucket {
-        TsBucket::Day => "day",
-        TsBucket::Week => "week",
-        TsBucket::Month => "month",
+        TsBucket::Day => t!("viz.title.bucket_day"),
+        TsBucket::Week => t!("viz.title.bucket_week"),
+        TsBucket::Month => t!("viz.title.bucket_month"),
     }
+    .into_owned()
 }
 
 /// Best-effort entity name for a count-over-time panel, distilled from the dataset `grain`
 /// ("one row = one 311 service request" -> "311 service request"). Falls back to "records" when
 /// grain is absent or doesn't fit the "... one <X>" shape, so the label is always sensible.
 fn count_unit_from_grain(grain: Option<&str>) -> String {
-    const FALLBACK: &str = "records";
+    let fallback = || t!("viz.chart.records").into_owned();
     let Some(g) = grain else {
-        return FALLBACK.to_string();
+        return fallback();
     };
     // describegpt phrases grain as "one row = one <X>" / "each row is one <X>"; take the text after
     // the last " one ".
@@ -18128,7 +18129,7 @@ fn count_unit_from_grain(grain: Option<&str>) -> String {
         .trim_end_matches('.')
         .trim();
     if entity.is_empty() || entity.len() > 40 {
-        FALLBACK.to_string()
+        fallback()
     } else {
         entity.to_string()
     }
@@ -18295,7 +18296,7 @@ fn build_timeseries_panel(
         };
         return Ok(Some(
             Panel::new(
-                format!("{y_label} over {date_label}"),
+                t!("viz.title.trend_raw", q_y = y_label, q_date = date_label).into_owned(),
                 PanelKind::TimeSeries { y_label, xs, ys },
             )
             .with_dict_info(dict_info),
@@ -18359,9 +18360,9 @@ fn build_timeseries_panel(
     match mode {
         Mode::AggValue(y_idx, agg) => {
             let y_label = label_for(y_idx);
-            let (agg_word, ys): (&str, Vec<f64>) = if agg == Agg::Mean {
+            let (agg_word, ys): (String, Vec<f64>) = if agg == Agg::Mean {
                 (
-                    "mean",
+                    t!("viz.title.agg_mean").into_owned(),
                     buckets
                         .values()
                         .map(|&(s, n)| if n > 0 { s / n as f64 } else { 0.0 })
@@ -18369,13 +18370,28 @@ fn build_timeseries_panel(
                 )
             } else {
                 // counts/amounts are additive -> sum per period
-                ("sum", buckets.values().map(|&(s, _)| s).collect())
+                (
+                    t!("viz.title.agg_sum").into_owned(),
+                    buckets.values().map(|&(s, _)| s).collect(),
+                )
             };
             Ok(Some(
                 Panel::new(
-                    format!("{y_label} ({agg_word}) over {date_label}"),
+                    t!(
+                        "viz.title.trend_agg",
+                        q_y = y_label,
+                        q_agg = agg_word,
+                        q_date = date_label
+                    )
+                    .into_owned(),
                     PanelKind::TimeSeries {
-                        y_label: format!("{y_label} ({agg_word}/{word})"),
+                        y_label: t!(
+                            "viz.title.trend_axis_agg",
+                            q_y = y_label,
+                            q_agg = agg_word,
+                            q_bucket = word
+                        )
+                        .into_owned(),
                         xs,
                         ys,
                     },
@@ -18389,9 +18405,10 @@ fn build_timeseries_panel(
             let ys: Vec<f64> = buckets.values().map(|&(_, n)| n as f64).collect();
             Ok(Some(
                 Panel::new(
-                    format!("{unit} over {date_label}"),
+                    t!("viz.title.trend_count", q_unit = unit, q_date = date_label).into_owned(),
                     PanelKind::TimeSeries {
-                        y_label: format!("{unit} per {word}"),
+                        y_label: t!("viz.title.trend_axis_count", q_unit = unit, q_bucket = word)
+                            .into_owned(),
                         xs,
                         ys,
                     },
@@ -19187,12 +19204,13 @@ impl CyclicAxis {
     }
 
     /// Word for the panel title.
-    fn word(self) -> &'static str {
+    fn word(self) -> String {
         match self {
-            CyclicAxis::HourOfDay => "hour of day",
-            CyclicAxis::DayOfWeek => "day of week",
-            CyclicAxis::MonthOfYear => "month",
+            CyclicAxis::HourOfDay => t!("viz.title.cyclic_hour_of_day"),
+            CyclicAxis::DayOfWeek => t!("viz.title.cyclic_day_of_week"),
+            CyclicAxis::MonthOfYear => t!("viz.title.cyclic_month"),
         }
+        .into_owned()
     }
 }
 
@@ -19289,7 +19307,12 @@ fn build_cyclic_panel(
 
     Ok(Some(
         Panel::new(
-            format!("Records by {} ({date_label})", axis.word()),
+            t!(
+                "viz.title.cyclic_records_by",
+                q_axis = axis.word(),
+                q_date = date_label
+            )
+            .into_owned(),
             PanelKind::CyclicProfile { theta, r },
         )
         // --dict-info: like the trend panel, anchor on the driving date column's entry
@@ -23263,7 +23286,7 @@ impl<'a> SmartCtx<'a> {
                             let size_idx = size_k.map(|k| kept_indices[k]);
                             let size_label = size_k
                                 .map(|k| labels[k].clone())
-                                .unwrap_or_else(|| "records".to_string());
+                                .unwrap_or_else(|| t!("viz.chart.records").into_owned());
                             let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
                             if let Some(data) = read_entity_bucket_agg(
                                 self.args,
@@ -32406,6 +32429,9 @@ mod tests {
 
     #[test]
     fn count_unit_from_grain_extracts_or_falls_back() {
+        // the "records" fallback is localized -- pin English, or this races the
+        // Spanish-setting tests on the process-global locale.
+        let _locale = english_locale();
         assert_eq!(
             count_unit_from_grain(Some("one row = one 311 service request")),
             "311 service request"

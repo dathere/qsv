@@ -326,6 +326,19 @@ viz:
     us_states: "US states"
     countries: "Countries"
     count_by_region: "count by %{q_region}"
+    # The `--geojson` point-in-polygon panel (`build_smart_pip_choropleth_panel`).
+    # Its title states the snap/drop accounting beside the map: e.g.
+    # "Regions (110 snapped ≤0.36 km; 10 of 7,464 dropped, >0.36 km)", with the
+    # parts joined by "; ".
+    #
+    # `≤` / `>` are math symbols and `km` is SI -- all literal. So is `--no-snap`,
+    # which appears as the `q_why` value: it is a FLAG NAME the user typed, not a
+    # word, and translating it would print a flag that does not exist.
+    regions: "Regions"
+    regions_with: "Regions (%{q_parts})"
+    snap_snapped: "%{q_n} snapped ≤%{q_km} km"
+    snap_dropped: "%{q_n} of %{q_total} dropped, %{q_why}"
+    snap_why_over: ">%{q_km} km"
     # Parcats (category-flow) panel. `%{q_dims}` is the dimension names already
     # joined with " · ".
     category_flow: "Category flow: %{q_dims}"
@@ -376,3 +389,6 @@ viz:
     # shape the ORDERING RULE above explicitly permits.
     pct_of_total: "%{q_pct}% of total"
     rank_of: "rank %{q_rank} of %{q_total}"
+    # Appended to a PIP region's hover when some of its points were snapped in
+    # from outside the polygon. The "<br>" separator stays in the code.
+    snap_includes: "includes %{q_n} snapped from outside"

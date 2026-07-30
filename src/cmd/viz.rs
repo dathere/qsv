@@ -6103,7 +6103,7 @@ fn choropleth_pip_locations(
         if let Some(&c) = snapped_by_id.get(loc)
             && c > 0
         {
-            h.push_str(&format!("<br>includes {c} snapped from outside"));
+            h.push_str(&format!("<br>{}", t!("viz.hover.snap_includes", q_n = c)));
         }
     }
 
@@ -19739,41 +19739,49 @@ fn build_smart_pip_choropleth_panel(
     }
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
     let names = aligned_region_names(&features, &order);
-    let mut hover_text = choropleth_hover_text(&order, &z, names.as_deref(), "count", true);
+    let mut hover_text =
+        choropleth_hover_text(&order, &z, names.as_deref(), &t!("viz.chart.count"), true);
     // flag each region's snapped-in points as a subset of its count (matches the command path).
     for (h, loc) in hover_text.iter_mut().zip(&order) {
         if let Some(&c) = snapped_by_id.get(loc)
             && c > 0
         {
-            h.push_str(&format!("<br>includes {c} snapped from outside"));
+            h.push_str(&format!("<br>{}", t!("viz.hover.snap_includes", q_n = c)));
         }
     }
     // a sub-panel can't carry a below-map annotation, so surface the snap metadata (count + the
     // cap applied) and dropped points in the panel title — beside the map, never over it.
     let mut title_parts: Vec<String> = Vec::new();
     if snapped > 0 {
-        title_parts.push(format!(
-            "{} snapped ≤{} km",
-            HumanCount(snapped as u64),
-            fmt_measure(cap.km)
-        ));
+        title_parts.push(
+            t!(
+                "viz.title.snap_snapped",
+                q_n = HumanCount(snapped as u64).to_string(),
+                q_km = fmt_measure(cap.km)
+            )
+            .into_owned(),
+        );
     }
     if dropped > 0 {
         let why = if snap {
-            format!(">{} km", fmt_measure(cap.km))
+            t!("viz.title.snap_why_over", q_km = fmt_measure(cap.km)).into_owned()
         } else {
             "--no-snap".to_string()
         };
-        title_parts.push(format!(
-            "{} of {} dropped, {why}",
-            HumanCount(dropped as u64),
-            HumanCount(total as u64)
-        ));
+        title_parts.push(
+            t!(
+                "viz.title.snap_dropped",
+                q_n = HumanCount(dropped as u64).to_string(),
+                q_total = HumanCount(total as u64).to_string(),
+                q_why = why
+            )
+            .into_owned(),
+        );
     }
     let panel_name = if title_parts.is_empty() {
-        "Regions".to_string()
+        t!("viz.title.regions").into_owned()
     } else {
-        format!("Regions ({})", title_parts.join("; "))
+        t!("viz.title.regions_with", q_parts = title_parts.join("; ")).into_owned()
     };
     // Frame the basemap to the matched regions' bbox union (PipFeature::bbox is
     // [min_lon, min_lat, max_lon, max_lat]). A metro-scale extent — under
@@ -36347,6 +36355,10 @@ mod tests {
     // brittle; this calls the panel builder directly with explicit coordinates.
     #[test]
     fn smart_pip_panel_caps_snap() {
+        // the "Regions (...)" panel title is localized -- pin English. `--no-snap`
+        // inside it is a FLAG NAME and stays literal in every locale, which is
+        // why the third assertion below still expects it verbatim.
+        let _locale = english_locale();
         // two regions separated by a wide gap: A at lon 0..4, C at lon 16..20 (both lat 0..10).
         let gj = r#"{"type":"FeatureCollection","features":[
             {"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon",

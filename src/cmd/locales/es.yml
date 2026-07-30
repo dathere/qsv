@@ -183,6 +183,13 @@ viz:
     us_states: "Estados de EE. UU."
     countries: "Países"
     count_by_region: "recuento por %{q_region}"
+    # `≤`, `>`, `km` y `--no-snap` no se traducen (simbolos, unidad SI y nombre
+    # de opcion de la CLI).
+    regions: "Regiones"
+    regions_with: "Regiones (%{q_parts})"
+    snap_snapped: "%{q_n} ajustados ≤%{q_km} km"
+    snap_dropped: "%{q_n} de %{q_total} descartados, %{q_why}"
+    snap_why_over: ">%{q_km} km"
     category_flow: "Flujo de categorías: %{q_dims}"
     kpi_mean: "Media de %{q_label}"
     kpi_total: "Total de %{q_label}"
@@ -218,3 +225,4 @@ viz:
     polar_records: "%{theta}<br>registros: %{r:,.0f}<extra></extra>"
     pct_of_total: "%{q_pct}% del total"
     rank_of: "puesto %{q_rank} de %{q_total}"
+    snap_includes: "incluye %{q_n} ajustados desde fuera"

@@ -15091,6 +15091,29 @@ fn datatables_language_block() -> Option<String> {
                 "_": t!("viz.drawer.advanced_filter_counted"),
             }),
         );
+
+    // UPSTREAM DEFECT, corrected here rather than in the vendored file. DataTables' zh translation
+    // has the SearchBuilder *date* conditions inverted: `after` reads 早于 ("earlier than") and
+    // `before` reads 晚于 ("later than"), so a reader picking a date filter gets the opposite
+    // comparison to the one applied. Its `number` conditions (大于/小于) are correct, as are every
+    // other vendored locale's dates, so this is specific to upstream zh.
+    //
+    // Fixed at splice time because `assets/i18n/datatables/zh-CN.json` must stay a byte-faithful
+    // copy of the CDN file -- hand-editing it would be reverted by the next version-bump
+    // re-download, silently reintroducing the bug. `zh_date_condition_labels_are_corrected` pins
+    // the corrected output AND asserts the vendored file still needs correcting, so this override
+    // is removed rather than left shadowing a fixed upstream string.
+    if row.bcp47 == "zh-CN"
+        && let Some(date) = obj
+            .get_mut("searchBuilder")
+            .and_then(|sb| sb.get_mut("conditions"))
+            .and_then(|conditions| conditions.get_mut("date"))
+            .and_then(serde_json::Value::as_object_mut)
+    {
+        date.insert("after".to_string(), serde_json::json!("晚于"));
+        date.insert("before".to_string(), serde_json::json!("早于"));
+    }
+
     Some(format!(
         "        language: {},",
         serde_json::to_string(&lang).ok()?
@@ -37962,6 +37985,47 @@ mod tests {
         let button = &parsed["searchBuilder"]["button"];
         assert_eq!(button["0"], "Filtro avanzado");
         assert_eq!(button["_"], "Filtro avanzado (%d)");
+
+        viz_i18n::reset_active();
+    }
+
+    /// The date SearchBuilder conditions DataTables ships for zh are inverted, so an unpatched
+    /// drawer applies the opposite comparison to the one the reader picked. `datatables_language_
+    /// block` corrects them at splice time; this pins that, and pins that the correction is still
+    /// needed.
+    #[test]
+    fn zh_date_condition_labels_are_corrected() {
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::set_active(viz_i18n::parse_lang("zh-CN").unwrap());
+
+        let lang = datatables_language_block().expect("zh-CN has a vendored DataTables file");
+        let parsed: serde_json::Value = serde_json::from_str(
+            lang.trim_start()
+                .trim_start_matches("language:")
+                .trim_end_matches(','),
+        )
+        .expect("the spliced language block must be valid JSON");
+        let date = &parsed["searchBuilder"]["conditions"]["date"];
+        assert_eq!(date["after"], "晚于", "`after` must read 'later than'");
+        assert_eq!(date["before"], "早于", "`before` must read 'earlier than'");
+        // the sibling conditions must survive the surgical edit untouched
+        assert_eq!(date["between"], "介于");
+        assert_eq!(
+            parsed["searchBuilder"]["conditions"]["number"]["gt"],
+            "大于"
+        );
+
+        // Canary: when upstream fixes this, the override turns into dead code that shadows a
+        // now-correct string. Fail then, so it gets removed rather than quietly kept forever.
+        let vendored: serde_json::Value =
+            serde_json::from_str(include_str!("assets/i18n/datatables/zh-CN.json"))
+                .expect("the vendored zh-CN DataTables file must be valid JSON");
+        let raw = &vendored["searchBuilder"]["conditions"]["date"];
+        assert!(
+            raw["after"] == "早于" && raw["before"] == "晚于",
+            "the vendored zh-CN DataTables file no longer has its date conditions inverted -- \
+             upstream looks fixed, so drop the override in datatables_language_block"
+        );
 
         viz_i18n::reset_active();
     }

@@ -33824,6 +33824,12 @@ mod tests {
 
     #[test]
     fn contour_hover_template_neutralizes_percent_bearing_headers() {
+        // this helper reads the process-global locale now that its template lives in the catalog,
+        // so an English assertion has to pin the locale -- cargo runs unit tests on parallel
+        // threads and a locale-mutating test would otherwise make this fail nondeterministically
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+
         // the labels are raw column headers dropped into a template that parses `%{...}`, so a
         // header carrying `%` -- or one that already looks like a token -- must be neutralized
         // rather than honored, and markup must be escaped before the `%`-doubling
@@ -33846,6 +33852,11 @@ mod tests {
 
     #[test]
     fn lorenz_hover_template_neutralizes_percent_bearing_labels() {
+        // same process-global locale dependency as the contour test above -- pin it before
+        // asserting English
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+
         // the Lorenz hover interpolates a raw measure label into a template that parses `%{...}`,
         // exactly as the contour hover does -- `%` in a header is NOT an intensive-measure token
         // (tokenization splits on non-alphanumerics), so such a column really can reach a Lorenz

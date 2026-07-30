@@ -393,10 +393,31 @@ mod tests {
                     continue;
                 };
                 let value = rest.trim();
-                // a nesting parent (`viz:`) or the `_version: 1` scalar carries no message text
-                if !value.starts_with('"') {
+                // a nesting parent (`viz:`) has no scalar on this line at all
+                if value.is_empty() {
                     continue;
                 }
+                // Everything else IS inspected, whatever its scalar style: quoting does not hide a
+                // `%{...}` token, so a single-quoted or plain scalar has to be swept too. Gating on
+                // a leading `"` (as this once did) meant a translator writing an unquoted value
+                // could carry the hazard straight past the guard while the `checked` floor below
+                // still looked healthy.
+                //
+                // The two shapes that genuinely cannot be read one line at a time are rejected
+                // rather than skipped, so the hole reopens loudly instead of silently.
+                assert!(
+                    !value.starts_with('|') && !value.starts_with('>'),
+                    "{locale}.yml:{} key '{key}' is a block scalar, whose text lives on the \
+                     following lines where this line-wise sweep cannot see it -- rewrite it as a \
+                     quoted scalar, or teach this sweep to fold block scalars",
+                    idx + 1
+                );
+                assert!(
+                    !(value.starts_with('"') && !value[1..].contains('"')),
+                    "{locale}.yml:{} key '{key}' opens a quoted scalar that does not close on the \
+                     same line; this sweep inspects one line at a time and would miss the rest",
+                    idx + 1
+                );
                 checked += 1;
                 let missed = unsubstitutable_arg_tokens(value);
                 assert!(

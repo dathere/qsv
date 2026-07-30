@@ -11,6 +11,59 @@
 //!
 //! Adding a language is: one `src/cmd/locales/<tag>.yml` + one [`LOCALES`] row
 //! (+ the two vendored asset files once those land).
+//!
+//! # Localizing more of `viz`: four rules that were learned expensively
+//!
+//! Phase 2 (squash `428d7fa26`) moved ~120 strings into the catalogs over nineteen review rounds.
+//! These four findings cost the most to arrive at and generalize to any future area, so they live
+//! here rather than in a scratch file.
+//!
+//! ## 1. Batch by RENDERED string, never by `format!` call site
+//!
+//! One visible string is often assembled by several `format!` calls in different functions.
+//! Localizing a subset renders that string half in each language — a defect no English test can
+//! see (byte-identity still holds) and no placeholder sweep can see (every substitution
+//! succeeded). The recurring shape is a helper taking an already-composed title as a `&str` and
+//! appending to it; such a helper belongs to the same batch as its caller. Before calling a batch
+//! done, look for `name: &str` parameters alongside `format!("{name} ...")`, and follow each value
+//! ACROSS function boundaries — within one function the rule is easy to honor, and every failure
+//! of it in phase 2 was a value that travelled.
+//!
+//! ## 2. An English-pinned test proves byte-identity, NOT localization
+//!
+//! English *is* the catalog's value, so reverting a lookup back to the literal it replaced leaves
+//! every English assertion passing. Pinning English is still required wherever a test asserts
+//! exact output — the active locale is process-global and cargo runs unit tests on threads, see
+//! `lock_locale` below (test-only, so not an intra-doc link) — but it guards formatting, not
+//! translation. Add at least one test per area
+//! that selects a non-English locale, asserts the translated output, and asserts that no English
+//! fragment survives. Then MUTATION-TEST that guard: break the thing on purpose, confirm the new
+//! test fails and the English one does not, restore. A green new test proves nothing about what it
+//! would catch.
+//!
+//! ## 3. A coverage sweep that filters for readability will hide real findings
+//!
+//! Successive attempts to grep rendered dashboards for leftover English all failed, each time
+//! because of a filter added to keep the output readable: an accent filter, an allowed-character
+//! class (which silently dropped any string containing a middle dot, an em dash, or an embedded
+//! markup tag), and a two-or-more-words minimum (which hid every single-word string). Text also
+//! ships where a JSON-shape grep never looks: plotly `ticktext` arrays, `colorbar.title.text`,
+//! `updatemenus` labels, and raw HTML nodes. Prefer a noisy candidate list discharged one entry at
+//! a time by provenance — is this a fixture column header, a dictionary label, or a defect? — over
+//! a short list you trust. And open a dashboard in the target language IN A BROWSER and read it;
+//! that found six clusters in minutes which four rounds of grepping had missed.
+//!
+//! ## 4. New non-English content must be whitelisted in `_typos.toml` in the SAME commit
+//!
+//! The `Spell Check with Typos` CI job fires on file *content*, not behavior, so green local tests
+//! and clippy say nothing about it. Any path holding translated text — including a test asserting
+//! translated output — needs an `extend-exclude` entry. This was written down and still walked into
+//! twice.
+//!
+//! Two conventions worth preserving. CLI syntax appearing in rendered output stays English in every
+//! locale: a flag name or an aggregation keyword must remain something the user can actually type.
+//! Symbols, acronyms and SI units likewise. And operator-facing stderr notes are English by
+//! convention, unlike anything that reaches the HTML.
 
 /// A curated language: one row per language qsv ships translations for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

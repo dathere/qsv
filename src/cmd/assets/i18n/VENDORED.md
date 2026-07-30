@@ -93,10 +93,31 @@ DataTables falls back to its own English default for any key its language object
 * `pt-BR.json` omits the whole `columnControl` group, so the per-column search widgets
   (ColumnControl 2.0.0) stay English in a Brazilian Portuguese drawer.
 
-`zh` was checked at the same time and is worth recording for whoever adds it: DataTables' bare
-`zh.json` is **Simplified** (`搜索`), with Traditional published separately as `zh-HANT.json`, while
-plotly's file is `zh-cn` with internal id `zh-CN` — so that language has the same tag divergence as
-`pt-BR`.
+### ja, zh-CN — retrieved 2026-07-30
+
+| Local file | Bytes | Fetched from |
+|---|---|---|
+| `datatables/ja.json` | 8,845 | `.../3.0.0/i18n/ja.json` |
+| `datatables/zh-CN.json` | 7,844 | `.../3.0.0/i18n/**zh**.json` |
+| `plotly/plotly-locale-ja.js` | 5,183 | `plotly-locale-ja-3.7.0.js` |
+| `plotly/plotly-locale-zh-CN.js` | 4,164 | `plotly-locale-**zh-cn**-3.7.0.js` |
+
+**`zh-CN` is the tag for two independent reasons**, and it is the same trap `pt-BR` documents above:
+
+1. plotly ships only `plotly-locale-zh-cn`, internal id **`zh-CN`**, with no generic `zh` — so a `zh`
+   tag would register a locale `setPlotConfig` never selects.
+2. DataTables' bare `zh.json` **is Simplified** — verified by inspection (`搜索`, `没有找到匹配的记录`)
+   — with Traditional published separately as `zh-HANT.json`. Calling the row `zh` would imply we
+   serve a script we do not ship.
+
+`--language zh` resolves through the row's alias; `zh-Hant` deliberately does **not**, because
+`parse_lang`'s regional fallback matches base tags only. Without that rule (fixed in the same
+branch) a Traditional request would have silently returned Simplified — a wrong *script*, not
+merely a wrong dialect.
+
+**Neither file has `columnControl`**, and both also omit `lengthLabels` and `orderClear`, so those
+controls keep DataTables' English defaults — the same shape as `pt-BR.json`. Of the six vendored
+DataTables locales only `es`, `fr` and `de` are complete.
 
 ## Adding a language
 

@@ -743,7 +743,7 @@ smart options:
                            name (Spanish). Overrides the language detected in a
                            data dictionary, and is also forwarded to describegpt
                            when inferring one. Curated: en, es, fr, de, it,
-                           pt-BR. [default: auto]
+                           pt-BR, ja, zh-CN. [default: auto]
     --width <n>            Image width in pixels for static export. Default 1000;
                            for `smart`, auto-scaled to the grid's column count.
     --height <n>           Image height in pixels for static export. Default 600;
@@ -10568,6 +10568,15 @@ fn plotly_locale_block() -> String {
             "<script>{}</script>",
             include_str!("assets/i18n/plotly/plotly-locale-pt-BR.js")
         ),
+        "ja" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-ja.js")
+        ),
+        // as with pt-BR, the vendored file's own id is "zh-CN" -- the tag must match it exactly.
+        "zh-CN" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-zh-CN.js")
+        ),
         // A curated language whose plotly locale has not been vendored yet: the chrome is still
         // translated, only the modebar tooltips stay English.
         _ => String::new(),
@@ -15059,6 +15068,10 @@ fn datatables_language_block() -> Option<String> {
         // file in assets/i18n/VENDORED.md.
         "it" => include_str!("assets/i18n/datatables/it.json"),
         "pt-BR" => include_str!("assets/i18n/datatables/pt-BR.json"),
+        // ja.json and zh-CN.json (upstream's Simplified `zh.json`) each omit columnControl,
+        // lengthLabels and orderClear, so those controls keep their English defaults too.
+        "ja" => include_str!("assets/i18n/datatables/ja.json"),
+        "zh-CN" => include_str!("assets/i18n/datatables/zh-CN.json"),
         // Curated language with no vendored DataTables file yet: keep the English defaults
         // rather than emitting a half-translated table.
         _ => return None,

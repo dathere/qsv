@@ -132,6 +132,24 @@ pub static LOCALES: &[LocaleRow] = &[
             "brazilian portuguese",
         ],
     },
+    LocaleRow {
+        bcp47:        "ja",
+        english_name: "Japanese",
+        aliases:      &["jpn", "japanese"],
+    },
+    // zh-CN, not zh -- the same shape as pt-BR above, for two independent reasons. plotly ships
+    // only `plotly-locale-zh-cn` (internal id "zh-CN") with no generic `zh`, so a "zh" tag would
+    // register a locale it never selects; and DataTables' bare `zh.json` is SIMPLIFIED
+    // (Traditional is published separately as `zh-HANT`), so calling this row `zh` would imply
+    // we serve a script we do not ship. `--language zh` still works through the alias, while
+    // `zh-Hant` deliberately does NOT resolve here -- see the alias caveat on `parse_lang`'s
+    // regional fallback, which exists precisely so a Traditional request cannot silently
+    // return Simplified.
+    LocaleRow {
+        bcp47:        "zh-CN",
+        english_name: "Simplified Chinese",
+        aliases:      &["zho", "cmn", "chinese", "zh", "simplified chinese"],
+    },
 ];
 
 /// Resolve a user- or dictionary-supplied language string to a curated locale.

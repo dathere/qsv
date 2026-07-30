@@ -1,0 +1,310 @@
+{
+    "aria": {
+        "paginate": {
+            "first": "Erste",
+            "last": "Letzte",
+            "next": "Nächste",
+            "previous": "Vorherige"
+        }
+    },
+    "autoFill": {
+        "cancel": "Abbrechen",
+        "fill": "Alle Zellen mit <i>%d<i> füllen<\/i><\/i>",
+        "fillHorizontal": "Alle horizontalen Zellen füllen",
+        "fillVertical": "Alle vertikalen Zellen füllen",
+        "info": ""
+    },
+    "buttons": {
+        "collection": "Aktionen <span class=\"ui-button-icon-primary ui-icon ui-icon-triangle-1-s\"><\/span>",
+        "colvis": "Spaltensichtbarkeit",
+        "colvisRestore": "Sichtbarkeit wiederherstellen",
+        "copy": "Kopieren",
+        "copyKeys": "Taste <i>STRG&lt;\\\/i&gt; oder <i>⌘&lt;\\\/i&gt; + <i>C&lt;\\\/i&gt; drücken um die Tabelle<br \/>in den Zwischenspeicher zu kopieren.<br \/><br \/>Um den Vorgang abzubrechen, Nachricht anklicken oder Escape-Taste drücken.<\/i><\/i><\/i>",
+        "copySuccess": {
+            "_": "%d Zeilen kopiert",
+            "1": "1 Zeile kopiert"
+        },
+        "copyTitle": "In Zwischenablage kopieren",
+        "createState": "Ansicht erstellen",
+        "csv": "CSV",
+        "excel": "Excel",
+        "pageLength": {
+            "_": "Zeige %d Zeilen",
+            "-1": "Alle Zeilen anzeigen",
+            "1": "Zeigt 1 Zeile"
+        },
+        "pdf": "PDF",
+        "print": "Drucken",
+        "removeAllStates": "Alle Ansichten entfernen",
+        "removeState": "Entfernen",
+        "renameState": "Umbenennen",
+        "savedStates": "Gespeicherte Ansicht",
+        "stateRestore": "Ansicht %d",
+        "updateState": "Aktualisieren"
+    },
+    "columnControl": {
+        "buttons": {
+            "searchClear": "Suche löschen"
+        },
+        "colVis": "Sichtbarkeit der Spalte",
+        "colVisDropdown": "Sichtbarkeit der Spalte",
+        "dropdown": "Mehr...",
+        "list": {
+            "all": "Alle auswählen",
+            "empty": "Leer",
+            "none": "Nichts auswählen",
+            "search": "Suche..."
+        },
+        "orderAddAsc": "Aufsteigende Sortierung hinzufügen",
+        "orderAddDesc": "Absteigende Sortierung hinzufügen",
+        "orderAsc": "Aufsteigend sortieren",
+        "orderClear": "Sortierung aufheben",
+        "orderDesc": "Absteigend sortieren",
+        "orderRemove": "Aus Sortierung löschen",
+        "reorder": "Spalten neu sortieren",
+        "reorderLeft": "Spalte nach links verschieben",
+        "reorderRight": "Spalte nach rechts verschieben",
+        "search": {
+            "datetime": {
+                "empty": "Leer",
+                "equal": "Gleich",
+                "greater": "Nach",
+                "less": "Vor",
+                "notEmpty": "Nicht leer",
+                "notEqual": "Nicht"
+            },
+            "number": {
+                "empty": "Leer",
+                "equal": "Gleich",
+                "greater": "Größer",
+                "greaterOrEqual": "Größer gleich",
+                "less": "Kleiner",
+                "lessOrEqual": "Kleiner gleich",
+                "notEmpty": "Nicht leer",
+                "notEqual": "Nicht"
+            },
+            "text": {
+                "contains": "Enthält",
+                "empty": "Leer",
+                "ends": "Endet auf",
+                "equal": "Gleich",
+                "notContains": "Enthält nicht",
+                "notEmpty": "Nicht leer",
+                "notEqual": "Nicht",
+                "starts": "Startet mit"
+            }
+        },
+        "searchClear": "Suche leeren",
+        "searchDropdown": "Suchen"
+    },
+    "datetime": {
+        "amPm": {
+            "0": "Vormittag",
+            "1": "Nachmittag"
+        },
+        "hours": "Stunden",
+        "minutes": "Minuten",
+        "months": {
+            "0": "Januar",
+            "1": "Februar",
+            "10": "November",
+            "11": "Dezember",
+            "2": "März",
+            "3": "April",
+            "4": "Mai",
+            "5": "Juni",
+            "6": "Juli",
+            "7": "August",
+            "8": "September",
+            "9": "Oktober"
+        },
+        "next": "Nachher",
+        "previous": "Vorher",
+        "seconds": "Sekunden",
+        "unknown": "Unbekannt",
+        "weekdays": {
+            "0": "Sonntag",
+            "1": "Montag",
+            "2": "Dienstag",
+            "3": "Mittwoch",
+            "4": "Donnerstag",
+            "5": "Freitag",
+            "6": "Samstag"
+        }
+    },
+    "decimal": "",
+    "editor": {
+        "close": "Schließen",
+        "create": {
+            "button": "Neu",
+            "submit": "Erstellen",
+            "title": "Neuen Eintrag erstellen"
+        },
+        "edit": {
+            "button": "Bearbeiten",
+            "submit": "Bearbeiten",
+            "title": "Eintrag bearbeiten"
+        },
+        "error": {
+            "system": "Ein Systemfehler ist aufgetreten"
+        },
+        "multi": {
+            "info": "Die ausgewählten Elemente enthalten mehrere Werte für dieses Feld. Um alle Elemente für dieses Feld zu bearbeiten und auf denselben Wert zu setzen, hier klicken oder tippen, andernfalls behalten diese ihre individuellen Werte bei.",
+            "noMulti": "Dieses Feld kann nur einzeln bearbeitet werden, nicht als Teil einer Mengen-Änderung.",
+            "restore": "Änderungen zurücksetzen",
+            "title": "Mehrere Werte"
+        },
+        "remove": {
+            "button": "Entfernen",
+            "confirm": {
+                "_": "Sollen %d Zeilen gelöscht werden?",
+                "1": "Soll diese Zeile gelöscht werden?"
+            },
+            "submit": "Entfernen",
+            "title": "Entfernen"
+        }
+    },
+    "emptyTable": "Keine Daten in der Tabelle vorhanden",
+    "info": "_START_ bis _END_ von _TOTAL_ Einträgen",
+    "infoEmpty": "Keine Daten vorhanden",
+    "infoFiltered": "(gefiltert von _MAX_ Einträgen)",
+    "infoPostFix": "",
+    "infoThousands": ".",
+    "lengthLabels": {
+        "-1": "Alle"
+    },
+    "lengthMenu": "_MENU_ Zeilen anzeigen",
+    "loadingRecords": "Wird geladen ..",
+    "orderClear": "Sortierung leeren",
+    "processing": "Bitte warten ..",
+    "search": "Suche:",
+    "searchBuilder": {
+        "add": "Bedingung hinzufügen",
+        "button": {
+            "_": "Such-Baukasten (%d)",
+            "0": "Such-Baukasten"
+        },
+        "clearAll": "Alle entfernen",
+        "condition": "Bedingung",
+        "conditions": {
+            "array": {
+                "contains": "enthält",
+                "empty": "ist leer",
+                "equals": "ist gleich",
+                "not": "ist ungleich",
+                "notEmpty": "ist nicht leer",
+                "without": "aber nicht"
+            },
+            "date": {
+                "after": "Nach",
+                "before": "Vor",
+                "between": "Zwischen",
+                "empty": "Leer",
+                "equals": "Gleich",
+                "not": "Nicht",
+                "notBetween": "Nicht zwischen",
+                "notEmpty": "Nicht leer"
+            },
+            "number": {
+                "between": "Zwischen",
+                "empty": "Leer",
+                "equals": "Entspricht",
+                "gt": "Größer als",
+                "gte": "Größer als oder gleich",
+                "lt": "Kleiner als",
+                "lte": "Kleiner als oder gleich",
+                "not": "Nicht",
+                "notBetween": "Nicht zwischen",
+                "notEmpty": "Nicht leer"
+            },
+            "string": {
+                "contains": "Beinhaltet",
+                "empty": "Leer",
+                "endsWith": "Endet mit",
+                "equals": "Entspricht",
+                "not": "Nicht",
+                "notContains": "enthält nicht",
+                "notEmpty": "Nicht leer",
+                "notEndsWith": "endet nicht mit",
+                "notStartsWith": "startet nicht mit",
+                "startsWith": "Startet mit"
+            }
+        },
+        "data": "Daten",
+        "deleteTitle": "Filterregel entfernen",
+        "leftTitle": "Äußere Kriterien",
+        "logicAnd": "Und",
+        "logicOr": "Oder",
+        "rightTitle": "Innere Kriterien",
+        "search": "Suche",
+        "title": {
+            "_": "Such-Baukasten (%d)",
+            "0": "Such-Baukasten"
+        },
+        "value": "Wert"
+    },
+    "searchPanes": {
+        "clearMessage": "Leeren",
+        "collapse": {
+            "_": "Suchmasken (%d)",
+            "0": "Suchmasken"
+        },
+        "collapseMessage": "Alle einklappen",
+        "count": "{total}",
+        "countFiltered": "{shown} ({total})",
+        "emptyMessage": "<em>Leer<\/em>",
+        "emptyPanes": "Keine Suchmasken",
+        "loadMessage": "Lade Suchmasken ..",
+        "showMessage": "zeige Alle",
+        "title": "Aktive Filter: %d"
+    },
+    "searchPlaceholder": "",
+    "select": {
+        "cells": {
+            "_": "%d Zellen ausgewählt",
+            "0": "",
+            "1": "1 Zelle ausgewählt"
+        },
+        "columns": {
+            "_": "%d Spalten ausgewählt",
+            "0": "",
+            "1": "1 Spalte ausgewählt"
+        },
+        "rows": {
+            "_": "%d Zeilen ausgewählt",
+            "0": "",
+            "1": "1 Zeile ausgewählt"
+        }
+    },
+    "stateRestore": {
+        "creationModal": {
+            "button": "Erstellen",
+            "columns": {
+                "search": "Spalten Suche",
+                "visible": "Spalten Sichtbarkeit"
+            },
+            "name": "Name:",
+            "order": "Sortieren",
+            "paging": "Seiten",
+            "scroller": "Scroll Position",
+            "search": "Suche",
+            "searchBuilder": "Such-Baukasten",
+            "select": "Auswahl",
+            "title": "Neue Ansicht erstellen",
+            "toggleLabel": "Inkludiert:"
+        },
+        "duplicateError": "Eine Ansicht mit diesem Namen existiert bereits.",
+        "emptyError": "Name darf nicht leer sein.",
+        "emptyStates": "Keine gespeicherten Ansichten",
+        "removeConfirm": "Sicher dass %s entfernt werden soll?",
+        "removeError": "Entfernen der Ansicht fehlgeschlagen.",
+        "removeJoiner": " und ",
+        "removeSubmit": "Entfernen",
+        "removeTitle": "Ansicht entfernen",
+        "renameButton": "Umbenennen",
+        "renameLabel": "Neuer Name für %s:",
+        "renameTitle": "Ansicht umbenennen"
+    },
+    "thousands": ".",
+    "zeroRecords": "Keine passenden Einträge gefunden"
+}

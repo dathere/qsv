@@ -57,6 +57,47 @@ Note that plotly's locale files are genuinely version-specific: `plotly-locale-e
   renders that follow. qsv emits that call in two places because plotly arrives on two schedules;
   see `plotly_setlocale_js` in `src/cmd/viz.rs`.
 
+### fr, de, it, pt-BR — retrieved 2026-07-30
+
+Same licences, same pins as the `es` pair above. **The local file name is the `LOCALES` tag; the
+CDN name often is not** — DataTables region-qualifies most European languages:
+
+| Local file | Bytes | Fetched from |
+|---|---|---|
+| `datatables/fr.json` | 10,838 | `.../3.0.0/i18n/fr-FR.json` |
+| `datatables/de.json` | 10,523 | `.../3.0.0/i18n/de-DE.json` |
+| `datatables/it.json` | 10,443 | `.../3.0.0/i18n/it-IT.json` |
+| `datatables/pt-BR.json` | 8,659 | `.../3.0.0/i18n/pt-BR.json` |
+| `plotly/plotly-locale-fr.js` | 3,505 | `plotly-locale-fr-3.7.0.js` |
+| `plotly/plotly-locale-de.js` | 3,225 | `plotly-locale-de-3.7.0.js` |
+| `plotly/plotly-locale-it.js` | 3,317 | `plotly-locale-it-3.7.0.js` |
+| `plotly/plotly-locale-pt-BR.js` | 3,345 | `plotly-locale-pt-br-3.7.0.js` |
+
+**Why the tag is `pt-BR` and not `pt`.** plotly publishes **no generic `pt` locale** —
+`https://cdn.plot.ly/plotly-locale-pt-3.7.0.js` returns 403; only `pt-br` exists, and its internal
+id is `pt-BR`. Since `plotly_setlocale_js` passes the `LOCALES` tag straight to
+`Plotly.setPlotConfig`, a `pt` row would register a locale that is then never selected — an English
+modebar inside a translated dashboard, with no error anywhere. `--language pt` still resolves, via
+the `pt` alias on the row. **Verify registered-vs-selected after adding any language**: the id in
+the vendored file (`name:"…"`) must equal the tag, e.g.
+
+```bash
+grep -oE 'name:"[A-Za-z-]+",dictionary' plotly/plotly-locale-<tag>.js   # registered
+grep -oE 'setPlotConfig\(\{locale: "[^"]*"' <rendered>.html             # selected
+```
+
+**Incomplete DataTables coverage — deliberate, do not "fix" by hand-editing a vendored file.**
+DataTables falls back to its own English default for any key its language object omits:
+
+* `it.json` omits `lengthLabels` and `orderClear`;
+* `pt-BR.json` omits the whole `columnControl` group, so the per-column search widgets
+  (ColumnControl 2.0.0) stay English in a Brazilian Portuguese drawer.
+
+`zh` was checked at the same time and is worth recording for whoever adds it: DataTables' bare
+`zh.json` is **Simplified** (`搜索`), with Traditional published separately as `zh-HANT.json`, while
+plotly's file is `zh-cn` with internal id `zh-CN` — so that language has the same tag divergence as
+`pt-BR`.
+
 ## Adding a language
 
 1. `src/cmd/locales/<bcp47>.yml` (rust-i18n catalog; the key-parity test requires one per

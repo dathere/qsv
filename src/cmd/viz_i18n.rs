@@ -98,6 +98,38 @@ pub static LOCALES: &[LocaleRow] = &[
         english_name: "Spanish",
         aliases:      &["spa", "spanish", "espanol", "español"],
     },
+    LocaleRow {
+        bcp47:        "fr",
+        english_name: "French",
+        aliases:      &["fra", "french", "francais", "français"],
+    },
+    LocaleRow {
+        bcp47:        "de",
+        english_name: "German",
+        aliases:      &["deu", "german", "deutsch"],
+    },
+    LocaleRow {
+        bcp47:        "it",
+        english_name: "Italian",
+        aliases:      &["ita", "italian", "italiano"],
+    },
+    // pt-BR, not pt: plotly publishes no generic `pt` locale, only `plotly-locale-pt-br` whose
+    // internal id is "pt-BR". `plotly_setlocale_js` hands `bcp47` straight to
+    // `Plotly.setPlotConfig`, so a "pt" row would register a locale plotly never selects --
+    // silently leaving an English modebar. The `pt` alias keeps `--language pt` working, and
+    // `parse_lang`'s regional fallback resolves `pt-PT` here too.
+    LocaleRow {
+        bcp47:        "pt-BR",
+        english_name: "Brazilian Portuguese",
+        aliases:      &[
+            "por",
+            "portuguese",
+            "pt",
+            "portugues",
+            "português",
+            "brazilian portuguese",
+        ],
+    },
 ];
 
 /// Resolve a user- or dictionary-supplied language string to a curated locale.
@@ -341,6 +373,74 @@ mod tests {
                 );
                 seen.push(alias);
             }
+        }
+    }
+
+    /// Every locale catalog must carry EXACTLY the key set `en.yml` has.
+    ///
+    /// rust-i18n silently falls back to English for a key a locale omits, so a missing key ships
+    /// an English string inside an otherwise-translated dashboard; a key present only in a
+    /// translation is dead weight that can never render. Nothing else catches either: the strand
+    /// guard inspects VALUES rather than key sets, and the English golden fixtures never load a
+    /// translation at all.
+    ///
+    /// Reads from disk for the same reason the strand guard does -- editing only a YAML may not
+    /// trigger a rebuild, so a compiled-catalog check can pass against stale bytes.
+    #[test]
+    fn every_locale_yaml_has_the_same_keys_as_english() {
+        fn keys(path: &std::path::Path) -> Vec<String> {
+            let text = std::fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("{} must be readable: {e}", path.display()));
+            let mut section = String::new();
+            let mut out = Vec::new();
+            for line in text.lines() {
+                let trimmed = line.trim_start();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                // "  <section>:" opens a group; "    <key>: \"value\"" is a leaf. Anything at
+                // column 0 (`_version`, `viz:`) is neither.
+                let indent = line.len() - trimmed.len();
+                if indent == 2 && trimmed.ends_with(':') {
+                    section = trimmed.trim_end_matches(':').to_string();
+                } else if indent == 4
+                    && let Some((key, _)) = trimmed.split_once(": ")
+                {
+                    out.push(format!("{section}.{key}"));
+                }
+            }
+            out.sort();
+            out
+        }
+
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cmd/locales");
+        let english = keys(&dir.join("en.yml"));
+        assert!(
+            english.len() > 150,
+            "only {} keys parsed out of en.yml -- the line scanner has stopped matching the YAML \
+             shape, rather than the catalog having shrunk",
+            english.len()
+        );
+
+        for row in LOCALES {
+            if row.bcp47 == "en" {
+                continue;
+            }
+            let theirs = keys(&dir.join(format!("{}.yml", row.bcp47)));
+            let missing: Vec<&String> = english.iter().filter(|k| !theirs.contains(k)).collect();
+            let extra: Vec<&String> = theirs.iter().filter(|k| !english.contains(k)).collect();
+            assert!(
+                missing.is_empty(),
+                "{}.yml omits {} key(s), which would silently render in English: {missing:?}",
+                row.bcp47,
+                missing.len()
+            );
+            assert!(
+                extra.is_empty(),
+                "{}.yml has {} key(s) absent from en.yml, which can never render: {extra:?}",
+                row.bcp47,
+                extra.len()
+            );
         }
     }
 

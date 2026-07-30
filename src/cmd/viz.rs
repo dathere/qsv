@@ -742,7 +742,8 @@ smart options:
                            BCP-47/ISO 639 code (es, spa) or an English language
                            name (Spanish). Overrides the language detected in a
                            data dictionary, and is also forwarded to describegpt
-                           when inferring one. Curated: en, es. [default: auto]
+                           when inferring one. Curated: en, es, fr, de, it,
+                           pt-BR. [default: auto]
     --width <n>            Image width in pixels for static export. Default 1000;
                            for `smart`, auto-scaled to the grid's column count.
     --height <n>           Image height in pixels for static export. Default 600;
@@ -10549,6 +10550,24 @@ fn plotly_locale_block() -> String {
             "<script>{}</script>",
             include_str!("assets/i18n/plotly/plotly-locale-es.js")
         ),
+        "fr" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-fr.js")
+        ),
+        "de" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-de.js")
+        ),
+        "it" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-it.js")
+        ),
+        // the vendored file's own id is "pt-BR", which is why the LOCALES row uses that tag
+        // rather than "pt" -- `plotly_setlocale_js` must ask for exactly what was registered.
+        "pt-BR" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-pt-BR.js")
+        ),
         // A curated language whose plotly locale has not been vendored yet: the chrome is still
         // translated, only the modebar tooltips stay English.
         _ => String::new(),
@@ -15032,6 +15051,14 @@ fn datatables_language_block() -> Option<String> {
     let vendored = match row.bcp47 {
         "en" => return None,
         "es" => include_str!("assets/i18n/datatables/es.json"),
+        "fr" => include_str!("assets/i18n/datatables/fr.json"),
+        "de" => include_str!("assets/i18n/datatables/de.json"),
+        // it.json omits `lengthLabels` / `orderClear`, and pt-BR.json omits the whole
+        // `columnControl` group -- DataTables falls back to its English defaults for a key the
+        // language object does not provide, so those few controls stay English. Recorded per
+        // file in assets/i18n/VENDORED.md.
+        "it" => include_str!("assets/i18n/datatables/it.json"),
+        "pt-BR" => include_str!("assets/i18n/datatables/pt-BR.json"),
         // Curated language with no vendored DataTables file yet: keep the English defaults
         // rather than emitting a half-translated table.
         _ => return None,
@@ -37923,6 +37950,83 @@ mod tests {
         assert_eq!(button["0"], "Filtro avanzado");
         assert_eq!(button["_"], "Filtro avanzado (%d)");
 
+        viz_i18n::reset_active();
+    }
+
+    /// The `pt` vs `pt-BR` trap, generalized across every curated language.
+    ///
+    /// A vendored plotly locale registers itself under the id baked into the FILE, while
+    /// `plotly_setlocale_js` selects by the `LOCALES` TAG. When those disagree the locale is
+    /// registered and then never selected, so a fully translated dashboard keeps an English
+    /// modebar -- no panic, no console error, and a test that only checks "a block was emitted"
+    /// sails straight past it. plotly publishes no generic `pt` locale (only `pt-br`, id "pt-BR"),
+    /// which is exactly how this bites in practice.
+    #[test]
+    fn every_vendored_locale_registers_the_id_it_later_selects() {
+        let _guard = viz_i18n::lock_locale();
+        let mut plotly_checked = 0_usize;
+        let mut datatables_checked = 0_usize;
+
+        for row in viz_i18n::LOCALES {
+            viz_i18n::set_active(row);
+            let bundle = plotly_locale_block();
+            if bundle.is_empty() {
+                // No vendored plotly file: the documented graceful fallback. Selecting a locale
+                // nothing registered would be worse than staying English, so assert it doesn't.
+                assert!(
+                    plotly_setlocale_js().is_empty(),
+                    "{} selects a plotly locale that was never registered",
+                    row.bcp47
+                );
+            } else {
+                plotly_checked += 1;
+                assert!(
+                    bundle.contains(&format!(r#"name:"{}""#, row.bcp47)),
+                    "the vendored plotly locale for {} registers an id different from the tag \
+                     setPlotConfig asks for -- its modebar would silently stay English",
+                    row.bcp47
+                );
+                assert!(
+                    plotly_setlocale_js()
+                        .contains(&format!(r#"setPlotConfig({{locale: "{}"}})"#, row.bcp47)),
+                    "{} registers a plotly locale but never selects it",
+                    row.bcp47
+                );
+            }
+
+            if let Some(lang) = datatables_language_block() {
+                datatables_checked += 1;
+                let parsed: serde_json::Value = serde_json::from_str(
+                    lang.trim_start()
+                        .trim_start_matches("language:")
+                        .trim_end_matches(','),
+                )
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "{}'s spliced DataTables block is not valid JSON: {e}",
+                        row.bcp47
+                    )
+                });
+                assert!(
+                    parsed.get("zeroRecords").is_some(),
+                    "{}'s vendored DataTables strings did not survive the splice",
+                    row.bcp47
+                );
+                // qsv overrides searchBuilder.button from its OWN catalog, so an untranslated
+                // catalog entry shows up here as the English default.
+                assert_ne!(
+                    parsed["searchBuilder"]["button"]["0"], "Advanced Filter",
+                    "{}'s advanced-filter label was not translated",
+                    row.bcp47
+                );
+            }
+        }
+
+        assert!(
+            plotly_checked >= 5 && datatables_checked >= 5,
+            "expected every vendored locale to be exercised, saw plotly={plotly_checked} \
+             datatables={datatables_checked}"
+        );
         viz_i18n::reset_active();
     }
 

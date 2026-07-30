@@ -16480,11 +16480,13 @@ fn render_dict_page_html(
              class=\"qsv-dict-export-short\">{}</span></a>\n",
             sc.mime,
             html_escape(sc.short),
-            // attribute position, so escape -- and `fname` is already html_escape'd above,
-            // which is what the tooltip names.
+            // Interpolate the RAW file name and escape once, at the end. Feeding the
+            // already-escaped `fname` in here would escape it twice, so a file named `a&b.csv`
+            // would surface a literal `&amp;` in the rendered tooltip. `fname` stays escaped for
+            // the `download=` attribute and the label span, which are separate contexts.
             tip = html_escape(&t!(
                 "viz.dict.sidecar_download_tooltip",
-                q_file = fname.clone()
+                q_file = sc.fname.clone()
             ))
         ));
     }
@@ -37198,32 +37200,63 @@ mod tests {
         // Key-set parity between en.yml and es.yml cannot catch this (both locales agreed, and
         // both were wrong). The only reliable check is call-site-driven: scan this file for the
         // keys actually passed to `t!` and confirm each resolves to something other than itself.
+        //
+        // The scan must tolerate rustfmt putting the key on its own line -- an earlier version
+        // keyed on the literal `t!("` and silently skipped all three multi-line calls, one of
+        // which was the very key whose omission motivated this test. So rather than trusting a
+        // count floor, this asserts FULL coverage: every `t!(` site in the file must present a
+        // string-literal first argument, and every such literal must resolve.
         let _guard = viz_i18n::lock_locale();
         viz_i18n::reset_active();
 
-        let src = include_str!("viz.rs");
-        let mut checked = 0usize;
+        // Scan PRODUCTION code only. This module's own source contains a `t!` call with a
+        // runtime key (the resolution check below) and the literal "t!(" the scanner searches
+        // for, both of which would register as unverifiable sites.
+        let whole = include_str!("viz.rs");
+        let src = whole
+            .split_once("\n#[cfg(test)]\nmod tests {")
+            .map_or(whole, |(before, _)| before);
+        let bytes = src.as_bytes();
+        let (mut checked, mut sites) = (0usize, 0usize);
         let mut missing: Vec<&str> = Vec::new();
-        for (i, part) in src.split("t!(\"").enumerate() {
-            if i == 0 {
+        let mut non_literal: Vec<usize> = Vec::new();
+
+        for (idx, _) in src.match_indices("t!(") {
+            // skip `assert!(`, `debug_assert!(` and friends, which contain `t!(` as a substring
+            if idx > 0 && matches!(bytes[idx - 1], b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_') {
                 continue;
             }
-            let Some(key) = part.split('"').next() else {
+            sites += 1;
+            let rest = src[idx + 3..].trim_start();
+            let Some(after_quote) = rest.strip_prefix('"') else {
+                // a non-literal first argument cannot be verified statically; there are none
+                // today, and the assertion below makes adding one a deliberate decision.
+                non_literal.push(idx);
                 continue;
             };
-            // only literal dotted keys; anything else is not a key we can resolve statically
-            if !key.starts_with("viz.") {
+            let Some(key) = after_quote.split('"').next() else {
                 continue;
-            }
+            };
             checked += 1;
             if rust_i18n::t!(key) == key {
                 missing.push(key);
             }
         }
+
         assert!(
-            checked > 40,
-            "expected to find many t! keys by scanning the source, found {checked} — the scan \
-             probably broke rather than the catalog shrinking"
+            non_literal.is_empty(),
+            "{} `t!` call(s) use a non-literal key and are therefore unverifiable here; if that \
+             is intentional, exempt them explicitly rather than letting coverage drop silently",
+            non_literal.len()
+        );
+        assert_eq!(
+            checked, sites,
+            "every `t!` site should have yielded a literal key to check"
+        );
+        assert!(
+            sites > 60,
+            "expected many `t!` sites by scanning the source, found {sites} — the scan probably \
+             broke rather than the catalog shrinking"
         );
         assert!(
             missing.is_empty(),

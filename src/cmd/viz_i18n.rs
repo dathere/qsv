@@ -336,6 +336,27 @@ mod tests {
         missed
     }
 
+    /// Whether `value` is a double-quoted YAML scalar whose closing quote lands on the same line (a
+    /// trailing comment after it is fine). Backslash escapes are honored, so a `\"` inside the
+    /// string is not mistaken for the terminator.
+    fn is_single_line_double_quoted(value: &str) -> bool {
+        let mut chars = value.chars();
+        if chars.next() != Some('"') {
+            return false;
+        }
+        let mut escaped = false;
+        for c in chars {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Guards the one localization failure that is invisible to every other check.
     ///
     /// A plotly token carrying a literal `%` inside its braces (`%{x:.0%}`, the Lorenz axis format)
@@ -397,25 +418,29 @@ mod tests {
                 if value.is_empty() {
                     continue;
                 }
-                // Everything else IS inspected, whatever its scalar style: quoting does not hide a
-                // `%{...}` token, so a single-quoted or plain scalar has to be swept too. Gating on
-                // a leading `"` (as this once did) meant a translator writing an unquoted value
-                // could carry the hazard straight past the guard while the `checked` floor below
-                // still looked healthy.
+                // the one non-message scalar in these files
+                if key == "_version" {
+                    continue;
+                }
+                // Every message value must be a double-quoted scalar that closes on its own line,
+                // and that is ENFORCED here rather than assumed.
                 //
-                // The two shapes that genuinely cannot be read one line at a time are rejected
-                // rather than skipped, so the hole reopens loudly instead of silently.
+                // This sweep reads one line at a time, and several YAML scalar styles may legally
+                // continue onto the NEXT line: block (`|`, `>`), single-quoted, and even plain. A
+                // continuation line carries no `key:`, so it is skipped -- and a `%{q_*}` sitting
+                // on it would slip past the hazard check while the `checked` floor below still
+                // read as healthy. Recognizing those styles line-wise is not possible without a
+                // real YAML parser, and yaml_serde is gated on the `profile` feature, not `viz`.
+                //
+                // So the sweep demands the one style it can fully see. Both catalogs already use
+                // it for every value, so this costs nothing today while making the coverage claim
+                // total rather than partial.
                 assert!(
-                    !value.starts_with('|') && !value.starts_with('>'),
-                    "{locale}.yml:{} key '{key}' is a block scalar, whose text lives on the \
-                     following lines where this line-wise sweep cannot see it -- rewrite it as a \
-                     quoted scalar, or teach this sweep to fold block scalars",
-                    idx + 1
-                );
-                assert!(
-                    !(value.starts_with('"') && !value[1..].contains('"')),
-                    "{locale}.yml:{} key '{key}' opens a quoted scalar that does not close on the \
-                     same line; this sweep inspects one line at a time and would miss the rest",
+                    is_single_line_double_quoted(value),
+                    "{locale}.yml:{} key '{key}' is not a double-quoted scalar closed on its own \
+                     line. Message catalogs must use that one style: every other YAML scalar \
+                     style can continue onto a following line, where this line-wise hazard sweep \
+                     cannot see it. Rewrite as: {key}: \"...\"\n  got: {value}",
                     idx + 1
                 );
                 checked += 1;

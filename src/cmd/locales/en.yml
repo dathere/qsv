@@ -105,6 +105,27 @@ viz:
     log_axis_value: "log scale"
     null_bucket: "(NULL)"
     other_bucket: "Other (%{q_count})"
+  notes:
+    # Box/histogram title hints. These are a COMMA-SEPARATED LIST of noun phrases,
+    # not a sentence, so each translates independently. At most two ever appear.
+    box_null: "%{q_pct}% null"
+    box_zeros: "%{q_pct}% zeros"
+    box_right_skewed: "right-skewed"
+    box_left_skewed: "left-skewed"
+    box_outliers: "%{q_pct}% outliers"
+    box_heavy_tails: "heavy tails"
+    box_mean_impact: "mean %{q_pct}% from outliers"
+    box_gini: "Gini %{q_gini}"
+    # Lorenz caveat. `lorenz_zeros` takes the unit clause as %{q_unit} rather than
+    # repeating it, so a translation can put it wherever its grammar wants.
+    lorenz_unit: "concentration is expected unless rows are comparable units"
+    lorenz_zeros: "flat run = %{q_pct}% zeros, not small values · %{q_unit}"
+    # Funnel caveat clauses, joined with " · ". Each is a whole clause: the
+    # stage names are slots, so word order is the translator's to choose.
+    funnel_complete: "n = %{q_n} complete cases (%{q_pct}% of rows)"
+    funnel_violation: "%{q_here} exceeds %{q_prev} in %{q_pct}% of rows"
+    funnel_bridge: "stages do not nest — bridged, not funnelled"
+    funnel_inverted: "%{q_here} total exceeds %{q_prev} — overruns, not leakage"
   hover:
     # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` are PLOTLY tokens -- leave them exactly
     # as they are. Only the surrounding words get translated. See the ORDERING

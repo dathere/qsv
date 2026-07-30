@@ -17342,38 +17342,42 @@ fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
     const MAD_STDDEV_HEAVY_TAILS_MAX: f64 = 0.4;
     const MAX_PARTS: usize = 2;
 
+    // The parts form a comma-separated LIST of noun phrases, not a sentence, so each is its own
+    // catalog string and the ", " joiner stays literal.
     let mut parts: Vec<String> = Vec::new();
     if let Some(sp) = s.sparsity
         && (NULL_SHARE_MIN..=1.0).contains(&sp)
     {
-        parts.push(format!("{:.0}% null", sp * 100.0));
+        parts.push(t!("viz.notes.box_null", q_pct = format!("{:.0}", sp * 100.0)).into_owned());
     }
     if let Some(z) = zero_share(s)
         && z >= ZERO_SHARE_MIN
     {
-        parts.push(format!("{:.0}% zeros", z * 100.0));
+        parts.push(t!("viz.notes.box_zeros", q_pct = format!("{:.0}", z * 100.0)).into_owned());
     }
     if let Some(skew) = pearson_skewness_stat(s)
         && skew.abs() >= SKEW_MIN_ABS
     {
         parts.push(
             if skew > 0.0 {
-                "right-skewed"
+                t!("viz.notes.box_right_skewed")
             } else {
-                "left-skewed"
+                t!("viz.notes.box_left_skewed")
             }
-            .to_string(),
+            .into_owned(),
         );
     }
     match s.outliers_percentage {
-        Some(pct) if pct >= OUTLIER_MIN_PCT => parts.push(format!("{pct:.1}% outliers")),
+        Some(pct) if pct >= OUTLIER_MIN_PCT => {
+            parts.push(t!("viz.notes.box_outliers", q_pct = format!("{pct:.1}")).into_owned());
+        },
         Some(_) => {},
         None => {
             if let Some(r) = s.mad_stddev_ratio
                 && r > 0.0
                 && r <= MAD_STDDEV_HEAVY_TAILS_MAX
             {
-                parts.push("heavy tails".to_string());
+                parts.push(t!("viz.notes.box_heavy_tails").into_owned());
             }
         },
     }
@@ -17381,12 +17385,18 @@ fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
         && r.is_finite()
         && r.abs() >= MEAN_IMPACT_MIN_ABS
     {
-        parts.push(format!("mean {:+.0}% from outliers", r * 100.0));
+        parts.push(
+            t!(
+                "viz.notes.box_mean_impact",
+                q_pct = format!("{:+.0}", r * 100.0)
+            )
+            .into_owned(),
+        );
     }
     if let Some(g) = s.gini_coefficient
         && g >= GINI_MIN
     {
-        parts.push(format!("Gini {g:.2}"));
+        parts.push(t!("viz.notes.box_gini", q_gini = format!("{g:.2}")).into_owned());
     }
     parts.truncate(MAX_PARTS);
     if parts.is_empty() {
@@ -17443,38 +17453,20 @@ fn is_inequality_candidate(sem: &ColSemantics, s: &crate::cmd::stats::StatsData)
     additive && s.gini_coefficient.is_some_and(|g| g >= LORENZ_GINI_MIN)
 }
 
-/// The caveat line shown beneath a Lorenz panel's title (issue #4222), guarding against the
-/// dominant misread of the inequality vocabulary.
-///
-/// Two independent hazards, both of which the curve's geometry alone cannot disclose:
-///
-/// 1. **Unit heterogeneity (always shown).** A Gini over rows that are not comparable units is
-///    close to tautological — a subway extension SHOULD cost a thousand times a playground
-///    resurfacing — yet "Gini 0.96" reads to a general audience as unfairness. There is no row-unit
-///    signal anywhere in the stats cache: whether a row is a person, a household, a geography or a
-///    heterogeneous capital project is semantics, not a statistic. Rather than invent a
-///    name-heuristic proxy — which would either delete a legitimate equity finding or silently keep
-///    a misleading one — the caveat is UNCONDITIONAL and the reader is told what the number does
-///    and does not license. No gate, so no false negatives.
-/// 2. **Zero inflation (shown when it applies).** At or above `ZERO_SHARE_MIN`, the flat opening
-///    run of the curve IS the zeros, not a mass of small-but-nonzero records — commonly a pipeline
-///    stage (nothing committed/spent YET) rather than a have-not population. Those are two
-///    different populations and the curve draws them identically.
-///
-/// The zero share comes from `zero_share` (base stats cache, non-null denominator), the same
-/// helper and the same `ZERO_SHARE_MIN` threshold behind the "% zeros" box-title hint, so the two
-/// annotations agree whenever both appear on one dashboard. Nothing here is recomputed from the
-/// data: the panel's Gini remains the CACHED coefficient, untouched.
 fn lorenz_caveat(s: &crate::cmd::stats::StatsData) -> String {
-    const UNIT_CAVEAT: &str = "concentration is expected unless rows are comparable units";
+    // The zero-inflation variant takes the unit clause as a SLOT rather than repeating it, so a
+    // translation keeps one copy of the sentence and still controls where it sits.
+    let unit_caveat = t!("viz.notes.lorenz_unit");
 
     zero_share(s).filter(|z| *z >= ZERO_SHARE_MIN).map_or_else(
-        || UNIT_CAVEAT.to_string(),
+        || unit_caveat.to_string(),
         |z| {
-            format!(
-                "flat run = {:.0}% zeros, not small values \u{b7} {UNIT_CAVEAT}",
-                z * 100.0
+            t!(
+                "viz.notes.lorenz_zeros",
+                q_pct = format!("{:.0}", z * 100.0),
+                q_unit = unit_caveat.to_string()
             )
+            .into_owned()
         },
     )
 }
@@ -17631,11 +17623,16 @@ fn funnel_subtitle(
     complete_frac: f64,
     form: &PipelineForm,
 ) -> Option<String> {
-    let mut parts: Vec<String> = vec![format!(
-        "n = {} complete cases ({}% of rows)",
-        HumanCount(n_complete as u64),
-        complete_pct_str(complete_frac)
-    )];
+    // Each clause is a whole sentence with the stage names as slots, so word order belongs to the
+    // translator; only the " · " joiner stays literal.
+    let mut parts: Vec<String> = vec![
+        t!(
+            "viz.notes.funnel_complete",
+            q_n = HumanCount(n_complete as u64).to_string(),
+            q_pct = complete_pct_str(complete_frac)
+        )
+        .into_owned(),
+    ];
 
     // worst per-row violation, if any is worth naming
     if let Some((k, v)) = violations
@@ -17646,16 +17643,21 @@ fn funnel_subtitle(
         .filter(|(_, v)| **v >= FUNNEL_VIOLATION_NOTE_MIN)
         && let (Some(here), Some(prev)) = (stages.get(k), stages.get(k - 1))
     {
-        parts.push(format!(
-            "{here} exceeds {prev} in {:.0}% of rows",
-            v * 100.0
-        ));
+        parts.push(
+            t!(
+                "viz.notes.funnel_violation",
+                q_here = here.clone(),
+                q_prev = prev.clone(),
+                q_pct = format!("{:.0}", v * 100.0)
+            )
+            .into_owned(),
+        );
     }
 
     // On a bridge, name the form choice: a reader who expected the declared "pipeline" to be a
     // funnel is owed the reason it is not one, in the same line that reports the violation.
     if matches!(form, PipelineForm::Bridge) {
-        parts.push("stages do not nest \u{2014} bridged, not funnelled".to_string());
+        parts.push(t!("viz.notes.funnel_bridge").into_owned());
     }
 
     // a stage whose TOTAL outruns its predecessor: the bar order is kept (vocabulary order is
@@ -17663,9 +17665,14 @@ fn funnel_subtitle(
     if let Some(k) = (1..totals.len()).find(|&k| totals[k] > totals[k - 1])
         && let (Some(here), Some(prev)) = (stages.get(k), stages.get(k - 1))
     {
-        parts.push(format!(
-            "{here} total exceeds {prev} \u{2014} overruns, not leakage"
-        ));
+        parts.push(
+            t!(
+                "viz.notes.funnel_inverted",
+                q_here = here.clone(),
+                q_prev = prev.clone()
+            )
+            .into_owned(),
+        );
     }
 
     parts.truncate(3);

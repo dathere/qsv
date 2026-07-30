@@ -83,6 +83,22 @@ viz:
     log_axis_value: "escala log"
     null_bucket: "(NULO)"
     other_bucket: "Otros (%{q_count})"
+  notes:
+    # Lista separada por comas, no una frase: cada elemento se traduce por separado.
+    box_null: "%{q_pct}% nulos"
+    box_zeros: "%{q_pct}% ceros"
+    box_right_skewed: "asimetría derecha"
+    box_left_skewed: "asimetría izquierda"
+    box_outliers: "%{q_pct}% atípicos"
+    box_heavy_tails: "colas pesadas"
+    box_mean_impact: "media %{q_pct}% por atípicos"
+    box_gini: "Gini %{q_gini}"
+    lorenz_unit: "la concentración es esperable salvo que las filas sean unidades comparables"
+    lorenz_zeros: "tramo plano = %{q_pct}% ceros, no valores pequeños · %{q_unit}"
+    funnel_complete: "n = %{q_n} casos completos (%{q_pct}% de las filas)"
+    funnel_violation: "%{q_here} supera a %{q_prev} en %{q_pct}% de las filas"
+    funnel_bridge: "las etapas no se anidan — puente, no embudo"
+    funnel_inverted: "el total de %{q_here} supera a %{q_prev} — excesos, no fugas"
   hover:
     # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` son tokens de PLOTLY: no los traduzcas.
     # `%{q_label}` y `%{q_gini}` deben ir ANTES de `%{x:.0%}` (ver la ORDERING

@@ -30,6 +30,9 @@ tripel        = "tripel"
 sems          = "sems"
 # Spanish for "annual" — "reunión anual" in a describegpt language-detection fixture
 anual         = "anual"
+# Unaccented "português", an accepted `--language` alias in viz_i18n::LOCALES. Mirrors the
+# "espanol"/"español" pair already there: a user who cannot type the diacritic still gets a hit.
+portugues     = "portugues"
 
 [files]
 extend-exclude = [

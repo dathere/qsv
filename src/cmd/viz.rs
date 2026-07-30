@@ -742,7 +742,8 @@ smart options:
                            BCP-47/ISO 639 code (es, spa) or an English language
                            name (Spanish). Overrides the language detected in a
                            data dictionary, and is also forwarded to describegpt
-                           when inferring one. Curated: en, es. [default: auto]
+                           when inferring one. Curated: en, es, fr, de, it,
+                           pt-BR, ja, zh-CN. [default: auto]
     --width <n>            Image width in pixels for static export. Default 1000;
                            for `smart`, auto-scaled to the grid's column count.
     --height <n>           Image height in pixels for static export. Default 600;
@@ -5279,8 +5280,13 @@ struct SnapCap {
 }
 
 impl SnapCap {
-    /// Short provenance phrase for coverage notes ("cap 3.2 km, {phrase}").
-    const fn basis_phrase(&self) -> &'static str {
+    /// Short provenance phrase for the **stderr** coverage notes ("cap 3.2 km, {phrase}").
+    ///
+    /// Deliberately NOT localized: every one of this command's stderr diagnostics is English, so
+    /// substituting a translated phrase here would emit a half-Spanish English sentence. The
+    /// dashboard's own below-map note uses [`SnapCap::basis_phrase_localized`] instead; the two
+    /// are pinned byte-identical under English by `snap_basis_catalog_matches_english_phrase`.
+    const fn basis_phrase_en(&self) -> &'static str {
         match self.basis {
             SnapCapBasis::Explicit => "--snap-max-dist",
             SnapCapBasis::Auto {
@@ -5303,6 +5309,35 @@ impl SnapCap {
             }
             | SnapCapBasis::Fallback => "default",
         }
+    }
+
+    /// Same provenance phrase, in the dashboard's language, for the below-map coverage note.
+    ///
+    /// The keys are spelled out per arm rather than mapped over a runtime key, because
+    /// `every_t_key_used_in_this_file_exists_in_the_catalog` only verifies literal keys and hard-
+    /// fails on a computed one -- a typo would otherwise render as raw key text under the map.
+    fn basis_phrase_localized(&self) -> String {
+        match self.basis {
+            SnapCapBasis::Explicit => t!("viz.notes.snap_basis_explicit"),
+            SnapCapBasis::Auto {
+                region_km: Some(_),
+                precision_km: Some(_),
+            } => t!("viz.notes.snap_basis_region_precision"),
+            SnapCapBasis::Auto {
+                region_km: Some(_),
+                precision_km: None,
+            } => t!("viz.notes.snap_basis_region"),
+            SnapCapBasis::Auto {
+                region_km: None,
+                precision_km: Some(_),
+            } => t!("viz.notes.snap_basis_precision"),
+            SnapCapBasis::Auto {
+                region_km: None,
+                precision_km: None,
+            }
+            | SnapCapBasis::Fallback => t!("viz.notes.snap_basis_default"),
+        }
+        .into_owned()
     }
 }
 
@@ -6082,7 +6117,7 @@ fn choropleth_pip_locations(
             "viz choropleth: {snapped} of {total} points were snapped to the nearest region (cap \
              {} km, {}).",
             fmt_measure(cap.km),
-            cap.basis_phrase()
+            cap.basis_phrase_en()
         ));
     }
     if dropped > 0 {
@@ -6111,25 +6146,35 @@ fn choropleth_pip_locations(
     // Whenever anything snapped, the note states the snap metadata (count, cap, cap provenance).
     let mut note_parts: Vec<String> = Vec::new();
     if snapped > 0 {
-        note_parts.push(format!(
-            "{snapped} of {total} points snapped to the nearest region (≤{} km, {}).",
-            fmt_measure(cap.km),
-            cap.basis_phrase()
-        ));
+        note_parts.push(
+            t!(
+                "viz.notes.snap_coverage",
+                q_n = snapped,
+                q_total = total,
+                q_km = fmt_measure(cap.km),
+                q_basis = cap.basis_phrase_localized()
+            )
+            .into_owned(),
+        );
     }
     if dropped > 0 {
-        note_parts.push(if snap {
-            format!(
-                "{dropped} of {total} points were farther than {} km from any region and were \
-                 dropped.",
-                fmt_measure(cap.km)
-            )
-        } else {
-            format!(
-                "--no-snap: {dropped} of {total} points fell outside every GeoJSON region and \
-                 were dropped."
-            )
-        });
+        note_parts.push(
+            if snap {
+                t!(
+                    "viz.notes.drop_coverage",
+                    q_n = dropped,
+                    q_total = total,
+                    q_km = fmt_measure(cap.km)
+                )
+            } else {
+                t!(
+                    "viz.notes.drop_coverage_no_snap",
+                    q_n = dropped,
+                    q_total = total
+                )
+            }
+            .into_owned(),
+        );
     }
     let below_note = (!note_parts.is_empty()).then(|| note_parts.join(" "));
 
@@ -10504,6 +10549,33 @@ fn plotly_locale_block() -> String {
         "es" => format!(
             "<script>{}</script>",
             include_str!("assets/i18n/plotly/plotly-locale-es.js")
+        ),
+        "fr" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-fr.js")
+        ),
+        "de" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-de.js")
+        ),
+        "it" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-it.js")
+        ),
+        // the vendored file's own id is "pt-BR", which is why the LOCALES row uses that tag
+        // rather than "pt" -- `plotly_setlocale_js` must ask for exactly what was registered.
+        "pt-BR" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-pt-BR.js")
+        ),
+        "ja" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-ja.js")
+        ),
+        // as with pt-BR, the vendored file's own id is "zh-CN" -- the tag must match it exactly.
+        "zh-CN" => format!(
+            "<script>{}</script>",
+            include_str!("assets/i18n/plotly/plotly-locale-zh-CN.js")
         ),
         // A curated language whose plotly locale has not been vendored yet: the chrome is still
         // translated, only the modebar tooltips stay English.
@@ -14974,12 +15046,18 @@ const DT_LANG_NEEDLE: &str = r#"        language: {
 /// English returns `None` and the block in `DATA_DRAWER_SCRIPT` is left exactly as written — the
 /// library's own defaults ARE English, so there is nothing to vendor and an English page keeps
 /// its previous bytes. For a curated language the vendored file supplies every DataTables string
-/// (pagination, search, "no matching records"), and qsv overrides ONE key: `searchBuilder.button`,
-/// which the vendored file calls "Constructor de busqueda" (a literal "search builder"). qsv
-/// deliberately names that control "Advanced Filter" instead, because it sits alongside the
-/// per-column `ColumnControl` widgets and what distinguishes it is the cross-column AND/OR
-/// logic --
-/// so the qsv-authored name is translated from qsv's own catalog, not taken from DataTables.
+/// (pagination, search, "no matching records"), and qsv applies TWO splice-time overrides on top:
+///
+///  * `searchBuilder.button`, for EVERY locale. The vendored files render it as a literal "search
+///    builder" ("Constructor de busqueda" in es); qsv deliberately names that control "Advanced
+///    Filter" instead, because it sits alongside the per-column `ColumnControl` widgets and what
+///    distinguishes it is the cross-column AND/OR logic -- so the qsv-authored name is translated
+///    from qsv's own catalog, not taken from DataTables.
+///  * `searchBuilder.conditions.date.{after,before}`, for `zh-CN` ONLY. That one is a correction
+///    rather than a preference: upstream ships the two inverted. See the comment at the override.
+///
+/// Both live here rather than in the vendored files, which must stay byte-faithful copies of the
+/// CDN -- `assets/i18n/VENDORED.md` explains why, and how to send such a fix upstream.
 ///
 /// DataTables' `%d` in the counted form is a DataTables placeholder, NOT a rust-i18n one; it must
 /// reach the page verbatim. rust-i18n only interpolates `%{name}`, so it passes through untouched.
@@ -14988,6 +15066,18 @@ fn datatables_language_block() -> Option<String> {
     let vendored = match row.bcp47 {
         "en" => return None,
         "es" => include_str!("assets/i18n/datatables/es.json"),
+        "fr" => include_str!("assets/i18n/datatables/fr.json"),
+        "de" => include_str!("assets/i18n/datatables/de.json"),
+        // it.json omits `lengthLabels` / `orderClear`, and pt-BR.json omits the whole
+        // `columnControl` group -- DataTables falls back to its English defaults for a key the
+        // language object does not provide, so those few controls stay English. Recorded per
+        // file in assets/i18n/VENDORED.md.
+        "it" => include_str!("assets/i18n/datatables/it.json"),
+        "pt-BR" => include_str!("assets/i18n/datatables/pt-BR.json"),
+        // ja.json and zh-CN.json (upstream's Simplified `zh.json`) each omit columnControl,
+        // lengthLabels and orderClear, so those controls keep their English defaults too.
+        "ja" => include_str!("assets/i18n/datatables/ja.json"),
+        "zh-CN" => include_str!("assets/i18n/datatables/zh-CN.json"),
         // Curated language with no vendored DataTables file yet: keep the English defaults
         // rather than emitting a half-translated table.
         _ => return None,
@@ -15007,6 +15097,29 @@ fn datatables_language_block() -> Option<String> {
                 "_": t!("viz.drawer.advanced_filter_counted"),
             }),
         );
+
+    // UPSTREAM DEFECT, corrected here rather than in the vendored file. DataTables' zh translation
+    // has the SearchBuilder *date* conditions inverted: `after` reads 早于 ("earlier than") and
+    // `before` reads 晚于 ("later than"), so a reader picking a date filter gets the opposite
+    // comparison to the one applied. Its `number` conditions (大于/小于) are correct, as are every
+    // other vendored locale's dates, so this is specific to upstream zh.
+    //
+    // Fixed at splice time because `assets/i18n/datatables/zh-CN.json` must stay a byte-faithful
+    // copy of the CDN file -- hand-editing it would be reverted by the next version-bump
+    // re-download, silently reintroducing the bug. `zh_date_condition_labels_are_corrected` pins
+    // the corrected output AND asserts the vendored file still needs correcting, so this override
+    // is removed rather than left shadowing a fixed upstream string.
+    if row.bcp47 == "zh-CN"
+        && let Some(date) = obj
+            .get_mut("searchBuilder")
+            .and_then(|sb| sb.get_mut("conditions"))
+            .and_then(|conditions| conditions.get_mut("date"))
+            .and_then(serde_json::Value::as_object_mut)
+    {
+        date.insert("after".to_string(), serde_json::json!("晚于"));
+        date.insert("before".to_string(), serde_json::json!("早于"));
+    }
+
     Some(format!(
         "        language: {},",
         serde_json::to_string(&lang).ok()?
@@ -19723,7 +19836,7 @@ fn build_smart_pip_choropleth_panel(
             "viz smart: {snapped} of {total} points were snapped to the nearest region (cap {} \
              km, {}).",
             fmt_measure(cap.km),
-            cap.basis_phrase()
+            cap.basis_phrase_en()
         ));
     }
     if dropped > 0 {
@@ -36689,6 +36802,43 @@ mod tests {
         );
     }
 
+    // The stderr phrase keeps its literals in Rust; the below-map note reads the catalog. Nothing
+    // but this assertion stops the two from drifting apart, and only ONE of the five phrases is
+    // asserted by an integration test -- the other four rest solely here. A missing or misspelled
+    // key fails too: rust-i18n renders the key itself, which never equals the literal.
+    #[test]
+    fn snap_basis_catalog_matches_english_phrase() {
+        let _locale = english_locale();
+        for basis in [
+            SnapCapBasis::Explicit,
+            SnapCapBasis::Auto {
+                region_km:    Some(12.0),
+                precision_km: Some(3.0),
+            },
+            SnapCapBasis::Auto {
+                region_km:    Some(12.0),
+                precision_km: None,
+            },
+            SnapCapBasis::Auto {
+                region_km:    None,
+                precision_km: Some(3.0),
+            },
+            // never leaves resolve_snap_cap (it returns Fallback); covered for exhaustiveness.
+            SnapCapBasis::Auto {
+                region_km:    None,
+                precision_km: None,
+            },
+            SnapCapBasis::Fallback,
+        ] {
+            let cap = SnapCap { km: 1.0, basis };
+            assert_eq!(
+                cap.basis_phrase_localized(),
+                cap.basis_phrase_en(),
+                "catalog value drifted from the English literal for {basis:?}"
+            );
+        }
+    }
+
     // with neither signal available the cap falls back to the fixed default.
     #[test]
     fn snap_cap_fallback_default() {
@@ -37842,6 +37992,124 @@ mod tests {
         assert_eq!(button["0"], "Filtro avanzado");
         assert_eq!(button["_"], "Filtro avanzado (%d)");
 
+        viz_i18n::reset_active();
+    }
+
+    /// The date SearchBuilder conditions DataTables ships for zh are inverted, so an unpatched
+    /// drawer applies the opposite comparison to the one the reader picked. `datatables_language_
+    /// block` corrects them at splice time; this pins that, and pins that the correction is still
+    /// needed.
+    #[test]
+    fn zh_date_condition_labels_are_corrected() {
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::set_active(viz_i18n::parse_lang("zh-CN").unwrap());
+
+        let lang = datatables_language_block().expect("zh-CN has a vendored DataTables file");
+        let parsed: serde_json::Value = serde_json::from_str(
+            lang.trim_start()
+                .trim_start_matches("language:")
+                .trim_end_matches(','),
+        )
+        .expect("the spliced language block must be valid JSON");
+        let date = &parsed["searchBuilder"]["conditions"]["date"];
+        assert_eq!(date["after"], "晚于", "`after` must read 'later than'");
+        assert_eq!(date["before"], "早于", "`before` must read 'earlier than'");
+        // the sibling conditions must survive the surgical edit untouched
+        assert_eq!(date["between"], "介于");
+        assert_eq!(
+            parsed["searchBuilder"]["conditions"]["number"]["gt"],
+            "大于"
+        );
+
+        // Canary: when upstream fixes this, the override turns into dead code that shadows a
+        // now-correct string. Fail then, so it gets removed rather than quietly kept forever.
+        let vendored: serde_json::Value =
+            serde_json::from_str(include_str!("assets/i18n/datatables/zh-CN.json"))
+                .expect("the vendored zh-CN DataTables file must be valid JSON");
+        let raw = &vendored["searchBuilder"]["conditions"]["date"];
+        assert!(
+            raw["after"] == "早于" && raw["before"] == "晚于",
+            "the vendored zh-CN DataTables file no longer has its date conditions inverted -- \
+             upstream looks fixed, so drop the override in datatables_language_block"
+        );
+
+        viz_i18n::reset_active();
+    }
+
+    /// The `pt` vs `pt-BR` trap, generalized across every curated language.
+    ///
+    /// A vendored plotly locale registers itself under the id baked into the FILE, while
+    /// `plotly_setlocale_js` selects by the `LOCALES` TAG. When those disagree the locale is
+    /// registered and then never selected, so a fully translated dashboard keeps an English
+    /// modebar -- no panic, no console error, and a test that only checks "a block was emitted"
+    /// sails straight past it. plotly publishes no generic `pt` locale (only `pt-br`, id "pt-BR"),
+    /// which is exactly how this bites in practice.
+    #[test]
+    fn every_vendored_locale_registers_the_id_it_later_selects() {
+        let _guard = viz_i18n::lock_locale();
+        let mut plotly_checked = 0_usize;
+        let mut datatables_checked = 0_usize;
+
+        for row in viz_i18n::LOCALES {
+            viz_i18n::set_active(row);
+            let bundle = plotly_locale_block();
+            if bundle.is_empty() {
+                // No vendored plotly file: the documented graceful fallback. Selecting a locale
+                // nothing registered would be worse than staying English, so assert it doesn't.
+                assert!(
+                    plotly_setlocale_js().is_empty(),
+                    "{} selects a plotly locale that was never registered",
+                    row.bcp47
+                );
+            } else {
+                plotly_checked += 1;
+                assert!(
+                    bundle.contains(&format!(r#"name:"{}""#, row.bcp47)),
+                    "the vendored plotly locale for {} registers an id different from the tag \
+                     setPlotConfig asks for -- its modebar would silently stay English",
+                    row.bcp47
+                );
+                assert!(
+                    plotly_setlocale_js()
+                        .contains(&format!(r#"setPlotConfig({{locale: "{}"}})"#, row.bcp47)),
+                    "{} registers a plotly locale but never selects it",
+                    row.bcp47
+                );
+            }
+
+            if let Some(lang) = datatables_language_block() {
+                datatables_checked += 1;
+                let parsed: serde_json::Value = serde_json::from_str(
+                    lang.trim_start()
+                        .trim_start_matches("language:")
+                        .trim_end_matches(','),
+                )
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "{}'s spliced DataTables block is not valid JSON: {e}",
+                        row.bcp47
+                    )
+                });
+                assert!(
+                    parsed.get("zeroRecords").is_some(),
+                    "{}'s vendored DataTables strings did not survive the splice",
+                    row.bcp47
+                );
+                // qsv overrides searchBuilder.button from its OWN catalog, so an untranslated
+                // catalog entry shows up here as the English default.
+                assert_ne!(
+                    parsed["searchBuilder"]["button"]["0"], "Advanced Filter",
+                    "{}'s advanced-filter label was not translated",
+                    row.bcp47
+                );
+            }
+        }
+
+        assert!(
+            plotly_checked >= 5 && datatables_checked >= 5,
+            "expected every vendored locale to be exercised, saw plotly={plotly_checked} \
+             datatables={datatables_checked}"
+        );
         viz_i18n::reset_active();
     }
 

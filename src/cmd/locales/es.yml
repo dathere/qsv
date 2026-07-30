@@ -213,6 +213,15 @@ viz:
     funnel_violation: "%{q_here} supera a %{q_prev} en %{q_pct}% de las filas"
     funnel_bridge: "las etapas no se anidan — puente, no embudo"
     funnel_inverted: "el total de %{q_here} supera a %{q_prev} — excesos, no fugas"
+    # `--no-snap` y `--snap-max-dist` son nombres de opciones: no se traducen.
+    snap_coverage: "%{q_n} de %{q_total} puntos se ajustaron a la región más cercana (≤%{q_km} km, %{q_basis})."
+    drop_coverage: "%{q_n} de %{q_total} puntos estaban a más de %{q_km} km de cualquier región y se descartaron."
+    drop_coverage_no_snap: "--no-snap: %{q_n} de %{q_total} puntos quedaron fuera de todas las regiones GeoJSON y se descartaron."
+    snap_basis_explicit: "--snap-max-dist"
+    snap_basis_region_precision: "derivado del tamaño de las regiones y de la precisión de las coordenadas"
+    snap_basis_region: "derivado del tamaño de las regiones"
+    snap_basis_precision: "derivado de la precisión de las coordenadas"
+    snap_basis_default: "predeterminado"
   hover:
     # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` son tokens de PLOTLY: no los traduzcas.
     # `%{q_label}` y `%{q_gini}` deben ir ANTES de `%{x:.0%}` (ver la ORDERING

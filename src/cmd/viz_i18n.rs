@@ -98,6 +98,58 @@ pub static LOCALES: &[LocaleRow] = &[
         english_name: "Spanish",
         aliases:      &["spa", "spanish", "espanol", "español"],
     },
+    LocaleRow {
+        bcp47:        "fr",
+        english_name: "French",
+        aliases:      &["fra", "french", "francais", "français"],
+    },
+    LocaleRow {
+        bcp47:        "de",
+        english_name: "German",
+        aliases:      &["deu", "german", "deutsch"],
+    },
+    LocaleRow {
+        bcp47:        "it",
+        english_name: "Italian",
+        aliases:      &["ita", "italian", "italiano"],
+    },
+    // pt-BR, not pt: plotly publishes no generic `pt` locale, only `plotly-locale-pt-br` whose
+    // internal id is "pt-BR". `plotly_setlocale_js` hands `bcp47` straight to
+    // `Plotly.setPlotConfig`, so a "pt" row would register a locale plotly never selects --
+    // silently leaving an English modebar. The `pt` alias keeps `--language pt` working; other
+    // Portuguese regions (`pt-PT`, `pt-AO`) deliberately do NOT resolve here -- this catalog is
+    // specifically Brazilian, so answering an explicit European request with it would be a silent
+    // dialect swap. See the alias caveat on `parse_lang`'s regional fallback.
+    LocaleRow {
+        bcp47:        "pt-BR",
+        english_name: "Brazilian Portuguese",
+        aliases:      &[
+            "por",
+            "portuguese",
+            "pt",
+            "portugues",
+            "português",
+            "brazilian portuguese",
+        ],
+    },
+    LocaleRow {
+        bcp47:        "ja",
+        english_name: "Japanese",
+        aliases:      &["jpn", "japanese"],
+    },
+    // zh-CN, not zh -- the same shape as pt-BR above, for two independent reasons. plotly ships
+    // only `plotly-locale-zh-cn` (internal id "zh-CN") with no generic `zh`, so a "zh" tag would
+    // register a locale it never selects; and DataTables' bare `zh.json` is SIMPLIFIED
+    // (Traditional is published separately as `zh-HANT`), so calling this row `zh` would imply
+    // we serve a script we do not ship. `--language zh` still works through the alias, while
+    // `zh-Hant` deliberately does NOT resolve here -- see the alias caveat on `parse_lang`'s
+    // regional fallback, which exists precisely so a Traditional request cannot silently
+    // return Simplified.
+    LocaleRow {
+        bcp47:        "zh-CN",
+        english_name: "Simplified Chinese",
+        aliases:      &["zho", "cmn", "chinese", "zh", "simplified chinese"],
+    },
 ];
 
 /// Resolve a user- or dictionary-supplied language string to a curated locale.
@@ -119,14 +171,20 @@ pub fn parse_lang(input: &str) -> Option<&'static LocaleRow> {
     LOCALES
         .iter()
         .find(|row| row.bcp47.to_lowercase() == needle || row.aliases.contains(&needle.as_str()))
-        // A regional tag with no curated regional variant falls back to its base
-        // language, matching rust-i18n's own territory fallback (zh-CN -> zh).
+        // A regional tag with no curated regional variant falls back to its BASE LANGUAGE row,
+        // matching rust-i18n's own territory fallback (es-MX -> es).
+        //
+        // Matches `bcp47` ONLY, never an alias, and that restriction is load-bearing. A curated
+        // row whose own tag carries a region (`pt-BR`) lists the bare language as an alias so
+        // `--language pt` still works -- but honouring that alias *here* would pull every other
+        // region of that language into it, so `pt-PT` would silently render the Brazilian
+        // catalog. For Portuguese that is a dialect swap; for a `zh-CN` row with a `zh` alias it
+        // would return `zh-Hant` in the wrong SCRIPT. An explicit regional request we do not
+        // curate is better surfaced as a usage error than quietly answered with a neighbour.
         .or_else(|| {
-            needle.split_once('-').and_then(|(base, _)| {
-                LOCALES
-                    .iter()
-                    .find(|row| row.bcp47.to_lowercase() == base || row.aliases.contains(&base))
-            })
+            needle
+                .split_once('-')
+                .and_then(|(base, _)| LOCALES.iter().find(|row| row.bcp47.to_lowercase() == base))
         })
 }
 
@@ -271,6 +329,48 @@ mod tests {
     }
 
     #[test]
+    fn regional_fallback_never_crosses_into_another_region() {
+        // `es-MX` -> `es` is BASE-LANGUAGE fallback: the `es` catalog is region-neutral, so the
+        // request is genuinely honoured. `pt-PT` -> `pt-BR` would not be -- it answers an explicit
+        // European Portuguese request with a specifically Brazilian catalog. The bare `pt` alias
+        // on the pt-BR row exists so `--language pt` works; letting the FALLBACK honour that alias
+        // dragged every other Portuguese region along with it (roborev 3964).
+        assert_eq!(parse_lang("pt").unwrap().bcp47, "pt-BR");
+        assert_eq!(parse_lang("pt-BR").unwrap().bcp47, "pt-BR");
+        assert_eq!(parse_lang("por").unwrap().bcp47, "pt-BR");
+        assert!(
+            parse_lang("pt-PT").is_none(),
+            "European Portuguese is not curated -- it must not silently resolve to the Brazilian \
+             catalog"
+        );
+        assert!(parse_lang("pt-AO").is_none());
+
+        // The general property, so this keeps holding for languages added later: no regional
+        // needle may land on a row whose OWN tag carries a region. This is the guard that matters
+        // for Chinese -- a `zh-CN` row with a `zh` alias (which it needs, for the same plotly
+        // reason pt-BR does) would otherwise resolve `zh-Hant` to Simplified, i.e. the wrong
+        // script rather than merely the wrong dialect.
+        let mut regioned = 0_usize;
+        for row in LOCALES {
+            let Some((base, _)) = row.bcp47.split_once('-') else {
+                continue;
+            };
+            regioned += 1;
+            let other = format!("{base}-ZZ");
+            assert!(
+                parse_lang(&other).is_none_or(|hit| hit.bcp47 != row.bcp47),
+                "'{other}' resolved to the regioned row '{}' -- a different region of the same \
+                 language must not inherit it",
+                row.bcp47
+            );
+        }
+        assert!(
+            regioned > 0,
+            "no curated row carries a region, so the property above went untested"
+        );
+    }
+
+    #[test]
     fn parse_lang_rejects_unknown_and_empty() {
         assert!(parse_lang("vie").is_none());
         assert!(parse_lang("Klingon").is_none());
@@ -341,6 +441,74 @@ mod tests {
                 );
                 seen.push(alias);
             }
+        }
+    }
+
+    /// Every locale catalog must carry EXACTLY the key set `en.yml` has.
+    ///
+    /// rust-i18n silently falls back to English for a key a locale omits, so a missing key ships
+    /// an English string inside an otherwise-translated dashboard; a key present only in a
+    /// translation is dead weight that can never render. Nothing else catches either: the strand
+    /// guard inspects VALUES rather than key sets, and the English golden fixtures never load a
+    /// translation at all.
+    ///
+    /// Reads from disk for the same reason the strand guard does -- editing only a YAML may not
+    /// trigger a rebuild, so a compiled-catalog check can pass against stale bytes.
+    #[test]
+    fn every_locale_yaml_has_the_same_keys_as_english() {
+        fn keys(path: &std::path::Path) -> Vec<String> {
+            let text = std::fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("{} must be readable: {e}", path.display()));
+            let mut section = String::new();
+            let mut out = Vec::new();
+            for line in text.lines() {
+                let trimmed = line.trim_start();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                // "  <section>:" opens a group; "    <key>: \"value\"" is a leaf. Anything at
+                // column 0 (`_version`, `viz:`) is neither.
+                let indent = line.len() - trimmed.len();
+                if indent == 2 && trimmed.ends_with(':') {
+                    section = trimmed.trim_end_matches(':').to_string();
+                } else if indent == 4
+                    && let Some((key, _)) = trimmed.split_once(": ")
+                {
+                    out.push(format!("{section}.{key}"));
+                }
+            }
+            out.sort();
+            out
+        }
+
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cmd/locales");
+        let english = keys(&dir.join("en.yml"));
+        assert!(
+            english.len() > 150,
+            "only {} keys parsed out of en.yml -- the line scanner has stopped matching the YAML \
+             shape, rather than the catalog having shrunk",
+            english.len()
+        );
+
+        for row in LOCALES {
+            if row.bcp47 == "en" {
+                continue;
+            }
+            let theirs = keys(&dir.join(format!("{}.yml", row.bcp47)));
+            let missing: Vec<&String> = english.iter().filter(|k| !theirs.contains(k)).collect();
+            let extra: Vec<&String> = theirs.iter().filter(|k| !english.contains(k)).collect();
+            assert!(
+                missing.is_empty(),
+                "{}.yml omits {} key(s), which would silently render in English: {missing:?}",
+                row.bcp47,
+                missing.len()
+            );
+            assert!(
+                extra.is_empty(),
+                "{}.yml has {} key(s) absent from en.yml, which can never render: {extra:?}",
+                row.bcp47,
+                extra.len()
+            );
         }
     }
 

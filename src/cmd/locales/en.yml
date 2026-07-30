@@ -128,6 +128,41 @@ viz:
     viewer_failed: "qsv viz: data viewer failed:"
     advanced_filter: "Advanced Filter"
     advanced_filter_counted: "Advanced Filter (%d)"
+  cycle:
+    # POLAR AXIS TICK LABELS for the cyclic-seasonality panel. These are plotly
+    # `ticktext` values, NOT a `"text"`/`"name"` field, which is why four rounds
+    # of JSON-shape sweeps never saw them -- they were found by loading a Spanish
+    # dashboard in a browser and reading the chart.
+    #
+    # plotly's registered locale cannot supply these: we hand it an explicit
+    # `ticktext` array, so its own month/day names are never consulted.
+    #
+    # Keep them SHORT. They ring a polar chart and plotly does not wrap or elide
+    # them, so a long form collides with its neighbours. Abbreviate the way the
+    # target language abbreviates, and do not add a trailing period unless the
+    # language requires one.
+    #
+    # The hour-of-day labels ("00h".."23h") are generated numerically and need no
+    # keys.
+    day_mon: "Mon"
+    day_tue: "Tue"
+    day_wed: "Wed"
+    day_thu: "Thu"
+    day_fri: "Fri"
+    day_sat: "Sat"
+    day_sun: "Sun"
+    month_jan: "Jan"
+    month_feb: "Feb"
+    month_mar: "Mar"
+    month_apr: "Apr"
+    month_may: "May"
+    month_jun: "Jun"
+    month_jul: "Jul"
+    month_aug: "Aug"
+    month_sep: "Sep"
+    month_oct: "Oct"
+    month_nov: "Nov"
+    month_dec: "Dec"
   menu:
     # ON-GRAPH `updatemenus` BUTTON LABELS (group 5). Deferred through phase 2
     # per roborev 3936 finding 1, then done deliberately at the maintainer's
@@ -171,6 +206,15 @@ viz:
     #   * the animated-bubble size label, when the dataset has no third numeric to
     #     size by, where it names the bubble-size dimension in the per-point hover.
     records: "records"
+    # The measure label when a panel counts rows rather than aggregating a
+    # column: a colorbar title, a histogram y-axis title, and the choropleth
+    # hover measure. NINE display sites share this one key.
+    #
+    # DO NOT wire this into `--agg` parsing (`"count" => Agg::Count`, viz.rs
+    # ~10969) or the agg-resolution match (~6441). Those compare against the
+    # USER'S flag value, which is CLI syntax and stays English in every locale --
+    # localizing them would break `--agg count` for everyone.
+    count: "count"
     # Heatmap TRACE names (plotly `.name`), naming the coefficient a cell holds.
     # The paired SYMBOL (`r`, `ρ`, `NMI`) is interpolated into the cell hover and
     # stays literal in every locale; only these names are words.
@@ -276,6 +320,15 @@ viz:
     # stays literal.
     assoc_heatmap: "Association (NMI)"
     top_relationships: "Top Relationships (NMI)"
+    # Choropleth panel titles. `us_states` / `countries` are the two branches of
+    # the reverse-geocoded region choropleth (all-USA vs mixed); `count_by_region`
+    # titles the `--geojson` point-in-polygon panel.
+    us_states: "US states"
+    countries: "Countries"
+    count_by_region: "count by %{q_region}"
+    # Parcats (category-flow) panel. `%{q_dims}` is the dimension names already
+    # joined with " · ".
+    category_flow: "Category flow: %{q_dims}"
     # KPI ROW TILES. Whole strings rather than a "Mean"/"Total" prefix plus a
     # slot, so a translation can put the qualifier where its grammar wants
     # ("Media de X"). Which one is used is decided by the extensive/intensive
@@ -317,3 +370,9 @@ viz:
     count_by_label: "%{hovertext}<br>count: %{y:,}<extra></extra>"
     histogram: "%{q_col}: %{x:,.3f}<br>count: %{y:,}<extra></extra>"
     polar_records: "%{theta}<br>records: %{r:,.0f}<extra></extra>"
+    # Choropleth per-region hover lines, appended under "<label>: <value>". These
+    # are built in Rust (not a plotly template), so the `%` in `pct_of_total` is a
+    # LITERAL percent sign directly after a slot -- which is safe, and is the one
+    # shape the ORDERING RULE above explicitly permits.
+    pct_of_total: "%{q_pct}% of total"
+    rank_of: "rank %{q_rank} of %{q_total}"

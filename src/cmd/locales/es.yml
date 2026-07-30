@@ -87,6 +87,29 @@ viz:
     viewer_failed: "qsv viz: fallo el visor de datos:"
     advanced_filter: "Filtro avanzado"
     advanced_filter_counted: "Filtro avanzado (%d)"
+  cycle:
+    # Etiquetas del eje polar: CORTAS, sin punto final. Rodean el grafico y
+    # plotly no las ajusta ni recorta, asi que una forma larga choca con la
+    # vecina. Las horas ("00h".."23h") se generan numericamente.
+    day_mon: "lun"
+    day_tue: "mar"
+    day_wed: "mié"
+    day_thu: "jue"
+    day_fri: "vie"
+    day_sat: "sáb"
+    day_sun: "dom"
+    month_jan: "ene"
+    month_feb: "feb"
+    month_mar: "mar"
+    month_apr: "abr"
+    month_may: "may"
+    month_jun: "jun"
+    month_jul: "jul"
+    month_aug: "ago"
+    month_sep: "sep"
+    month_oct: "oct"
+    month_nov: "nov"
+    month_dec: "dic"
   menu:
     # Etiquetas de los botones `updatemenus`. CONSERVA el glifo inicial
     # (`▶`, `⏸`, `⇅`): forma parte del control, no es una palabra.
@@ -107,6 +130,8 @@ viz:
     null_bucket: "(NULO)"
     other_bucket: "Otros (%{q_count})"
     records: "registros"
+    # NO conectar con el analisis de `--agg`: ese valor es sintaxis de CLI.
+    count: "recuento"
     # Nombres de traza: el simbolo emparejado (`r`, `ρ`, `NMI`) no se traduce.
     trace_correlation: "correlación"
     trace_rank_correlation: "correlación por rangos"
@@ -155,6 +180,10 @@ viz:
     # NMI es una sigla: no se traduce.
     assoc_heatmap: "Asociación (NMI)"
     top_relationships: "Relaciones principales (NMI)"
+    us_states: "Estados de EE. UU."
+    countries: "Países"
+    count_by_region: "recuento por %{q_region}"
+    category_flow: "Flujo de categorías: %{q_dims}"
     kpi_mean: "Media de %{q_label}"
     kpi_total: "Total de %{q_label}"
     cyclic_records_by: "Registros por %{q_axis} (%{q_date})"
@@ -187,3 +216,5 @@ viz:
     count_by_label: "%{hovertext}<br>recuento: %{y:,}<extra></extra>"
     histogram: "%{q_col}: %{x:,.3f}<br>recuento: %{y:,}<extra></extra>"
     polar_records: "%{theta}<br>registros: %{r:,.0f}<extra></extra>"
+    pct_of_total: "%{q_pct}% del total"
+    rank_of: "puesto %{q_rank} de %{q_total}"

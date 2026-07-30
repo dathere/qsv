@@ -2104,7 +2104,7 @@ fn build_plot(
         Chart::Histogram => {
             let (trace, x_label) = build_histogram(args)?;
             plot.add_trace(trace);
-            (Some(x_label), Some("count".to_string()))
+            (Some(x_label), Some(t!("viz.chart.count").into_owned()))
         },
         Chart::Box => {
             let (trace, y_label, x_label) = build_box(args)?;
@@ -4779,9 +4779,15 @@ fn choropleth_hover_text(
             }
             lines.push(format!("{label}: {}", fmt_measure(z[i])));
             if include_pct && total > 0.0 {
-                lines.push(format!("{:.1}% of total", z[i] / total * 100.0));
+                lines.push(
+                    t!(
+                        "viz.hover.pct_of_total",
+                        q_pct = format!("{:.1}", z[i] / total * 100.0)
+                    )
+                    .into_owned(),
+                );
             }
-            lines.push(format!("rank {} of {n}", rank[i]));
+            lines.push(t!("viz.hover.rank_of", q_rank = rank[i], q_total = n).into_owned());
             lines.join("<br>")
         })
         .collect()
@@ -5914,7 +5920,7 @@ fn choropleth_literal_locations(
     };
     let measure_label = match value_idx {
         Some(i) => col_label(&headers, i, nh),
-        None => "count".to_string(),
+        None => t!("viz.chart.count").into_owned(),
     };
 
     let mut raw_locs: Vec<String> = Vec::new();
@@ -5987,7 +5993,7 @@ fn choropleth_pip_locations(
     };
     let measure_label = match value_idx {
         Some(i) => col_label(&headers, i, nh),
-        None => "count".to_string(),
+        None => t!("viz.chart.count").into_owned(),
     };
 
     let feature_id_key = args.flag_feature_id_key.as_deref().unwrap_or("id");
@@ -6162,7 +6168,7 @@ fn choropleth_geocoded_locations(
     };
     let measure_label = match value_idx {
         Some(i) => col_label(&headers, i, nh),
-        None => "count".to_string(),
+        None => t!("viz.chart.count").into_owned(),
     };
 
     // Collect the per-row geocode query + aligned measure, skipping rows missing inputs.
@@ -6827,7 +6833,11 @@ fn parcats_panel(
     let counts: Vec<f64> = paths.iter().map(|(_, c)| *c).collect();
     let tuples: Vec<Vec<String>> = paths.into_iter().map(|(t, _)| t).collect();
     let dim_labels: Vec<String> = dims.into_iter().map(|(.., name)| name).collect();
-    let title = format!("Category flow: {}", dim_labels.join(" \u{b7} "));
+    let title = t!(
+        "viz.title.category_flow",
+        q_dims = dim_labels.join(" \u{b7} ")
+    )
+    .into_owned();
     let panel = Panel::new(
         title,
         PanelKind::Parcats {
@@ -19190,16 +19200,36 @@ impl CyclicAxis {
     fn labels(self) -> Vec<String> {
         match self {
             CyclicAxis::HourOfDay => (0..24).map(|h| format!("{h:02}h")).collect(),
-            CyclicAxis::DayOfWeek => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-                .iter()
-                .map(ToString::to_string)
-                .collect(),
-            CyclicAxis::MonthOfYear => [
-                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-            ]
-            .iter()
-            .map(ToString::to_string)
-            .collect(),
+            // Spelled out with LITERAL keys rather than mapping a runtime key over
+            // a `&str` array: `every_t_key_used_in_this_file_exists_in_the_catalog`
+            // scans for literal keys, and a runtime one slips past it -- leaving a
+            // typo to render as raw key text on the axis with no error anywhere.
+            // (That guard reads this file as TEXT, so don't write the macro-call
+            // token in a comment either; doing so is itself reported as a
+            // non-literal call site.)
+            CyclicAxis::DayOfWeek => vec![
+                t!("viz.cycle.day_mon").into_owned(),
+                t!("viz.cycle.day_tue").into_owned(),
+                t!("viz.cycle.day_wed").into_owned(),
+                t!("viz.cycle.day_thu").into_owned(),
+                t!("viz.cycle.day_fri").into_owned(),
+                t!("viz.cycle.day_sat").into_owned(),
+                t!("viz.cycle.day_sun").into_owned(),
+            ],
+            CyclicAxis::MonthOfYear => vec![
+                t!("viz.cycle.month_jan").into_owned(),
+                t!("viz.cycle.month_feb").into_owned(),
+                t!("viz.cycle.month_mar").into_owned(),
+                t!("viz.cycle.month_apr").into_owned(),
+                t!("viz.cycle.month_may").into_owned(),
+                t!("viz.cycle.month_jun").into_owned(),
+                t!("viz.cycle.month_jul").into_owned(),
+                t!("viz.cycle.month_aug").into_owned(),
+                t!("viz.cycle.month_sep").into_owned(),
+                t!("viz.cycle.month_oct").into_owned(),
+                t!("viz.cycle.month_nov").into_owned(),
+                t!("viz.cycle.month_dec").into_owned(),
+            ],
         }
     }
 
@@ -19567,7 +19597,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             return None;
         }
         (
-            "US states",
+            t!("viz.title.us_states").into_owned(),
             LocationMode::UsaStates,
             state_order,
             state_counts,
@@ -19578,7 +19608,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             return None;
         }
         (
-            "Countries",
+            t!("viz.title.countries").into_owned(),
             LocationMode::Iso3,
             country_order,
             country_counts,
@@ -19586,7 +19616,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
     };
 
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
-    let hover_text = choropleth_hover_text(&order, &z, None, "count", true);
+    let hover_text = choropleth_hover_text(&order, &z, None, &t!("viz.chart.count"), true);
     Some(Panel::new(
         name.to_string(),
         PanelKind::Choropleth {
@@ -19596,7 +19626,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             geojson: None,
             feature_id_key: None,
             hover_text,
-            measure_label: "count".to_string(),
+            measure_label: t!("viz.chart.count").into_owned(),
         },
     ))
 }
@@ -19792,7 +19822,7 @@ fn build_smart_pip_choropleth_panel(
                 MAP_PANEL_ASSUMED_WIDTH_PX,
                 MAP_PANEL_USABLE_HEIGHT_PX,
             )),
-            measure_label: "count".to_string(),
+            measure_label: t!("viz.chart.count").into_owned(),
         }
     } else {
         PanelKind::Choropleth {
@@ -19802,7 +19832,7 @@ fn build_smart_pip_choropleth_panel(
             geojson: Some(geojson.clone()),
             feature_id_key: Some(feature_id_key.to_string()),
             hover_text,
-            measure_label: "count".to_string(),
+            measure_label: t!("viz.chart.count").into_owned(),
         }
     };
     Ok(Some(Panel::new(panel_name, kind)))
@@ -20141,9 +20171,9 @@ fn build_smart_summary_choropleth_panels(
     let mut out = vec![make_panel(
         count_locs,
         count_z,
-        "count".to_string(),
+        t!("viz.chart.count").into_owned(),
         true,
-        format!("count by {region_label}"),
+        t!("viz.title.count_by_region", q_region = region_label).into_owned(),
     )];
 
     // median-measure panel (when a measure column exists): per-region median of the buffered
@@ -36787,6 +36817,9 @@ mod tests {
 
     #[test]
     fn choropleth_hover_text_content_and_alignment() {
+        // the "% of total" / "rank N of N" lines are localized -- pin English.
+        // The "count" label is passed IN below and so needs no pin itself.
+        let _locale = english_locale();
         // z deliberately unsorted so rank (by descending z) differs from index order
         let locs = vec!["JP01".to_string(), "JP02".to_string(), "JP03".to_string()];
         let z = vec![10.0, 30.0, 60.0];
@@ -36812,6 +36845,9 @@ mod tests {
 
     #[test]
     fn choropleth_hover_text_no_pct_when_not_count_or_sum() {
+        // asserts the localized "rank N of N" line and the ABSENCE of the
+        // localized "% of total" line -- both need English pinned.
+        let _locale = english_locale();
         let locs = vec!["A".to_string(), "B".to_string()];
         let z = vec![3.5, 1.5];
         // include_pct = false (mean/min/max): no "% of total" line, value still labeled + ranked

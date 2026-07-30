@@ -7919,7 +7919,7 @@ fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str, labels: (&str, &str)) -
     // disclosed, so a handful of zeros in thousands of rows reads as `<1% of rows omitted`, never
     // the bare "log scale" cue reserved for a genuinely all-positive pair.
     let title = if dropped <= 0.0 {
-        format!("{name} \u{b7} log scale")
+        t!("viz.title.pair_log_scale", q_name = name).into_owned()
     } else {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let dropped_pct = (dropped * 100.0).round() as u32;
@@ -7928,7 +7928,12 @@ fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str, labels: (&str, &str)) -
         } else {
             format!("{dropped_pct}%")
         };
-        format!("{name} \u{b7} log scale, positive values only ({share} of rows omitted)")
+        t!(
+            "viz.title.pair_log_scale_positive",
+            q_name = name,
+            q_share = share
+        )
+        .into_owned()
     };
     Some(
         Panel::new(
@@ -23044,7 +23049,7 @@ impl<'a> SmartCtx<'a> {
                         .filter(|l| !l.is_empty())
                         .map_or_else(|| self.stats[date_idx].field.clone(), ToString::to_string);
                     self.geo_anim_panel = Some(Panel::new(
-                        "locations over time".to_string(),
+                        t!("viz.title.locations_over_time").into_owned(),
                         PanelKind::AnimatedGeo {
                             bucket_lats: data.bucket_lats,
                             bucket_lons: data.bucket_lons,
@@ -23178,15 +23183,25 @@ impl<'a> SmartCtx<'a> {
                         .map_or_else(|| col_label(&headers, date_idx, nh), ToString::to_string);
                     let rho = spearman_rho(&columns[i], &columns[j]);
                     let rel = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
-                        format!(
-                            "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
-                            labels[i], labels[j]
+                        t!(
+                            "viz.title.pair_r_nonlinear",
+                            q_x = labels[i],
+                            q_y = labels[j],
+                            q_r = format!("{r:.2}"),
+                            q_rho = format!("{rho:.2}")
                         )
+                        .into_owned()
                     } else {
-                        format!("{} vs {} (r={r:.2})", labels[i], labels[j])
+                        t!(
+                            "viz.title.pair_r",
+                            q_x = labels[i],
+                            q_y = labels[j],
+                            q_r = format!("{r:.2}")
+                        )
+                        .into_owned()
                     };
                     let panel = Panel::new(
-                        format!("{rel} over time"),
+                        t!("viz.title.pair_over_time", q_pair = rel).into_owned(),
                         PanelKind::AnimatedScatterPair {
                             xs: data.xs,
                             ys: data.ys,
@@ -23272,7 +23287,13 @@ impl<'a> SmartCtx<'a> {
                                         ToString::to_string,
                                     );
                                 self.bubble_panel = Some(Panel::new(
-                                    format!("{y_label} vs {x_label} by {entity_label} over time"),
+                                    t!(
+                                        "viz.title.bubble_over_time",
+                                        q_y = y_label,
+                                        q_x = x_label,
+                                        q_entity = entity_label
+                                    )
+                                    .into_owned(),
                                     PanelKind::AnimatedBubble {
                                         entities: data.entities,
                                         xs: data.xs,
@@ -23312,12 +23333,22 @@ impl<'a> SmartCtx<'a> {
                     .and_then(|(i, j, r)| {
                         let rho = spearman_rho(&columns[i], &columns[j]);
                         let name = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
-                            format!(
-                                "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
-                                labels[i], labels[j]
+                            t!(
+                                "viz.title.pair_r_nonlinear",
+                                q_x = labels[i],
+                                q_y = labels[j],
+                                q_r = format!("{r:.2}"),
+                                q_rho = format!("{rho:.2}")
                             )
+                            .into_owned()
                         } else {
-                            format!("{} vs {} (r={r:.2})", labels[i], labels[j])
+                            t!(
+                                "viz.title.pair_r",
+                                q_x = labels[i],
+                                q_y = labels[j],
+                                q_r = format!("{r:.2}")
+                            )
+                            .into_owned()
                         };
                         if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
                             // A density grid that collapses into one cell is dropped outright (or
@@ -23383,7 +23414,12 @@ impl<'a> SmartCtx<'a> {
                                             *MAX_SMART_POINTS,
                                         );
                                         (
-                                            format!("{name} \u{b7} size: {}", labels[k]),
+                                            t!(
+                                                "viz.title.pair_size",
+                                                q_name = name,
+                                                q_col = labels[k]
+                                            )
+                                            .into_owned(),
                                             Some(sizes),
                                             Some(labels[k].clone()),
                                         )
@@ -23394,9 +23430,15 @@ impl<'a> SmartCtx<'a> {
                             // title), so the log cue goes in the title too — naming WHICH axis,
                             // which a bare axis-side "log scale" label could not.
                             let name = match axis_log {
-                                (true, true) => format!("{name} \u{b7} log x/y"),
-                                (true, false) => format!("{name} \u{b7} log x"),
-                                (false, true) => format!("{name} \u{b7} log y"),
+                                (true, true) => {
+                                    t!("viz.title.pair_log_xy", q_name = name).into_owned()
+                                },
+                                (true, false) => {
+                                    t!("viz.title.pair_log_x", q_name = name).into_owned()
+                                },
+                                (false, true) => {
+                                    t!("viz.title.pair_log_y", q_name = name).into_owned()
+                                },
                                 (false, false) => name,
                             };
                             Some(
@@ -35208,6 +35250,11 @@ mod tests {
 
     #[test]
     fn smart_contour_panel_honors_log_scale_mode() {
+        // the log-space retry's title is localized -- pin English, or this races the
+        // Spanish-setting tests on the process-global locale. The "a vs b" passed in
+        // below is arbitrary fixture data, not observed output; the assertions on
+        // `.name` are what need the pin.
+        let _locale = english_locale();
         // a collapsed linear pair: 1200 zeros pile into one bin (0.6 > gate), plus 800 strictly-
         // positive points spread across three decades so the log-space grid is legible.
         let mut xs = vec![0.0_f64; 1200];

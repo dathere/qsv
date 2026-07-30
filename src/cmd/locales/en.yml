@@ -137,6 +137,35 @@ viz:
     # Suffixes decorating a title whose base is a column name.
     sampled: "%{q_name} (sampled)"
     dominated_by: "(dominated by %{q_value}, %{q_pct}%)"
+    # NUMERIC-PAIR DRILL-DOWN. `pair_r` / `pair_r_nonlinear` are SHARED by two
+    # different rendered titles and must always be localized together with both:
+    #   * the ANIMATED pair, which wraps the base in `pair_over_time`;
+    #   * the STATIC pair, which appends `pair_size` and then one `pair_log_*`.
+    # The contour branch of the static path uses the bare base with no suffix.
+    # `r` and the Greek rho are statistical symbols, not words -- leave them.
+    pair_r: "%{q_x} vs %{q_y} (r=%{q_r})"
+    pair_r_nonlinear: "%{q_x} vs %{q_y} (r=%{q_r}, ρ=%{q_rho} — nonlinear)"
+    pair_over_time: "%{q_pair} over time"
+    pair_size: "%{q_name} · size: %{q_col}"
+    # Three separate keys, NOT one composed from an axis letter: `x` and `y` are
+    # plotly axis identifiers, so they stay literal in every locale. These panels
+    # carry no axis titles, which is why the log cue names the axis here.
+    pair_log_x: "%{q_name} · log x"
+    pair_log_y: "%{q_name} · log y"
+    pair_log_xy: "%{q_name} · log x/y"
+    # The other two animated panels. Independent whole titles -- they share no key
+    # with the pair titles above, but a Spanish dashboard showing these in English
+    # beside a translated animated pair reads as a bug, so they travel together.
+    bubble_over_time: "%{q_y} vs %{q_x} by %{q_entity} over time"
+    locations_over_time: "locations over time"
+    # The contour branch's log-space retry (`log_contour_panel`) appends one of
+    # these to the SAME pair base, so they belong with `pair_r` -- leaving them
+    # English rendered "… (r=0.39, ρ=0.80 — no lineal) · log scale, positive
+    # values only (<1% of rows omitted)", half in each language.
+    # `q_share` arrives as "<1%" or "12%". Its `%` is safe: rust-i18n never
+    # re-scans an argument VALUE, only the template (see §6a property 3).
+    pair_log_scale: "%{q_name} · log scale"
+    pair_log_scale_positive: "%{q_name} · log scale, positive values only (%{q_share} of rows omitted)"
   notes:
     # Box/histogram title hints. These are a COMMA-SEPARATED LIST of noun phrases,
     # not a sentence, so each translates independently. At most two ever appear.

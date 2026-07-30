@@ -97,6 +97,20 @@ viz:
     agg_mean: "media"
     sampled: "%{q_name} (muestreado)"
     dominated_by: "(dominado por %{q_value}, %{q_pct}%)"
+    # `pair_r` y `pair_r_nonlinear` los comparten DOS titulos distintos (el par
+    # animado y el par estatico); se traducen siempre junto con ambos.
+    # `r`, `ρ`, `x` e `y` son simbolos/identificadores: no se traducen.
+    pair_r: "%{q_x} vs %{q_y} (r=%{q_r})"
+    pair_r_nonlinear: "%{q_x} vs %{q_y} (r=%{q_r}, ρ=%{q_rho} — no lineal)"
+    pair_over_time: "%{q_pair} a lo largo del tiempo"
+    pair_size: "%{q_name} · tamaño: %{q_col}"
+    pair_log_x: "%{q_name} · log x"
+    pair_log_y: "%{q_name} · log y"
+    pair_log_xy: "%{q_name} · log x/y"
+    bubble_over_time: "%{q_y} vs %{q_x} por %{q_entity} a lo largo del tiempo"
+    locations_over_time: "ubicaciones a lo largo del tiempo"
+    pair_log_scale: "%{q_name} · escala log"
+    pair_log_scale_positive: "%{q_name} · escala log, solo valores positivos (%{q_share} de las filas omitidas)"
   notes:
     # Lista separada por comas, no una frase: cada elemento se traduce por separado.
     box_null: "%{q_pct}% nulos"

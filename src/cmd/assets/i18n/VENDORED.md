@@ -119,6 +119,35 @@ merely a wrong dialect.
 controls keep DataTables' English defaults — the same shape as `pt-BR.json`. Of the six vendored
 DataTables locales only `es`, `fr` and `de` are complete.
 
+## Fixing a bad string in a vendored DataTables locale
+
+**Do not edit the file here.** It must stay a byte-faithful copy of the CDN, or the next version
+bump silently reverts the fix. Two steps instead:
+
+1. **Correct it locally at splice time**, in `datatables_language_block` — the same `get_mut`
+   override already used for `searchBuilder.button`. Pair it with a test that pins the corrected
+   output *and* asserts the vendored file still needs correcting, so the override is deleted rather
+   than left shadowing a string upstream has since fixed. `zh_date_condition_labels_are_corrected`
+   is the worked example (upstream zh has its SearchBuilder date conditions inverted: `after` reads
+   早于 "earlier than", `before` reads 晚于 "later than").
+
+2. **Send the fix upstream — but NOT as a pull request.** DataTables' `contributing.md` is explicit:
+
+   > In the case of i18n Plugins, we ask that you don't create a pull request and instead make use
+   > of the management system that we have in place for this on our website.
+
+   The evidence backs the request: <https://github.com/DataTables/Plugins> has ~7 open i18n PRs,
+   the oldest from **2015**, none merged. Use <https://datatables.net/plug-ins/i18n/> instead —
+   every language row has a **Contribute** button opening an "Edit Language Options" form with one
+   input per key (including `searchBuilder`, `columnControl` and `lengthLabels`, i.e. the groups
+   several of our files are missing). No account is needed; submissions land in a moderation queue
+   ("pending sets ... submitted for approval"). Note the form states that contributing **licenses
+   the change under MIT**, and asks for a contributor name — so it is a decision for the
+   maintainer, not something to submit unattended.
+
+   The canonical source is `i18n/<code>.json` in the `DataTables/Plugins` repo; our
+   `datatables/zh-CN.json` was verified byte-identical to both that file and the CDN.
+
 ## Adding a language
 
 1. `src/cmd/locales/<bcp47>.yml` (rust-i18n catalog; the key-parity test requires one per

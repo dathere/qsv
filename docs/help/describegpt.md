@@ -86,11 +86,11 @@ A QSV_REDIS_TTL_SECS of 0 disables expiration (entries are cached indefinitely).
 
 ## Examples [↩](#nav)
 
-> Generate a Data Dictionary, Description & Tags of data.csv using default OpenAI gpt-oss-20b model
+> Generate a Data Dictionary, Description & Tags of data.csv using OpenAI's gpt-oss-20b model
 > (replace <API_KEY> with your OpenAI API key)
 
 ```console
-qsv describegpt data.csv --api-key <API_KEY> --all
+qsv describegpt data.csv --api-key <API_KEY> --model openai/gpt-oss-20b --all
 ```
 
 > Generate a Data Dictionary of data.csv using the DeepSeek R1:14b model on a local Ollama instance
@@ -106,7 +106,7 @@ qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --
 qsv describegpt data.csv --dictionary --infer-content-type
 ```
 
-> Ask questions about the sample NYC 311 dataset using LM Studio with the default gpt-oss-20b model.
+> Ask questions about the sample NYC 311 dataset using LM Studio with the default gemma-4-26b-a4b model.
 > Questions that can be answered using the Summary Statistics & Frequency Distribution of the dataset.
 
 ```console
@@ -282,7 +282,7 @@ qsv describegpt --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑u,`<br>`‑‑base‑url`&nbsp; | string | The LLM API URL. Supports APIs & local LLMs compatible with the OpenAI API specification. Some common base URLs: OpenAI: <https://api.openai.com/v1> Gemini: <https://generativelanguage.googleapis.com/v1beta/openai> TogetherAI: <https://api.together.ai/v1> |  |
-| &nbsp;`‑m,`<br>`‑‑model`&nbsp; | string | The model to use for inferencing. This model must be compatible with OpenAI API spec. Works with both cloud LLM providers and local LLMs. Tested open weights models include OpenAI's gpt-oss-20b and gpt-oss-120b; Google's Gemma family of open models; and Mistral's Magistral reasoning models. Precedence: explicit CLI flag > QSV_LLM_MODEL env var > prompt file model > built-in default (openai/gpt-oss-20b). No docopt default — same rationale as --base-url above. |  |
+| &nbsp;`‑m,`<br>`‑‑model`&nbsp; | string | The model to use for inferencing. This model must be compatible with OpenAI API spec. Works with both cloud LLM providers and local LLMs. Tested open weights models include OpenAI's gpt-oss-20b and gpt-oss-120b; Google's Gemma family of open models; and Mistral's Magistral reasoning models. Precedence: explicit CLI flag > QSV_LLM_MODEL env var > prompt file model > built-in default (google/gemma-4-26b-a4b). No docopt default — same rationale as --base-url above. |  |
 | &nbsp;`‑‑language`&nbsp; | string | The output language/dialect/tone to use for the response. (e.g., "Spanish", "French", "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin", "Valley Girl", "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", etc.) If set to a string, that language/dialect is ALWAYS used for the response, overriding auto-detection. If set to a float (0.0 to 1.0), it specifies the auto-detection confidence threshold. If not set, auto-detection runs with an 80% confidence threshold. |  |
 | &nbsp;`‑‑addl‑props`&nbsp; | string | Additional model properties to pass to the LLM chat/completion API. Various models support different properties beyond the standard ones. For instance, gpt-oss-20b supports the "reasoning_effort" property. e.g. to set the "reasoning_effort" property to "high" & "temperature" to 0.5, use '{"reasoning_effort": "high", "temperature": 0.5}' |  |
 | &nbsp;`‑k,`<br>`‑‑api‑key`&nbsp; | string | The API key to use. If set, takes precedence over the QSV_LLM_APIKEY envvar. Required when the base URL is not localhost. Set to NONE to suppress sending the API key. |  |

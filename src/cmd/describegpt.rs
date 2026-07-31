@@ -70,9 +70,9 @@ A QSV_REDIS_TTL_SECS of 0 disables expiration (entries are cached indefinitely).
 
 Examples:
 
-  # Generate a Data Dictionary, Description & Tags of data.csv using default OpenAI gpt-oss-20b model
+  # Generate a Data Dictionary, Description & Tags of data.csv using OpenAI's gpt-oss-20b model
   # (replace <API_KEY> with your OpenAI API key)
-  qsv describegpt data.csv --api-key <API_KEY> --all
+  qsv describegpt data.csv --api-key <API_KEY> --model openai/gpt-oss-20b --all
 
   # Generate a Data Dictionary of data.csv using the DeepSeek R1:14b model on a local Ollama instance
   qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --dictionary
@@ -81,7 +81,7 @@ Examples:
   # (e.g. email, city, latitude) so the dictionary can later drive synthetic data generation
   qsv describegpt data.csv --dictionary --infer-content-type
 
-  # Ask questions about the sample NYC 311 dataset using LM Studio with the default gpt-oss-20b model.
+  # Ask questions about the sample NYC 311 dataset using LM Studio with the default gemma-4-26b-a4b model.
   # Questions that can be answered using the Summary Statistics & Frequency Distribution of the dataset.
   qsv describegpt NYC_311.csv --prompt "What is the most common complaint?"
 
@@ -400,7 +400,7 @@ describegpt options:
                            Tested open weights models include OpenAI's gpt-oss-20b and gpt-oss-120b;
                            Google's Gemma family of open models; and Mistral's Magistral reasoning models.
                            Precedence: explicit CLI flag > QSV_LLM_MODEL env var > prompt file model
-                           > built-in default (openai/gpt-oss-20b). No docopt default — same
+                           > built-in default (google/gemma-4-26b-a4b). No docopt default — same
                            rationale as --base-url above.
     --language <lang>      The output language/dialect/tone to use for the response. (e.g., "Spanish", "French",
                            "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin",

@@ -70,9 +70,13 @@ A QSV_REDIS_TTL_SECS of 0 disables expiration (entries are cached indefinitely).
 
 Examples:
 
-  # Generate a Data Dictionary, Description & Tags of data.csv using OpenAI's gpt-oss-20b model
+  # Generate a Data Dictionary, Description & Tags of data.csv using the bundled defaults
+  # (a local LLM on http://localhost:1234/v1 running the google/gemma-4-26b-a4b model)
+  qsv describegpt data.csv --all
+
+  # Same, but against OpenAI's cloud API instead of a local LLM
   # (replace <API_KEY> with your OpenAI API key)
-  qsv describegpt data.csv --api-key <API_KEY> --model openai/gpt-oss-20b --all
+  qsv describegpt data.csv --base-url https://api.openai.com/v1 --api-key <API_KEY> --model openai/gpt-oss-20b --all
 
   # Generate a Data Dictionary of data.csv using the DeepSeek R1:14b model on a local Ollama instance
   qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --dictionary

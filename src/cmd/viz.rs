@@ -4266,9 +4266,11 @@ fn ring_distinct_vertices(ring: &serde_json::Value) -> usize {
     seen.len()
 }
 
-/// Absolute planar (shoelace) area of a GeoJSON ring in raw lon/lat degree space. Used only to
-/// decide which ring is the exterior (largest), never as a real geographic area.
-fn ring_planar_area(ring: &serde_json::Value) -> f64 {
+/// SIGNED planar (shoelace) area of a GeoJSON ring in raw lon/lat degree space: positive when the
+/// ring is wound counter-clockwise, negative when clockwise. Never a real geographic area — its
+/// magnitude only ranks rings (largest = exterior) and its sign only drives the winding
+/// normalization in [`repair_polygon_rings`].
+fn ring_signed_area(ring: &serde_json::Value) -> f64 {
     let Some(arr) = ring.as_array() else {
         return 0.0;
     };
@@ -4304,30 +4306,61 @@ fn ring_planar_area(ring: &serde_json::Value) -> f64 {
         };
         a += x0 * y1 - x1 * y0;
     }
-    a.abs() / 2.0
+    a / 2.0
 }
 
 /// Repair one polygon's rings (a `Vec` of ring `Value`s) for plotly rendering: drop degenerate
 /// rings — fewer than 3 distinct vertices, OR zero planar area (a collinear ring whose vertices are
-/// distinct but lie on a line) — and order the survivors largest-area-first so ring[0] is the
-/// exterior. A zero-area ring is non-renderable either way: as an exterior it leaves plotly's
-/// `MultiPolygon` centroid with no positive-area sub-polygon (the crash this fix prevents), and as
-/// a hole it encloses nothing. Returns `None` when nothing renderable remains. Ring `Value`s are
-/// moved, never rebuilt, so coordinate precision is preserved exactly.
+/// distinct but lie on a line) — order the survivors largest-area-first so ring[0] is the exterior,
+/// then normalize each ring's WINDING (see below). A zero-area ring is non-renderable either way:
+/// as an exterior it leaves plotly's `MultiPolygon` centroid with no positive-area sub-polygon (the
+/// crash this fix prevents), and as a hole it encloses nothing. Returns `None` when nothing
+/// renderable remains. Ring `Value`s are moved and reversed in place, never rebuilt, so coordinate
+/// precision is preserved exactly.
+///
+/// WINDING: plotly's `choropleth` trace projects with d3-geo, whose spherical polygon fill takes
+/// the interior to be the side left of the ring direction — so a sub-hemisphere exterior ring must
+/// be CLOCKWISE. This is the OPPOSITE of RFC 7946 §3.1.6, which mandates counter-clockwise
+/// exteriors, so *spec-conforming* GeoJSON renders inverted: the fill floods the whole map and the
+/// real regions punch out of it. Measured on a donut fixture: CW exterior + CCW hole draws the ring
+/// and its hole correctly, while the RFC form fills the globe's complement. We therefore force
+/// ring[0] clockwise and every hole counter-clockwise. The tile-based `choroplethmap` renderer is
+/// winding-insensitive (it derives exterior-vs-hole from the area sign), so this is safe for both
+/// paths, and the even-odd point-in-polygon binning in [`build_pip_features`] is winding- and
+/// ring-order-independent, so region counts are unaffected.
 fn repair_polygon_rings(rings: Vec<serde_json::Value>) -> Option<Vec<serde_json::Value>> {
     let mut kept: Vec<(f64, serde_json::Value)> = rings
         .into_iter()
         .filter(|r| ring_distinct_vertices(r) >= 3)
-        .map(|r| (ring_planar_area(&r), r))
-        .filter(|(area, _)| *area > 0.0)
+        .map(|r| (ring_signed_area(&r), r))
+        .filter(|(area, _)| *area != 0.0)
         .collect();
     if kept.is_empty() {
         return None;
     }
     // largest area first = exterior, holes after. Stable: equal-area rings keep input order, so a
     // conforming polygon (exterior already first and largest, holes strictly smaller) is untouched.
-    kept.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    Some(kept.into_iter().map(|(_, r)| r).collect())
+    kept.sort_by(|a, b| {
+        b.0.abs()
+            .partial_cmp(&a.0.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    // exterior (index 0) must wind clockwise (signed area < 0), holes counter-clockwise (> 0).
+    Some(
+        kept.into_iter()
+            .enumerate()
+            .map(|(i, (signed_area, mut ring))| {
+                let want_clockwise = i == 0;
+                let is_clockwise = signed_area < 0.0;
+                if is_clockwise != want_clockwise
+                    && let Some(arr) = ring.as_array_mut()
+                {
+                    arr.reverse();
+                }
+                ring
+            })
+            .collect(),
+    )
 }
 
 /// Repair a single GeoJSON geometry in place for plotly rendering, returning the cleaned geometry
@@ -4374,11 +4407,13 @@ fn repair_render_geometry(geom: &mut serde_json::Value) -> Option<serde_json::Va
 /// exterior and every hole lies inside it — and *throws* (blanking the WHOLE panel, not just the
 /// one region) when a feature violates this. Real-world GeoJSON does: e.g. a zero-area sliver
 /// listed first (becoming the "exterior") with the true boundary listed as a later "hole". For each
-/// Polygon/MultiPolygon we drop degenerate rings and reorder so the largest ring is the exterior
-/// (see [`repair_polygon_rings`]); features left with no renderable polygon are dropped. Both steps
-/// are no-ops for conforming GeoJSON (a hole is always strictly smaller than its exterior), and the
-/// even-odd point-in-polygon binning in [`build_pip_features`] is ring-order-independent, so this
-/// fixes only the malformed-ordering class without altering counts or valid geometry.
+/// Polygon/MultiPolygon we drop degenerate rings, reorder so the largest ring is the exterior, and
+/// normalize ring winding to what d3-geo needs (see [`repair_polygon_rings`]); features left with
+/// no renderable polygon are dropped. The drop/reorder steps are no-ops for conforming GeoJSON (a
+/// hole is always strictly smaller than its exterior); the winding step rewrites RFC
+/// 7946-conforming rings, which d3-geo would otherwise render inverted. The even-odd
+/// point-in-polygon binning in [`build_pip_features`] is winding- and ring-order-independent, so
+/// region counts are unaffected.
 fn sanitize_geojson_for_render(geojson: &mut serde_json::Value) {
     let Some(features) = geojson.get_mut("features").and_then(|f| f.as_array_mut()) else {
         return;
@@ -33529,7 +33564,7 @@ mod tests {
     }
 
     #[test]
-    fn ring_planar_area_includes_the_closing_edge() {
+    fn ring_signed_area_includes_the_closing_edge() {
         let ring = |pts: &[[f64; 2]]| serde_json::json!(pts);
         // a 10x10 square offset from the origin, written UNCLOSED: dropping the closing term
         // makes the shoelace sum wildly wrong (it used to compute 950 instead of 100)
@@ -33539,7 +33574,7 @@ mod tests {
             [110.0, 110.0],
             [100.0, 110.0],
         ]);
-        assert!((ring_planar_area(&unclosed) - 100.0).abs() < 1e-9);
+        assert!((ring_signed_area(&unclosed).abs() - 100.0).abs() < 1e-9);
         // the already-closed spelling must give the same answer
         let closed = ring(&[
             [100.0, 100.0],
@@ -33548,7 +33583,7 @@ mod tests {
             [100.0, 110.0],
             [100.0, 100.0],
         ]);
-        assert!((ring_planar_area(&closed) - ring_planar_area(&unclosed)).abs() < 1e-9);
+        assert!((ring_signed_area(&closed).abs() - ring_signed_area(&unclosed).abs()).abs() < 1e-9);
         // and an unclosed exterior must still out-rank a genuine hole, which is what
         // repair_polygon_rings orders on
         let hole = ring(&[
@@ -33557,9 +33592,9 @@ mod tests {
             [105.0, 105.0],
             [102.0, 105.0],
         ]);
-        assert!(ring_planar_area(&unclosed) > ring_planar_area(&hole));
+        assert!(ring_signed_area(&unclosed).abs() > ring_signed_area(&hole).abs());
         // degenerate rings stay zero
-        assert!((ring_planar_area(&ring(&[[0.0, 0.0], [1.0, 1.0]])) - 0.0).abs() < 1e-12);
+        assert!((ring_signed_area(&ring(&[[0.0, 0.0], [1.0, 1.0]])).abs() - 0.0).abs() < 1e-12);
     }
 
     #[test]
@@ -37536,12 +37571,12 @@ mod tests {
         assert_eq!(rings.len(), 2, "degenerate sliver ring dropped");
         // ring[0] is now the largest-area ring (the true exterior), not the inner small ring.
         assert_eq!(
-            ring_planar_area(&rings[0]),
+            ring_signed_area(&rings[0]).abs(),
             100.0,
             "largest ring promoted to exterior"
         );
         assert_eq!(
-            ring_planar_area(&rings[1]),
+            ring_signed_area(&rings[1]).abs(),
             4.0,
             "smaller ring becomes the hole"
         );
@@ -37549,8 +37584,10 @@ mod tests {
 
     #[test]
     fn sanitize_geojson_leaves_conforming_polygon_untouched() {
-        // a well-formed polygon (exterior first and largest, hole strictly inside) must be a no-op:
-        // same ring count and same order, so valid GeoJSON is never perturbed.
+        // a well-formed polygon (exterior first and largest, hole strictly inside) keeps its ring
+        // COUNT and ORDER: no ring is dropped, reordered, or rebuilt. Only winding is normalized
+        // for d3-geo (see repair_polygon_rings), which reverses each ring's vertex sequence in
+        // place — so identity is asserted as "same vertices", modulo direction.
         let exterior = serde_json::json!([
             [0.0, 0.0],
             [10.0, 0.0],
@@ -37572,8 +37609,24 @@ mod tests {
             .as_array()
             .expect("polygon rings array");
         assert_eq!(rings.len(), 2);
-        assert_eq!(rings[0], exterior, "exterior unchanged and still first");
-        assert_eq!(rings[1], hole, "hole unchanged and still second");
+        // same vertex sets, still exterior-then-hole (a reversed ring compares equal once one side
+        // is flipped, so this catches any drop/reorder/rebuild while tolerating the winding fix).
+        let same_ring = |got: &serde_json::Value, want: &serde_json::Value| {
+            let g = got.as_array().expect("ring array");
+            let w = want.as_array().expect("ring array");
+            g == w || g.iter().rev().eq(w.iter())
+        };
+        assert!(
+            same_ring(&rings[0], &exterior),
+            "exterior kept its vertices and is still first"
+        );
+        assert!(
+            same_ring(&rings[1], &hole),
+            "hole kept its vertices and is still second"
+        );
+        // ...and the winding is what d3-geo needs.
+        assert!(ring_signed_area(&rings[0]) < 0.0, "exterior clockwise");
+        assert!(ring_signed_area(&rings[1]) > 0.0, "hole counter-clockwise");
     }
 
     #[test]
@@ -37613,7 +37666,7 @@ mod tests {
             "load_geojson must drop the degenerate sliver ring"
         );
         assert_eq!(
-            ring_planar_area(&rings[0]),
+            ring_signed_area(&rings[0]).abs(),
             100.0,
             "load_geojson must promote the real boundary to the exterior"
         );
@@ -37661,9 +37714,83 @@ mod tests {
             .expect("polygon rings array");
         assert_eq!(rings.len(), 1, "the collinear zero-area hole is stripped");
         assert_eq!(
-            ring_planar_area(&rings[0]),
+            ring_signed_area(&rings[0]).abs(),
             100.0,
             "the real exterior is kept"
+        );
+    }
+
+    #[test]
+    fn repair_polygon_rings_normalizes_winding_for_d3_geo() {
+        // plotly's `choropleth` projects with d3-geo, which needs a CLOCKWISE exterior — the
+        // OPPOSITE of RFC 7946. So spec-conforming (CCW) input must come back reversed, or the
+        // fill floods the whole map and the regions punch out of it. Measured on a donut fixture.
+        let ring = |pts: &[[f64; 2]]| serde_json::json!(pts);
+        // RFC 7946 form: CCW exterior, CW hole.
+        let ccw_exterior = ring(&[
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, 10.0],
+            [0.0, 10.0],
+            [0.0, 0.0],
+        ]);
+        let cw_hole = ring(&[[2.0, 2.0], [2.0, 8.0], [8.0, 8.0], [8.0, 2.0], [2.0, 2.0]]);
+        assert!(
+            ring_signed_area(&ccw_exterior) > 0.0,
+            "fixture: CCW exterior"
+        );
+        assert!(ring_signed_area(&cw_hole) < 0.0, "fixture: CW hole");
+
+        let fixed = repair_polygon_rings(vec![ccw_exterior.clone(), cw_hole.clone()])
+            .expect("polygon survives");
+        assert_eq!(fixed.len(), 2, "both rings kept");
+        assert!(
+            ring_signed_area(&fixed[0]) < 0.0,
+            "exterior must be normalized to CLOCKWISE"
+        );
+        assert!(
+            ring_signed_area(&fixed[1]) > 0.0,
+            "hole must be normalized to COUNTER-CLOCKWISE"
+        );
+        // reversal must MOVE coordinates, never rebuild them: same vertex set, reversed order.
+        let orig: Vec<_> = ccw_exterior.as_array().unwrap().iter().rev().collect();
+        let got: Vec<_> = fixed[0].as_array().unwrap().iter().collect();
+        assert_eq!(
+            orig, got,
+            "exterior is the input ring reversed, vertex-wise"
+        );
+
+        // already-normalized input is a no-op (byte-identical), so conforming files never churn.
+        let already = repair_polygon_rings(fixed.clone()).expect("polygon survives");
+        assert_eq!(already, fixed, "normalizing twice changes nothing");
+    }
+
+    #[test]
+    fn load_geojson_normalizes_winding() {
+        // wiring guard, same rationale as `load_geojson_invokes_sanitizer`: an inverted fill is
+        // invisible at qsv runtime (exit 0, valid-looking HTML) and only shows up in the browser.
+        let path = std::env::temp_dir().join("qsv_viz_load_geojson_winding.geojson");
+        let rfc_conforming = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"name": "ccw"},
+                // RFC 7946 §3.1.6-conforming counter-clockwise exterior
+                "geometry": {"type": "Polygon", "coordinates": [[
+                    [0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]
+                ]]}
+            }]
+        });
+        std::fs::write(&path, serde_json::to_vec(&rfc_conforming).unwrap()).unwrap();
+        let loaded = load_geojson(path.to_str().unwrap()).expect("load_geojson");
+        let _ = std::fs::remove_file(&path);
+
+        let rings = loaded["features"][0]["geometry"]["coordinates"]
+            .as_array()
+            .expect("polygon rings array");
+        assert!(
+            ring_signed_area(&rings[0]) < 0.0,
+            "load_geojson must hand d3-geo a CLOCKWISE exterior"
         );
     }
 

@@ -989,6 +989,81 @@ SCREENSHOTS = [
                   "resource/9d7c2214-4709-478a-a2e8-fb2020a5bb94 "
                   "--feature-id-key properties.name"),
     },
+    {
+        "title": "Brazil LPG prices smart visual data dictionary (Portuguese)",
+        "win":   "smart_brazil_lpg",
+        "desc": (
+            "A <code>qsv viz smart</code> <b>visual data dictionary</b> rendered entirely in "
+            "<b>Portuguese</b> over four weeks of <b>LPG (GLP) cooking-gas prices</b> — "
+            "<b>12,732 rows x 16 columns</b>, 89.1% complete — from Brazil's national open data "
+            'portal, <a href="https://dados.gov.br/dados/conjuntos-dados/serie-historica-de-'
+            'precos-de-combustiveis-e-de-glp">dados.gov.br</a>. This is the <b>localization</b> '
+            "showcase: <code>--language pt</code> resolves through the curated <code>pt-BR</code> "
+            "locale (the bare tag is a registered alias), so every piece of dashboard chrome — "
+            "<i>Descrição</i>, <i>Linhas</i>, <i>Colunas</i>, <i>Completude</i>, <i>Dicionário de "
+            "dados</i>, <i>Ver o gráfico</i> — plus the vendored plotly and DataTables locale "
+            "bundles all render in Portuguese. The input is a <b>semicolon-separated "
+            "(<code>.ssv</code>)</b> export whose dates are day-first, so "
+            "<code>QSV_PREFER_DMY=1</code> makes <code>Data da Coleta</code> parse as DD/MM/YYYY "
+            "rather than month-first. The auto-profiler leads with a <b>27-state choropleth</b> "
+            "(<i>contagem por Estado (Sigla)</i>) drawn on the coarse projection basemap "
+            "<code>viz smart</code> uses for country-scale extents, followed by a "
+            "<b>day-of-week radar</b> over the collection date and a price time trend. "
+            "<code>--bivariate</code> adds the NMI association panels (and implicitly forces "
+            "<code>--smarter</code>, so the stats cache is enriched by "
+            "<code>moarstats --advanced</code>), while a committed <code>--dictionary</code> "
+            "supplies the friendly Portuguese field labels that <code>--dict-info</code> renders "
+            "as the in-page <b>Dicionário de dados</b> tab. Neither the <code>.ssv</code> export "
+            "nor <code>brazil_geo.json</code> is committed here, so this page is reused as-is. "
+            "The standalone dashboard is a ~17&nbsp;MB self-contained page &mdash; too large to "
+            "embed inline &mdash; so this is a screenshot: <b>click it to open the fully "
+            "interactive dashboard in a new window</b>."),
+        "image": "brazil-lpg-visual-datadic.webp",
+        "href":  "smart-brazil-lpg-4-semanas.html",
+        "cmd":   ("QSV_PREFER_DMY=1 qsv viz smart ultimas-4-semanas-glp.ssv --smarter "
+                  "--dictionary ultimas-4-semanas-glp.schema.json --dict-info --bivariate "
+                  "-o smart-brazil-lpg-4-semanas.html --geojson brazil_geo.json --language pt "
+                  "--dataset-pid https://dados.gov.br/dados/conjuntos-dados/"
+                  "serie-historica-de-precos-de-combustiveis-e-de-glp"),
+    },
+    {
+        "title": "Colombia air quality (PM) smart visual data dictionary (Spanish)",
+        "win":   "smart_colombia_aire",
+        "desc": (
+            "A <code>qsv viz smart</code> <b>visual data dictionary</b> rendered entirely in "
+            "<b>Spanish</b> (<code>--language es</code>) over <b>PM10 / PM2.5 particulate "
+            "measurements</b> recorded at Colombian monitoring stations between 2011 and 2024 — "
+            "<b>8,842 rows x 25 columns</b>, 100% complete. A <b>KPI row</b> headlines the totals "
+            "(19.2M observations, 758k exceedance counts, 182k days with an exceedance), followed "
+            "by a station <b>point map</b> and a <b>department choropleth</b> "
+            "(<i>Regiones</i>) that bins each station point-in-polygon into Colombia's department "
+            "boundaries via <code>--geojson colombia_departments.geojson</code> with "
+            "<code>--feature-id-key properties.shapeName</code> — 14 stray points are snapped to "
+            "their nearest department within the auto-derived 35&nbsp;km cap. Because the matched "
+            "regions span a country-scale extent the fill lands on an interactive <b>MapLibre "
+            "tile basemap</b>. The committed <code>--dictionary</code> is <b>hand-tuned</b>, and "
+            "both edits are load-bearing: <code>Latitud</code>/<code>Longitud</code> carry "
+            "explicit <code>geo.latitude</code>/<code>geo.longitude</code> concepts because "
+            "<code>viz</code>'s header-name fallback matches only the English "
+            "<i>lat</i>/<i>latitude</i>/<i>lon</i>/<i>longitude</i> (without them the dashboard "
+            "has no map at all), and only the genuinely additive columns keep "
+            "<code>role=measure</code> — <code>viz</code> recognises non-additive measures from an "
+            "English token list, so Spanish <i>Promedio</i>/<i>Mediana</i>/<i>Porcentaje</i> would "
+            "otherwise be SUMMED into meaningless KPI totals. <code>--bivariate</code> adds the "
+            "NMI association panels (and implicitly forces <code>--smarter</code>), and "
+            "<code>--dict-info</code> renders the dictionary as the in-page <b>Diccionario de "
+            "datos</b> tab. Regenerate with the committed dictionary, <b>not</b> "
+            "<code>--dictionary infer</code>. The standalone dashboard is a ~5.1&nbsp;MB "
+            "self-contained page, shown here as a screenshot so the gallery page stays light: "
+            "<b>click it to open the fully interactive dashboard in a new window</b>."),
+        "image": "colombia-calidad-aire-visual-datadic.webp",
+        "href":  "smart-colombia-calidad-aire.html",
+        "cmd":   ("qsv viz smart calidad-aire-pm-colombia.csv --language es "
+                  "--geojson colombia_departments.geojson "
+                  "--feature-id-key properties.shapeName "
+                  "--dictionary calidad-aire-pm-colombia.schema.json --dict-info --bivariate "
+                  "-o smart-colombia-calidad-aire.html"),
+    },
 ]
 
 

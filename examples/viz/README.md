@@ -39,13 +39,15 @@ To refresh those four, run the generator with a local LLM up (LM Studio / Ollama
   so the four figures are not byte-stable across runs — review the diff before committing. The
   curated dictionaries (`*_dict.schema.json`, `boston311`, `pitt311data`) are never touched.
 
-The gallery closes with three clickable **screenshot link-outs** — `smart_nyc311.html`,
-`pitt311data.html` and `smart_boston_311_2025.html` — full `--dict-info` **visual data
-dictionaries** over real municipal 311 data. They are shown as scaled preview images that open
+The gallery closes with five clickable **screenshot link-outs** — `smart_nyc311.html`,
+`pitt311data.html`, `smart_boston_311_2025.html`, `smart-brazil-lpg-4-semanas.html` and
+`smart-colombia-calidad-aire.html` — full `--dict-info` **visual data dictionaries**: three over
+real municipal 311 data, plus two **localized** dashboards rendered entirely in Portuguese
+(`--language pt`) and Spanish (`--language es`). They are shown as scaled preview images that open
 the dashboard in its own popup window, rather than embedded, so the gallery page stays light
-(those pages run 3.6&ndash;6.9&nbsp;MB each). `gen_gallery.py` still regenerates the NYC one from
-the committed `nyc_311.csv`; the Pittsburgh and Boston dashboards are committed artifacts whose
-source data is far too large to commit, so they are reused as-is.
+(those pages run 3.9&ndash;20.6&nbsp;MB each). `gen_gallery.py` still regenerates the NYC one from
+the committed `nyc_311.csv`; the other four are committed artifacts whose source data is not in
+the repo, so they are reused as-is.
 
 **▶ View it rendered** (GitHub Pages, served with the correct `text/html` type):
 

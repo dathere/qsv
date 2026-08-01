@@ -73,14 +73,14 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>300 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>5</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-01 08:55 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-01 09:36 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
       <div class="qsv-viz-plot" style="height:230px">
 <div id="qsv-viz-panel-0" class="plotly-graph-div" style="height:100%; width:100%;"></div>
 <script type="text/javascript">
-    Plotly.newPlot("qsv-viz-panel-0", {"data":[{"type":"indicator","mode":"number","value":37616.58,"domain":{"x":[0.01,0.49],"y":[0.1,1.0]},"number":{"valueformat":".3~s"}},{"type":"indicator","mode":"number","value":184.5333,"domain":{"x":[0.51,0.99],"y":[0.1,1.0]},"number":{"valueformat":",.2f"}}],"layout":{"showlegend":false,"margin":{"l":20,"r":20,"t":20,"b":20,"pad":4},"height":230,"font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":12,"color":"#2A3F5F"},"paper_bgcolor":"#FFFFFF","modebar":{"orientation":"v"},"uirevision":"qsv-viz","annotations":[{"text":"Total monthly_spend","font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":13},"showarrow":false,"xref":"paper","x":0.25,"xanchor":"center","yref":"paper","y":0.24,"yanchor":"top"},{"text":"Mean account_age_days","font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":13},"showarrow":false,"xref":"paper","x":0.75,"xanchor":"center","yref":"paper","y":0.24,"yanchor":"top"}]},"config":{"responsive":true},"frames":null});
+    Plotly.newPlot("qsv-viz-panel-0", {"data":[{"type":"indicator","mode":"number","value":37616.58,"domain":{"x":[0.01,0.49],"y":[0.1,1.0]},"number":{"valueformat":".3~s"}},{"type":"indicator","mode":"number","value":184.5333,"domain":{"x":[0.51,0.99],"y":[0.1,1.0]},"number":{"valueformat":",.2f"}}],"layout":{"showlegend":false,"margin":{"l":20,"r":20,"t":20,"b":20,"pad":4},"height":230,"font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":12,"color":"#2A3F5F"},"paper_bgcolor":"#FFFFFF","modebar":{"orientation":"v"},"uirevision":"qsv-viz","annotations":[{"text":"Total monthly_spend","font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":13},"showarrow":false,"xref":"paper","x":0.25,"xanchor":"center","yref":"paper","y":0.24,"yanchor":"top","name":"qsv-kpi-label"},{"text":"Mean account_age_days","font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":13},"showarrow":false,"xref":"paper","x":0.75,"xanchor":"center","yref":"paper","y":0.24,"yanchor":"top","name":"qsv-kpi-label"}]},"config":{"responsive":true},"frames":null});
 </script>
       </div>
     </div>
@@ -578,6 +578,76 @@
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", function () { setTimeout(init, 0); });
   else setTimeout(init, 0);
+})();
+</script>
+<script>
+(function () {
+  var MARK = "qsv-kpi-label";
+  // A single reused canvas: text measurement must match the annotation's own font, and creating a
+  // canvas per call would churn.
+  function measurer(font) {
+    var c = measurer._c || (measurer._c = document.createElement("canvas"));
+    var ctx = c.getContext("2d");
+    ctx.font = font;
+    return function (s) { return ctx.measureText(s).width; };
+  }
+  // Greedy word wrap, mirroring wrap_kpi_label: a single word wider than the tile is left intact
+  // (never hard-split) and simply overflows.
+  function wrap(text, widthPx, measure) {
+    var words = text.split(/\s+/).filter(Boolean), lines = [], cur = "";
+    for (var i = 0; i < words.length; i++) {
+      var next = cur ? cur + " " + words[i] : words[i];
+      if (cur && measure(next) > widthPx) { lines.push(cur); cur = words[i]; } else { cur = next; }
+    }
+    if (cur) lines.push(cur);
+    return lines.join("<br>");
+  }
+  function rewrap(gd) {
+    var anns = (gd.layout && gd.layout.annotations) || [], idx = [];
+    for (var i = 0; i < anns.length; i++) { if (anns[i] && anns[i].name === MARK) idx.push(i); }
+    if (!idx.length) return;
+    // Annotation x is in PAPER coords, which span the plot area inside the margins -- so measure
+    // against that same box, not the div's full width.
+    var fl = gd._fullLayout, plotW = 0;
+    if (fl && fl.width && fl.margin) { plotW = fl.width - fl.margin.l - fl.margin.r; }
+    if (!plotW) { plotW = gd.clientWidth || gd.getBoundingClientRect().width; }
+    if (!plotW) return;
+    // Consecutive KPI labels sit at evenly spaced tile centers, so the gap between the first two IS
+    // the tile width in paper units. A lone tile gets the whole row.
+    var pitch = idx.length > 1 ? Math.abs(anns[idx[1]].x - anns[idx[0]].x) : 1;
+    var avail = Math.max(40, pitch * plotW * 0.94);
+    var upd = {}, changed = false;
+    for (var k = 0; k < idx.length; k++) {
+      var a = anns[idx[k]];
+      var full = String(a.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\s+/g, " ").trim();
+      if (!full) continue;
+      var f = a.font || {};
+      var font = ((f.size || 13) + "px ") + (f.family || getComputedStyle(document.body).fontFamily || "sans-serif");
+      var next = wrap(full, avail, measurer(font));
+      if (next !== a.text) { upd["annotations[" + idx[k] + "].text"] = next; changed = true; }
+    }
+    // The `next !== a.text` guard also stops the relayout from re-triggering the observer forever.
+    if (changed && window.Plotly && Plotly.relayout) { Plotly.relayout(gd, upd); }
+  }
+  function debounce(fn) {
+    var t = null;
+    return function () { clearTimeout(t); t = setTimeout(fn, 120); };
+  }
+  function attach() {
+    var divs = document.querySelectorAll(".js-plotly-plot"), found = false;
+    for (var i = 0; i < divs.length; i++) {
+      var gd = divs[i];
+      if (gd.__qsvKpiRw) { found = true; continue; }
+      if (!gd.layout) { continue; }
+      gd.__qsvKpiRw = true; found = true;
+      var run = (function (el) { return debounce(function () { try { rewrap(el); } catch (e) {} }); })(gd);
+      try { new ResizeObserver(run).observe(gd); } catch (e) { window.addEventListener("resize", run); }
+      run();
+    }
+    return found;
+  }
+  var tries = 0;
+  (function poll() { if (attach() || ++tries > 40) { return; } setTimeout(poll, 150); })();
 })();
 </script>
 

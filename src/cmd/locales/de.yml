@@ -62,6 +62,7 @@ viz:
     unavailable: "Bild nicht verfügbar"
     unavailable_suffix: " - nicht verfügbar"
   dict:
+    notable_characteristics: "Bemerkenswerte Merkmale"
     title: "Datenwörterbuch"
     open_own_tab: "In eigenem Tab öffnen"
     close_esc: "Schließen (Esc)"

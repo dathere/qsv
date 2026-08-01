@@ -9458,6 +9458,91 @@ fn assumed_map_dims_prelude(width_px: f64, height_px: f64) -> String {
     )
 }
 
+/// Re-wrap `viz smart` KPI tile labels against their MEASURED pixel width, on every resize.
+///
+/// `wrap_kpi_label` wraps against a character budget at generation time, but the tile's pixel width
+/// is not known then and is not even fixed afterwards: the KPI row spans anywhere from ~580px
+/// (narrow window, or the `--dict-info` drawer open) to ~1400px on the same page, so no character
+/// count is right at both ends — too few over-wraps a wide row, too many lets neighbouring labels
+/// collide. This measures the tile, re-wraps, and `relayout`s only the labels that actually change.
+///
+/// Uses a `ResizeObserver` on the plot div rather than `window.onresize` because the common trigger
+/// is the dictionary drawer opening, which shrinks the plot WITHOUT a window resize event. Falls
+/// back to `window.onresize` where `ResizeObserver` is unavailable.
+///
+/// Runs after plotly's own `Plotly.newPlot` script tags but polls anyway (capped), since plotly
+/// renders from a deferred module script — the same reason `FULLSCREEN_SCRIPT` retries.
+const KPI_REWRAP_SCRIPT: &str = r#"<script>
+(function () {
+  var MARK = "qsv-kpi-label";
+  // A single reused canvas: text measurement must match the annotation's own font, and creating a
+  // canvas per call would churn.
+  function measurer(font) {
+    var c = measurer._c || (measurer._c = document.createElement("canvas"));
+    var ctx = c.getContext("2d");
+    ctx.font = font;
+    return function (s) { return ctx.measureText(s).width; };
+  }
+  // Greedy word wrap, mirroring wrap_kpi_label: a single word wider than the tile is left intact
+  // (never hard-split) and simply overflows.
+  function wrap(text, widthPx, measure) {
+    var words = text.split(/\s+/).filter(Boolean), lines = [], cur = "";
+    for (var i = 0; i < words.length; i++) {
+      var next = cur ? cur + " " + words[i] : words[i];
+      if (cur && measure(next) > widthPx) { lines.push(cur); cur = words[i]; } else { cur = next; }
+    }
+    if (cur) lines.push(cur);
+    return lines.join("<br>");
+  }
+  function rewrap(gd) {
+    var anns = (gd.layout && gd.layout.annotations) || [], idx = [];
+    for (var i = 0; i < anns.length; i++) { if (anns[i] && anns[i].name === MARK) idx.push(i); }
+    if (!idx.length) return;
+    // Annotation x is in PAPER coords, which span the plot area inside the margins -- so measure
+    // against that same box, not the div's full width.
+    var fl = gd._fullLayout, plotW = 0;
+    if (fl && fl.width && fl.margin) { plotW = fl.width - fl.margin.l - fl.margin.r; }
+    if (!plotW) { plotW = gd.clientWidth || gd.getBoundingClientRect().width; }
+    if (!plotW) return;
+    // Consecutive KPI labels sit at evenly spaced tile centers, so the gap between the first two IS
+    // the tile width in paper units. A lone tile gets the whole row.
+    var pitch = idx.length > 1 ? Math.abs(anns[idx[1]].x - anns[idx[0]].x) : 1;
+    var avail = Math.max(40, pitch * plotW * 0.94);
+    var upd = {}, changed = false;
+    for (var k = 0; k < idx.length; k++) {
+      var a = anns[idx[k]];
+      var full = String(a.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\s+/g, " ").trim();
+      if (!full) continue;
+      var f = a.font || {};
+      var font = ((f.size || 13) + "px ") + (f.family || getComputedStyle(document.body).fontFamily || "sans-serif");
+      var next = wrap(full, avail, measurer(font));
+      if (next !== a.text) { upd["annotations[" + idx[k] + "].text"] = next; changed = true; }
+    }
+    // The `next !== a.text` guard also stops the relayout from re-triggering the observer forever.
+    if (changed && window.Plotly && Plotly.relayout) { Plotly.relayout(gd, upd); }
+  }
+  function debounce(fn) {
+    var t = null;
+    return function () { clearTimeout(t); t = setTimeout(fn, 120); };
+  }
+  function attach() {
+    var divs = document.querySelectorAll(".js-plotly-plot"), found = false;
+    for (var i = 0; i < divs.length; i++) {
+      var gd = divs[i];
+      if (gd.__qsvKpiRw) { found = true; continue; }
+      if (!gd.layout) { continue; }
+      gd.__qsvKpiRw = true; found = true;
+      var run = (function (el) { return debounce(function () { try { rewrap(el); } catch (e) {} }); })(gd);
+      try { new ResizeObserver(run).observe(gd); } catch (e) { window.addEventListener("resize", run); }
+      run();
+    }
+    return found;
+  }
+  var tries = 0;
+  (function poll() { if (attach() || ++tries > 40) { return; } setTimeout(poll, 150); })();
+})();
+</script>"#;
+
 /// Splice the fullscreen `<style>` + assumed-dims prelude + `<script>` into a full HTML document
 /// immediately before the closing `</body>` (so the script runs after plotly's own
 /// `Plotly.newPlot` script tags). Used for the plain single-chart document produced by
@@ -10270,6 +10355,7 @@ fn smart_html_page(
 {body}
 {fs_prelude}
 {fullscreen_script}
+{KPI_REWRAP_SCRIPT}
 {dict_chrome}
 {data_chrome}
 {photo_chrome}
@@ -15985,7 +16071,7 @@ fn render_dict_markdown(md: &str) -> String {
         // subordinate to the page's <h1>/<h2> structure.
         if let Some(h) = heading_content(lines[i]) {
             out.push_str("<h4 class=\"qsv-dict-mdh\">");
-            out.push_str(&md_inline(h));
+            out.push_str(&md_inline(&localize_dict_heading(h)));
             out.push_str("</h4>\n");
             i += 1;
             continue;
@@ -16024,6 +16110,25 @@ fn render_dict_markdown(md: &str) -> String {
 fn is_bullet_line(line: &str) -> bool {
     let t = line.trim_start();
     (t.starts_with("- ") || t.starts_with("* ") || t.starts_with("+ ")) && t.len() > 2
+}
+
+/// Localize the one describegpt section heading that is deliberately emitted in English.
+///
+/// `describegpt`'s Description response is lead prose followed by a "Notable Characteristics"
+/// section, and that literal is LOAD-BEARING: `okf_short_description` (describegpt.rs) uses it as
+/// the cut marker that separates the lead prose it needs for OKF's frontmatter `description:` key.
+/// So the heading must stay English in the stored schema, and translating it at the prompt would
+/// silently break OKF short-description extraction on every non-English run.
+///
+/// Translating it HERE -- at render time, after all marker parsing -- localizes the drawer without
+/// touching the schema or describegpt's parser. Only the curated locales are covered (an uncurated
+/// `--language` keeps the English heading), and the match is exact, so an LLM that words the
+/// heading differently simply falls through unchanged. Both degrade to today's behavior.
+fn localize_dict_heading(heading: &str) -> String {
+    if heading.trim() == "Notable Characteristics" {
+        return t!("viz.dict.notable_characteristics").to_string();
+    }
+    heading.to_string()
 }
 
 /// ATX-heading content: 1–6 leading `#` then a space (e.g. `### Notable Characteristics`,
@@ -22157,9 +22262,20 @@ fn wrap_kpi_label(text: &str, max_chars: usize) -> String {
     lines.join("<br>")
 }
 
+/// Marks a KPI tile's subtitle annotation so [`KPI_REWRAP_SCRIPT`] can find it in `gd.layout`
+/// without depending on annotation INDICES, which differ between the two emission sites (the smart
+/// grid interleaves KPI labels into a shared `annotations` vec; the standalone KPI row owns its
+/// own). `name` is a real plotly annotation attribute, so it survives the round-trip into the page.
+const KPI_LABEL_MARK: &str = "qsv-kpi-label";
+
 /// The word-wrapped subtitle label for one KPI tile, centered under the tile at paper-y `y_top`
 /// (anchored at its top so it hangs down into the band reserved below the indicator). Smaller than
 /// the number it captions; `font` follows the dashboard's themed/non-themed convention.
+///
+/// `max_chars` is a CHARACTER budget, which cannot track the tile's pixel width — the same page
+/// renders its KPI row anywhere from ~580px wide (narrow window, or the `--dict-info` drawer open)
+/// to ~1400px. This wrap is therefore the pre-JS baseline only; [`KPI_REWRAP_SCRIPT`] re-wraps
+/// against the measured width once the page is live.
 fn kpi_label_annotation(
     label: &str,
     x_center: f64,
@@ -22169,6 +22285,7 @@ fn kpi_label_annotation(
 ) -> Annotation {
     Annotation::new()
         .text(wrap_kpi_label(label, max_chars))
+        .name(KPI_LABEL_MARK)
         .x(x_center)
         .y(y_top)
         .x_ref("paper")
@@ -26050,7 +26167,7 @@ fn smart_grid_parts(
             let ind_y0 = y0 + band * ind_frac;
             let label_y = y0 + band * label_frac;
             // narrower tiles (more of them) wrap sooner; the label font fits ~2 lines in the band.
-            let max_chars = ((150.0 / count) as usize).clamp(12, 36);
+            let max_chars = ((150.0 / count) as usize).clamp(12, 28);
             for (i, tile) in tiles.iter().enumerate() {
                 let lo = x0 + i as f64 * width + gutter / 2.0;
                 let hi = x0 + (i as f64 + 1.0) * width - gutter / 2.0;
@@ -27200,7 +27317,7 @@ fn smart_inline_panel_plot(
         } else {
             (0.10_f64, 0.24_f64)
         };
-        let max_chars = ((150.0 / count) as usize).clamp(12, 36);
+        let max_chars = ((150.0 / count) as usize).clamp(12, 28);
         let ann_font = |size: usize| {
             let f = Font::new().size(size);
             if themed { f } else { f.family(FONT_FAMILY) }
@@ -32539,6 +32656,9 @@ mod tests {
 
     #[test]
     fn render_dict_markdown_atx_headings() {
+        // `Notable Characteristics` is localized at render time by `localize_dict_heading`, so this
+        // assertion is locale-sensitive and must pin English against concurrently-running tests.
+        let _locale = english_locale();
         // describegpt descriptions commonly use `### Notable Characteristics` sub-headings.
         let html = render_dict_markdown("Intro.\n\n### Notable Characteristics\n\n* one\n* two");
         assert_eq!(
@@ -32562,6 +32682,48 @@ mod tests {
         assert_eq!(
             render_dict_markdown("### Heading ###"),
             "<h4 class=\"qsv-dict-mdh\">Heading</h4>\n"
+        );
+    }
+
+    #[test]
+    fn notable_characteristics_heading_is_localized_at_render_time() {
+        let _guard = viz_i18n::lock_locale();
+        viz_i18n::set_active(viz_i18n::parse_lang("es").unwrap());
+
+        // The heading is LLM output carried verbatim in the schema's `description`, and it is
+        // deliberately English there: describegpt's `okf_short_description` finds this exact
+        // literal to cut the lead prose it needs for OKF's frontmatter. Localizing it at render
+        // time is what lets the drawer read Spanish without breaking that parser.
+        let html = render_dict_markdown("Intro.\n\n### Notable Characteristics\n\n* uno");
+        assert!(
+            html.contains("<h4 class=\"qsv-dict-mdh\">Características destacadas</h4>"),
+            "the section heading should render in the active locale, got: {html}"
+        );
+
+        // Any OTHER heading is LLM prose already written in the target language, so it passes
+        // through untouched -- only the one structural English literal is swapped.
+        let other = render_dict_markdown("### Resumen general");
+        assert!(
+            other.contains("<h4 class=\"qsv-dict-mdh\">Resumen general</h4>"),
+            "non-marker headings must not be rewritten, got: {other}"
+        );
+    }
+
+    #[test]
+    fn kpi_labels_carry_the_rewrap_marker() {
+        // KPI_REWRAP_SCRIPT finds its labels by this `name`, not by annotation index -- the two
+        // emission sites produce different index layouts (shared `annotations` vec vs a dedicated
+        // KPI-row layout), so an index-based hook would silently target the wrong annotation.
+        let ann = kpi_label_annotation("Total de Conteo", 0.5, 0.24, 28, Font::new().size(13));
+        let json = serde_json::to_value(&ann).expect("annotation should serialize");
+        assert_eq!(
+            json.get("name").and_then(serde_json::Value::as_str),
+            Some(KPI_LABEL_MARK),
+            "the marker must survive serialization into the page's layout"
+        );
+        assert!(
+            KPI_REWRAP_SCRIPT.contains(KPI_LABEL_MARK),
+            "the script and the annotation must agree on the marker string"
         );
     }
 

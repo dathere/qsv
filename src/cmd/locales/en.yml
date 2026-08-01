@@ -99,6 +99,7 @@ viz:
     unavailable: "image unavailable"
     unavailable_suffix: " - unavailable"
   dict:
+    notable_characteristics: "Notable Characteristics"
     title: "Data Dictionary"
     open_own_tab: "Open in its own tab"
     close_esc: "Close (Esc)"

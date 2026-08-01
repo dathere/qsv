@@ -106,6 +106,8 @@ render the dictionary as an in-page **Data Dictionary** tab. The committed ones 
 | `pitt311data.schema.json` | 26 | `pittsburgh_311.tsv` (not committed) for the Pittsburgh 311 link-out dashboard |
 | `nyc_capital_projects_dict.schema.json` | 7 | `nyc_capital_projects.csv` — declares the three budget columns as an `x-qsv.relationships` pipeline. Their totals grow, so the panel is drawn as a **bridge** rather than a funnel |
 | `onboarding_funnel_dict.schema.json` | 6 | `onboarding_funnel.csv` — declares the four stage columns as a pipeline. Their totals nest, so the same declaration earns a **funnel** |
+| `ultimas-4-semanas-glp.schema.json` | 16 | `ultimas-4-semanas-glp.ssv` (not committed) for the Portuguese LPG-prices link-out dashboard |
+| `calidad-aire-pm-colombia.schema.json` | 25 | `calidad-aire-pm-colombia.csv` (not committed) for the Spanish air-quality link-out dashboard — **hand-tuned twice**: `Latitud`/`Longitud` carry explicit `geo.latitude`/`geo.longitude` concepts (viz's header-name fallback only matches the English `lat`/`lon`, so without them there is no map at all), and only the additive columns keep `role=measure`, since viz detects non-additive measures from an English token list and would otherwise SUM Spanish `Promedio`/`Mediana`/`Porcentaje` into meaningless KPI totals |
 
 ## The smart dashboard
 

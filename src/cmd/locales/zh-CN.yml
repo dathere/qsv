@@ -69,6 +69,7 @@ viz:
     unavailable: "图片不可用"
     unavailable_suffix: " - 不可用"
   dict:
+    notable_characteristics: "值得注意的特征"
     title: "数据字典"
     open_own_tab: "在新标签页中打开"
     close_esc: "关闭(Esc)"

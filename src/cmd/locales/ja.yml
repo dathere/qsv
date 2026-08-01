@@ -62,6 +62,7 @@ viz:
     unavailable: "画像を利用できません"
     unavailable_suffix: " - 利用不可"
   dict:
+    notable_characteristics: "注目すべき特徴"
     title: "データ辞書"
     open_own_tab: "新しいタブで開く"
     close_esc: "閉じる(Esc)"

@@ -58,6 +58,7 @@ viz:
     unavailable: "imagen no disponible"
     unavailable_suffix: " - no disponible"
   dict:
+    notable_characteristics: "Características destacadas"
     title: "Diccionario de datos"
     open_own_tab: "Abrir en su propia pestaña"
     close_esc: "Cerrar (Esc)"

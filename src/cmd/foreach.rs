@@ -267,8 +267,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         if is_dry_run {
             let prog_str = cfg_select! {
-                target_family = "unix" => simdutf8::basic::from_utf8(prog.as_bytes()).unwrap_or_default(),
-                target_family = "windows" => simdutf8::basic::from_utf8(prog.as_encoded_bytes()).unwrap_or_default(),
+                target_family = "unix" => {
+                    simdutf8::basic::from_utf8(prog.as_bytes()).unwrap_or_default()
+                },
+                target_family = "windows" => {
+                    simdutf8::basic::from_utf8(prog.as_encoded_bytes()).unwrap_or_default()
+                },
             };
             let cmd_args_string = cmd_args.join(" ");
             dry_run_file.write_all(format!("{prog_str} {cmd_args_string}\n").as_bytes())?;

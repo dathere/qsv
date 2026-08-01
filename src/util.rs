@@ -182,12 +182,10 @@ const WHITESPACE_MARKERS: &[(char, &str)] = &[
 
 pub fn reset_sigpipe() {
     cfg_select! {
-        unix => {
-            unsafe {
-                libc::signal(libc::SIGPIPE, libc::SIG_DFL);
-            }
-        }
-        _ => {}
+        unix => unsafe {
+            libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+        },
+        _ => {},
     }
 }
 
@@ -3314,10 +3312,11 @@ pub fn get_stats_records(
             s_slice = curr_line.as_bytes().to_vec();
 
             // Parse regular stats record
-            let parse_result = cfg_select! {
-                target_endian = "little" => simd_json::from_slice::<StatsData>(&mut s_slice),
-                _ => serde_json::from_slice::<StatsData>(&s_slice),
-            };
+            let parse_result =
+                cfg_select! {
+                    target_endian = "little" => simd_json::from_slice::<StatsData>(&mut s_slice),
+                    _ => serde_json::from_slice::<StatsData>(&s_slice),
+                };
 
             if let Ok(stats) = parse_result {
                 csv_stats.push(stats);
@@ -3516,11 +3515,15 @@ pub fn get_stats_records(
                 )));
             }
             return Err(CliError::Other(cfg_select! {
-                target_family = "unix" => match status.signal() {
-                    Some(signal) => format!("qsv stats terminated with signal: {signal}"),
-                    None => "qsv stats terminated by unknown cause".to_string(),
+                target_family = "unix" => {
+                    match status.signal() {
+                        Some(signal) => format!("qsv stats terminated with signal: {signal}"),
+                        None => "qsv stats terminated by unknown cause".to_string(),
+                    }
                 },
-                _ => "qsv stats terminated by unknown cause".to_string(),
+                _ => {
+                    "qsv stats terminated by unknown cause".to_string()
+                },
             }));
         }
 
@@ -3576,10 +3579,11 @@ pub fn get_stats_records(
             s_slice = curr_line.as_bytes().to_vec();
 
             // Parse regular stats record
-            let parse_result = cfg_select! {
-                target_endian = "little" => simd_json::from_slice::<StatsData>(&mut s_slice),
-                _ => serde_json::from_slice::<StatsData>(&s_slice),
-            };
+            let parse_result =
+                cfg_select! {
+                    target_endian = "little" => simd_json::from_slice::<StatsData>(&mut s_slice),
+                    _ => serde_json::from_slice::<StatsData>(&s_slice),
+                };
 
             match parse_result {
                 Ok(stats) => csv_stats.push(stats),
@@ -4746,7 +4750,7 @@ pub fn is_executable(path: &str) -> std::io::Result<bool> {
 
             let metadata = fs::metadata(path)?;
             Ok(metadata.permissions().mode() & 0o111 != 0)
-        }
+        },
         windows => {
             use std::path::Path;
             let p = Path::new(path);
@@ -4756,7 +4760,7 @@ pub fn is_executable(path: &str) -> std::io::Result<bool> {
                     "exe" | "bat" | "cmd" | "com"
                 )
             }))
-        }
+        },
     }
 }
 

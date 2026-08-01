@@ -1886,10 +1886,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // save the stats args to "stdin.stats.csv.json"
         stats_pathbuf.set_extension("csv.json");
         // Use platform-appropriate JSON serialization
-        let json_string = cfg_select! {
-            target_endian = "little" => simd_json::to_string_pretty(&current_stats_args)?,
-            _ => serde_json::to_string_pretty(&current_stats_args)?,
-        };
+        let json_string =
+            cfg_select! {
+                target_endian = "little" => simd_json::to_string_pretty(&current_stats_args)?,
+                _ => serde_json::to_string_pretty(&current_stats_args)?,
+            };
         std::fs::write(stats_pathbuf, json_string)?;
     } else if let Some(path) = rconfig.path {
         // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv" or
@@ -1964,10 +1965,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .unwrap()
                 .to_string();
             // Use platform-appropriate JSON serialization
-            let json_string = cfg_select! {
-                target_endian = "little" => simd_json::to_string_pretty(&current_stats_args)?,
-                _ => serde_json::to_string_pretty(&current_stats_args)?,
-            };
+            let json_string =
+                cfg_select! {
+                    target_endian = "little" => simd_json::to_string_pretty(&current_stats_args)?,
+                    _ => serde_json::to_string_pretty(&current_stats_args)?,
+                };
             std::fs::write(stats_pathbuf.clone(), json_string)?;
 
             // save the stats data to "<FILESTEM>.stats.csv.data.jsonl"

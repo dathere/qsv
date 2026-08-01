@@ -162,7 +162,7 @@ jobs:
     # for the cross-compiled target(s) (currently aarch64-unknown-linux-gnu).
     - name: Install cross
       if: ${{ matrix.job.use-cross == true }}
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@v2.85.3
       with:
         tool: cross
     - name: Build qsv

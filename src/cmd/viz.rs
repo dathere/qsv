@@ -15575,11 +15575,15 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   // ---------------------------------------------------------------------------------------
   // Row selection.
   //
-  // Hand-rolled rather than using the DataTables Select extension, which hard-requires a global
-  // jQuery at every published version (2.1.0 through 3.1.0, plus the standalone and ESM builds)
-  // while this page runs DataTables in vanilla mode — loading it throws `ReferenceError: jQuery
-  // is not defined` and it silently never registers, leaving `rows({selected:true})` to return
-  // EVERY row rather than none. See DATATABLES_CDN_COMBO.
+  // Hand-rolled rather than using the DataTables Select extension, which is omitted from the
+  // bundle by choice — see DATATABLES_CDN_COMBO for the cost/benefit. (Through the 3.x line it
+  // also could not have worked here: it hard-required a global jQuery, which this vanilla-mode
+  // page does not provide. Select 4.0.0 dropped that requirement, so the omission is now a
+  // decision, not a constraint.)
+  //
+  // What matters for the code below is that Select is ABSENT: with no Select registered,
+  // `rows({selected:true})` returns EVERY row rather than none, so selection state cannot be
+  // read back off the table and is tracked here instead.
   //
   // Selection is stored as DATA row indexes (`row().index()`), never DOM nodes: `deferRender`
   // discards off-page rows, and sorting/filtering/paging all reshuffle the DOM, so a node-based
@@ -16062,7 +16066,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
           // applies, paging does not, so the file holds every filtered row, not the page.
           //
           // NOTE: this default is only safe because the DataTables **Select extension is not
-          // loaded** (it requires jQuery; see DATATABLES_CDN_COMBO). With Select present, Buttons
+          // loaded** (omitted by choice; see DATATABLES_CDN_COMBO). With Select present, Buttons
           // silently narrows the export to "the selected rows, if any" — so if it is ever added,
           // this button MUST pin `exportOptions.modifier.selected = null`. The hand-rolled row
           // selection below deliberately does not hook Buttons, so the export stays all-rows.

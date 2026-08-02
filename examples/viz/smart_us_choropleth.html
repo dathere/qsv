@@ -74,7 +74,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>332 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>6</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-02 15:41 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-02 16:28 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -755,11 +755,15 @@
   // ---------------------------------------------------------------------------------------
   // Row selection.
   //
-  // Hand-rolled rather than using the DataTables Select extension, which hard-requires a global
-  // jQuery at every published version (2.1.0 through 3.1.0, plus the standalone and ESM builds)
-  // while this page runs DataTables in vanilla mode — loading it throws `ReferenceError: jQuery
-  // is not defined` and it silently never registers, leaving `rows({selected:true})` to return
-  // EVERY row rather than none. See DATATABLES_CDN_COMBO.
+  // Hand-rolled rather than using the DataTables Select extension, which is omitted from the
+  // bundle by choice — see DATATABLES_CDN_COMBO for the cost/benefit. (Through the 3.x line it
+  // also could not have worked here: it hard-required a global jQuery, which this vanilla-mode
+  // page does not provide. Select 4.0.0 dropped that requirement, so the omission is now a
+  // decision, not a constraint.)
+  //
+  // What matters for the code below is that Select is ABSENT: with no Select registered,
+  // `rows({selected:true})` returns EVERY row rather than none, so selection state cannot be
+  // read back off the table and is tracked here instead.
   //
   // Selection is stored as DATA row indexes (`row().index()`), never DOM nodes: `deferRender`
   // discards off-page rows, and sorting/filtering/paging all reshuffle the DOM, so a node-based
@@ -1242,7 +1246,7 @@
           // applies, paging does not, so the file holds every filtered row, not the page.
           //
           // NOTE: this default is only safe because the DataTables **Select extension is not
-          // loaded** (it requires jQuery; see DATATABLES_CDN_COMBO). With Select present, Buttons
+          // loaded** (omitted by choice; see DATATABLES_CDN_COMBO). With Select present, Buttons
           // silently narrows the export to "the selected rows, if any" — so if it is ever added,
           // this button MUST pin `exportOptions.modifier.selected = null`. The hand-rolled row
           // selection below deliberately does not hook Buttons, so the export stays all-rows.

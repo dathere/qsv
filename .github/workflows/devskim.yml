@@ -38,7 +38,7 @@ jobs:
           #   DevSkim flags as localhost access — fixture noise, not runtime code.
           #   Scoped to the generated text formats so executable/config files in
           #   the same dir (check_semanticmd.py, datadict.yaml) stay scanned.
-          # src/cmd/assets/datatables.min.* : vendored DataTables 3.0.0 bundle
+          # src/cmd/assets/datatables.min.* : vendored DataTables 3.0.1 bundle
           #   (dt/b/date/r/sb). DS172411 flags every setTimeout call site
           #   regardless of argument type; all 25 in the bundle pass a function
           #   literal, none pass a string — minified third-party noise.

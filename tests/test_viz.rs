@@ -14451,10 +14451,10 @@ fn viz_smart_data_viewer_cdn_tags_carry_sri() {
     let html = String::from_utf8_lossy(&out.stdout);
 
     assert!(html.contains(
-        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/sb-2.0.0/datatables.min.js"
+        "https://cdn.datatables.net/v/dt/dt-3.0.1/b-4.0.1/cc-2.0.0/date-2.0.0/sb-2.0.0/datatables.min.js"
     ));
     assert!(html.contains(
-        "https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/sb-2.0.0/datatables.min.css"
+        "https://cdn.datatables.net/v/dt/dt-3.0.1/b-4.0.1/cc-2.0.0/date-2.0.0/sb-2.0.0/datatables.min.css"
     ));
     // both tags carry integrity + crossorigin; no embedded library payloads remain
     assert_eq!(html.matches("cdn.datatables.net").count(), 2);

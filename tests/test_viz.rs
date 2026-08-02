@@ -4315,6 +4315,55 @@ fn viz_smart_timeseries_dict_format_overrides_prefer_dmy_with_dict_info() {
     assert!(html.contains(MDY_X_AXIS));
 }
 
+// Guards the reachability of the fix for dates that are NOT ambiguous. A column mixing
+// `12/31/2021` (day > 12, so unreadable day-first) with ambiguous cells, under an opposing
+// QSV_PREFER_DMY=1, could in principle fail date inference and leave `stats` typing the column
+// `String` — which would make `canonical_date_col` skip it and the dictionary preference never
+// engage at all. It does not: qsv-dateparser's `slash_mdy_family` tries the preferred order and
+// FALLS BACK to the other one (a failed parse yields `None`, not an error), so the column still
+// types as `Date` and the declared format still governs the reading. Pinned here because the
+// other #4303 tests deliberately use only ambiguous cells and cannot cover this path.
+#[test]
+fn viz_smart_timeseries_dict_format_handles_unambiguous_mdy_values() {
+    let wrk = Workdir::new("viz_smart_timeseries_dict_format_handles_unambiguous_mdy_values");
+    // 12/31 and 11/30 have day > 12; 01/03 and 02/04 are ambiguous.
+    wrk.create_from_string(
+        "sales.csv",
+        "sale_date,revenue\n12/31/2021,1500\n01/03/2021,1200\n11/30/2021,1000\n02/04/2021,1100\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "sale_date": { "type": "string", "title": "Sale Date",
+              "x-qsv": { "qsv_type": "Date", "content_type": "date:%m/%d/%Y",
+                "role": "timestamp", "concept": "time.event_timestamp" } },
+            "revenue": { "type": "integer", "title": "Revenue",
+              "x-qsv": { "qsv_type": "Integer", "content_type": "unknown" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_PREFER_DMY", "1");
+    cmd.args(["smart", "sales.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the panel exists at all -> the column was still typed Date, not downgraded to String
+    assert!(
+        html.contains("Revenue over Sale Date"),
+        "a date column mixing unambiguous MDY values must still be typed as a date"
+    );
+    // ... and every cell reads month-first: 01/03 -> Jan 3 (QSV_PREFER_DMY=1 would say Mar 1),
+    // alongside the day>12 cells that only ever had one reading.
+    assert!(html.contains(r#""x":["2021-01-03","2021-02-04","2021-11-30","2021-12-31"]"#));
+}
+
 // The tri-state fallback. `qsv_dateparser` only consults its DMY preference for slash-separated
 // `d/m` values, so a year-leading format expresses no actionable preference and must leave
 // QSV_PREFER_DMY in charge -- as must a bare `date` token carrying no format at all. Getting this

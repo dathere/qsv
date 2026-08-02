@@ -165,6 +165,9 @@ Examples:
   # Bubble scatter: marker size by population, marker color by a numeric score
   qsv viz scatter data.csv --x gdp --y life_exp --size population --color score -o bubble.html
 
+  # Gapminder bubble animation: one bubble per region moving over time
+  qsv viz scatter regions.csv --x gdp_index --y wellbeing_index --size population_m --series region --slider month_date -o gapminder.html
+
   # Histogram of a numeric column with 30 bins
   qsv viz histogram data.csv --x value --bins 30 -o hist.html
 
@@ -287,8 +290,11 @@ viz options:
                            the heatmap weight.
     --size <col>           For scatter/scatter3d/map/geo: a numeric column to encode as
                            marker size, producing a bubble chart (values are rescaled to
-                           a readable pixel range). Cannot be combined with --series. In
-                           map density mode, this column is the heatmap weight.
+                           a readable pixel range). Cannot be combined with --series,
+                           EXCEPT on an animated scatter (see the --slider option), where
+                           the --series column names the entity and this column is the
+                           third data variable. In map density mode, this column is the
+                           heatmap weight.
     --donut                Render a pie chart as a donut (with a center hole).
     --ohlc-open <col>      Open-price column for candlestick/ohlc charts.
     --high <col>           High-price column for candlestick/ohlc charts.
@@ -315,6 +321,10 @@ viz options:
                            repeats. One of: sum, mean, count, min, max.
                            For treemap/sunburst/icicle, only additive aggregations
                            apply: count (default) or sum (requires --value).
+                           For a bubble animation (see --slider), collapses each
+                           entity x frame cell to a single bubble; defaults to mean
+                           (the cell centroid). count is rejected there, since a row
+                           count is not a position.
     --box-points <mode>    Which sample points to draw alongside a box. Reading the
                            raw values lets plotly render true Tukey whiskers (1.5*IQR)
                            with the points beyond the fences as outliers. One of:
@@ -712,7 +722,16 @@ smart options:
                            style). Supported for bar/line/scatter and geo, and may be
                            split into animated traces with the --series option. (Not
                            supported for `viz map` — the MapLibre basemap can't animate;
-                           use `viz geo` for an animated point map.) For `smart`, this
+                           use `viz geo` for an animated point map.)
+                           On `viz scatter`, combining a slider with --series AND --size
+                           builds a Gapminder BUBBLE ANIMATION: --series is the entity
+                           (one colored bubble each), --x/--y the measure pair and --size
+                           the third data variable (bubble area). Each entity x frame cell
+                           collapses to one bubble via --agg (mean by default); bubble
+                           sizes are scaled once across all frames so they stay comparable.
+                           A slider column that parses as dates is auto-bucketed to a
+                           readable number of frames; any other column frames on its
+                           distinct values. For `smart`, this
                            controls whether one animated relationship-over-time panel is
                            added: the numeric pair whose per-time-bucket centroid path
                            bends the most (a trailing-window scatter colored by time
@@ -730,6 +749,10 @@ smart options:
                            whose --slider value is at or below the Nth value, so the
                            animation builds up cumulatively instead of replacing each
                            step. Applies to bar/line/scatter and geo.
+                           On a bubble animation there is only ever one bubble per entity
+                           per frame, so nothing piles up on screen; instead each bubble
+                           shows a RUNNING aggregate over all frames up to that point, and
+                           so drifts less and less as the animation plays.
     --annotation <s>       Caption note drawn at the bottom of the plot (e.g. to note
                            a clipped outlier). Cartesian charts only.
     --theme <name>         Plotly theme that drives the chart's overall look
@@ -1969,11 +1992,26 @@ fn build_plot(
     geojson: Option<serde_json::Value>,
 ) -> CliResult<Plot> {
     progress.set_message("Building chart…");
+    let kind = chart_kind(args);
+    let slider_col = resolve_slider_col(args)?;
+    // `viz scatter --slider <t> --series <entity> --size <measure>` is the Gapminder bubble
+    // animation: --series names the entity (one bubble, one color, one trace per value) and --size
+    // the third data variable. It is the one case where a marker encoding and --series coexist,
+    // because each entity's trace carries exactly one point per frame.
+    //
+    // The `flag_color.is_none()` term is load-bearing: `encoded_scatter` is `color || size`, so
+    // relaxing on `encoded_scatter` alone would also wave `--color` + `--series` past the conflict
+    // check below and into the slider dispatch, which only screens for a lone `--color`.
+    let bubble_anim = slider_col.is_some()
+        && matches!(kind, Chart::Scatter)
+        && args.flag_size.is_some()
+        && args.flag_color.is_none()
+        && args.flag_series.is_some();
     // --color/--size are per-point marker encodings that apply to scatter and map only, and
     // need a single trace, so they can't be combined with --series (which splits into traces).
     if encoded_scatter(args) {
         if !matches!(
-            chart_kind(args),
+            kind,
             Chart::Scatter | Chart::Scatter3D | Chart::Map | Chart::Geo
         ) {
             return fail_incorrectusage_clierror!(
@@ -1981,11 +2019,12 @@ fn build_plot(
                  geo`."
             );
         }
-        if args.flag_series.is_some() {
+        if args.flag_series.is_some() && !bubble_anim {
             return fail_incorrectusage_clierror!(
                 "--color/--size cannot be combined with --series. Use --series to split into \
                  colored traces by category, or --color/--size to encode numeric columns onto a \
-                 single series."
+                 single series.\n(The one exception is the bubble animation: `viz scatter \
+                 --slider <col> --series <entity> --size <measure>`.)"
             );
         }
     }
@@ -2018,17 +2057,27 @@ fn build_plot(
     // frames + slider/menu layout, so it's dispatched here before the per-kind builders below.
     // Supported for bar/line/scatter and geo; histogram/box are follow-ups, and `viz map` can't
     // animate (the MapLibre backend never settles its animation frames — use `viz geo` instead).
-    if let Some(slider_col) = resolve_slider_col(args)? {
-        match chart_kind(args) {
+    if let Some(slider_col) = slider_col {
+        match kind {
             Chart::Bar | Chart::Line | Chart::Scatter => {
-                if encoded_scatter(args) {
+                if bubble_anim {
+                    return build_slider_bubble_plot(args, &slider_col);
+                }
+                if args.flag_color.is_some() {
                     return fail_incorrectusage_clierror!(
-                        "--slider cannot yet be combined with --color/--size (bubble animation is \
-                         a follow-up). Use --series to split into animated traces, or drop \
-                         --color/--size."
+                        "--slider cannot yet be combined with --color (animating a continuous \
+                         colorscale is a follow-up). Use --series to split into animated traces, \
+                         or drop --color."
                     );
                 }
-                return build_slider_xy_plot(args, chart_kind(args), &slider_col);
+                if args.flag_size.is_some() {
+                    return fail_incorrectusage_clierror!(
+                        "--slider with --size builds a Gapminder bubble animation, which needs an \
+                         entity to put a bubble on. Add --series <col> (one bubble per distinct \
+                         value), or drop --size."
+                    );
+                }
+                return build_slider_xy_plot(args, kind, &slider_col);
             },
             Chart::Geo => {
                 if encoded_scatter(args) {
@@ -2820,6 +2869,132 @@ fn build_slider_xy_plot(args: &Args, kind: Chart, slider_col: &SelectColumns) ->
     layout = layout.sliders(vec![slider_control(
         &data.frame_label,
         &data.frame_values,
+        args.flag_slider_speed,
+    )?]);
+    layout = layout.update_menus(vec![play_pause_menu(args.flag_slider_speed)?]);
+
+    plot.set_layout(apply_theme(layout, args.theme()));
+    Ok(plot)
+}
+
+/// Cap on the number of `--series` entities a bubble animation will draw. Every entity is its own
+/// trace IN EVERY FRAME, so the embedded payload grows as entities x frames — an unbounded
+/// high-cardinality `--series` would produce an unusably large file rather than a readable chart.
+const BUBBLE_MAX_ENTITIES: usize = 60;
+
+/// Build a Gapminder-style animated bubble chart: `--series` is the entity (one colored bubble
+/// each), `--x`/`--y` the measure pair, `--size` the third data variable, and `--slider` the time
+/// (or ordinal) axis. Each `(entity, frame)` cell collapses to ONE bubble via `--agg` (default
+/// mean).
+///
+/// This is the standalone twin of the `viz smart` bubble panel and shares its reader
+/// ([`read_entity_bucket_agg`]) and its trace/frame builder ([`add_bubble_traces_and_frames`]);
+/// only the gates and the layout differ. Because the user asked for this chart by name, the
+/// quality gates that make sense for an AUTO-selected panel are relaxed here and reported as
+/// stderr notes instead — see [`EntityBucketOpts`].
+fn build_slider_bubble_plot(args: &Args, slider_col: &SelectColumns) -> CliResult<Plot> {
+    let (_rdr, headers, nh) = reader_and_headers(args)?;
+    let x_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
+    let y_idx = resolve_one(args.flag_y.as_ref(), &headers, nh, "y")?;
+    let entity_idx = resolve_one(args.flag_series.as_ref(), &headers, nh, "series")?;
+    // `--size` is REQUIRED here, guaranteed by the `bubble_anim` dispatch predicate in
+    // `build_plot`. (The reader's size-less fallback to a per-cell row count exists for `viz
+    // smart`, which reaches this reader on a 2-numeric dataset with no third measure; it is not
+    // reachable from the standalone path, so this must not advertise it.)
+    let size_idx = resolve_one(args.flag_size.as_ref(), &headers, nh, "size")?;
+    let frame_idx = resolve_one(Some(slider_col), &headers, nh, "slider")?;
+
+    // `--agg count` would make the bubble's POSITION a row count, which is meaningless
+    let agg = match parse_agg(args.flag_agg.as_deref())? {
+        Some(Agg::Count) => {
+            return fail_incorrectusage_clierror!(
+                "--agg count has no meaning for a bubble's x/y position. Use sum, mean, min or \
+                 max."
+            );
+        },
+        Some(a) => a,
+        // mean = the centroid the `viz smart` bubble panel has always drawn
+        None => Agg::Mean,
+    };
+
+    let opts = EntityBucketOpts {
+        size_idx: Some(size_idx),
+        agg,
+        cumulative: args.flag_slider_cumulative,
+        prefer_dmy: util::get_envvar_flag("QSV_PREFER_DMY"),
+        min_frames: 2,
+        // draw what was asked for: keep every cell that has any data, keep an entity that shows
+        // up in even one frame, and report the gaps rather than silently dropping them
+        min_dense_floor: 1,
+        min_cell_rows: 1,
+        min_entities: 1,
+        min_dense_pct: 0,
+        warn: true,
+    };
+    let Some(data) = read_entity_bucket_agg(args, entity_idx, x_idx, y_idx, frame_idx, &opts)?
+    else {
+        return fail_clierror!(
+            "No plottable bubbles found. A bubble animation needs numeric --x/--y (and --size) \
+             values, a non-empty --series entity, and at least 2 distinct --slider values."
+        );
+    };
+    if data.entities.len() > BUBBLE_MAX_ENTITIES {
+        return fail_incorrectusage_clierror!(
+            "--series has {} distinct values; the bubble animation maximum is \
+             {BUBBLE_MAX_ENTITIES}.\nEvery entity is a separate trace in every frame, so this \
+             would produce an unusably large file. Pick a lower-cardinality --series column.",
+            data.entities.len()
+        );
+    }
+
+    let x_label = col_label(&headers, x_idx, nh);
+    let y_label = col_label(&headers, y_idx, nh);
+    let size_label = col_label(&headers, size_idx, nh);
+    let frame_label = col_label(&headers, frame_idx, nh);
+
+    let mut plot = Plot::new();
+    add_bubble_traces_and_frames(&mut plot, &data, &x_label, &y_label, &size_label);
+
+    let mut layout = Layout::new().show_legend(true);
+    if let Some(title) = &args.flag_title {
+        layout = layout.title(Title::with_text(title));
+    }
+    // same sink as `build_layout`: the fallback is a raw CSV header, so it is escaped; an explicit
+    // --x-title is operator-supplied and stays raw.
+    let mut x = Axis::new().title(Title::with_text(
+        args.flag_x_title
+            .clone()
+            .unwrap_or_else(|| escape_hover(&x_label)),
+    ));
+    // pin both axes globally so the bubbles move within a fixed frame instead of the axes
+    // rescaling under them every frame
+    x = x.range(vec![data.x_range.0, data.x_range.1]);
+    if args.flag_rangeslider {
+        x = x.range_slider(RangeSlider::new().visible(true));
+    }
+    layout = layout.x_axis(x);
+
+    let mut y = Axis::new().title(Title::with_text(
+        args.flag_y_title
+            .clone()
+            .unwrap_or_else(|| escape_hover(&y_label)),
+    ));
+    // an explicit --y-range wins over the pinned global range
+    let (ylo, yhi) = if let Some(r) = &args.flag_y_range {
+        parse_y_range(r)?
+    } else {
+        data.y_range
+    };
+    y = y.range(vec![ylo, yhi]);
+    layout = layout.y_axis(y);
+
+    if let Some(note) = &args.flag_annotation {
+        layout = with_chart_note(layout, note);
+    }
+
+    layout = layout.sliders(vec![slider_control(
+        &frame_label,
+        &data.bucket_labels,
         args.flag_slider_speed,
     )?]);
     layout = layout.update_menus(vec![play_pause_menu(args.flag_slider_speed)?]);
@@ -13478,20 +13653,16 @@ enum PanelKind {
     /// aggregate (per-cell record count) and colored by entity. Per (entity,bucket): x/y centroid +
     /// size. Non-cartesian only in that it's inline+HTML-only (it IS an x/y scatter, but the
     /// per-frame full-replacement + per-entity trace structure needs the inline Plot path).
-    /// `entities` indexes the outer vecs; `xs`/`ys`/`sizes` are `[entity][bucket]` (NaN where an
-    /// entity is absent in a bucket).
+    /// `data` carries the `[entity][bucket]` matrices (NaN where an entity is absent in a bucket),
+    /// the frame labels and the pinned axis ranges — the same payload the standalone
+    /// `viz scatter --slider` path builds, so both render through
+    /// [`add_bubble_traces_and_frames`].
     AnimatedBubble {
-        entities:      Vec<String>,
-        xs:            Vec<Vec<f64>>,
-        ys:            Vec<Vec<f64>>,
-        sizes:         Vec<Vec<f64>>,
-        bucket_labels: Vec<String>,
-        x_label:       String,
-        y_label:       String,
-        size_label:    String,
-        frame_label:   String,
-        x_range:       (f64, f64),
-        y_range:       (f64, f64),
+        data:        EntityBucketAgg,
+        x_label:     String,
+        y_label:     String,
+        size_label:  String,
+        frame_label: String,
     },
     /// Cyclic "seasonality" profile: a date/datetime column folded onto a repeating phase —
     /// hour-of-day, day-of-week, or month-of-year — with record volume as the radial value. Exposes
@@ -19276,9 +19447,10 @@ fn read_geo_anim(
     }))
 }
 
-/// The per-`[entity][bucket]` aggregates for an [`PanelKind::AnimatedBubble`] panel: centroid x/y
-/// and record-count size per surviving cell (`f64::NAN` where a cell was dropped or absent), the
-/// chronological bucket labels, and the globally-pinned axis ranges.
+/// The per-`[entity][bucket]` aggregates for an [`PanelKind::AnimatedBubble`] panel: the x/y
+/// position and the size measure per surviving cell (`f64::NAN` where a cell was dropped or
+/// absent), the ordered frame labels, and the globally-pinned axis ranges. Each value is its
+/// cell's `--agg` aggregate — the mean (i.e. the centroid) unless the caller asked otherwise.
 struct EntityBucketAgg {
     entities:      Vec<String>,
     xs:            Vec<Vec<f64>>,
@@ -19289,34 +19461,188 @@ struct EntityBucketAgg {
     y_range:       (f64, f64),
 }
 
-/// Read one pass of (entity, x, y, size, date) rows and aggregate them into per-`(entity, bucket)`
-/// centroids for a Gapminder-style animated bubble chart. STRICT quality gates keep the chart a
-/// real story rather than noisy jitter: a cell with fewer than `min_cell_rows` rows is dropped, a
-/// surviving entity must be present in `>= min_frames` buckets to trace a path, and at least 3
-/// entities must survive. Returns `None` when the date column yields fewer than `min_frames`
-/// distinct buckets or when too few entities survive (this is what stops a sparse zone-per-month
-/// dataset from producing noisy jitter).
+/// The raw per-`(entity, bucket)` cell values, kept UNAGGREGATED so `--agg` is applied exactly
+/// once at materialization (see [`read_entity_bucket_agg`]).
+#[derive(Default)]
+struct CellVals {
+    xs:    Vec<f64>,
+    ys:    Vec<f64>,
+    sizes: Vec<f64>,
+}
+
+/// Aggregate a cell's raw values into the single number a bubble plots. Mirrors the per-x
+/// [`aggregate`] used by the bar/line paths, but over a whole cell rather than grouped by x.
+fn agg_values(vals: &[f64], agg: Agg) -> f64 {
+    match agg {
+        Agg::Count => vals.len() as f64,
+        Agg::Sum => vals.iter().sum(),
+        Agg::Mean => {
+            if vals.is_empty() {
+                0.0
+            } else {
+                vals.iter().sum::<f64>() / vals.len() as f64
+            }
+        },
+        Agg::Min => vals.iter().copied().fold(f64::INFINITY, f64::min),
+        Agg::Max => vals.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+    }
+}
+
+/// Resolve the animation's frame axis from the raw `--slider` cells, returning the per-ROW bucket
+/// index (`None` for a row whose cell doesn't belong on the axis) and the ordered frame labels.
 ///
-/// `size_idx` picks the bubble-SIZE measure — Gapminder's defining third data variable. When
-/// `Some`, each cell's size is the MEAN of that measure over the cell's rows (like the x/y
-/// centroids), and a row missing/non-finite in that column is dropped (so the cell's row count and
-/// its size mean stay over the same rows). When `None` (a 2-numeric dataset with no third measure),
-/// size falls back to the per-cell row COUNT so the chart still animates.
+/// THE CALENDAR PATH REQUIRES NEGLIGIBLE NUMERIC COVERAGE, and that is load-bearing rather than
+/// cosmetic. `qsv_dateparser` reads a bare number as EPOCH SECONDS — "2010" becomes
+/// 1970-01-01T00:33:30 — so a year column sent down the calendar path collapses every frame into a
+/// single 1970 bucket and the animation dies outright. Even where it survives, calendar-bucketing
+/// a year would relabel the frame "2020-01-01", disagreeing with `viz bar --slider year`, which
+/// frames on distinct values.
+///
+/// So the two coverages are tested SEPARATELY (>=90% temporal AND <=10% numeric) rather than
+/// against each other. A "more dates than numbers" comparison is not enough, because a numeric
+/// cell also counts as a parsed date: 20 bare years plus one real "2024-01-01" gives 21 dates vs
+/// 20 numbers, which would hand a fully numeric column to the calendar path and re-collapse it
+/// into 1970. Requiring numeric coverage to be negligible makes the misclassification impossible
+/// in that direction, and failing to raw mode is the safe fallback anyway — it is exactly what
+/// `viz bar --slider` does.
+///
+/// This CANNOT divert `viz smart` off the calendar path it has always taken: smart only ever passes
+/// a column `canonical_date_col` accepted, and that hard-filters on a stats type of
+/// "Date"/"DateTime" — while `qsv stats` types an all-numeric column as Integer/Float even when it
+/// looks like a date (`20230101`, epoch seconds, a bare year) and even under
+/// `--dates-whitelist all`. So a smart-supplied frame column has zero numeric coverage.
+fn resolve_frame_axis(
+    cells: &[&str],
+    prefer_dmy: bool,
+) -> CliResult<Option<(Vec<Option<usize>>, Vec<String>)>> {
+    let n_numeric = cells
+        .iter()
+        .filter(|c| parse_finite_f64(c).is_some())
+        .count();
+    {
+        // temporal only when nearly every cell parses — a stats-typed date column (what `viz
+        // smart` always passes) is ~100%, while a stray parseable token in a text column is not
+        // enough to make the whole column a timeline
+        let parsed: Vec<Option<chrono::NaiveDate>> = cells
+            .iter()
+            .map(|c| {
+                qsv_dateparser::parse_with_preference(c, prefer_dmy)
+                    .ok()
+                    .map(|dt| dt.date_naive())
+            })
+            .collect();
+        let n_parsed = parsed.iter().filter(|p| p.is_some()).count();
+        if n_parsed >= 2 && n_parsed * 10 >= cells.len() * 9 && n_numeric * 10 <= cells.len() {
+            let dates: Vec<chrono::NaiveDate> = parsed.iter().filter_map(|p| *p).collect();
+            let (bkt, distinct) = choose_anim_bucket(&dates);
+            if distinct.len() > SLIDER_MAX_FRAMES {
+                return fail_incorrectusage_clierror!(
+                    "--slider column yields {} animation frames; the maximum is \
+                     {SLIDER_MAX_FRAMES}.\nEvery frame embeds its own copy of the plotted data, \
+                     so this would produce an unusably large file. Bucket the column first (e.g. \
+                     `qsv datefmt` to a coarser grain).",
+                    distinct.len()
+                );
+            }
+            let keys = parsed
+                .iter()
+                .map(|p| p.and_then(|d| distinct.binary_search(&ts_bucket_key(d, bkt)).ok()))
+                .collect();
+            let labels = distinct.iter().map(|k| ts_bucket_label(*k, bkt)).collect();
+            return Ok(Some((keys, labels)));
+        }
+    }
+
+    // distinct raw values, first-seen then ordered numerically when every value parses as finite,
+    // else lexically — the same policy `read_xy_slider` uses, so `--slider year` frames identically
+    // on every chart type
+    let mut order: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for c in cells {
+        if seen.insert((*c).to_string()) {
+            order.push((*c).to_string());
+        }
+    }
+    if order.len() > SLIDER_MAX_FRAMES {
+        return fail_incorrectusage_clierror!(
+            "--slider column has {} distinct values; the maximum is {SLIDER_MAX_FRAMES}.\nEvery \
+             frame embeds its own copy of the plotted data, so this would produce an unusably \
+             large file. Bucket the column first (e.g. `qsv datefmt` to a coarser grain, or `qsv \
+             apply`), or pick a lower-cardinality --slider column.",
+            order.len()
+        );
+    }
+    // ordering (as opposed to the mode choice above) still requires EVERY value to be numeric —
+    // exactly `read_xy_slider`'s policy, so a mixed column sorts lexically on both paths
+    if order.iter().all(|v| parse_finite_f64(v).is_some()) {
+        order.sort_by(|a, b| {
+            parse_finite_f64(a)
+                .unwrap_or(f64::NAN)
+                .partial_cmp(&parse_finite_f64(b).unwrap_or(f64::NAN))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    } else {
+        order.sort();
+    }
+    let pos: HashMap<&str, usize> = order
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.as_str(), i))
+        .collect();
+    let keys = cells.iter().map(|c| pos.get(*c).copied()).collect();
+    Ok(Some((keys, order)))
+}
+
+/// Knobs for [`read_entity_bucket_agg`]. The two callers differ only here: `viz smart` AUTO-selects
+/// its bubble panel, so it sets strict gates that drop a sparse/jittery panel entirely; the
+/// standalone `viz scatter --slider` was asked for explicitly, so it relaxes the gates and WARNS
+/// instead of silently refusing to draw.
+struct EntityBucketOpts {
+    /// bubble-SIZE measure — Gapminder's third data variable. `None` falls back to the per-cell
+    /// row COUNT so a 2-measure dataset still animates.
+    size_idx:        Option<usize>,
+    /// how each `(entity, bucket)` cell collapses to one point; `Mean` is the centroid the smart
+    /// panel has always drawn
+    agg:             Agg,
+    /// frame k aggregates buckets `0..=k` (a RUNNING aggregate) instead of bucket k alone
+    cumulative:      bool,
+    prefer_dmy:      bool,
+    /// minimum distinct frames on the axis, else there is no animation to draw
+    min_frames:      usize,
+    /// absolute floor on how many frames an entity must be dense in, applied alongside
+    /// `min_dense_pct`. Kept SEPARATE from `min_frames` on purpose: `viz smart` sets both to the
+    /// same value (its completeness bound subsumes the floor at typical bucket counts), but the
+    /// standalone path wants a 2-frame animation while still drawing an entity that appears in
+    /// only one of them.
+    min_dense_floor: usize,
+    min_cell_rows:   usize,
+    /// minimum surviving entities, else the whole chart is refused
+    min_entities:    usize,
+    /// PERCENT of buckets an entity must be dense in to survive (smart 80, standalone 0). Integer
+    /// percent, not a float ratio: `(nb * 80).div_ceil(100)` is exact, whereas
+    /// `(nb as f64 * 0.8).ceil()` silently disagrees at nb=5 (0.8 has no exact binary
+    /// representation, so 5*0.8 lands just above 4.0 and ceils to 5).
+    min_dense_pct:   usize,
+    /// report skipped entities / empty cells on stderr rather than silently dropping them
+    warn:            bool,
+}
+
+/// Read one pass of (entity, x, y, size, frame) rows and aggregate them into per-`(entity, bucket)`
+/// values for a Gapminder-style animated bubble chart. Returns `None` when the frame axis or the
+/// surviving entities can't support an animation; `opts` decides how strict that is (see
+/// [`EntityBucketOpts`]).
 fn read_entity_bucket_agg(
     args: &Args,
     entity_idx: usize,
     x_idx: usize,
     y_idx: usize,
-    size_idx: Option<usize>,
-    date_idx: usize,
-    prefer_dmy: bool,
-    min_frames: usize,
-    min_cell_rows: usize,
+    frame_idx: usize,
+    opts: &EntityBucketOpts,
 ) -> CliResult<Option<EntityBucketAgg>> {
     let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
-    // (entity, bucket date, x, y, size) for every row with a non-empty entity, finite x/y (and a
-    // finite size when a size measure is requested), and a parseable date
-    let mut rows: Vec<(String, chrono::NaiveDate, f64, f64, f64)> = Vec::new();
+    // (entity, raw frame cell, x, y, size) for every row with a non-empty entity, finite x/y (and
+    // a finite size when a size measure is requested) and a non-empty frame cell
+    let mut rows: Vec<(String, String, f64, f64, f64)> = Vec::new();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let entity = cell_to_string(record.get(entity_idx));
@@ -19329,81 +19655,112 @@ fn read_entity_bucket_agg(
         let Some(y) = parse_f64(record.get(y_idx)).filter(|v| v.is_finite()) else {
             continue;
         };
-        // when sizing by a measure, require it finite too so the cell mean is well-defined over the
-        // same rows the count/x/y use; the count fallback ignores this (size = row count).
-        let size = match size_idx {
+        // when sizing by a measure, require it finite too so the cell aggregate is well-defined
+        // over the same rows the count/x/y use; the count fallback ignores this (size = row count).
+        let size = match opts.size_idx {
             Some(si) => match parse_f64(record.get(si)).filter(|v| v.is_finite()) {
                 Some(v) => v,
                 None => continue,
             },
             None => 0.0,
         };
-        let Some(dt) = parse_record_date(&record, date_idx, prefer_dmy) else {
+        let frame_cell = cell_to_string(record.get(frame_idx));
+        if frame_cell.trim().is_empty() {
             continue;
-        };
-        rows.push((entity, dt.date_naive(), x, y, size));
+        }
+        rows.push((entity, frame_cell, x, y, size));
     }
     if rows.len() < 2 {
         return Ok(None);
     }
-    let dates: Vec<chrono::NaiveDate> = rows.iter().map(|r| r.1).collect();
-    let (bkt, distinct) = choose_anim_bucket(&dates);
-    if distinct.len() < min_frames {
+
+    // Resolve the frame axis. Numeric columns are checked FIRST and deliberately: a bare year like
+    // "2020" also parses as a date, and coarsening it to a calendar bucket would label the frame
+    // "2020-01-01" — so `viz scatter --slider year` would disagree with `viz bar --slider year`,
+    // which frames on the column's distinct values. Only a genuinely temporal column takes the
+    // calendar path.
+    let frame_cells: Vec<&str> = rows.iter().map(|r| r.1.as_str()).collect();
+    let (bucket_keys, bucket_labels) = match resolve_frame_axis(&frame_cells, opts.prefer_dmy)? {
+        Some(axis) => axis,
+        // an unparseable/degenerate frame axis is only reachable from the standalone path (smart
+        // always hands us a stats-typed date column), and `build_slider_bubble_plot` turns the
+        // `None` into an actionable error naming the column
+        None => return Ok(None),
+    };
+    let nb = bucket_labels.len();
+    if nb < opts.min_frames {
         return Ok(None);
     }
-    let nb = distinct.len();
 
-    // accumulate (sum_x, sum_y, sum_size, count) per (entity, bucket index), tracking first-seen
-    // entity order
-    let mut acc: HashMap<(String, usize), (f64, f64, f64, usize)> = HashMap::new();
+    // Accumulate the RAW per-cell values (not running sums) so `--agg` is applied exactly once, at
+    // materialization — the same discipline `read_xy_slider` uses. It also makes min/max correct
+    // (they can't be folded into a single running scalar alongside a mean) and makes the cumulative
+    // window a plain concatenation of the cells in `0..=k`.
+    let mut acc: HashMap<(String, usize), CellVals> = HashMap::new();
     let mut entity_order: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-    for (entity, d, x, y, size) in &rows {
-        let key = ts_bucket_key(*d, bkt);
-        let bi = distinct
-            .binary_search(&key)
-            .expect("key came from distinct");
+    for ((entity, _, x, y, size), bi) in rows.iter().zip(&bucket_keys) {
+        // a row whose frame cell fell off the axis (unparseable date in an otherwise temporal
+        // column) is skipped, exactly as the date-only reader always did
+        let Some(bi) = *bi else {
+            continue;
+        };
         if seen.insert(entity.clone()) {
             entity_order.push(entity.clone());
         }
-        let e = acc
-            .entry((entity.clone(), bi))
-            .or_insert((0.0, 0.0, 0.0, 0));
-        e.0 += x;
-        e.1 += y;
-        e.2 += size;
-        e.3 += 1;
+        let e = acc.entry((entity.clone(), bi)).or_default();
+        e.xs.push(*x);
+        e.ys.push(*y);
+        e.sizes.push(*size);
     }
+    drop(rows);
 
-    // drop sparse cells, then keep only entities whose surviving (>= min_cell_rows) cells cover a
-    // near-complete panel — dense in >= 80% of the buckets. This extends the per-cell "too sparse"
-    // gate to the WHOLE PANEL: a Gapminder bubble reads as continuous motion only if each entity
-    // has a value for most frames; an entity present in only ~half the buckets flickers in and out
-    // and its inter-frame "movement" is mostly sampling noise. (A per-cell threshold alone doesn't
-    // suffice: a dataset with many daily dates coarsens via `choose_anim_bucket` to a few monthly
-    // buckets, so even ~3 rows/cell can clear `min_cell_rows` while leaving a sparse, jittery
-    // panel.) The completeness bound subsumes `>= min_frames` for typical bucket counts.
-    let min_dense = min_frames.max((nb * 4).div_ceil(5));
+    // Drop sparse cells, then keep only entities whose surviving (>= min_cell_rows) cells cover a
+    // dense-enough panel. `min_dense_ratio` is what separates the two callers: `viz smart` passes
+    // 0.8 because it AUTO-selects this panel and a bubble that flickers in and out reads as
+    // sampling noise rather than motion; the standalone command passes 0.0 and instead WARNS,
+    // because a user who spelled out --series/--size/--slider asked for this chart specifically.
+    let min_dense = opts
+        .min_dense_floor
+        .max((nb * opts.min_dense_pct).div_ceil(100));
+    let dense_count = |ent: &String| -> usize {
+        (0..nb)
+            .filter(|&bi| {
+                acc.get(&(ent.clone(), bi))
+                    .is_some_and(|c| c.xs.len() >= opts.min_cell_rows)
+            })
+            .count()
+    };
+    let total_entities = entity_order.len();
     let surviving: Vec<String> = entity_order
         .into_iter()
-        .filter(|ent| {
-            (0..nb)
-                .filter(|&bi| {
-                    acc.get(&(ent.clone(), bi))
-                        .is_some_and(|&(_, _, _, c)| c >= min_cell_rows)
-                })
-                .count()
-                >= min_dense
-        })
+        .filter(|ent| dense_count(ent) >= min_dense)
         .collect();
-    // a Gapminder story needs at least 3 entities to compare
-    if surviving.len() < 3 {
+    if surviving.len() < opts.min_entities {
         return Ok(None);
     }
+    if opts.warn {
+        let dropped = total_entities - surviving.len();
+        if dropped > 0 {
+            viz_note(&format!(
+                "note: {dropped} of {total_entities} --series values have usable data in fewer \
+                 than {min_dense} of the {nb} frames and were skipped."
+            ));
+        }
+        let gaps: usize = surviving.iter().map(|e| nb - dense_count(e)).sum();
+        if gaps > 0 {
+            viz_note(&format!(
+                "note: {gaps} of {} (series x frame) cells have no data; those bubbles are hidden \
+                 in the affected frames.",
+                surviving.len() * nb
+            ));
+        }
+    }
 
-    // build [entity][bucket] centroid/size matrices; NaN where a cell was dropped or absent. The
-    // per-cell size is the MEAN of the size measure (Gapminder's third data variable) when one was
-    // supplied, else the per-cell row COUNT.
+    // build [entity][bucket] value matrices; NaN where a cell was dropped or absent. Each cell
+    // aggregates its raw values with `--agg` (default mean, matching the centroid the smart panel
+    // has always drawn). Size aggregates the measure the same way when one was supplied, else it
+    // is the per-cell row COUNT.
     let mut xs: Vec<Vec<f64>> = Vec::with_capacity(surviving.len());
     let mut ys: Vec<Vec<f64>> = Vec::with_capacity(surviving.len());
     let mut sizes: Vec<Vec<f64>> = Vec::with_capacity(surviving.len());
@@ -19413,27 +19770,45 @@ fn read_entity_bucket_agg(
         let mut ey = Vec::with_capacity(nb);
         let mut es = Vec::with_capacity(nb);
         for bi in 0..nb {
-            match acc.get(&(ent.clone(), bi)) {
-                Some(&(sx, sy, ss, c)) if c >= min_cell_rows => {
-                    let cf = c as f64;
-                    let cx = sx / cf;
-                    let cy = sy / cf;
-                    ex.push(cx);
-                    ey.push(cy);
-                    es.push(if size_idx.is_some() { ss / cf } else { cf });
-                    xv.push(cx);
-                    yv.push(cy);
-                },
-                _ => {
-                    ex.push(f64::NAN);
-                    ey.push(f64::NAN);
-                    es.push(f64::NAN);
-                },
+            // a cumulative frame aggregates every surviving cell at or below it, so the bubble
+            // shows a RUNNING aggregate rather than that frame's value alone
+            let lo = if opts.cumulative { 0 } else { bi };
+            let mut cx: Vec<f64> = Vec::new();
+            let mut cy: Vec<f64> = Vec::new();
+            let mut cs: Vec<f64> = Vec::new();
+            for prev in lo..=bi {
+                if let Some(c) = acc.get(&(ent.clone(), prev))
+                    && c.xs.len() >= opts.min_cell_rows
+                {
+                    cx.extend_from_slice(&c.xs);
+                    cy.extend_from_slice(&c.ys);
+                    cs.extend_from_slice(&c.sizes);
+                }
             }
+            if cx.is_empty() {
+                ex.push(f64::NAN);
+                ey.push(f64::NAN);
+                es.push(f64::NAN);
+                continue;
+            }
+            let px = agg_values(&cx, opts.agg);
+            let py = agg_values(&cy, opts.agg);
+            ex.push(px);
+            ey.push(py);
+            es.push(if opts.size_idx.is_some() {
+                agg_values(&cs, opts.agg)
+            } else {
+                cs.len() as f64
+            });
+            xv.push(px);
+            yv.push(py);
         }
         xs.push(ex);
         ys.push(ey);
         sizes.push(es);
+    }
+    if xv.is_empty() {
+        return Ok(None);
     }
     let x_range = padded_range(&xv);
     let y_range = padded_range(&yv);
@@ -19445,10 +19820,119 @@ fn read_entity_bucket_agg(
         xs,
         ys,
         sizes,
-        bucket_labels: distinct.iter().map(|k| ts_bucket_label(*k, bkt)).collect(),
+        bucket_labels,
         x_range,
         y_range,
     }))
+}
+
+/// A bubble-size scaler over a WHOLE `[entity][bucket]` matrix.
+///
+/// The global min/max is load-bearing and is why this exists instead of [`scale_bubble_sizes`]:
+/// every bubble is its own single-point trace, so a per-trace rescale would see one value, land it
+/// at `t = 0.5`, and render every bubble mid-sized — silently destroying the size encoding. Scaling
+/// once over all cells keeps an entity's size comparable across frames AND across entities.
+fn bubble_size_px(sizes: &[Vec<f64>]) -> impl Fn(f64) -> usize {
+    let (smin, smax) = sizes
+        .iter()
+        .flatten()
+        .filter(|v| v.is_finite())
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
+            (lo.min(v), hi.max(v))
+        });
+    let sspan = smax - smin;
+    move |v: f64| -> usize {
+        let t = if !v.is_finite() {
+            0.0
+        } else if sspan > 0.0 {
+            (v - smin) / sspan
+        } else {
+            0.5
+        };
+        (BUBBLE_MIN_PX + t * (BUBBLE_MAX_PX - BUBBLE_MIN_PX)).round() as usize
+    }
+}
+
+/// Add a Gapminder bubble animation's traces and frames to `plot`: one single-point trace per
+/// entity, plus one per-frame FULL REPLACEMENT per bucket (every entity trace updates).
+///
+/// Shared by the `viz smart` bubble panel and the standalone `viz scatter --slider` chart; the
+/// caller owns the layout, which genuinely differs between them (panel height/title vs
+/// `--title`/`--x-title`/`--slider-speed`).
+///
+/// Two invariants here are easy to "clean up" and must not be:
+/// - an absent cell emits EMPTY coordinate vectors, not NaN, so the entity simply vanishes that
+///   frame while the trace count and index order stay constant (plotly matches frame traces by
+///   index; a varying count leaves stale traces on screen);
+/// - the hover escaping is deliberately asymmetric — entities are already `escape_hover`'d at read
+///   time and must NOT be escaped twice (-> "&amp;amp;"), while the three labels are raw CSV
+///   headers and take the full `escape_template_pct(escape_hover(..))` composition. Pinned by the
+///   `escape_composition_is_once_per_sink` unit test.
+fn add_bubble_traces_and_frames(
+    plot: &mut Plot,
+    data: &EntityBucketAgg,
+    x_label: &str,
+    y_label: &str,
+    size_label: &str,
+) {
+    let EntityBucketAgg {
+        entities,
+        xs,
+        ys,
+        sizes,
+        bucket_labels,
+        ..
+    } = data;
+    let n_entities = entities.len();
+    let size_px = bubble_size_px(sizes);
+    let bubble = |e: usize, k: usize| {
+        let (px, py, sz) = (xs[e][k], ys[e][k], sizes[e][k]);
+        let (pxv, pyv) = if px.is_finite() && py.is_finite() {
+            (vec![px], vec![py])
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        // format the size measure cleanly: integral values (e.g. a row count) show with no
+        // decimal, fractional measures (e.g. a mean population) keep up to 2 places — do NOT
+        // cast to an integer, which would truncate a decimal measure and misreport it.
+        let size_disp = if sz.is_finite() {
+            format!("{}", (sz * 100.0).round() / 100.0)
+        } else {
+            "0".to_string()
+        };
+        Scatter::new(pxv, pyv)
+            .mode(Mode::Markers)
+            // already `escape_hover`d at read time; the legend renders markup but treats `%`
+            // literally, so it needs no further escaping here
+            .name(entities[e].clone())
+            .marker(Marker::new().size(size_px(sz)).opacity(MAP_POINT_OPACITY))
+            // a hovertemplate additionally parses `%{...}`, so every interpolated string needs
+            // its literal `%` doubled.
+            .hover_template(format!(
+                "{}<br>{}: %{{x}}<br>{}: %{{y}}<br>{}: {size_disp}<extra></extra>",
+                escape_template_pct(&entities[e]),
+                escape_template_pct(&escape_hover(x_label)),
+                escape_template_pct(&escape_hover(y_label)),
+                escape_template_pct(&escape_hover(size_label)),
+            ))
+    };
+    // base = bucket 0 positions (one trace per entity, in entity order)
+    for e in 0..n_entities {
+        plot.add_trace(bubble(e, 0));
+    }
+    // one per-frame replacement per bucket: every entity trace updates (traces 0..n)
+    for (k, label) in bucket_labels.iter().enumerate() {
+        let mut td = Traces::new();
+        for e in 0..n_entities {
+            td.push(bubble(e, k));
+        }
+        plot.add_frame(
+            Frame::new()
+                .name(label.clone())
+                .data(td)
+                .traces((0..n_entities).collect()),
+        );
+    }
 }
 
 /// The repeating phase a `CyclicProfile` folds timestamps onto.
@@ -23670,16 +24154,29 @@ impl<'a> SmartCtx<'a> {
                                 .map(|k| labels[k].clone())
                                 .unwrap_or_else(|| t!("viz.chart.records").into_owned());
                             let prefer_dmy = self.dmy_pref(date_idx);
+                            // STRICT gates: this panel is AUTO-selected, so a sparse cell or an
+                            // entity that flickers in and out reads as sampling noise rather than
+                            // motion. The explicit `viz scatter --slider` path relaxes these and
+                            // warns instead (see `EntityBucketOpts`).
+                            let opts = EntityBucketOpts {
+                                size_idx,
+                                agg: Agg::Mean,
+                                cumulative: false,
+                                prefer_dmy,
+                                min_frames,
+                                min_dense_floor: min_frames,
+                                min_cell_rows: 3,
+                                min_entities: 3,
+                                min_dense_pct: 80,
+                                warn: false,
+                            };
                             if let Some(data) = read_entity_bucket_agg(
                                 self.args,
                                 e_idx,
                                 kept_indices[i],
                                 kept_indices[j],
-                                size_idx,
                                 date_idx,
-                                prefer_dmy,
-                                min_frames,
-                                3,
+                                &opts,
                             )? {
                                 let (x_label, y_label) = (labels[i].clone(), labels[j].clone());
                                 let frame_label = self
@@ -23700,17 +24197,11 @@ impl<'a> SmartCtx<'a> {
                                     )
                                     .into_owned(),
                                     PanelKind::AnimatedBubble {
-                                        entities: data.entities,
-                                        xs: data.xs,
-                                        ys: data.ys,
-                                        sizes: data.sizes,
-                                        bucket_labels: data.bucket_labels,
+                                        data,
                                         x_label,
                                         y_label,
                                         size_label,
                                         frame_label,
-                                        x_range: data.x_range,
-                                        y_range: data.y_range,
                                     },
                                 ));
                             }
@@ -27607,92 +28098,18 @@ fn smart_inline_panel_plot(
     // all cells so an entity's size is comparable across frames and entities (a per-point
     // scale_bubble_sizes call would collapse each single value to mid-size).
     if let PanelKind::AnimatedBubble {
-        entities,
-        xs,
-        ys,
-        sizes,
-        bucket_labels,
+        data,
         x_label,
         y_label,
         size_label,
         frame_label,
-        x_range,
-        y_range,
     } = &panel.kind
     {
         const SMART_SLIDER_SPEED_MS: u64 = 700;
-        let n_entities = entities.len();
-        let (smin, smax) = sizes
-            .iter()
-            .flatten()
-            .filter(|v| v.is_finite())
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
-                (lo.min(v), hi.max(v))
-            });
-        let sspan = smax - smin;
-        let size_px = |v: f64| -> usize {
-            let t = if !v.is_finite() {
-                0.0
-            } else if sspan > 0.0 {
-                (v - smin) / sspan
-            } else {
-                0.5
-            };
-            (BUBBLE_MIN_PX + t * (BUBBLE_MAX_PX - BUBBLE_MIN_PX)).round() as usize
-        };
-        // one entity's single-point marker trace for bucket `k` (empty when the cell is NaN/absent,
-        // so the entity vanishes that frame while trace count/order stays constant)
-        let bubble = |e: usize, k: usize| {
-            let (px, py, sz) = (xs[e][k], ys[e][k], sizes[e][k]);
-            let (pxv, pyv) = if px.is_finite() && py.is_finite() {
-                (vec![px], vec![py])
-            } else {
-                (Vec::new(), Vec::new())
-            };
-            // format the size measure cleanly: integral values (e.g. a row count) show with no
-            // decimal, fractional measures (e.g. a mean population) keep up to 2 places — do NOT
-            // cast to an integer, which would truncate a decimal measure and misreport it.
-            let size_disp = if sz.is_finite() {
-                format!("{}", (sz * 100.0).round() / 100.0)
-            } else {
-                "0".to_string()
-            };
-            Scatter::new(pxv, pyv)
-                .mode(Mode::Markers)
-                // already `escape_hover`d at read time; the legend renders markup but treats `%`
-                // literally, so it needs no further escaping here
-                .name(entities[e].clone())
-                .marker(Marker::new().size(size_px(sz)).opacity(MAP_POINT_OPACITY))
-                // a hovertemplate additionally parses `%{...}`, so every interpolated string needs
-                // its literal `%` doubled. The entity is already markup-escaped (do NOT escape it
-                // twice -> "&amp;amp;"); the three labels are raw column headers, so they take the
-                // full escape_template_pct(escape_hover(..)) composition.
-                .hover_template(format!(
-                    "{}<br>{}: %{{x}}<br>{}: %{{y}}<br>{}: {size_disp}<extra></extra>",
-                    escape_template_pct(&entities[e]),
-                    escape_template_pct(&escape_hover(x_label)),
-                    escape_template_pct(&escape_hover(y_label)),
-                    escape_template_pct(&escape_hover(size_label)),
-                ))
-        };
+        let bucket_labels = &data.bucket_labels;
+        let (x_range, y_range) = (data.x_range, data.y_range);
         let mut plot = Plot::new();
-        // base = bucket 0 positions (one trace per entity, in entity order)
-        for e in 0..n_entities {
-            plot.add_trace(bubble(e, 0));
-        }
-        // one per-frame replacement per bucket: every entity trace updates (traces 0..n)
-        for (k, label) in bucket_labels.iter().enumerate() {
-            let mut td = Traces::new();
-            for e in 0..n_entities {
-                td.push(bubble(e, k));
-            }
-            plot.add_frame(
-                Frame::new()
-                    .name(label.clone())
-                    .data(td)
-                    .traces((0..n_entities).collect()),
-            );
-        }
+        add_bubble_traces_and_frames(&mut plot, data, x_label, y_label, size_label);
         // pin axes globally so bubbles don't reframe as they move
         let x_axis = Axis::new()
             // axis titles are a plotly markup sink; these labels are raw CSV headers

@@ -620,6 +620,19 @@ FIGURES = [
     ("scatter (bubble)", "Units vs revenue; marker size = shipping cost, color = profit margin %.",
      False, ["scatter", "sales_sample.csv", "--x", "units_sold", "--y", "revenue",
              "--size", "shipping_cost", "--color", "profit_margin_pct"]),
+    ("scatter (Gapminder bubble animation)",
+     "The <b>Gapminder bubble animation</b> as a standalone chart: <code>--slider</code> supplies "
+     "the time axis, <code>--series</code> the <b>entity</b> (one colored bubble per region) and "
+     "<code>--size</code> the <b>third data variable</b> (population). Each region traces a path "
+     "through the gdp/wellbeing space as the animation plays (<b>&#9654; Play</b>/"
+     "<b>&#9208; Pause</b> + a scrub slider), with axes <b>pinned across frames</b> and bubble "
+     "sizes scaled <b>once over every frame</b> so they stay comparable throughout. Each "
+     "region&times;month cell collapses to one bubble via <code>--agg</code> (mean by default). "
+     "This is the same chart <code>viz smart</code> auto-selects (see the last figure), but "
+     "requested explicitly &mdash; so it draws sparse entities too, noting the gaps on stderr "
+     "instead of dropping them.",
+     False, ["scatter", "regions_growth.csv", "--x", "gdp_index", "--y", "wellbeing_index",
+             "--size", "population_m", "--series", "region", "--slider", "month_date"]),
     ("scatter3d", "Units vs revenue vs shipping cost in 3D; marker color = profit margin %.",
      False, ["scatter3d", "sales_sample.csv", "--x", "units_sold", "--y", "revenue",
              "--z", "shipping_cost", "--color", "profit_margin_pct"]),

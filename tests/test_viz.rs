@@ -6040,8 +6040,9 @@ fn viz_smart_dictionary_infer_reuses_sidecar_when_fresh_off() {
 
 // viz shows progress on stderr by default and honors QSV_PROGRESSBAR, but progress must NEVER
 // contaminate the deliverable (the HTML on stdout). Running the same dashboard with the env var
-// on vs. off must yield byte-identical stdout. (Under the test harness's piped stderr, indicatif
-// auto-hides in both cases, so this validates the env plumbing + stdout purity.)
+// on vs. off must yield identical stdout, modulo the by-design build timestamp masked below.
+// (Under the test harness's piped stderr, indicatif auto-hides in both cases, so this validates
+// the env plumbing + stdout purity.)
 #[test]
 fn viz_progressbar_env_stdout_unaffected() {
     let wrk = Workdir::new("viz_progressbar_env_stdout_unaffected");
@@ -6067,8 +6068,27 @@ fn viz_progressbar_env_stdout_unaffected() {
     let out_off = wrk.output(&mut off);
     assert!(out_off.status.success());
 
+    // The dashboard embeds a minute-granularity "Compiled:" build timestamp, so the two runs
+    // differ whenever they straddle a minute boundary - by design, and unrelated to what this
+    // test asserts. Mask it out before comparing. Anchored on the timestamp FORMAT, not on the
+    // "Compiled:" label, which is localized. Keep in sync with the same normalization in
+    // scripts/viz-golden-check.sh:77.
+    let ts_re = regex::Regex::new(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC").unwrap();
+    let mask = |raw: &[u8]| -> String {
+        let html = String::from_utf8(raw.to_vec()).expect("viz smart stdout must be valid UTF-8");
+        // Guard against the normalizer silently becoming a no-op if the timestamp format ever
+        // changes - without this, the flake would come back with no signal.
+        assert!(
+            ts_re.is_match(&html),
+            "expected a `YYYY-MM-DD HH:MM UTC` build timestamp in the dashboard HTML - if the \
+             format changed, update this test AND scripts/viz-golden-check.sh"
+        );
+        ts_re.replace_all(&html, "<TIMESTAMP>").into_owned()
+    };
+
     assert_eq!(
-        out_on.stdout, out_off.stdout,
+        mask(&out_on.stdout),
+        mask(&out_off.stdout),
         "QSV_PROGRESSBAR must not change the HTML written to stdout"
     );
 }

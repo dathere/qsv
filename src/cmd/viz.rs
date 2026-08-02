@@ -6928,6 +6928,18 @@ fn parcats_dimensions_and_line(
 /// `categoryorder: "array"`, because plotly DROPS `categoryarray` from the trace the moment
 /// `categoryorder` leaves "array" — without re-supplying it the count order would be lost after the
 /// first toggle and "array" would fall back to first-appearance order.
+///
+/// This stays a fully self-contained NATIVE toggle — `PARCATS_ORDER_SCRIPT` upgrades the flip to
+/// an animated one by intercepting the click and running this same payload itself. Plotly's sankey
+/// renderer transitions its node positions on every replot (hence the node-order toggle animates
+/// for free), but the parcats renderer transitions only inside its own drag handler — its plot
+/// entry point drops the `transitionOpts` plotly hands it, so a plain restyle always snaps.
+///
+/// The button is deliberately NOT marked `execute: false`: the figure JSON emitted here is also
+/// lifted out of the page on its own (`examples/viz/gen_gallery.py` extracts the `Plotly.newPlot`
+/// object and reassembles it under its own scaffold). A button that delegated its restyle to a
+/// script would be DEAD wherever the script didn't follow it. Keeping the payload native means the
+/// worst case is the un-animated snap this always did.
 fn parcats_order_toggle_menu(ordered: &[Vec<String>]) -> UpdateMenu {
     let ndims = ordered.len();
     // alphabetical state: just flip categoryorder (categoryarray is ignored while != "array").
@@ -6966,6 +6978,13 @@ fn parcats_order_toggle_menu(ordered: &[Vec<String>]) -> UpdateMenu {
         .x_anchor(Anchor::Left)
         .y(1.0)
         .y_anchor(Anchor::Bottom)
+        // Lift the pill clear of the FIRST dimension's axis label, which parcats draws just inside
+        // the top-left of the plot area — exactly where a y=1/bottom-anchored button lands, so the
+        // two overlapped. Bottom padding in PIXELS (not a fractional `y` bump, which would resolve
+        // to a different gap on a tall standalone chart than on a short dashboard panel), and
+        // plotly's automargin grows the top margin to keep the lifted pill inside the panel.
+        // Sankey needs none of this: its node labels sit beside the nodes, not above them.
+        .pad(plotly::common::Pad::new(0, PARCATS_TOGGLE_LABEL_GAP, 0))
         // a stateless flip: no persistent "pressed" highlight (both orders are valid states).
         .show_active(false)
         .active(-1)
@@ -6974,6 +6993,11 @@ fn parcats_order_toggle_menu(ordered: &[Vec<String>]) -> UpdateMenu {
         .border_width(1)
         .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
 }
+
+/// Pixels of bottom padding under the parcats "category order" pill, lifting it off the first
+/// dimension's label. The label is ~14px tall and starts at the plot-area top, so this clears it
+/// with ~8px to spare on both a standalone chart and a `viz smart` panel.
+const PARCATS_TOGGLE_LABEL_GAP: usize = 22;
 
 /// True when a single category — a value, or empty/null — covers more than
 /// `CATEGORICAL_DIM_MAX_DOMINANCE` of the `n` rows, making the column near-constant. qsv stats'
@@ -9718,6 +9742,168 @@ const KPI_REWRAP_SCRIPT: &str = r#"<script>
 })();
 </script>"#;
 
+/// How long the animated parcats category-order flip runs. Matched to the Sankey node-order
+/// toggle's 500 ms (plotly's `traces/sankey/constants.js`) rather than the 300 ms of plotly's own
+/// parcats drag transition: 300 ms is right for a drag, where the pointer has already told you
+/// what moved, but reads as a flicker on a button press you may not even be looking at. The easing
+/// stays cubic-in-out, as in `parcats.js` `dragEnd`.
+const PARCATS_ORDER_DURATION_MS: u32 = 500;
+
+/// Animates the "category order" flip on every parcats chart (standalone `viz parcats` and the
+/// `viz smart` flow panel), giving it the moving transition the Sankey node-order toggle gets for
+/// free.
+///
+/// WHY THIS IS NEEDED AT ALL: plotly's sankey renderer re-applies `transition().duration(500)` to
+/// its node/link selections on EVERY replot, so a plain `Plotly.restyle` from an updatemenu button
+/// animates. The parcats renderer does not — its module entry (`traces/parcats/plot.js`) accepts
+/// plotly's `transitionOpts` and never forwards it, and the only `d3.transition` in `parcats.js`
+/// lives in the drag handler. A restyled parcats therefore always snaps. There is no trace or
+/// layout attribute that changes this, so the animation has to be driven here.
+///
+/// HOW: a capture-phase listener sees the click before plotly's own (which is bound to the button
+/// element itself, further down the propagation path). Once it has confirmed the click IS a parcats
+/// order toggle and that it can service it, it claims the event with `stopPropagation` — plotly's
+/// handler never runs — and then
+///   1. snapshots the geometry plotly animates on a drag — `g.dimension` / `g.category` `transform`
+///      and `path.path` `d`,
+///   2. runs the button's own restyle payload (picked by reading the trace's live `categoryorder`,
+///      so no toggle state is stored anywhere and a theme flip or `Plotly.newPlot` can't desync
+///      it),
+///   3. rewinds each element to its snapshot value SYNCHRONOUSLY inside the restyle's `then` —
+///      before the browser can paint the new state, which would flash — and tweens to the value
+///      plotly just computed.
+///
+/// Claiming the click rather than disabling the button (`execute: false`) is what keeps this a pure
+/// ENHANCEMENT: every bail-out below lets the event travel on to plotly, which applies the very
+/// same restyle un-animated. That matters because the figure JSON can travel WITHOUT this script —
+/// anything that lifts the bare `Plotly.newPlot` object out of an emitted page — and a button that
+/// had delegated its restyle would be dead there. (`examples/viz/gen_gallery.py` does exactly that
+/// lift, and re-splices this block via `PARCATS_ORDER_MARKER` so the gallery animates too, but the
+/// button must not DEPEND on a consumer doing so.)
+///
+/// Interpolating attribute strings (rather than recomputing plotly's layout math) is exactly what
+/// d3 — and so plotly's own drag transition — does. `tween` only interpolates when the two strings
+/// differ solely in their numbers; anything else snaps, so a structural change can never emit a
+/// malformed `d`. Bands and labels snap, matching plotly's drag transition, which also leaves them
+/// out.
+///
+/// The listener is a single delegated capture-phase handler on `document`: it covers every panel
+/// of a dashboard at once and, unlike a `gd.on(...)` plotly listener, survives the fullscreen
+/// chrome's `Plotly.newPlot` re-render without any rehook. Charts with no parcats trace never
+/// match, so the script is inert on every other page.
+fn parcats_order_script() -> String {
+    format!(
+        "{PARCATS_ORDER_MARKER}\n{}",
+        PARCATS_ORDER_SCRIPT.replace("__DURATION__", &PARCATS_ORDER_DURATION_MS.to_string())
+    )
+}
+
+/// Marks the start of `PARCATS_ORDER_SCRIPT` in emitted HTML. `examples/viz/gen_gallery.py` lifts
+/// the block from `<marker>` through `</script>` out of a generated page and re-splices it into the
+/// gallery scaffold, so the gallery's reassembled parcats figure animates too; the marker is what
+/// makes both the lift and the strip-and-re-add idempotent across regens.
+const PARCATS_ORDER_MARKER: &str = "<!--qsv-parcats-order-->";
+
+const PARCATS_ORDER_SCRIPT: &str = r#"<script>
+(function () {
+  var DURATION = __DURATION__;
+  // one shared numeric-token pattern, recompiled per use so no /g lastIndex can leak between calls
+  var NUM = "[-+]?(?:\\d*\\.\\d+|\\d+)(?:[eE][-+]?\\d+)?";
+  function rx() { return new RegExp(NUM, "g"); }
+  // interpolator over two attribute strings that differ ONLY in their numbers; null when the
+  // non-numeric skeletons differ (different command count/order), so the caller snaps instead.
+  function tween(from, to) {
+    var a = from.match(rx()), b = to.match(rx());
+    if (!a || !b || a.length !== b.length) { return null; }
+    if (from.replace(rx(), "") !== to.replace(rx(), "")) { return null; }
+    var lits = from.split(rx()), f = a.map(Number), t = b.map(Number);
+    return function (u) {
+      var s = lits[0];
+      for (var i = 0; i < f.length; i++) { s += (f[i] + (t[i] - f[i]) * u) + lits[i + 1]; }
+      return s;
+    };
+  }
+  // cubic-in-out, d3's "cubic-in-out" — the ease plotly's own parcats drag transition uses
+  function ease(u) { return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2; }
+  var GEOMETRY = [
+    ["g.trace.parcats g.dimension", "transform"],
+    ["g.trace.parcats g.category", "transform"],
+    ["g.trace.parcats path.path", "d"]
+  ];
+  function snapshot(gd) {
+    var out = [];
+    for (var g = 0; g < GEOMETRY.length; g++) {
+      var els = gd.querySelectorAll(GEOMETRY[g][0]);
+      for (var i = 0; i < els.length; i++) {
+        out.push([els[i], GEOMETRY[g][1], els[i].getAttribute(GEOMETRY[g][1])]);
+      }
+    }
+    return out;
+  }
+  // rewind to `before` and tween back to whatever plotly just rendered. Elements survive the
+  // restyle with their identity intact (plotly keys the parcats joins on data indices, not display
+  // position), so element N holds the same category before and after and the flip reads as a swap.
+  function animate(gd, before) {
+    var frames = [];
+    for (var i = 0; i < before.length; i++) {
+      var el = before[i][0], attr = before[i][1], from = before[i][2];
+      if (!el.isConnected || from == null) { continue; }
+      var to = el.getAttribute(attr);
+      if (to == null || to === from) { continue; }
+      var fn = tween(from, to);
+      if (!fn) { continue; }
+      el.setAttribute(attr, from);
+      frames.push([el, attr, fn, to]);
+    }
+    if (!frames.length) { return; }
+    // a second click mid-flight retargets from wherever the first one got to
+    if (gd.__qsvParcatsAnim) { cancelAnimationFrame(gd.__qsvParcatsAnim); }
+    var t0 = null;
+    function step(ts) {
+      if (t0 === null) { t0 = ts; }
+      var u = Math.min(1, (ts - t0) / DURATION), e = ease(u);
+      for (var i = 0; i < frames.length; i++) {
+        // land on plotly's exact strings, never an interpolated approximation of them
+        frames[i][0].setAttribute(frames[i][1], u === 1 ? frames[i][3] : frames[i][2](e));
+      }
+      gd.__qsvParcatsAnim = u < 1 ? requestAnimationFrame(step) : null;
+    }
+    gd.__qsvParcatsAnim = requestAnimationFrame(step);
+  }
+  // EVERY early return here hands the click back to plotly, which applies the same restyle without
+  // the animation — so a failure to enhance is never a broken button.
+  document.addEventListener("click", function (ev) {
+    var target = ev.target;
+    if (!target || !target.closest) { return; }
+    var btn = target.closest("g.updatemenu-button");
+    if (!btn) { return; }
+    // the d3 datum plotly binds to the button group
+    var opts = btn.__data__;
+    if (!opts || opts.method !== "restyle" || !opts.args || !opts.args2) { return; }
+    var gd = btn.closest(".js-plotly-plot");
+    if (!gd || !gd.data || !window.Plotly) { return; }
+    var idx = (opts.args[1] && opts.args[1][0]) || 0;
+    var trace = gd.data[idx];
+    if (!trace || trace.type !== "parcats") { return; }
+    // ...and it must be THE category-order toggle, not some other restyle button on the same chart
+    if (!opts.args[0] || !("dimensions[0].categoryorder" in opts.args[0])) { return; }
+    // read the direction off the trace, not a stored flag: `args` is the alphabetical state, so it
+    // applies exactly while the chart is still in its baked count ("array") order
+    var dims = trace.dimensions || [];
+    var payload = (!dims.length || dims[0].categoryorder === "array") ? opts.args : opts.args2;
+    if (!payload[0]) { return; }
+    // past this point the click is ours: plotly's own handler (bound to the button, i.e. later in
+    // the propagation path) must not also apply the restyle
+    ev.stopPropagation();
+    var before = snapshot(gd);
+    Plotly.restyle(gd, payload[0], payload[1]).then(function () {
+      // MUST rewind synchronously here: deferring past this callback lets the new state paint
+      try { animate(gd, before); } catch (e) {}
+    });
+  }, true);
+})();
+</script>"#;
+
 /// Splice the fullscreen `<style>` + assumed-dims prelude + `<script>` into a full HTML document
 /// immediately before the closing `</body>` (so the script runs after plotly's own
 /// `Plotly.newPlot` script tags). Used for the plain single-chart document produced by
@@ -9728,7 +9914,10 @@ const KPI_REWRAP_SCRIPT: &str = r#"<script>
 fn inject_fullscreen_chrome(doc: &str) -> String {
     let prelude = assumed_map_dims_prelude(DEFAULT_IMG_WIDTH as f64, DEFAULT_IMG_HEIGHT as f64);
     let fullscreen_script = fullscreen_script();
-    let chrome = format!("<style>\n{FULLSCREEN_STYLE}\n</style>\n{prelude}\n{fullscreen_script}\n");
+    let parcats_script = parcats_order_script();
+    let chrome = format!(
+        "<style>\n{FULLSCREEN_STYLE}\n</style>\n{prelude}\n{fullscreen_script}\n{parcats_script}\n"
+    );
     match doc.rfind("</body>") {
         Some(idx) => {
             let mut out = String::with_capacity(doc.len() + chrome.len());
@@ -10471,6 +10660,7 @@ fn smart_html_page(
     // logo variants off `body.qsv-dark`; the logo itself rides in the `.qsv-page-foot` flow row.
     let ui_lang = viz_i18n::active_locale().bcp47;
     let fullscreen_script = fullscreen_script();
+    let parcats_script = parcats_order_script();
     format!(
         r#"<!doctype html>
 {tp_comment}
@@ -10530,6 +10720,7 @@ fn smart_html_page(
 {body}
 {fs_prelude}
 {fullscreen_script}
+{parcats_script}
 {KPI_REWRAP_SCRIPT}
 {dict_chrome}
 {data_chrome}

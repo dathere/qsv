@@ -1207,6 +1207,27 @@ def extract_fig_json(html):
     return obj
 
 
+# Start of the parcats "category order" animation script that `viz` injects into every page it
+# emits (src/cmd/viz.rs `PARCATS_ORDER_MARKER`). The gallery reassembles bare figure JSON under its
+# own scaffold, which carries none of viz's injected chrome — without lifting this block across,
+# the gallery's parcats figure would fall back to plotly's un-animated snap.
+PARCATS_MARKER = "<!--qsv-parcats-order-->"
+
+# Filled in from the first `qsv viz` run of this regen (every emitted page carries the same block),
+# then spliced into the scaffold by main().
+PARCATS_SCRIPT = ""
+
+
+def extract_parcats_script(html):
+    """The marker + `<script>` block driving the animated parcats category-order flip, or "" when
+    the binary predates it (the gallery then simply keeps the native snapping button)."""
+    start = html.find(PARCATS_MARKER)
+    if start < 0:
+        return ""
+    end = html.index("</script>", start) + len("</script>")
+    return html[start:end]
+
+
 def extract_inline_panels(html):
     """The inline-div smart dashboard form (used when a map panel forces it, or for >8 panels):
     a series of `Plotly.newPlot("qsv-viz-panel-N", {...})` calls, each a self-contained figure.
@@ -1288,6 +1309,9 @@ def run_html(qsv, args):
     finally:
         os.unlink(out)
     assert_plaintext(html, f"`qsv viz {' '.join(args)}` output")
+    global PARCATS_SCRIPT
+    if not PARCATS_SCRIPT:
+        PARCATS_SCRIPT = extract_parcats_script(html)
     return html
 
 
@@ -1424,6 +1448,40 @@ def warn_stale_data_viewers(linked_pages):
             f"{ref_name} was just built with:\n  " + "\n  ".join(stale) +
             "\n  They are built from datasets that are not committed (see the SCREENSHOTS entry "
             "for the command), so this script cannot refresh them.\n")
+
+
+def warn_stale_parcats_pages(linked_pages):
+    """Warn when a committed dashboard carries a parcats panel but not the animation script.
+
+    The same two pages `warn_stale_data_viewers` exists for -- `pitt311data.html` and
+    `smart_boston_311_2025.html`, built from datasets that are not in the repo -- also carry parcats
+    panels, so a regen leaves their category-order button on plotly's un-animated snap. Every page
+    this script rebuilds gets the current script for free; those two cannot be rebuilt here.
+
+    Deliberately a warning and NOT an in-place splice of PARCATS_SCRIPT into them: the script is
+    only half of the current output (the button's `pad`, which lifts the pill off the first axis
+    label, lives in the figure JSON), so patching the script alone would produce a page no `qsv viz`
+    run emits -- animated, but still overlapping. Refreshing them properly needs the datasets and
+    the SCREENSHOTS entry's documented `cmd`, exactly as for the data viewer.
+    """
+    if not PARCATS_SCRIPT:
+        return  # this binary emits no such script; nothing to be stale against
+    stale = []
+    for name in linked_pages:
+        path = os.path.join(VIZ_DIR, name)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            html = fh.read()
+        if '"type":"parcats"' in html and PARCATS_MARKER not in html:
+            stale.append(name)
+    if stale:
+        sys.stderr.write(
+            "WARNING: these committed pages have a parcats panel but not the category-order "
+            "animation script:\n  " + "\n  ".join(stale) +
+            "\n  Their toggle keeps plotly's un-animated snap. They are built from datasets that "
+            "are not committed (see the SCREENSHOTS entry for the command), so this script cannot "
+            "refresh them.\n")
 
 
 def llm_dictionary_sidecars():
@@ -1722,6 +1780,18 @@ def main():
             f'alt="{html_escape(shot["title"])} screenshot"/></a></figure>'
         )
 
+    # The parcats "category order" animation, lifted from this run's own viz output. The figures
+    # here are bare JSON reassembled under this scaffold, so without it the gallery's parcats
+    # button would fall back to plotly's un-animated snap. Idempotent (the head is reused verbatim
+    # across regens): drop any prior copy before re-adding, so it neither stacks nor goes stale.
+    head = re.sub(re.escape(PARCATS_MARKER) + r".*?</script>\n?", "", head, flags=re.S)
+    if PARCATS_SCRIPT:
+        head = head.replace("</head>", PARCATS_SCRIPT + "\n</head>", 1)
+    else:
+        sys.stderr.write(
+            "NOTE: this qsv emits no parcats category-order animation script; the gallery's "
+            "parcats button keeps plotly's un-animated snap\n")
+
     figs_json = "const FIGS = [" + ",".join(
         json.dumps(f, ensure_ascii=False, separators=(",", ":")) for f in figs) + "];"
     body = (
@@ -1812,6 +1882,7 @@ def main():
             "Subresource Integrity:\n  " + "\n  ".join(unprotected))
 
     warn_stale_data_viewers(linked_pages)
+    warn_stale_parcats_pages(linked_pages)
 
     with open(GALLERY, "w", encoding="utf-8") as fh:
         fh.write(body)

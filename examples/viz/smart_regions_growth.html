@@ -73,7 +73,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>844 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Preview)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>5</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-02 16:33 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-02 17:31 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -634,6 +634,106 @@
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", function () { setTimeout(init, 0); });
   else setTimeout(init, 0);
+})();
+</script>
+<!--qsv-parcats-order-->
+<script>
+(function () {
+  var DURATION = 500;
+  // one shared numeric-token pattern, recompiled per use so no /g lastIndex can leak between calls
+  var NUM = "[-+]?(?:\\d*\\.\\d+|\\d+)(?:[eE][-+]?\\d+)?";
+  function rx() { return new RegExp(NUM, "g"); }
+  // interpolator over two attribute strings that differ ONLY in their numbers; null when the
+  // non-numeric skeletons differ (different command count/order), so the caller snaps instead.
+  function tween(from, to) {
+    var a = from.match(rx()), b = to.match(rx());
+    if (!a || !b || a.length !== b.length) { return null; }
+    if (from.replace(rx(), "") !== to.replace(rx(), "")) { return null; }
+    var lits = from.split(rx()), f = a.map(Number), t = b.map(Number);
+    return function (u) {
+      var s = lits[0];
+      for (var i = 0; i < f.length; i++) { s += (f[i] + (t[i] - f[i]) * u) + lits[i + 1]; }
+      return s;
+    };
+  }
+  // cubic-in-out, d3's "cubic-in-out" — the ease plotly's own parcats drag transition uses
+  function ease(u) { return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2; }
+  var GEOMETRY = [
+    ["g.trace.parcats g.dimension", "transform"],
+    ["g.trace.parcats g.category", "transform"],
+    ["g.trace.parcats path.path", "d"]
+  ];
+  function snapshot(gd) {
+    var out = [];
+    for (var g = 0; g < GEOMETRY.length; g++) {
+      var els = gd.querySelectorAll(GEOMETRY[g][0]);
+      for (var i = 0; i < els.length; i++) {
+        out.push([els[i], GEOMETRY[g][1], els[i].getAttribute(GEOMETRY[g][1])]);
+      }
+    }
+    return out;
+  }
+  // rewind to `before` and tween back to whatever plotly just rendered. Elements survive the
+  // restyle with their identity intact (plotly keys the parcats joins on data indices, not display
+  // position), so element N holds the same category before and after and the flip reads as a swap.
+  function animate(gd, before) {
+    var frames = [];
+    for (var i = 0; i < before.length; i++) {
+      var el = before[i][0], attr = before[i][1], from = before[i][2];
+      if (!el.isConnected || from == null) { continue; }
+      var to = el.getAttribute(attr);
+      if (to == null || to === from) { continue; }
+      var fn = tween(from, to);
+      if (!fn) { continue; }
+      el.setAttribute(attr, from);
+      frames.push([el, attr, fn, to]);
+    }
+    if (!frames.length) { return; }
+    // a second click mid-flight retargets from wherever the first one got to
+    if (gd.__qsvParcatsAnim) { cancelAnimationFrame(gd.__qsvParcatsAnim); }
+    var t0 = null;
+    function step(ts) {
+      if (t0 === null) { t0 = ts; }
+      var u = Math.min(1, (ts - t0) / DURATION), e = ease(u);
+      for (var i = 0; i < frames.length; i++) {
+        // land on plotly's exact strings, never an interpolated approximation of them
+        frames[i][0].setAttribute(frames[i][1], u === 1 ? frames[i][3] : frames[i][2](e));
+      }
+      gd.__qsvParcatsAnim = u < 1 ? requestAnimationFrame(step) : null;
+    }
+    gd.__qsvParcatsAnim = requestAnimationFrame(step);
+  }
+  // EVERY early return here hands the click back to plotly, which applies the same restyle without
+  // the animation — so a failure to enhance is never a broken button.
+  document.addEventListener("click", function (ev) {
+    var target = ev.target;
+    if (!target || !target.closest) { return; }
+    var btn = target.closest("g.updatemenu-button");
+    if (!btn) { return; }
+    // the d3 datum plotly binds to the button group
+    var opts = btn.__data__;
+    if (!opts || opts.method !== "restyle" || !opts.args || !opts.args2) { return; }
+    var gd = btn.closest(".js-plotly-plot");
+    if (!gd || !gd.data || !window.Plotly) { return; }
+    var idx = (opts.args[1] && opts.args[1][0]) || 0;
+    var trace = gd.data[idx];
+    if (!trace || trace.type !== "parcats") { return; }
+    // ...and it must be THE category-order toggle, not some other restyle button on the same chart
+    if (!opts.args[0] || !("dimensions[0].categoryorder" in opts.args[0])) { return; }
+    // read the direction off the trace, not a stored flag: `args` is the alphabetical state, so it
+    // applies exactly while the chart is still in its baked count ("array") order
+    var dims = trace.dimensions || [];
+    var payload = (!dims.length || dims[0].categoryorder === "array") ? opts.args : opts.args2;
+    if (!payload[0]) { return; }
+    // past this point the click is ours: plotly's own handler (bound to the button, i.e. later in
+    // the propagation path) must not also apply the restyle
+    ev.stopPropagation();
+    var before = snapshot(gd);
+    Plotly.restyle(gd, payload[0], payload[1]).then(function () {
+      // MUST rewind synchronously here: deferring past this callback lets the new state paint
+      try { animate(gd, before); } catch (e) {}
+    });
+  }, true);
 })();
 </script>
 <script>

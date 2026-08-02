@@ -2,7 +2,7 @@
 <!-- Third-party software used by this page:
      plotly.js 3.7.0 - (c) 2012-2026 Plotly, Inc. - MIT
        (bundles MapLibre GL JS - BSD-3-Clause)
-     DataTables 3.0.0 + Buttons/ColumnControl/DateTime/SearchBuilder
+     DataTables 3.0.1 + Buttons/ColumnControl/DateTime/SearchBuilder
        (c) SpryMedia Ltd - MIT
      Full texts: https://github.com/dathere/qsv/blob/master/THIRD_PARTY_NOTICES.md -->
 <html lang="en">
@@ -73,14 +73,14 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>300 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>5</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-29 03:36 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-02 18:05 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
       <div class="qsv-viz-plot" style="height:230px">
 <div id="qsv-viz-panel-0" class="plotly-graph-div" style="height:100%; width:100%;"></div>
 <script type="text/javascript">
-    Plotly.newPlot("qsv-viz-panel-0", {"data":[{"type":"indicator","mode":"number","value":37616.58,"domain":{"x":[0.01,0.49],"y":[0.1,1.0]},"number":{"valueformat":".3~s"}},{"type":"indicator","mode":"number","value":184.5333,"domain":{"x":[0.51,0.99],"y":[0.1,1.0]},"number":{"valueformat":",.2f"}}],"layout":{"showlegend":false,"margin":{"l":20,"r":20,"t":20,"b":20,"pad":4},"height":230,"font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":12,"color":"#2A3F5F"},"paper_bgcolor":"#FFFFFF","modebar":{"orientation":"v"},"uirevision":"qsv-viz","annotations":[{"text":"Total Monthly Spend","font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":13},"showarrow":false,"xref":"paper","x":0.25,"xanchor":"center","yref":"paper","y":0.24,"yanchor":"top"},{"text":"Mean Account Age (Days)","font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":13},"showarrow":false,"xref":"paper","x":0.75,"xanchor":"center","yref":"paper","y":0.24,"yanchor":"top"}]},"config":{"responsive":true},"frames":null});
+    Plotly.newPlot("qsv-viz-panel-0", {"data":[{"type":"indicator","mode":"number","value":37616.58,"domain":{"x":[0.01,0.49],"y":[0.1,1.0]},"number":{"valueformat":".3~s"}},{"type":"indicator","mode":"number","value":184.5333,"domain":{"x":[0.51,0.99],"y":[0.1,1.0]},"number":{"valueformat":",.2f"}}],"layout":{"showlegend":false,"margin":{"l":20,"r":20,"t":20,"b":20,"pad":4},"height":230,"font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":12,"color":"#2A3F5F"},"paper_bgcolor":"#FFFFFF","modebar":{"orientation":"v"},"uirevision":"qsv-viz","annotations":[{"text":"Total Monthly Spend","font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":13},"showarrow":false,"xref":"paper","x":0.25,"xanchor":"center","yref":"paper","y":0.24,"yanchor":"top","name":"qsv-kpi-label"},{"text":"Mean Account Age (Days)","font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":13},"showarrow":false,"xref":"paper","x":0.75,"xanchor":"center","yref":"paper","y":0.24,"yanchor":"top","name":"qsv-kpi-label"}]},"config":{"responsive":true},"frames":null});
 </script>
       </div>
     </div>
@@ -588,9 +588,179 @@
   else setTimeout(init, 0);
 })();
 </script>
+<!--qsv-parcats-order-->
+<script>
+(function () {
+  var DURATION = 500;
+  // one shared numeric-token pattern, recompiled per use so no /g lastIndex can leak between calls
+  var NUM = "[-+]?(?:\\d*\\.\\d+|\\d+)(?:[eE][-+]?\\d+)?";
+  function rx() { return new RegExp(NUM, "g"); }
+  // interpolator over two attribute strings that differ ONLY in their numbers; null when the
+  // non-numeric skeletons differ (different command count/order), so the caller snaps instead.
+  function tween(from, to) {
+    var a = from.match(rx()), b = to.match(rx());
+    if (!a || !b || a.length !== b.length) { return null; }
+    if (from.replace(rx(), "") !== to.replace(rx(), "")) { return null; }
+    var lits = from.split(rx()), f = a.map(Number), t = b.map(Number);
+    return function (u) {
+      var s = lits[0];
+      for (var i = 0; i < f.length; i++) { s += (f[i] + (t[i] - f[i]) * u) + lits[i + 1]; }
+      return s;
+    };
+  }
+  // cubic-in-out, d3's "cubic-in-out" — the ease plotly's own parcats drag transition uses
+  function ease(u) { return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2; }
+  var GEOMETRY = [
+    ["g.trace.parcats g.dimension", "transform"],
+    ["g.trace.parcats g.category", "transform"],
+    ["g.trace.parcats path.path", "d"]
+  ];
+  function snapshot(gd) {
+    var out = [];
+    for (var g = 0; g < GEOMETRY.length; g++) {
+      var els = gd.querySelectorAll(GEOMETRY[g][0]);
+      for (var i = 0; i < els.length; i++) {
+        out.push([els[i], GEOMETRY[g][1], els[i].getAttribute(GEOMETRY[g][1])]);
+      }
+    }
+    return out;
+  }
+  // rewind to `before` and tween back to whatever plotly just rendered. Elements survive the
+  // restyle with their identity intact (plotly keys the parcats joins on data indices, not display
+  // position), so element N holds the same category before and after and the flip reads as a swap.
+  function animate(gd, before) {
+    var frames = [];
+    for (var i = 0; i < before.length; i++) {
+      var el = before[i][0], attr = before[i][1], from = before[i][2];
+      if (!el.isConnected || from == null) { continue; }
+      var to = el.getAttribute(attr);
+      if (to == null || to === from) { continue; }
+      var fn = tween(from, to);
+      if (!fn) { continue; }
+      el.setAttribute(attr, from);
+      frames.push([el, attr, fn, to]);
+    }
+    if (!frames.length) { return; }
+    // a second click mid-flight retargets from wherever the first one got to
+    if (gd.__qsvParcatsAnim) { cancelAnimationFrame(gd.__qsvParcatsAnim); }
+    var t0 = null;
+    function step(ts) {
+      if (t0 === null) { t0 = ts; }
+      var u = Math.min(1, (ts - t0) / DURATION), e = ease(u);
+      for (var i = 0; i < frames.length; i++) {
+        // land on plotly's exact strings, never an interpolated approximation of them
+        frames[i][0].setAttribute(frames[i][1], u === 1 ? frames[i][3] : frames[i][2](e));
+      }
+      gd.__qsvParcatsAnim = u < 1 ? requestAnimationFrame(step) : null;
+    }
+    gd.__qsvParcatsAnim = requestAnimationFrame(step);
+  }
+  // EVERY early return here hands the click back to plotly, which applies the same restyle without
+  // the animation — so a failure to enhance is never a broken button.
+  document.addEventListener("click", function (ev) {
+    var target = ev.target;
+    if (!target || !target.closest) { return; }
+    var btn = target.closest("g.updatemenu-button");
+    if (!btn) { return; }
+    // the d3 datum plotly binds to the button group
+    var opts = btn.__data__;
+    if (!opts || opts.method !== "restyle" || !opts.args || !opts.args2) { return; }
+    var gd = btn.closest(".js-plotly-plot");
+    if (!gd || !gd.data || !window.Plotly) { return; }
+    var idx = (opts.args[1] && opts.args[1][0]) || 0;
+    var trace = gd.data[idx];
+    if (!trace || trace.type !== "parcats") { return; }
+    // ...and it must be THE category-order toggle, not some other restyle button on the same chart
+    if (!opts.args[0] || !("dimensions[0].categoryorder" in opts.args[0])) { return; }
+    // read the direction off the trace, not a stored flag: `args` is the alphabetical state, so it
+    // applies exactly while the chart is still in its baked count ("array") order
+    var dims = trace.dimensions || [];
+    var payload = (!dims.length || dims[0].categoryorder === "array") ? opts.args : opts.args2;
+    if (!payload[0]) { return; }
+    // past this point the click is ours: plotly's own handler (bound to the button, i.e. later in
+    // the propagation path) must not also apply the restyle
+    ev.stopPropagation();
+    var before = snapshot(gd);
+    Plotly.restyle(gd, payload[0], payload[1]).then(function () {
+      // MUST rewind synchronously here: deferring past this callback lets the new state paint
+      try { animate(gd, before); } catch (e) {}
+    });
+  }, true);
+})();
+</script>
+<script>
+(function () {
+  var MARK = "qsv-kpi-label";
+  // A single reused canvas: text measurement must match the annotation's own font, and creating a
+  // canvas per call would churn.
+  function measurer(font) {
+    var c = measurer._c || (measurer._c = document.createElement("canvas"));
+    var ctx = c.getContext("2d");
+    ctx.font = font;
+    return function (s) { return ctx.measureText(s).width; };
+  }
+  // Greedy word wrap, mirroring wrap_kpi_label: a single word wider than the tile is left intact
+  // (never hard-split) and simply overflows.
+  function wrap(text, widthPx, measure) {
+    var words = text.split(/\s+/).filter(Boolean), lines = [], cur = "";
+    for (var i = 0; i < words.length; i++) {
+      var next = cur ? cur + " " + words[i] : words[i];
+      if (cur && measure(next) > widthPx) { lines.push(cur); cur = words[i]; } else { cur = next; }
+    }
+    if (cur) lines.push(cur);
+    return lines.join("<br>");
+  }
+  function rewrap(gd) {
+    var anns = (gd.layout && gd.layout.annotations) || [], idx = [];
+    for (var i = 0; i < anns.length; i++) { if (anns[i] && anns[i].name === MARK) idx.push(i); }
+    if (!idx.length) return;
+    // Annotation x is in PAPER coords, which span the plot area inside the margins -- so measure
+    // against that same box, not the div's full width.
+    var fl = gd._fullLayout, plotW = 0;
+    if (fl && fl.width && fl.margin) { plotW = fl.width - fl.margin.l - fl.margin.r; }
+    if (!plotW) { plotW = gd.clientWidth || gd.getBoundingClientRect().width; }
+    if (!plotW) return;
+    // Consecutive KPI labels sit at evenly spaced tile centers, so the gap between the first two IS
+    // the tile width in paper units. A lone tile gets the whole row.
+    var pitch = idx.length > 1 ? Math.abs(anns[idx[1]].x - anns[idx[0]].x) : 1;
+    var avail = Math.max(40, pitch * plotW * 0.94);
+    var upd = {}, changed = false;
+    for (var k = 0; k < idx.length; k++) {
+      var a = anns[idx[k]];
+      var full = String(a.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\s+/g, " ").trim();
+      if (!full) continue;
+      var f = a.font || {};
+      var font = ((f.size || 13) + "px ") + (f.family || getComputedStyle(document.body).fontFamily || "sans-serif");
+      var next = wrap(full, avail, measurer(font));
+      if (next !== a.text) { upd["annotations[" + idx[k] + "].text"] = next; changed = true; }
+    }
+    // The `next !== a.text` guard also stops the relayout from re-triggering the observer forever.
+    if (changed && window.Plotly && Plotly.relayout) { Plotly.relayout(gd, upd); }
+  }
+  function debounce(fn) {
+    var t = null;
+    return function () { clearTimeout(t); t = setTimeout(fn, 120); };
+  }
+  function attach() {
+    var divs = document.querySelectorAll(".js-plotly-plot"), found = false;
+    for (var i = 0; i < divs.length; i++) {
+      var gd = divs[i];
+      if (gd.__qsvKpiRw) { found = true; continue; }
+      if (!gd.layout) { continue; }
+      gd.__qsvKpiRw = true; found = true;
+      var run = (function (el) { return debounce(function () { try { rewrap(el); } catch (e) {} }); })(gd);
+      try { new ResizeObserver(run).observe(gd); } catch (e) { window.addEventListener("resize", run); }
+      run();
+    }
+    return found;
+  }
+  var tries = 0;
+  (function poll() { if (attach() || ++tries > 40) { return; } setTimeout(poll, 150); })();
+})();
+</script>
 
-<link rel="stylesheet" href="https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/sb-2.0.0/datatables.min.css" integrity="sha384-F2flyIQJh3hqy53lxTgcrVhhjCx7+oZJjioSBIuyljZAHTNhyCXsrT8iOIoylGMu" crossorigin="anonymous">
-<script src="https://cdn.datatables.net/v/dt/dt-3.0.0/b-4.0.0/cc-2.0.0/date-2.0.0/sb-2.0.0/datatables.min.js" integrity="sha384-B90pTMf63769NHSc70ShJk7oZumO6CZr5p389024KoPfbeXhfdyTGFe3AODnkPwu" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://cdn.datatables.net/v/dt/dt-3.0.1/b-4.0.1/cc-2.0.0/date-2.0.0/sb-2.0.0/datatables.min.css" integrity="sha384-lRGUvwnJvQ6dz9UARbiiTi6QUhuxCGaHkPD7sCILKXraFQOR9P67vWU5zVStDO2R" crossorigin="anonymous">
+<script src="https://cdn.datatables.net/v/dt/dt-3.0.1/b-4.0.1/cc-2.0.0/date-2.0.0/sb-2.0.0/datatables.min.js" integrity="sha384-y0MCk57Zxg695kxqXU1ZYUZvF2Raqy0JvVTqeDkInunnCFj5dvai0y1Fus2IMIJo" crossorigin="anonymous"></script>
 <script id="qsv-data-rows" type="application/json">[["1001","Basic","East","215.39","190"],["1002","Basic","Central","33.58","14"],["1003","Plus","South","203.26","11"],["1004","Plus","West","28.51","128"],["1005","Pro","East","238.66","14"],["1006","Basic","Central","31.74","18"],["1007","Basic","South","190.01","24"],["1008","Basic","West","35.99","46"],["1009","Plus","East","189.56","155"],["1010","Plus","Central","17.79","91"],["1011","Pro","South","225.5","352"],["1012","Basic","West","29.68","62"],["1013","Basic","East","225.56","67"],["1014","Basic","Central","32.76","305"],["1015","Plus","South","230.02","184"],["1016","Plus","West","38.38","84"],["1017","Pro","East","213.81","12"],["1018","Basic","Central","29.26","42"],["1019","Basic","South","211.95","68"],["1020","Basic","West","23.3","159"],["1021","Plus","East","205.46","285"],["1022","Plus","Central","31.71","217"],["1023","Pro","South","220.87","135"],["1024","Basic","West","39.14","375"],["1025","Basic","East","218.09","706"],["1026","Basic","Central","24.28","23"],["1027","Plus","South","193.64","30"],["1028","Plus","West","35.79","121"],["1029","Pro","East","245.93","261"],["1030","Basic","Central","32.54","154"],["1031","Basic","South","231.08","214"],["1032","Basic","West","25.72","163"],["1033","Plus","East","202.58","330"],["1034","Plus","Central","26.28","522"],["1035","Pro","South","193.76","12"],["1036","Basic","West","31.68","218"],["1037","Basic","East","185.8","311"],["1038","Basic","Central","12.37","61"],["1039","Plus","South","199.84","5"],["1040","Plus","West","36.84","112"],["1041","Pro","East","224.42","11"],["1042","Basic","Central","33.04","264"],["1043","Basic","South","229.34","90"],["1044","Basic","West","33.83","370"],["1045","Plus","East","237.19","144"],["1046","Plus","Central","33.71","387"],["1047","Pro","South","235.16","59"],["1048","Basic","West","17.32","97"],["1049","Basic","East","196.4","570"],["1050","Basic","Central","41.27","30"],["1051","Plus","South","225.85","48"],["1052","Plus","West","34.55","120"],["1053","Pro","East","208.09","1"],["1054","Basic","Central","27.1","98"],["1055","Basic","South","204.15","551"],["1056","Basic","West","36.63","212"],["1057","Plus","East","195.16","203"],["1058","Plus","Central","29.06","10"],["1059","Pro","South","245.29","374"],["1060","Basic","West","22.81","288"],["1061","Basic","East","205.83","20"],["1062","Basic","Central","34.42","182"],["1063","Plus","South","226.21","43"],["1064","Plus","West","31.0","32"],["1065","Pro","East","216.83","1"],["1066","Basic","Central","31.94","30"],["1067","Basic","South","233.75","5"],["1068","Basic","West","33.96","374"],["1069","Plus","East","212.3","53"],["1070","Plus","Central","27.39","77"],["1071","Pro","South","213.94","341"],["1072","Basic","West","32.7","896"],["1073","Basic","East","199.77","17"],["1074","Basic","Central","31.71","20"],["1075","Plus","South","212.24","318"],["1076","Plus","West","34.59","32"],["1077","Pro","East","263.74","136"],["1078","Basic","Central","32.49","29"],["1079","Basic","South","215.94","136"],["1080","Basic","West","29.56","692"],["1081","Plus","East","238.15","55"],["1082","Plus","Central","21.82","83"],["1083","Pro","South","235.41","137"],["1084","Basic","West","40.44","272"],["1085","Basic","East","213.86","301"],["1086","Basic","Central","34.36","756"],["1087","Plus","South","239.6","308"],["1088","Plus","West","19.87","243"],["1089","Pro","East","223.17","80"],["1090","Basic","Central","38.36","6"],["1091","Basic","South","234.35","54"],["1092","Basic","West","30.99","213"],["1093","Plus","East","238.87","498"],["1094","Plus","Central","27.94","797"],["1095","Pro","South","236.46","45"],["1096","Basic","West","28.14","47"],["1097","Basic","East","224.0","177"],["1098","Basic","Central","34.47","416"],["1099","Plus","South","231.07","191"],["1100","Plus","West","23.26","290"],["1101","Pro","East","242.79","433"],["1102","Basic","Central","35.23","275"],["1103","Basic","South","220.02","36"],["1104","Basic","West","22.02","281"],["1105","Plus","East","203.98","642"],["1106","Plus","Central","40.92","91"],["1107","Pro","South","184.5","233"],["1108","Basic","West","39.85","34"],["1109","Basic","East","227.19","424"],["1110","Basic","Central","32.87","296"],["1111","Plus","South","240.45","707"],["1112","Plus","West","40.41","193"],["1113","Pro","East","206.61","26"],["1114","Basic","Central","37.13","3"],["1115","Basic","South","245.64","135"],["1116","Basic","West","28.16","489"],["1117","Plus","East","186.63","315"],["1118","Plus","Central","35.73","43"],["1119","Pro","South","219.83","50"],["1120","Basic","West","35.83","159"],["1121","Basic","East","218.9","26"],["1122","Basic","Central","37.28","434"],["1123","Plus","South","207.91","158"],["1124","Plus","West","36.16","423"],["1125","Pro","East","184.67","126"],["1126","Basic","Central","37.48","137"],["1127","Basic","South","216.54","105"],["1128","Basic","West","29.8","37"],["1129","Plus","East","252.24","35"],["1130","Plus","Central","30.31","116"],["1131","Pro","South","216.44","72"],["1132","Basic","West","21.18","132"],["1133","Basic","East","190.37","21"],["1134","Basic","Central","25.82","148"],["1135","Plus","South","220.14","267"],["1136","Plus","West","35.64","128"],["1137","Pro","East","191.85","439"],["1138","Basic","Central","25.53","106"],["1139","Basic","South","203.76","130"],["1140","Basic","West","24.6","213"],["1141","Plus","East","198.77","118"],["1142","Plus","Central","32.55","511"],["1143","Pro","South","208.45","514"],["1144","Basic","West","16.4","55"],["1145","Basic","East","179.86","330"],["1146","Basic","Central","23.87","27"],["1147","Plus","South","234.04","14"],["1148","Plus","West","35.23","50"],["1149","Pro","East","244.01","276"],["1150","Basic","Central","34.62","410"],["1151","Basic","South","236.14","195"],["1152","Basic","West","39.17","28"],["1153","Plus","East","254.93","45"],["1154","Plus","Central","17.69","549"],["1155","Pro","South","203.3","827"],["1156","Basic","West","34.83","322"],["1157","Basic","East","230.1","131"],["1158","Basic","Central","36.32","75"],["1159","Plus","South","225.27","231"],["1160","Plus","West","35.78","4"],["1161","Pro","East","201.71","4"],["1162","Basic","Central","27.49","73"],["1163","Basic","South","204.65","12"],["1164","Basic","West","24.11","757"],["1165","Plus","East","231.47","20"],["1166","Plus","Central","11.85","56"],["1167","Pro","South","250.31","57"],["1168","Basic","West","32.99","25"],["1169","Basic","East","185.0","308"],["1170","Basic","Central","37.23","54"],["1171","Plus","South","243.86","153"],["1172","Plus","West","42.67","217"],["1173","Pro","East","225.24","210"],["1174","Basic","Central","31.28","100"],["1175","Basic","South","258.17","182"],["1176","Basic","West","37.26","292"],["1177","Plus","East","250.66","13"],["1178","Plus","Central","36.92","358"],["1179","Pro","South","204.3","145"],["1180","Basic","West","31.82","471"],["1181","Basic","East","218.94","135"],["1182","Basic","Central","33.66","50"],["1183","Plus","South","228.25","10"],["1184","Plus","West","32.64","41"],["1185","Pro","East","214.17","257"],["1186","Basic","Central","35.52","62"],["1187","Basic","South","208.73","77"],["1188","Basic","West","30.0","4"],["1189","Plus","East","219.99","238"],["1190","Plus","Central","31.23","145"],["1191","Pro","South","227.58","492"],["1192","Basic","West","37.38","21"],["1193","Basic","East","228.04","123"],["1194","Basic","Central","23.24","324"],["1195","Plus","South","203.25","210"],["1196","Plus","West","35.18","728"],["1197","Pro","East","201.29","221"],["1198","Basic","Central","41.05","182"],["1199","Basic","South","206.26","11"],["1200","Basic","West","33.65","26"],["1201","Plus","East","246.71","54"],["1202","Plus","Central","34.95","33"],["1203","Pro","South","249.78","368"],["1204","Basic","West","36.8","200"],["1205","Basic","East","217.33","63"],["1206","Basic","Central","35.11","111"],["1207","Plus","South","230.73","55"],["1208","Plus","West","36.36","588"],["1209","Pro","East","242.32","51"],["1210","Basic","Central","28.49","607"],["1211","Basic","South","213.82","1"],["1212","Basic","West","36.12","87"],["1213","Plus","East","198.99","41"],["1214","Plus","Central","31.31","127"],["1215","Pro","South","234.09","17"],["1216","Basic","West","30.17","92"],["1217","Basic","East","223.71","66"],["1218","Basic","Central","30.39","48"],["1219","Plus","South","201.02","250"],["1220","Plus","West","25.6","193"],["1221","Pro","East","212.15","89"],["1222","Basic","Central","15.94","72"],["1223","Basic","South","230.2","232"],["1224","Basic","West","29.62","186"],["1225","Plus","East","252.9","401"],["1226","Plus","Central","33.61","178"],["1227","Pro","South","216.67","28"],["1228","Basic","West","17.26","134"],["1229","Basic","East","185.85","294"],["1230","Basic","Central","29.64","316"],["1231","Plus","South","187.14","207"],["1232","Plus","West","22.54","213"],["1233","Pro","East","220.57","26"],["1234","Basic","Central","31.75","81"],["1235","Basic","South","247.05","148"],["1236","Basic","West","38.15","178"],["1237","Plus","East","200.92","121"],["1238","Plus","Central","22.46","1"],["1239","Pro","South","228.83","126"],["1240","Basic","West","18.89","138"],["1241","Basic","East","216.41","241"],["1242","Basic","Central","27.82","53"],["1243","Plus","South","232.62","236"],["1244","Plus","West","32.48","42"],["1245","Pro","East","216.86","123"],["1246","Basic","Central","10.95","87"],["1247","Basic","South","192.93","263"],["1248","Basic","West","31.4","173"],["1249","Plus","East","215.49","29"],["1250","Plus","Central","27.8","53"],["1251","Pro","South","219.35","151"],["1252","Basic","West","24.04","3"],["1253","Basic","East","233.22","201"],["1254","Basic","Central","32.06","213"],["1255","Plus","South","213.28","131"],["1256","Plus","West","24.82","113"],["1257","Pro","East","211.16","404"],["1258","Basic","Central","30.74","40"],["1259","Basic","South","261.84","4"],["1260","Basic","West","27.75","111"],["1261","Plus","East","240.09","108"],["1262","Plus","Central","13.37","57"],["1263","Pro","South","230.84","43"],["1264","Basic","West","46.36","157"],["1265","Basic","East","233.8","550"],["1266","Basic","Central","36.63","26"],["1267","Plus","South","229.16","393"],["1268","Plus","West","22.45","219"],["1269","Pro","East","224.49","120"],["1270","Basic","Central","44.85","5"],["1271","Basic","South","240.93","108"],["1272","Basic","West","30.18","65"],["1273","Plus","East","230.48","69"],["1274","Plus","Central","34.97","331"],["1275","Pro","South","250.0","329"],["1276","Basic","West","30.13","24"],["1277","Basic","East","245.45","418"],["1278","Basic","Central","25.07","62"],["1279","Plus","South","207.51","1210"],["1280","Plus","West","35.03","161"],["1281","Pro","East","207.81","58"],["1282","Basic","Central","35.68","9"],["1283","Basic","South","247.41","61"],["1284","Basic","West","37.92","494"],["1285","Plus","East","220.06","129"],["1286","Plus","Central","35.5","38"],["1287","Pro","South","188.5","389"],["1288","Basic","West","42.51","301"],["1289","Basic","East","192.91","509"],["1290","Basic","Central","18.65","144"],["1291","Plus","South","218.91","238"],["1292","Plus","West","27.81","108"],["1293","Pro","East","220.43","61"],["1294","Basic","Central","19.93","10"],["1295","Basic","South","228.42","116"],["1296","Basic","West","28.38","76"],["1297","Plus","East","211.28","674"],["1298","Plus","Central","40.96","55"],["1299","Pro","South","211.52","147"],["1300","Basic","West","25.08","91"]]</script>
 <script id="qsv-data-cols" type="application/json">[{"title":"customer_id","type":"num","list":false},{"title":"plan","type":"string","list":true},{"title":"region","type":"string","list":true},{"title":"monthly_spend","type":"num","list":false},{"title":"account_age_days","type":"num","list":false}]</script>
 <style>
@@ -659,10 +829,114 @@
      unreadable on dark paper, and href="#" means one click marks it visited forever */
   .qsv-viz-meta a.qsv-data-link, .qsv-viz-meta a.qsv-data-link:visited { font-size: 0.9em; font-weight: 600; color: var(--qsv-link, #0a5fb4); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
   .qsv-viz-meta a.qsv-data-link:hover, .qsv-viz-meta a.qsv-data-link:focus-visible { color: var(--qsv-link-hover, #084b8f); text-decoration: underline; }
+  /* Selected rows. Derived from --qsv-link with color-mix rather than hardcoded, so the tint
+     tracks the theme automatically (the link color flips with body.qsv-dark) instead of needing
+     a separate dark-mode rule that could drift. DataTables' own Select CSS paints a solid grey
+     that is nearly invisible on the dark theme, hence the override; the !important is needed
+     because that rule is more specific and ships inside the vendored bundle. The left border
+     is the redundant, non-color cue: a row stays identifiable as selected when the tint is lost
+     to a colorblind reader, a high-contrast mode, or a print stylesheet. */
+  #qsv-data-table tbody tr.selected > *, #qsv-data-table tbody tr.selected:hover > * { box-shadow: none !important; background: color-mix(in srgb, var(--qsv-link, #0a5fb4) 22%, transparent) !important; color: inherit !important; }
+  #qsv-data-table tbody tr.selected:hover > * { background: color-mix(in srgb, var(--qsv-link, #0a5fb4) 30%, transparent) !important; }
+  #qsv-data-table tbody tr.selected > *:first-child, #qsv-data-table tbody tr.selected:hover > *:first-child { box-shadow: inset 3px 0 0 0 var(--qsv-link, #0a5fb4) !important; }
+  /* count of selected rows, appended to DataTables' own info line */
+  .qsv-data-selinfo { opacity: 0.85; }
+  /* Transient note (e.g. a clicked map point whose row is past the preview prefix). Sits in the
+     drawer bar, not over the table, so it never covers data; aria-live lets a screen reader
+     announce it, since it is the only feedback that a click did something. */
+  .qsv-data-note { margin-left: 10px; margin-right: auto; font-weight: 400; font-size: 12px; opacity: 0; transition: opacity 0.15s ease; color: var(--qsv-link, #0a5fb4); pointer-events: none; }
+  .qsv-data-note.show { opacity: 1; }
 </style>
 <script>
 (function () {
   var dt = null;
+  // ---------------------------------------------------------------------------------------
+  // Row selection.
+  //
+  // Hand-rolled rather than using the DataTables Select extension, which is omitted from the
+  // bundle by choice — see DATATABLES_CDN_COMBO for the cost/benefit. (Through the 3.x line it
+  // also could not have worked here: it hard-required a global jQuery, which this vanilla-mode
+  // page does not provide. Select 4.0.0 dropped that requirement, so the omission is now a
+  // decision, not a constraint.)
+  //
+  // What matters for the code below is that Select is ABSENT: with no Select registered,
+  // `rows({selected:true})` returns EVERY row rather than none, so selection state cannot be
+  // read back off the table and is tracked here instead.
+  //
+  // Selection is stored as DATA row indexes (`row().index()`), never DOM nodes: `deferRender`
+  // discards off-page rows, and sorting/filtering/paging all reshuffle the DOM, so a node-based
+  // set would silently lose rows. The visual state is therefore re-applied on every `draw`.
+  var selRows = new Set();
+  // data index of the last non-shift click, the fixed end of a shift-range
+  var selAnchor = null;
+
+  // Repaint the `selected` class on the rows currently in the DOM. Cheap: only the current page.
+  function paintSelection() {
+    if (!dt) return;
+    dt.rows({page: "current"}).every(function () {
+      var node = this.node();
+      if (node) node.classList.toggle("selected", selRows.has(this.index()));
+    });
+  }
+
+  // Append/refresh the "N rows selected" count on DataTables' own info line, which is where a
+  // user already looks for row counts — and the only feedback when a selected row is on another
+  // page or filtered out of view.
+  function paintSelectionInfo() {
+    var info = document.querySelector("#qsv-data-drawer div.dt-info");
+    if (!info) return;
+    var el = info.querySelector(".qsv-data-selinfo");
+    if (!selRows.size) { if (el) el.remove(); return; }
+    if (!el) {
+      el = document.createElement("span");
+      el.className = "qsv-data-selinfo";
+      info.appendChild(el);
+    }
+    el.textContent = " — " + selRows.size + (selRows.size === 1 ? " row selected" : " rows selected");
+  }
+
+  // Single funnel for every selection change, so the map bridge sees exactly one event per
+  // change regardless of which side caused it. `source` lets a listener ignore its own echo.
+  function selectionChanged(source) {
+    paintSelection();
+    paintSelectionInfo();
+    document.dispatchEvent(new CustomEvent("qsv-data-selection", {
+      detail: { indexes: Array.from(selRows), source: source }
+    }));
+  }
+
+  // --- public seam, used by the map<->rows bridge (MAP_SELECT_CHROME) ---
+  // Replace (or extend) the selection with the given DATA indexes. Out-of-range indexes are
+  // dropped and reported, so a map point past the drawer's preview prefix cannot select row 0.
+  window.__qsvDataSelect = function (indexes, extend) {
+    if (!dt) return 0;
+    var list = Array.isArray(indexes) ? indexes : [indexes];
+    // rows().count(), NOT data().count() — the latter counts CELLS (rows x columns), so on a
+    // 41-column preview it reported 20500 for 500 rows and waved through every out-of-range index
+    var total = dt.rows().count();
+    if (!extend) selRows.clear();
+    var kept = 0;
+    list.forEach(function (i) {
+      i = +i;
+      if (Number.isInteger(i) && i >= 0 && i < total) { selRows.add(i); selAnchor = i; kept++; }
+    });
+    selectionChanged("map");
+    return kept;
+  };
+  window.__qsvDataSelectedRows = function () { return Array.from(selRows); };
+  // Page to the row with this DATA index, in the CURRENT sort/filter. Returns false when the row
+  // is filtered out (caller decides whether to explain) — never clears the user's filters.
+  window.__qsvDataPageTo = function (i) {
+    if (!dt) return false;
+    var order = dt.rows({order: "applied", search: "applied"}).indexes().toArray();
+    var pos = order.indexOf(+i);
+    if (pos < 0) return false;
+    var len = dt.page.len();
+    // len is -1 when the user picked "All" — everything is already on one page
+    if (len > 0) dt.page(Math.floor(pos / len)).draw(false);
+    return true;
+  };
+
   // DataTables' native dark palette keys on `:root.dark` (the <html> element); qsv's theme
   // toggle flips `body.qsv-dark`. Mirror the body class onto <html> so the drawer widgets
   // follow the qsv theme — nothing else in the page styles off `html.dark`.
@@ -854,6 +1128,13 @@
       close.setAttribute("aria-label", "Close data viewer");
       close.addEventListener("click", function (ev) { ev.preventDefault(); window.qsvCloseData(); });
       bar.appendChild(title);
+      // transient status line, flashed by window.__qsvDataNote (see below). `margin-right: auto`
+      // keeps it beside the title and still pushes the close button to the far right.
+      var note = document.createElement("span");
+      note.className = "qsv-data-note";
+      note.id = "qsv-data-note";
+      note.setAttribute("aria-live", "polite");
+      bar.appendChild(note);
       bar.appendChild(close);
       var content = document.createElement("div");
       content.className = "qsv-data-drawer-content";
@@ -1061,6 +1342,12 @@
           // applied for display. Over a markup/entity/quote/tab/emoji fixture "display" was
           // 10/10 exact where "export" corrupted 4/10. Row scope is the default too: search
           // applies, paging does not, so the file holds every filtered row, not the page.
+          //
+          // NOTE: this default is only safe because the DataTables **Select extension is not
+          // loaded** (omitted by choice; see DATATABLES_CDN_COMBO). With Select present, Buttons
+          // silently narrows the export to "the selected rows, if any" — so if it is ever added,
+          // this button MUST pin `exportOptions.modifier.selected = null`. The hand-rolled row
+          // selection below deliberately does not hook Buttons, so the export stays all-rows.
           exportOptions: {
             // csvHtml5 carries this in its OWN default exportOptions, and supplying the object
             // replaces that default rather than merging into it. Restated so the CSV-injection
@@ -1087,6 +1374,48 @@
           }
         }] }] }
       });
+      // Row selection, "os" idiom: plain click replaces the selection (and clicking the only
+      // selected row clears it), ctrl/cmd-click toggles one row, shift-click extends a range.
+      // Delegated from the table so it keeps working as deferRender recycles row nodes, and
+      // scoped to tbody so the ColumnControl search row in the thead is untouched.
+      table.addEventListener("click", function (ev) {
+        var tr = ev.target.closest("tbody tr");
+        if (!tr || !dt || !table.contains(tr)) return;
+        var idx = dt.row(tr).index();
+        // the "no matching records" placeholder is a tbody tr with no backing data row
+        if (idx === undefined || idx === null) return;
+        if (ev.shiftKey && selAnchor !== null) {
+          // range over the CURRENT sort+filter, so it matches what the user sees
+          var order = dt.rows({order: "applied", search: "applied"}).indexes().toArray();
+          var a = order.indexOf(selAnchor), b = order.indexOf(idx);
+          if (a >= 0 && b >= 0) {
+            selRows.clear();
+            for (var i = Math.min(a, b); i <= Math.max(a, b); i++) selRows.add(order[i]);
+          }
+          // shift-click also starts a native text selection across the rows; drop it so the
+          // range reads as a row selection rather than a smear of highlighted text
+          var ws = window.getSelection();
+          if (ws) ws.removeAllRanges();
+        } else if (ev.ctrlKey || ev.metaKey) {
+          if (selRows.has(idx)) selRows.delete(idx); else selRows.add(idx);
+          selAnchor = idx;
+        } else {
+          var onlyThis = selRows.size === 1 && selRows.has(idx);
+          selRows.clear();
+          if (!onlyThis) selRows.add(idx);
+          selAnchor = idx;
+        }
+        selectionChanged("rows");
+      });
+      // deferRender builds row nodes on demand and every draw re-writes the tbody, so the
+      // `selected` class has to be re-applied rather than set once at click time.
+      dt.on("draw", function () { paintSelection(); paintSelectionInfo(); });
+      // Publish the table for the map<->rows selection bridge. The drawer is built LAZILY on
+      // first open, so a bridge that merely read `window.__qsvDataDT` at page load would always
+      // find nothing — it listens for this event instead (and re-checks the global, in case it
+      // hooked after the drawer was already built).
+      window.__qsvDataDT = dt;
+      document.dispatchEvent(new CustomEvent("qsv-data-dt-ready"));
       // let the just-appended drawer paint once closed, so the open transition animates
       requestAnimationFrame(function () { show(drawer); });
     });
@@ -1103,6 +1432,18 @@
     }
     build().catch(function (e) { console.error("qsv viz: data viewer failed:", e); });
     return false;
+  };
+  // Flash a short message in the drawer bar for ~2s. Used by the map<->rows bridge to explain a
+  // click that could not do anything visible (a map point whose row lies past the preview
+  // prefix). A no-op before the drawer is built, so callers need no guard.
+  var noteTimer = null;
+  window.__qsvDataNote = function (msg) {
+    var el = document.getElementById("qsv-data-note");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { el.classList.remove("show"); }, 2000);
   };
   window.qsvCloseData = function () {
     var drawer = document.getElementById("qsv-data-drawer");
@@ -1132,6 +1473,7 @@
   });
 })();
 </script>
+
 
 <script>
 (function () {
@@ -1251,6 +1593,13 @@
           if (gd.__qsvPhotoHooked && window.__qsvPhotoRehook && np && np.then) {
             var prehook = function () { gd.__qsvPhotoHooked = false; window.__qsvPhotoRehook.tries = 0; window.__qsvPhotoRehook(); };
             np.then(prehook, prehook);
+          }
+          // and for the map<->rows selection bridge (see MAP_SELECT_CHROME): this newPlot drops
+          // its plotly_click listener AND repaints the points unselected, so the rehook also
+          // re-applies the current selection.
+          if (gd.__qsvSelHooked && window.__qsvSelRehook && np && np.then) {
+            var srehook = function () { gd.__qsvSelHooked = false; window.__qsvSelRehook.tries = 0; window.__qsvSelRehook(); };
+            np.then(srehook, srehook);
           }
         } else {
           Plotly.relayout(gd, u);

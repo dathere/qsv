@@ -7,6 +7,11 @@ use crate::workdir::Workdir;
 /* NOTE: If you want to run these tests, set QSV_TEST_DESCRIBEGPT=1 and install
 LM Studio (https://lmstudio.ai), then load the openai/gpt-oss-20b model with
 context window set to at least 10,000 tokens.
+
+Additionally, the four model-selection tests (describegpt_env_var_overrides,
+describegpt_different_model, describegpt_model_precedence_cli_over_env and
+describegpt_model_precedence_env_over_default) explicitly request a
+deepseek/deepseek-r1-* model and are skipped unless one is also loaded.
 */
 
 // Set QSV_TIMEOUT=0 for all tests to disable timeouts
@@ -18,13 +23,17 @@ fn set_describegpt_testing_envvars(cmd: &mut std::process::Command) {
         .env("QSV_LLM_API_KEY", "");
 }
 
-fn is_local_llm_available() -> bool {
-    static IS_LOCAL_LLM_AVAILABLE: OnceLock<bool> = OnceLock::new();
+// Probe the local LLM once and cache which of the required models are loaded.
+// Returns (has_openai, has_deepseek). Any failure of the base gate
+// (QSV_TEST_DESCRIBEGPT unset, non-localhost base URL, server unreachable,
+// unparseable model list) yields (false, false).
+fn loaded_models() -> (bool, bool) {
+    static LOADED_MODELS: OnceLock<(bool, bool)> = OnceLock::new();
 
-    *IS_LOCAL_LLM_AVAILABLE.get_or_init(|| {
+    *LOADED_MODELS.get_or_init(|| {
         // check if QSV_TEST_DESCRIBEGPT is set to enable these tests
         if env::var("QSV_TEST_DESCRIBEGPT").is_err() {
-            return false;
+            return (false, false);
         }
 
         // check if QSV_LLM_BASE_URL is set and its on localhost
@@ -36,7 +45,7 @@ fn is_local_llm_available() -> bool {
                 match cmd.output() {
                     Ok(output) => {
                         if !output.status.success() {
-                            return false;
+                            return (false, false);
                         }
 
                         // Parse the JSON response to check for required models
@@ -60,19 +69,38 @@ fn is_local_llm_available() -> bool {
                                 }
                             }
 
-                            return has_deepseek && has_openai;
+                            return (has_openai, has_deepseek);
                         }
-                        false
+                        (false, false)
                     },
-                    Err(_) => false,
+                    Err(_) => (false, false),
                 }
             } else {
-                false
+                (false, false)
             }
         } else {
-            false
+            (false, false)
         }
     })
+}
+
+// The vast majority of the live tests run against the built-in default model
+// (openai/gpt-oss-20b), so only that model is required here.
+fn is_local_llm_available() -> bool {
+    loaded_models().0
+}
+
+// Only the handful of model-selection tests that explicitly ask for
+// deepseek/deepseek-r1-* need this.
+fn is_deepseek_available() -> bool {
+    let (has_openai, has_deepseek) = loaded_models();
+    if has_openai && !has_deepseek {
+        eprintln!(
+            "SKIPPING: this test requires a deepseek/deepseek-r1 model to be loaded in the local \
+             LLM."
+        );
+    }
+    has_deepseek
 }
 
 // Providing an invalid API key with --api-key without
@@ -1244,7 +1272,7 @@ fn describegpt_null_values() {
 #[test]
 #[serial]
 fn describegpt_env_var_overrides() {
-    if !is_local_llm_available() {
+    if !is_deepseek_available() {
         return;
     }
     let wrk = Workdir::new("describegpt");
@@ -1276,7 +1304,7 @@ fn describegpt_env_var_overrides() {
 #[test]
 #[serial]
 fn describegpt_different_model() {
-    if !is_local_llm_available() {
+    if !is_deepseek_available() {
         return;
     }
     let wrk = Workdir::new("describegpt");
@@ -1666,7 +1694,7 @@ p_fewshot_examples = ""
 // Test that CLI --model flag takes precedence over QSV_LLM_MODEL env var
 #[test]
 fn describegpt_model_precedence_cli_over_env() {
-    if !is_local_llm_available() {
+    if !is_deepseek_available() {
         return;
     }
     let wrk = Workdir::new("describegpt_model_precedence");
@@ -1705,7 +1733,7 @@ fn describegpt_model_precedence_cli_over_env() {
 #[test]
 #[serial]
 fn describegpt_model_precedence_env_over_default() {
-    if !is_local_llm_available() {
+    if !is_deepseek_available() {
         return;
     }
     let wrk = Workdir::new("describegpt_model_env");

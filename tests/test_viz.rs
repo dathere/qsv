@@ -4204,6 +4204,39 @@ fn viz_smart_map_bubble_sizes_by_measure() {
     );
 }
 
+// The x-axis the `viz_smart_timeseries_dmy_dates` rows render as under each reading. Both arrays
+// cover the same eight cells, and every cell is ambiguous (day AND month <= 12), so the two
+// readings differ in BOTH their values and their chronological order -- which is what makes an
+// exact-array assertion able to tell them apart.
+const DMY_X_AXIS: &str = r#""x":["2021-01-11","2021-02-07","2021-03-09","2021-04-02","2021-05-03","2021-06-05","2021-07-08","2021-08-06"]"#;
+const MDY_X_AXIS: &str = r#""x":["2021-02-04","2021-03-05","2021-05-06","2021-06-08","2021-07-02","2021-08-07","2021-09-03","2021-11-01"]"#;
+
+// The `viz_smart_timeseries_dmy_dates` rows plus a dictionary declaring `content_type` on
+// `sale_date`. `revenue` is declared WITHOUT a role or concept so it stays `Route::Defer` and the
+// panel renders in raw mode -- an aggregating role would bucket the x-axis into period labels and
+// the exact-date assertions could not be made.
+fn dict_dmy_fixture(wrk: &Workdir, content_type: &str) {
+    let rows = "sale_date,revenue\n07/02/2021,1500\n03/05/2021,1200\n11/01/2021,1000\n06/08/2021,\
+                1700\n02/04/2021,1100\n09/03/2021,1300\n05/06/2021,1600\n08/07/2021,1400\n";
+    wrk.create_from_string("sales.csv", rows);
+    wrk.create_from_string(
+        "dict.schema.json",
+        &format!(
+            r#"{{
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {{
+                "sale_date": {{ "type": "string", "title": "Sale Date",
+                  "x-qsv": {{ "qsv_type": "Date", "content_type": "{content_type}",
+                    "role": "timestamp", "concept": "time.event_timestamp" }} }},
+                "revenue": {{ "type": "integer", "title": "Revenue",
+                  "x-qsv": {{ "qsv_type": "Integer", "content_type": "unknown" }} }}
+              }}
+            }}"#
+        ),
+    );
+}
+
 #[test]
 fn viz_smart_timeseries_dmy_dates() {
     let wrk = Workdir::new("viz_smart_timeseries_dmy_dates");
@@ -4227,9 +4260,88 @@ fn viz_smart_timeseries_dmy_dates() {
     assert!(html.contains("revenue over sale_date"));
     // x-axis dates parsed as DMY (e.g. 11/01 -> 2021-01-11, not 2021-11-01) and sorted
     // chronologically. Under the buggy MDY parse this array would have different values/order.
-    assert!(html.contains(
-        r#""x":["2021-01-11","2021-02-07","2021-03-09","2021-04-02","2021-05-03","2021-06-05","2021-07-08","2021-08-06"]"#
-    ));
+    assert!(html.contains(DMY_X_AXIS));
+}
+
+// issue #4303: a dictionary declares the column's own date format via `x-qsv.content_type`
+// (`date:%m/%d/%Y`). That declaration is authoritative for the column, so an opposing
+// QSV_PREFER_DMY=1 must NOT flip the reading. Deliberately run WITHOUT `--dict-info`: the
+// pre-existing `dict_icons: Option<&DictData>` params are `None` unless `--dict-info` AND HTML,
+// so a fix routed through them would be dead on exactly this (plain `--dictionary`) run.
+#[test]
+fn viz_smart_timeseries_dict_format_overrides_prefer_dmy() {
+    let wrk = Workdir::new("viz_smart_timeseries_dict_format_overrides_prefer_dmy");
+    dict_dmy_fixture(&wrk, "date:%m/%d/%Y");
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_PREFER_DMY", "1");
+    cmd.args(["smart", "sales.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // MONTH-first, per the dictionary: 11/01 -> 2021-11-01. Both the values AND the ordering
+    // differ from the day-first array QSV_PREFER_DMY=1 alone produces (see
+    // `viz_smart_timeseries_dmy_dates`), so this cannot pass by coincidence.
+    assert!(
+        html.contains(MDY_X_AXIS),
+        "the dictionary's declared %m/%d/%Y must outrank QSV_PREFER_DMY=1"
+    );
+}
+
+// Same scenario WITH `--dict-info`. Pinning that both states agree is what proves the fix does
+// not ride on `dict_icons()`, which is `Some` only here.
+#[test]
+fn viz_smart_timeseries_dict_format_overrides_prefer_dmy_with_dict_info() {
+    let wrk = Workdir::new("viz_smart_timeseries_dict_format_overrides_prefer_dmy_with_dict_info");
+    dict_dmy_fixture(&wrk, "date:%m/%d/%Y");
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_PREFER_DMY", "1");
+    cmd.args([
+        "smart",
+        "sales.csv",
+        "-o",
+        &out_html,
+        "--dict-info",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(MDY_X_AXIS));
+}
+
+// The tri-state fallback. `qsv_dateparser` only consults its DMY preference for slash-separated
+// `d/m` values, so a year-leading format expresses no actionable preference and must leave
+// QSV_PREFER_DMY in charge -- as must a bare `date` token carrying no format at all. Getting this
+// wrong would turn "the dictionary is ignored" into "the dictionary wins when it said nothing".
+#[test]
+fn viz_smart_timeseries_dict_format_without_preference_defers_to_env() {
+    for (case, content_type) in [("iso", "date:%Y-%m-%d"), ("bare", "date")] {
+        // one viz run per Workdir: a stats sidecar is reused on mtime alone and ignores the DMY
+        // preference, so a second run in the same directory could pass for the wrong reason.
+        let wrk = Workdir::new(&format!(
+            "viz_smart_timeseries_dict_format_without_preference_defers_to_env_{case}"
+        ));
+        dict_dmy_fixture(&wrk, content_type);
+
+        let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.env("QSV_PREFER_DMY", "1");
+        cmd.args(["smart", "sales.csv", "-o", &out_html, "--dictionary"])
+            .arg(wrk.path("dict.schema.json"));
+        wrk.assert_success(&mut cmd);
+
+        let html = wrk.read_to_string("dash.html").unwrap();
+        assert!(
+            html.contains(DMY_X_AXIS),
+            "`{content_type}` expresses no actionable preference, so QSV_PREFER_DMY=1 must stand"
+        );
+    }
 }
 
 #[test]
@@ -13610,6 +13722,57 @@ fn viz_smart_data_viewer_unparseable_dates_stay_plain() {
     // no pair was minted for the blank: its row embeds it as a plain empty string. Anchored on
     // the whole row — a bare `["","` also occurs inside the plaintext minified bundle.
     assert!(html.contains(r#"["beta","","2"]"#));
+}
+
+// issue #4303, data-viewer half: the drawer's `[raw, sort-key]` date pairs must be minted under
+// the column's DECLARED format too, not the global QSV_PREFER_DMY. Otherwise the table sorts and
+// filters an ambiguous date column by the opposite reading of the one the charts plot.
+#[test]
+fn viz_smart_data_viewer_dict_format_sort_keys() {
+    let wrk = Workdir::new("viz_smart_data_viewer_dict_format_sort_keys");
+    // `when_date` is ambiguous (05/03 is 3 May day-first, 5 Mar month-first); `iso_date` is
+    // already ISO, so it must stay a plain string and cost nothing extra either way.
+    wrk.create_from_string(
+        "dates.csv",
+        "when_date,iso_date,qty\n05/03/2021,2021-05-03,1\n07/02/2021,2021-07-02,2\n11/01/2021,\
+         2021-11-01,3\n02/04/2021,2021-02-04,4\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "when_date": { "type": "string", "title": "When",
+              "x-qsv": { "qsv_type": "Date", "content_type": "date:%m/%d/%Y",
+                "role": "timestamp", "concept": "time.event_timestamp" } },
+            "iso_date": { "type": "string", "title": "ISO",
+              "x-qsv": { "qsv_type": "Date", "content_type": "date:%Y-%m-%d" } },
+            "qty": { "type": "integer", "title": "Qty",
+              "x-qsv": { "qsv_type": "Integer", "content_type": "unknown" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.env("QSV_PREFER_DMY", "1");
+    cmd.args(["smart", "dates.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // still a date column, and its sort key is the MONTH-first reading the dictionary declares:
+    // 05/03/2021 -> 3 May would be the QSV_PREFER_DMY=1 answer this must override.
+    assert!(html.contains(r#""title":"when_date","type":"date""#));
+    assert!(
+        html.contains(r#"["05/03/2021","2021-05-03T00:00:00+00:00"]"#),
+        "the data viewer's date sort key must follow the dictionary's declared format"
+    );
+    assert!(html.contains(r#"["11/01/2021","2021-11-01T00:00:00+00:00"]"#));
+    // the already-ISO column mints no pair at all
+    assert!(!html.contains(r#""2021-05-03","2021-05-03T"#));
 }
 
 // `--preview-threshold 0` disables the viewer entirely: no link, no payloads, no drawer, no

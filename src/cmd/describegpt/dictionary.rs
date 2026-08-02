@@ -427,7 +427,7 @@ pub(super) fn content_type_base(token: &str) -> &str {
 /// Extract the strftime format suffix from a `date`/`datetime` `content_type`,
 /// when present and syntactically valid (e.g. `"date:%m/%d/%Y"` →
 /// `Some("%m/%d/%Y")`). Bare tokens and non-date content types yield `None`.
-pub(super) fn content_type_date_format(content_type: &str) -> Option<&str> {
+pub(crate) fn content_type_date_format(content_type: &str) -> Option<&str> {
     let fmt = content_type
         .strip_prefix("datetime:")
         .or_else(|| content_type.strip_prefix("date:"))?;
@@ -457,30 +457,61 @@ pub(super) fn format_date_value<'a>(
     // "01/02/2020" under `date:%d/%m/%Y` parses as 1 Feb (not 2 Jan) and
     // round-trips unchanged instead of being silently swapped. Min/Max are
     // RFC3339 (preference-invariant), so this only matters for raw Examples.
-    match qsv_dateparser::parse_with_preference(value, prefer_dmy(fmt)) {
+    match qsv_dateparser::parse_with_preference(
+        value,
+        strftime_dmy_preference(fmt).unwrap_or(false),
+    ) {
         Ok(dt) => Cow::Owned(dt.format(fmt).to_string()),
         Err(_) => Cow::Borrowed(value),
     }
 }
 
-/// Whether a strftime format is day-first (the day field precedes the month
-/// field), used to set `qsv_dateparser`'s DMY-vs-MDY preference when
-/// reformatting ambiguous values. Parses the format with chrono's
-/// `StrftimeItems` so every day/month padding variant (`%d`, `%e`, `%-d`,
-/// `%0d`, `%_d`, `%m`, `%-m`, `%0m`, `%_m`, …) is recognized. Defaults to
-/// `false` (month-first) when the order can't be determined.
-fn prefer_dmy(fmt: &str) -> bool {
+/// The DMY-vs-MDY preference a strftime format expresses, as understood by
+/// `qsv_dateparser::parse_with_preference`:
+///
+/// - `Some(true)`  — day-first: the numeric day field precedes the numeric month.
+/// - `Some(false)` — month-first: the numeric month precedes the numeric day, in a layout the
+///   preference bit can actually act on.
+/// - `None`        — the format expresses no *actionable* preference, so callers should fall back
+///   to their own default (e.g. `QSV_PREFER_DMY`).
+///
+/// `None` covers two cases: formats with no numeric day and/or month (`%H:%M:%S`,
+/// `%b %d, %Y`), and **year-leading** layouts (`%Y-%m-%d`, `%F`, `%y-%m-%d`).
+/// The latter matters because `qsv_dateparser` only consults the preference bit for
+/// slash-separated `d/m` values (its `slash_mdy_family`, regex `^\d{1,2}/\d{1,2}`);
+/// year-leading values are read unambiguously regardless, so claiming "month-first"
+/// there would override a caller's default for no reason.
+///
+/// Parses the format with chrono's `StrftimeItems` so every day/month padding
+/// variant (`%d`, `%e`, `%-d`, `%0d`, `%_d`, `%m`, `%-m`, `%0m`, `%_m`, …) and every
+/// compound specifier (`%F` → `%Y-%m-%d`, `%D` → `%m/%d/%y`) is recognized.
+pub(crate) fn strftime_dmy_preference(fmt: &str) -> Option<bool> {
     use chrono::format::{Item, Numeric, StrftimeItems};
     let mut day_idx = None;
     let mut month_idx = None;
+    let mut year_idx = None;
     for (i, item) in StrftimeItems::new(fmt).enumerate() {
         match item {
             Item::Numeric(Numeric::Day, _) if day_idx.is_none() => day_idx = Some(i),
             Item::Numeric(Numeric::Month, _) if month_idx.is_none() => month_idx = Some(i),
+            Item::Numeric(Numeric::Year | Numeric::YearMod100 | Numeric::IsoYear, _)
+                if year_idx.is_none() =>
+            {
+                year_idx = Some(i);
+            },
             _ => {},
         }
     }
-    matches!((day_idx, month_idx), (Some(d), Some(m)) if d < m)
+    let (d, m) = (day_idx?, month_idx?);
+    if d < m {
+        return Some(true);
+    }
+    // month-first, but a leading year makes the value unambiguous to the parser.
+    // Keep this check gated on `m < d` so `%Y/%d/%m` stays day-first.
+    if year_idx.is_some_and(|y| y < m) {
+        return None;
+    }
+    Some(false)
 }
 
 /// Reformat the value part of each `"value [count]"` example line to the
@@ -2433,6 +2464,10 @@ mod tests {
             format_date_examples("date:%m/%d/%Y", "01/02/2020 [5]"),
             "01/02/2020 [5]"
         );
+        // `format_date_value` collapses the tri-state with `.unwrap_or(false)`;
+        // these asserts pin that collapsed behavior (see the tri-state test below
+        // for what each format actually expresses).
+        let prefer_dmy = |fmt: &str| strftime_dmy_preference(fmt).unwrap_or(false);
         assert!(prefer_dmy("%d/%m/%Y"));
         assert!(!prefer_dmy("%m/%d/%Y"));
         assert!(!prefer_dmy("%Y-%m-%d")); // ISO is month-before-day
@@ -2450,6 +2485,36 @@ mod tests {
             format_date_examples("date:%0d/%0m/%Y", "01/02/2020 [5]"),
             "01/02/2020 [5]"
         );
+    }
+
+    #[test]
+    fn strftime_dmy_preference_is_tri_state() {
+        // day before month → day-first, whatever the padding.
+        assert_eq!(strftime_dmy_preference("%d/%m/%Y"), Some(true));
+        assert_eq!(strftime_dmy_preference("%-d/%-m/%Y"), Some(true));
+        // the year guard is gated on month-before-day, so a year-leading
+        // day-first layout stays day-first.
+        assert_eq!(strftime_dmy_preference("%Y/%d/%m"), Some(true));
+
+        // month before day, no leading year → month-first (the case the
+        // preference bit actually acts on).
+        assert_eq!(strftime_dmy_preference("%m/%d/%Y"), Some(false));
+        assert_eq!(strftime_dmy_preference("%0m/%0d/%Y"), Some(false));
+        // %D expands to %m/%d/%y.
+        assert_eq!(strftime_dmy_preference("%D"), Some(false));
+
+        // year-leading layouts are unambiguous to qsv_dateparser, so they
+        // express no actionable preference and must NOT override the caller's.
+        assert_eq!(strftime_dmy_preference("%Y-%m-%d"), None);
+        assert_eq!(strftime_dmy_preference("%y-%m-%d"), None);
+        // %F expands to %Y-%m-%d.
+        assert_eq!(strftime_dmy_preference("%F"), None);
+        assert_eq!(strftime_dmy_preference("%Y-%m-%dT%H:%M:%S"), None);
+
+        // no numeric day and/or month at all.
+        assert_eq!(strftime_dmy_preference("%H:%M:%S"), None);
+        assert_eq!(strftime_dmy_preference("%b %d, %Y"), None);
+        assert_eq!(strftime_dmy_preference(""), None);
     }
 
     #[test]

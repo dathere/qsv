@@ -77,6 +77,11 @@ step() { printf '\n== %s\n' "$*"; }
 if [ -n "${QSV_BIN:-}" ]; then
     QSV="$QSV_BIN"
     [ -x "$QSV" ] || die "QSV_BIN is set to '$QSV_BIN' but that is not executable."
+    # Resolve to an absolute path NOW. Both viz runs below execute inside `cd "$DATA_DIR"`,
+    # and gen_gallery.py re-invokes QSV_BIN from examples/viz -- so a RELATIVE value (like the
+    # `QSV_BIN=target/release/qsv` this script's own header suggests) passes the -x check here
+    # against the caller's cwd and then does not exist at either of those two later cwds.
+    QSV="$(cd "$(dirname "$QSV")" && pwd)/$(basename "$QSV")"
 elif [ -x "$REPO/target/debug/qsv" ]; then
     QSV="$REPO/target/debug/qsv"
 elif [ -x "$REPO/target/release/qsv" ]; then
@@ -161,7 +166,10 @@ step "data-viewer hooks (want 4 of 4 on every page)"
 rc=0
 for page in pitt311data smart_boston_311_2025 smart_dict_sunburst \
             smart_dict_treemap smart_geospatial smart_world_choropleth; do
-    n=$(grep -oE 'qsv-data-(dt-ready|note|selection|selinfo)' "$VIZ_DIR/$page.html" \
+    # `|| true` on the grep is load-bearing: a page with ZERO hooks -- the exact failure this
+    # loop exists to catch -- makes grep exit 1, which under `set -euo pipefail` kills the
+    # script mid-assignment, so it would never print "0 of 4" nor reach the die() below.
+    n=$({ grep -oE 'qsv-data-(dt-ready|note|selection|selinfo)' "$VIZ_DIR/$page.html" || true; } \
         | sort -u | wc -l | tr -d ' ')
     printf '  %-28s %s of 4\n' "$page" "$n"
     [ "$n" = "4" ] || rc=1

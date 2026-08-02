@@ -19491,17 +19491,20 @@ fn agg_values(vals: &[f64], agg: Agg) -> f64 {
 /// Resolve the animation's frame axis from the raw `--slider` cells, returning the per-ROW bucket
 /// index (`None` for a row whose cell doesn't belong on the axis) and the ordered frame labels.
 ///
-/// A NUMERIC READING WINS TIES, and that is load-bearing rather than cosmetic. `qsv_dateparser`
-/// reads a bare year as EPOCH SECONDS — "2010" becomes 1970-01-01T00:33:30 — so a year column sent
-/// down the calendar path collapses every frame into a single 1970 bucket and the animation dies
-/// outright. Even where it survives, calendar-bucketing a year would relabel the frame
-/// "2020-01-01", disagreeing with `viz bar --slider year`, which frames on distinct values.
+/// THE CALENDAR PATH REQUIRES NEGLIGIBLE NUMERIC COVERAGE, and that is load-bearing rather than
+/// cosmetic. `qsv_dateparser` reads a bare number as EPOCH SECONDS — "2010" becomes
+/// 1970-01-01T00:33:30 — so a year column sent down the calendar path collapses every frame into a
+/// single 1970 bucket and the animation dies outright. Even where it survives, calendar-bucketing
+/// a year would relabel the frame "2020-01-01", disagreeing with `viz bar --slider year`, which
+/// frames on distinct values.
 ///
-/// The test is COVERAGE, not "every cell is numeric": one stray non-numeric cell must not flip a
-/// year column onto the calendar path. Since a bare year parses as both a number and a date, the
-/// two counts tie and the numeric reading wins; a real date column ("2024-01-01") is not numeric at
-/// all, so dates win outright and the calendar path is taken, where `choose_anim_bucket`
-/// auto-coarsens Day -> Week -> Month to keep the frame count sane.
+/// So the two coverages are tested SEPARATELY (>=90% temporal AND <=10% numeric) rather than
+/// against each other. A "more dates than numbers" comparison is not enough, because a numeric
+/// cell also counts as a parsed date: 20 bare years plus one real "2024-01-01" gives 21 dates vs
+/// 20 numbers, which would hand a fully numeric column to the calendar path and re-collapse it
+/// into 1970. Requiring numeric coverage to be negligible makes the misclassification impossible
+/// in that direction, and failing to raw mode is the safe fallback anyway — it is exactly what
+/// `viz bar --slider` does.
 ///
 /// This CANNOT divert `viz smart` off the calendar path it has always taken: smart only ever passes
 /// a column `canonical_date_col` accepted, and that hard-filters on a stats type of
@@ -19529,7 +19532,7 @@ fn resolve_frame_axis(
             })
             .collect();
         let n_parsed = parsed.iter().filter(|p| p.is_some()).count();
-        if n_parsed > n_numeric && n_parsed >= 2 && n_parsed * 10 >= cells.len() * 9 {
+        if n_parsed >= 2 && n_parsed * 10 >= cells.len() * 9 && n_numeric * 10 <= cells.len() {
             let dates: Vec<chrono::NaiveDate> = parsed.iter().filter_map(|p| *p).collect();
             let (bkt, distinct) = choose_anim_bucket(&dates);
             if distinct.len() > SLIDER_MAX_FRAMES {

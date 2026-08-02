@@ -783,6 +783,81 @@ fn viz_scatter_slider_bubble_mostly_numeric_frames_stay_raw() {
 }
 
 #[test]
+fn viz_scatter_slider_bubble_numeric_frames_survive_a_date_parseable_stray() {
+    // REGRESSION: comparing the two coverages against each other ("more dates than numbers") is
+    // NOT enough, because a numeric cell also counts as a parsed date. 20 bare years plus one real
+    // "2024-01-01" gives 21 dates vs 20 numbers, which handed a fully numeric column to the
+    // calendar path and re-collapsed the years into a single 1970 epoch bucket. The coverages are
+    // therefore tested separately: the calendar path needs numeric coverage to be NEGLIGIBLE.
+    let wrk =
+        Workdir::new("viz_scatter_slider_bubble_numeric_frames_survive_a_date_parseable_stray");
+    let mut rows = vec!["yr,ent,x,y,p".to_string()];
+    for (i, y) in [2010, 2015, 2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027]
+        .iter()
+        .enumerate()
+    {
+        rows.push(format!("{y},A,{},{},{}", i + 1, i + 2, 10 + i));
+        rows.push(format!("{y},B,{},{},{}", i + 5, i + 6, 20 + i));
+    }
+    // the stray cell is itself date-parseable — this is what defeated the old comparison
+    rows.push("2024-01-01,B,3,3,7".to_string());
+    let refs: Vec<&str> = rows.iter().map(String::as_str).collect();
+    wrk.create_from_string("d.csv", &csv_rows(&refs));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "x", "--y", "y", "--size", "p", "--series", "ent", "--slider",
+        "yr",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#""name":"2010""#));
+    assert!(html.contains(r#""name":"2027""#));
+    assert!(!html.contains("1970-01-01"));
+}
+
+#[test]
+fn viz_scatter_slider_bubble_dates_with_a_stray_number_stay_calendar() {
+    // the other direction of the same rule: requiring negligible NUMERIC coverage must not cost a
+    // real date column its calendar bucketing just because one cell happens to be a bare number
+    let wrk = Workdir::new("viz_scatter_slider_bubble_dates_with_a_stray_number_stay_calendar");
+    let mut rows = vec!["d,ent,x,y,p".to_string()];
+    for i in 0..10 {
+        rows.push(format!(
+            "2024-{:02}-01,A,{},{},{}",
+            i + 1,
+            i + 1,
+            i + 2,
+            10 + i
+        ));
+        rows.push(format!(
+            "2024-{:02}-01,B,{},{},{}",
+            i + 1,
+            i + 5,
+            i + 6,
+            20 + i
+        ));
+    }
+    rows.push("7,B,3,3,7".to_string());
+    let refs: Vec<&str> = rows.iter().map(String::as_str).collect();
+    wrk.create_from_string("d.csv", &csv_rows(&refs));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "x", "--y", "y", "--size", "p", "--series", "ent", "--slider",
+        "d",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#""name":"2024-01-01""#));
+    assert!(html.contains(r#""name":"2024-10-01""#));
+}
+
+#[test]
 fn viz_scatter_slider_bubble_date_column_still_calendar_bucketed() {
     // the coverage rule must not cost real date columns their calendar bucketing: "2024-01-01"
     // has zero numeric coverage, so dates win outright and the frames are calendar buckets

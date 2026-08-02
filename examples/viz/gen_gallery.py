@@ -1450,6 +1450,40 @@ def warn_stale_data_viewers(linked_pages):
             "for the command), so this script cannot refresh them.\n")
 
 
+def warn_stale_parcats_pages(linked_pages):
+    """Warn when a committed dashboard carries a parcats panel but not the animation script.
+
+    The same two pages `warn_stale_data_viewers` exists for -- `pitt311data.html` and
+    `smart_boston_311_2025.html`, built from datasets that are not in the repo -- also carry parcats
+    panels, so a regen leaves their category-order button on plotly's un-animated snap. Every page
+    this script rebuilds gets the current script for free; those two cannot be rebuilt here.
+
+    Deliberately a warning and NOT an in-place splice of PARCATS_SCRIPT into them: the script is
+    only half of the current output (the button's `pad`, which lifts the pill off the first axis
+    label, lives in the figure JSON), so patching the script alone would produce a page no `qsv viz`
+    run emits -- animated, but still overlapping. Refreshing them properly needs the datasets and
+    the SCREENSHOTS entry's documented `cmd`, exactly as for the data viewer.
+    """
+    if not PARCATS_SCRIPT:
+        return  # this binary emits no such script; nothing to be stale against
+    stale = []
+    for name in linked_pages:
+        path = os.path.join(VIZ_DIR, name)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            html = fh.read()
+        if '"type":"parcats"' in html and PARCATS_MARKER not in html:
+            stale.append(name)
+    if stale:
+        sys.stderr.write(
+            "WARNING: these committed pages have a parcats panel but not the category-order "
+            "animation script:\n  " + "\n  ".join(stale) +
+            "\n  Their toggle keeps plotly's un-animated snap. They are built from datasets that "
+            "are not committed (see the SCREENSHOTS entry for the command), so this script cannot "
+            "refresh them.\n")
+
+
 def llm_dictionary_sidecars():
     """The `<stem>.schema.json` sidecars belonging to the LLM (`--dictionary infer`) dashboards.
 
@@ -1848,6 +1882,7 @@ def main():
             "Subresource Integrity:\n  " + "\n  ".join(unprotected))
 
     warn_stale_data_viewers(linked_pages)
+    warn_stale_parcats_pages(linked_pages)
 
     with open(GALLERY, "w", encoding="utf-8") as fh:
         fh.write(body)

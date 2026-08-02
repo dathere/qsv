@@ -9050,6 +9050,20 @@ fn viz_parcats_standalone() {
         "parcats should bake in a category-order toggle button; html: {html}"
     );
     assert!(html.contains("dimensions[0].categoryorder"));
+    // the flip is ANIMATED, which plotly's parcats renderer can't do on its own (unlike its sankey
+    // renderer, whose replot transitions are what make the node-order toggle animate for free): an
+    // injected script intercepts the click and tweens across the restyle
+    assert!(
+        html.contains("__qsvParcatsAnim"),
+        "a standalone parcats page must carry the category-order animation script; html: {html}"
+    );
+    // ...but the button itself stays a NATIVE plotly toggle, so it still works wherever the figure
+    // JSON travels without that script (`gen_gallery.py` reassembles the bare figure). `execute:
+    // false` would delegate the restyle to the script and leave a dead button there.
+    assert!(
+        !html.contains(r#""execute":false"#),
+        "the category-order button must not delegate its restyle to the script; html: {html}"
+    );
 }
 
 // deterministic dataset that qualifies for the smart parcats panel: region/tier/segment are 3
@@ -9094,6 +9108,12 @@ fn viz_smart_parcats_suppresses_hierarchy() {
     // on the same columns (mutual exclusivity).
     assert!(!html.contains(r#""type":"treemap""#));
     assert!(!html.contains(r#""type":"sunburst""#));
+    // the panel's category-order toggle is animated on a dashboard too
+    assert!(
+        html.contains("__qsvParcatsAnim"),
+        "a dashboard with a parcats panel must carry the category-order animation script"
+    );
+    assert!(!html.contains(r#""execute":false"#));
 }
 
 // Length of the comma-separated `"<key>":[...]` array first appearing at/after the position of

@@ -49,7 +49,7 @@
       {
         "flag": "--agg",
         "type": "string",
-        "description": "For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. For treemap/sunburst/icicle, only additive aggregations apply: count (default) or sum (requires --value)."
+        "description": "For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. For treemap/sunburst/icicle, only additive aggregations apply: count (default) or sum (requires --value). For a bubble animation (see --slider), collapses each entity x frame cell to a single bubble; defaults to mean (the cell centroid). count is rejected there, since a row count is not a position — omit --size to size by count."
       },
       {
         "flag": "--annotation",
@@ -184,7 +184,7 @@
       {
         "flag": "--language",
         "type": "string",
-        "description": "Render the dashboard UI in this language. Accepts a BCP-47/ISO 639 code (es, spa) or an English language name (Spanish). Overrides the language detected in a data dictionary, and is also forwarded to describegpt when inferring one. Curated: en, es.",
+        "description": "Render the dashboard UI in this language. Accepts a BCP-47/ISO 639 code (es, spa) or an English language name (Spanish). Overrides the language detected in a data dictionary, and is also forwarded to describegpt when inferring one. Curated: en, es, fr, de, it, pt-BR, ja, zh-CN.",
         "default": "auto"
       },
       {
@@ -312,17 +312,17 @@
       {
         "flag": "--size",
         "type": "string",
-        "description": "For scatter/scatter3d/map/geo: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series. In map density mode, this column is the heatmap weight."
+        "description": "For scatter/scatter3d/map/geo: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series, EXCEPT on an animated scatter (see the --slider option), where the --series column names the entity and this column is the third data variable. In map density mode, this column is the heatmap weight."
       },
       {
         "flag": "--slider",
         "type": "string",
-        "description": "Animate the chart over a column: each distinct value of the given column becomes an animation frame, with a Play/Pause button and a slider to scrub through the frames (Gapminder- style). Supported for bar/line/scatter and geo, and may be split into animated traces with the --series option. (Not supported for `viz map` — the MapLibre basemap can't animate; use `viz geo` for an animated point map.) For `smart`, this controls whether one animated relationship-over-time panel is added: the numeric pair whose per-time-bucket centroid path bends the most (a trailing-window scatter colored by time bucket), or an animated geo map of global-extent dated points, or a Gapminder entity-bubble chart (at most one is shown; when several qualify the bubble wins, then the geo map, then the pair). auto (default) adds one only on a strong signal (a date column and enough time buckets); on lowers the bar (as few as two buckets) but still requires a genuinely drifting or animatable relationship; off never does. Axis ranges are pinned across frames so nothing jumps."
+        "description": "Animate the chart over a column: each distinct value of the given column becomes an animation frame, with a Play/Pause button and a slider to scrub through the frames (Gapminder- style). Supported for bar/line/scatter and geo, and may be split into animated traces with the --series option. (Not supported for `viz map` — the MapLibre basemap can't animate; use `viz geo` for an animated point map.) On `viz scatter`, combining a slider with --series AND --size builds a Gapminder BUBBLE ANIMATION: --series is the entity (one colored bubble each), --x/--y the measure pair and --size the third data variable (bubble area). Each entity x frame cell collapses to one bubble via --agg (mean by default); bubble sizes are scaled once across all frames so they stay comparable. A slider column that parses as dates is auto-bucketed to a readable number of frames; any other column frames on its distinct values. For `smart`, this controls whether one animated relationship-over-time panel is added: the numeric pair whose per-time-bucket centroid path bends the most (a trailing-window scatter colored by time bucket), or an animated geo map of global-extent dated points, or a Gapminder entity-bubble chart (at most one is shown; when several qualify the bubble wins, then the geo map, then the pair). auto (default) adds one only on a strong signal (a date column and enough time buckets); on lowers the bar (as few as two buckets) but still requires a genuinely drifting or animatable relationship; off never does. Axis ranges are pinned across frames so nothing jumps."
       },
       {
         "flag": "--slider-cumulative",
         "type": "flag",
-        "description": "Accumulate rows across frames: frame N includes every row whose --slider value is at or below the Nth value, so the animation builds up cumulatively instead of replacing each step. Applies to bar/line/scatter and geo."
+        "description": "Accumulate rows across frames: frame N includes every row whose --slider value is at or below the Nth value, so the animation builds up cumulatively instead of replacing each step. Applies to bar/line/scatter and geo. On a bubble animation there is only ever one bubble per entity per frame, so nothing piles up on screen; instead each bubble shows a RUNNING aggregate over all frames up to that point, and so drifts less and less as the animation plays."
       },
       {
         "flag": "--slider-speed",
@@ -447,6 +447,10 @@
     {
       "description": "Bubble scatter: marker size by population, marker color by a numeric score",
       "command": "qsv viz scatter data.csv --x gdp --y life_exp --size population --color score -o bubble.html"
+    },
+    {
+      "description": "Gapminder bubble animation: one bubble per region moving over time",
+      "command": "qsv viz scatter regions.csv --x gdp_index --y wellbeing_index --size population_m --series region --slider month_date -o gapminder.html"
     },
     {
       "description": "Histogram of a numeric column with 30 bins",

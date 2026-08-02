@@ -450,6 +450,351 @@ fn viz_map_slider_errors() {
     assert!(stderr.contains("viz geo"));
 }
 
+/// 3 regions x 3 months, with SEVERAL rows per (region, month) cell so the cell aggregation is
+/// observable — a 1-row-per-cell fixture makes every --agg the identity and would pin nothing.
+/// Region C is deliberately absent from month 2.
+fn bubble_csv() -> String {
+    // built by joining short row literals rather than one long "a\nb\nc" string: rustfmt's
+    // format_strings re-wraps a long literal at max_width and can land the break INSIDE a `\n`
+    // escape, turning it into a literal backslash + n and silently corrupting the fixture
+    csv_rows(&[
+        "region,month,gdp,well,pop",
+        "A,2024-01-01,10,20,100",
+        "A,2024-01-01,20,40,200",
+        "A,2024-02-01,30,30,300",
+        "A,2024-03-01,40,50,400",
+        "B,2024-01-01,50,10,500",
+        "B,2024-02-01,60,20,600",
+        "B,2024-03-01,70,30,700",
+        "C,2024-01-01,80,60,800",
+        "C,2024-03-01,90,70,900",
+    ])
+}
+
+/// Join CSV rows into a trailing-newline-terminated document. See [`bubble_csv`] for why the
+/// fixtures are built this way instead of as one long string literal.
+fn csv_rows(rows: &[&str]) -> String {
+    let mut s = rows.join("\n");
+    s.push('\n');
+    s
+}
+
+/// Pull the plotly `frames` array out of the emitted HTML by brace-scanning from the `"frames":`
+/// key. The bubble tests assert on per-frame VALUES, which a substring probe can't do reliably —
+/// the frames are adjacent in the JSON, so a window match silently reads the neighboring frame.
+fn frames_json(html: &str) -> serde_json::Value {
+    let k = html.find(r#""frames":"#).expect("no frames in plot");
+    let start = html[k..].find('[').expect("frames array") + k;
+    let (mut depth, mut i) = (0_i32, start);
+    let bytes = html.as_bytes();
+    loop {
+        match bytes[i] {
+            b'[' | b'{' => depth += 1,
+            b']' | b'}' => depth -= 1,
+            _ => {},
+        }
+        i += 1;
+        if depth == 0 {
+            break;
+        }
+    }
+    serde_json::from_str(&html[start..i]).expect("frames parse")
+}
+
+/// The x value plotted for `entity` in the frame named `frame`, or None when the bubble is hidden
+/// that frame (an absent cell renders as an EMPTY coordinate vector, not NaN).
+fn bubble_x(frames: &serde_json::Value, frame: &str, entity: &str) -> Option<f64> {
+    let f = frames
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == frame)
+        .expect("frame not found");
+    let t = f["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == entity)
+        .expect("entity trace not found");
+    t["x"].as_array().unwrap().first().and_then(|v| v.as_f64())
+}
+
+#[test]
+fn viz_scatter_slider_bubble_animation() {
+    // the Gapminder combination (--slider + --series + --size) builds one bubble per entity that
+    // moves and resizes across frames, with pinned axes so it doesn't reframe as it plays
+    let wrk = Workdir::new("viz_scatter_slider_bubble_animation");
+    wrk.create_from_string("d.csv", &bubble_csv());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "gdp", "--y", "well", "--size", "pop", "--series", "region",
+        "--slider", "month",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#""sliders":["#));
+    assert!(html.contains(r#""updatemenus":["#));
+    assert!(html.contains("▶ Play"));
+    assert!(html.contains("⏸ Pause"));
+    // one frame per month, and EVERY frame maps the same 3 trace indices — a varying trace count
+    // would leave stale bubbles on screen
+    assert_eq!(html.matches(r#""traces":[0,1,2]"#).count(), 3);
+    // both axes are pinned to a fixed range
+    assert_eq!(html.matches(r#""range":["#).count(), 2);
+    // legend of entities (one trace each)
+    for ent in ["A", "B", "C"] {
+        assert!(html.contains(&format!(r#""name":"{ent}""#)));
+    }
+}
+
+#[test]
+fn viz_scatter_slider_bubble_cell_mean() {
+    // each (entity, frame) cell collapses to ONE bubble via --agg, defaulting to the mean (the
+    // centroid `viz smart` has always drawn). A's month-1 cell holds gdp 10 and 20 -> 15.
+    let wrk = Workdir::new("viz_scatter_slider_bubble_cell_mean");
+    wrk.create_from_string("d.csv", &bubble_csv());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "gdp", "--y", "well", "--size", "pop", "--series", "region",
+        "--slider", "month",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let frames = frames_json(&String::from_utf8_lossy(&out.stdout));
+
+    assert_eq!(bubble_x(&frames, "2024-01-01", "A"), Some(15.0));
+    // single-row cells are unaffected
+    assert_eq!(bubble_x(&frames, "2024-02-01", "A"), Some(30.0));
+}
+
+#[test]
+fn viz_scatter_slider_bubble_agg_sum() {
+    // --agg is honored, and applied exactly once: A's month-1 cell (10 + 20) sums to 30, not to
+    // some doubly-aggregated value
+    let wrk = Workdir::new("viz_scatter_slider_bubble_agg_sum");
+    wrk.create_from_string("d.csv", &bubble_csv());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "gdp", "--y", "well", "--size", "pop", "--series", "region",
+        "--slider", "month", "--agg", "sum",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let frames = frames_json(&String::from_utf8_lossy(&out.stdout));
+
+    assert_eq!(bubble_x(&frames, "2024-01-01", "A"), Some(30.0));
+}
+
+#[test]
+fn viz_scatter_slider_bubble_cumulative() {
+    // On a bubble there is one point per entity per frame, so nothing can pile up on screen the
+    // way it does for bar/line/geo. --slider-cumulative instead makes each frame a RUNNING
+    // aggregate over frames 0..=k: A's month-2 bubble is mean(10, 20, 30) = 20, not 30.
+    let wrk = Workdir::new("viz_scatter_slider_bubble_cumulative");
+    wrk.create_from_string("d.csv", &bubble_csv());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter",
+        "d.csv",
+        "--x",
+        "gdp",
+        "--y",
+        "well",
+        "--size",
+        "pop",
+        "--series",
+        "region",
+        "--slider",
+        "month",
+        "--slider-cumulative",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let frames = frames_json(&String::from_utf8_lossy(&out.stdout));
+
+    assert_eq!(bubble_x(&frames, "2024-01-01", "A"), Some(15.0));
+    assert_eq!(bubble_x(&frames, "2024-02-01", "A"), Some(20.0));
+    // mean(10, 20, 30, 40)
+    assert_eq!(bubble_x(&frames, "2024-03-01", "A"), Some(25.0));
+}
+
+#[test]
+fn viz_scatter_slider_bubble_non_date_frames() {
+    // a bare year parses as a date too, so the frame axis MUST check numeric first: otherwise the
+    // column would be calendar-bucketed and labelled "2020-01-01", and `viz scatter --slider year`
+    // would disagree with `viz bar --slider year`, which frames on distinct values
+    let wrk = Workdir::new("viz_scatter_slider_bubble_non_date_frames");
+    wrk.create_from_string(
+        "d.csv",
+        &csv_rows(&[
+            "year,ent,x,y,p",
+            "2020,A,1,2,10",
+            "2020,B,5,6,20",
+            "2021,A,2,3,11",
+            "2021,B,6,7,22",
+            "2010,A,9,9,5",
+            "2010,B,8,8,6",
+        ]),
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "x", "--y", "y", "--size", "p", "--series", "ent", "--slider",
+        "year",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#""name":"2020""#));
+    assert!(!html.contains(r#""name":"2020-01-01""#));
+    // and the frames are ordered numerically, not lexically
+    let p2010 = html.find(r#""name":"2010""#).unwrap();
+    let p2020 = html.find(r#""name":"2020""#).unwrap();
+    let p2021 = html.find(r#""name":"2021""#).unwrap();
+    assert!(p2010 < p2020 && p2020 < p2021);
+}
+
+#[test]
+fn viz_scatter_slider_bubble_size_global_scale() {
+    // Bubble sizes are scaled ONCE over every (entity, frame) cell, so sizes stay comparable
+    // across frames and entities. Rescaling per trace would see a single value, land it at the
+    // midpoint, and render every bubble the same size — silently destroying the size encoding.
+    let wrk = Workdir::new("viz_scatter_slider_bubble_size_global_scale");
+    wrk.create_from_string("d.csv", &bubble_csv());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "gdp", "--y", "well", "--size", "pop", "--series", "region",
+        "--slider", "month",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the smallest and largest cells hit the ends of the pixel range, and several distinct sizes
+    // appear in between — none of which happens under a per-trace rescale
+    let sizes: std::collections::BTreeSet<i64> = frames_json(&html)
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|f| f["data"].as_array().unwrap().clone())
+        .filter_map(|t| t["marker"]["size"].as_i64())
+        .collect();
+    assert!(
+        sizes.len() > 3,
+        "expected varied bubble sizes, got {sizes:?}"
+    );
+    assert_eq!(sizes.iter().next(), Some(&6));
+    assert_eq!(sizes.iter().next_back(), Some(&40));
+}
+
+#[test]
+fn viz_scatter_slider_bubble_sparse_is_drawn_and_noted() {
+    // `viz smart` DROPS an entity that isn't present in most frames, because it auto-selects that
+    // panel and a flickering bubble reads as sampling noise. An explicitly requested chart is a
+    // different contract: region C is missing month 2, and must still be drawn (hidden only in
+    // that frame) with the gap reported on stderr.
+    let wrk = Workdir::new("viz_scatter_slider_bubble_sparse_is_drawn_and_noted");
+    wrk.create_from_string("d.csv", &bubble_csv());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "gdp", "--y", "well", "--size", "pop", "--series", "region",
+        "--slider", "month",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let frames = frames_json(&String::from_utf8_lossy(&out.stdout));
+
+    assert_eq!(bubble_x(&frames, "2024-01-01", "C"), Some(80.0));
+    // hidden in the frame it has no data for — an EMPTY coordinate vector keeps the trace count
+    // and index order constant
+    assert_eq!(bubble_x(&frames, "2024-02-01", "C"), None);
+    assert_eq!(bubble_x(&frames, "2024-03-01", "C"), Some(90.0));
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("cells have no data"));
+}
+
+#[test]
+fn viz_scatter_slider_bubble_agg_count_errors() {
+    // a row count is not a position, so --agg count can't drive a bubble's x/y — and the error
+    // points at the fallback that DOES size by count
+    let wrk = Workdir::new("viz_scatter_slider_bubble_agg_count_errors");
+    wrk.create_from_string("d.csv", &bubble_csv());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "gdp", "--y", "well", "--size", "pop", "--series", "region",
+        "--slider", "month", "--agg", "count",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("--agg count has no meaning"));
+    assert!(stderr.contains("omit --size"));
+}
+
+#[test]
+fn viz_scatter_slider_size_without_series_errors() {
+    // --size under --slider means a bubble animation, which needs an entity to put bubbles on
+    let wrk = Workdir::new("viz_scatter_slider_size_without_series_errors");
+    wrk.create_from_string("d.csv", &bubble_csv());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "gdp", "--y", "well", "--size", "pop", "--slider", "month",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("Add --series"));
+}
+
+#[test]
+fn viz_scatter_slider_color_errors() {
+    // --color stays a CONTINUOUS numeric encoding everywhere; animating a colorscale is a
+    // separate follow-up, so it is still rejected under --slider
+    let wrk = Workdir::new("viz_scatter_slider_color_errors");
+    wrk.create_from_string("d.csv", &bubble_csv());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "gdp", "--y", "well", "--color", "pop", "--slider", "month",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("--slider cannot yet be combined with --color"));
+}
+
+#[test]
+fn viz_scatter_slider_color_with_series_still_errors() {
+    // REGRESSION GUARD for the bubble relaxation: the exception that lets --size sit beside
+    // --series is deliberately narrowed to "--size and NOT --color". Relaxing on "has any marker
+    // encoding" instead would wave this combination past the --series conflict check and into the
+    // slider dispatch, which only screens for a lone --color.
+    let wrk = Workdir::new("viz_scatter_slider_color_with_series_still_errors");
+    wrk.create_from_string("d.csv", &bubble_csv());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "gdp", "--y", "well", "--color", "pop", "--series", "region",
+        "--slider", "month",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("cannot be combined with --series"));
+}
+
 /// 36 rows: a TAUTOLOGICAL numeric pair (x, y = 2x → r=1.0, a rigid line) over 3 monthly dates.
 /// Its centroids can only slide along the line (curvature ~0), so `viz smart` must NOT animate it —
 /// animation is reserved for relationships whose 2-D shape genuinely evolves over time.

@@ -739,7 +739,67 @@ fn viz_scatter_slider_bubble_agg_count_errors() {
     assert!(!out.status.success());
     let stderr = wrk.output_stderr(&mut cmd);
     assert!(stderr.contains("--agg count has no meaning"));
-    assert!(stderr.contains("omit --size"));
+    // must NOT tell the user to omit --size: the bubble path is only dispatched WITH --size, so
+    // dropping it silently yields a plain animated scatter (many points per series, no sizing),
+    // not a count-sized bubble. That fallback exists only for `viz smart`.
+    assert!(!stderr.contains("omit --size"));
+}
+
+#[test]
+fn viz_scatter_slider_bubble_mostly_numeric_frames_stay_raw() {
+    // REGRESSION: `qsv_dateparser` reads a bare year as EPOCH SECONDS ("2010" ->
+    // 1970-01-01T00:33:30), so a year column pushed onto the calendar path collapses every
+    // frame into a single 1970 bucket and the animation dies with "No plottable bubbles found".
+    // Testing "every cell is numeric" was too brittle: ONE non-numeric cell out of 21 flipped
+    // the whole column onto that path. The mode is chosen by COVERAGE, and a year ties (it
+    // parses as both), so numeric wins.
+    let wrk = Workdir::new("viz_scatter_slider_bubble_mostly_numeric_frames_stay_raw");
+    let mut rows = vec!["yr,ent,x,y,p".to_string()];
+    for (i, y) in [2010, 2015, 2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027]
+        .iter()
+        .enumerate()
+    {
+        rows.push(format!("{y},A,{},{},{}", i + 1, i + 2, 10 + i));
+        rows.push(format!("{y},B,{},{},{}", i + 5, i + 6, 20 + i));
+    }
+    // the single non-numeric cell that used to flip the classification
+    rows.push("N/A,B,3,3,7".to_string());
+    let refs: Vec<&str> = rows.iter().map(String::as_str).collect();
+    wrk.create_from_string("d.csv", &csv_rows(&refs));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "x", "--y", "y", "--size", "p", "--series", "ent", "--slider",
+        "yr",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // framed on the raw years, NOT on epoch-derived 1970 buckets
+    assert!(html.contains(r#""name":"2010""#));
+    assert!(html.contains(r#""name":"2027""#));
+    assert!(!html.contains("1970-01-01"));
+}
+
+#[test]
+fn viz_scatter_slider_bubble_date_column_still_calendar_bucketed() {
+    // the coverage rule must not cost real date columns their calendar bucketing: "2024-01-01"
+    // has zero numeric coverage, so dates win outright and the frames are calendar buckets
+    let wrk = Workdir::new("viz_scatter_slider_bubble_date_column_still_calendar_bucketed");
+    wrk.create_from_string("d.csv", &bubble_csv());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "gdp", "--y", "well", "--size", "pop", "--series", "region",
+        "--slider", "month",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#""name":"2024-01-01""#));
+    assert!(html.contains(r#""name":"2024-03-01""#));
 }
 
 #[test]

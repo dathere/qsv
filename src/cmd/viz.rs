@@ -324,7 +324,7 @@ viz options:
                            For a bubble animation (see --slider), collapses each
                            entity x frame cell to a single bubble; defaults to mean
                            (the cell centroid). count is rejected there, since a row
-                           count is not a position — omit --size to size by count.
+                           count is not a position.
     --box-points <mode>    Which sample points to draw alongside a box. Reading the
                            raw values lets plotly render true Tukey whiskers (1.5*IQR)
                            with the points beyond the fences as outliers. One of:
@@ -2897,19 +2897,19 @@ fn build_slider_bubble_plot(args: &Args, slider_col: &SelectColumns) -> CliResul
     let x_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
     let y_idx = resolve_one(args.flag_y.as_ref(), &headers, nh, "y")?;
     let entity_idx = resolve_one(args.flag_series.as_ref(), &headers, nh, "series")?;
-    let size_idx = match args.flag_size.as_ref() {
-        Some(s) => Some(resolve_one(Some(s), &headers, nh, "size")?),
-        None => None,
-    };
+    // `--size` is REQUIRED here, guaranteed by the `bubble_anim` dispatch predicate in
+    // `build_plot`. (The reader's size-less fallback to a per-cell row count exists for `viz
+    // smart`, which reaches this reader on a 2-numeric dataset with no third measure; it is not
+    // reachable from the standalone path, so this must not advertise it.)
+    let size_idx = resolve_one(args.flag_size.as_ref(), &headers, nh, "size")?;
     let frame_idx = resolve_one(Some(slider_col), &headers, nh, "slider")?;
 
-    // `--agg count` would make the bubble's POSITION a row count, which is meaningless — but the
-    // count is exactly what sizing falls back to, so point there rather than just refusing.
+    // `--agg count` would make the bubble's POSITION a row count, which is meaningless
     let agg = match parse_agg(args.flag_agg.as_deref())? {
         Some(Agg::Count) => {
             return fail_incorrectusage_clierror!(
-                "--agg count has no meaning for a bubble's x/y position.\nUse sum, mean, min or \
-                 max; to size bubbles by record count, omit --size instead."
+                "--agg count has no meaning for a bubble's x/y position. Use sum, mean, min or \
+                 max."
             );
         },
         Some(a) => a,
@@ -2918,7 +2918,7 @@ fn build_slider_bubble_plot(args: &Args, slider_col: &SelectColumns) -> CliResul
     };
 
     let opts = EntityBucketOpts {
-        size_idx,
+        size_idx: Some(size_idx),
         agg,
         cumulative: args.flag_slider_cumulative,
         prefer_dmy: util::get_envvar_flag("QSV_PREFER_DMY"),
@@ -2949,10 +2949,7 @@ fn build_slider_bubble_plot(args: &Args, slider_col: &SelectColumns) -> CliResul
 
     let x_label = col_label(&headers, x_idx, nh);
     let y_label = col_label(&headers, y_idx, nh);
-    let size_label = size_idx.map_or_else(
-        || t!("viz.chart.records").into_owned(),
-        |i| col_label(&headers, i, nh),
-    );
+    let size_label = col_label(&headers, size_idx, nh);
     let frame_label = col_label(&headers, frame_idx, nh);
 
     let mut plot = Plot::new();
@@ -19494,24 +19491,32 @@ fn agg_values(vals: &[f64], agg: Agg) -> f64 {
 /// Resolve the animation's frame axis from the raw `--slider` cells, returning the per-ROW bucket
 /// index (`None` for a row whose cell doesn't belong on the axis) and the ordered frame labels.
 ///
-/// NUMERIC IS CHECKED FIRST, and deliberately: a bare year like "2020" parses as a date too, and
-/// taking the calendar path would coarsen it to a bucket labelled "2020-01-01" — so
-/// `viz scatter --slider year` would disagree with `viz bar --slider year`, which frames on the
-/// column's distinct values. Only a column that is NOT numeric and is overwhelmingly temporal
-/// takes the calendar path, where `choose_anim_bucket` auto-coarsens Day -> Week -> Month to keep
-/// the frame count sane.
+/// A NUMERIC READING WINS TIES, and that is load-bearing rather than cosmetic. `qsv_dateparser`
+/// reads a bare year as EPOCH SECONDS — "2010" becomes 1970-01-01T00:33:30 — so a year column sent
+/// down the calendar path collapses every frame into a single 1970 bucket and the animation dies
+/// outright. Even where it survives, calendar-bucketing a year would relabel the frame
+/// "2020-01-01", disagreeing with `viz bar --slider year`, which frames on distinct values.
 ///
-/// This ordering CANNOT divert `viz smart` off the calendar path it has always taken: smart only
-/// ever passes a column `canonical_date_col` accepted, and that hard-filters on a stats type of
+/// The test is COVERAGE, not "every cell is numeric": one stray non-numeric cell must not flip a
+/// year column onto the calendar path. Since a bare year parses as both a number and a date, the
+/// two counts tie and the numeric reading wins; a real date column ("2024-01-01") is not numeric at
+/// all, so dates win outright and the calendar path is taken, where `choose_anim_bucket`
+/// auto-coarsens Day -> Week -> Month to keep the frame count sane.
+///
+/// This CANNOT divert `viz smart` off the calendar path it has always taken: smart only ever passes
+/// a column `canonical_date_col` accepted, and that hard-filters on a stats type of
 /// "Date"/"DateTime" — while `qsv stats` types an all-numeric column as Integer/Float even when it
 /// looks like a date (`20230101`, epoch seconds, a bare year) and even under
-/// `--dates-whitelist all`. So a smart-supplied frame column is never `all_numeric`.
+/// `--dates-whitelist all`. So a smart-supplied frame column has zero numeric coverage.
 fn resolve_frame_axis(
     cells: &[&str],
     prefer_dmy: bool,
 ) -> CliResult<Option<(Vec<Option<usize>>, Vec<String>)>> {
-    let all_numeric = cells.iter().all(|c| parse_finite_f64(c).is_some());
-    if !all_numeric {
+    let n_numeric = cells
+        .iter()
+        .filter(|c| parse_finite_f64(c).is_some())
+        .count();
+    {
         // temporal only when nearly every cell parses — a stats-typed date column (what `viz
         // smart` always passes) is ~100%, while a stray parseable token in a text column is not
         // enough to make the whole column a timeline
@@ -19524,7 +19529,7 @@ fn resolve_frame_axis(
             })
             .collect();
         let n_parsed = parsed.iter().filter(|p| p.is_some()).count();
-        if n_parsed >= 2 && (n_parsed as f64) >= 0.9 * cells.len() as f64 {
+        if n_parsed > n_numeric && n_parsed >= 2 && n_parsed * 10 >= cells.len() * 9 {
             let dates: Vec<chrono::NaiveDate> = parsed.iter().filter_map(|p| *p).collect();
             let (bkt, distinct) = choose_anim_bucket(&dates);
             if distinct.len() > SLIDER_MAX_FRAMES {
@@ -19564,7 +19569,9 @@ fn resolve_frame_axis(
             order.len()
         );
     }
-    if all_numeric {
+    // ordering (as opposed to the mode choice above) still requires EVERY value to be numeric —
+    // exactly `read_xy_slider`'s policy, so a mixed column sorts lexically on both paths
+    if order.iter().all(|v| parse_finite_f64(v).is_some()) {
         order.sort_by(|a, b| {
             parse_finite_f64(a)
                 .unwrap_or(f64::NAN)

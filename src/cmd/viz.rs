@@ -14223,6 +14223,31 @@ fn route_from_content_type(content_type: &str) -> (Route, Option<Agg>) {
     (route, None)
 }
 
+/// The DMY-vs-MDY parsing preference a dictionary column declares, if any (issue #4303).
+///
+/// A dictionary's `x-qsv.content_type` carries the column's own strftime format as a suffix
+/// (`"date:%m/%d/%Y"`, `"datetime:%m/%d/%Y %I:%M:%S %p"`). `route_from_content_type` only needs the
+/// base token and throws the suffix away; this reads it and turns it into the single knob
+/// `qsv_dateparser::parse_with_preference` accepts.
+///
+/// Returns `None` — meaning "fall back to `QSV_PREFER_DMY`" — when there is no dictionary row, no
+/// format suffix, the format is not a `date:`/`datetime:` one, or the layout expresses no
+/// actionable preference (year-leading formats such as `%Y-%m-%d`; see
+/// `strftime_dmy_preference`). Note that the preference bit only steers slash-separated `d/m`
+/// values, so a declaration like `date:%d-%m-%Y` is inert by design — do not "fix" that here.
+///
+/// Deliberately NOT gated on the column's resolved `Route`: `derive_semantics` resolves the route
+/// from `concept`, then `role`, then `content_type`, so a column carrying a `concept` never reaches
+/// the `content_type` arm — yet its declared format is still authoritative for parsing.
+fn dict_dmy_preference(row: Option<&DictRow>) -> Option<bool> {
+    use crate::cmd::describegpt::dictionary::{content_type_date_format, strftime_dmy_preference};
+
+    // the JSON Schema path stores `x-qsv.content_type` verbatim and the format lookup is an exact
+    // `strip_prefix`, so trim before matching or a stray leading space defeats it.
+    let fmt = content_type_date_format(row?.content_type.trim())?;
+    strftime_dmy_preference(fmt)
+}
+
 /// Defend against describegpt's numeric `role` defaulting to `measure` (see
 /// `describegpt::dictionary::coerce_role_concept`): downgrade a `Measure` verdict to a `Dimension`
 /// (bar) when the column is really a discrete code or ordinal scale — few distinct integer values
@@ -18398,8 +18423,11 @@ fn count_unit_from_grain(grain: Option<&str>) -> String {
     }
 }
 
-/// Parse a row's date cell into a `DateTime<Utc>`, honoring the DMY preference stats used to infer
-/// the column. Returns `None` for a missing/blank/unparseable cell.
+/// Parse a row's date cell into a `DateTime<Utc>` under the caller's DMY preference — the
+/// column's dictionary-declared date format when it expresses one, otherwise `QSV_PREFER_DMY`
+/// (see `SmartCtx::dmy_pref`, issue #4303). That can differ from the preference `stats` typed the
+/// column under, which is deliberate: an explicit per-column declaration outranks the global env
+/// flag. Returns `None` for a missing/blank/unparseable cell.
 fn parse_record_date(
     record: &csv::ByteRecord,
     idx: usize,
@@ -18442,7 +18470,7 @@ fn canonical_date_col(
 fn build_timeseries_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
-    prefer_dmy: bool,
+    dmy_prefs: &[bool],
     map_cols: Option<(usize, usize)>,
     sems: &[ColSemantics],
     grain: Option<&str>,
@@ -18455,6 +18483,8 @@ fn build_timeseries_panel(
     let Some((date_idx, is_datetime)) = canonical_date_col(stats, sems) else {
         return Ok(None);
     };
+    // the date column is picked here, so resolve its parsing preference here too (issue #4303).
+    let prefer_dmy = dmy_prefs.get(date_idx).copied().unwrap_or(false);
     // --dict-info: the overview trend anchors its info icon on the date column's entry (the
     // panel is derived from it, and timestamp entries typically explain timezone/pairing).
     let dict_info = dict_info_for_field(dict_icons, &stats[date_idx].field);
@@ -19509,7 +19539,7 @@ const CYCLIC_MIN_POPULATED_BUCKETS: usize = 3;
 fn build_cyclic_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
-    prefer_dmy: bool,
+    dmy_prefs: &[bool],
     map_cols: Option<(usize, usize)>,
     sems: &[ColSemantics],
     dict_icons: Option<&DictData>,
@@ -19537,6 +19567,8 @@ fn build_cyclic_panel(
     else {
         return Ok(None);
     };
+    // the date column is picked here, so resolve its parsing preference here too (issue #4303).
+    let prefer_dmy = dmy_prefs.get(date_idx).copied().unwrap_or(false);
 
     // choose the cycle: intraday timestamps -> hour-of-day; date-only -> month-of-year when the
     // span is wide enough to show a yearly shape, else the weekly rhythm.
@@ -22662,6 +22694,9 @@ struct SmartCtx<'a> {
 
     stats:          Vec<crate::cmd::stats::StatsData>,
     col_sems:       Vec<ColSemantics>,
+    /// per-column DMY-vs-MDY parsing preference: the dictionary's declared date format when it
+    /// expresses one, otherwise `QSV_PREFER_DMY` (issue #4303). See `dmy_pref`.
+    dmy_prefs:      Vec<bool>,
     dict_data:      Option<DictData>,
     dict_json_text: Option<String>,
     twin_suppress:  std::collections::HashSet<usize>,
@@ -22814,6 +22849,19 @@ impl<'a> SmartCtx<'a> {
         let col_sems: Vec<ColSemantics> = stats
             .iter()
             .map(|s| derive_semantics(s, dict_data.as_ref().and_then(|d| d.rows.get(&s.field))))
+            .collect();
+
+        // Resolve the date-parsing preference per column ONCE (issue #4303). A dictionary that
+        // declares a column's strftime format (`content_type: "date:%m/%d/%Y"`) is authoritative
+        // for that column; QSV_PREFER_DMY is the fallback wherever the dictionary is silent, so a
+        // dashboard built without a dictionary is byte-identical to before.
+        let env_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+        let dmy_prefs: Vec<bool> = stats
+            .iter()
+            .map(|s| {
+                dict_dmy_preference(dict_data.as_ref().and_then(|d| d.rows.get(&s.field)))
+                    .unwrap_or(env_dmy)
+            })
             .collect();
 
         // De-duplicate code/label twins (subject + subject_code -> chart only "subject"). Gated on
@@ -22994,6 +23042,7 @@ impl<'a> SmartCtx<'a> {
             progress,
             stats,
             col_sems,
+            dmy_prefs,
             dict_data,
             dict_json_text,
             twin_suppress,
@@ -23037,6 +23086,13 @@ impl<'a> SmartCtx<'a> {
     fn is_map_col(&self, idx: usize) -> bool {
         self.map_cols.is_some_and(|(la, lo)| idx == la || idx == lo)
             || self.summary_choro_col == Some(idx)
+    }
+
+    /// The DMY-vs-MDY preference to parse column `idx`'s raw date cells under (issue #4303):
+    /// the dictionary's declared format when it expresses one, otherwise `QSV_PREFER_DMY`.
+    /// Resolved once in `SmartCtx::new`; see the `dmy_prefs` field.
+    fn dmy_pref(&self, idx: usize) -> bool {
+        self.dmy_prefs.get(idx).copied().unwrap_or(false)
     }
 
     /// `--dict-info` icons are HTML-gated at build time (image exports never grow them); the
@@ -23387,7 +23443,7 @@ impl<'a> SmartCtx<'a> {
                 } else {
                     3
                 };
-                let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                let prefer_dmy = self.dmy_pref(date_idx);
                 if let Some(data) = read_geo_anim(
                     self.args, lat_idx, lon_idx, date_idx, prefer_dmy, min_frames,
                 )? {
@@ -23486,7 +23542,7 @@ impl<'a> SmartCtx<'a> {
                     } else {
                         3
                     };
-                    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                    let prefer_dmy = self.dmy_pref(date_idx);
                     let Some(bucket_means) = read_bucketed_means(
                         self.args,
                         &kept_indices,
@@ -23613,7 +23669,7 @@ impl<'a> SmartCtx<'a> {
                             let size_label = size_k
                                 .map(|k| labels[k].clone())
                                 .unwrap_or_else(|| t!("viz.chart.records").into_owned());
-                            let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                            let prefer_dmy = self.dmy_pref(date_idx);
                             if let Some(data) = read_entity_bucket_agg(
                                 self.args,
                                 e_idx,
@@ -24564,17 +24620,19 @@ impl<'a> SmartCtx<'a> {
         // prepend a time-series trend panel when the data has a date/datetime column and a
         // continuous numeric column. Like the correlation panel, it does one extra data pass and
         // is prepended so it survives the panel cap.
-        // mirror the DMY preference stats used to infer dates: `viz smart` builds stats with
-        // flag_prefer_dmy = false, and stats itself ORs in QSV_PREFER_DMY (see `cmd::stats`), so
-        // the effective preference is the env flag. Parse dates the same way here so
-        // DMY-formatted dates are ordered correctly rather than misparsed/dropped.
-        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+        // Parse dates under the per-column preference resolved in `SmartCtx::new`: a
+        // dictionary-declared format wins for its column, otherwise QSV_PREFER_DMY (issue #4303).
+        // NOTE this can now legitimately differ from the preference `stats` typed the column
+        // under — `viz smart` builds stats with flag_prefer_dmy = false and stats ORs in
+        // QSV_PREFER_DMY, and there is no per-column knob to hand it. The consequence is bounded:
+        // the raw cells below are read per the dictionary, while `stats[date_idx].min/max` (used
+        // only to pick bucket granularity) are still env-derived.
         let built = {
             let grain = self.dict_data.as_ref().and_then(|d| d.grain.as_deref());
             build_timeseries_panel(
                 self.args,
                 &self.stats,
-                prefer_dmy,
+                &self.dmy_prefs,
                 self.map_cols,
                 &self.col_sems,
                 grain,
@@ -24592,7 +24650,7 @@ impl<'a> SmartCtx<'a> {
             let built = build_cyclic_panel(
                 self.args,
                 &self.stats,
-                prefer_dmy,
+                &self.dmy_prefs,
                 self.map_cols,
                 &self.col_sems,
                 self.dict_icons(),
@@ -25024,7 +25082,7 @@ impl<'a> SmartCtx<'a> {
             // enabled (issue #4283), the count links to it: "(Explore)" when every row is
             // embedded, "(Preview)" when only the first --preview-threshold rows are.
             let n = self.row_count();
-            data_viewer = build_data_viewer_chrome(self.args, &self.stats, n)?;
+            data_viewer = build_data_viewer_chrome(self.args, &self.stats, n, &self.dmy_prefs)?;
             let data_link = match &data_viewer {
                 Some((_, label)) => format!(
                     " <a href=\"#\" class=\"qsv-data-link\" onclick=\"return \
@@ -29199,20 +29257,21 @@ const DATATABLE_GZ_MIN_BYTES: usize = 4096;
 /// provide (`datatable_columns_json`). Date columns are the exception: DataTables orders its
 /// `date` type through the browser's `Date.parse`, which reads ISO and month-first text but
 /// rejects day-first (`25/07/2026` is month 25), so those columns fell back to source order.
-/// `date_cols` marks the columns where such a cell is instead embedded as a
-/// `[raw, sort-key]` pair, the sort key being the same qsv-dateparser reading that stats used to
-/// type the column — the display keeps the source text and ordering follows qsv's own parse.
-/// Cells that already lead with an ISO date sort correctly as they are and stay plain strings,
-/// so an ISO column costs nothing extra.
-fn collect_datatable_rows(args: &Args, limit: u64, date_cols: &[bool]) -> CliResult<(String, u64)> {
+/// `date_cols` carries `Some(prefer_dmy)` for the columns where such a cell is instead embedded as
+/// a `[raw, sort-key]` pair (`None` = not a date column), the sort key being qsv-dateparser's
+/// reading under that column's own DMY preference — the column's dictionary-declared date format
+/// when it expresses one, otherwise `QSV_PREFER_DMY` (issue #4303). The display keeps the source
+/// text and ordering follows qsv's own parse. Cells that already lead with an ISO date sort
+/// correctly as they are and stay plain strings, so an ISO column costs nothing extra.
+fn collect_datatable_rows(
+    args: &Args,
+    limit: u64,
+    date_cols: &[Option<bool>],
+) -> CliResult<(String, u64)> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
     let mut rdr = rconfig.reader()?;
-
-    // the same preference stats inferred the date columns under, so a sort key can never
-    // disagree with the type that asked for it
-    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
     // stream-serialize into one growing String: the JSON text is the only whole-dataset
     // allocation this pass makes
@@ -29232,11 +29291,11 @@ fn collect_datatable_rows(args: &Args, limit: u64, date_cols: &[bool]) -> CliRes
             // serde_json escapes quotes/control chars; HTML-sensitive chars (&<>) are handled
             // at embed time — the gzip-b64 path needs nothing, the plain path \u-escapes them
             let text = String::from_utf8_lossy(cell);
-            let sort_key = if date_cols.get(i).copied().unwrap_or(false) {
-                datatable_date_sort_key(&text, prefer_dmy)
-            } else {
-                None
-            };
+            let sort_key = date_cols
+                .get(i)
+                .copied()
+                .flatten()
+                .and_then(|prefer_dmy| datatable_date_sort_key(&text, prefer_dmy));
             if let Some(key) = sort_key {
                 out.push('[');
                 out.push_str(&serde_json::to_string(&text)?);
@@ -29352,16 +29411,22 @@ fn build_data_viewer_chrome(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     total_rows: u64,
+    dmy_prefs: &[bool],
 ) -> CliResult<Option<(String, String)>> {
     let threshold = args.flag_preview_threshold as u64;
     if threshold == 0 || total_rows == 0 || stats.is_empty() {
         return Ok(None);
     }
     // which columns get a date sort key — the same Date/DateTime typing that
-    // `datatable_columns_json` turns into the DataTables "date" column type
-    let date_cols: Vec<bool> = stats
+    // `datatable_columns_json` turns into the DataTables "date" column type — each carrying the
+    // preference to parse it under (dictionary-declared format, else QSV_PREFER_DMY; issue #4303)
+    let date_cols: Vec<Option<bool>> = stats
         .iter()
-        .map(|s| matches!(s.r#type.as_str(), "Date" | "DateTime"))
+        .enumerate()
+        .map(|(i, s)| {
+            matches!(s.r#type.as_str(), "Date" | "DateTime")
+                .then(|| dmy_prefs.get(i).copied().unwrap_or(false))
+        })
         .collect();
     let (rows_json, embedded) =
         collect_datatable_rows(args, total_rows.min(threshold), &date_cols)?;
@@ -31065,6 +31130,46 @@ mod tests {
         // explicit / empty -> defer to stats
         assert_eq!(route_from_content_type("unknown").0, Route::Defer);
         assert_eq!(route_from_content_type("").0, Route::Defer);
+    }
+
+    #[test]
+    fn dict_dmy_preference_reads_the_declared_date_format() {
+        let with_ct = |ct: &str| DictRow {
+            content_type: ct.to_string(),
+            ..DictRow::default()
+        };
+
+        // no dictionary row at all -> fall back to the env preference
+        assert_eq!(dict_dmy_preference(None), None);
+
+        // declared month-first / day-first formats are authoritative
+        assert_eq!(
+            dict_dmy_preference(Some(&with_ct("date:%m/%d/%Y"))),
+            Some(false)
+        );
+        assert_eq!(
+            dict_dmy_preference(Some(&with_ct("date:%d/%m/%Y"))),
+            Some(true)
+        );
+        // the format's own colons must not truncate it
+        assert_eq!(
+            dict_dmy_preference(Some(&with_ct("datetime:%m/%d/%Y %I:%M:%S %p"))),
+            Some(false)
+        );
+        // content_type is stored verbatim, so leading whitespace must be trimmed
+        assert_eq!(
+            dict_dmy_preference(Some(&with_ct("  datetime:%m/%d/%Y %I:%M:%S %p  "))),
+            Some(false)
+        );
+
+        // no actionable preference -> fall back to the env preference
+        assert_eq!(dict_dmy_preference(Some(&with_ct("date"))), None);
+        assert_eq!(dict_dmy_preference(Some(&with_ct("date:"))), None);
+        assert_eq!(dict_dmy_preference(Some(&with_ct("date:%Y-%m-%d"))), None);
+        assert_eq!(dict_dmy_preference(Some(&with_ct("date:%Q"))), None); // invalid strftime
+        assert_eq!(dict_dmy_preference(Some(&with_ct("time:%H:%M"))), None); // not date/datetime
+        assert_eq!(dict_dmy_preference(Some(&with_ct("unknown"))), None);
+        assert_eq!(dict_dmy_preference(Some(&with_ct(""))), None);
     }
 
     #[test]

@@ -6937,9 +6937,9 @@ fn parcats_dimensions_and_line(
 ///
 /// The button is deliberately NOT marked `execute: false`: the figure JSON emitted here is also
 /// lifted out of the page on its own (`examples/viz/gen_gallery.py` extracts the `Plotly.newPlot`
-/// object and reassembles it under its own scaffold, which carries none of qsv's injected chrome).
-/// A button that delegated its restyle to a script would be DEAD wherever the script didn't follow
-/// it. Keeping the payload native means the worst case is the un-animated snap this always did.
+/// object and reassembles it under its own scaffold). A button that delegated its restyle to a
+/// script would be DEAD wherever the script didn't follow it. Keeping the payload native means the
+/// worst case is the un-animated snap this always did.
 fn parcats_order_toggle_menu(ordered: &[Vec<String>]) -> UpdateMenu {
     let ndims = ordered.len();
     // alphabetical state: just flip categoryorder (categoryarray is ignored while != "array").
@@ -9742,10 +9742,12 @@ const KPI_REWRAP_SCRIPT: &str = r#"<script>
 })();
 </script>"#;
 
-/// How long the animated parcats category-order flip runs, and its easing — deliberately the same
-/// 300 ms / cubic-in-out that plotly's own parcats drag-reorder transition uses (`parcats.js`
-/// `dragEnd`), so a button flip and a hand drag feel like the same gesture.
-const PARCATS_ORDER_DURATION_MS: u32 = 300;
+/// How long the animated parcats category-order flip runs. Matched to the Sankey node-order
+/// toggle's 500 ms (plotly's `traces/sankey/constants.js`) rather than the 300 ms of plotly's own
+/// parcats drag transition: 300 ms is right for a drag, where the pointer has already told you
+/// what moved, but reads as a flicker on a button press you may not even be looking at. The easing
+/// stays cubic-in-out, as in `parcats.js` `dragEnd`.
+const PARCATS_ORDER_DURATION_MS: u32 = 500;
 
 /// Animates the "category order" flip on every parcats chart (standalone `viz parcats` and the
 /// `viz smart` flow panel), giving it the moving transition the Sankey node-order toggle gets for
@@ -9773,9 +9775,11 @@ const PARCATS_ORDER_DURATION_MS: u32 = 300;
 ///
 /// Claiming the click rather than disabling the button (`execute: false`) is what keeps this a pure
 /// ENHANCEMENT: every bail-out below lets the event travel on to plotly, which applies the very
-/// same restyle un-animated. That matters because the figure JSON also travels WITHOUT this script
-/// — `examples/viz/gen_gallery.py` lifts the bare `Plotly.newPlot` object into its own scaffold —
-/// and a button that had delegated its restyle would be dead there.
+/// same restyle un-animated. That matters because the figure JSON can travel WITHOUT this script —
+/// anything that lifts the bare `Plotly.newPlot` object out of an emitted page — and a button that
+/// had delegated its restyle would be dead there. (`examples/viz/gen_gallery.py` does exactly that
+/// lift, and re-splices this block via `PARCATS_ORDER_MARKER` so the gallery animates too, but the
+/// button must not DEPEND on a consumer doing so.)
 ///
 /// Interpolating attribute strings (rather than recomputing plotly's layout math) is exactly what
 /// d3 — and so plotly's own drag transition — does. `tween` only interpolates when the two strings
@@ -9788,8 +9792,17 @@ const PARCATS_ORDER_DURATION_MS: u32 = 300;
 /// chrome's `Plotly.newPlot` re-render without any rehook. Charts with no parcats trace never
 /// match, so the script is inert on every other page.
 fn parcats_order_script() -> String {
-    PARCATS_ORDER_SCRIPT.replace("__DURATION__", &PARCATS_ORDER_DURATION_MS.to_string())
+    format!(
+        "{PARCATS_ORDER_MARKER}\n{}",
+        PARCATS_ORDER_SCRIPT.replace("__DURATION__", &PARCATS_ORDER_DURATION_MS.to_string())
+    )
 }
+
+/// Marks the start of `PARCATS_ORDER_SCRIPT` in emitted HTML. `examples/viz/gen_gallery.py` lifts
+/// the block from `<marker>` through `</script>` out of a generated page and re-splices it into the
+/// gallery scaffold, so the gallery's reassembled parcats figure animates too; the marker is what
+/// makes both the lift and the strip-and-re-add idempotent across regens.
+const PARCATS_ORDER_MARKER: &str = "<!--qsv-parcats-order-->";
 
 const PARCATS_ORDER_SCRIPT: &str = r#"<script>
 (function () {

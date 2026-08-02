@@ -1207,6 +1207,27 @@ def extract_fig_json(html):
     return obj
 
 
+# Start of the parcats "category order" animation script that `viz` injects into every page it
+# emits (src/cmd/viz.rs `PARCATS_ORDER_MARKER`). The gallery reassembles bare figure JSON under its
+# own scaffold, which carries none of viz's injected chrome — without lifting this block across,
+# the gallery's parcats figure would fall back to plotly's un-animated snap.
+PARCATS_MARKER = "<!--qsv-parcats-order-->"
+
+# Filled in from the first `qsv viz` run of this regen (every emitted page carries the same block),
+# then spliced into the scaffold by main().
+PARCATS_SCRIPT = ""
+
+
+def extract_parcats_script(html):
+    """The marker + `<script>` block driving the animated parcats category-order flip, or "" when
+    the binary predates it (the gallery then simply keeps the native snapping button)."""
+    start = html.find(PARCATS_MARKER)
+    if start < 0:
+        return ""
+    end = html.index("</script>", start) + len("</script>")
+    return html[start:end]
+
+
 def extract_inline_panels(html):
     """The inline-div smart dashboard form (used when a map panel forces it, or for >8 panels):
     a series of `Plotly.newPlot("qsv-viz-panel-N", {...})` calls, each a self-contained figure.
@@ -1288,6 +1309,9 @@ def run_html(qsv, args):
     finally:
         os.unlink(out)
     assert_plaintext(html, f"`qsv viz {' '.join(args)}` output")
+    global PARCATS_SCRIPT
+    if not PARCATS_SCRIPT:
+        PARCATS_SCRIPT = extract_parcats_script(html)
     return html
 
 
@@ -1721,6 +1745,18 @@ def main():
             f'<img src="{shot["image"]}" loading="lazy" '
             f'alt="{html_escape(shot["title"])} screenshot"/></a></figure>'
         )
+
+    # The parcats "category order" animation, lifted from this run's own viz output. The figures
+    # here are bare JSON reassembled under this scaffold, so without it the gallery's parcats
+    # button would fall back to plotly's un-animated snap. Idempotent (the head is reused verbatim
+    # across regens): drop any prior copy before re-adding, so it neither stacks nor goes stale.
+    head = re.sub(re.escape(PARCATS_MARKER) + r".*?</script>\n?", "", head, flags=re.S)
+    if PARCATS_SCRIPT:
+        head = head.replace("</head>", PARCATS_SCRIPT + "\n</head>", 1)
+    else:
+        sys.stderr.write(
+            "NOTE: this qsv emits no parcats category-order animation script; the gallery's "
+            "parcats button keeps plotly's un-animated snap\n")
 
     figs_json = "const FIGS = [" + ",".join(
         json.dumps(f, ensure_ascii=False, separators=(",", ":")) for f in figs) + "];"

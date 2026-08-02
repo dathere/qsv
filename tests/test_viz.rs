@@ -9064,6 +9064,12 @@ fn viz_parcats_standalone() {
         !html.contains(r#""execute":false"#),
         "the category-order button must not delegate its restyle to the script; html: {html}"
     );
+    // the marker `examples/viz/gen_gallery.py` keys on to lift the script into the gallery
+    // scaffold (the gallery reassembles bare figure JSON, so without it that figure would snap)
+    assert!(
+        html.contains("<!--qsv-parcats-order-->"),
+        "the animation script must carry the marker gen_gallery.py extracts it by; html: {html}"
+    );
 }
 
 // deterministic dataset that qualifies for the smart parcats panel: region/tier/segment are 3

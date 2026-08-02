@@ -881,6 +881,13 @@ SCREENSHOTS = [
             "dashboard in a new window</b>."),
         "image": "pitt311data-visual-datadic.webp",
         "href":  "pitt311data.html",
+        # `--geojson pittsburgh-neighborhoods` is a QSV_GEOJSON_SHORTCUTS alias, not a file: the
+        # env var maps a name to {path, id}, and the alias's id supplies --feature-id-key (here
+        # properties.hood, which is what the committed page was built with). Do NOT put that JSON
+        # in a repo `.env` to make the alias resolve -- qsv loads .env with dotenv_override(),
+        # which clobbers the value the shortcut tests inject and breaks 6 of them. To rebuild this
+        # page, use refresh_external_dashboards.sh, which passes the geojson file and the
+        # feature-id-key directly (equivalent, and needs no env setup).
         "cmd":   ("qsv viz smart pittsburgh_311.tsv --smarter --dictionary pitt311data.schema.json "
                   "--dict-info --bivariate -o pitt311data.html "
                   "--geojson pittsburgh-neighborhoods "

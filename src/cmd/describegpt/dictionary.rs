@@ -1972,6 +1972,24 @@ pub(super) fn parse_llm_dictionary_response(
         }
     }
 
+    // A response that parsed but matched NOT ONE of the real column names is a red flag, not
+    // an empty dictionary. The usual cause is malformed JSON: `extract_json_from_output`
+    // fails on the whole object, falls through to its brace scan, and returns the first
+    // NESTED object that happens to parse -- typically one field's `{label, description,
+    // ...}` body. Every lookup below then misses, and without this warning the run silently
+    // produces a dictionary with no LLM labels at all (single-pass) or silently discards the
+    // baseline pass (`--two-pass`), having already paid for the inference.
+    //
+    // Guarded on non-empty `field_names` so a genuinely column-less input stays quiet.
+    if result.is_empty() && !field_names.is_empty() {
+        wwarn!(
+            "LLM response yielded no usable fields (none of the {} column name(s) matched). The \
+             response was likely malformed JSON; any grain/relationships it carried were dropped \
+             too. Re-run to retry the inference.",
+            field_names.len()
+        );
+    }
+
     Ok(result)
 }
 
@@ -2140,6 +2158,26 @@ pub(super) fn parse_llm_grain(llm_response: &str) -> Option<String> {
     let json_value = extract_json_from_output(llm_response).ok()?;
     let grain = json_value.get("grain")?.as_str()?.trim();
     (!grain.is_empty()).then(|| grain.to_string())
+}
+
+/// Extract the optional top-level `grain_unit` string from the LLM's dictionary
+/// response — the bare entity noun behind the `grain` sentence ("311 service
+/// request"), which `viz smart` renders VERBATIM as the subject of its
+/// count-over-time chart titles.
+///
+/// This exists so viz never has to parse a natural-language sentence: the older
+/// path split `grain` on the English literal `" one "`, which silently leaked
+/// English into otherwise-localized dashboards (issue #4321) and could not work
+/// at all for languages that use neither articles nor spaces. Under
+/// `--language xx` the prompt asks for this field in the target language, so it
+/// can be interpolated directly into a localized title template.
+///
+/// Best-effort, exactly like `parse_llm_grain`: malformed JSON or a
+/// missing/blank `grain_unit` yields `None`, never failing the dictionary phase.
+pub(super) fn parse_llm_grain_unit(llm_response: &str) -> Option<String> {
+    let json_value = extract_json_from_output(llm_response).ok()?;
+    let grain_unit = json_value.get("grain_unit")?.as_str()?.trim();
+    (!grain_unit.is_empty()).then(|| grain_unit.to_string())
 }
 
 #[cfg(test)]
@@ -4728,6 +4766,27 @@ mod tests {
         assert_eq!(parse_llm_grain(r#"{"grain":"   "}"#), None);
         assert_eq!(parse_llm_grain(r#"{"foo":1}"#), None);
         assert_eq!(parse_llm_grain("not json at all"), None);
+    }
+
+    #[test]
+    fn parse_llm_grain_unit_reads_top_level_string() {
+        assert_eq!(
+            parse_llm_grain_unit(r#"{"grain":"one row = one trip","grain_unit":"trip"}"#)
+                .as_deref(),
+            Some("trip")
+        );
+        // localized unit rides through verbatim -- the whole point of the field (issue #4321)
+        assert_eq!(
+            parse_llm_grain_unit(r#"{"grain_unit":"registro de coleta"}"#).as_deref(),
+            Some("registro de coleta")
+        );
+        assert_eq!(parse_llm_grain_unit(r#"{"grain_unit":"  "}"#), None);
+        // grain present but no grain_unit -> None, so viz falls back to parsing the sentence
+        assert_eq!(
+            parse_llm_grain_unit(r#"{"grain":"one row = one trip"}"#),
+            None
+        );
+        assert_eq!(parse_llm_grain_unit("not json at all"), None);
     }
 
     #[test]

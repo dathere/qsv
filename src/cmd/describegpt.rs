@@ -1991,8 +1991,19 @@ fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
             .and_then(Result::ok)
     }
 
-    /// Escape literal newlines / CRs / tabs that appear inside string values.
-    /// Only runs when strict parsing fails, so already-valid JSON is untouched.
+    /// Repair the two malformations LLMs actually emit in otherwise-valid JSON:
+    /// literal newlines / CRs / tabs inside string values, and a STRAY BACKSLASH in
+    /// structural position (e.g. `"role":\\ "measure",` — observed from
+    /// google/gemma-4-26b-a4b). Only runs when strict parsing fails, so already-valid
+    /// JSON is untouched.
+    ///
+    /// A backslash outside a string is never valid JSON — it can only be noise — so it
+    /// is dropped. Inside a string it is a real escape and is preserved along with the
+    /// character it escapes. Without the `in_string` guard the stray-backslash case is
+    /// passed through unchanged and the whole response fails to parse, which then falls
+    /// through to the brace scan below and silently yields a NESTED FRAGMENT instead of
+    /// the intended top-level object (see `parse_llm_dictionary_response`'s zero-match
+    /// warning).
     fn try_fix_json(json_str: &str) -> String {
         let mut result = String::with_capacity(json_str.len());
         let mut in_string = false;
@@ -2005,6 +2016,9 @@ fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
                 continue;
             }
             match ch {
+                // Structural position: a bare backslash cannot be valid here, so drop it
+                // rather than preserving it and failing the parse.
+                '\\' if !in_string => {},
                 '\\' => {
                     result.push(ch);
                     escape_next = true;
@@ -3487,6 +3501,7 @@ fn build_combined_dictionary_entries(
     Vec<dictionary::DictionaryEntry>,
     Vec<serde_json::Value>,
     Option<String>,
+    Option<String>,
 )> {
     let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
     let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
@@ -3535,9 +3550,11 @@ fn build_combined_dictionary_entries(
     // real field names. `synthesize` re-validates them against the data.
     let relationships =
         dictionary::parse_llm_relationships(&completion_response.response, &field_names);
-    // Dataset-level grain (one-sentence "one row = one X") from the same response.
+    // Dataset-level grain (one-sentence "one row = one X") from the same response, plus the bare
+    // entity noun viz renders in chart titles (issue #4321).
     let grain = dictionary::parse_llm_grain(&completion_response.response);
-    Ok((entries, relationships, grain))
+    let grain_unit = dictionary::parse_llm_grain_unit(&completion_response.response);
+    Ok((entries, relationships, grain, grain_unit))
 }
 
 /// Two-pass variant: parse stats/frequency, parse BOTH the baseline (first-pass) and refine
@@ -3556,6 +3573,7 @@ fn build_combined_dictionary_entries_two_pass(
 ) -> CliResult<(
     Vec<dictionary::DictionaryEntry>,
     Vec<serde_json::Value>,
+    Option<String>,
     Option<String>,
 )> {
     let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
@@ -3614,8 +3632,10 @@ fn build_combined_dictionary_entries_two_pass(
     let relationships =
         dictionary::parse_llm_relationships(&baseline_completion.response, &field_names);
     // Grain, like relationships, is taken from the first-pass (relationship-aware) response.
+    // The refine prompt never revisits either, so `grain_unit` must come from the same pass.
     let grain = dictionary::parse_llm_grain(&baseline_completion.response);
-    Ok((entries, relationships, grain))
+    let grain_unit = dictionary::parse_llm_grain_unit(&baseline_completion.response);
+    Ok((entries, relationships, grain, grain_unit))
 }
 
 /// Produce the prettified first-pass dictionary JSON string used as `{{ first_pass_dictionary }}`
@@ -3737,6 +3757,11 @@ fn emit_dictionary_context_only(
 ///
 /// `relationships` carries the LLM-inferred inter-column relationships; it is empty
 /// unless the dictionary prompt inferred any.
+///
+/// `grain_unit` is the bare entity noun behind `grain` ("311 service request"), which
+/// `viz smart` renders verbatim in chart titles. It rides only in the JSON Schema output —
+/// the SemanticMd/OKF documents render the human-readable `grain` sentence instead, and
+/// viz consumes JSON Schema.
 #[allow(clippy::too_many_arguments)]
 fn format_dictionary_phase(
     kind: PromptType,
@@ -3744,6 +3769,7 @@ fn format_dictionary_phase(
     combined_entries: &[dictionary::DictionaryEntry],
     relationships: &[serde_json::Value],
     grain: Option<&str>,
+    grain_unit: Option<&str>,
     completion_response: &CompletionResponse,
     total_json_output: &mut serde_json::Value,
     model: &str,
@@ -3804,6 +3830,7 @@ fn format_dictionary_phase(
             args.flag_allow_extra_cols,
             args.flag_strict_dates,
             grain,
+            grain_unit,
             relationships,
         );
         let attribution = replace_attribution_placeholder(
@@ -4165,7 +4192,7 @@ fn process_phase_output(
 ) -> CliResult<()> {
     // Dictionary when --prompt is active: generate dictionary JSON for prompt context, no output.
     if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
-        let (combined_entries, relationships, _grain) =
+        let (combined_entries, relationships, _grain, _grain_unit) =
             build_combined_dictionary_entries(args, analysis_results, completion_response)?;
         return emit_dictionary_context_only(
             args,
@@ -4177,7 +4204,7 @@ fn process_phase_output(
     }
 
     if kind == PromptType::Dictionary {
-        let (combined_entries, relationships, grain) =
+        let (combined_entries, relationships, grain, grain_unit) =
             build_combined_dictionary_entries(args, analysis_results, completion_response)?;
         return format_dictionary_phase(
             kind,
@@ -4185,6 +4212,7 @@ fn process_phase_output(
             &combined_entries,
             &relationships,
             grain.as_deref(),
+            grain_unit.as_deref(),
             completion_response,
             total_json_output,
             model,
@@ -4488,7 +4516,7 @@ fn run_dictionary_phase(
     // --- FIRST_PASS_DICT_JSON, render the refine prompt, and call the LLM again. ---
     // First-pass relationships are discarded here; the final ones are re-parsed
     // from the (relationship-aware) first-pass response by the two-pass builder.
-    let (first_pass_entries, _, _) =
+    let (first_pass_entries, _, _, _) =
         build_combined_dictionary_entries(args, analysis_results, &data_dict)?;
     let first_pass_json = build_first_pass_dictionary_json_string(args, &first_pass_entries);
     // Seed the global the refine prompt template reads via `{{ first_pass_dictionary }}`.
@@ -4534,12 +4562,13 @@ fn run_dictionary_phase(
     // don't wipe first-pass Label/Description. Then emit using the SAME format functions
     // the single-pass flow uses — process_phase_output is bypassed here because routing
     // back through it would re-parse only the refine response and lose the baseline.
-    let (merged_entries, relationships, grain) = build_combined_dictionary_entries_two_pass(
-        args,
-        analysis_results,
-        &data_dict,
-        &refine_completion,
-    )?;
+    let (merged_entries, relationships, grain, grain_unit) =
+        build_combined_dictionary_entries_two_pass(
+            args,
+            analysis_results,
+            &data_dict,
+            &refine_completion,
+        )?;
 
     // Synthesize the CompletionResponse that emit functions receive: response text comes
     // from the refine pass (it's what gets shown in the output's `response` JSON field
@@ -4570,6 +4599,7 @@ fn run_dictionary_phase(
             &merged_entries,
             &relationships,
             grain.as_deref(),
+            grain_unit.as_deref(),
             &combined_completion,
             total_json_output,
             model,
@@ -9054,6 +9084,68 @@ p_fewshot_examples = ""
             rendered.contains("| 01/24/2013 [5]<br>01/07/2014 [3] |"),
             "date Examples not reformatted to inferred format:\n{rendered}"
         );
+    }
+
+    /// A stray backslash in STRUCTURAL position is the malformation that actually shows up in
+    /// LLM dictionary responses (observed from google/gemma-4-26b-a4b: `"role":\\ "measure",`).
+    ///
+    /// The failure mode this pins is NOT "returns an error" -- it is far worse. Before the
+    /// `in_string` guard in `try_fix_json`, the whole object failed to parse,
+    /// `extract_json_from_output` fell through to its brace scan, and the scan returned the
+    /// first NESTED object that happened to parse: one field's `{label, description, ...}`
+    /// body, silently standing in for the entire dictionary. Every real column lookup then
+    /// missed, and `grain` / `relationships` vanished with no error anywhere.
+    ///
+    /// So this asserts the recovered value is the TOP-LEVEL dictionary -- an `is_ok()` check
+    /// would pass on the fragment.
+    #[test]
+    fn extract_json_recovers_from_a_stray_structural_backslash() {
+        let malformed = r#"```json
+{
+  "Regiao - Sigla": {
+    "label": "Regiao",
+    "description": "Sigla da regiao."
+  },
+  "Valor de Venda": {
+    "label": "Valor de Venda",
+    "role":\\ "measure",
+    "concept": "measure.amount"
+  },
+  "grain": "cada linha representa um registro de coleta",
+  "relationships": [{"kind": "joint", "members": ["Regiao - Sigla"]}]
+}
+```"#;
+        let v = extract_json_from_output(malformed).expect("stray backslash must be repaired");
+
+        // the TOP-LEVEL object, not an inner fragment
+        let obj = v.as_object().expect("must recover an object");
+        assert!(
+            obj.contains_key("Regiao - Sigla") && obj.contains_key("Valor de Venda"),
+            "recovered a FRAGMENT, not the dictionary: keys were {:?}",
+            obj.keys().collect::<Vec<_>>()
+        );
+        // the sibling top-level keys that the fragment path silently drops
+        assert_eq!(
+            v["grain"].as_str(),
+            Some("cada linha representa um registro de coleta")
+        );
+        assert!(v["relationships"].is_array(), "relationships must survive");
+        // the repaired field itself still carries its value
+        assert_eq!(v["Valor de Venda"]["role"].as_str(), Some("measure"));
+    }
+
+    /// The guard on the repair: a backslash INSIDE a string is a real escape and must be
+    /// preserved, not dropped. Dropping it would corrupt Windows paths, regexes and the
+    /// `\n` sequences that legitimately appear in descriptions.
+    #[test]
+    fn extract_json_preserves_escapes_inside_strings() {
+        let v = extract_json_from_output(
+            r#"{"a": "C:\\Users\\me", "b": "line1\nline2", "c": "q\"uoted"}"#,
+        )
+        .expect("valid JSON must parse untouched");
+        assert_eq!(v["a"].as_str(), Some(r"C:\Users\me"));
+        assert_eq!(v["b"].as_str(), Some("line1\nline2"));
+        assert_eq!(v["c"].as_str(), Some(r#"q"uoted"#));
     }
 
     #[test]

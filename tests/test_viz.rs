@@ -6989,6 +6989,124 @@ fn viz_smart_dictionary_grain_labels_count() {
 }
 
 #[test]
+fn viz_smart_dictionary_grain_unit_localizes_count_title() {
+    // Issue #4321. Under `--language pt` the trend title template is Portuguese
+    // (`"%{q_unit} ao longo de %{q_date}"`), and `q_unit` comes from the dictionary. Before the
+    // structured `x-qsv.grain_unit` field existed, viz parsed the unit out of the English `grain`
+    // sentence and interpolated an ENGLISH noun into that Portuguese template, producing a
+    // half-translated title. The structured field must be used verbatim instead.
+    let wrk = Workdir::new("viz_smart_dictionary_grain_unit_localizes_count_title");
+    let mut rows = String::from("requested_on,status\n");
+    for i in 0..60 {
+        let day = (i % 28) + 1;
+        let status = if i % 2 == 0 { "Submitted" } else { "Approved" };
+        rows.push_str(&format!("2021-03-{day:02},{status}\n"));
+    }
+    wrk.create_from_string("permits.csv", &rows);
+
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "requested_on": { "type": "string", "title": "Data de Solicitação",
+              "x-qsv": { "qsv_type": "Date", "role": "timestamp", "concept": "time.created_at" } },
+            "status": { "type": "string", "title": "Situação",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          },
+          "x-qsv": { "grain": "uma linha = um pedido de licença",
+                     "grain_unit": "pedido de licença" }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "permits.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"))
+        .args(["--language", "pt", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // The FULL title is asserted, not just the unit: the title is entirely determined by
+    // `q_unit` + the pt template + `q_date`, so an exact match is itself the proof that no
+    // English survived anywhere in the interpolated sentence.
+    let title = "pedido de licença ao longo de Data de Solicitação";
+    assert!(
+        html.contains(title),
+        "trend title must interpolate the localized grain_unit into the pt template; html: {html}"
+    );
+    let axis = "pedido de licença por dia";
+    assert!(
+        html.contains(axis),
+        "trend axis title must use the localized grain_unit and pt bucket word; html: {html}"
+    );
+
+    // Regression guards, both scoped to the TITLE rather than the whole document (a bare
+    // `html.contains(" over ")` would be vacuous -- unrelated English tokens live in the
+    // vendored JS bundles).
+    //
+    // 1. English template: would mean --language never reached the title.
+    assert!(
+        !html.contains("pedido de licença over "),
+        "the English trend template leaked into a --language pt dashboard; html: {html}"
+    );
+    // 2. Localized fallback: would mean grain_unit stopped being read and viz fell back to
+    //    `viz.chart.records`. Correct language, but the entity name is lost.
+    assert!(
+        !html.contains("registros ao longo de"),
+        "grain_unit was ignored and the count unit fell back to the generic `records`; html: \
+         {html}"
+    );
+}
+
+#[test]
+fn viz_smart_localized_grain_without_unit_falls_back_localized() {
+    // The other half of #4321: a dictionary whose `grain` sentence is localized but which carries
+    // no `grain_unit` (e.g. a custom --prompt-file that predates the field). The legacy parser
+    // splits on the English literal " one ", which a Portuguese sentence does not contain, so it
+    // must degrade to the LOCALIZED `viz.chart.records` -- never to English.
+    let wrk = Workdir::new("viz_smart_localized_grain_without_unit_falls_back_localized");
+    let mut rows = String::from("requested_on,status\n");
+    for i in 0..60 {
+        let day = (i % 28) + 1;
+        let status = if i % 2 == 0 { "Submitted" } else { "Approved" };
+        rows.push_str(&format!("2021-03-{day:02},{status}\n"));
+    }
+    wrk.create_from_string("permits.csv", &rows);
+
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "requested_on": { "type": "string", "title": "Data de Solicitação",
+              "x-qsv": { "qsv_type": "Date", "role": "timestamp", "concept": "time.created_at" } },
+            "status": { "type": "string", "title": "Situação",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          },
+          "x-qsv": { "grain": "uma linha = um pedido de licença" }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "permits.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"))
+        .args(["--language", "pt", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("registros ao longo de Data de Solicitação"),
+        "a localized grain with no grain_unit must fall back to the LOCALIZED records unit; html: \
+         {html}"
+    );
+}
+
+#[test]
 fn viz_smart_antimeridian_cluster_stays_local_map() {
     // A tight cluster straddling the +/-180 antimeridian has a small TRUE longitude span but a huge
     // raw max-min span. The global/local test must use the antimeridian-aware span, so this stays a

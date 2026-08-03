@@ -140,6 +140,14 @@ pub(super) fn format_dictionary_json(
 /// `grain` is the dataset-level "one row = one X" statement (when inferred);
 /// emitted as `x-qsv.grain` only when `infer_content_type` is set.
 ///
+/// `grain_unit` is the bare entity noun behind that sentence ("311 service
+/// request"), emitted as `x-qsv.grain_unit` under the same flag. `viz smart`
+/// renders it VERBATIM as the subject of its count-over-time chart titles.
+/// It is a separate field precisely so viz never has to parse the sentence:
+/// the old path split `grain` on the English literal `" one "`, which leaked
+/// English into localized dashboards (issue #4321). Under `--language xx` the
+/// prompt asks for this field in the target language.
+///
 /// `relationships` are the LLM-inferred inter-column groups (see
 /// `dictionary::parse_llm_relationships`), emitted as `x-qsv.relationships` under
 /// the same flag. `viz smart --dictionary` reads `kind: "pipeline"` entries from
@@ -162,6 +170,7 @@ pub(super) fn format_dictionary_jsonschema(
     allow_extra_cols: bool,
     strict_dates: bool,
     grain: Option<&str>,
+    grain_unit: Option<&str>,
     relationships: &[Value],
 ) -> Value {
     let mut properties = serde_json::Map::with_capacity(entries.len());
@@ -207,6 +216,18 @@ pub(super) fn format_dictionary_jsonschema(
         && let Some(x_qsv) = doc.get_mut("x-qsv").and_then(Value::as_object_mut)
     {
         x_qsv.insert("grain".to_string(), Value::String(g.to_string()));
+    }
+
+    // The machine-readable counterpart of `grain`: the bare entity noun viz interpolates into
+    // localized chart titles (issue #4321). Emitted under the same gate, and omitted entirely
+    // when the model didn't supply one — a dictionary without it stays byte-identical, and viz
+    // falls back to parsing `grain` exactly as it does today.
+    if infer_content_type
+        && let Some(gu) = grain_unit
+        && !gu.is_empty()
+        && let Some(x_qsv) = doc.get_mut("x-qsv").and_then(Value::as_object_mut)
+    {
+        x_qsv.insert("grain_unit".to_string(), Value::String(gu.to_string()));
     }
 
     // LLM-inferred inter-column relationships, gated on the same --infer-content-type path (the
@@ -1168,6 +1189,7 @@ mod tests {
             false,
             false,
             None,
+            None,
             &[],
         );
         let x = &schema["properties"]["depth"]["x-qsv"];
@@ -1193,6 +1215,7 @@ mod tests {
             false,
             false,
             false,
+            None,
             None,
             &[],
         );
@@ -1221,6 +1244,7 @@ mod tests {
             true,
             false,
             false,
+            None,
             None,
             &rels,
         );
@@ -1255,6 +1279,7 @@ mod tests {
             false,
             false,
             None,
+            None,
             &[],
         );
         assert!(none_inferred["x-qsv"].get("relationships").is_none());
@@ -1268,6 +1293,7 @@ mod tests {
             false,
             false,
             false,
+            None,
             None,
             &rels,
         );
@@ -1406,6 +1432,7 @@ mod tests {
             false,
             false,
             None,
+            None,
             &[],
         );
         let xq = &schema["properties"]["created"]["x-qsv"];
@@ -1440,6 +1467,7 @@ mod tests {
             false,
             false,
             Some("one row = one 311 service request"),
+            Some("311 service request"),
             &[],
         );
         let xq = &schema["properties"]["census_tract"]["x-qsv"];
@@ -1448,6 +1476,28 @@ mod tests {
         assert_eq!(
             schema["x-qsv"]["grain"],
             "one row = one 311 service request"
+        );
+        assert_eq!(schema["x-qsv"]["grain_unit"], "311 service request");
+
+        // grain without grain_unit: the key is OMITTED, never emitted as null, so a dictionary
+        // from before the field existed stays byte-identical and viz falls back to parsing
+        // the grain sentence (issue #4321).
+        let no_unit = format_dictionary_jsonschema(
+            std::slice::from_ref(&tract),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            Some("one row = one 311 service request"),
+            None,
+            &[],
+        );
+        assert!(
+            no_unit["x-qsv"].get("grain_unit").is_none(),
+            "grain_unit must be omitted, not null, when the model supplied none"
         );
 
         // flag off: role/concept/grain all absent (legacy schema stays byte-identical).
@@ -1461,6 +1511,7 @@ mod tests {
             false,
             false,
             Some("one row = one 311 service request"),
+            Some("311 service request"),
             &[],
         );
         let xq_off = &off["properties"]["census_tract"]["x-qsv"];
@@ -1472,6 +1523,10 @@ mod tests {
         assert!(
             off["x-qsv"].get("grain").is_none(),
             "grain leaked when flag off"
+        );
+        assert!(
+            off["x-qsv"].get("grain_unit").is_none(),
+            "grain_unit leaked when flag off"
         );
 
         // empty role/concept are not emitted even with the flag on; grain None is omitted.
@@ -1485,6 +1540,7 @@ mod tests {
             true,
             false,
             false,
+            None,
             None,
             &[],
         );
@@ -1514,6 +1570,7 @@ mod tests {
             false,
             false,
             None,
+            None,
             &[],
         );
         let gr = &schema["properties"]["rating"]["x-qsv"]["gauge_range"];
@@ -1531,6 +1588,7 @@ mod tests {
             false,
             false,
             false,
+            None,
             None,
             &[],
         );
@@ -1554,6 +1612,7 @@ mod tests {
             true,
             false,
             false,
+            None,
             None,
             &[],
         );
@@ -1623,6 +1682,7 @@ mod tests {
             false,
             false,
             None,
+            None,
             &[],
         );
         let examples = schema["properties"]["created"]["examples"]
@@ -1670,6 +1730,7 @@ mod tests {
             false,
             false,
             None,
+            None,
             &[],
         );
         let examples = schema["properties"]["X Coordinate"]["examples"]
@@ -1701,6 +1762,7 @@ mod tests {
             false,
             false,
             false,
+            None,
             None,
             &[],
         );
@@ -1734,6 +1796,7 @@ mod tests {
             false,
             false,
             None,
+            None,
             &[],
         );
         let prop = &schema["properties"]["license"];
@@ -1759,6 +1822,7 @@ mod tests {
             false,
             false,
             false,
+            None,
             None,
             &[],
         );

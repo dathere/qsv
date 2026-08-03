@@ -7201,7 +7201,7 @@ fn build_histogram(args: &Args) -> CliResult<(Box<dyn Trace>, String)> {
     }
 
     let label = col_label(&headers, x_idx, nh);
-    let mut hist = Histogram::new(values).name(label.clone());
+    let mut hist = Histogram::new(values).name(escape_hover(&label));
     if let Some(bins) = args.flag_bins {
         hist = hist.n_bins_x(bins);
     }
@@ -7248,7 +7248,7 @@ fn build_box(args: &Args) -> CliResult<(Box<dyn Trace>, String, Option<String>)>
             .box_points(box_points)
     } else {
         BoxPlot::new(ys)
-            .name(y_label.clone())
+            .name(escape_hover(y_label.as_str()))
             .quartile_method(QuartileMethod::Linear)
             .box_points(box_points)
     };
@@ -7294,7 +7294,7 @@ fn build_violin(args: &Args) -> CliResult<(Box<dyn Trace>, String, Option<String
             .points(points)
     } else {
         Violin::new(ys)
-            .name(y_label.clone())
+            .name(escape_hover(y_label.as_str()))
             .quartile_method(QuartileMethod::Linear)
             .box_plot(ViolinBox::new().visible(true))
             .mean_line(MeanLine::new().visible(true))
@@ -26596,8 +26596,10 @@ fn panel_trace_box_stats(
     let trace: Box<dyn Trace> = {
         // value-axis log verdict resolved at classification time (see `box_panel_logs`)
         log_y = panel.value_log;
+        // `Panel::name` is stored RAW (it also feeds stderr), so every markup sink escapes
+        // it itself — escaped exactly once per sink. Do NOT hoist this into `Panel::new`.
         let mut b = BoxPlot::new(Vec::<f64>::new())
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .q1(vec![*q1])
             .median(vec![*median])
             .q3(vec![*q3])
@@ -26646,7 +26648,7 @@ fn panel_trace_box_raw(
         // reach it on a log axis (issue #4219 — see `log_safe_values`)
         let values = log_safe_values(log_y, hist.get(idx).cloned().unwrap_or_default());
         let mut b = BoxPlot::new(values)
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .quartile_method(QuartileMethod::Linear)
             .box_points(points.clone())
             .marker(Marker::new().color(color))
@@ -26686,7 +26688,7 @@ fn panel_trace_violin(
         // not reach it on a log axis (issue #4219 — see `log_safe_values`)
         let values = log_safe_values(log_y, hist.get(idx).cloned().unwrap_or_default());
         let mut v = Violin::new(values)
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .quartile_method(QuartileMethod::Linear)
             .box_plot(ViolinBox::new().visible(true))
             .mean_line(MeanLine::new().visible(true))
@@ -26785,7 +26787,7 @@ fn panel_trace_box_outliers(
         let whisker_low = log_safe_lower_fence(log_y, stats.map_or(*q1, |o| o.whisker_low), *q1);
         let whisker_high = stats.map_or(*q3, |o| o.whisker_high);
         let mut b = BoxPlot::<f64, Vec<f64>>::new(vec![pts])
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .q1(vec![*q1])
             .median(vec![*median])
             .q3(vec![*q3])
@@ -26868,7 +26870,7 @@ fn panel_trace_freq_bar(
         // `label` (not `x_key`): the aggregate buckets' axis keys are sentinel-padded.
         let hover_labels: Vec<String> = bars.iter().map(|b| escape_hover(&b.label)).collect();
         let mut bar = Bar::new(xs, ys)
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .marker(marker)
             .hover_text_array(hover_labels)
             .hover_template(&t!("viz.hover.count_by_label"))
@@ -26910,7 +26912,7 @@ fn panel_trace_histogram(
         // would be a behavior change, not a translation.
         let hover = t!("viz.hover.histogram", q_col = escape_hover(&panel.name)).into_owned();
         let mut h = Histogram::new(values)
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .marker(Marker::new().color(color))
             .hover_template(hover);
         if let Some((x, y)) = &axes {
@@ -26933,7 +26935,7 @@ fn panel_trace_time_series(
     let trace: Box<dyn Trace> = {
         let mut t = Scatter::new(xs.clone(), ys.clone())
             .mode(Mode::Lines)
-            .name(y_label.clone())
+            .name(escape_hover(y_label.as_str()))
             .line(Line::new().color(color));
         if let Some((x, y)) = &axes {
             t = t.x_axis(x.clone()).y_axis(y.clone());
@@ -26986,7 +26988,7 @@ fn panel_trace_scatter_pair(
             .collect();
         let mut t = Scatter::new(xs.clone(), ys.clone())
             .mode(Mode::Markers)
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .marker(marker)
             .hover_text_array(hover)
             .hover_info(HoverInfo::Text);
@@ -27019,7 +27021,7 @@ fn panel_trace_lorenz(
         let hover = lorenz_hover_template(label, *gini);
         let mut t = Scatter::new(pop.clone(), share.clone())
             .mode(Mode::Lines)
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .line(Line::new().color(color))
             .hover_template(hover);
         if let Some((x, y)) = &axes {
@@ -27162,7 +27164,7 @@ fn panel_trace_funnel_bridge(
             })
             .collect();
         let mut w = Waterfall::new(cats, vals)
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .measure(measures)
             .text_template_array(templates)
             .text_position(TextPosition::Outside)
@@ -27256,7 +27258,7 @@ fn panel_trace_funnel(
         let ys: Vec<String> = stages.clone();
         let mut f = Funnel::new(xs, ys)
             .orientation(Orientation::Horizontal)
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .marker(Marker::new().color(color))
             // ONLY the stage-to-stage conversion: plotly computes it from the values, so it
             // can never drift from the bars. The absolute amounts deliberately stay out of
@@ -27296,7 +27298,8 @@ fn panel_trace_contour_pair(
         let mut c = Contour::new(x.clone(), y.clone(), z.clone())
             .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
             .show_scale(axes.is_none())
-            .name(&panel.name)
+            // Contour::name takes &str (unlike the other traces' impl AsRef<str>)
+            .name(&escape_hover(&panel.name))
             .hover_template(&hover);
         if let Some((xa, ya)) = &axes {
             c = c.x_axis(xa.as_str()).y_axis(ya.as_str());
@@ -27417,7 +27420,7 @@ fn panel_trace_top_relationships(
             .size_array(scale_bubble_sizes(&sizes))
             .color_array(colors);
         let mut sc = Scatter::new(xs.clone(), ys)
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .mode(Mode::Markers)
             .marker(marker)
             .error_x(
@@ -27477,7 +27480,7 @@ fn panel_trace_measure_by_dim(
         // default hover would otherwise echo that truncated tick text
         let hover_labels: Vec<String> = labels.iter().map(|l| escape_hover(l)).collect();
         let mut bar = Bar::new(labels.clone(), values.clone())
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .marker(Marker::new().color(color))
             .hover_text_array(hover_labels)
             .hover_template("%{hovertext}<br>%{y:,}<extra></extra>")
@@ -28913,7 +28916,7 @@ fn inline_panel_plot_cyclic_profile(panel: &Panel, theme: Option<BuiltinTheme>) 
             // just a single hover on the ring.
             .mode(Mode::LinesMarkers)
             .fill(Fill::ToSelf)
-            .name(panel.name.clone())
+            .name(escape_hover(&panel.name))
             .hover_template(&t!("viz.hover.polar_records")),
     );
     // A polar subplot draws its angular tick labels ("06h", "Mon", "Jan") OUTSIDE its plot
@@ -29313,7 +29316,7 @@ fn inline_panel_plot_animated_scatter_pair(panel: &Panel, theme: Option<BuiltinT
     let scatter = |start: usize, end: usize| {
         Scatter::new(xs[start..end].to_vec(), ys[start..end].to_vec())
             .mode(Mode::Markers)
-            .name(y_label.clone())
+            .name(escape_hover(y_label.as_str()))
             .marker(
                 Marker::new()
                     .color_array(bucket[start..end].iter().map(|&b| b as f64).collect())
@@ -36427,6 +36430,39 @@ mod tests {
         assert!(title.contains("R&amp;D &lt;b&gt;label&lt;/b&gt;"));
         // the styling markup the title itself emits must survive as real markup
         assert!(title.contains("<br><span style="));
+    }
+
+    #[test]
+    fn panel_trace_name_escapes_markup_exactly_once() {
+        // issue #4331: the panel TITLE was escaped (test above) but the trace NAME was not, so a
+        // hostile CSV header still reached plotly's markup renderer via the legend/hover box.
+        // `Panel::name` is stored raw (it also feeds stderr), so the escape belongs at this sink.
+        let hostile = "R&D <b>Revenue</b>";
+        let panel = Panel::new(
+            hostile.to_string(),
+            PanelKind::BoxStats {
+                q1:     1.0,
+                median: 2.0,
+                q3:     3.0,
+                lower:  Some(0.0),
+                upper:  Some(4.0),
+                mean:   Some(2.0),
+            },
+        );
+        let (trace, ..) = panel_trace_box_stats(&panel, "#4c78a8", None);
+        let json = trace.to_json();
+
+        // rendered as literal text, not markup
+        assert!(
+            json.contains(r"R&amp;D &lt;b&gt;Revenue&lt;/b&gt;"),
+            "trace name must be escaped, got: {json}"
+        );
+        // ...and escaped exactly ONCE. A double-escape is invisible to the golden check
+        // (no committed fixture header carries `&`/`<`/`>`), so it has to be pinned here.
+        assert!(
+            !json.contains(r"&amp;amp;"),
+            "trace name must not be double-escaped, got: {json}"
+        );
     }
 
     #[test]

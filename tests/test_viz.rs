@@ -13889,6 +13889,81 @@ fn viz_axis_and_colorbar_titles_escape_markup_headers_but_not_flags() {
     );
 }
 
+// ---- viz trace-name escaping sweep (issue #4331) -------------------------------------------
+
+/// The #4247/#4254 sweeps escaped panel titles and axis/colorbar titles, but the plotly TRACE
+/// NAME -- which plotly renders as markup in the legend and hover box -- was left raw at 19
+/// sites. This covers one `panel.name` site (viz smart) and one `y_label` site (viz box); a
+/// single-site test would pass while the other 18 stayed wrong. NOTE it pins two MEMBERS, not
+/// the whole class -- notably the TimeSeries `y_label` (the site carrying LLM-derived grain
+/// text) takes the count path here, which interpolates a localized unit rather than a header,
+/// so it is not directly exercised. All 19 sites share the identical one-line sink.
+#[test]
+fn viz_trace_names_escape_markup_headers_exactly_once() {
+    let wrk = Workdir::new("viz_trace_names_escape_markup_headers_exactly_once");
+    // the categorical column carries BOTH `&` and tags: `&` is what catches a double-escape,
+    // the tags are what catch a missing escape
+    wrk.create_from_string(
+        "evil.csv",
+        "R&D <b>Region</b>,<b>Amount</b>\nnorth,10\nsouth,20\nnorth,30\nsouth,40\n",
+    );
+
+    // --- panel.name sink: the viz smart frequency-bar panel ---
+    // `--preview-threshold 0` keeps this panel-scoped: the data viewer embeds every column
+    // NAME verbatim in its own `qsv-data-cols` JSON (neutralized there by `inline_json_script`,
+    // a different sink with its own escaping), which would otherwise satisfy the negatives below
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "evil.csv",
+        "--preview-threshold",
+        "0",
+        "-o",
+        "smart.html",
+    ]);
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("smart.html").unwrap();
+
+    // escape_hover produces `R&amp;D &lt;b&gt;...`, then plotly's serializer additionally
+    // \u-escapes every `&`, so the trace name reaches the page as literal text -- never a tag
+    assert!(
+        html.contains(r#""name":"R\u0026amp;D \u0026lt;b\u0026gt;Region\u0026lt;/b\u0026gt;"#),
+        "the smart panel trace name must be escaped, not rendered as markup"
+    );
+    // the raw header must not survive as a trace name. Anchored on the `"name":"` field so
+    // unrelated chrome (or the embedded plotly bundle) can neither satisfy nor trip it.
+    assert!(
+        !html.contains(r#""name":"R\u0026D \u003cb\u003eRegion"#),
+        "raw markup header leaked into a trace name"
+    );
+    // ...and escaped exactly ONCE. No committed fixture header carries `&`/`<`/`>`, so the
+    // golden check cannot see a double-escape -- this assertion is the only guard.
+    assert!(
+        !html.contains(r"\u0026amp;amp;") && !html.contains(r"\u0026amp;lt;"),
+        "trace name was double-escaped"
+    );
+
+    // --- y_label sink: the standalone box chart, resolved from the same raw header ---
+    let mut cmd = wrk.command("viz");
+    cmd.args(["box", "evil.csv", "--y", "<b>Amount</b>", "-o", "box.html"]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("box.html").unwrap();
+
+    assert!(
+        html.contains(r#""name":"\u0026lt;b\u0026gt;Amount\u0026lt;/b\u0026gt;"#),
+        "the box trace name must be escaped, not rendered as markup"
+    );
+    assert!(
+        !html.contains(r#""name":"\u003cb\u003eAmount"#),
+        "raw markup header leaked into the box trace name"
+    );
+    assert!(
+        !html.contains(r"\u0026amp;lt;"),
+        "box trace name was double-escaped"
+    );
+}
+
 // ---- viz smart data viewer drawer (issue #4283) -------------------------------------------
 
 /// A small mixed-type CSV for the data viewer tests: numeric, date, categorical, and text.

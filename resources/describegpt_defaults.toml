@@ -1,7 +1,7 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "qsv team"
-version = "8.0.0"
+version = "9.0.0"
 tokens = 20000
 base_url = "http://localhost:1234/v1"
 model = "google/gemma-4-26b-a4b"
@@ -197,7 +197,7 @@ A "pipeline" has TWO possible encodings - pick the one matching the data:
 Only declare a ROW-ENCODED pipeline when a single subject PASSES THROUGH the stages over
 time - an event log where one row is one event and the same subject appears at several
 stages. NEVER declare one when each row simply sits in one mutually-exclusive state.
-Check the "grain" sentence you are about to write: if it says "one row = one <entity>",
+Check the "grain" sentence you are about to write: if one row is simply one <entity>,
 then a status/state column is a PARTITION, not a pipeline, and a funnel of it would be a
 lie. Never name a complement or residual as a stage (unspent, remaining, balance,
 variance, difference) - those are what is LEFT OVER, not a stage the process passed through.
@@ -208,6 +208,17 @@ than one relationship. If you find none, emit an empty array.
 
 Also provide a top-level "grain" string: a single sentence stating what ONE ROW represents,
 e.g. "one row = one 311 service request" or "one row = one daily reading per station".
+{%- if language %}
+Write the "grain" sentence in this language: {{ language|trim|title }}. Phrase it naturally in
+that language - do NOT copy the English "one row = one ..." wording literally.
+{%- endif %}
+
+Also provide a top-level "grain_unit" string: the ENTITY NOUN alone, taken from the "grain"
+sentence with the "one row = one" lead-in and any trailing period removed - e.g. "311 service
+request" for the example above, or "daily reading per station". A few words at most.{% if language %}
+Write "grain_unit" in this language too: {{ language|trim|title }}.{% endif %} It is rendered
+VERBATIM as the subject of chart titles, so it must read as a plain noun phrase on its own - no
+leading article, no sentence punctuation, and never a whole sentence.
 {%- endif %}
 {%- if infer_null_values %}
 
@@ -242,7 +253,7 @@ automatically, so propose a numeric placeholder whenever the field's meaning gen
 one. Do not invent one to be thorough.
 {%- endif %}
 
-Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role", "concept" and (for canonical-scale numeric measures only) an optional "gauge_range"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string and an optional "relationships" array{% endif %}:
+Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role", "concept" and (for canonical-scale numeric measures only) an optional "gauge_range"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string, a top-level "grain_unit" string and an optional "relationships" array{% endif %}:
 {% raw %}{
   "field_name_1": {
     "label": "Human-friendly label",
@@ -261,6 +272,7 @@ Return the results in JSON format where each field name is a key, and the value 
     "null_values": ["N/A", "UNKNOWN"]{% endif %}{% raw %}
   }{% endraw %}{% if infer_content_type %},
   "grain": "one row = one record",
+  "grain_unit": "record",
   "relationships": [
 {% raw %}    {"kind": "ordered", "members": ["created_date", "closed_date"], "anchor": "created_date"},
     {"kind": "joint", "members": ["city", "state", "zip"]},

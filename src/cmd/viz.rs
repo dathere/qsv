@@ -14840,6 +14840,13 @@ enum PipelineSpec {
 struct DictData {
     rows:                HashMap<String, DictRow>,
     grain:               Option<String>,
+    /// The bare entity noun behind `grain` ("311 service request"), emitted by describegpt as
+    /// `x-qsv.grain_unit` and rendered VERBATIM as the subject of count-over-time chart titles.
+    /// Under `--language xx` describegpt writes it in the target language, so unlike the prose
+    /// `grain` it can be interpolated straight into a localized title (issue #4321). `None` for
+    /// dictionaries generated before the field existed — `count_unit_from_grain` then falls back
+    /// to parsing `grain`.
+    grain_unit:          Option<String>,
     /// Pipelines declared via `x-qsv.relationships`. Parsed leniently here (shape only); the
     /// funnel builder does the strict validation against real columns and types, mirroring how
     /// `gauge_range` is shape-parsed here and range-checked at the KPI tile.
@@ -15548,6 +15555,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 .map(ToString::to_string)
         };
         let grain = top_str(v.get("x-qsv").and_then(|x| x.get("grain")));
+        let grain_unit = top_str(v.get("x-qsv").and_then(|x| x.get("grain_unit")));
         // describegpt appends its attribution/provenance footer to the dataset description AND
         // stores it separately in `x-qsv.generated_by` (which renders as the page footer). Strip
         // it from the description so it isn't shown twice.
@@ -15562,6 +15570,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
         return Some(DictData {
             rows,
             grain,
+            grain_unit,
             pipelines: xq_pipelines(&v),
             dataset_description,
             generated_by,
@@ -19235,11 +19244,35 @@ fn ts_bucket_word(bucket: TsBucket) -> String {
     .into_owned()
 }
 
-/// Best-effort entity name for a count-over-time panel, distilled from the dataset `grain`
-/// ("one row = one 311 service request" -> "311 service request"). Falls back to "records" when
-/// grain is absent or doesn't fit the "... one <X>" shape, so the label is always sensible.
-fn count_unit_from_grain(grain: Option<&str>) -> String {
+/// Character cap for a structured count unit (`x-qsv.grain_unit`) before it is rejected as a
+/// runaway. 40 matches the intent of the legacy grain path's 40-BYTE cap for ASCII, while leaving
+/// a CJK unit — which would blow a 40-byte budget at ~13 characters — comfortable room.
+const COUNT_UNIT_MAX_CHARS: usize = 40;
+
+/// Best-effort entity name for a count-over-time panel.
+///
+/// Precedence, most to least trustworthy:
+///
+/// 1. `grain_unit` — describegpt's STRUCTURED count unit (`x-qsv.grain_unit`), the bare entity noun
+///    with no sentence around it. Under `--language xx` the model is asked to write it in the
+///    target language, so it drops straight into a localized title template.
+/// 2. `grain` — the prose sentence, split on the English literal `" one "` ("one row = one 311
+///    service request" -> "311 service request"). LEGACY: this is the only path for dictionaries
+///    generated before `grain_unit` existed. It is deliberately left exactly as it was, English
+///    assumption included — a pre-`grain_unit` dictionary keeps today's behavior verbatim rather
+///    than silently changing, and the real fix for such a dictionary is to regenerate it (issue
+///    #4321).
+/// 3. the localized `viz.chart.records` fallback, so the label is always sensible.
+fn count_unit_from_grain(grain_unit: Option<&str>, grain: Option<&str>) -> String {
     let fallback = || t!("viz.chart.records").into_owned();
+
+    // The structured field wins outright when present and plausible.
+    if let Some(unit) = grain_unit.map(str::trim).filter(|u| !u.is_empty())
+        && plausible_count_unit(unit)
+    {
+        return unit.to_string();
+    }
+
     let Some(g) = grain else {
         return fallback();
     };
@@ -19257,6 +19290,16 @@ fn count_unit_from_grain(grain: Option<&str>) -> String {
     } else {
         entity.to_string()
     }
+}
+
+/// Runaway guard for a count unit: it has to fit in a chart title.
+///
+/// Counted in CHARACTERS, not bytes. The legacy grain path caps at 40 *bytes*, which is a
+/// reasonable proxy only for ASCII — a perfectly ordinary Japanese or Chinese unit
+/// ("ステーションごとの日次観測記録") exhausts 40 bytes in ~14 characters, so a byte cap would
+/// reject exactly the localized units this field exists to carry.
+fn plausible_count_unit(unit: &str) -> bool {
+    unit.chars().count() <= COUNT_UNIT_MAX_CHARS
 }
 
 /// Parse a row's date cell into a `DateTime<Utc>` under the caller's DMY preference — the
@@ -19309,6 +19352,7 @@ fn build_timeseries_panel(
     dmy_prefs: &[bool],
     map_cols: Option<(usize, usize)>,
     sems: &[ColSemantics],
+    grain_unit: Option<&str>,
     grain: Option<&str>,
     dict_icons: Option<&DictData>,
 ) -> CliResult<Option<Panel>> {
@@ -19530,7 +19574,7 @@ fn build_timeseries_panel(
         },
         // Count: one point per period = number of records (rows with a parseable date).
         _ => {
-            let unit = count_unit_from_grain(grain);
+            let unit = count_unit_from_grain(grain_unit, grain);
             let ys: Vec<f64> = buckets.values().map(|&(_, n)| n as f64).collect();
             Ok(Some(
                 Panel::new(
@@ -25801,12 +25845,17 @@ impl<'a> SmartCtx<'a> {
         // only to pick bucket granularity) are still env-derived.
         let built = {
             let grain = self.dict_data.as_ref().and_then(|d| d.grain.as_deref());
+            let grain_unit = self
+                .dict_data
+                .as_ref()
+                .and_then(|d| d.grain_unit.as_deref());
             build_timeseries_panel(
                 self.args,
                 &self.stats,
                 &self.dmy_prefs,
                 self.map_cols,
                 &self.col_sems,
+                grain_unit,
                 grain,
                 self.dict_icons(),
             )?
@@ -33517,7 +33566,8 @@ mod tests {
               "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount" } },
             "notes": { "type": "string", "x-qsv": { "qsv_type": "String" } }
           },
-          "x-qsv": { "grain": "one row = one 311 service request" }
+          "x-qsv": { "grain": "one row = one 311 service request",
+                     "grain_unit": "311 service request" }
         }"#;
         let data = parse_dictionary_semantics(schema).expect("schema should parse");
         let tract = data.rows.get("census_tract").expect("census_tract row");
@@ -33534,6 +33584,7 @@ mod tests {
             data.grain.as_deref(),
             Some("one row = one 311 service request")
         );
+        assert_eq!(data.grain_unit.as_deref(), Some("311 service request"));
 
         // end-to-end: the parsed census_tract row routes to a Dimension bar.
         assert_eq!(
@@ -34506,24 +34557,62 @@ mod tests {
         // the "records" fallback is localized -- pin English, or this races the
         // Spanish-setting tests on the process-global locale.
         let _locale = english_locale();
+
+        // --- structured `grain_unit` wins (issue #4321) ---------------------------------
+        // It is preferred even when a parseable grain sentence disagrees, because it is the
+        // field describegpt writes in the target language.
         assert_eq!(
-            count_unit_from_grain(Some("one row = one 311 service request")),
+            count_unit_from_grain(
+                Some("registro de coleta"),
+                Some("one row = one product collection record per location")
+            ),
+            "registro de coleta"
+        );
+        // ...and it is used verbatim, with surrounding whitespace trimmed.
+        assert_eq!(
+            count_unit_from_grain(Some("  permit application  "), None),
+            "permit application"
+        );
+        // A CJK unit must survive: it blows a 40-BYTE budget at ~13 chars, so the cap has to
+        // count characters. This is the case the legacy byte cap would have silently eaten.
+        let cjk = "ステーションごとの日次観測記録";
+        assert!(cjk.len() > 40, "fixture must exceed the legacy byte cap");
+        assert!(
+            cjk.chars().count() <= COUNT_UNIT_MAX_CHARS,
+            "fixture must still be within the char cap"
+        );
+        assert_eq!(count_unit_from_grain(Some(cjk), None), cjk);
+        // Blank/whitespace-only grain_unit falls THROUGH to the grain parse, not to `records`.
+        assert_eq!(
+            count_unit_from_grain(Some("   "), Some("one row = one order")),
+            "order"
+        );
+        // A runaway grain_unit is rejected on chars, then falls through to the grain parse.
+        let runaway = "x".repeat(COUNT_UNIT_MAX_CHARS + 1);
+        assert_eq!(
+            count_unit_from_grain(Some(&runaway), Some("one row = one order")),
+            "order"
+        );
+
+        // --- legacy grain parsing, unchanged --------------------------------------------
+        assert_eq!(
+            count_unit_from_grain(None, Some("one row = one 311 service request")),
             "311 service request"
         );
         assert_eq!(
-            count_unit_from_grain(Some("each row is one order.")),
+            count_unit_from_grain(None, Some("each row is one order.")),
             "order"
         );
         // no " one " pattern -> fallback
         assert_eq!(
-            count_unit_from_grain(Some("each row represents a person")),
+            count_unit_from_grain(None, Some("each row represents a person")),
             "records"
         );
         // absent grain -> fallback
-        assert_eq!(count_unit_from_grain(None), "records");
+        assert_eq!(count_unit_from_grain(None, None), "records");
         // implausibly long tail -> fallback (guards against a runaway grain sentence)
         let long = format!("one row = one {}", "x".repeat(60));
-        assert_eq!(count_unit_from_grain(Some(&long)), "records");
+        assert_eq!(count_unit_from_grain(None, Some(&long)), "records");
     }
 
     #[test]

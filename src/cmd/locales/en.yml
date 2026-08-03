@@ -290,10 +290,19 @@ viz:
     # y-axis title. `trend_agg` / `trend_axis_agg` are where `agg_sum` /
     # `agg_mean` above are finally consumed.
     #
-    # `q_unit` is EITHER the localized `viz.chart.records` fallback OR text parsed
-    # out of the dictionary's grain phrase. The latter is LLM output and is
-    # already in the target language under `--dictionary infer --language xx`, so
-    # it is passed through untranslated, like a column name.
+    # `q_unit` is LLM output passed through untranslated, like a column name. It
+    # is resolved by `count_unit_from_grain` in this precedence:
+    #   1. the dictionary's `x-qsv.grain_unit` -- a STRUCTURED bare entity noun
+    #      that describegpt is asked to write in the target language, so it drops
+    #      straight into the templates below;
+    #   2. else, text parsed out of the prose `x-qsv.grain` sentence. LEGACY, and
+    #      English-only: it splits on the literal " one ". Dictionaries generated
+    #      before `grain_unit` existed take this path and CAN leak English into an
+    #      otherwise-localized title (issue #4321) -- the fix is to regenerate the
+    #      dictionary, not to translate here;
+    #   3. else, the localized `viz.chart.records` fallback.
+    # This block previously asserted that grain text "is already in the target
+    # language" under `--language xx`. That was false, and was the bug.
     trend_raw: "%{q_y} over %{q_date}"
     trend_agg: "%{q_y} (%{q_agg}) over %{q_date}"
     trend_count: "%{q_unit} over %{q_date}"

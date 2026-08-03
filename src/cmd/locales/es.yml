@@ -167,8 +167,10 @@ viz:
     locations_over_time: "ubicaciones a lo largo del tiempo"
     pair_log_scale: "%{q_name} · escala log"
     pair_log_scale_positive: "%{q_name} · escala log, solo valores positivos (%{q_share} de las filas omitidas)"
-    # Paneles de tendencia. `q_unit` puede ser `viz.chart.records` o texto derivado
-    # del grano del diccionario (salida del LLM, ya traducida): no se traduce aqui.
+    # Paneles de tendencia. `q_unit` es salida del LLM y no se traduce aqui. Orden de
+    # preferencia: `x-qsv.grain_unit` (estructurado, ya en el idioma destino), luego
+    # texto extraido de la frase `x-qsv.grain` (heredado, solo ingles) y por ultimo
+    # `viz.chart.records`.
     trend_raw: "%{q_y} a lo largo de %{q_date}"
     trend_agg: "%{q_y} (%{q_agg}) a lo largo de %{q_date}"
     trend_count: "%{q_unit} a lo largo de %{q_date}"

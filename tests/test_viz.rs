@@ -14656,9 +14656,17 @@ fn viz_smart_density_map_still_reaches_the_row_pin() {
     // ...yet the pin ships, and the bridge accepts a pin-only panel as hookable
     assert!(html.contains(r#""name":"qsv-row-pin""#));
     assert!(
-        html.contains("gd.data.some(isPointTrace) || gd.data.some(isPinTrace)"),
+        html.contains("gd.data.some(isPointTrace) || hasPinPair(gd)"),
         "a pin-only panel would be skipped, leaving the pin traces unreachable"
     );
+    // The pin sentinel is matched on TYPE as well as name. Trace names elsewhere in a dashboard
+    // come from the data, so a bare name match would let a row whose category read "qsv-row-pin"
+    // make an unrelated panel look pin-bearing -- and that panel, reached first, would answer for
+    // the note. Both halves are required too, since the pin is only ever drawn as a pair.
+    assert!(html.contains(
+        r#"(t.type === "scattermap" || t.type === "scattergeo")
+      && (t.name === "qsv-row-pin" || t.name === "qsv-row-pin-halo")"#
+    ));
 }
 
 // No drawer, no pin: there is no row to pin and nothing that could ever fill it in.

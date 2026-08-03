@@ -74,7 +74,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>332 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>6</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-03 01:33 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-03 01:45 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -1529,8 +1529,24 @@
   function isPointTrace(t) {
     return !!(t && (t.type === "scattermap" || t.type === "scattergeo") && t.ids && t.ids.length);
   }
+  // Type-gated, NOT matched on the name alone: trace names elsewhere in a dashboard come from the
+  // data (series values, category labels), so a row whose category happened to read "qsv-row-pin"
+  // could otherwise make a bar panel look pin-bearing. Only a `Map`/`Geo` panel ever emits these
+  // names on these types, and none of the trace names on those panels are data-derived.
   function isPinTrace(t) {
-    return !!(t && (t.name === "qsv-row-pin" || t.name === "qsv-row-pin-halo"));
+    return !!(t && (t.type === "scattermap" || t.type === "scattergeo")
+      && (t.name === "qsv-row-pin" || t.name === "qsv-row-pin-halo"));
+  }
+  // Both halves or neither: the pin is drawn as a core plus the halo beneath it and `applyPins`
+  // restyles the pair together, so a lone half can never actually show anything.
+  function hasPinPair(gd) {
+    var pin = false, halo = false;
+    (gd.data || []).forEach(function (t) {
+      if (!isPinTrace(t)) return;
+      if (t.name === "qsv-row-pin") pin = true;
+      else halo = true;
+    });
+    return pin && halo;
   }
   // A panel is worth hooking if it can show a selection AT ALL — which is not the same as having
   // selectable points. The second case is a DENSITY map: its heatmap core carries no `ids` (and it
@@ -1538,7 +1554,7 @@
   // drawer row is by definition "not among plotted points" and can still be pinned at its own
   // coordinates. Without this the pin traces would be emitted and then never reachable.
   function hasPointTrace(gd) {
-    return !!(gd.data && (gd.data.some(isPointTrace) || gd.data.some(isPinTrace)));
+    return !!(gd.data && (gd.data.some(isPointTrace) || hasPinPair(gd)));
   }
   // id string -> {t: traceIndex, p: pointIndex}. Built once per hook so applying a selection is
   // O(selected) rather than O(points) — the core trace can carry 150k of them.

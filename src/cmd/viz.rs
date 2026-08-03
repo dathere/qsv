@@ -10464,8 +10464,24 @@ const MAP_SELECT_CHROME: &str = r##"<script>
   function isPointTrace(t) {
     return !!(t && (t.type === "scattermap" || t.type === "scattergeo") && t.ids && t.ids.length);
   }
+  // Type-gated, NOT matched on the name alone: trace names elsewhere in a dashboard come from the
+  // data (series values, category labels), so a row whose category happened to read "qsv-row-pin"
+  // could otherwise make a bar panel look pin-bearing. Only a `Map`/`Geo` panel ever emits these
+  // names on these types, and none of the trace names on those panels are data-derived.
   function isPinTrace(t) {
-    return !!(t && (t.name === "qsv-row-pin" || t.name === "qsv-row-pin-halo"));
+    return !!(t && (t.type === "scattermap" || t.type === "scattergeo")
+      && (t.name === "qsv-row-pin" || t.name === "qsv-row-pin-halo"));
+  }
+  // Both halves or neither: the pin is drawn as a core plus the halo beneath it and `applyPins`
+  // restyles the pair together, so a lone half can never actually show anything.
+  function hasPinPair(gd) {
+    var pin = false, halo = false;
+    (gd.data || []).forEach(function (t) {
+      if (!isPinTrace(t)) return;
+      if (t.name === "qsv-row-pin") pin = true;
+      else halo = true;
+    });
+    return pin && halo;
   }
   // A panel is worth hooking if it can show a selection AT ALL — which is not the same as having
   // selectable points. The second case is a DENSITY map: its heatmap core carries no `ids` (and it
@@ -10473,7 +10489,7 @@ const MAP_SELECT_CHROME: &str = r##"<script>
   // drawer row is by definition "not among plotted points" and can still be pinned at its own
   // coordinates. Without this the pin traces would be emitted and then never reachable.
   function hasPointTrace(gd) {
-    return !!(gd.data && (gd.data.some(isPointTrace) || gd.data.some(isPinTrace)));
+    return !!(gd.data && (gd.data.some(isPointTrace) || hasPinPair(gd)));
   }
   // id string -> {t: traceIndex, p: pointIndex}. Built once per hook so applying a selection is
   // O(selected) rather than O(points) — the core trace can carry 150k of them.

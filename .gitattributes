@@ -2,5 +2,12 @@
 *.sh text eol=lf
 *.csv text eol=lf
 *.toml text eol=lf
+
+# Vendored browser assets. These are embedded verbatim with include_str!/include_bytes! and
+# their exact bytes are hashed for Subresource Integrity. Under `* text=auto` above, a Windows
+# checkout rewrites them to CRLF, which changes those bytes: the build then emits an SRI
+# attribute that cannot match what the CDN serves, and the browser refuses to run the script.
+# `-text` pins them to their upstream bytes on every platform.
+src/cmd/assets/** -text
 resources/test/test-windows1252.csv encoding=cp1252
 resources/test/test-utf16le.csv encoding=utf-16le

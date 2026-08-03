@@ -39412,8 +39412,14 @@ mod tests {
         // runtime key (the resolution check below) and the literal "t!(" the scanner searches
         // for, both of which would register as unverifiable sites.
         let whole = include_str!("viz.rs");
+        // The CRLF arm is not hypothetical: `.gitattributes` declares `* text=auto`, so a Windows
+        // checkout hands include_str! a file whose newlines are \r\n. The LF-only anchor then
+        // fails to match, the scan does NOT stop at the test module, and it picks up this
+        // module's own deliberately-runtime `t!` keys -- reporting them as unverifiable sites and
+        // failing the assertion below on Windows only.
         let src = whole
             .split_once("\n#[cfg(test)]\nmod tests {")
+            .or_else(|| whole.split_once("\r\n#[cfg(test)]\r\nmod tests {"))
             .map_or(whole, |(before, _)| before);
         let bytes = src.as_bytes();
         let (mut checked, mut sites) = (0usize, 0usize);

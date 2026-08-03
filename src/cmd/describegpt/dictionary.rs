@@ -1972,6 +1972,24 @@ pub(super) fn parse_llm_dictionary_response(
         }
     }
 
+    // A response that parsed but matched NOT ONE of the real column names is a red flag, not
+    // an empty dictionary. The usual cause is malformed JSON: `extract_json_from_output`
+    // fails on the whole object, falls through to its brace scan, and returns the first
+    // NESTED object that happens to parse -- typically one field's `{label, description,
+    // ...}` body. Every lookup below then misses, and without this warning the run silently
+    // produces a dictionary with no LLM labels at all (single-pass) or silently discards the
+    // baseline pass (`--two-pass`), having already paid for the inference.
+    //
+    // Guarded on non-empty `field_names` so a genuinely column-less input stays quiet.
+    if result.is_empty() && !field_names.is_empty() {
+        wwarn!(
+            "LLM response yielded no usable fields (none of the {} column name(s) matched). The \
+             response was likely malformed JSON; any grain/relationships it carried were dropped \
+             too. Re-run to retry the inference.",
+            field_names.len()
+        );
+    }
+
     Ok(result)
 }
 

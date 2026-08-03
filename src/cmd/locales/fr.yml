@@ -38,6 +38,8 @@ viz:
     cluster_click_to_zoom: " - cliquer pour zoomer"
     row_not_in_preview: "ligne absente de l'aperçu"
     row_is_filtered_out: "ligne exclue par un filtre"
+    row_not_plotted: "ligne absente des points tracés"
+    row_has_no_coordinates: "la ligne n'a pas de coordonnées cartographiques"
     extent_points: "points d'étendue"
     spatial_extent: "étendue spatiale"
     full_extent: "étendue totale (valeurs aberrantes incluses)"

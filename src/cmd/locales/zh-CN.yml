@@ -45,6 +45,8 @@ viz:
     cluster_click_to_zoom: " - 点击放大"
     row_not_in_preview: "该行不在预览范围内"
     row_is_filtered_out: "该行已被筛选排除"
+    row_not_plotted: "该行不在已绘制的点中"
+    row_has_no_coordinates: "该行没有地图坐标"
     extent_points: "范围点"
     spatial_extent: "空间范围"
     full_extent: "完整范围(含离群点)"

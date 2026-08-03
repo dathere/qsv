@@ -38,6 +38,8 @@ viz:
     cluster_click_to_zoom: " - clicca per ingrandire"
     row_not_in_preview: "riga non presente nell'anteprima"
     row_is_filtered_out: "riga esclusa dai filtri"
+    row_not_plotted: "riga non tra i punti tracciati"
+    row_has_no_coordinates: "la riga non ha coordinate sulla mappa"
     extent_points: "punti di estensione"
     spatial_extent: "estensione spaziale"
     full_extent: "estensione totale (valori anomali inclusi)"

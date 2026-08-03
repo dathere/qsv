@@ -73,7 +73,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>300 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>5</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-02 18:05 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-03 01:45 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -924,8 +924,51 @@
     return kept;
   };
   window.__qsvDataSelectedRows = function () { return Array.from(selRows); };
-  // Page to the row with this DATA index, in the CURRENT sort/filter. Returns false when the row
-  // is filtered out (caller decides whether to explain) — never clears the user's filters.
+  // Raw cells of one DATA row (file column order, exactly as embedded), or null when the drawer
+  // has not been built or the index is out of range. The map bridge reads a row's coordinates
+  // through this rather than reaching into DataTables itself. A DATE column's cell is a
+  // `[display, sortKey]` pair rather than a bare string, so callers must expect either.
+  window.__qsvDataRowCells = function (i) {
+    if (!dt) return null;
+    i = +i;
+    if (!Number.isInteger(i) || i < 0 || i >= dt.rows().count()) return null;
+    return dt.row(i).data() || null;
+  };
+
+  // breathing room left above/below a row that had to be scrolled to, so it does not sit flush
+  // against the header or the bottom edge
+  var ROW_REVEAL_MARGIN = 8;
+
+  // Scroll a row into the drawer's visible band.
+  //
+  // The vertical scroller is the OUTER `div.dt-layout-table` (the drawer's own flex rule), NOT
+  // `div.dt-scroll-body` — under `scrollX: true` that one scrolls horizontally only, since
+  // `scrollY` is never set. The header is pinned inside the scroller with `position: sticky`, so
+  // its height has to come off the top of the band; scrolling a row flush to the top would park it
+  // underneath the header instead of revealing it.
+  //
+  // Nothing moves while the row is already fully visible: a map click that lands on a row that is
+  // on screen anyway should not jerk the table out from under the reader.
+  //
+  // `behavior: "instant"` is deliberate and is NOT interchangeable with "auto". The page sets
+  // `scroll-behavior: smooth`, "auto" inherits it, and a smooth programmatic scroll can be
+  // cancelled at frame 0 by the layout work the same click triggers — arriving nowhere, silently.
+  function revealRow(node) {
+    var scroller = document.querySelector("#qsv-data-drawer div.dt-container > div.dt-layout-table");
+    if (!scroller || !node) return;
+    var head = document.querySelector("#qsv-data-drawer div.dt-scroll-head");
+    var headH = head ? head.getBoundingClientRect().height : 0;
+    var sr = scroller.getBoundingClientRect(), nr = node.getBoundingClientRect();
+    var above = nr.top - (sr.top + headH), below = nr.bottom - sr.bottom, delta = 0;
+    if (above < 0) delta = above - ROW_REVEAL_MARGIN;
+    else if (below > 0) delta = below + ROW_REVEAL_MARGIN;
+    if (delta) scroller.scrollTo({top: scroller.scrollTop + delta, behavior: "instant"});
+  }
+
+  // Bring the row with this DATA index into view, in the CURRENT sort/filter: page to it, then
+  // scroll it inside the drawer's scrollport (paging alone only guarantees the right PAGE — on a
+  // 25-row page the row can still sit well below the fold). Returns false when the row is filtered
+  // out (caller decides whether to explain) — never clears the user's filters.
   window.__qsvDataPageTo = function (i) {
     if (!dt) return false;
     var order = dt.rows({order: "applied", search: "applied"}).indexes().toArray();
@@ -934,6 +977,11 @@
     var len = dt.page.len();
     // len is -1 when the user picked "All" — everything is already on one page
     if (len > 0) dt.page(Math.floor(pos / len)).draw(false);
+    // `draw` is synchronous and materializes the page's rows, so the node is normally attached by
+    // now; the deferred retry covers a `deferRender` pass that has not caught up.
+    var node = dt.row(+i).node();
+    if (node) revealRow(node);
+    else setTimeout(function () { revealRow(dt.row(+i).node()); }, 0);
     return true;
   };
 

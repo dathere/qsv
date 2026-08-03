@@ -34,6 +34,8 @@ viz:
     cluster_click_to_zoom: " - haz clic para ampliar"
     row_not_in_preview: "fila no incluida en la vista previa"
     row_is_filtered_out: "fila excluida por el filtro"
+    row_not_plotted: "fila no incluida entre los puntos trazados"
+    row_has_no_coordinates: "la fila no tiene coordenadas en el mapa"
     extent_points: "puntos de extensión"
     spatial_extent: "extensión espacial"
     full_extent: "extensión completa (incl. atípicos)"

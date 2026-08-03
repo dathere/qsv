@@ -13889,6 +13889,90 @@ fn viz_axis_and_colorbar_titles_escape_markup_headers_but_not_flags() {
     );
 }
 
+// Slider step labels and the current-value readout are RENDERED surfaces: plotly's
+// `drawLabel` (`sliders/draw.js:365`) and `drawCurrentValue` (`:322`) both pipe their text through
+// `svgTextUtils.convertToTspans`, so a frame value or slider column header carrying markup renders
+// as a tag. Verified in-browser: an `<a href>` frame value produced two live anchors (one in the
+// step label, one in the current-value readout), each with a working `xlink:href`. See #4333.
+//
+// The invariant has TWO halves, and asserting only the first is not enough -- a later sweep that
+// escaped all four fields would still pass a label-only assertion while silently desynchronizing
+// the slider from the frames:
+//   1. the step `label` and the current-value `prefix` ARE escaped, and
+//   2. the step `value` and its animate arg are STILL byte-equal to `Frame::name`.
+//
+// Note the two serialized forms below: `escape_hover` turns `<` into `&lt;`, and plotly's
+// serializer then u-escapes the `&` -> `\u0026lt;`. An UNescaped value keeps its `<`, which the
+// same serializer emits as `\u003c`. So `\u0026` == escaped, `\u003c` == raw.
+#[test]
+fn viz_slider_escapes_rendered_labels_but_keeps_frame_identity_raw() {
+    let wrk = Workdir::new("viz_slider_escapes_rendered_labels_but_keeps_frame_identity_raw");
+    // markup in BOTH the frame values (step labels) and the slider column header (prefix)
+    wrk.create_from_string(
+        "evil.csv",
+        "region,gdp,wellbeing,<b>Period</b>\n\
+         North,10,20,<b>Q1</b>\n\
+         South,12,22,<b>Q1</b>\n\
+         North,14,26,\"<a href=\"\"https://evil.example\"\">Q2</a>\"\n\
+         South,16,28,\"<a href=\"\"https://evil.example\"\">Q2</a>\"\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter",
+        "evil.csv",
+        "--x",
+        "gdp",
+        "--y",
+        "wellbeing",
+        "--series",
+        "region",
+        "--slider",
+        "<b>Period</b>",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // --- half 1: the two RENDERED strings are escaped --------------------------------------
+    assert!(
+        html.contains(r#""label":"\u0026lt;b\u0026gt;Q1\u0026lt;/b\u0026gt;""#),
+        "the slider step label must be escaped, not rendered as markup; html: {html}"
+    );
+    assert!(
+        html.contains(r#""prefix":"\u0026lt;b\u0026gt;Period\u0026lt;/b\u0026gt;: ""#),
+        "the slider current-value prefix must be escaped, not rendered as markup"
+    );
+    // strongest form: NO step label anywhere keeps a raw `<`, so none can open a tag
+    assert!(
+        !html.contains(r#""label":"\u003c"#),
+        "a raw markup frame value leaked into a rendered slider step label"
+    );
+
+    // --- half 2: the IDENTITY fields stay byte-identical to Frame::name ---------------------
+    // escaping these would desynchronize step -> frame matching (the #4247 decision), and
+    // `sliders/defaults.js:101-102` (`coerce('value', label)`) means dropping the explicit
+    // `.value()` would silently make it inherit the escaped label.
+    for raw in [
+        r#"\u003cb\u003eQ1\u003c/b\u003e"#,
+        r#"\u003ca href=\"https://evil.example\"\u003eQ2\u003c/a\u003e"#,
+    ] {
+        assert!(
+            html.contains(&format!(r#""value":"{raw}""#)),
+            "the slider step value must stay raw so it still matches Frame::name; missing {raw}"
+        );
+        assert!(
+            html.contains(&format!(r#""name":"{raw}""#)),
+            "the animation frame name must stay raw; missing {raw}"
+        );
+        // `args[0]` is the frame key the step animates to -- must match Frame::name exactly
+        assert!(
+            html.contains(&format!(r#""args":[["{raw}"]"#)),
+            "the slider step animate target must stay raw and match Frame::name; missing {raw}"
+        );
+    }
+}
+
 // ---- viz trace-name escaping sweep (issue #4331) -------------------------------------------
 
 /// The #4247/#4254 sweeps escaped panel titles and axis/colorbar titles, but the plotly TRACE

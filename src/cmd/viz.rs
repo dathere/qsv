@@ -3045,11 +3045,24 @@ fn slider_anim_options(speed_ms: u64) -> AnimationOptions {
 }
 
 /// A scrub `Slider` with one animate step per frame value; dragging a step animates to that frame.
+///
+/// ESCAPING INVARIANT (see #4333): plotly renders its markup subset (`<b>`, `<i>`, `<a href>`, ...)
+/// in BOTH slider surfaces — `drawLabel` (`sliders/draw.js:365`) and `drawCurrentValue`
+/// (`:322`) each pipe their text through `svgTextUtils.convertToTspans`. The `data-notex` attr on
+/// those nodes only suppresses MathJax, not the HTML subset. So the two RENDERED strings — the step
+/// `label` and the current-value `prefix` — are escaped, since both carry untrusted text (raw CSV
+/// cells / column headers / dictionary labels).
+///
+/// The other two fields must stay RAW: `.value()` and `Animation::frames()` are matched against
+/// `Frame::name` by exact string, so escaping them desynchronizes the slider from the frames (the
+/// #4247 decision recorded in CHANGELOG.md). `.value()` in particular must keep being set
+/// EXPLICITLY: `sliders/defaults.js:101-102` does `coerce('value', label)`, so dropping it would
+/// silently make `value` inherit the now-escaped label and break frame matching.
 fn slider_control(col_label: &str, frame_values: &[String], speed_ms: u64) -> CliResult<Slider> {
     let mut steps = Vec::with_capacity(frame_values.len());
     for label in frame_values {
         let step = SliderStepBuilder::new()
-            .label(label.clone())
+            .label(escape_hover(label))
             .value(label.clone())
             .animation(
                 Animation::frames(vec![label.clone()]).options(slider_anim_options(speed_ms)),
@@ -3065,7 +3078,7 @@ fn slider_control(col_label: &str, frame_values: &[String], speed_ms: u64) -> Cl
         .current_value(
             SliderCurrentValue::new()
                 .visible(true)
-                .prefix(format!("{col_label}: ")),
+                .prefix(format!("{}: ", escape_hover(col_label))),
         )
         // top padding drops the slider (and its current-value readout) clear of the x-axis title
         // so the two don't collide (the `common::Pad(t, b, l)` type — NOT the unqualified

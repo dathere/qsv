@@ -26462,6 +26462,10 @@ fn lorenz_diagonal_trace(axes: Option<(String, String)>) -> Box<dyn Trace> {
 /// to add vertical headroom for the outside value labels) and whether that panel's y-axis
 /// should be logarithmic (per `--log-scale`; bar panels decide from their counts, box panels
 /// from the verdict baked in at classification time; `false` for every other panel kind).
+///
+/// One `#[inline(never)]` function per panel kind, dispatched here: a single body with
+/// every arm needs far more stack at `opt-level=0` (no slot reuse across arms), which
+/// overflowed Windows' 1 MB debug main-thread stack (issue #4328).
 fn panel_trace(
     panel: &Panel,
     color: &'static str,
@@ -26472,8 +26476,302 @@ fn panel_trace(
     theme: Option<BuiltinTheme>,
     log_scale: LogScale,
 ) -> (Box<dyn Trace>, Option<f64>, bool) {
-    let mut bar_max: Option<f64> = None;
-    let mut log_y = false;
+    match &panel.kind {
+        PanelKind::BoxStats { .. } => panel_trace_box_stats(panel, color, axes),
+        PanelKind::BoxRaw { .. } => panel_trace_box_raw(panel, color, hist, axes),
+        PanelKind::Violin { .. } => panel_trace_violin(panel, color, hist, axes),
+        PanelKind::GroupedViolin { .. } => panel_trace_grouped_violin(panel, color, axes),
+        PanelKind::BoxOutliers { .. } => panel_trace_box_outliers(panel, color, outliers, axes),
+        PanelKind::FreqBar { .. } => {
+            panel_trace_freq_bar(panel, color, freq, axes, theme, log_scale)
+        },
+        PanelKind::Histogram { .. } => panel_trace_histogram(panel, color, hist, axes),
+        PanelKind::TimeSeries { .. } => panel_trace_time_series(panel, color, axes),
+        PanelKind::ScatterPair { .. } => panel_trace_scatter_pair(panel, color, axes),
+        PanelKind::Lorenz { .. } => panel_trace_lorenz(panel, color, axes),
+        PanelKind::Funnel {
+            form: PipelineForm::Bridge,
+            ..
+        } => panel_trace_funnel_bridge(panel, color, axes),
+        PanelKind::Funnel { .. } => panel_trace_funnel(panel, color, axes),
+        PanelKind::ContourPair { .. } => panel_trace_contour_pair(panel, axes),
+        PanelKind::CorrHeatmap { .. } => panel_trace_corr_heatmap(panel, axes),
+        PanelKind::AssocHeatmap { .. } => panel_trace_assoc_heatmap(panel, axes),
+        PanelKind::TopRelationships { .. } => panel_trace_top_relationships(panel, axes),
+        PanelKind::MeasureByDim { .. } => {
+            panel_trace_measure_by_dim(panel, color, axes, theme, log_scale)
+        },
+        // map / geo / 3D / hierarchy panels use a non-cartesian layout (map, geo projection,
+        // 3D scene, or domain-based treemap/sunburst) that can't share the typed x/y subplot grid,
+        // so they are rendered entirely by `smart_inline_panel_plot` and never reach this
+        // assembler.
+        PanelKind::KpiRow { .. }
+        | PanelKind::Map { .. }
+        | PanelKind::Geo { .. }
+        | PanelKind::Choropleth { .. }
+        | PanelKind::ChoroplethMap { .. }
+        | PanelKind::Scatter3D { .. }
+        | PanelKind::CyclicProfile { .. }
+        | PanelKind::Hierarchy { .. }
+        | PanelKind::Sankey { .. }
+        | PanelKind::Parcats { .. }
+        | PanelKind::AnimatedScatterPair { .. }
+        | PanelKind::AnimatedGeo { .. }
+        | PanelKind::AnimatedBubble { .. } => {
+            unreachable!(
+                "map/geo/choropleth/3D/polar/hierarchy/sankey/parcats/animated-scatter panels are \
+                 rendered via the inline path, not panel_trace"
+            )
+        },
+    }
+}
+
+#[inline(never)]
+fn panel_trace_box_stats(
+    panel: &Panel,
+    color: &'static str,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let log_y;
+    let PanelKind::BoxStats {
+        q1,
+        median,
+        q3,
+        lower,
+        upper,
+        mean,
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        // value-axis log verdict resolved at classification time (see `box_panel_logs`)
+        log_y = panel.value_log;
+        let mut b = BoxPlot::new(Vec::<f64>::new())
+            .name(panel.name.clone())
+            .q1(vec![*q1])
+            .median(vec![*median])
+            .q3(vec![*q3])
+            .marker(Marker::new().color(color))
+            // show only the y stats in the hover ("median: 202.771k"), not plotly's default
+            // "(<trace name>, median: ...)" which repeats the (long) column name on every
+            // statistic line — the column name is already the panel title.
+            .hover_info(HoverInfo::Y);
+        if let Some((x, y)) = &axes {
+            b = b.x_axis(x.clone()).y_axis(y.clone());
+        }
+        if let Some(l) = lower {
+            // clamp a non-positive lower whisker up to q1 on a log axis (issue #4219)
+            b = b.lower_fence(vec![log_safe_lower_fence(log_y, *l, *q1)]);
+        }
+        if let Some(u) = upper {
+            b = b.upper_fence(vec![*u]);
+        }
+        if let Some(m) = mean {
+            b = b.mean(vec![*m]);
+        }
+        if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
+            b = b.fill_color(fill).line(Line::new().color(outline));
+        }
+        b
+    };
+    (trace, None, log_y)
+}
+
+#[inline(never)]
+fn panel_trace_box_raw(
+    panel: &Panel,
+    color: &'static str,
+    hist: &HashMap<usize, Vec<f64>>,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let log_y;
+    let PanelKind::BoxRaw { idx, points } = &panel.kind else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        // opt-in / heuristic raw box: plotly computes the quartiles + true Tukey whiskers from
+        // the values and overlays the sample points per this panel's chosen --box-points mode
+        log_y = panel.value_log;
+        // plotly derives this box's whiskers from the values, so non-positive values must not
+        // reach it on a log axis (issue #4219 — see `log_safe_values`)
+        let values = log_safe_values(log_y, hist.get(idx).cloned().unwrap_or_default());
+        let mut b = BoxPlot::new(values)
+            .name(panel.name.clone())
+            .quartile_method(QuartileMethod::Linear)
+            .box_points(points.clone())
+            .marker(Marker::new().color(color))
+            // show only the y stats in the hover ("median: 202.771k"), not plotly's default
+            // "(<trace name>, median: ...)" which repeats the (long) column name on every
+            // statistic line — the column name is already the panel title.
+            .hover_info(HoverInfo::Y);
+        if let Some((x, y)) = &axes {
+            b = b.x_axis(x.clone()).y_axis(y.clone());
+        }
+        if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
+            b = b.fill_color(fill).line(Line::new().color(outline));
+        }
+        b
+    };
+    (trace, None, log_y)
+}
+
+#[inline(never)]
+fn panel_trace_violin(
+    panel: &Panel,
+    color: &'static str,
+    hist: &HashMap<usize, Vec<f64>>,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let log_y;
+    let PanelKind::Violin { idx, points, .. } = &panel.kind else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        // the default distribution panel: plotly estimates the KDE silhouette from the
+        // (possibly stride-sampled) values and draws the quartile box + mean line inside
+        // it, with the sample points overlaid per this panel's resolved --box-points mode
+        // (no overlay at all for sampled violins)
+        log_y = panel.value_log;
+        // plotly estimates the KDE + inner box from the values, so non-positive values must
+        // not reach it on a log axis (issue #4219 — see `log_safe_values`)
+        let values = log_safe_values(log_y, hist.get(idx).cloned().unwrap_or_default());
+        let mut v = Violin::new(values)
+            .name(panel.name.clone())
+            .quartile_method(QuartileMethod::Linear)
+            .box_plot(ViolinBox::new().visible(true))
+            .mean_line(MeanLine::new().visible(true))
+            .points(violin_points(points))
+            .marker(Marker::new().color(color))
+            .line(Line::new().color(color))
+            // clamp the KDE to the observed data range so the silhouette can't bleed past a
+            // natural bound (density below 0 for a count, above 100 for a percentage); the
+            // default "soft" span extends a bandwidth beyond the extremes, which misleads on
+            // bounded/discrete columns.
+            .span_mode(SpanMode::Hard)
+            // show only the y stats in the hover, not plotly's default "(<trace name>,
+            // ...)" which repeats the (long) column name — it's already the panel title.
+            .hover_info(HoverInfo::Y);
+        if let Some((x, y)) = &axes {
+            v = v.x_axis(x.clone()).y_axis(y.clone());
+        }
+        if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
+            v = v.fill_color(fill).line(Line::new().color(outline));
+        }
+        v
+    };
+    (trace, None, log_y)
+}
+
+#[inline(never)]
+fn panel_trace_grouped_violin(
+    panel: &Panel,
+    color: &'static str,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let PanelKind::GroupedViolin {
+        groups,
+        values,
+        points,
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        // distribution-by-category overview: one KDE silhouette per category (categories on
+        // the shared x-axis, the measure on y). A single `new_xy` trace, so it composes with
+        // the typed subplot grid and static image export like the MeasureByDim bar.
+        let mut v = Violin::new_xy(groups.clone(), values.clone())
+            .quartile_method(QuartileMethod::Linear)
+            .box_plot(ViolinBox::new().visible(true))
+            .mean_line(MeanLine::new().visible(true))
+            .points(violin_points(points))
+            .marker(Marker::new().color(color))
+            .line(Line::new().color(color))
+            // clamp each category's KDE to its observed range (see the single-column violin
+            // above) so a bounded/discrete measure can't render density past a natural limit.
+            .span_mode(SpanMode::Hard);
+        if let Some((x, y)) = &axes {
+            v = v.x_axis(x.clone()).y_axis(y.clone());
+        }
+        v
+    };
+    (trace, None, false)
+}
+
+#[inline(never)]
+fn panel_trace_box_outliers(
+    panel: &Panel,
+    color: &'static str,
+    outliers: &HashMap<usize, OutlierStats>,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let log_y;
+    let PanelKind::BoxOutliers {
+        idx,
+        q1,
+        median,
+        q3,
+        mean,
+        ..
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        // large column WITH outliers: a precomputed quartile box whose whiskers end at the
+        // observed in-fence extremes, with the out-of-fence values overlaid as NATIVE box
+        // points. The outliers are passed as a 2D `y` (`[[...]]`, via `Y = Vec<f64>`), which
+        // makes plotly draw them as points WITHOUT recomputing the box from them — a 1D `y`
+        // renders the box but drops the points.
+        log_y = panel.value_log;
+        let stats = outliers.get(idx);
+        // the precomputed whisker is clamped below, but these are raw VALUES handed to
+        // plotly — a column granted a log axis by box_log_skew_fallback can carry
+        // zero/negative outliers, which are log-undefined exactly like the BoxRaw/Violin
+        // case (issue #4219).
+        let pts = log_safe_values(log_y, stats.map(|o| o.outliers.clone()).unwrap_or_default());
+        // clamp a non-positive lower whisker up to q1 on a log axis (issue #4219), else the
+        // log-undefined fence breaks the box and only the outlier points survive
+        let whisker_low = log_safe_lower_fence(log_y, stats.map_or(*q1, |o| o.whisker_low), *q1);
+        let whisker_high = stats.map_or(*q3, |o| o.whisker_high);
+        let mut b = BoxPlot::<f64, Vec<f64>>::new(vec![pts])
+            .name(panel.name.clone())
+            .q1(vec![*q1])
+            .median(vec![*median])
+            .q3(vec![*q3])
+            .lower_fence(vec![whisker_low])
+            .upper_fence(vec![whisker_high])
+            .box_points(BoxPoints::All)
+            .point_pos(0.0)
+            .jitter(0.0)
+            .marker(Marker::new().color(color).size(4))
+            .hover_info(HoverInfo::Y);
+        if let Some(m) = mean {
+            b = b.mean(vec![*m]);
+        }
+        if let Some((x, y)) = &axes {
+            b = b.x_axis(x.clone()).y_axis(y.clone());
+        }
+        if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
+            b = b.fill_color(fill).line(Line::new().color(outline));
+        }
+        b
+    };
+    (trace, None, log_y)
+}
+
+#[inline(never)]
+fn panel_trace_freq_bar(
+    panel: &Panel,
+    color: &'static str,
+    freq: &FreqMap,
+    axes: Option<(String, String)>,
+    theme: Option<BuiltinTheme>,
+    log_scale: LogScale,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let bar_max: Option<f64>;
+    let log_y;
     // bar value-label font: omit the explicit color so the label inherits the layout font color
     // (qsv's ink in the unthemed look, the template's font when themed) -- this lets the dark/light
     // toggle's `font.color` relayout flip the labels instead of leaving them dark on a dark page.
@@ -26485,354 +26783,396 @@ fn panel_trace(
             f.family(FONT_FAMILY)
         }
     };
-    let trace: Box<dyn Trace> = match &panel.kind {
-        PanelKind::BoxStats {
-            q1,
-            median,
-            q3,
-            lower,
-            upper,
-            mean,
-        } => {
-            // value-axis log verdict resolved at classification time (see `box_panel_logs`)
-            log_y = panel.value_log;
-            let mut b = BoxPlot::new(Vec::<f64>::new())
-                .name(panel.name.clone())
-                .q1(vec![*q1])
-                .median(vec![*median])
-                .q3(vec![*q3])
-                .marker(Marker::new().color(color))
-                // show only the y stats in the hover ("median: 202.771k"), not plotly's default
-                // "(<trace name>, median: ...)" which repeats the (long) column name on every
-                // statistic line — the column name is already the panel title.
-                .hover_info(HoverInfo::Y);
-            if let Some((x, y)) = &axes {
-                b = b.x_axis(x.clone()).y_axis(y.clone());
-            }
-            if let Some(l) = lower {
-                // clamp a non-positive lower whisker up to q1 on a log axis (issue #4219)
-                b = b.lower_fence(vec![log_safe_lower_fence(log_y, *l, *q1)]);
-            }
-            if let Some(u) = upper {
-                b = b.upper_fence(vec![*u]);
-            }
-            if let Some(m) = mean {
-                b = b.mean(vec![*m]);
-            }
-            if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
-                b = b.fill_color(fill).line(Line::new().color(outline));
-            }
-            b
-        },
-        PanelKind::BoxRaw { idx, points } => {
-            // opt-in / heuristic raw box: plotly computes the quartiles + true Tukey whiskers from
-            // the values and overlays the sample points per this panel's chosen --box-points mode
-            log_y = panel.value_log;
-            // plotly derives this box's whiskers from the values, so non-positive values must not
-            // reach it on a log axis (issue #4219 — see `log_safe_values`)
-            let values = log_safe_values(log_y, hist.get(idx).cloned().unwrap_or_default());
-            let mut b = BoxPlot::new(values)
-                .name(panel.name.clone())
-                .quartile_method(QuartileMethod::Linear)
-                .box_points(points.clone())
-                .marker(Marker::new().color(color))
-                // show only the y stats in the hover ("median: 202.771k"), not plotly's default
-                // "(<trace name>, median: ...)" which repeats the (long) column name on every
-                // statistic line — the column name is already the panel title.
-                .hover_info(HoverInfo::Y);
-            if let Some((x, y)) = &axes {
-                b = b.x_axis(x.clone()).y_axis(y.clone());
-            }
-            if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
-                b = b.fill_color(fill).line(Line::new().color(outline));
-            }
-            b
-        },
-        PanelKind::Violin { idx, points, .. } => {
-            // the default distribution panel: plotly estimates the KDE silhouette from the
-            // (possibly stride-sampled) values and draws the quartile box + mean line inside
-            // it, with the sample points overlaid per this panel's resolved --box-points mode
-            // (no overlay at all for sampled violins)
-            log_y = panel.value_log;
-            // plotly estimates the KDE + inner box from the values, so non-positive values must
-            // not reach it on a log axis (issue #4219 — see `log_safe_values`)
-            let values = log_safe_values(log_y, hist.get(idx).cloned().unwrap_or_default());
-            let mut v = Violin::new(values)
-                .name(panel.name.clone())
-                .quartile_method(QuartileMethod::Linear)
-                .box_plot(ViolinBox::new().visible(true))
-                .mean_line(MeanLine::new().visible(true))
-                .points(violin_points(points))
-                .marker(Marker::new().color(color))
-                .line(Line::new().color(color))
-                // clamp the KDE to the observed data range so the silhouette can't bleed past a
-                // natural bound (density below 0 for a count, above 100 for a percentage); the
-                // default "soft" span extends a bandwidth beyond the extremes, which misleads on
-                // bounded/discrete columns.
-                .span_mode(SpanMode::Hard)
-                // show only the y stats in the hover, not plotly's default "(<trace name>,
-                // ...)" which repeats the (long) column name — it's already the panel title.
-                .hover_info(HoverInfo::Y);
-            if let Some((x, y)) = &axes {
-                v = v.x_axis(x.clone()).y_axis(y.clone());
-            }
-            if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
-                v = v.fill_color(fill).line(Line::new().color(outline));
-            }
-            v
-        },
-        PanelKind::GroupedViolin {
-            groups,
-            values,
-            points,
-        } => {
-            // distribution-by-category overview: one KDE silhouette per category (categories on
-            // the shared x-axis, the measure on y). A single `new_xy` trace, so it composes with
-            // the typed subplot grid and static image export like the MeasureByDim bar.
-            let mut v = Violin::new_xy(groups.clone(), values.clone())
-                .quartile_method(QuartileMethod::Linear)
-                .box_plot(ViolinBox::new().visible(true))
-                .mean_line(MeanLine::new().visible(true))
-                .points(violin_points(points))
-                .marker(Marker::new().color(color))
-                .line(Line::new().color(color))
-                // clamp each category's KDE to its observed range (see the single-column violin
-                // above) so a bounded/discrete measure can't render density past a natural limit.
-                .span_mode(SpanMode::Hard);
-            if let Some((x, y)) = &axes {
-                v = v.x_axis(x.clone()).y_axis(y.clone());
-            }
-            v
-        },
-        PanelKind::BoxOutliers {
-            idx,
-            q1,
-            median,
-            q3,
-            mean,
-            ..
-        } => {
-            // large column WITH outliers: a precomputed quartile box whose whiskers end at the
-            // observed in-fence extremes, with the out-of-fence values overlaid as NATIVE box
-            // points. The outliers are passed as a 2D `y` (`[[...]]`, via `Y = Vec<f64>`), which
-            // makes plotly draw them as points WITHOUT recomputing the box from them — a 1D `y`
-            // renders the box but drops the points.
-            log_y = panel.value_log;
-            let stats = outliers.get(idx);
-            // the precomputed whisker is clamped below, but these are raw VALUES handed to
-            // plotly — a column granted a log axis by box_log_skew_fallback can carry
-            // zero/negative outliers, which are log-undefined exactly like the BoxRaw/Violin
-            // case (issue #4219).
-            let pts = log_safe_values(log_y, stats.map(|o| o.outliers.clone()).unwrap_or_default());
-            // clamp a non-positive lower whisker up to q1 on a log axis (issue #4219), else the
-            // log-undefined fence breaks the box and only the outlier points survive
-            let whisker_low =
-                log_safe_lower_fence(log_y, stats.map_or(*q1, |o| o.whisker_low), *q1);
-            let whisker_high = stats.map_or(*q3, |o| o.whisker_high);
-            let mut b = BoxPlot::<f64, Vec<f64>>::new(vec![pts])
-                .name(panel.name.clone())
-                .q1(vec![*q1])
-                .median(vec![*median])
-                .q3(vec![*q3])
-                .lower_fence(vec![whisker_low])
-                .upper_fence(vec![whisker_high])
-                .box_points(BoxPoints::All)
-                .point_pos(0.0)
-                .jitter(0.0)
-                .marker(Marker::new().color(color).size(4))
-                .hover_info(HoverInfo::Y);
-            if let Some(m) = mean {
-                b = b.mean(vec![*m]);
-            }
-            if let Some((x, y)) = &axes {
-                b = b.x_axis(x.clone()).y_axis(y.clone());
-            }
-            if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
-                b = b.fill_color(fill).line(Line::new().color(outline));
-            }
-            b
-        },
-        PanelKind::FreqBar { idx } => {
-            let bars = freq.get(idx).cloned().unwrap_or_default();
-            // x = each bar's distinct category-axis key (real value, or aggregate sentinel) so
-            // distinct categories never collapse onto the same plotly category; the friendly,
-            // truncated tick labels are applied separately via freq_bar_tick_text.
-            let xs: Vec<String> = bars.iter().map(|b| b.x_key.clone()).collect();
-            let ys: Vec<f64> = bars.iter().map(|b| b.count as f64).collect();
-            // muted-grey the aggregate "(NULL)" / "Other (N)" buckets so they read as summary
-            // bars, visually distinct from the palette-colored real categories. Color is driven
-            // by the bar's kind (not its label), so a real category named like an aggregate is
-            // never mis-colored.
-            let bar_colors: Vec<&'static str> = bars
-                .iter()
-                .map(|b| match b.kind {
-                    FreqBarKind::Aggregate => MUTED_COLOR,
-                    FreqBarKind::Category => color,
-                })
-                .collect();
-            bar_max = Some(ys.iter().copied().fold(0.0_f64, f64::max));
-            // high dynamic range (a dominating "(NULL)"/"Other" bucket) -> log y-axis so the
-            // small real categories stay visible; gated by the resolved --log-scale mode.
-            log_y = panel_is_log(panel, freq, log_scale);
-            // on a log y-axis, hatch the muted-grey aggregate bars as a redundant cue
-            // (alongside the "count (log)" axis title) that the axis is non-linear
-            let mut marker = Marker::new().color_array(bar_colors);
-            if let Some(shapes) = freq_bar_pattern_shapes(&bars, log_y) {
-                marker = marker.pattern(Pattern::new().shape_array(shapes));
-            }
-            // The category axis shows TRUNCATED tick labels, and plotly's default hover reads
-            // that same tick text — so the hover carries each bar's FULL label explicitly.
-            // `label` (not `x_key`): the aggregate buckets' axis keys are sentinel-padded.
-            let hover_labels: Vec<String> = bars.iter().map(|b| escape_hover(&b.label)).collect();
-            let mut bar = Bar::new(xs, ys)
-                .name(panel.name.clone())
-                .marker(marker)
-                .hover_text_array(hover_labels)
-                .hover_template(&t!("viz.hover.count_by_label"))
-                // value labels above each bar, SI-formatted ("258k", "1.05M") to match
-                // the axis ticks
-                .text_template("%{y:.3s}")
-                .text_position(TextPosition::Outside)
-                // don't clip the outside label of the tallest bar at the cell's top edge. On a
-                // log axis the fixed top headroom shrinks to a few pixels when counts span many
-                // decades (a dominant "(NULL)"/"Other" bucket), so its value label would otherwise
-                // be cut off; let it draw into the inter-row gap instead.
-                .clip_on_axis(false)
-                .text_font(label_font);
-            if let Some((x, y)) = &axes {
-                bar = bar.x_axis(x.clone()).y_axis(y.clone());
-            }
-            bar
-        },
-        PanelKind::Histogram { idx } => {
-            let values = hist.get(idx).cloned().unwrap_or_default();
-            // the cell has no x-axis title (panel.name is only a cell annotation), so name the
-            // binned value and its count in the hover, both comma-grouped.
-            // NOTE: `escape_hover` only, no `escape_template_pct` -- preserved from before this
-            // string was localized. A `%` in the panel name is mis-read by plotly here, unlike in
-            // the contour/Lorenz hovers which take the full composition. Pre-existing; changing it
-            // would be a behavior change, not a translation.
-            let hover = t!("viz.hover.histogram", q_col = escape_hover(&panel.name)).into_owned();
-            let mut h = Histogram::new(values)
-                .name(panel.name.clone())
-                .marker(Marker::new().color(color))
-                .hover_template(hover);
-            if let Some((x, y)) = &axes {
-                h = h.x_axis(x.clone()).y_axis(y.clone());
-            }
-            h
-        },
-        PanelKind::TimeSeries { y_label, xs, ys } => {
-            let mut t = Scatter::new(xs.clone(), ys.clone())
-                .mode(Mode::Lines)
-                .name(y_label.clone())
-                .line(Line::new().color(color));
-            if let Some((x, y)) = &axes {
-                t = t.x_axis(x.clone()).y_axis(y.clone());
-            }
-            t
-        },
-        PanelKind::ScatterPair {
-            xs,
-            ys,
-            sizes,
-            x_label,
-            y_label,
-            size_label,
-        } => {
-            let mut marker = Marker::new().color(color);
-            if let Some(sizes) = sizes {
-                marker = marker.size_array(scale_bubble_sizes(sizes));
-            }
-            // The marker encodes SCALED pixel sizes, so `%{marker.size}` can't surface the real
-            // third value — pre-render a per-point label naming x/y (the cell has no axis titles)
-            // and, when present, the size column's RAW value. All comma-grouped via `fmt_measure`.
-            let xl = escape_hover(x_label);
-            let yl = escape_hover(y_label);
-            let sl = size_label.as_deref().map(escape_hover);
-            let hover: Vec<String> = xs
-                .iter()
-                .zip(ys.iter())
-                .enumerate()
-                .map(|(pt, (x, y))| {
-                    let mut label =
-                        format!("{xl}: {}<br>{yl}: {}", fmt_measure(*x), fmt_measure(*y));
-                    if let (Some(sl), Some(s)) =
-                        (sl.as_ref(), sizes.as_ref().and_then(|sz| sz.get(pt)))
-                    {
-                        label.push_str(&format!("<br>{sl}: {}", fmt_measure(*s)));
-                    }
-                    label
-                })
-                .collect();
-            let mut t = Scatter::new(xs.clone(), ys.clone())
-                .mode(Mode::Markers)
-                .name(panel.name.clone())
-                .marker(marker)
-                .hover_text_array(hover)
-                .hover_info(HoverInfo::Text);
-            if let Some((x, y)) = &axes {
-                t = t.x_axis(x.clone()).y_axis(y.clone());
-            }
-            t
-        },
-        PanelKind::Lorenz {
-            pop,
-            share,
-            gini,
-            label,
-        } => {
-            // the cumulative curve; the muted equality diagonal is a SECOND trace added by the
-            // caller (grid + inline) right after this one.
-            let hover = lorenz_hover_template(label, *gini);
-            let mut t = Scatter::new(pop.clone(), share.clone())
-                .mode(Mode::Lines)
-                .name(panel.name.clone())
-                .line(Line::new().color(color))
-                .hover_template(hover);
-            if let Some((x, y)) = &axes {
-                t = t.x_axis(x.clone()).y_axis(y.clone());
-            }
-            t
-        },
-        PanelKind::Funnel {
-            stages,
-            labels,
-            totals,
-            reached,
-            n_complete,
-            shape,
-            form: PipelineForm::Bridge,
-        } => {
-            // The declared stages do not nest, so the panel bridges the signed differences
-            // between consecutive totals instead of asserting containment (see `PipelineForm`).
-            //
-            // Drawn VERTICALLY, unlike the funnel. A waterfall is an ordinary bar-like trace, so
-            // category index 0 lands at the axis BOTTOM — the opposite of a funnel — and the
-            // arrays cannot simply be reversed to compensate, because a waterfall accumulates in
-            // array order and index 0 must be the `Absolute` that seeds the running total.
-            // Vertical sidesteps that entirely, and is the conventional orientation for a bridge.
-            //
-            // Each step is `stage[k] - stage[k-1]`, labelled as exactly that: an ARITHMETIC
-            // difference between two independent totals, never "converted" or "lost", because
-            // the whole reason this is not a funnel is that no flow between them is claimed.
-            let mut cats: Vec<String> = Vec::with_capacity(stages.len() * 2 - 1);
-            let mut vals: Vec<f64> = Vec::with_capacity(stages.len() * 2 - 1);
-            let mut measures: Vec<Measure> = Vec::with_capacity(stages.len() * 2 - 1);
-            let mut hover: Vec<String> = Vec::with_capacity(stages.len() * 2 - 1);
+    let PanelKind::FreqBar { idx } = &panel.kind else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        let bars = freq.get(idx).cloned().unwrap_or_default();
+        // x = each bar's distinct category-axis key (real value, or aggregate sentinel) so
+        // distinct categories never collapse onto the same plotly category; the friendly,
+        // truncated tick labels are applied separately via freq_bar_tick_text.
+        let xs: Vec<String> = bars.iter().map(|b| b.x_key.clone()).collect();
+        let ys: Vec<f64> = bars.iter().map(|b| b.count as f64).collect();
+        // muted-grey the aggregate "(NULL)" / "Other (N)" buckets so they read as summary
+        // bars, visually distinct from the palette-colored real categories. Color is driven
+        // by the bar's kind (not its label), so a real category named like an aggregate is
+        // never mis-colored.
+        let bar_colors: Vec<&'static str> = bars
+            .iter()
+            .map(|b| match b.kind {
+                FreqBarKind::Aggregate => MUTED_COLOR,
+                FreqBarKind::Category => color,
+            })
+            .collect();
+        bar_max = Some(ys.iter().copied().fold(0.0_f64, f64::max));
+        // high dynamic range (a dominating "(NULL)"/"Other" bucket) -> log y-axis so the
+        // small real categories stay visible; gated by the resolved --log-scale mode.
+        log_y = panel_is_log(panel, freq, log_scale);
+        // on a log y-axis, hatch the muted-grey aggregate bars as a redundant cue
+        // (alongside the "count (log)" axis title) that the axis is non-linear
+        let mut marker = Marker::new().color_array(bar_colors);
+        if let Some(shapes) = freq_bar_pattern_shapes(&bars, log_y) {
+            marker = marker.pattern(Pattern::new().shape_array(shapes));
+        }
+        // The category axis shows TRUNCATED tick labels, and plotly's default hover reads
+        // that same tick text — so the hover carries each bar's FULL label explicitly.
+        // `label` (not `x_key`): the aggregate buckets' axis keys are sentinel-padded.
+        let hover_labels: Vec<String> = bars.iter().map(|b| escape_hover(&b.label)).collect();
+        let mut bar = Bar::new(xs, ys)
+            .name(panel.name.clone())
+            .marker(marker)
+            .hover_text_array(hover_labels)
+            .hover_template(&t!("viz.hover.count_by_label"))
+            // value labels above each bar, SI-formatted ("258k", "1.05M") to match
+            // the axis ticks
+            .text_template("%{y:.3s}")
+            .text_position(TextPosition::Outside)
+            // don't clip the outside label of the tallest bar at the cell's top edge. On a
+            // log axis the fixed top headroom shrinks to a few pixels when counts span many
+            // decades (a dominant "(NULL)"/"Other" bucket), so its value label would otherwise
+            // be cut off; let it draw into the inter-row gap instead.
+            .clip_on_axis(false)
+            .text_font(label_font);
+        if let Some((x, y)) = &axes {
+            bar = bar.x_axis(x.clone()).y_axis(y.clone());
+        }
+        bar
+    };
+    (trace, bar_max, log_y)
+}
 
-            // A stage bar's hover, worded per `shape` exactly as the funnel arm words it: the
-            // number means something different in each encoding, so calling it "Amount"
-            // everywhere would label a ROW COUNT as an amount, and would drop the declared
-            // value-column label a row-encoded measure pipeline was given. `RowsCount` folds the
-            // value and the count into one line because they are the same number.
-            let stage_hover = |k: usize| -> String {
-                #[allow(clippy::cast_precision_loss)]
+#[inline(never)]
+fn panel_trace_histogram(
+    panel: &Panel,
+    color: &'static str,
+    hist: &HashMap<usize, Vec<f64>>,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let PanelKind::Histogram { idx } = &panel.kind else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        let values = hist.get(idx).cloned().unwrap_or_default();
+        // the cell has no x-axis title (panel.name is only a cell annotation), so name the
+        // binned value and its count in the hover, both comma-grouped.
+        // NOTE: `escape_hover` only, no `escape_template_pct` -- preserved from before this
+        // string was localized. A `%` in the panel name is mis-read by plotly here, unlike in
+        // the contour/Lorenz hovers which take the full composition. Pre-existing; changing it
+        // would be a behavior change, not a translation.
+        let hover = t!("viz.hover.histogram", q_col = escape_hover(&panel.name)).into_owned();
+        let mut h = Histogram::new(values)
+            .name(panel.name.clone())
+            .marker(Marker::new().color(color))
+            .hover_template(hover);
+        if let Some((x, y)) = &axes {
+            h = h.x_axis(x.clone()).y_axis(y.clone());
+        }
+        h
+    };
+    (trace, None, false)
+}
+
+#[inline(never)]
+fn panel_trace_time_series(
+    panel: &Panel,
+    color: &'static str,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let PanelKind::TimeSeries { y_label, xs, ys } = &panel.kind else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        let mut t = Scatter::new(xs.clone(), ys.clone())
+            .mode(Mode::Lines)
+            .name(y_label.clone())
+            .line(Line::new().color(color));
+        if let Some((x, y)) = &axes {
+            t = t.x_axis(x.clone()).y_axis(y.clone());
+        }
+        t
+    };
+    (trace, None, false)
+}
+
+#[inline(never)]
+fn panel_trace_scatter_pair(
+    panel: &Panel,
+    color: &'static str,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let PanelKind::ScatterPair {
+        xs,
+        ys,
+        sizes,
+        x_label,
+        y_label,
+        size_label,
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        let mut marker = Marker::new().color(color);
+        if let Some(sizes) = sizes {
+            marker = marker.size_array(scale_bubble_sizes(sizes));
+        }
+        // The marker encodes SCALED pixel sizes, so `%{marker.size}` can't surface the real
+        // third value — pre-render a per-point label naming x/y (the cell has no axis titles)
+        // and, when present, the size column's RAW value. All comma-grouped via `fmt_measure`.
+        let xl = escape_hover(x_label);
+        let yl = escape_hover(y_label);
+        let sl = size_label.as_deref().map(escape_hover);
+        let hover: Vec<String> = xs
+            .iter()
+            .zip(ys.iter())
+            .enumerate()
+            .map(|(pt, (x, y))| {
+                let mut label = format!("{xl}: {}<br>{yl}: {}", fmt_measure(*x), fmt_measure(*y));
+                if let (Some(sl), Some(s)) = (sl.as_ref(), sizes.as_ref().and_then(|sz| sz.get(pt)))
+                {
+                    label.push_str(&format!("<br>{sl}: {}", fmt_measure(*s)));
+                }
+                label
+            })
+            .collect();
+        let mut t = Scatter::new(xs.clone(), ys.clone())
+            .mode(Mode::Markers)
+            .name(panel.name.clone())
+            .marker(marker)
+            .hover_text_array(hover)
+            .hover_info(HoverInfo::Text);
+        if let Some((x, y)) = &axes {
+            t = t.x_axis(x.clone()).y_axis(y.clone());
+        }
+        t
+    };
+    (trace, None, false)
+}
+
+#[inline(never)]
+fn panel_trace_lorenz(
+    panel: &Panel,
+    color: &'static str,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let PanelKind::Lorenz {
+        pop,
+        share,
+        gini,
+        label,
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        // the cumulative curve; the muted equality diagonal is a SECOND trace added by the
+        // caller (grid + inline) right after this one.
+        let hover = lorenz_hover_template(label, *gini);
+        let mut t = Scatter::new(pop.clone(), share.clone())
+            .mode(Mode::Lines)
+            .name(panel.name.clone())
+            .line(Line::new().color(color))
+            .hover_template(hover);
+        if let Some((x, y)) = &axes {
+            t = t.x_axis(x.clone()).y_axis(y.clone());
+        }
+        t
+    };
+    (trace, None, false)
+}
+
+#[inline(never)]
+fn panel_trace_funnel_bridge(
+    panel: &Panel,
+    color: &'static str,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let bar_max: Option<f64>;
+    let PanelKind::Funnel {
+        stages,
+        labels,
+        totals,
+        reached,
+        n_complete,
+        shape,
+        form: PipelineForm::Bridge,
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        // The declared stages do not nest, so the panel bridges the signed differences
+        // between consecutive totals instead of asserting containment (see `PipelineForm`).
+        //
+        // Drawn VERTICALLY, unlike the funnel. A waterfall is an ordinary bar-like trace, so
+        // category index 0 lands at the axis BOTTOM — the opposite of a funnel — and the
+        // arrays cannot simply be reversed to compensate, because a waterfall accumulates in
+        // array order and index 0 must be the `Absolute` that seeds the running total.
+        // Vertical sidesteps that entirely, and is the conventional orientation for a bridge.
+        //
+        // Each step is `stage[k] - stage[k-1]`, labelled as exactly that: an ARITHMETIC
+        // difference between two independent totals, never "converted" or "lost", because
+        // the whole reason this is not a funnel is that no flow between them is claimed.
+        let mut cats: Vec<String> = Vec::with_capacity(stages.len() * 2 - 1);
+        let mut vals: Vec<f64> = Vec::with_capacity(stages.len() * 2 - 1);
+        let mut measures: Vec<Measure> = Vec::with_capacity(stages.len() * 2 - 1);
+        let mut hover: Vec<String> = Vec::with_capacity(stages.len() * 2 - 1);
+
+        // A stage bar's hover, worded per `shape` exactly as the funnel arm words it: the
+        // number means something different in each encoding, so calling it "Amount"
+        // everywhere would label a ROW COUNT as an amount, and would drop the declared
+        // value-column label a row-encoded measure pipeline was given. `RowsCount` folds the
+        // value and the count into one line because they are the same number.
+        let stage_hover = |k: usize| -> String {
+            #[allow(clippy::cast_precision_loss)]
+            let pct = if *n_complete == 0 {
+                0.0
+            } else {
+                reached[k] as f64 / *n_complete as f64 * 100.0
+            };
+            match shape {
+                FunnelShape::Columns => format!(
+                    "{}<br>Stage: {}<br>Amount: {}<br>Rows reached: {} of {} ({pct:.0}% of \
+                     complete cases)",
+                    escape_hover(&labels[k]),
+                    escape_hover(&stages[k]),
+                    fmt_measure(totals[k]),
+                    HumanCount(reached[k] as u64),
+                    HumanCount(*n_complete as u64),
+                ),
+                FunnelShape::RowsMeasure { value_label } => format!(
+                    "{}<br>Stage: {}<br>{}: {}<br>Rows in stage: {} of {} ({pct:.0}% of rows in \
+                     declared stages)",
+                    escape_hover(&labels[k]),
+                    escape_hover(&stages[k]),
+                    escape_hover(value_label),
+                    fmt_measure(totals[k]),
+                    HumanCount(reached[k] as u64),
+                    HumanCount(*n_complete as u64),
+                ),
+                FunnelShape::RowsCount => format!(
+                    "{}<br>Stage: {}<br>Rows: {} of {} ({pct:.0}% of rows in declared stages)",
+                    escape_hover(&labels[k]),
+                    escape_hover(&stages[k]),
+                    HumanCount(reached[k] as u64),
+                    HumanCount(*n_complete as u64),
+                ),
+            }
+        };
+
+        cats.push(stages[0].clone());
+        vals.push(totals[0]);
+        measures.push(Measure::Absolute);
+        hover.push(stage_hover(0));
+
+        for k in 1..stages.len() {
+            let delta = totals[k] - totals[k - 1];
+            cats.push(format!("{} \u{2212} {}", stages[k], stages[k - 1]));
+            vals.push(delta);
+            measures.push(Measure::Relative);
+            hover.push(format!(
+                "{} \u{2212} {}<br>Difference: {}<br>{} is {} than {}",
+                escape_hover(&stages[k]),
+                escape_hover(&stages[k - 1]),
+                fmt_measure(delta),
+                escape_hover(&stages[k]),
+                if delta < 0.0 { "lower" } else { "higher" },
+                escape_hover(&stages[k - 1]),
+            ));
+
+            // `Total` re-derives its own height from the running total; the real amount goes
+            // in the slot anyway so the arrays stay parallel and the JSON self-documenting.
+            cats.push(stages[k].clone());
+            vals.push(totals[k]);
+            measures.push(Measure::Total);
+            hover.push(stage_hover(k));
+        }
+
+        bar_max = vals
+            .iter()
+            .zip(&measures)
+            .filter(|(_, m)| !matches!(m, Measure::Relative))
+            .map(|(v, _)| *v)
+            .fold(None, |acc: Option<f64>, v| {
+                Some(acc.map_or(v, |a| f64::max(a, v)))
+            });
+
+        // Per-bar templates, because no single one is right for every bar: a step bar's
+        // number is its DELTA, a stage bar's is the running TOTAL. plotly stays the
+        // formatter (so the labels cannot drift from the values it draws), and `.3s` matches
+        // the SI precision the KPI row and the axes already use — its own `textinfo` renders
+        // seven significant figures.
+        let templates: Vec<String> = measures
+            .iter()
+            .map(|m| {
+                if matches!(m, Measure::Relative) {
+                    "%{delta:.3s}".to_string()
+                } else {
+                    "%{final:.3s}".to_string()
+                }
+            })
+            .collect();
+        let mut w = Waterfall::new(cats, vals)
+            .name(panel.name.clone())
+            .measure(measures)
+            .text_template_array(templates)
+            .text_position(TextPosition::Outside)
+            .increasing(MeasureStyle::new().marker(WaterfallMarker::new().color(BRIDGE_UP_COLOR)))
+            .decreasing(MeasureStyle::new().marker(WaterfallMarker::new().color(BRIDGE_DOWN_COLOR)))
+            .totals(MeasureStyle::new().marker(WaterfallMarker::new().color(color)))
+            .hover_text_array(hover)
+            .hover_template("%{hovertext}<extra></extra>");
+        if let Some((x, y)) = &axes {
+            w = w.x_axis(x.clone()).y_axis(y.clone());
+        }
+        w
+    };
+    (trace, bar_max, false)
+}
+
+#[inline(never)]
+fn panel_trace_funnel(
+    panel: &Panel,
+    color: &'static str,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let PanelKind::Funnel {
+        stages,
+        labels,
+        totals,
+        reached,
+        n_complete,
+        shape,
+        form: _,
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        // A horizontal funnel: amount on the value axis, stage on the category axis.
+        // A funnel trace draws index 0 at the TOP and works downward — the opposite of a
+        // plain category axis, and the reason these arrays are fed UPSTREAM-FIRST, exactly
+        // as the panel carries them. Feeding them reversed (the lollipop's convention)
+        // renders the funnel upside down, widening toward the bottom.
+        //
+        // The bar text is left to plotly's own `textinfo`: it computes "percent previous"
+        // from the values themselves, so the conversion figures can never drift from the
+        // bars. The hover is fully pre-rendered into `hover_text`, which keeps every literal
+        // `%` in DATA rather than in the template — so `escape_template_pct` is unnecessary
+        // here and only the column label needs `escape_hover`.
+        let hover: Vec<String> = (0..stages.len())
+            .map(|k| {
                 let pct = if *n_complete == 0 {
                     0.0
                 } else {
-                    reached[k] as f64 / *n_complete as f64 * 100.0
+                    #[allow(clippy::cast_precision_loss)]
+                    let p = reached[k] as f64 / *n_complete as f64 * 100.0;
+                    p
                 };
+                // The counts mean different things per shape, so the wording must too: for
+                // the row encodings `reached` IS the stage's row count and sums to
+                // `n_complete`, so "of complete cases" would assert a 100% completeness rate
+                // that means nothing.
                 match shape {
                     FunnelShape::Columns => format!(
                         "{}<br>Stage: {}<br>Amount: {}<br>Rows reached: {} of {} ({pct:.0}% of \
@@ -26861,329 +27201,246 @@ fn panel_trace(
                         HumanCount(*n_complete as u64),
                     ),
                 }
-            };
+            })
+            .collect();
+        let xs: Vec<f64> = totals.clone();
+        let ys: Vec<String> = stages.clone();
+        let mut f = Funnel::new(xs, ys)
+            .orientation(Orientation::Horizontal)
+            .name(panel.name.clone())
+            .marker(Marker::new().color(color))
+            // ONLY the stage-to-stage conversion: plotly computes it from the values, so it
+            // can never drift from the bars. The absolute amounts deliberately stay out of
+            // the band — "value+percent previous" is two long lines that plotly clips inside
+            // a short band — and live in the KPI row above and this panel's hover instead.
+            .text_info("percent previous")
+            .text_position(TextPosition::Outside)
+            .connector(FunnelConnector::new().visible(true))
+            .hover_text_array(hover)
+            .hover_template("%{hovertext}<extra></extra>");
+        if let Some((x, y)) = &axes {
+            f = f.x_axis(x.clone()).y_axis(y.clone());
+        }
+        f
+    };
+    (trace, None, false)
+}
 
-            cats.push(stages[0].clone());
-            vals.push(totals[0]);
-            measures.push(Measure::Absolute);
-            hover.push(stage_hover(0));
+#[inline(never)]
+fn panel_trace_contour_pair(
+    panel: &Panel,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let PanelKind::ContourPair {
+        x,
+        y,
+        z,
+        x_label,
+        y_label,
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        // standalone (inline) panels show the colorbar; grid cells hide it to avoid clutter
+        let hover = contour_hover_template(x_label, y_label);
+        let mut c = Contour::new(x.clone(), y.clone(), z.clone())
+            .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+            .show_scale(axes.is_none())
+            .name(&panel.name)
+            .hover_template(&hover);
+        if let Some((xa, ya)) = &axes {
+            c = c.x_axis(xa.as_str()).y_axis(ya.as_str());
+        }
+        c
+    };
+    (trace, None, false)
+}
 
-            for k in 1..stages.len() {
-                let delta = totals[k] - totals[k - 1];
-                cats.push(format!("{} \u{2212} {}", stages[k], stages[k - 1]));
-                vals.push(delta);
-                measures.push(Measure::Relative);
-                hover.push(format!(
-                    "{} \u{2212} {}<br>Difference: {}<br>{} is {} than {}",
-                    escape_hover(&stages[k]),
-                    escape_hover(&stages[k - 1]),
-                    fmt_measure(delta),
-                    escape_hover(&stages[k]),
-                    if delta < 0.0 { "lower" } else { "higher" },
-                    escape_hover(&stages[k - 1]),
-                ));
+#[inline(never)]
+fn panel_trace_corr_heatmap(
+    panel: &Panel,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let PanelKind::CorrHeatmap {
+        labels,
+        matrix,
+        spearman,
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = corr_heatmap_trace(
+        truncate_labels_unique(labels, CORR_LABEL_MAX_CHARS),
+        matrix.clone(),
+        axes.clone(),
+        // standalone (inline) panels show the colorbar; grid panels use in-cell labels
+        axes.is_none(),
+        *spearman,
+    );
+    (trace, None, false)
+}
 
-                // `Total` re-derives its own height from the running total; the real amount goes
-                // in the slot anyway so the arrays stay parallel and the JSON self-documenting.
-                cats.push(stages[k].clone());
-                vals.push(totals[k]);
-                measures.push(Measure::Total);
-                hover.push(stage_hover(k));
-            }
+#[inline(never)]
+fn panel_trace_assoc_heatmap(
+    panel: &Panel,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let PanelKind::AssocHeatmap {
+        labels,
+        matrix,
+        hover_suffix,
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = assoc_heatmap_trace(
+        truncate_labels_unique(labels, CORR_LABEL_MAX_CHARS),
+        matrix.clone(),
+        hover_suffix.clone(),
+        axes.clone(),
+        // standalone (inline) panels show the colorbar; grid panels use in-cell labels
+        axes.is_none(),
+    );
+    (trace, None, false)
+}
 
-            bar_max = vals
-                .iter()
-                .zip(&measures)
-                .filter(|(_, m)| !matches!(m, Measure::Relative))
-                .map(|(v, _)| *v)
-                .fold(None, |acc: Option<f64>, v| {
-                    Some(acc.map_or(v, |a| f64::max(a, v)))
-                });
-
-            // Per-bar templates, because no single one is right for every bar: a step bar's
-            // number is its DELTA, a stage bar's is the running TOTAL. plotly stays the
-            // formatter (so the labels cannot drift from the values it draws), and `.3s` matches
-            // the SI precision the KPI row and the axes already use — its own `textinfo` renders
-            // seven significant figures.
-            let templates: Vec<String> = measures
-                .iter()
-                .map(|m| {
-                    if matches!(m, Measure::Relative) {
-                        "%{delta:.3s}".to_string()
-                    } else {
-                        "%{final:.3s}".to_string()
-                    }
-                })
-                .collect();
-            let mut w = Waterfall::new(cats, vals)
-                .name(panel.name.clone())
-                .measure(measures)
-                .text_template_array(templates)
-                .text_position(TextPosition::Outside)
-                .increasing(
-                    MeasureStyle::new().marker(WaterfallMarker::new().color(BRIDGE_UP_COLOR)),
+#[inline(never)]
+fn panel_trace_top_relationships(
+    panel: &Panel,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let PanelKind::TopRelationships {
+        labels,
+        values,
+        supports,
+        nonlinear,
+        hover_suffix,
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        // Horizontal multivariate lollipop: value (NMI) on x, pair on the category y-axis
+        // (the zoomed value-axis range and category axis are built by the grid assembler for
+        // this panel kind, NOT via `bar_max`/`styled_y_axis`). Three encodings per dot:
+        // x = association strength, size = co-occurrence support, color = nonlinear flag.
+        // Rank #1 must sit at the TOP, but plotly places category index 0 at the axis BOTTOM,
+        // so every parallel array is fed weakest-first (reverse of the descending rank order).
+        let (floor, _ceil) = lollipop_value_range(values);
+        let xs: Vec<f64> = values.iter().rev().copied().collect();
+        // FULL (untruncated) pair labels are the category y-values so each pair gets its own
+        // row — two distinct pairs that share a long prefix must NOT collapse onto one line.
+        // The category axis (built by the assembler) truncates only the DISPLAYED tick text.
+        let ys: Vec<String> = labels.iter().rev().cloned().collect();
+        let sizes: Vec<f64> = supports.iter().rev().copied().collect();
+        // stems: each extends leftward from its dot down to the (zoomed) axis floor, drawn as
+        // an asymmetric x error bar with no rightward arm and no end caps (`width(0)`).
+        let stem_minus: Vec<f64> = xs.iter().map(|v| (v - floor).max(0.0)).collect();
+        let colors: Vec<&'static str> = nonlinear
+            .iter()
+            .rev()
+            .map(|&nl| {
+                if nl {
+                    NONLINEAR_MARKER_COLOR
+                } else {
+                    REGULAR_MARKER_COLOR
+                }
+            })
+            .collect();
+        // per-dot hover carries the FULL (untruncated) pair label plus n= and any nonlinearity
+        // note; the y-axis tick shows only the truncated label. escape: this is a plotly
+        // hoverTEMPLATE, so a raw header containing `<extra>` or `<b>` would otherwise
+        // terminate/format the template instead of displaying literally (matching the
+        // escaped Histogram/ScatterPair hovers).
+        let templates: Vec<String> = labels
+            .iter()
+            .rev()
+            .zip(hover_suffix.iter().rev())
+            .map(|(full, suffix)| {
+                format!(
+                    "{}<br>NMI = %{{x:.3f}}{suffix}<extra></extra>",
+                    escape_hover(full)
                 )
-                .decreasing(
-                    MeasureStyle::new().marker(WaterfallMarker::new().color(BRIDGE_DOWN_COLOR)),
-                )
-                .totals(MeasureStyle::new().marker(WaterfallMarker::new().color(color)))
-                .hover_text_array(hover)
-                .hover_template("%{hovertext}<extra></extra>");
-            if let Some((x, y)) = &axes {
-                w = w.x_axis(x.clone()).y_axis(y.clone());
-            }
-            w
-        },
-        PanelKind::Funnel {
-            stages,
-            labels,
-            totals,
-            reached,
-            n_complete,
-            shape,
-            form: _,
-        } => {
-            // A horizontal funnel: amount on the value axis, stage on the category axis.
-            // A funnel trace draws index 0 at the TOP and works downward — the opposite of a
-            // plain category axis, and the reason these arrays are fed UPSTREAM-FIRST, exactly
-            // as the panel carries them. Feeding them reversed (the lollipop's convention)
-            // renders the funnel upside down, widening toward the bottom.
-            //
-            // The bar text is left to plotly's own `textinfo`: it computes "percent previous"
-            // from the values themselves, so the conversion figures can never drift from the
-            // bars. The hover is fully pre-rendered into `hover_text`, which keeps every literal
-            // `%` in DATA rather than in the template — so `escape_template_pct` is unnecessary
-            // here and only the column label needs `escape_hover`.
-            let hover: Vec<String> = (0..stages.len())
-                .map(|k| {
-                    let pct = if *n_complete == 0 {
-                        0.0
-                    } else {
-                        #[allow(clippy::cast_precision_loss)]
-                        let p = reached[k] as f64 / *n_complete as f64 * 100.0;
-                        p
-                    };
-                    // The counts mean different things per shape, so the wording must too: for
-                    // the row encodings `reached` IS the stage's row count and sums to
-                    // `n_complete`, so "of complete cases" would assert a 100% completeness rate
-                    // that means nothing.
-                    match shape {
-                        FunnelShape::Columns => format!(
-                            "{}<br>Stage: {}<br>Amount: {}<br>Rows reached: {} of {} ({pct:.0}% \
-                             of complete cases)",
-                            escape_hover(&labels[k]),
-                            escape_hover(&stages[k]),
-                            fmt_measure(totals[k]),
-                            HumanCount(reached[k] as u64),
-                            HumanCount(*n_complete as u64),
-                        ),
-                        FunnelShape::RowsMeasure { value_label } => format!(
-                            "{}<br>Stage: {}<br>{}: {}<br>Rows in stage: {} of {} ({pct:.0}% of \
-                             rows in declared stages)",
-                            escape_hover(&labels[k]),
-                            escape_hover(&stages[k]),
-                            escape_hover(value_label),
-                            fmt_measure(totals[k]),
-                            HumanCount(reached[k] as u64),
-                            HumanCount(*n_complete as u64),
-                        ),
-                        FunnelShape::RowsCount => format!(
-                            "{}<br>Stage: {}<br>Rows: {} of {} ({pct:.0}% of rows in declared \
-                             stages)",
-                            escape_hover(&labels[k]),
-                            escape_hover(&stages[k]),
-                            HumanCount(reached[k] as u64),
-                            HumanCount(*n_complete as u64),
-                        ),
-                    }
-                })
-                .collect();
-            let xs: Vec<f64> = totals.clone();
-            let ys: Vec<String> = stages.clone();
-            let mut f = Funnel::new(xs, ys)
-                .orientation(Orientation::Horizontal)
-                .name(panel.name.clone())
-                .marker(Marker::new().color(color))
-                // ONLY the stage-to-stage conversion: plotly computes it from the values, so it
-                // can never drift from the bars. The absolute amounts deliberately stay out of
-                // the band — "value+percent previous" is two long lines that plotly clips inside
-                // a short band — and live in the KPI row above and this panel's hover instead.
-                .text_info("percent previous")
-                .text_position(TextPosition::Outside)
-                .connector(FunnelConnector::new().visible(true))
-                .hover_text_array(hover)
-                .hover_template("%{hovertext}<extra></extra>");
-            if let Some((x, y)) = &axes {
-                f = f.x_axis(x.clone()).y_axis(y.clone());
-            }
-            f
-        },
-        PanelKind::ContourPair {
-            x,
-            y,
-            z,
-            x_label,
-            y_label,
-        } => {
-            // standalone (inline) panels show the colorbar; grid cells hide it to avoid clutter
-            let hover = contour_hover_template(x_label, y_label);
-            let mut c = Contour::new(x.clone(), y.clone(), z.clone())
-                .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
-                .show_scale(axes.is_none())
-                .name(&panel.name)
-                .hover_template(&hover);
-            if let Some((xa, ya)) = &axes {
-                c = c.x_axis(xa.as_str()).y_axis(ya.as_str());
-            }
-            c
-        },
-        PanelKind::CorrHeatmap {
-            labels,
-            matrix,
-            spearman,
-        } => corr_heatmap_trace(
-            truncate_labels_unique(labels, CORR_LABEL_MAX_CHARS),
-            matrix.clone(),
-            axes.clone(),
-            // standalone (inline) panels show the colorbar; grid panels use in-cell labels
-            axes.is_none(),
-            *spearman,
-        ),
-        PanelKind::AssocHeatmap {
-            labels,
-            matrix,
-            hover_suffix,
-        } => assoc_heatmap_trace(
-            truncate_labels_unique(labels, CORR_LABEL_MAX_CHARS),
-            matrix.clone(),
-            hover_suffix.clone(),
-            axes.clone(),
-            // standalone (inline) panels show the colorbar; grid panels use in-cell labels
-            axes.is_none(),
-        ),
-        PanelKind::TopRelationships {
-            labels,
-            values,
-            supports,
-            nonlinear,
-            hover_suffix,
-        } => {
-            // Horizontal multivariate lollipop: value (NMI) on x, pair on the category y-axis
-            // (the zoomed value-axis range and category axis are built by the grid assembler for
-            // this panel kind, NOT via `bar_max`/`styled_y_axis`). Three encodings per dot:
-            // x = association strength, size = co-occurrence support, color = nonlinear flag.
-            // Rank #1 must sit at the TOP, but plotly places category index 0 at the axis BOTTOM,
-            // so every parallel array is fed weakest-first (reverse of the descending rank order).
-            let (floor, _ceil) = lollipop_value_range(values);
-            let xs: Vec<f64> = values.iter().rev().copied().collect();
-            // FULL (untruncated) pair labels are the category y-values so each pair gets its own
-            // row — two distinct pairs that share a long prefix must NOT collapse onto one line.
-            // The category axis (built by the assembler) truncates only the DISPLAYED tick text.
-            let ys: Vec<String> = labels.iter().rev().cloned().collect();
-            let sizes: Vec<f64> = supports.iter().rev().copied().collect();
-            // stems: each extends leftward from its dot down to the (zoomed) axis floor, drawn as
-            // an asymmetric x error bar with no rightward arm and no end caps (`width(0)`).
-            let stem_minus: Vec<f64> = xs.iter().map(|v| (v - floor).max(0.0)).collect();
-            let colors: Vec<&'static str> = nonlinear
-                .iter()
-                .rev()
-                .map(|&nl| {
-                    if nl {
-                        NONLINEAR_MARKER_COLOR
-                    } else {
-                        REGULAR_MARKER_COLOR
-                    }
-                })
-                .collect();
-            // per-dot hover carries the FULL (untruncated) pair label plus n= and any nonlinearity
-            // note; the y-axis tick shows only the truncated label. escape: this is a plotly
-            // hoverTEMPLATE, so a raw header containing `<extra>` or `<b>` would otherwise
-            // terminate/format the template instead of displaying literally (matching the
-            // escaped Histogram/ScatterPair hovers).
-            let templates: Vec<String> = labels
-                .iter()
-                .rev()
-                .zip(hover_suffix.iter().rev())
-                .map(|(full, suffix)| {
-                    format!(
-                        "{}<br>NMI = %{{x:.3f}}{suffix}<extra></extra>",
-                        escape_hover(full)
-                    )
-                })
-                .collect();
-            let marker = Marker::new()
-                .size_array(scale_bubble_sizes(&sizes))
-                .color_array(colors);
-            let mut sc = Scatter::new(xs.clone(), ys)
-                .name(panel.name.clone())
-                .mode(Mode::Markers)
-                .marker(marker)
-                .error_x(
-                    ErrorData::new(ErrorType::Data)
-                        .symmetric(false)
-                        .array(vec![0.0_f64; xs.len()])
-                        .array_minus(stem_minus)
-                        .width(0)
-                        .thickness(1.5)
-                        .color(MUTED_COLOR),
-                )
-                .hover_template_array(templates);
-            if let Some((x, y)) = &axes {
-                sc = sc.x_axis(x.clone()).y_axis(y.clone());
-            }
-            sc
-        },
-        PanelKind::MeasureByDim { labels, values } => {
-            // a high-dynamic-range measure (one big group over much smaller ones) squashes on a
-            // linear axis; a log value axis spreads the bars out — but only when every bar is
-            // strictly positive (see `measure_by_dim_logs`).
-            log_y = measure_by_dim_logs(log_scale, values);
-            // headroom only frames the LINEAR range (`0..=max*1.15`); a log value axis autoranges
-            // like a box panel (it can't assume counts >= 1, so `bar_max` stays None → the "log
-            // scale" value cue, not "count (log)").
-            if !log_y {
-                bar_max = Some(values.iter().copied().fold(0.0_f64, f64::max));
-            }
-            // full category names in the hover — the axis ticks are truncated, and plotly's
-            // default hover would otherwise echo that truncated tick text
-            let hover_labels: Vec<String> = labels.iter().map(|l| escape_hover(l)).collect();
-            let mut bar = Bar::new(labels.clone(), values.clone())
-                .name(panel.name.clone())
-                .marker(Marker::new().color(color))
-                .hover_text_array(hover_labels)
-                .hover_template("%{hovertext}<br>%{y:,}<extra></extra>")
-                // value labels above each bar, SI-formatted ("258k", "1.05M") to match the ticks
-                .text_template("%{y:.3s}")
-                .text_position(TextPosition::Outside)
-                .clip_on_axis(false)
-                .text_font(label_font);
-            if let Some((x, y)) = &axes {
-                bar = bar.x_axis(x.clone()).y_axis(y.clone());
-            }
-            bar
-        },
-        // map / geo / 3D / hierarchy panels use a non-cartesian layout (map, geo projection,
-        // 3D scene, or domain-based treemap/sunburst) that can't share the typed x/y subplot grid,
-        // so they are rendered entirely by `smart_inline_panel_plot` and never reach this
-        // assembler.
-        PanelKind::KpiRow { .. }
-        | PanelKind::Map { .. }
-        | PanelKind::Geo { .. }
-        | PanelKind::Choropleth { .. }
-        | PanelKind::ChoroplethMap { .. }
-        | PanelKind::Scatter3D { .. }
-        | PanelKind::CyclicProfile { .. }
-        | PanelKind::Hierarchy { .. }
-        | PanelKind::Sankey { .. }
-        | PanelKind::Parcats { .. }
-        | PanelKind::AnimatedScatterPair { .. }
-        | PanelKind::AnimatedGeo { .. }
-        | PanelKind::AnimatedBubble { .. } => {
-            unreachable!(
-                "map/geo/choropleth/3D/polar/hierarchy/sankey/parcats/animated-scatter panels are \
-                 rendered via the inline path, not panel_trace"
+            })
+            .collect();
+        let marker = Marker::new()
+            .size_array(scale_bubble_sizes(&sizes))
+            .color_array(colors);
+        let mut sc = Scatter::new(xs.clone(), ys)
+            .name(panel.name.clone())
+            .mode(Mode::Markers)
+            .marker(marker)
+            .error_x(
+                ErrorData::new(ErrorType::Data)
+                    .symmetric(false)
+                    .array(vec![0.0_f64; xs.len()])
+                    .array_minus(stem_minus)
+                    .width(0)
+                    .thickness(1.5)
+                    .color(MUTED_COLOR),
             )
-        },
+            .hover_template_array(templates);
+        if let Some((x, y)) = &axes {
+            sc = sc.x_axis(x.clone()).y_axis(y.clone());
+        }
+        sc
+    };
+    (trace, None, false)
+}
+
+#[inline(never)]
+fn panel_trace_measure_by_dim(
+    panel: &Panel,
+    color: &'static str,
+    axes: Option<(String, String)>,
+    theme: Option<BuiltinTheme>,
+    log_scale: LogScale,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let mut bar_max: Option<f64> = None;
+    let log_y;
+    // bar value-label font: omit the explicit color so the label inherits the layout font color
+    // (qsv's ink in the unthemed look, the template's font when themed) -- this lets the dark/light
+    // toggle's `font.color` relayout flip the labels instead of leaving them dark on a dark page.
+    let label_font = {
+        let f = Font::new().size(9);
+        if theme.is_some() {
+            f
+        } else {
+            f.family(FONT_FAMILY)
+        }
+    };
+    let PanelKind::MeasureByDim { labels, values } = &panel.kind else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    let trace: Box<dyn Trace> = {
+        // a high-dynamic-range measure (one big group over much smaller ones) squashes on a
+        // linear axis; a log value axis spreads the bars out — but only when every bar is
+        // strictly positive (see `measure_by_dim_logs`).
+        log_y = measure_by_dim_logs(log_scale, values);
+        // headroom only frames the LINEAR range (`0..=max*1.15`); a log value axis autoranges
+        // like a box panel (it can't assume counts >= 1, so `bar_max` stays None → the "log
+        // scale" value cue, not "count (log)").
+        if !log_y {
+            bar_max = Some(values.iter().copied().fold(0.0_f64, f64::max));
+        }
+        // full category names in the hover — the axis ticks are truncated, and plotly's
+        // default hover would otherwise echo that truncated tick text
+        let hover_labels: Vec<String> = labels.iter().map(|l| escape_hover(l)).collect();
+        let mut bar = Bar::new(labels.clone(), values.clone())
+            .name(panel.name.clone())
+            .marker(Marker::new().color(color))
+            .hover_text_array(hover_labels)
+            .hover_template("%{hovertext}<br>%{y:,}<extra></extra>")
+            // value labels above each bar, SI-formatted ("258k", "1.05M") to match the ticks
+            .text_template("%{y:.3s}")
+            .text_position(TextPosition::Outside)
+            .clip_on_axis(false)
+            .text_font(label_font);
+        if let Some((x, y)) = &axes {
+            bar = bar.x_axis(x.clone()).y_axis(y.clone());
+        }
+        bar
     };
     (trace, bar_max, log_y)
 }
@@ -27772,7 +28029,7 @@ fn render_smart_grid(
         plot.add_trace(trace);
     }
     for (pos, x_axis, y_axis) in axes {
-        base_layout = assign_typed_axis(base_layout, pos, x_axis, y_axis);
+        assign_typed_axis(&mut base_layout, pos, x_axis, y_axis);
     }
     base_layout = base_layout.annotations(annotations);
 
@@ -27978,6 +28235,12 @@ fn inline_panel_title_shifted(
 }
 
 /// Build a standalone themed `Plot` for one panel, used as a cell in the inline-div dashboard.
+///
+/// One function per panel kind rather than one big body: at `opt-level=0` every
+/// `Plot`/`Layout` local gets its own stack slot with no reuse across branches, and a
+/// single body building all panel kinds needs megabytes of stack -- overflowing
+/// Windows' 1 MB main-thread default in debug builds (issue #4328). `#[inline(never)]`
+/// on the per-kind builders keeps release builds from re-merging them into one frame.
 fn smart_inline_panel_plot(
     panel: &Panel,
     color: &'static str,
@@ -27987,15 +28250,34 @@ fn smart_inline_panel_plot(
     theme: Option<BuiltinTheme>,
     log_scale: LogScale,
 ) -> Plot {
-    // when a theme is set, its template drives backgrounds/fonts; otherwise apply qsv's look.
+    match &panel.kind {
+        PanelKind::Map { .. } => inline_panel_plot_map(panel, color, theme),
+        PanelKind::Geo { .. } => inline_panel_plot_geo(panel, theme),
+        PanelKind::ChoroplethMap { .. } => inline_panel_plot_choropleth_map(panel, theme),
+        PanelKind::Choropleth { .. } => inline_panel_plot_choropleth(panel, theme),
+        PanelKind::Scatter3D { .. } => inline_panel_plot_scatter3d(panel, color, theme),
+        PanelKind::CyclicProfile { .. } => inline_panel_plot_cyclic_profile(panel, theme),
+        PanelKind::KpiRow { .. } => inline_panel_plot_kpi_row(panel, theme),
+        PanelKind::Hierarchy { .. } => inline_panel_plot_hierarchy(panel, theme),
+        PanelKind::Sankey { .. } => inline_panel_plot_sankey(panel, theme),
+        PanelKind::Parcats { .. } => inline_panel_plot_parcats(panel, theme),
+        PanelKind::AnimatedGeo { .. } => inline_panel_plot_animated_geo(panel, theme),
+        PanelKind::AnimatedBubble { .. } => inline_panel_plot_animated_bubble(panel, theme),
+        PanelKind::AnimatedScatterPair { .. } => {
+            inline_panel_plot_animated_scatter_pair(panel, theme)
+        },
+        _ => inline_panel_plot_cartesian(panel, color, freq, hist, outliers, theme, log_scale),
+    }
+}
+
+// map panels use a MapLibre `map` layout (tile basemap, framed to the points) instead of
+// cartesian x/y axes, so they're assembled here rather than through the shared
+// `panel_trace`/axis path.
+#[inline(never)]
+fn inline_panel_plot_map(panel: &Panel, color: &'static str, theme: Option<BuiltinTheme>) -> Plot {
     let themed = theme.is_some();
-    // overview panels (map/geo, correlation, time-series, …) render a little taller than the
-    // per-column box/bar/histogram panels.
     let row_height = panel_render_height(&panel.kind, panel.axis_log);
-    // map panels use a MapLibre `map` layout (tile basemap, framed to the points) instead of
-    // cartesian x/y axes, so they're assembled here rather than through the shared
-    // `panel_trace`/axis path.
-    if let PanelKind::Map {
+    let PanelKind::Map {
         lats,
         lons,
         density,
@@ -28011,200 +28293,206 @@ fn smart_inline_panel_plot(
         row_ids,
         outlier_row_ids,
     } = &panel.kind
-    {
-        // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
-        #[cfg_attr(not(feature = "geocode"), expect(unused_mut))]
-        let (mut center, mut zoom) = map_center_zoom(
-            lats,
-            lons,
-            MAP_FRAME_TRIM_FRAC,
-            MAP_PANEL_ASSUMED_WIDTH_PX,
-            MAP_PANEL_USABLE_HEIGHT_PX,
-        );
-        // frame the tight CORE extent (outliers are drawn distinctly and reachable via the "Full
-        // extent" zoom button below).
-        #[cfg(feature = "geocode")]
-        let mut extent_menu: Option<UpdateMenu> = None;
-        #[cfg(feature = "geocode")]
-        if let Some(meta) = &panel.geo_meta {
-            let (c, z) = extent_center_zoom(&meta.extent);
-            center = c;
-            zoom = z;
-            // with geographic outliers, offer Core/Full extent zoom buttons: the map opens tight on
-            // the core, and "Full extent" reveals the strays without manual panning/zooming.
-            if let Some(full) = &meta.full_extent {
-                extent_menu = Some(extent_zoom_menu(&meta.extent, full));
-            }
+    else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
+    #[cfg_attr(not(feature = "geocode"), expect(unused_mut))]
+    let (mut center, mut zoom) = map_center_zoom(
+        lats,
+        lons,
+        MAP_FRAME_TRIM_FRAC,
+        MAP_PANEL_ASSUMED_WIDTH_PX,
+        MAP_PANEL_USABLE_HEIGHT_PX,
+    );
+    // frame the tight CORE extent (outliers are drawn distinctly and reachable via the "Full
+    // extent" zoom button below).
+    #[cfg(feature = "geocode")]
+    let mut extent_menu: Option<UpdateMenu> = None;
+    #[cfg(feature = "geocode")]
+    if let Some(meta) = &panel.geo_meta {
+        let (c, z) = extent_center_zoom(&meta.extent);
+        center = c;
+        zoom = z;
+        // with geographic outliers, offer Core/Full extent zoom buttons: the map opens tight on
+        // the core, and "Full extent" reveals the strays without manual panning/zooming.
+        if let Some(full) = &meta.full_extent {
+            extent_menu = Some(extent_zoom_menu(&meta.extent, full));
         }
-        let mut plot = Plot::new();
-        if *density {
-            // many points overplot into a solid mass as markers, so aggregate into a heatmap.
-            // The density weight is a uniform 1.0, so surface the same per-point labels the marker
-            // branch uses — via hovertemplate, since density traces ignore hovertext.
-            let mut dens = DensityMap::new(lats.clone(), lons.clone(), vec![1.0_f64; lats.len()])
-                .radius(MAP_SMART_DENSITY_RADIUS_PX);
-            if !hover_text.is_empty() {
-                dens = dens
-                    .text_array(map_hover_text_values(hover_text))
-                    .hover_template(MAP_HOVER_TEMPLATE);
-            }
-            plot.add_trace(dens);
-        } else {
-            let mut core_marker = Marker::new().color(color).opacity(MAP_POINT_OPACITY);
-            if let Some(sizes) = sizes {
-                core_marker = core_marker.size_array(scale_bubble_sizes(sizes));
-            }
-            let mut core_trace = ScatterMap::new(lats.clone(), lons.clone())
-                .mode(Mode::Markers)
-                .marker(core_marker);
-            if !hover_text.is_empty() {
-                core_trace = core_trace
-                    .text_array(map_hover_text_values(hover_text))
-                    .hover_template(MAP_HOVER_TEMPLATE);
-            }
-            // `--photos`: per-point image URLs for the hover-dwell lightbox. Inert everywhere
-            // except the page's own JS — plotly never renders `customdata` unless a hovertemplate
-            // references it, and `MAP_HOVER_TEMPLATE` deliberately does not.
-            if !photos.is_empty() {
-                core_trace = core_trace.custom_data(photos.clone());
-            }
-            // Data-viewer cross-link: the row ordinal per point rides in `ids`, NOT `customdata`
-            // (which `--photos` already owns as a flat string array). `ids` is inert to rendering
-            // and to the hover template — plotly only uses it for animation object-constancy —
-            // and the bridge reads it as `gd.data[curve].ids[pointNumber]`. The selected/
-            // unselected styles are baked here so the bridge only has to set `selectedpoints`.
-            if !row_ids.is_empty() {
-                core_trace = core_trace
-                    .ids(row_ids.clone())
-                    .selected(
-                        MapSelection::new()
-                            .size(MAP_SELECTED_POINT_SIZE)
-                            .color(MAP_SELECTED_POINT_COLOR),
-                    )
-                    .unselected(MapSelection::new().opacity(MAP_UNSELECTED_POINT_OPACITY));
-            }
-            if *cluster {
-                // native MapLibre client-side clustering, configured but DISABLED at load so the
-                // map opens on individual points; the "Clusters/Points" toggle (see
-                // `cluster_toggle_menu`) flips `cluster.enabled` on. `max_zoom` is
-                // baked now so toggling on honors it. No point is ever dropped —
-                // clustering only changes rendering, not the embedded data.
-                core_trace = core_trace.cluster(
-                    Cluster::new()
-                        .enabled(false)
-                        .max_zoom(SMART_CLUSTER_MAX_ZOOM),
-                );
-            }
-            plot.add_trace(core_trace);
+    }
+    let mut plot = Plot::new();
+    if *density {
+        // many points overplot into a solid mass as markers, so aggregate into a heatmap.
+        // The density weight is a uniform 1.0, so surface the same per-point labels the marker
+        // branch uses — via hovertemplate, since density traces ignore hovertext.
+        let mut dens = DensityMap::new(lats.clone(), lons.clone(), vec![1.0_f64; lats.len()])
+            .radius(MAP_SMART_DENSITY_RADIUS_PX);
+        if !hover_text.is_empty() {
+            dens = dens
+                .text_array(map_hover_text_values(hover_text))
+                .hover_template(MAP_HOVER_TEMPLATE);
         }
-        // geographic outliers as a distinct amber marker trace on top of the core points/heatmap.
-        // Outliers are always markers (even in density mode), so they carry hover labels too.
-        if !outlier_lats.is_empty() {
-            let mut out_trace = ScatterMap::new(outlier_lats.clone(), outlier_lons.clone())
-                .name(&t!("viz.map.geographic_outliers"))
-                .mode(Mode::Markers)
-                .marker(outlier_marker_map())
-                .show_legend(false);
-            if !outlier_hover_text.is_empty() {
-                out_trace = out_trace
-                    .text_array(map_hover_text_values(outlier_hover_text))
-                    .hover_template(MAP_HOVER_TEMPLATE);
-            }
-            if !outlier_photos.is_empty() {
-                out_trace = out_trace.custom_data(outlier_photos.clone());
-            }
-            // outliers are selectable too; the base amber identity is untouched, only the
-            // selected/unselected states differ (see the core trace above)
-            if !outlier_row_ids.is_empty() {
-                out_trace = out_trace
-                    .ids(outlier_row_ids.clone())
-                    .selected(
-                        MapSelection::new()
-                            .size(MAP_SELECTED_POINT_SIZE)
-                            .color(MAP_SELECTED_POINT_COLOR),
-                    )
-                    .unselected(MapSelection::new().opacity(MAP_UNSELECTED_POINT_OPACITY));
-            }
-            plot.add_trace(out_trace);
+        plot.add_trace(dens);
+    } else {
+        let mut core_marker = Marker::new().color(color).opacity(MAP_POINT_OPACITY);
+        if let Some(sizes) = sizes {
+            core_marker = core_marker.size_array(scale_bubble_sizes(sizes));
         }
-        #[cfg(feature = "geocode")]
-        if let Some(meta) = &panel.geo_meta {
-            add_extent_overlay_map(&mut plot, meta);
+        let mut core_trace = ScatterMap::new(lats.clone(), lons.clone())
+            .mode(Mode::Markers)
+            .marker(core_marker);
+        if !hover_text.is_empty() {
+            core_trace = core_trace
+                .text_array(map_hover_text_values(hover_text))
+                .hover_template(MAP_HOVER_TEMPLATE);
         }
-        if let Some(overlay) = &panel.geojson_overlay {
-            for trace in geojson_overlay_map_traces(overlay) {
-                plot.add_trace(trace);
-            }
+        // `--photos`: per-point image URLs for the hover-dwell lightbox. Inert everywhere
+        // except the page's own JS — plotly never renders `customdata` unless a hovertemplate
+        // references it, and `MAP_HOVER_TEMPLATE` deliberately does not.
+        if !photos.is_empty() {
+            core_trace = core_trace.custom_data(photos.clone());
         }
-        // The row pin, LAST so it draws over the points and any overlay. Gated on the same
-        // condition as the cross-link itself (`row_ids` non-empty): with no drawer there is
-        // nothing to select, so nothing could ever fill it in, and an image export -- which
-        // passes `capture_row_ids: false` -- stays byte-identical.
+        // Data-viewer cross-link: the row ordinal per point rides in `ids`, NOT `customdata`
+        // (which `--photos` already owns as a flat string array). `ids` is inert to rendering
+        // and to the hover template — plotly only uses it for animation object-constancy —
+        // and the bridge reads it as `gd.data[curve].ids[pointNumber]`. The selected/
+        // unselected styles are baked here so the bridge only has to set `selectedpoints`.
         if !row_ids.is_empty() {
-            // halo first so the ring renders beneath the core; it never answers a hover, so the
-            // pin's own label is the only one a reader can get
-            plot.add_trace(
-                ScatterMap::new(Vec::<f64>::new(), Vec::<f64>::new())
-                    .name(MAP_ROW_PIN_HALO_NAME)
-                    .mode(Mode::Markers)
-                    .marker(row_pin_halo_marker())
-                    .hover_info(HoverInfo::Skip)
-                    .show_legend(false),
-            );
-            plot.add_trace(
-                ScatterMap::new(Vec::<f64>::new(), Vec::<f64>::new())
-                    .name(MAP_ROW_PIN_NAME)
-                    .mode(Mode::Markers)
-                    .marker(row_pin_marker())
-                    // baked now so the bridge only ever has to set lat/lon/text
-                    .hover_template(MAP_HOVER_TEMPLATE)
-                    .show_legend(false),
-            );
-        }
-        // Carto tiles work from local files (no Referer header required). OSM enforces a Referer
-        // policy and returns 403 when the HTML is opened directly from disk. A density heatmap is a
-        // data overlay, so it gets the label-free basemap; a point map keeps labels for context.
-        let mut layout_map = LayoutMap::new()
-            .style(smart_map_basemap(is_dark_theme(theme), *density))
-            .center(center)
-            .zoom(f64::from(zoom));
-        // constrain panning to the data's footprint so the map can't be dragged off into empty
-        // ocean. Computed in `build_map_panel` from the FULL (pre-downsample) coordinate cloud, so
-        // the box always encloses the true extent the "Full extent" zoom button / overlay use — a
-        // stride-dropped extreme can't shrink it below the rendered core/outlier points.
-        if let Some(bounds) = pan_bounds {
-            layout_map = layout_map.bounds(bounds.clone());
-        }
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .map(layout_map);
-        let mut menus: Vec<UpdateMenu> = Vec::new();
-        #[cfg(feature = "geocode")]
-        if let Some(menu) = extent_menu {
-            menus.push(menu);
+            core_trace = core_trace
+                .ids(row_ids.clone())
+                .selected(
+                    MapSelection::new()
+                        .size(MAP_SELECTED_POINT_SIZE)
+                        .color(MAP_SELECTED_POINT_COLOR),
+                )
+                .unselected(MapSelection::new().opacity(MAP_UNSELECTED_POINT_OPACITY));
         }
         if *cluster {
-            menus.push(cluster_toggle_menu());
+            // native MapLibre client-side clustering, configured but DISABLED at load so the
+            // map opens on individual points; the "Clusters/Points" toggle (see
+            // `cluster_toggle_menu`) flips `cluster.enabled` on. `max_zoom` is
+            // baked now so toggling on honors it. No point is ever dropped —
+            // clustering only changes rendering, not the embedded data.
+            core_trace = core_trace.cluster(
+                Cluster::new()
+                    .enabled(false)
+                    .max_zoom(SMART_CLUSTER_MAX_ZOOM),
+            );
         }
-        if !menus.is_empty() {
-            layout = layout.update_menus(menus);
-        }
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+        plot.add_trace(core_trace);
     }
+    // geographic outliers as a distinct amber marker trace on top of the core points/heatmap.
+    // Outliers are always markers (even in density mode), so they carry hover labels too.
+    if !outlier_lats.is_empty() {
+        let mut out_trace = ScatterMap::new(outlier_lats.clone(), outlier_lons.clone())
+            .name(&t!("viz.map.geographic_outliers"))
+            .mode(Mode::Markers)
+            .marker(outlier_marker_map())
+            .show_legend(false);
+        if !outlier_hover_text.is_empty() {
+            out_trace = out_trace
+                .text_array(map_hover_text_values(outlier_hover_text))
+                .hover_template(MAP_HOVER_TEMPLATE);
+        }
+        if !outlier_photos.is_empty() {
+            out_trace = out_trace.custom_data(outlier_photos.clone());
+        }
+        // outliers are selectable too; the base amber identity is untouched, only the
+        // selected/unselected states differ (see the core trace above)
+        if !outlier_row_ids.is_empty() {
+            out_trace = out_trace
+                .ids(outlier_row_ids.clone())
+                .selected(
+                    MapSelection::new()
+                        .size(MAP_SELECTED_POINT_SIZE)
+                        .color(MAP_SELECTED_POINT_COLOR),
+                )
+                .unselected(MapSelection::new().opacity(MAP_UNSELECTED_POINT_OPACITY));
+        }
+        plot.add_trace(out_trace);
+    }
+    #[cfg(feature = "geocode")]
+    if let Some(meta) = &panel.geo_meta {
+        add_extent_overlay_map(&mut plot, meta);
+    }
+    if let Some(overlay) = &panel.geojson_overlay {
+        for trace in geojson_overlay_map_traces(overlay) {
+            plot.add_trace(trace);
+        }
+    }
+    // The row pin, LAST so it draws over the points and any overlay. Gated on the same
+    // condition as the cross-link itself (`row_ids` non-empty): with no drawer there is
+    // nothing to select, so nothing could ever fill it in, and an image export -- which
+    // passes `capture_row_ids: false` -- stays byte-identical.
+    if !row_ids.is_empty() {
+        // halo first so the ring renders beneath the core; it never answers a hover, so the
+        // pin's own label is the only one a reader can get
+        plot.add_trace(
+            ScatterMap::new(Vec::<f64>::new(), Vec::<f64>::new())
+                .name(MAP_ROW_PIN_HALO_NAME)
+                .mode(Mode::Markers)
+                .marker(row_pin_halo_marker())
+                .hover_info(HoverInfo::Skip)
+                .show_legend(false),
+        );
+        plot.add_trace(
+            ScatterMap::new(Vec::<f64>::new(), Vec::<f64>::new())
+                .name(MAP_ROW_PIN_NAME)
+                .mode(Mode::Markers)
+                .marker(row_pin_marker())
+                // baked now so the bridge only ever has to set lat/lon/text
+                .hover_template(MAP_HOVER_TEMPLATE)
+                .show_legend(false),
+        );
+    }
+    // Carto tiles work from local files (no Referer header required). OSM enforces a Referer
+    // policy and returns 403 when the HTML is opened directly from disk. A density heatmap is a
+    // data overlay, so it gets the label-free basemap; a point map keeps labels for context.
+    let mut layout_map = LayoutMap::new()
+        .style(smart_map_basemap(is_dark_theme(theme), *density))
+        .center(center)
+        .zoom(f64::from(zoom));
+    // constrain panning to the data's footprint so the map can't be dragged off into empty
+    // ocean. Computed in `build_map_panel` from the FULL (pre-downsample) coordinate cloud, so
+    // the box always encloses the true extent the "Full extent" zoom button / overlay use — a
+    // stride-dropped extreme can't shrink it below the rendered core/outlier points.
+    if let Some(bounds) = pan_bounds {
+        layout_map = layout_map.bounds(bounds.clone());
+    }
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+        .map(layout_map);
+    let mut menus: Vec<UpdateMenu> = Vec::new();
+    #[cfg(feature = "geocode")]
+    if let Some(menu) = extent_menu {
+        menus.push(menu);
+    }
+    if *cluster {
+        menus.push(cluster_toggle_menu());
+    }
+    if !menus.is_empty() {
+        layout = layout.update_menus(menus);
+    }
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
+    }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
 
-    // geo panels use a `geo` projection layout (no tiles, fully offline) instead of cartesian
-    // x/y axes, so they're assembled here like the MapLibre map panel above.
-    if let PanelKind::Geo {
+// geo panels use a `geo` projection layout (no tiles, fully offline) instead of cartesian
+// x/y axes, so they're assembled here like the MapLibre map panel above.
+#[inline(never)]
+fn inline_panel_plot_geo(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::Geo {
         lats,
         lons,
         outlier_lats,
@@ -28215,32 +28503,57 @@ fn smart_inline_panel_plot(
         row_ids,
         outlier_row_ids,
     } = &panel.kind
-    {
-        let mut plot = Plot::new();
-        // a fixed high-contrast marker (warm fill + thin white outline) instead of the palette
-        // accent: the `geo` projection paints a light-blue ocean and light-gray land, and the
-        // palette's first color is a blue that disappears against the ocean (e.g. coastal/island
-        // points on a world overview). Crimson reads on both land and water and in dark themes.
-        let mut core_marker = Marker::new()
-            .color(NamedColor::Crimson)
-            .opacity(MAP_POINT_OPACITY)
-            .line(Line::new().color(NamedColor::White).width(0.5));
-        if let Some(sizes) = sizes {
-            core_marker = core_marker.size_array(scale_bubble_sizes(sizes));
-        }
-        let mut core_trace = ScatterGeo::new(lats.clone(), lons.clone())
+    else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    let mut plot = Plot::new();
+    // a fixed high-contrast marker (warm fill + thin white outline) instead of the palette
+    // accent: the `geo` projection paints a light-blue ocean and light-gray land, and the
+    // palette's first color is a blue that disappears against the ocean (e.g. coastal/island
+    // points on a world overview). Crimson reads on both land and water and in dark themes.
+    let mut core_marker = Marker::new()
+        .color(NamedColor::Crimson)
+        .opacity(MAP_POINT_OPACITY)
+        .line(Line::new().color(NamedColor::White).width(0.5));
+    if let Some(sizes) = sizes {
+        core_marker = core_marker.size_array(scale_bubble_sizes(sizes));
+    }
+    let mut core_trace = ScatterGeo::new(lats.clone(), lons.clone())
+        .mode(Mode::Markers)
+        .marker(core_marker);
+    if !hover_text.is_empty() {
+        core_trace = core_trace
+            .text_array(map_hover_text_values(hover_text))
+            .hover_template(MAP_HOVER_TEMPLATE);
+    }
+    // data-viewer cross-link; see the ScatterMap core trace above. ScatterGeo renders as SVG
+    // rather than WebGL, so selection restyling here is ordinary plotly behavior.
+    if !row_ids.is_empty() {
+        core_trace = core_trace
+            .ids(row_ids.clone())
+            .selected(
+                GeoSelection::new()
+                    .size(MAP_SELECTED_POINT_SIZE)
+                    .color(MAP_SELECTED_POINT_COLOR),
+            )
+            .unselected(GeoSelection::new().opacity(MAP_UNSELECTED_POINT_OPACITY));
+    }
+    plot.add_trace(core_trace);
+    // geographic outliers as a distinct amber/X marker trace on top of the core points
+    if !outlier_lats.is_empty() {
+        let mut out_trace = ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
+            .name(&t!("viz.map.geographic_outliers"))
             .mode(Mode::Markers)
-            .marker(core_marker);
-        if !hover_text.is_empty() {
-            core_trace = core_trace
-                .text_array(map_hover_text_values(hover_text))
+            .marker(outlier_marker_geo())
+            .show_legend(false);
+        if !outlier_hover_text.is_empty() {
+            out_trace = out_trace
+                .text_array(map_hover_text_values(outlier_hover_text))
                 .hover_template(MAP_HOVER_TEMPLATE);
         }
-        // data-viewer cross-link; see the ScatterMap core trace above. ScatterGeo renders as SVG
-        // rather than WebGL, so selection restyling here is ordinary plotly behavior.
-        if !row_ids.is_empty() {
-            core_trace = core_trace
-                .ids(row_ids.clone())
+        if !outlier_row_ids.is_empty() {
+            out_trace = out_trace
+                .ids(outlier_row_ids.clone())
                 .selected(
                     GeoSelection::new()
                         .size(MAP_SELECTED_POINT_SIZE)
@@ -28248,111 +28561,92 @@ fn smart_inline_panel_plot(
                 )
                 .unselected(GeoSelection::new().opacity(MAP_UNSELECTED_POINT_OPACITY));
         }
-        plot.add_trace(core_trace);
-        // geographic outliers as a distinct amber/X marker trace on top of the core points
-        if !outlier_lats.is_empty() {
-            let mut out_trace = ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
-                .name(&t!("viz.map.geographic_outliers"))
-                .mode(Mode::Markers)
-                .marker(outlier_marker_geo())
-                .show_legend(false);
-            if !outlier_hover_text.is_empty() {
-                out_trace = out_trace
-                    .text_array(map_hover_text_values(outlier_hover_text))
-                    .hover_template(MAP_HOVER_TEMPLATE);
-            }
-            if !outlier_row_ids.is_empty() {
-                out_trace = out_trace
-                    .ids(outlier_row_ids.clone())
-                    .selected(
-                        GeoSelection::new()
-                            .size(MAP_SELECTED_POINT_SIZE)
-                            .color(MAP_SELECTED_POINT_COLOR),
-                    )
-                    .unselected(GeoSelection::new().opacity(MAP_UNSELECTED_POINT_OPACITY));
-            }
-            plot.add_trace(out_trace);
-        }
-        #[cfg(feature = "geocode")]
-        if let Some(meta) = &panel.geo_meta {
-            add_extent_overlay_geo(&mut plot, meta);
-        }
-        if let Some(overlay) = &panel.geojson_overlay {
-            for trace in geojson_overlay_geo_traces(overlay, None) {
-                plot.add_trace(trace);
-            }
-        }
-        // the row pin, on top of everything (see the `PanelKind::Map` arm). A geo panel never moves
-        // its camera for a selection, but it still shows the pin -- downsampling drops rows here
-        // too, so without it a click on such a row would do nothing at all.
-        if !row_ids.is_empty() {
-            plot.add_trace(
-                ScatterGeo::new(Vec::<f64>::new(), Vec::<f64>::new())
-                    .name(MAP_ROW_PIN_HALO_NAME)
-                    .mode(Mode::Markers)
-                    .marker(row_pin_halo_marker())
-                    .hover_info(HoverInfo::Skip)
-                    .show_legend(false),
-            );
-            plot.add_trace(
-                ScatterGeo::new(Vec::<f64>::new(), Vec::<f64>::new())
-                    .name(MAP_ROW_PIN_NAME)
-                    .mode(Mode::Markers)
-                    .marker(row_pin_marker())
-                    .hover_template(MAP_HOVER_TEMPLATE)
-                    .show_legend(false),
-            );
-        }
-        let (geo_land, geo_water, geo_bg) = geo_palette(theme);
-        // when every plotted point (core + outliers) sits in a single plotly continent, frame the
-        // world overview to that continent's `scope` instead of showing the whole globe.
-        let continent = {
-            let mut all_lats = lats.clone();
-            all_lats.extend_from_slice(outlier_lats);
-            let mut all_lons = lons.clone();
-            all_lons.extend_from_slice(outlier_lons);
-            continent_scope(&all_lats, &all_lons)
-        };
-        let mut geo = LayoutGeo::new()
-            .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
-            .resolution(GeoResolution::OneOverFiftyMillion)
-            .showland(true)
-            .landcolor(geo_land)
-            .showocean(true)
-            .oceancolor(geo_water)
-            .showlakes(true)
-            .lakecolor(geo_water)
-            .showcountries(true)
-            .bgcolor(geo_bg);
-        if let Some(scope) = continent {
-            geo = geo.scope(scope);
-        }
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .geo(geo);
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+        plot.add_trace(out_trace);
     }
+    #[cfg(feature = "geocode")]
+    if let Some(meta) = &panel.geo_meta {
+        add_extent_overlay_geo(&mut plot, meta);
+    }
+    if let Some(overlay) = &panel.geojson_overlay {
+        for trace in geojson_overlay_geo_traces(overlay, None) {
+            plot.add_trace(trace);
+        }
+    }
+    // the row pin, on top of everything (see the `PanelKind::Map` arm). A geo panel never moves
+    // its camera for a selection, but it still shows the pin -- downsampling drops rows here
+    // too, so without it a click on such a row would do nothing at all.
+    if !row_ids.is_empty() {
+        plot.add_trace(
+            ScatterGeo::new(Vec::<f64>::new(), Vec::<f64>::new())
+                .name(MAP_ROW_PIN_HALO_NAME)
+                .mode(Mode::Markers)
+                .marker(row_pin_halo_marker())
+                .hover_info(HoverInfo::Skip)
+                .show_legend(false),
+        );
+        plot.add_trace(
+            ScatterGeo::new(Vec::<f64>::new(), Vec::<f64>::new())
+                .name(MAP_ROW_PIN_NAME)
+                .mode(Mode::Markers)
+                .marker(row_pin_marker())
+                .hover_template(MAP_HOVER_TEMPLATE)
+                .show_legend(false),
+        );
+    }
+    let (geo_land, geo_water, geo_bg) = geo_palette(theme);
+    // when every plotted point (core + outliers) sits in a single plotly continent, frame the
+    // world overview to that continent's `scope` instead of showing the whole globe.
+    let continent = {
+        let mut all_lats = lats.clone();
+        all_lats.extend_from_slice(outlier_lats);
+        let mut all_lons = lons.clone();
+        all_lons.extend_from_slice(outlier_lons);
+        continent_scope(&all_lats, &all_lons)
+    };
+    let mut geo = LayoutGeo::new()
+        .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
+        .resolution(GeoResolution::OneOverFiftyMillion)
+        .showland(true)
+        .landcolor(geo_land)
+        .showocean(true)
+        .oceancolor(geo_water)
+        .showlakes(true)
+        .lakecolor(geo_water)
+        .showcountries(true)
+        .bgcolor(geo_bg);
+    if let Some(scope) = continent {
+        geo = geo.scope(scope);
+    }
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+        .geo(geo);
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
+    }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
 
-    // metro-scale `--geojson` choropleth: a MapLibre tile basemap (`map` subplot) supplies the fine
-    // street/coastline detail the projection basemap lacks at city scale. Center/zoom are
-    // precomputed from the matched-region bbox, so render frames the metro area without re-scanning
-    // geometry. Token-free carto tiles (load from local files; no Referer header) chosen by theme,
-    // matching the point `Map` panel.
-    //
-    // NOTE: plotly's `fitbounds` is a `layout.geo`-only property (the projection Choropleth below
-    // uses it) — the MapLibre `map` subplot has no fitbounds/auto-fit equivalent, so we frame it
-    // manually via the precomputed center/zoom (and re-aim the GL camera on resize/fullscreen).
-    if let PanelKind::ChoroplethMap {
+// metro-scale `--geojson` choropleth: a MapLibre tile basemap (`map` subplot) supplies the fine
+// street/coastline detail the projection basemap lacks at city scale. Center/zoom are
+// precomputed from the matched-region bbox, so render frames the metro area without re-scanning
+// geometry. Token-free carto tiles (load from local files; no Referer header) chosen by theme,
+// matching the point `Map` panel.
+//
+// NOTE: plotly's `fitbounds` is a `layout.geo`-only property (the projection Choropleth below
+// uses it) — the MapLibre `map` subplot has no fitbounds/auto-fit equivalent, so we frame it
+// manually via the precomputed center/zoom (and re-aim the GL camera on resize/fullscreen).
+#[inline(never)]
+fn inline_panel_plot_choropleth_map(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::ChoroplethMap {
         locations,
         z,
         geojson,
@@ -28363,66 +28657,72 @@ fn smart_inline_panel_plot(
         zoom,
         measure_label,
     } = &panel.kind
-    {
-        let mut plot = Plot::new();
-        plot.add_trace(
-            ChoroplethMap::new(locations.clone(), z.clone())
-                .geojson(geojson.clone())
-                .feature_id_key(feature_id_key.clone())
-                .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
-                .show_scale(true)
-                .color_bar(ColorBar::new().title(escape_hover(measure_label)))
-                .marker(
-                    ChoroplethMarker::new()
-                        .line(Line::new().width(0.5))
-                        .opacity(CHOROPLETH_MAP_FILL_OPACITY),
-                )
-                // insert the fill ABOVE every basemap layer. Plotly's default drops it just above
-                // the water layers, so the basemap's roads render on TOP of the regions and muddy
-                // the read; "" lifts it over the roads (a near-opaque fill then reads cleanly, with
-                // the inter-polygon gaps still revealing enough basemap to orient).
-                .below("")
-                .hover_text_array(hover_text.clone())
-                .hover_info(HoverInfo::Text),
-        );
-        // keep the LABELED basemap: since the fill is inserted above every basemap layer
-        // (`below("")` on the trace), place names can no longer bleed over the regions — they sit
-        // under the fill and show only in the gaps between polygons (water, harbor, parks, and the
-        // uncovered land around the metro), where they aid orientation. Passing `false` (not a
-        // label-suppressing overlay); the theme-toggle JS keys off the `-nolabels` suffix, so a
-        // labeled style here stays labeled across a light/dark switch.
-        let layout_map = LayoutMap::new()
-            .style(smart_map_basemap(is_dark_theme(theme), false))
-            .center(Center::new(*center_lat, *center_lon))
-            .zoom(*zoom);
-        // opt-in "Basemap labels" toggle: hides/shows the carto basemap's place names (default on).
-        // The two style strings are baked for the render-time theme; the theme-toggle JS rewrites
-        // them to the active theme on each flip (preserving the `-nolabels` suffix).
-        let labeled_style = smart_map_basemap(is_dark_theme(theme), false);
-        let nolabels_style = smart_map_basemap(is_dark_theme(theme), true);
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .update_menus(vec![basemap_labels_toggle_menu(
-                labeled_style,
-                nolabels_style,
-            )])
-            .map(layout_map);
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+    else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    let mut plot = Plot::new();
+    plot.add_trace(
+        ChoroplethMap::new(locations.clone(), z.clone())
+            .geojson(geojson.clone())
+            .feature_id_key(feature_id_key.clone())
+            .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+            .show_scale(true)
+            .color_bar(ColorBar::new().title(escape_hover(measure_label)))
+            .marker(
+                ChoroplethMarker::new()
+                    .line(Line::new().width(0.5))
+                    .opacity(CHOROPLETH_MAP_FILL_OPACITY),
+            )
+            // insert the fill ABOVE every basemap layer. Plotly's default drops it just above
+            // the water layers, so the basemap's roads render on TOP of the regions and muddy
+            // the read; "" lifts it over the roads (a near-opaque fill then reads cleanly, with
+            // the inter-polygon gaps still revealing enough basemap to orient).
+            .below("")
+            .hover_text_array(hover_text.clone())
+            .hover_info(HoverInfo::Text),
+    );
+    // keep the LABELED basemap: since the fill is inserted above every basemap layer
+    // (`below("")` on the trace), place names can no longer bleed over the regions — they sit
+    // under the fill and show only in the gaps between polygons (water, harbor, parks, and the
+    // uncovered land around the metro), where they aid orientation. Passing `false` (not a
+    // label-suppressing overlay); the theme-toggle JS keys off the `-nolabels` suffix, so a
+    // labeled style here stays labeled across a light/dark switch.
+    let layout_map = LayoutMap::new()
+        .style(smart_map_basemap(is_dark_theme(theme), false))
+        .center(Center::new(*center_lat, *center_lon))
+        .zoom(*zoom);
+    // opt-in "Basemap labels" toggle: hides/shows the carto basemap's place names (default on).
+    // The two style strings are baked for the render-time theme; the theme-toggle JS rewrites
+    // them to the active theme on each flip (preserving the `-nolabels` suffix).
+    let labeled_style = smart_map_basemap(is_dark_theme(theme), false);
+    let nolabels_style = smart_map_basemap(is_dark_theme(theme), true);
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+        .update_menus(vec![basemap_labels_toggle_menu(
+            labeled_style,
+            nolabels_style,
+        )])
+        .map(layout_map);
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
     }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
 
-    // choropleth panels fill whole regions on a `geo` projection layout (no tiles), colored by the
-    // per-region point count; assembled here like the geo point map above.
-    if let PanelKind::Choropleth {
+// choropleth panels fill whole regions on a `geo` projection layout (no tiles), colored by the
+// per-region point count; assembled here like the geo point map above.
+#[inline(never)]
+fn inline_panel_plot_choropleth(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::Choropleth {
         locations,
         z,
         location_mode,
@@ -28431,450 +28731,506 @@ fn smart_inline_panel_plot(
         hover_text,
         measure_label,
     } = &panel.kind
-    {
-        let mut plot = Plot::new();
-        let mut trace = Choropleth::new(locations.clone(), z.clone())
-            .location_mode(location_mode.clone())
-            .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
-            .show_scale(true)
-            .color_bar(ColorBar::new().title(escape_hover(measure_label)))
-            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
-            .hover_text_array(hover_text.clone())
-            .hover_info(HoverInfo::Text);
-        // a point-in-polygon panel carries its own GeoJSON polygons (geojson-id mode); the
-        // built-in geocode-derived panels (iso3 / usa-states) carry neither.
-        if let (Some(gj), Some(key)) = (geojson, feature_id_key) {
-            trace = trace.geojson(gj.clone()).feature_id_key(key.clone());
-        }
-        plot.add_trace(trace);
-        // frame to the FILLED REGION GEOMETRIES, not the source points (whose bounding box clips
-        // the countries/states at the edges — e.g. a city near a country's center).
-        // US-states use the albers-usa composite (CONUS + AK/HI insets), which self-frames
-        // the US; everything else uses natural-earth with `fitbounds: "locations"`, so
-        // Plotly fits the view to the union of the rendered region polygons — a
-        // European/Asian/etc. cluster zooms to those countries, global data stays
-        // world-scale.
-        let (geo_land, _geo_water, geo_bg) = geo_palette(theme);
-        let mut geo = LayoutGeo::new()
-            .resolution(GeoResolution::OneOverFiftyMillion)
-            .showland(true)
-            .landcolor(geo_land)
-            .showcountries(true)
-            // the choropleth paints no ocean, so geo.bgcolor is the sea; it carries the theme so a
-            // dark map has a dark sea. The smart toggle also relayouts geo.bgcolor for live
-            // switching.
-            .bgcolor(geo_bg);
-        if matches!(location_mode, LocationMode::UsaStates) {
-            // scope:"usa" restricts the basemap (showland, showcountries) to the US extent,
-            // preventing Canadian land (e.g. British Columbia) from bleeding into the
-            // albers-usa composite canvas above Washington State.
-            geo = geo
-                .projection(Projection::new().projection_type(ProjectionType::AlbersUsa))
-                .scope("usa");
-        } else {
-            geo = geo
-                .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
-                .fitbounds(GeoFitBounds::Locations);
-        }
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .geo(geo);
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+    else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    let mut plot = Plot::new();
+    let mut trace = Choropleth::new(locations.clone(), z.clone())
+        .location_mode(location_mode.clone())
+        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+        .show_scale(true)
+        .color_bar(ColorBar::new().title(escape_hover(measure_label)))
+        .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+        .hover_text_array(hover_text.clone())
+        .hover_info(HoverInfo::Text);
+    // a point-in-polygon panel carries its own GeoJSON polygons (geojson-id mode); the
+    // built-in geocode-derived panels (iso3 / usa-states) carry neither.
+    if let (Some(gj), Some(key)) = (geojson, feature_id_key) {
+        trace = trace.geojson(gj.clone()).feature_id_key(key.clone());
     }
-
-    // 3D scatter panels use a `scene` (3D) layout instead of cartesian x/y axes, so they're
-    // assembled here as well.
-    if let PanelKind::Scatter3D { xs, ys, zs, labels } = &panel.kind {
-        let (x_label, y_label, z_label) = labels;
-        // plotly's default 3D hover labels the coordinates with the bare axis letters x/y/z (it
-        // does NOT read the scene axis titles), so name each dimension explicitly. escape: this
-        // is a hoverTEMPLATE — a raw header containing `<extra>`/`<b>` would otherwise
-        // terminate/format the template instead of displaying literally.
-        let hover = format!(
-            "{}: %{{x:,.3f}}<br>{}: %{{y:,.3f}}<br>{}: %{{z:,.3f}}<extra></extra>",
-            escape_hover(x_label),
-            escape_hover(y_label),
-            escape_hover(z_label)
-        );
-        let mut plot = Plot::new();
-        plot.add_trace(
-            Scatter3D::new(xs.clone(), ys.clone(), zs.clone())
-                .mode(Mode::Markers)
-                .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY))
-                .hover_template(hover),
-        );
-        let scene = LayoutScene::new()
-            // axis titles render plotly pseudo-HTML just like hovers and panel titles, and
-            // these labels are raw CSV headers
-            .x_axis(Axis::new().title(Title::with_text(escape_hover(x_label))))
-            .y_axis(Axis::new().title(Title::with_text(escape_hover(y_label))))
-            .z_axis(Axis::new().title(Title::with_text(escape_hover(z_label))));
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .scene(scene);
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+    plot.add_trace(trace);
+    // frame to the FILLED REGION GEOMETRIES, not the source points (whose bounding box clips
+    // the countries/states at the edges — e.g. a city near a country's center).
+    // US-states use the albers-usa composite (CONUS + AK/HI insets), which self-frames
+    // the US; everything else uses natural-earth with `fitbounds: "locations"`, so
+    // Plotly fits the view to the union of the rendered region polygons — a
+    // European/Asian/etc. cluster zooms to those countries, global data stays
+    // world-scale.
+    let (geo_land, _geo_water, geo_bg) = geo_palette(theme);
+    let mut geo = LayoutGeo::new()
+        .resolution(GeoResolution::OneOverFiftyMillion)
+        .showland(true)
+        .landcolor(geo_land)
+        .showcountries(true)
+        // the choropleth paints no ocean, so geo.bgcolor is the sea; it carries the theme so a
+        // dark map has a dark sea. The smart toggle also relayouts geo.bgcolor for live
+        // switching.
+        .bgcolor(geo_bg);
+    if matches!(location_mode, LocationMode::UsaStates) {
+        // scope:"usa" restricts the basemap (showland, showcountries) to the US extent,
+        // preventing Canadian land (e.g. British Columbia) from bleeding into the
+        // albers-usa composite canvas above Washington State.
+        geo = geo
+            .projection(Projection::new().projection_type(ProjectionType::AlbersUsa))
+            .scope("usa");
+    } else {
+        geo = geo
+            .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
+            .fitbounds(GeoFitBounds::Locations);
     }
-
-    // cyclic-seasonality panels use a `polar` subplot — plotly auto-creates it from the
-    // ScatterPolar trace (as the standalone `viz radar` does), so they own their whole Plot
-    // here too.
-    if let PanelKind::CyclicProfile { theta, r } = &panel.kind {
-        let mut plot = Plot::new();
-        plot.add_trace(
-            ScatterPolar::new(theta.clone(), r.clone())
-                // lines+markers so each phase (hour/day/month) is its own hoverable vertex, not
-                // just a single hover on the ring.
-                .mode(Mode::LinesMarkers)
-                .fill(Fill::ToSelf)
-                .name(panel.name.clone())
-                .hover_template(&t!("viz.hover.polar_records")),
-        );
-        // A polar subplot draws its angular tick labels ("06h", "Mon", "Jan") OUTSIDE its plot
-        // area — ~22px past the top and bottom edges — and this plotly version's `LayoutPolar`
-        // exposes no `domain` to rein the ring in. So the panel's own margins do the work: a
-        // taller top band (with the title lifted to sit above the spill, see
-        // POLAR_TITLE_Y_SHIFT) keeps the title clear of the 12-o'clock label, and a taller
-        // bottom band keeps the 6-o'clock label from being clipped by the panel edge.
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(64).bottom(44).left(20).right(20).pad(4));
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        let layout =
-            inline_panel_title_shifted(layout, panel, themed, Vec::new(), POLAR_TITLE_Y_SHIFT);
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+        .geo(geo);
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
     }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
 
-    // hierarchy (treemap/sunburst) panels are domain-based — no cartesian x/y axes — so, like the
-    // map/geo/3D panels above, they own their whole Plot here.
-    // KPI row: a full-width band of domain-positioned `Indicator` tiles (no cartesian axes), so it
-    // owns its whole Plot here like the hierarchy/sankey panels below.
-    if let PanelKind::KpiRow { tiles } = &panel.kind {
-        let mut plot = Plot::new();
-        let count = tiles.len().max(1) as f64;
-        // even horizontal split with a small inter-tile gutter so adjacent gauges/numbers breathe
-        let gutter = 0.02_f64;
-        // Indicator-domain bottom (`ind_y0`) and the shared label baseline (`label_y`), as paper
-        // fractions of this panel's plot (0 = bottom). Number tiles center the number in the
-        // domain; gauge tiles render it lower, at the dial pivot (~30px below a plain number at the
-        // gauge height). The whole row is height-matched to its content (`panel_render_height`),
-        // so the domain fills the plot and the label sits snug under the numbers with no dead band
-        // below. Anchor ALL labels at one baseline so they share a clean line (no per-tile step);
-        // in a mixed row the gauge number is binding, so it is pinned just under the gauge number
-        // and the plain-number tiles carry a slightly larger (still tidy) number-to-label gap.
-        let has_gauge = tiles.iter().any(|t| t.gauge.is_some());
-        let (ind_y0, label_y) = if has_gauge {
-            (0.34_f64, 0.30_f64)
-        } else {
-            (0.10_f64, 0.24_f64)
-        };
-        let max_chars = ((150.0 / count) as usize).clamp(12, 28);
-        let ann_font = |size: usize| {
-            let f = Font::new().size(size);
-            if themed { f } else { f.family(FONT_FAMILY) }
-        };
-        let mut kpi_labels: Vec<Annotation> = Vec::with_capacity(tiles.len());
-        for (i, tile) in tiles.iter().enumerate() {
-            let lo = (i as f64 / count) + gutter / 2.0;
-            let hi = ((i + 1) as f64 / count) - gutter / 2.0;
-            plot.add_trace(kpi_indicator(tile, [lo, hi], [ind_y0, 1.0]));
-            kpi_labels.push(kpi_label_annotation(
-                &tile.label,
-                f64::midpoint(lo, hi),
-                label_y,
-                max_chars,
-                ann_font(13),
-            ));
-        }
-        // no panel title — each tile carries its own word-wrapped subtitle label below its number
-        // (`kpi_label_annotation`), so reclaim the top band a title would occupy. Vertical hover
-        // modebar only.
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(20).bottom(20).left(20).right(20).pad(4))
-            .mode_bar(ModeBar::new().orientation(Orientation::Vertical))
-            .annotations(kpi_labels);
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+// 3D scatter panels use a `scene` (3D) layout instead of cartesian x/y axes, so they're
+// assembled here as well.
+#[inline(never)]
+fn inline_panel_plot_scatter3d(
+    panel: &Panel,
+    color: &'static str,
+    theme: Option<BuiltinTheme>,
+) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::Scatter3D { xs, ys, zs, labels } = &panel.kind else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    let (x_label, y_label, z_label) = labels;
+    // plotly's default 3D hover labels the coordinates with the bare axis letters x/y/z (it
+    // does NOT read the scene axis titles), so name each dimension explicitly. escape: this
+    // is a hoverTEMPLATE — a raw header containing `<extra>`/`<b>` would otherwise
+    // terminate/format the template instead of displaying literally.
+    let hover = format!(
+        "{}: %{{x:,.3f}}<br>{}: %{{y:,.3f}}<br>{}: %{{z:,.3f}}<extra></extra>",
+        escape_hover(x_label),
+        escape_hover(y_label),
+        escape_hover(z_label)
+    );
+    let mut plot = Plot::new();
+    plot.add_trace(
+        Scatter3D::new(xs.clone(), ys.clone(), zs.clone())
+            .mode(Mode::Markers)
+            .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY))
+            .hover_template(hover),
+    );
+    let scene = LayoutScene::new()
+        // axis titles render plotly pseudo-HTML just like hovers and panel titles, and
+        // these labels are raw CSV headers
+        .x_axis(Axis::new().title(Title::with_text(escape_hover(x_label))))
+        .y_axis(Axis::new().title(Title::with_text(escape_hover(y_label))))
+        .z_axis(Axis::new().title(Title::with_text(escape_hover(z_label))));
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+        .scene(scene);
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
     }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
 
-    if let PanelKind::Hierarchy {
+// cyclic-seasonality panels use a `polar` subplot — plotly auto-creates it from the
+// ScatterPolar trace (as the standalone `viz radar` does), so they own their whole Plot
+// here too.
+#[inline(never)]
+fn inline_panel_plot_cyclic_profile(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::CyclicProfile { theta, r } = &panel.kind else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    let mut plot = Plot::new();
+    plot.add_trace(
+        ScatterPolar::new(theta.clone(), r.clone())
+            // lines+markers so each phase (hour/day/month) is its own hoverable vertex, not
+            // just a single hover on the ring.
+            .mode(Mode::LinesMarkers)
+            .fill(Fill::ToSelf)
+            .name(panel.name.clone())
+            .hover_template(&t!("viz.hover.polar_records")),
+    );
+    // A polar subplot draws its angular tick labels ("06h", "Mon", "Jan") OUTSIDE its plot
+    // area — ~22px past the top and bottom edges — and this plotly version's `LayoutPolar`
+    // exposes no `domain` to rein the ring in. So the panel's own margins do the work: a
+    // taller top band (with the title lifted to sit above the spill, see
+    // POLAR_TITLE_Y_SHIFT) keeps the title clear of the 12-o'clock label, and a taller
+    // bottom band keeps the 6-o'clock label from being clipped by the panel edge.
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(64).bottom(44).left(20).right(20).pad(4));
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
+    }
+    let layout = inline_panel_title_shifted(layout, panel, themed, Vec::new(), POLAR_TITLE_Y_SHIFT);
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
+
+// hierarchy (treemap/sunburst) panels are domain-based — no cartesian x/y axes — so, like the
+// map/geo/3D panels above, they own their whole Plot here.
+// KPI row: a full-width band of domain-positioned `Indicator` tiles (no cartesian axes), so it
+// owns its whole Plot here like the hierarchy/sankey panels below.
+#[inline(never)]
+fn inline_panel_plot_kpi_row(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::KpiRow { tiles } = &panel.kind else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    let mut plot = Plot::new();
+    let count = tiles.len().max(1) as f64;
+    // even horizontal split with a small inter-tile gutter so adjacent gauges/numbers breathe
+    let gutter = 0.02_f64;
+    // Indicator-domain bottom (`ind_y0`) and the shared label baseline (`label_y`), as paper
+    // fractions of this panel's plot (0 = bottom). Number tiles center the number in the
+    // domain; gauge tiles render it lower, at the dial pivot (~30px below a plain number at the
+    // gauge height). The whole row is height-matched to its content (`panel_render_height`),
+    // so the domain fills the plot and the label sits snug under the numbers with no dead band
+    // below. Anchor ALL labels at one baseline so they share a clean line (no per-tile step);
+    // in a mixed row the gauge number is binding, so it is pinned just under the gauge number
+    // and the plain-number tiles carry a slightly larger (still tidy) number-to-label gap.
+    let has_gauge = tiles.iter().any(|t| t.gauge.is_some());
+    let (ind_y0, label_y) = if has_gauge {
+        (0.34_f64, 0.30_f64)
+    } else {
+        (0.10_f64, 0.24_f64)
+    };
+    let max_chars = ((150.0 / count) as usize).clamp(12, 28);
+    let ann_font = |size: usize| {
+        let f = Font::new().size(size);
+        if themed { f } else { f.family(FONT_FAMILY) }
+    };
+    let mut kpi_labels: Vec<Annotation> = Vec::with_capacity(tiles.len());
+    for (i, tile) in tiles.iter().enumerate() {
+        let lo = (i as f64 / count) + gutter / 2.0;
+        let hi = ((i + 1) as f64 / count) - gutter / 2.0;
+        plot.add_trace(kpi_indicator(tile, [lo, hi], [ind_y0, 1.0]));
+        kpi_labels.push(kpi_label_annotation(
+            &tile.label,
+            f64::midpoint(lo, hi),
+            label_y,
+            max_chars,
+            ann_font(13),
+        ));
+    }
+    // no panel title — each tile carries its own word-wrapped subtitle label below its number
+    // (`kpi_label_annotation`), so reclaim the top band a title would occupy. Vertical hover
+    // modebar only.
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(20).bottom(20).left(20).right(20).pad(4))
+        .mode_bar(ModeBar::new().orientation(Orientation::Vertical))
+        .annotations(kpi_labels);
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
+    }
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
+
+#[inline(never)]
+fn inline_panel_plot_hierarchy(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::Hierarchy {
         style,
         labels,
         parents,
         values,
         ids,
     } = &panel.kind
-    {
-        let mut plot = Plot::new();
-        plot.add_trace(hierarchy_trace(*style, labels, parents, values, ids));
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+    else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    let mut plot = Plot::new();
+    plot.add_trace(hierarchy_trace(*style, labels, parents, values, ids));
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
     }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
 
-    // Sankey flow panels are domain-based (bipartite nodes + weighted links), like the hierarchy
-    // panel above — no cartesian x/y axes — so they own their whole Plot here.
-    if let PanelKind::Sankey {
+// Sankey flow panels are domain-based (bipartite nodes + weighted links), like the hierarchy
+// panel above — no cartesian x/y axes — so they own their whole Plot here.
+#[inline(never)]
+fn inline_panel_plot_sankey(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::Sankey {
         node_labels,
         link_source,
         link_target,
         link_value,
         value_order,
     } = &panel.kind
-    {
-        let mut plot = Plot::new();
-        let positions =
-            sankey_value_positions(node_labels.len(), link_source, link_target, link_value);
-        plot.add_trace(sankey_trace(
-            node_labels,
-            link_source,
-            link_target,
-            link_value,
-            (*value_order).then_some(()).and(positions.as_ref()),
-        ));
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
-        // on-screen "node order" toggle (offered whichever order the panel opened in).
-        if let Some((xs, ys)) = &positions {
-            layout = layout.update_menus(vec![sankey_order_toggle_menu(xs, ys, *value_order)]);
-        }
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+    else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    let mut plot = Plot::new();
+    let positions = sankey_value_positions(node_labels.len(), link_source, link_target, link_value);
+    plot.add_trace(sankey_trace(
+        node_labels,
+        link_source,
+        link_target,
+        link_value,
+        (*value_order).then_some(()).and(positions.as_ref()),
+    ));
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
+    // on-screen "node order" toggle (offered whichever order the panel opened in).
+    if let Some((xs, ys)) = &positions {
+        layout = layout.update_menus(vec![sankey_order_toggle_menu(xs, ys, *value_order)]);
     }
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
+    }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
 
-    // Parallel categories: a domain-based ribbon flow (like the Sankey above) — no cartesian axes.
-    if let PanelKind::Parcats {
+// Parallel categories: a domain-based ribbon flow (like the Sankey above) — no cartesian axes.
+#[inline(never)]
+fn inline_panel_plot_parcats(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::Parcats {
         dim_labels,
         tuples,
         counts,
     } = &panel.kind
-    {
-        let (dimensions, line, ordered) = parcats_dimensions_and_line(dim_labels, tuples, counts);
-        let mut trace = Parcats::new()
-            .dimensions(dimensions)
-            .counts_array(counts.clone())
-            .arrangement(ParcatsArrangement::Perpendicular)
-            .bundle_colors(true);
-        if let Some(line) = line {
-            trace = trace.line(line);
-        }
-        let mut plot = Plot::new();
-        plot.add_trace(trace);
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .update_menus(vec![parcats_order_toggle_menu(&ordered)]);
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+    else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    let (dimensions, line, ordered) = parcats_dimensions_and_line(dim_labels, tuples, counts);
+    let mut trace = Parcats::new()
+        .dimensions(dimensions)
+        .counts_array(counts.clone())
+        .arrangement(ParcatsArrangement::Perpendicular)
+        .bundle_colors(true);
+    if let Some(line) = line {
+        trace = trace.line(line);
     }
+    let mut plot = Plot::new();
+    plot.add_trace(trace);
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+        .update_menus(vec![parcats_order_toggle_menu(&ordered)]);
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
+    }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
 
-    // Animated geographic point map: dated points on a ScatterGeo projection basemap, revealed
-    // cumulatively over time buckets. Reconstructs the geo layout inline (like the static Geo block
-    // above — this render fn has no `args`, so `geo_base_layout` isn't reachable) and adds a scrub
-    // slider + Play/Pause. Reuses the standalone animated-geo core (native ScatterGeo animation).
-    if let PanelKind::AnimatedGeo {
+// Animated geographic point map: dated points on a ScatterGeo projection basemap, revealed
+// cumulatively over time buckets. Reconstructs the geo layout inline (like the static Geo block
+// above — this render fn has no `args`, so `geo_base_layout` isn't reachable) and adds a scrub
+// slider + Play/Pause. Reuses the standalone animated-geo core (native ScatterGeo animation).
+#[inline(never)]
+fn inline_panel_plot_animated_geo(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::AnimatedGeo {
         bucket_lats,
         bucket_lons,
         bucket_labels,
         frame_label,
     } = &panel.kind
-    {
-        const SMART_SLIDER_SPEED_MS: u64 = 700;
-        // a fixed high-contrast marker (warm fill + thin white outline), matching the static Geo
-        // panel, so points read on both land and ocean and in dark themes.
-        let geo_marker = || {
-            Marker::new()
-                .color(NamedColor::Crimson)
-                .opacity(MAP_POINT_OPACITY)
-                .line(Line::new().color(NamedColor::White).width(0.5))
-        };
-        let mut plot = Plot::new();
-        // base = ALL points (every bucket flattened) so the initial/static view shows the full
-        // cloud; Play then reveals it accumulating chronologically.
-        let all_lats: Vec<f64> = bucket_lats.iter().flatten().copied().collect();
-        let all_lons: Vec<f64> = bucket_lons.iter().flatten().copied().collect();
-        plot.add_trace(
-            ScatterGeo::new(all_lats, all_lons)
+    else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    const SMART_SLIDER_SPEED_MS: u64 = 700;
+    // a fixed high-contrast marker (warm fill + thin white outline), matching the static Geo
+    // panel, so points read on both land and ocean and in dark themes.
+    let geo_marker = || {
+        Marker::new()
+            .color(NamedColor::Crimson)
+            .opacity(MAP_POINT_OPACITY)
+            .line(Line::new().color(NamedColor::White).width(0.5))
+    };
+    let mut plot = Plot::new();
+    // base = ALL points (every bucket flattened) so the initial/static view shows the full
+    // cloud; Play then reveals it accumulating chronologically.
+    let all_lats: Vec<f64> = bucket_lats.iter().flatten().copied().collect();
+    let all_lons: Vec<f64> = bucket_lons.iter().flatten().copied().collect();
+    plot.add_trace(
+        ScatterGeo::new(all_lats, all_lons)
+            .mode(Mode::Markers)
+            .marker(geo_marker()),
+    );
+    // one CUMULATIVE frame per bucket: points from buckets 0..=k concatenated
+    for (k, label) in bucket_labels.iter().enumerate() {
+        let mut la: Vec<f64> = Vec::new();
+        let mut lo: Vec<f64> = Vec::new();
+        for b in 0..=k {
+            la.extend_from_slice(&bucket_lats[b]);
+            lo.extend_from_slice(&bucket_lons[b]);
+        }
+        let mut td = Traces::new();
+        td.push(
+            ScatterGeo::new(la, lo)
                 .mode(Mode::Markers)
                 .marker(geo_marker()),
         );
-        // one CUMULATIVE frame per bucket: points from buckets 0..=k concatenated
-        for (k, label) in bucket_labels.iter().enumerate() {
-            let mut la: Vec<f64> = Vec::new();
-            let mut lo: Vec<f64> = Vec::new();
-            for b in 0..=k {
-                la.extend_from_slice(&bucket_lats[b]);
-                lo.extend_from_slice(&bucket_lons[b]);
-            }
-            let mut td = Traces::new();
-            td.push(
-                ScatterGeo::new(la, lo)
-                    .mode(Mode::Markers)
-                    .marker(geo_marker()),
-            );
-            plot.add_frame(Frame::new().name(label.clone()).data(td).traces(vec![0]));
-        }
-        let (geo_land, geo_water, geo_bg) = geo_palette(theme);
-        let geo = LayoutGeo::new()
-            .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
-            .resolution(GeoResolution::OneOverFiftyMillion)
-            .showland(true)
-            .landcolor(geo_land)
-            .showocean(true)
-            .oceancolor(geo_water)
-            .showlakes(true)
-            .lakecolor(geo_water)
-            .showcountries(true)
-            .bgcolor(geo_bg);
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            // reserve a band below the map for the slider + Play/Pause (the panel height added the
-            // same allowance), so the controls sit UNDER the map rather than overlaying/shrinking
-            // it; usable draw height then equals a static map's (MAP_ROW_HEIGHT_PX - 48
-            // - 20)
-            .margin(
-                Margin::new()
-                    .top(48)
-                    .bottom(20 + SLIDER_CONTROL_ALLOWANCE_PX)
-                    .left(20)
-                    .right(20)
-                    .pad(4),
-            )
-            .geo(geo);
-        if let (Ok(slider), Ok(menu)) = (
-            slider_control(frame_label, bucket_labels, SMART_SLIDER_SPEED_MS),
-            play_pause_menu(SMART_SLIDER_SPEED_MS),
-        ) {
-            layout = layout.sliders(vec![slider]).update_menus(vec![menu]);
-        }
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+        plot.add_frame(Frame::new().name(label.clone()).data(td).traces(vec![0]));
     }
+    let (geo_land, geo_water, geo_bg) = geo_palette(theme);
+    let geo = LayoutGeo::new()
+        .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
+        .resolution(GeoResolution::OneOverFiftyMillion)
+        .showland(true)
+        .landcolor(geo_land)
+        .showocean(true)
+        .oceancolor(geo_water)
+        .showlakes(true)
+        .lakecolor(geo_water)
+        .showcountries(true)
+        .bgcolor(geo_bg);
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        // reserve a band below the map for the slider + Play/Pause (the panel height added the
+        // same allowance), so the controls sit UNDER the map rather than overlaying/shrinking
+        // it; usable draw height then equals a static map's (MAP_ROW_HEIGHT_PX - 48
+        // - 20)
+        .margin(
+            Margin::new()
+                .top(48)
+                .bottom(20 + SLIDER_CONTROL_ALLOWANCE_PX)
+                .left(20)
+                .right(20)
+                .pad(4),
+        )
+        .geo(geo);
+    if let (Ok(slider), Ok(menu)) = (
+        slider_control(frame_label, bucket_labels, SMART_SLIDER_SPEED_MS),
+        play_pause_menu(SMART_SLIDER_SPEED_MS),
+    ) {
+        layout = layout.sliders(vec![slider]).update_menus(vec![menu]);
+    }
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
+    }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
 
-    // Gapminder-style animated bubble chart: one trace per entity, each a single (x,y) bubble that
-    // moves + resizes per frame (per-frame full replacement). Rendered as its own inline Plot with
-    // a scrub slider + Play/Pause and a legend of entities. Bubble sizes are scaled GLOBALLY over
-    // all cells so an entity's size is comparable across frames and entities (a per-point
-    // scale_bubble_sizes call would collapse each single value to mid-size).
-    if let PanelKind::AnimatedBubble {
+// Gapminder-style animated bubble chart: one trace per entity, each a single (x,y) bubble that
+// moves + resizes per frame (per-frame full replacement). Rendered as its own inline Plot with
+// a scrub slider + Play/Pause and a legend of entities. Bubble sizes are scaled GLOBALLY over
+// all cells so an entity's size is comparable across frames and entities (a per-point
+// scale_bubble_sizes call would collapse each single value to mid-size).
+#[inline(never)]
+fn inline_panel_plot_animated_bubble(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::AnimatedBubble {
         data,
         x_label,
         y_label,
         size_label,
         frame_label,
     } = &panel.kind
-    {
-        const SMART_SLIDER_SPEED_MS: u64 = 700;
-        let bucket_labels = &data.bucket_labels;
-        let (x_range, y_range) = (data.x_range, data.y_range);
-        let mut plot = Plot::new();
-        add_bubble_traces_and_frames(&mut plot, data, x_label, y_label, size_label);
-        // pin axes globally so bubbles don't reframe as they move
-        let x_axis = Axis::new()
-            // axis titles are a plotly markup sink; these labels are raw CSV headers
-            .title(Title::with_text(escape_hover(x_label)))
-            .range(vec![x_range.0, x_range.1]);
-        let y_axis = Axis::new()
-            .title(Title::with_text(escape_hover(y_label)))
-            .range(vec![y_range.0, y_range.1]);
-        let mut layout = Layout::new()
-            .show_legend(true)
-            .height(row_height)
-            .margin(Margin::new().top(48).bottom(60).left(60).right(30).pad(4))
-            .x_axis(x_axis)
-            .y_axis(y_axis);
-        if let (Ok(slider), Ok(menu)) = (
-            slider_control(frame_label, bucket_labels, SMART_SLIDER_SPEED_MS),
-            play_pause_menu(SMART_SLIDER_SPEED_MS),
-        ) {
-            layout = layout.sliders(vec![slider]).update_menus(vec![menu]);
-        }
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG)
-                .plot_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+    else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    const SMART_SLIDER_SPEED_MS: u64 = 700;
+    let bucket_labels = &data.bucket_labels;
+    let (x_range, y_range) = (data.x_range, data.y_range);
+    let mut plot = Plot::new();
+    add_bubble_traces_and_frames(&mut plot, data, x_label, y_label, size_label);
+    // pin axes globally so bubbles don't reframe as they move
+    let x_axis = Axis::new()
+        // axis titles are a plotly markup sink; these labels are raw CSV headers
+        .title(Title::with_text(escape_hover(x_label)))
+        .range(vec![x_range.0, x_range.1]);
+    let y_axis = Axis::new()
+        .title(Title::with_text(escape_hover(y_label)))
+        .range(vec![y_range.0, y_range.1]);
+    let mut layout = Layout::new()
+        .show_legend(true)
+        .height(row_height)
+        .margin(Margin::new().top(48).bottom(60).left(60).right(30).pad(4))
+        .x_axis(x_axis)
+        .y_axis(y_axis);
+    if let (Ok(slider), Ok(menu)) = (
+        slider_control(frame_label, bucket_labels, SMART_SLIDER_SPEED_MS),
+        play_pause_menu(SMART_SLIDER_SPEED_MS),
+    ) {
+        layout = layout.sliders(vec![slider]).update_menus(vec![menu]);
     }
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG)
+            .plot_background_color(PAPER_BG);
+    }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
 
-    // Animated scatter pair: the strongest numeric pair revealed cumulatively over time, colored by
-    // time bucket (early → late), rendered as its own inline Plot (scrub slider + Play/Pause).
-    // Forces the inline dashboard path (see has_noncartesian) and is HTML-only. Reuses the
-    // standalone animation core (slider_control/play_pause_menu).
-    if let PanelKind::AnimatedScatterPair {
+// Animated scatter pair: the strongest numeric pair revealed cumulatively over time, colored by
+// time bucket (early → late), rendered as its own inline Plot (scrub slider + Play/Pause).
+// Forces the inline dashboard path (see has_noncartesian) and is HTML-only. Reuses the
+// standalone animation core (slider_control/play_pause_menu).
+#[inline(never)]
+fn inline_panel_plot_animated_scatter_pair(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::AnimatedScatterPair {
         xs,
         ys,
         bucket,
@@ -28885,88 +29241,106 @@ fn smart_inline_panel_plot(
         x_range,
         y_range,
     } = &panel.kind
-    {
-        const SMART_SLIDER_SPEED_MS: u64 = 700;
-        let n_buckets = bucket_labels.len();
-        // pin the color scale to the full bucket range so a point keeps its color across frames
-        let cmax = n_buckets.saturating_sub(1) as f64;
-        // a two-tick color legend showing the earliest → latest bucket the gradient spans
-        let colorbar = || {
-            ColorBar::new()
-                .thickness(10)
-                .tick_mode(TickMode::Array)
-                .tick_vals(vec![0.0, cmax])
-                .tick_text(vec![
-                    bucket_labels.first().cloned().unwrap_or_default(),
-                    bucket_labels.last().cloned().unwrap_or_default(),
-                ])
-        };
-        // one scatter over points whose bucket index is in `[start, end)` — a contiguous slice,
-        // since points are sorted by bucket ascending — colored by each point's bucket index
-        let scatter = |start: usize, end: usize| {
-            Scatter::new(xs[start..end].to_vec(), ys[start..end].to_vec())
-                .mode(Mode::Markers)
-                .name(y_label.clone())
-                .marker(
-                    Marker::new()
-                        .color_array(bucket[start..end].iter().map(|&b| b as f64).collect())
-                        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
-                        .cmin(0.0)
-                        .cmax(cmax)
-                        .show_scale(true)
-                        .color_bar(colorbar())
-                        .opacity(MAP_POINT_OPACITY),
-                )
-        };
-        let mut plot = Plot::new();
-        // base = the full cloud so the initial paint and any non-playing/static view degrade to the
-        // static ScatterPair + time color; Play then reveals a TRAILING WINDOW migrating over time.
-        plot.add_trace(scatter(0, xs.len()));
-        // one trailing-window frame per bucket: show the current bucket plus the
-        // `ANIM_TRAILING_WINDOW - 1` preceding buckets so the cloud is seen to MIGRATE, not merely
-        // accumulate (a cumulative reveal hides motion — the point of a drift-selected pair is the
-        // motion). Both bounds are `partition_point`s on the ascending bucket vector. Every frame
-        // keeps the same single trace index so plotly leaves no stale traces on screen.
-        for (k, label) in bucket_labels.iter().enumerate() {
-            let lo_bucket = k.saturating_sub(ANIM_TRAILING_WINDOW - 1);
-            let start = bucket.partition_point(|&b| b < lo_bucket);
-            let end = bucket.partition_point(|&b| b <= k);
-            let mut td = Traces::new();
-            td.push(scatter(start, end));
-            plot.add_frame(Frame::new().name(label.clone()).data(td).traces(vec![0]));
-        }
-        // pin axes globally so the cloud doesn't reframe as points accumulate
-        let x_axis = Axis::new()
-            // axis titles are a plotly markup sink; these labels are raw CSV headers
-            .title(Title::with_text(escape_hover(x_label)))
-            .range(vec![x_range.0, x_range.1]);
-        let y_axis = Axis::new()
-            .title(Title::with_text(escape_hover(y_label)))
-            .range(vec![y_range.0, y_range.1]);
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(48).bottom(60).left(60).right(30).pad(4))
-            .x_axis(x_axis)
-            .y_axis(y_axis);
-        if let (Ok(slider), Ok(menu)) = (
-            slider_control(frame_label, bucket_labels, SMART_SLIDER_SPEED_MS),
-            play_pause_menu(SMART_SLIDER_SPEED_MS),
-        ) {
-            layout = layout.sliders(vec![slider]).update_menus(vec![menu]);
-        }
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG)
-                .plot_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
+    else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    const SMART_SLIDER_SPEED_MS: u64 = 700;
+    let n_buckets = bucket_labels.len();
+    // pin the color scale to the full bucket range so a point keeps its color across frames
+    let cmax = n_buckets.saturating_sub(1) as f64;
+    // a two-tick color legend showing the earliest → latest bucket the gradient spans
+    let colorbar = || {
+        ColorBar::new()
+            .thickness(10)
+            .tick_mode(TickMode::Array)
+            .tick_vals(vec![0.0, cmax])
+            .tick_text(vec![
+                bucket_labels.first().cloned().unwrap_or_default(),
+                bucket_labels.last().cloned().unwrap_or_default(),
+            ])
+    };
+    // one scatter over points whose bucket index is in `[start, end)` — a contiguous slice,
+    // since points are sorted by bucket ascending — colored by each point's bucket index
+    let scatter = |start: usize, end: usize| {
+        Scatter::new(xs[start..end].to_vec(), ys[start..end].to_vec())
+            .mode(Mode::Markers)
+            .name(y_label.clone())
+            .marker(
+                Marker::new()
+                    .color_array(bucket[start..end].iter().map(|&b| b as f64).collect())
+                    .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+                    .cmin(0.0)
+                    .cmax(cmax)
+                    .show_scale(true)
+                    .color_bar(colorbar())
+                    .opacity(MAP_POINT_OPACITY),
+            )
+    };
+    let mut plot = Plot::new();
+    // base = the full cloud so the initial paint and any non-playing/static view degrade to the
+    // static ScatterPair + time color; Play then reveals a TRAILING WINDOW migrating over time.
+    plot.add_trace(scatter(0, xs.len()));
+    // one trailing-window frame per bucket: show the current bucket plus the
+    // `ANIM_TRAILING_WINDOW - 1` preceding buckets so the cloud is seen to MIGRATE, not merely
+    // accumulate (a cumulative reveal hides motion — the point of a drift-selected pair is the
+    // motion). Both bounds are `partition_point`s on the ascending bucket vector. Every frame
+    // keeps the same single trace index so plotly leaves no stale traces on screen.
+    for (k, label) in bucket_labels.iter().enumerate() {
+        let lo_bucket = k.saturating_sub(ANIM_TRAILING_WINDOW - 1);
+        let start = bucket.partition_point(|&b| b < lo_bucket);
+        let end = bucket.partition_point(|&b| b <= k);
+        let mut td = Traces::new();
+        td.push(scatter(start, end));
+        plot.add_frame(Frame::new().name(label.clone()).data(td).traces(vec![0]));
     }
+    // pin axes globally so the cloud doesn't reframe as points accumulate
+    let x_axis = Axis::new()
+        // axis titles are a plotly markup sink; these labels are raw CSV headers
+        .title(Title::with_text(escape_hover(x_label)))
+        .range(vec![x_range.0, x_range.1]);
+    let y_axis = Axis::new()
+        .title(Title::with_text(escape_hover(y_label)))
+        .range(vec![y_range.0, y_range.1]);
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(48).bottom(60).left(60).right(30).pad(4))
+        .x_axis(x_axis)
+        .y_axis(y_axis);
+    if let (Ok(slider), Ok(menu)) = (
+        slider_control(frame_label, bucket_labels, SMART_SLIDER_SPEED_MS),
+        play_pause_menu(SMART_SLIDER_SPEED_MS),
+    ) {
+        layout = layout.sliders(vec![slider]).update_menus(vec![menu]);
+    }
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG)
+            .plot_background_color(PAPER_BG);
+    }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
 
+// every cartesian (x/y-axis) panel kind: traces come from the shared `panel_trace` path.
+#[inline(never)]
+fn inline_panel_plot_cartesian(
+    panel: &Panel,
+    color: &'static str,
+    freq: &FreqMap,
+    hist: &HashMap<usize, Vec<f64>>,
+    outliers: &HashMap<usize, OutlierStats>,
+    theme: Option<BuiltinTheme>,
+    log_scale: LogScale,
+) -> Plot {
+    // when a theme is set, its template drives backgrounds/fonts; otherwise apply qsv's look.
+    let themed = theme.is_some();
+    // overview panels (map/geo, correlation, time-series, …) render a little taller than the
+    // per-column box/bar/histogram panels.
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
     let is_box = matches!(
         panel.kind,
         PanelKind::BoxStats { .. }
@@ -31337,19 +31711,24 @@ fn lollipop_category_axis(theme: Option<BuiltinTheme>, tick_text: &[String]) -> 
 /// `smart_grid_parts`) to the typed `Layout` axis fields, which only exist up to 8 (matching
 /// `MAX_SUBPLOTS`). Positions beyond 8 can't be expressed by the typed `Layout`; those grids
 /// go through `render_smart_grid_json` instead, so this silently drops them as a safeguard.
-fn assign_typed_axis(layout: Layout, pos: usize, x_axis: Axis, y_axis: Axis) -> Layout {
+///
+/// Takes `&mut Layout` (via `mem::take`) rather than moving through the by-value builder:
+/// at `opt-level=0` each per-arm builder chain would otherwise pin two more full `Layout`
+/// stack slots per arm in the caller's loop frame (issue #4328).
+fn assign_typed_axis(layout: &mut Layout, pos: usize, x_axis: Axis, y_axis: Axis) {
     let (x, y) = (x_axis, y_axis);
-    match pos {
-        1 => layout.x_axis(x).y_axis(y),
-        2 => layout.x_axis2(x).y_axis2(y),
-        3 => layout.x_axis3(x).y_axis3(y),
-        4 => layout.x_axis4(x).y_axis4(y),
-        5 => layout.x_axis5(x).y_axis5(y),
-        6 => layout.x_axis6(x).y_axis6(y),
-        7 => layout.x_axis7(x).y_axis7(y),
-        8 => layout.x_axis8(x).y_axis8(y),
-        _ => layout,
-    }
+    let l = std::mem::take(layout);
+    *layout = match pos {
+        1 => l.x_axis(x).y_axis(y),
+        2 => l.x_axis2(x).y_axis2(y),
+        3 => l.x_axis3(x).y_axis3(y),
+        4 => l.x_axis4(x).y_axis4(y),
+        5 => l.x_axis5(x).y_axis5(y),
+        6 => l.x_axis6(x).y_axis6(y),
+        7 => l.x_axis7(x).y_axis7(y),
+        8 => l.x_axis8(x).y_axis8(y),
+        _ => l,
+    };
 }
 
 /// The plotly.js layout key for axis `pos` (1-based): `xaxis`/`yaxis` for the first cell,

@@ -73,7 +73,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>264 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>5</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-03 01:07 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-03 01:33 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -1519,8 +1519,16 @@
   function isPointTrace(t) {
     return !!(t && (t.type === "scattermap" || t.type === "scattergeo") && t.ids && t.ids.length);
   }
+  function isPinTrace(t) {
+    return !!(t && (t.name === "qsv-row-pin" || t.name === "qsv-row-pin-halo"));
+  }
+  // A panel is worth hooking if it can show a selection AT ALL — which is not the same as having
+  // selectable points. The second case is a DENSITY map: its heatmap core carries no `ids` (and it
+  // may have no outlier markers either), so nothing on it can be clicked back to a row, yet every
+  // drawer row is by definition "not among plotted points" and can still be pinned at its own
+  // coordinates. Without this the pin traces would be emitted and then never reachable.
   function hasPointTrace(gd) {
-    return !!(gd.data && gd.data.some(isPointTrace));
+    return !!(gd.data && (gd.data.some(isPointTrace) || gd.data.some(isPinTrace)));
   }
   // id string -> {t: traceIndex, p: pointIndex}. Built once per hook so applying a selection is
   // O(selected) rather than O(points) — the core trace can carry 150k of them.
@@ -1553,12 +1561,18 @@
   //   * coordinates parse  -> the point was merely downsampled away  -> pin it
   //   * coordinates do not -> the row has no location at all         -> say so, pin nothing
   var LAT_COL = 1, LON_COL = 2;
+  // Rust decimal float syntax, which is what the server's `parse_f64` accepts. `Number()` alone is
+  // BROADER — it also takes `0x`/`0o`/`0b` literals, which the server rejects — and that gap breaks
+  // the one invariant this parse exists to hold: a cell the server refused must be refused here
+  // too, or the row gets pinned at a bogus location instead of being reported as having none.
+  // (`inf`/`nan`, which Rust does accept, are excluded here and by the isFinite check either way.)
+  var DECIMAL_FLOAT = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
   function cellNumber(cell) {
     // a DATE column ships as [display, sortKey]; coordinate columns never do, but be tolerant
     if (Array.isArray(cell)) cell = cell[0];
     if (cell === null || cell === undefined) return NaN;
     var s = String(cell).trim();
-    return s === "" ? NaN : Number(s);
+    return DECIMAL_FLOAT.test(s) ? Number(s) : NaN;
   }
   // Mirrors the server's own test exactly (`parse_f64` plus the lat/lon range check in
   // `build_map_panel`): a row rejected THERE never became a point, so rejecting it here too is what

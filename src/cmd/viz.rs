@@ -10464,8 +10464,16 @@ const MAP_SELECT_CHROME: &str = r##"<script>
   function isPointTrace(t) {
     return !!(t && (t.type === "scattermap" || t.type === "scattergeo") && t.ids && t.ids.length);
   }
+  function isPinTrace(t) {
+    return !!(t && (t.name === "qsv-row-pin" || t.name === "qsv-row-pin-halo"));
+  }
+  // A panel is worth hooking if it can show a selection AT ALL — which is not the same as having
+  // selectable points. The second case is a DENSITY map: its heatmap core carries no `ids` (and it
+  // may have no outlier markers either), so nothing on it can be clicked back to a row, yet every
+  // drawer row is by definition "not among plotted points" and can still be pinned at its own
+  // coordinates. Without this the pin traces would be emitted and then never reachable.
   function hasPointTrace(gd) {
-    return !!(gd.data && gd.data.some(isPointTrace));
+    return !!(gd.data && (gd.data.some(isPointTrace) || gd.data.some(isPinTrace)));
   }
   // id string -> {t: traceIndex, p: pointIndex}. Built once per hook so applying a selection is
   // O(selected) rather than O(points) — the core trace can carry 150k of them.
@@ -10498,12 +10506,18 @@ const MAP_SELECT_CHROME: &str = r##"<script>
   //   * coordinates parse  -> the point was merely downsampled away  -> pin it
   //   * coordinates do not -> the row has no location at all         -> say so, pin nothing
   var LAT_COL = __QSV_LAT_COL__, LON_COL = __QSV_LON_COL__;
+  // Rust decimal float syntax, which is what the server's `parse_f64` accepts. `Number()` alone is
+  // BROADER — it also takes `0x`/`0o`/`0b` literals, which the server rejects — and that gap breaks
+  // the one invariant this parse exists to hold: a cell the server refused must be refused here
+  // too, or the row gets pinned at a bogus location instead of being reported as having none.
+  // (`inf`/`nan`, which Rust does accept, are excluded here and by the isFinite check either way.)
+  var DECIMAL_FLOAT = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
   function cellNumber(cell) {
     // a DATE column ships as [display, sortKey]; coordinate columns never do, but be tolerant
     if (Array.isArray(cell)) cell = cell[0];
     if (cell === null || cell === undefined) return NaN;
     var s = String(cell).trim();
-    return s === "" ? NaN : Number(s);
+    return DECIMAL_FLOAT.test(s) ? Number(s) : NaN;
   }
   // Mirrors the server's own test exactly (`parse_f64` plus the lat/lon range check in
   // `build_map_panel`): a row rejected THERE never became a point, so rejecting it here too is what

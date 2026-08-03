@@ -14623,6 +14623,42 @@ fn viz_smart_map_row_pin_emitted() {
     );
     // and the drawer seam the bridge reads them THROUGH
     assert!(html.contains("window.__qsvDataRowCells = function (i)"));
+    // The client-side coordinate parse must stay STRICTER than bare `Number()`, which also accepts
+    // 0x/0o/0b literals that the server's `parse_f64` rejects — otherwise a cell the server refused
+    // gets pinned at a bogus location instead of reporting that the row has no coordinates.
+    assert!(
+        html.contains(r"var DECIMAL_FLOAT = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;"),
+        "the coordinate parse no longer mirrors the server's decimal-float syntax"
+    );
+}
+
+// A density heatmap has no id-bearing point trace at all — its core carries no `ids`, and it may
+// have no outlier markers either — so the bridge used to skip the panel outright while the pin
+// traces were still emitted, leaving them unreachable. The pin does not need selectable points:
+// on a heatmap EVERY row is "not among plotted points", so every one of them is pinnable.
+#[test]
+fn viz_smart_density_map_still_reaches_the_row_pin() {
+    let wrk = Workdir::new("viz_smart_density_map_still_reaches_the_row_pin");
+    map_select_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    // 4 mappable rows in the fixture, so this forces the heatmap branch
+    cmd.args(["smart", "ms.csv", "--heatmap-density", "2"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the heatmap branch really was taken (guards against this passing vacuously as a marker map)
+    assert!(html.contains(r#""type":"densitymap""#));
+    // the core carries no ordinals, so nothing on this panel is clickable back to a row
+    assert!(!html.contains(r#""ids":["0","1","3","5"]"#));
+    // ...yet the pin ships, and the bridge accepts a pin-only panel as hookable
+    assert!(html.contains(r#""name":"qsv-row-pin""#));
+    assert!(
+        html.contains("gd.data.some(isPointTrace) || gd.data.some(isPinTrace)"),
+        "a pin-only panel would be skipped, leaving the pin traces unreachable"
+    );
 }
 
 // No drawer, no pin: there is no row to pin and nothing that could ever fill it in.

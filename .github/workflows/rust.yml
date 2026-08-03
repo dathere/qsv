@@ -60,3 +60,8 @@ jobs:
       # env:
         # RUSTFLAGS: -C target-cpu=native
       run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,feature_capable,lens,magika,color,viz
+    # Windows gives the main thread 1 MB of stack and debug frames are not collapsed, so a
+    # stack-usage regression in `viz smart` breaks every Windows debug test run (issue #4328).
+    # Encode that constraint on every PR by running the debug binary under a 1 MB rlimit here.
+    - name: viz smart 1 MB stack smoke test
+      run: (ulimit -s 1024; ./target/debug/qsv viz smart examples/viz/customer_spend.csv -o /tmp/viz_smart_1mb.html)

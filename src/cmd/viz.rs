@@ -1220,6 +1220,34 @@ const MAP_SELECTED_POINT_COLOR: &str = "#ff2d95";
 /// stay findable in a dense cloud. Restores to `MAP_POINT_OPACITY` when the selection clears.
 const MAP_UNSELECTED_POINT_OPACITY: f64 = 0.12;
 
+/// Trace name of the "row pin" — the marker that stands in for a selected data-viewer row whose
+/// point was never plotted (the map draws at most `MAX_SMART_POINTS`, so on a downsampled dashboard
+/// most rows have no point of their own). Emitted EMPTY and filled in by the bridge.
+///
+/// Deliberately NOT localized: this is the handle the JS finds the trace by, since its index shifts
+/// with the optional extent/`--geojson` overlay traces that may precede it. It never reaches a
+/// reader — the trace and the layout both set `show_legend(false)`, and `MAP_HOVER_TEMPLATE` ends
+/// in `<extra></extra>`, which suppresses the trace-name box. (Same bare-sentinel convention as the
+/// `--geojson` boundary trace's `name("regions")`.)
+const MAP_ROW_PIN_NAME: &str = "qsv-row-pin";
+
+/// The halo drawn UNDER the pin, as its own trace.
+///
+/// A ring is the whole point of the pin's identity — it reuses the selection magenta (the pin IS
+/// the selection) so only the silhouette can say "this is not one of the plotted points". It cannot
+/// come from `marker.line`: plotly SILENTLY DROPS `marker.line` on a `scattermap`, and the
+/// resulting MapLibre circle layer carries only `circle-color`/`circle-radius`/`circle-opacity`
+/// with no `circle-stroke-*` at all (verified in-browser against the emitted style). So the ring is
+/// a second, larger white marker beneath — which also means the two traces must be filled in and
+/// cleared TOGETHER, and the halo has to be pushed FIRST so it renders below.
+const MAP_ROW_PIN_HALO_NAME: &str = "qsv-row-pin-halo";
+
+/// Pin sizes: the magenta core, and the white halo behind it. The gap is the ring's thickness, and
+/// the core is deliberately larger than `MAP_SELECTED_POINT_SIZE` so a pin never reads as a
+/// selected plotted point when a mixed selection puts both on screen.
+const MAP_ROW_PIN_SIZE: usize = 18;
+const MAP_ROW_PIN_HALO_SIZE: usize = 26;
+
 /// At or above this many rendered core points, the `viz smart` map panel enables native MapLibre
 /// point clustering on the core marker trace (unless a density heatmap or bubble-size encoding is
 /// active). Below it, a handful of markers reads fine as-is and clustering would needlessly merge
@@ -10409,8 +10437,18 @@ body.qsv-dark #qsv-photo-box .qsv-photo-inner { background: #1b1b1f; border-colo
 /// by it, and publish `__qsvSelRehook` for the theme toggle to call after ITS re-render.
 /// Localize `MAP_SELECT_CHROME`. Same contract as [`fullscreen_script`]: bare placeholders,
 /// unconditional substitution, `js_string_literal` for quoting + escaping.
-fn map_select_chrome() -> String {
+fn map_select_chrome(lat_col: usize, lon_col: usize) -> String {
     MAP_SELECT_CHROME
+        .replace("__QSV_LAT_COL__", &lat_col.to_string())
+        .replace("__QSV_LON_COL__", &lon_col.to_string())
+        .replace(
+            "__QSVI18N_ROW_NOT_PLOTTED__",
+            &js_string_literal(&t!("viz.map.row_not_plotted")),
+        )
+        .replace(
+            "__QSVI18N_ROW_HAS_NO_COORDINATES__",
+            &js_string_literal(&t!("viz.map.row_has_no_coordinates")),
+        )
         .replace(
             "__QSVI18N_ROW_NOT_IN_PREVIEW__",
             &js_string_literal(&t!("viz.map.row_not_in_preview")),
@@ -10443,8 +10481,69 @@ const MAP_SELECT_CHROME: &str = r##"<script>
     });
     gd.__qsvSelIndex = index;
     gd.__qsvSelTraces = traces;
+    // The row pin and its halo, located by their sentinel names -- their indexes are not fixed,
+    // since the optional extent and --geojson overlay traces sit between them and the points.
+    gd.__qsvSelPin = gd.data.findIndex(function (t) { return t && t.name === "qsv-row-pin"; });
+    gd.__qsvSelPinHalo = gd.data.findIndex(function (t) { return t && t.name === "qsv-row-pin-halo"; });
   }
-  function applySelection(gd, ids) {
+  // ---- the row pin -----------------------------------------------------------------------------
+  //
+  // The map draws at most `MAX_SMART_POINTS`, so on a large dataset most drawer rows have no point
+  // of their own -- on the Pittsburgh 311 dashboard only ~16% do. Such a row still HAS a location:
+  // its coordinates sit in the drawer, in the same columns the map was built from. The pin marks
+  // that location explicitly rather than panning to bare ground, which would invite reading a
+  // neighbouring point as the selected record.
+  //
+  // Two causes are NOT the same and must not be conflated:
+  //   * coordinates parse  -> the point was merely downsampled away  -> pin it
+  //   * coordinates do not -> the row has no location at all         -> say so, pin nothing
+  var LAT_COL = __QSV_LAT_COL__, LON_COL = __QSV_LON_COL__;
+  function cellNumber(cell) {
+    // a DATE column ships as [display, sortKey]; coordinate columns never do, but be tolerant
+    if (Array.isArray(cell)) cell = cell[0];
+    if (cell === null || cell === undefined) return NaN;
+    var s = String(cell).trim();
+    return s === "" ? NaN : Number(s);
+  }
+  // Mirrors the server's own test exactly (`parse_f64` plus the lat/lon range check in
+  // `build_map_panel`): a row rejected THERE never became a point, so rejecting it here too is what
+  // separates "no location" from "downsampled away".
+  function rowCoord(id) {
+    if (!window.__qsvDataRowCells) return null;
+    var cells = window.__qsvDataRowCells(id);
+    if (!cells) return null;
+    var lat = cellNumber(cells[LAT_COL]), lon = cellNumber(cells[LON_COL]);
+    if (!isFinite(lat) || !isFinite(lon)) return null;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+    return { lat: lat, lon: lon };
+  }
+  function pinsFor(gd, ids) {
+    var pts = [], missing = 0;
+    ids.forEach(function (id) {
+      // a plotted row highlights its own point; only the others need a pin
+      if (gd.__qsvSelIndex.get(String(id))) return;
+      var c = rowCoord(id);
+      if (c) pts.push(c);
+      else missing++;
+    });
+    return { points: pts, missing: missing };
+  }
+  function applyPins(gd, pts) {
+    if (!(gd.__qsvSelPin >= 0) || !(gd.__qsvSelPinHalo >= 0)) return;
+    var lats = pts.map(function (p) { return p.lat; });
+    var lons = pts.map(function (p) { return p.lon; });
+    var text = pts.map(function () { return __QSVI18N_ROW_NOT_PLOTTED__ + "<br>"; });
+    try {
+      // halo and core in ONE restyle: they are a single mark and must never disagree, not even
+      // for a frame. Values distribute positionally over the trace list.
+      Plotly.restyle(
+        gd,
+        { lat: [lats, lats], lon: [lons, lons], text: [text, text] },
+        [gd.__qsvSelPinHalo, gd.__qsvSelPin]
+      );
+    } catch (e) {}
+  }
+  function applySelection(gd, ids, pinned) {
     if (!gd.__qsvSelTraces || !gd.__qsvSelTraces.length) return;
     var per = {}, hits = 0;
     gd.__qsvSelTraces.forEach(function (ti) { per[ti] = []; });
@@ -10456,13 +10555,180 @@ const MAP_SELECT_CHROME: &str = r##"<script>
     // selection is active but nothing in THIS trace matched", which dims the trace's points as
     // unselected — the right treatment for the outlier call-out trace while a core point is
     // selected, since leaving its markers at full amber would read as though they were selected
-    // too. `null` is "no selection at all" and restores normal styling; it is also what EVERY
-    // trace gets when the selection maps to no plotted point (all the chosen rows lack usable
-    // coordinates), because dimming the whole map with nothing highlighted just looks broken.
-    var sel = gd.__qsvSelTraces.map(function (ti) { return hits ? per[ti] : null; });
+    // too. `null` is "no selection at all" and restores normal styling.
+    //
+    // The rule that `null` is also right when NOTHING matched (dimming the whole map with nothing
+    // highlighted just looks broken) now carries a precondition rather than being unconditional:
+    // a selected row with no plotted point may still be PINNED, and then there IS something
+    // highlighted, so the plotted traces should dim around it exactly as they do for a real hit.
+    // `null` survives only when the selection produces neither a point nor a pin.
+    var sel = gd.__qsvSelTraces.map(function (ti) { return (hits || pinned) ? per[ti] : null; });
     try {
       Plotly.restyle(gd, { selectedpoints: sel }, gd.__qsvSelTraces);
     } catch (e) {}
+  }
+  // ---- camera: bring the selected point(s) into view ------------------------------------------
+  //
+  // MapLibre `scattermap` panels only. A `scattergeo` panel is deliberately left alone: it is
+  // chosen only for a world/continent extent, and the continent scope is narrowed only when EVERY
+  // point falls inside it, so its points are already in frame by construction. It also has no GL
+  // instance — its camera is `geo.center`, a second mechanism that would buy nothing here.
+  //
+  // px of breathing room around a multi-point fit
+  var MAP_REVEAL_FIT_PADDING = 40;
+  function glMapFor(gd, key) {
+    var fl = gd._fullLayout || {}, sp = fl[key] && fl[key]._subplot, m = sp && sp.map;
+    return (m && typeof m.getBounds === "function" && typeof m.easeTo === "function") ? m : null;
+  }
+  function mapLayoutKeys(gd) {
+    var lay = (gd && gd.layout) || {};
+    return Object.keys(lay).filter(function (k) {
+      return /^map\d*$/.test(k) && lay[k] && typeof lay[k].zoom === "number";
+    });
+  }
+  // Keep `gd.layout`'s camera in step with the GL map.
+  //
+  // `Plotly.restyle` — which paints EVERY selection change — re-aims a MapLibre subplot at
+  // `gd.layout[k]`, so a camera the layout does not know about is discarded: a reader who pans by
+  // hand and then clicks a row would be snapped back, and worse, the "is this point already on
+  // screen?" test below would have been answered against a view that no longer exists once the
+  // restyle settles. Mirroring every settled move keeps the layout the single source of truth for
+  // the camera, which is also what makes a revealed position survive the next selection change.
+  //
+  // Plain property sets, never a relayout: on a MapLibre subplot in the pinned plotly fork
+  // relayout/react throw "setData of undefined" and blank the layer. The fullscreen re-fit is
+  // unaffected — it recomputes from its own `__qsvBaked` snapshot, taken before any of this, and
+  // so are the baked extent buttons, whose relayout args are absolute.
+  //
+  // Deliberately scoped to drawer-bearing pages: this whole script is only emitted when there is
+  // a data viewer to cross-link to, so a map dashboard without one keeps the older behavior of
+  // snapping back to the baked camera on a re-render. Do NOT "fix" that by hoisting this into
+  // `fullscreen_script` — its per-panel bodies are wrapped in swallowing `try {} catch {}`, so an
+  // unrelated helper throwing there would take the mirror down with it.
+  function mirrorCamera(gd, tries) {
+    var keys = mapLayoutKeys(gd);
+    if (!keys.length) return;
+    if (tries === undefined) tries = 20;
+    if (!keys.every(function (k) { return glMapFor(gd, k); })) {
+      if (tries > 0) setTimeout(function () { mirrorCamera(gd, tries - 1); }, 100);
+      return;
+    }
+    keys.forEach(function (k) {
+      var m = glMapFor(gd, k);
+      // a re-render hands out a NEW GL instance, so the guard belongs on the instance
+      if (!m || m.__qsvCamMirror) return;
+      m.__qsvCamMirror = true;
+      m.on("moveend", function () {
+        try {
+          var lay = gd.layout && gd.layout[k];
+          if (!lay) return;
+          var c = m.getCenter();
+          lay.center = { lon: c.lng, lat: c.lat };
+          lay.zoom = m.getZoom();
+        } catch (e) {}
+      });
+    });
+  }
+  // The DECODED coordinate arrays for a trace.
+  //
+  // Not `gd.data[ti].lat` — under the float32 `bdata` encoding that is still the wire object
+  // `{dtype, bdata}`, which has no indices, so reading a coordinate off it yields `undefined` and
+  // every camera move would silently be skipped for exactly the dense maps that need it most.
+  // plotly keeps the decoded `Float32Array` on `_fullData`, the same internal view this page
+  // already reads for `_fullLayout`; it indexes just like the plain array an uncompressed page
+  // ships, so one path covers both. The length check is what rejects a still-encoded array.
+  function coordArrays(gd, ti) {
+    var full = (gd._fullData && gd._fullData[ti]) || null, raw = gd.data[ti] || {};
+    var lat = (full && full.lat) || raw.lat, lon = (full && full.lon) || raw.lon;
+    if (!lat || !lon || typeof lat.length !== "number" || typeof lon.length !== "number") return null;
+    return { lat: lat, lon: lon };
+  }
+  // selected points grouped by map subplot key: {"map": [{lat, lon}, ...], "map2": [...]}
+  // Pinned rows count as selected points for framing purposes — the pin is what the reader is
+  // being sent to look at — but only on a MapLibre panel; a `scattergeo` pin is shown and never
+  // chased, which is the same rule its plotted points follow.
+  function selectedMapPoints(gd, ids, pins) {
+    var byKey = {};
+    if (pins && pins.length && gd.__qsvSelPin >= 0) {
+      var pinTrace = gd.data[gd.__qsvSelPin];
+      if (pinTrace && pinTrace.type === "scattermap") {
+        byKey[pinTrace.subplot || "map"] = pins.slice();
+      }
+    }
+    ids.forEach(function (id) {
+      var loc = gd.__qsvSelIndex.get(String(id));
+      if (!loc) return;
+      var t = gd.data[loc.t];
+      if (!t || t.type !== "scattermap") return;
+      var c = coordArrays(gd, loc.t);
+      if (!c) return;
+      var lat = c.lat[loc.p], lon = c.lon[loc.p];
+      if (!isFinite(lat) || !isFinite(lon)) return;
+      var k = t.subplot || "map";
+      (byKey[k] = byKey[k] || []).push({ lat: lat, lon: lon });
+    });
+    return byKey;
+  }
+  // Aim one map subplot at the selected points, unless they are all on screen already.
+  //
+  // MUST NOT run in the same task as the `Plotly.restyle` that paints the selection: restyle
+  // CANCELS a camera animation started in that tick. easeTo/fitBounds return normally, nothing
+  // throws, and the camera simply never leaves its starting point — while the identical call one
+  // task later always works (reproduced repeatedly, both directions). Callers therefore defer,
+  // and the attempt is verified afterwards in case the same swallow ever reappears at a longer
+  // delay: a cancelled animation leaves the center bit-identical, whereas a live one has moved
+  // well before the check.
+  function aimAt(gd, k, list, attempts) {
+    var m = glMapFor(gd, k);
+    if (!m) return;
+    try {
+      // Nothing moves while every selected point is already on screen: the highlight alone is the
+      // answer there, and a map that re-aims on every click is worse than one that holds still.
+      // This is also why a point inside a collapsed cluster bubble is left alone — its coordinates
+      // ARE in view; it is the bubble that hides it, and zooming to break the cluster open would
+      // let a click in the table change the reader's zoom.
+      var b = m.getBounds();
+      if (list.every(function (p) { return b.contains([p.lon, p.lat]); })) return;
+      var before = m.getCenter();
+      gd.__qsvSelCamera = k;
+      if (list.length === 1) {
+        // a single point: pan only. The zoom is the reader's, and a click in the table has no
+        // business changing it.
+        m.easeTo({ center: [list[0].lon, list[0].lat] });
+      } else {
+        var lons = list.map(function (p) { return p.lon; });
+        var lats = list.map(function (p) { return p.lat; });
+        // `maxZoom` pinned to the CURRENT zoom keeps this a pure "bring into view": the fit can
+        // only zoom OUT to take in scattered points, never surprise-zoom into two adjacent ones.
+        // Known limitation: a min/max box is wrong across the antimeridian, so a selection that
+        // straddles it fits the long way round.
+        m.fitBounds([[Math.min.apply(null, lons), Math.min.apply(null, lats)],
+                     [Math.max.apply(null, lons), Math.max.apply(null, lats)]],
+                    { padding: MAP_REVEAL_FIT_PADDING, maxZoom: m.getZoom() });
+      }
+      if (attempts > 0) setTimeout(function () {
+        // Never re-issue while the reader has hold of the map. A swallowed move plus a drag that
+        // happens to be passing through the starting center would otherwise yank the camera out
+        // from under their hand. Our own move is not caught by this: if it took, the center has
+        // already changed and the check below does not fire anyway.
+        if (typeof m.isMoving === "function" && m.isMoving()) return;
+        var now = m.getCenter();
+        if (now.lng === before.lng && now.lat === before.lat) aimAt(gd, k, list, attempts - 1);
+      }, 350);
+    } catch (e) {}
+  }
+  function revealOnMap(gd, ids, pins, tries) {
+    if (!gd.__qsvSelIndex || !ids.length) return;
+    var pts = selectedMapPoints(gd, ids, pins), keys = Object.keys(pts);
+    if (!keys.length) return;
+    // The GL map attaches a frame or two after a render — wait for it, bounded, the same way the
+    // fullscreen script's camera re-fit does.
+    if (tries === undefined) tries = 20;
+    if (!keys.every(function (k) { return glMapFor(gd, k); })) {
+      if (tries > 0) setTimeout(function () { revealOnMap(gd, ids, pins, tries - 1); }, 100);
+      return;
+    }
+    keys.forEach(function (k) { aimAt(gd, k, pts[k], 2); });
   }
   // `Plotly.newPlot` detaches every listener on the graph div, and for MapLibre map traces it
   // does so AGAIN on a deferred pass that runs after its own promise has already resolved — so a
@@ -10487,6 +10753,12 @@ const MAP_SELECT_CHROME: &str = r##"<script>
   }
   // last selection seen from the drawer, so a re-render (theme flip, fullscreen) can restore it
   var current = [];
+  // repaint everything a re-render drops: the selection styling AND the pin's coordinates
+  function restore(gd) {
+    var pins = pinsFor(gd, current);
+    applySelection(gd, current, pins.points.length);
+    applyPins(gd, pins.points);
+  }
   function eachHooked(fn) {
     document.querySelectorAll('#qsv-viz-smart-grid, [id^="qsv-viz-panel-"]').forEach(function (gd) {
       if (gd.__qsvSelHooked) fn(gd);
@@ -10495,8 +10767,40 @@ const MAP_SELECT_CHROME: &str = r##"<script>
   // rows -> map
   document.addEventListener("qsv-data-selection", function (ev) {
     current = (ev.detail && ev.detail.indexes) || [];
-    eachHooked(function (gd) { applySelection(gd, current); });
+    // Only a selection that ORIGINATED in the table moves the camera. Without this gate a map
+    // click echoes straight back — `__qsvDataSelect` dispatches the same event — and the map
+    // re-aims away from the very point the reader just clicked.
+    var fromRows = !!(ev.detail && ev.detail.source === "rows");
+    var reported = null;
+    eachHooked(function (gd) {
+      var pins = pinsFor(gd, current);
+      if (!reported) reported = pins;
+      // BOTH restyles run here, synchronously, before the camera is scheduled. Order is
+      // load-bearing: a restyle cancels a camera move started in the same task, so the deferral
+      // below must come after the last of them, not between them.
+      applySelection(gd, current, pins.points.length);
+      applyPins(gd, pins.points);
+      if (fromRows) {
+        setTimeout(function () { revealOnMap(gd, current, pins.points); }, 0);
+      }
+    });
+    if (reported) notePins(reported);
   });
+  // Why a pinned row looks different from a plotted one. The pin's own hover label carries the
+  // explanation, so the note only has to make the reader look once — on a downsampled dashboard
+  // most selections produce a pin, and a note every time would be pure noise.
+  var notedNotPlotted = false;
+  function notePins(pins) {
+    if (!window.__qsvDataNote) return;
+    if (pins.points.length) {
+      if (notedNotPlotted) return;
+      notedNotPlotted = true;
+      window.__qsvDataNote(__QSVI18N_ROW_NOT_PLOTTED__);
+    } else if (pins.missing) {
+      // nothing was drawn for this selection at all, so this note is its only feedback
+      window.__qsvDataNote(__QSVI18N_ROW_HAS_NO_COORDINATES__);
+    }
+  }
   // map -> rows
   function onClick(gd, ev) {
     // with the drawer closed there is no visible selection, so a click keeps its old meaning
@@ -10535,6 +10839,7 @@ const MAP_SELECT_CHROME: &str = r##"<script>
       gd.__qsvSelHooked = true;
       buildIndex(gd);
       bindClickSettled(gd);
+      mirrorCamera(gd);
       // Re-arm on our OWN triggers rather than trusting the theme toggle to call the rehook it
       // publishes. Two observed failure modes make that dependency unreliable: the toggle wraps
       // its whole per-panel body in `try {} catch {}`, so an earlier helper throwing (seen on a
@@ -10546,8 +10851,12 @@ const MAP_SELECT_CHROME: &str = r##"<script>
         gd.__qsvSelWatch = true;
         var rearm = function () {
           bindClickSettled(gd);
-          // the re-render repaints from gd.data; re-assert the selection once it has settled
-          if (current.length) setTimeout(function () { applySelection(gd, current); }, 1300);
+          // a re-render hands out a fresh GL map, so the camera mirror has to be re-attached too
+          mirrorCamera(gd);
+          // The re-render repaints from gd.data, which resets BOTH the selection styling and the
+          // pin's coordinates — the pin ships empty, so a re-render empties it again. Re-assert
+          // the pair once it has settled.
+          if (current.length) setTimeout(function () { restore(gd); }, 1300);
         };
         var tb = document.getElementById("qsv-theme-toggle");
         if (tb) tb.addEventListener("click", rearm);
@@ -10555,7 +10864,7 @@ const MAP_SELECT_CHROME: &str = r##"<script>
       }
       // a re-render drops both the listener above and the painted selection; restoring it here
       // is what makes a theme flip mid-selection look seamless
-      if (current.length) applySelection(gd, current);
+      if (current.length) restore(gd);
     });
     hook.tries = tries + 1;
     if (pending && hook.tries < 200) setTimeout(hook, 100);
@@ -10577,9 +10886,11 @@ fn smart_html_page(
     photos: bool,
     data_chrome: Option<&str>,
     has_basemap: bool,
-    // A `Map`/`Geo` panel carries per-point row ordinals, so the rows<->points bridge is worth
-    // emitting. Still gated on the drawer actually being present (see `map_select_chrome`).
-    map_select: bool,
+    // `Some((lat_col, lon_col))` when a `Map`/`Geo` panel carries per-point row ordinals, so the
+    // rows<->points bridge is worth emitting. The columns are the resolved coordinate pair, which
+    // the bridge uses to pin a selected row that has no plotted point. Still gated on the drawer
+    // actually being present (see `map_select_chrome`).
+    map_select: Option<(usize, usize)>,
 ) -> String {
     let js = plotly_js_block();
     let meta_table = meta_table.unwrap_or("");
@@ -10648,8 +10959,10 @@ fn smart_html_page(
     // rows<->points bridge: needs BOTH ends to exist. `map_select` says the map carries row
     // ordinals; a non-empty `data_chrome` is exactly the "drawer is on this page" test (same
     // condition the DataTables bundle is embedded under).
-    let map_select_chrome = if map_select && !data_chrome.is_empty() {
-        map_select_chrome()
+    let map_select_chrome = if let Some((lat_col, lon_col)) = map_select
+        && !data_chrome.is_empty()
+    {
+        map_select_chrome(lat_col, lon_col)
     } else {
         String::new()
     };
@@ -15837,8 +16150,51 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     return kept;
   };
   window.__qsvDataSelectedRows = function () { return Array.from(selRows); };
-  // Page to the row with this DATA index, in the CURRENT sort/filter. Returns false when the row
-  // is filtered out (caller decides whether to explain) — never clears the user's filters.
+  // Raw cells of one DATA row (file column order, exactly as embedded), or null when the drawer
+  // has not been built or the index is out of range. The map bridge reads a row's coordinates
+  // through this rather than reaching into DataTables itself. A DATE column's cell is a
+  // `[display, sortKey]` pair rather than a bare string, so callers must expect either.
+  window.__qsvDataRowCells = function (i) {
+    if (!dt) return null;
+    i = +i;
+    if (!Number.isInteger(i) || i < 0 || i >= dt.rows().count()) return null;
+    return dt.row(i).data() || null;
+  };
+
+  // breathing room left above/below a row that had to be scrolled to, so it does not sit flush
+  // against the header or the bottom edge
+  var ROW_REVEAL_MARGIN = 8;
+
+  // Scroll a row into the drawer's visible band.
+  //
+  // The vertical scroller is the OUTER `div.dt-layout-table` (the drawer's own flex rule), NOT
+  // `div.dt-scroll-body` — under `scrollX: true` that one scrolls horizontally only, since
+  // `scrollY` is never set. The header is pinned inside the scroller with `position: sticky`, so
+  // its height has to come off the top of the band; scrolling a row flush to the top would park it
+  // underneath the header instead of revealing it.
+  //
+  // Nothing moves while the row is already fully visible: a map click that lands on a row that is
+  // on screen anyway should not jerk the table out from under the reader.
+  //
+  // `behavior: "instant"` is deliberate and is NOT interchangeable with "auto". The page sets
+  // `scroll-behavior: smooth`, "auto" inherits it, and a smooth programmatic scroll can be
+  // cancelled at frame 0 by the layout work the same click triggers — arriving nowhere, silently.
+  function revealRow(node) {
+    var scroller = document.querySelector("#qsv-data-drawer div.dt-container > div.dt-layout-table");
+    if (!scroller || !node) return;
+    var head = document.querySelector("#qsv-data-drawer div.dt-scroll-head");
+    var headH = head ? head.getBoundingClientRect().height : 0;
+    var sr = scroller.getBoundingClientRect(), nr = node.getBoundingClientRect();
+    var above = nr.top - (sr.top + headH), below = nr.bottom - sr.bottom, delta = 0;
+    if (above < 0) delta = above - ROW_REVEAL_MARGIN;
+    else if (below > 0) delta = below + ROW_REVEAL_MARGIN;
+    if (delta) scroller.scrollTo({top: scroller.scrollTop + delta, behavior: "instant"});
+  }
+
+  // Bring the row with this DATA index into view, in the CURRENT sort/filter: page to it, then
+  // scroll it inside the drawer's scrollport (paging alone only guarantees the right PAGE — on a
+  // 25-row page the row can still sit well below the fold). Returns false when the row is filtered
+  // out (caller decides whether to explain) — never clears the user's filters.
   window.__qsvDataPageTo = function (i) {
     if (!dt) return false;
     var order = dt.rows({order: "applied", search: "applied"}).indexes().toArray();
@@ -15847,6 +16203,11 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     var len = dt.page.len();
     // len is -1 when the user picked "All" — everything is already on one page
     if (len > 0) dt.page(Math.floor(pos / len)).draw(false);
+    // `draw` is synchronous and materializes the page's rows, so the node is normally attached by
+    // now; the deferred retry covers a `deferRender` pass that has not caught up.
+    var node = dt.row(+i).node();
+    if (node) revealRow(node);
+    else setTimeout(function () { revealRow(dt.row(+i).node()); }, 0);
     return true;
   };
 
@@ -21438,6 +21799,22 @@ fn geojson_overlay_label_font() -> Font {
 /// basemaps cull colliding on-map text glyphs (the same reason the extent corner points use
 /// haloed circles, not text), so the region label is delivered on hover of this dot instead — a
 /// white-haloed teal circle that reads on both light and dark basemaps.
+/// Markers for the row pin (see `MAP_ROW_PIN_NAME`) — the magenta core and the white disc behind
+/// it whose exposed rim forms the ring.
+fn row_pin_marker() -> Marker {
+    Marker::new()
+        .color(MAP_SELECTED_POINT_COLOR)
+        .size(MAP_ROW_PIN_SIZE)
+        .opacity(1.0)
+}
+
+fn row_pin_halo_marker() -> Marker {
+    Marker::new()
+        .color("#ffffff")
+        .size(MAP_ROW_PIN_HALO_SIZE)
+        .opacity(1.0)
+}
+
 fn geojson_overlay_label_marker() -> Marker {
     Marker::new()
         .color(GEOJSON_OVERLAY_LINE_COLOR)
@@ -25895,6 +26272,7 @@ impl<'a> SmartCtx<'a> {
                 dict_page.as_deref(),
                 metadata_html.as_deref(),
                 data_chrome.as_deref(),
+                self.map_cols,
             )))
         } else if self
             .panels
@@ -27345,7 +27723,7 @@ fn render_smart_grid_page(
         // ...and for the same reason no MapLibre basemap tile is ever fetched from this page.
         false,
         // ...nor is there a map panel to cross-link the data viewer's rows to.
-        false,
+        None,
     )
 }
 
@@ -27655,6 +28033,31 @@ fn smart_inline_panel_plot(
                 plot.add_trace(trace);
             }
         }
+        // The row pin, LAST so it draws over the points and any overlay. Gated on the same
+        // condition as the cross-link itself (`row_ids` non-empty): with no drawer there is
+        // nothing to select, so nothing could ever fill it in, and an image export -- which
+        // passes `capture_row_ids: false` -- stays byte-identical.
+        if !row_ids.is_empty() {
+            // halo first so the ring renders beneath the core; it never answers a hover, so the
+            // pin's own label is the only one a reader can get
+            plot.add_trace(
+                ScatterMap::new(Vec::<f64>::new(), Vec::<f64>::new())
+                    .name(MAP_ROW_PIN_HALO_NAME)
+                    .mode(Mode::Markers)
+                    .marker(row_pin_halo_marker())
+                    .hover_info(HoverInfo::Skip)
+                    .show_legend(false),
+            );
+            plot.add_trace(
+                ScatterMap::new(Vec::<f64>::new(), Vec::<f64>::new())
+                    .name(MAP_ROW_PIN_NAME)
+                    .mode(Mode::Markers)
+                    .marker(row_pin_marker())
+                    // baked now so the bridge only ever has to set lat/lon/text
+                    .hover_template(MAP_HOVER_TEMPLATE)
+                    .show_legend(false),
+            );
+        }
         // Carto tiles work from local files (no Referer header required). OSM enforces a Referer
         // policy and returns 403 when the HTML is opened directly from disk. A density heatmap is a
         // data overlay, so it gets the label-free basemap; a point map keeps labels for context.
@@ -27775,6 +28178,27 @@ fn smart_inline_panel_plot(
             for trace in geojson_overlay_geo_traces(overlay, None) {
                 plot.add_trace(trace);
             }
+        }
+        // the row pin, on top of everything (see the `PanelKind::Map` arm). A geo panel never moves
+        // its camera for a selection, but it still shows the pin -- downsampling drops rows here
+        // too, so without it a click on such a row would do nothing at all.
+        if !row_ids.is_empty() {
+            plot.add_trace(
+                ScatterGeo::new(Vec::<f64>::new(), Vec::<f64>::new())
+                    .name(MAP_ROW_PIN_HALO_NAME)
+                    .mode(Mode::Markers)
+                    .marker(row_pin_halo_marker())
+                    .hover_info(HoverInfo::Skip)
+                    .show_legend(false),
+            );
+            plot.add_trace(
+                ScatterGeo::new(Vec::<f64>::new(), Vec::<f64>::new())
+                    .name(MAP_ROW_PIN_NAME)
+                    .mode(Mode::Markers)
+                    .marker(row_pin_marker())
+                    .hover_template(MAP_HOVER_TEMPLATE)
+                    .show_legend(false),
+            );
         }
         let (geo_land, geo_water, geo_bg) = geo_palette(theme);
         // when every plotted point (core + outliers) sits in a single plotly continent, frame the
@@ -28689,6 +29113,11 @@ fn render_smart_inline(
     dict_page: Option<&str>,
     meta_table: Option<&str>,
     data_chrome: Option<&str>,
+    // The resolved (latitude, longitude) CSV column indexes behind the map panel. They index the
+    // data viewer's rows directly — `collect_datatable_rows` emits every CSV column in file order
+    // — which is how the bridge reads the coordinates of a row that has no plotted point of its
+    // own (downsampled away) in order to pin it.
+    map_cols: Option<(usize, usize)>,
 ) -> String {
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
     let theme = args.theme();
@@ -28783,6 +29212,9 @@ fn render_smart_inline(
             | PanelKind::Geo { row_ids, outlier_row_ids, .. }
             if !row_ids.is_empty() || !outlier_row_ids.is_empty())
     });
+    // the bridge needs the coordinate columns too, so it can pin a selected row that has no
+    // plotted point; without them there is nothing to emit it for
+    let map_select = if has_map_select { map_cols } else { None };
     // panels carry no overall title, so the dashboard title is shown as the page <h1>.
     smart_html_page(
         title_text,
@@ -28795,7 +29227,7 @@ fn render_smart_inline(
         has_photos,
         data_chrome,
         has_basemap,
-        has_map_select,
+        map_select,
     )
 }
 
@@ -38837,7 +39269,7 @@ mod tests {
         // block that carries placeholders.
         for (name, rendered) in [
             ("FULLSCREEN_SCRIPT", fullscreen_script()),
-            ("MAP_SELECT_CHROME", map_select_chrome()),
+            ("MAP_SELECT_CHROME", map_select_chrome(3, 4)),
             ("PHOTO_CHROME", photo_chrome()),
             ("DICT_SCRIPT_TEMPLATE", dict_script_template()),
             ("DATA_DRAWER_SCRIPT", data_drawer_script()),
@@ -38847,6 +39279,13 @@ mod tests {
                 "an i18n placeholder survived substitution into {name}"
             );
         }
+        // the coordinate columns ride the same substitution machinery and leak the same way
+        let chrome = map_select_chrome(3, 4);
+        assert!(
+            !chrome.contains("__QSV_LAT_COL__") && !chrome.contains("__QSV_LON_COL__"),
+            "a coordinate-column placeholder survived substitution into MAP_SELECT_CHROME"
+        );
+        assert!(chrome.contains("var LAT_COL = 3, LON_COL = 4;"));
     }
 
     #[test]

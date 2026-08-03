@@ -14537,6 +14537,19 @@ fn viz_smart_map_select_ids_emitted() {
     // and the drawer's half of the seam
     assert!(html.contains("window.__qsvDataSelect = function (indexes, extend)"));
     assert!(html.contains(r#"document.dispatchEvent(new CustomEvent("qsv-data-selection""#));
+    // The camera half. Assert on the qsv-namespaced marker, NEVER on the MapLibre call names:
+    // `easeTo`, `fitBounds` and `getBounds` all occur inside the bundled plotly.js too, so an
+    // assertion on those is satisfied by the bundle alone and proves nothing (the same trap that
+    // once let a `hasChoropleth` assertion pass against a renamed function).
+    assert!(
+        html.contains("gd.__qsvSelCamera = k;"),
+        "map camera reveal missing from the bridge"
+    );
+    // only a selection that came FROM the table moves the camera — without this gate a map click
+    // echoes back and re-aims the map away from the point just clicked
+    assert!(html.contains(r#"ev.detail.source === "rows""#));
+    // and the camera mirror that keeps `gd.layout` authoritative across a restyle
+    assert!(html.contains("m.__qsvCamMirror = true;"));
 }
 
 // With the drawer disabled there is nothing to cross-link to, so neither the ids nor the bridge
@@ -14564,8 +14577,74 @@ fn viz_smart_map_select_gated_off_without_drawer() {
         !html.contains("gd.__qsvSelIndex = index;"),
         "bridge emitted with no drawer"
     );
+    assert!(
+        !html.contains("gd.__qsvSelCamera = k;"),
+        "map camera reveal emitted with no drawer"
+    );
     // the drawer really is absent (guards against the assertions above passing vacuously)
     assert!(!html.contains(r#"id="qsv-data-rows""#));
+}
+
+// A selected row whose point was never plotted (the map draws at most MAX_SMART_POINTS) still has
+// a location in the drawer, and the pin marks it. The pin ships EMPTY and is filled in at runtime.
+#[test]
+fn viz_smart_map_row_pin_emitted() {
+    let wrk = Workdir::new("viz_smart_map_row_pin_emitted");
+    map_select_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "ms.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // Two traces, because the ring CANNOT come from `marker.line`: plotly silently drops it on a
+    // scattermap (the MapLibre circle layer gets no `circle-stroke-*` at all), so the halo is a
+    // larger white marker drawn beneath. The halo must come FIRST in the payload for that.
+    let halo = html
+        .find(r##""name":"qsv-row-pin-halo","showlegend":false,"mode":"markers","lat":[],"lon":[],"hoverinfo":"skip","marker":{"opacity":1.0,"size":26,"color":"#ffffff"}"##)
+        .expect("row pin halo trace missing or restyled");
+    let pin = html
+        .find(r##""name":"qsv-row-pin","showlegend":false,"mode":"markers","lat":[],"lon":[]"##)
+        .expect("row pin trace missing or not shipped empty");
+    assert!(halo < pin, "the halo must be drawn beneath the pin");
+    assert!(html.contains(r##""marker":{"opacity":1.0,"size":18,"color":"#ff2d95"}"##));
+    // the sentinel name is the bridge's handle and must never reach a reader: legend off on the
+    // trace, and a hovertemplate ending in <extra></extra> (escaped by plotly) suppresses the
+    // trace-name box
+    // plotly \u-escapes angle brackets in emitted JSON, so the assertion has to match the
+    // ESCAPED form -- and this file is patched programmatically for exactly that reason
+    assert!(html.contains(r#"%{lat:.4f}, %{lon:.4f}\u003cextra\u003e\u003c/extra\u003e"#));
+    // the coordinate columns the bridge reads a row's location from: `ms.csv` is name,lat,lon,val
+    assert!(
+        html.contains("var LAT_COL = 1, LON_COL = 2;"),
+        "the resolved coordinate columns did not reach the bridge"
+    );
+    // and the drawer seam the bridge reads them THROUGH
+    assert!(html.contains("window.__qsvDataRowCells = function (i)"));
+}
+
+// No drawer, no pin: there is no row to pin and nothing that could ever fill it in.
+#[test]
+fn viz_smart_map_row_pin_gated_off_without_drawer() {
+    let wrk = Workdir::new("viz_smart_map_row_pin_gated_off_without_drawer");
+    map_select_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "ms.csv", "--preview-threshold", "0"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        !html.contains("qsv-row-pin"),
+        "row pin emitted with no drawer"
+    );
+    assert!(!html.contains("var LAT_COL ="));
+    // anti-vacuity: the map itself is still there, it just carries no cross-link chrome
+    assert!(html.contains(r#""type":"scattermap""#));
 }
 
 // A dashboard with a drawer but NO map gets the row-selection machinery (it is part of the
@@ -14584,9 +14663,19 @@ fn viz_smart_drawer_select_without_map() {
 
     assert!(html.contains(r#"id="qsv-data-rows""#));
     assert!(html.contains("window.__qsvDataSelect = function (indexes, extend)"));
+    // paging alone only guarantees the right PAGE; the row still has to be scrolled inside the
+    // drawer's own scrollport, clear of the sticky header
+    assert!(
+        html.contains("function revealRow(node)"),
+        "drawer is missing the row scroll-into-view helper"
+    );
     assert!(
         !html.contains("gd.__qsvSelIndex = index;"),
         "map<->rows bridge emitted on a dashboard with no map panel"
+    );
+    assert!(
+        !html.contains("gd.__qsvSelCamera = k;"),
+        "map camera reveal emitted on a dashboard with no map panel"
     );
 }
 
@@ -14633,6 +14722,10 @@ fn viz_smart_map_select_scattergeo_variant() {
     assert!(html.contains(r#""type":"scattergeo""#));
     assert!(html.contains(r#""ids":["0","1","2","3","4","5"]"#));
     assert!(html.contains("gd.__qsvSelIndex = index;"));
+    // the geo panel gets its own pin (downsampling drops rows here too); the camera stays put on
+    // a geo panel, but the pin is a highlight, not a camera move
+    assert!(html.contains(r#""name":"qsv-row-pin-halo""#));
+    assert!(html.contains(r#""name":"qsv-row-pin""#));
 }
 
 // The DataTables Select extension must stay OUT of the bundle. It requires a global jQuery that

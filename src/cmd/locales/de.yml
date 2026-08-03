@@ -38,6 +38,8 @@ viz:
     cluster_click_to_zoom: " - zum Vergrößern klicken"
     row_not_in_preview: "Zeile nicht in der Vorschau"
     row_is_filtered_out: "Zeile ist herausgefiltert"
+    row_not_plotted: "Zeile nicht unter den dargestellten Punkten"
+    row_has_no_coordinates: "Zeile hat keine Kartenkoordinaten"
     extent_points: "Ausdehnungspunkte"
     spatial_extent: "räumliche Ausdehnung"
     full_extent: "gesamte Ausdehnung (inkl. Ausreißer)"

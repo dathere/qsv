@@ -38,6 +38,8 @@ viz:
     cluster_click_to_zoom: " - クリックで拡大"
     row_not_in_preview: "この行はプレビューに含まれていません"
     row_is_filtered_out: "この行はフィルターで除外されています"
+    row_not_plotted: "この行は描画された点に含まれていません"
+    row_has_no_coordinates: "この行には地図座標がありません"
     extent_points: "範囲のポイント"
     spatial_extent: "空間範囲"
     full_extent: "全体範囲(外れ値を含む)"

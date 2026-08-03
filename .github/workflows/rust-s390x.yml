@@ -60,7 +60,7 @@ jobs:
       # big-endian) cover the platform-rejection error message instead.
       # run: cargo test s390x --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui -- --nocapture
       run: |
-        cargo test --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui -- \
+        cargo test --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui,viz -- \
           --skip stats_quantile_method_approx_ \
           --skip stats_cardinality_method_approx_ \
           --skip frequency_sketch_method_frequent_items_ \

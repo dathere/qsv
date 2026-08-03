@@ -16081,6 +16081,18 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
      this cannot be done with `max-width`: browsers treat that as advisory on table cells under
      `table-layout: auto`. */
   #qsv-data-table td, #qsv-data-table thead th { overflow-wrap: anywhere; }
+  /* Total width for the scrollX workaround (see syncTableMinWidth). Deliberately applied through
+     an ID-SCOPED RULE reading a custom property, NOT as an inline `style.minWidth`.
+     DataTables' sizing pass measures a SHALLOW `cloneNode()` of the table, which copies the style
+     ATTRIBUTE; it clears the width attribute and sets `width: auto`, but nothing clears
+     `min-width`. An inline min-width therefore rides into the very measurement that is supposed
+     to recompute it, flooring the clone at the previous total — so the value could only ever
+     ratchet upward, and a table first opened on a wide viewport stayed pinned wide after the
+     reader narrowed it, showing a horizontal scrollbar over columns that now had room.
+     The clone is stripped of its `id`, so this rule cannot match it (the same property that keeps
+     `overflow-wrap: anywhere` above out of the measurement); the custom property rides along on
+     the clone harmlessly, because nothing there declares `min-width` from it. */
+  #qsv-data-table { min-width: var(--qsv-data-minw, 0px); }
   /* theme-aware: left to the UA default this is #0000EE, then #551A8B once visited — both
      unreadable on dark paper, and href="#" means one click marks it visited forever */
   .qsv-viz-meta a.qsv-data-link, .qsv-viz-meta a.qsv-data-link:visited { font-size: 0.9em; font-weight: 600; color: var(--qsv-link, #0a5fb4); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
@@ -16763,8 +16775,12 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
         var px = Math.floor(total) + "px";
         // Also what breaks the adjust() -> column-sizing -> syncTableMinWidth() loop: the second
         // pass computes the same value and stops here.
-        if (table.style.minWidth === px) return;
-        table.style.minWidth = px;
+        //
+        // Written as a custom property consumed by the `#qsv-data-table` rule in the stylesheet,
+        // never as `table.style.minWidth` -- an inline min-width is copied onto the sizing pass's
+        // clone and would floor its own recomputation. See that rule for the full reasoning.
+        if (table.style.getPropertyValue("--qsv-data-minw") === px) return;
+        table.style.setProperty("--qsv-data-minw", px);
         // re-run the scroll draw so the header's inner table is re-widened to match the body's
         // new width; without it the two stay misaligned until the next unrelated redraw
         dt.columns.adjust();

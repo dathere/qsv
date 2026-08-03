@@ -16714,6 +16714,63 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       // deferRender builds row nodes on demand and every draw re-writes the tbody, so the
       // `selected` class has to be re-applied rather than set once at click time.
       dt.on("draw", function () { paintSelection(); paintSelectionInfo(); });
+      // Restate the table's total width as a `min-width` ON THE TABLE, because scrollX's own
+      // mechanism is not portable.
+      //
+      // Under scrollX DataTables leaves the table at `width: 100%` and holds the columns open
+      // with `min-width` on each <col>. But CSS 2.1 s17.6.1 limits the properties that apply to
+      // column elements to border, background, width and visibility -- `min-width` is not among
+      // them. Blink honours it as an extension; WebKit does not. So in Safari nothing enforces
+      // those widths: the table collapses to its container and there is nothing left to scroll.
+      // It collapses ALL the way rather than stopping somewhere readable because the
+      // `overflow-wrap: anywhere` rule above drives every column's min-content contribution down
+      // to about one character. The next scroll draw then re-measures the squished row and
+      // freezes the squished widths back onto the <col>s, so the collapse is self-sustaining.
+      //
+      // `min-width` on the TABLE is plain spec'd CSS and is honoured everywhere, so it carries
+      // the same total that the <col> min-widths were supposed to.
+      //
+      // The per-column figures are DataTables' own sizing-pass measurements. That pass measures
+      // an id-less clone of the table, so `overflow-wrap: anywhere` (which is keyed on
+      // #qsv-data-table) never applies to it -- the numbers describe unbroken text and are
+      // engine-independent. In Chrome their sum equals the width the table already renders at,
+      // including on a table whose widest column is an unbroken 90-char token, which makes this
+      // a no-op there rather than a second, competing sizing mechanism.
+      //
+      // Recomputed on every sizing pass rather than set once: that pass STRETCHES the columns to
+      // fill the container when their natural total is smaller than it, so a value captured on a
+      // wide window would pin the table wide after the reader narrows it -- inventing horizontal
+      // scroll where none is warranted.
+      function syncTableMinWidth() {
+        if (!dt) return;
+        // settings()[0].columns is internal API, hence the defensive shape check: the bundle is
+        // vendored and pinned, but a future bump should degrade to today's Chrome-only behaviour
+        // rather than throw inside a draw handler.
+        var st = dt.settings()[0];
+        if (!st || !st.columns || !st.columns.length) return;
+        var total = 0;
+        st.columns.forEach(function (c) {
+          // a column hidden after init keeps its last measured width, which would inflate the sum
+          if (c.visible !== false) total += parseFloat(c.width) || 0;
+        });
+        if (!(total > 0)) return;
+        // FLOOR, never ceil. When the columns' natural total is smaller than the container the
+        // sizing pass stretches them to fill it exactly, so this sum lands on the container's own
+        // width -- give or take a sub-pixel. Rounding that UP would push the table one pixel past
+        // its container and hang a horizontal scrollbar under every narrow table, which is the
+        // opposite of the bug being fixed. Rounding down can only ever leave the table a sub-pixel
+        // narrower than it could be, which is invisible.
+        var px = Math.floor(total) + "px";
+        // Also what breaks the adjust() -> column-sizing -> syncTableMinWidth() loop: the second
+        // pass computes the same value and stops here.
+        if (table.style.minWidth === px) return;
+        table.style.minWidth = px;
+        // re-run the scroll draw so the header's inner table is re-widened to match the body's
+        // new width; without it the two stay misaligned until the next unrelated redraw
+        dt.columns.adjust();
+      }
+      dt.on("column-sizing", syncTableMinWidth);
+      syncTableMinWidth();
       // Publish the table for the map<->rows selection bridge. The drawer is built LAZILY on
       // first open, so a bridge that merely read `window.__qsvDataDT` at page load would always
       // find nothing — it listens for this event instead (and re-checks the global, in case it

@@ -111,7 +111,7 @@ fi
 
 [ -d "$DATA_DIR" ] || die "data directory not found: $DATA_DIR
   Set QSV_VIZ_DATA_DIR, or populate that directory (see the header of this script
-  for the four required files and where each one comes from)."
+  for the required files and where each one comes from)."
 
 for f in pittsburgh_311.tsv pittsburgh_neighborhoods.geojson \
          boston311-2025.tsv boston_neighborhood_boundaries.json \

@@ -1384,6 +1384,69 @@ fn viz_smart_bubble_when_entity_and_drift() {
     );
 }
 
+/// The gapminder shape, but stretched over `years` ANNUAL frames instead of 6 quarters, so the
+/// only thing that varies between two runs is the frame count.
+fn smart_annual_bubble_csv(years: i32) -> String {
+    let mut rows = String::from("region,year_date,gdp_index,wellbeing_index,population_m\n");
+    for (region, pop, base) in [
+        ("Northland", 12, 60),
+        ("Eastmark", 30, 50),
+        ("Sudland", 48, 45),
+        ("Westfall", 9, 70),
+        ("Centra", 22, 55),
+    ] {
+        for y in 0..years {
+            // monotone drift through the measure space, so the panel is selected on its merits
+            let (gx, wy) = (base + y, base - 5 + y * 2);
+            for k in -1..=1 {
+                rows.push_str(&format!(
+                    "{region},{}-06-30,{},{},{pop}\n",
+                    1980 + y,
+                    gx + k,
+                    wy + k
+                ));
+            }
+        }
+    }
+    rows
+}
+
+#[test]
+fn viz_smart_bubble_declines_past_the_frame_cap() {
+    // The bubble panel resolves its frame axis through `resolve_frame_axis`, not the bucket
+    // ladder, so it needs SMART_ANIM_MAX_FRAMES applied at the reader (`EntityBucketOpts`).
+    // 25 annual frames animate; the SAME dataset stretched to 40 annual frames cannot be
+    // bucketed below the 30-frame cap (each year is its own bucket at every rung), so the panel
+    // is declined rather than emitting a 40-step slider that ignores the documented cap.
+    let wrk = Workdir::new("viz_smart_bubble_declines_past_the_frame_cap");
+
+    // positive control: under the cap, the animated bubble panel is present
+    wrk.create_from_string("under.csv", &smart_annual_bubble_csv(25));
+    let under_html = wrk.path("under.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "under.csv", "-o", &under_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("under.html").unwrap();
+    assert!(
+        html.contains(" by region over time"),
+        "25 annual frames is under the cap and should animate; html: {html}"
+    );
+
+    // over the cap: same shape, same gates, only the frame count differs
+    wrk.create_from_string("over.csv", &smart_annual_bubble_csv(40));
+    let over_html = wrk.path("over.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "over.csv", "-o", &over_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("over.html").unwrap();
+    assert!(
+        !html.contains(" by region over time"),
+        "40 annual frames exceeds SMART_ANIM_MAX_FRAMES and must be declined; html: {html}"
+    );
+}
+
 #[test]
 fn viz_smart_bubble_gated_without_entity() {
     // the same measure pair + date but NO categorical entity column => no bubble (and the

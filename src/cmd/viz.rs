@@ -2951,6 +2951,9 @@ fn build_slider_bubble_plot(args: &Args, slider_col: &SelectColumns) -> CliResul
         cumulative: args.flag_slider_cumulative,
         prefer_dmy: util::get_envvar_flag("QSV_PREFER_DMY"),
         min_frames: 2,
+        // already enforced upstream by `resolve_frame_axis`, which errors with guidance rather
+        // than silently declining — the user picked this column
+        max_frames: SLIDER_MAX_FRAMES,
         // draw what was asked for: keep every cell that has any data, keep an entity that shows
         // up in even one frame, and report the gaps rather than silently dropping them
         min_dense_floor: 1,
@@ -20490,6 +20493,15 @@ struct EntityBucketOpts {
     prefer_dmy:      bool,
     /// minimum distinct frames on the axis, else there is no animation to draw
     min_frames:      usize,
+    /// maximum distinct frames before the animation is DECLINED (`Ok(None)`), the counterpart of
+    /// `min_frames`. `viz smart` passes `SMART_ANIM_MAX_FRAMES` for the same legibility reason
+    /// its other animated panels do (see `choose_smart_anim_bucket`) — the bubble panel resolves
+    /// its frame axis through `resolve_frame_axis` rather than the bucket ladder, so it needs the
+    /// cap applied here. The standalone path passes `SLIDER_MAX_FRAMES`, which
+    /// `resolve_frame_axis` has already enforced with an actionable error, making this a no-op
+    /// there: the user picked the column, so they get the error and the guidance, never a
+    /// silent refusal.
+    max_frames:      usize,
     /// absolute floor on how many frames an entity must be dense in, applied alongside
     /// `min_dense_pct`. Kept SEPARATE from `min_frames` on purpose: `viz smart` sets both to the
     /// same value (its completeness bound subsumes the floor at typical bucket counts), but the
@@ -20569,7 +20581,7 @@ fn read_entity_bucket_agg(
         None => return Ok(None),
     };
     let nb = bucket_labels.len();
-    if nb < opts.min_frames {
+    if nb < opts.min_frames || nb > opts.max_frames {
         return Ok(None);
     }
 
@@ -25061,6 +25073,7 @@ impl<'a> SmartCtx<'a> {
                                 cumulative: false,
                                 prefer_dmy,
                                 min_frames,
+                                max_frames: SMART_ANIM_MAX_FRAMES,
                                 min_dense_floor: min_frames,
                                 min_cell_rows: 3,
                                 min_entities: 3,

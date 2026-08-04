@@ -73,6 +73,9 @@ qsv template --template-file template.tpl data.csv
 >  filters for math operations and when a MiniJinja filter/function requires it.
 > qsv's custom filters (substr, format_float, human_count, human_float_count, round_banker &
 > str_to_bool) do not require casting for convenience.
+> Booleans render as `True`/`False` and none (e.g. a JSON null reached via `fromjson`)
+>  renders as `None`, matching Jinja2. Use `{{ v or "" }}` for an empty string instead —
+>  a bare `{{ v|default("") }}` does NOT substitute for none, only for undefined.
 
 Additional qsv-specific data-wrangling filters/functions (available in all binary variants):  
 ```

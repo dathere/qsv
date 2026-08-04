@@ -184,7 +184,7 @@ fn template_with_loops() {
         .arg("data.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = "John's hobbies: reading, gaming, cooking, \nJane's hobbies: hiking, painting, ";
+    let expected = "John's hobbies: reading, gaming, cooking\nJane's hobbies: hiking, painting";
 
     wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
@@ -457,14 +457,14 @@ Amount: 1,234,567
 Bytes: 1.0 MB 1.0 MiB
 Score (2 decimals): 3.14
 Score (rounded): 3.1416 3.1416
-Active: true
+Active: True
 Float with commas: 1,234,567
 Name: Ja
 Amount: <FILTER_ERROR>: "7654321.04" is not an integer.
 Bytes: 1.1 GB 1.0 GiB
 Score (2 decimals): 2.72
 Score (rounded): 2.7183 2.7183
-Active: false
+Active: False
 Float with commas: 7,654,321.04"#;
     assert_eq!(got, expected);
 }
@@ -684,11 +684,11 @@ fn template_contrib_functions() {
     let got: String = wrk.stdout(&mut cmd);
     let expected = concat!(
         "pluralize: You have 1 message\n",
-        "now: true\n",
+        "now: True\n",
         "dtformat: June 24 2023 11:37:22\n",
         "\n",
         "pluralize: You have 2 messages\n",
-        "now: true\n",
+        "now: True\n",
         "dtformat: December 23 1999 23:37:22",
     );
     assert_eq!(got, expected);
@@ -724,19 +724,19 @@ fn template_pycompat_filters() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = concat!(
-        "isascii: true\n",
-        "isdigit: true\n",
-        "startswith: true\n",
-        "isnumeric: true\n",
-        "isupper: false\n",
+        "isascii: True\n",
+        "isdigit: True\n",
+        "startswith: True\n",
+        "isnumeric: True\n",
+        "isupper: False\n",
         "replace: XYZ123xyz  \n",
         "rfind: 6\n",
         "rstrip: ABC123xyz\n",
-        "isascii: true\n",
-        "isdigit: false\n",
-        "startswith: false\n",
-        "isnumeric: false\n",
-        "isupper: true\n",
+        "isascii: True\n",
+        "isdigit: False\n",
+        "startswith: False\n",
+        "isnumeric: False\n",
+        "isupper: True\n",
         "replace:   Hello  \n",
         "rfind: -1\n",
         "rstrip:   Hello",

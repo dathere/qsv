@@ -110,7 +110,9 @@ custom_prompt_md_template = """# {{ kind }}
 #   {{ row_count }}          - inferred dataset row count
 #   {{ grain }}              - one-sentence "one row = one X" grain, or empty
 #   {{ concepts }}           - sorted, de-duplicated list of catalog concept IDs used by the columns
-#   {{ temporal_coverage }}  - optional {column, start, end} for the event-timestamp column
+#   {{ temporal_coverage }}  - optional {column, start, end, cadence} for the event-timestamp
+#                              column; cadence is a deterministic token (daily/weekly/monthly/
+#                              quarterly/annual) or absent when the spacing is irregular
 #   {{ spatial }}            - optional {crs, lat, lon} when WGS84 lat/lon concept columns exist
 #   {{ ds_source }}/{{ ds_updated }}/{{ ds_license }} - optional provenance from --ds-* flags
 #   {{ entries }}            - list of records, each with: name, sem_type, required, label, description,
@@ -132,7 +134,7 @@ dataset:
 {% endif -%}
 {% if ds_license %}  license: {{ ds_license | yaml_scalar }}
 {% endif -%}
-{% if temporal_coverage %}  temporal_coverage: { column: {{ temporal_coverage.column | yaml_scalar }}, start: {{ temporal_coverage.start | yaml_scalar }}, end: {{ temporal_coverage.end | yaml_scalar }} }
+{% if temporal_coverage %}  temporal_coverage: { column: {{ temporal_coverage.column | yaml_scalar }}, start: {{ temporal_coverage.start | yaml_scalar }}, end: {{ temporal_coverage.end | yaml_scalar }}{% if temporal_coverage.cadence %}, cadence: {{ temporal_coverage.cadence | yaml_scalar }}{% endif %} }
 {% endif -%}
 {% if spatial %}  spatial: { crs: {{ spatial.crs | yaml_scalar }}, lat: {{ spatial.lat | yaml_scalar }}, lon: {{ spatial.lon | yaml_scalar }} }
 {% endif -%}

@@ -17,7 +17,7 @@ qsv and running [`gen_gallery.py`](gen_gallery.py) from the repo root —
 `python3 examples/viz/gen_gallery.py`. Individual `qsv viz` outputs are instead
 fully self-contained (plotly embedded), so they work offline.
 
-The sixteen **smart dashboards** are embedded as `<iframe>`s of their genuine
+The seventeen **smart dashboards** are embedded as `<iframe>`s of their genuine
 `qsv viz smart` HTML output (`smart_*.html`) rather than reconstructed inline, so
 the full-width overview panels (map, choropleth, correlation heatmap, time-series,
 treemap/sunburst hierarchy), themes and map zoom buttons render exactly as the CLI produces
@@ -69,6 +69,7 @@ as `text/plain`, so a browser won't render it):
 |------|-------|---------|
 | `sales_sample.csv` | 500 e-commerce orders: categoricals, a boolean, a rating, several correlated numerics, an ID and a high-cardinality text column | `smart`, `bar`, `line`, `scatter` (incl. bubble & 3D), `histogram`, `box`, `pie`, `heatmap`, `contour` |
 | `stock_prices.csv` | 90 trading days of `date,open,high,low,close,volume` | `smart` (time-series), `candlestick`, `ohlc`, `line` |
+| `quarterly_filings.csv` | 102 filings on 12 quarter-start dates (2021–2023): `filing_date,form_type,status` | `smart` (quarterly cadence — the trend detects the native quarterly spacing and buckets by `YYYY-Qn` on a category axis) |
 | `web_flows.csv` | `source,target,sessions` funnel edges | `sankey` |
 | `signup_funnel.csv` | 15 rows of `stage,channel,users` — 5 signup stages x 3 channels, the stages already in process order | `funnel` (stages as ROWS, summed per stage; no dictionary needed) |
 | `nyc_capital_projects.csv` | 12,587 NYC capital projects (CPDB): managing agency, project type, and three budget aggregates that do NOT nest | `smart` (pipeline **bridge**, Lorenz/Gini) |

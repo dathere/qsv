@@ -175,6 +175,8 @@ viz:
     bucket_day: "天"
     bucket_week: "周"
     bucket_month: "月"
+    bucket_quarter: "季度"
+    bucket_year: "年"
     corr_spearman: "相关性(斯皮尔曼 ρ — 基于秩,对离群值稳健)"
     corr_pearson: "相关性(皮尔逊 r)"
     scatter3d: "%{q_x} / %{q_y} / %{q_z}(3D)"

@@ -168,6 +168,8 @@ viz:
     bucket_day: "日"
     bucket_week: "週"
     bucket_month: "月"
+    bucket_quarter: "四半期"
+    bucket_year: "年"
     corr_spearman: "相関(スピアマン ρ — 順位ベース、外れ値に頑健)"
     corr_pearson: "相関(ピアソン r)"
     scatter3d: "%{q_x} / %{q_y} / %{q_z}(3D)"

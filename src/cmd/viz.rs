@@ -14158,11 +14158,14 @@ enum PanelKind {
     FreqBar { idx: usize },
     /// Line chart of a numeric column over a date/datetime column, sorted chronologically.
     /// Carries the precomputed (already date-sorted) x date strings and y values so the render
-    /// loop stays a pure assembly step.
+    /// loop stays a pure assembly step. `categorical` marks Quarter/Year-bucketed panels whose
+    /// x labels ("2024-Q1", "2024") are not date-parseable: they render on a category axis
+    /// (evenly spaced, no empty-period gaps) instead of the usual date axis (issue #4216).
     TimeSeries {
-        y_label: String,
-        xs:      Vec<String>,
-        ys:      Vec<f64>,
+        y_label:     String,
+        xs:          Vec<String>,
+        ys:          Vec<f64>,
+        categorical: bool,
     },
     /// Animated scatter of the strongest-correlated numeric pair, revealed cumulatively over time
     /// and colored by time bucket (early → late) — the temporal companion to `ScatterPair`. The
@@ -14860,6 +14863,11 @@ struct DictData {
     /// dictionaries generated before the field existed — `count_unit_from_grain` then falls back
     /// to parsing `grain`.
     grain_unit:          Option<String>,
+    /// Validated temporal cadence token (`x-qsv.cadence`, describegpt's controlled vocabulary:
+    /// daily/weekly/monthly/quarterly/annual). Sets the trend panel's bucket floor so e.g.
+    /// quarterly data never renders with empty weekly gaps (issue #4216). Unknown tokens are
+    /// ignored at the consumer (`bucket_floor_from_cadence`), mirroring the PR #4321 discipline.
+    cadence:             Option<String>,
     /// Pipelines declared via `x-qsv.relationships`. Parsed leniently here (shape only); the
     /// funnel builder does the strict validation against real columns and types, mirroring how
     /// `gauge_range` is shape-parsed here and range-checked at the KPI tile.
@@ -15569,6 +15577,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
         };
         let grain = top_str(v.get("x-qsv").and_then(|x| x.get("grain")));
         let grain_unit = top_str(v.get("x-qsv").and_then(|x| x.get("grain_unit")));
+        let cadence = top_str(v.get("x-qsv").and_then(|x| x.get("cadence")));
         // describegpt appends its attribution/provenance footer to the dataset description AND
         // stores it separately in `x-qsv.generated_by` (which renders as the page footer). Strip
         // it from the description so it isn't shown twice.
@@ -15584,6 +15593,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
             rows,
             grain,
             grain_unit,
+            cadence,
             pipelines: xq_pipelines(&v),
             dataset_description,
             generated_by,
@@ -19208,42 +19218,64 @@ fn sort_order_rank(s: &crate::cmd::stats::StatsData) -> u8 {
 }
 
 /// Time bucket granularity for the trend panel, widened as the date span grows so a multi-year
-/// dataset doesn't render thousands of daily points.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// dataset doesn't render thousands of daily points. Variant order is fineness order (finest
+/// first), so `Ord::max` picks the coarser of two buckets — the span default vs the cadence floor
+/// (issue #4216); a unit test pins this ordering.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum TsBucket {
     Day,
     Week,
     Month,
+    Quarter,
+    Year,
 }
 
 /// Pick a bucket granularity from the span (in days) between the date column's observed min and
-/// max.
+/// max. This is only the span-based ceiling on point count; the final bucket may be coarsened
+/// further by the data's cadence (see `cadence_floor`).
 fn ts_bucket_for_span(span_days: i64) -> TsBucket {
     if span_days <= 370 {
         TsBucket::Day
     } else if span_days <= 1825 {
         TsBucket::Week
-    } else {
+    } else if span_days <= 7300 {
         TsBucket::Month
+    } else if span_days <= 18250 {
+        TsBucket::Quarter
+    } else {
+        TsBucket::Year
     }
 }
 
-/// Truncate a date to its bucket's representative day (the day itself, its ISO-week Monday, or the
-/// first of its month) so rows in the same period share one key.
+/// Truncate a date to its bucket's representative day (the day itself, its ISO-week Monday, the
+/// first of its month/quarter/year) so rows in the same period share one key.
 fn ts_bucket_key(date: chrono::NaiveDate, bucket: TsBucket) -> chrono::NaiveDate {
     use chrono::{Datelike, Duration};
     match bucket {
         TsBucket::Day => date,
         TsBucket::Week => date - Duration::days(i64::from(date.weekday().num_days_from_monday())),
         TsBucket::Month => date.with_day(1).unwrap_or(date),
+        TsBucket::Quarter => date
+            .with_day(1)
+            .and_then(|d| d.with_month(d.month0() / 3 * 3 + 1))
+            .unwrap_or(date),
+        TsBucket::Year => date
+            .with_day(1)
+            .and_then(|d| d.with_month(1))
+            .unwrap_or(date),
     }
 }
 
-/// Display label for a bucket key: ISO date for Day/Week, `YYYY-MM` for Month.
+/// Display label for a bucket key: ISO date for Day/Week, `YYYY-MM` for Month, `YYYY-Qn` for
+/// Quarter, `YYYY` for Year. Quarter/Year labels are NOT date-parseable, so those panels render
+/// on a category axis (see `PanelKind::TimeSeries::categorical`).
 fn ts_bucket_label(key: chrono::NaiveDate, bucket: TsBucket) -> String {
+    use chrono::Datelike;
     match bucket {
         TsBucket::Day | TsBucket::Week => key.format("%Y-%m-%d").to_string(),
         TsBucket::Month => key.format("%Y-%m").to_string(),
+        TsBucket::Quarter => format!("{}-Q{}", key.year(), key.month0() / 3 + 1),
+        TsBucket::Year => key.format("%Y").to_string(),
     }
 }
 
@@ -19253,8 +19285,74 @@ fn ts_bucket_word(bucket: TsBucket) -> String {
         TsBucket::Day => t!("viz.title.bucket_day"),
         TsBucket::Week => t!("viz.title.bucket_week"),
         TsBucket::Month => t!("viz.title.bucket_month"),
+        TsBucket::Quarter => t!("viz.title.bucket_quarter"),
+        TsBucket::Year => t!("viz.title.bucket_year"),
     }
     .into_owned()
+}
+
+/// Number of bucket periods between two dates, inclusive (both endpoints' periods count).
+/// Exact integer arithmetic on calendar indices — no floating-point day averaging.
+fn periods_in_span(first: chrono::NaiveDate, last: chrono::NaiveDate, bucket: TsBucket) -> i64 {
+    use chrono::Datelike;
+    let month_index = |d: chrono::NaiveDate| i64::from(d.year()) * 12 + i64::from(d.month0());
+    match bucket {
+        TsBucket::Day => (last - first).num_days() + 1,
+        TsBucket::Week => {
+            let a = ts_bucket_key(first, TsBucket::Week);
+            let b = ts_bucket_key(last, TsBucket::Week);
+            (b - a).num_days() / 7 + 1
+        },
+        TsBucket::Month => month_index(last) - month_index(first) + 1,
+        TsBucket::Quarter => month_index(last) / 3 - month_index(first) / 3 + 1,
+        TsBucket::Year => i64::from(last.year()) - i64::from(first.year()) + 1,
+    }
+}
+
+/// Occupancy threshold (percent) for `cadence_floor`: the finest bucket whose periods are at
+/// least this occupied wins. 45% lets genuinely daily/monthly data with holiday/weekend gaps
+/// keep its fine bucket, while quarterly data (~12 of 156 weeks ≈ 8%) falls through to Quarter.
+const CADENCE_MIN_OCCUPANCY_PCT: i64 = 45;
+
+/// The finest bucket justified by the data's own cadence: the finest candidate whose periods
+/// between the first and last observed day are at least `CADENCE_MIN_OCCUPANCY_PCT` occupied.
+/// Span-based selection alone renders quarterly data as a comb of spikes separated by empty
+/// weeks (issue #4216); occupancy equals mode-of-intervals for regular cadences while degrading
+/// gracefully for gappy data. `day_keys` must be sorted and de-duplicated distinct days.
+fn cadence_floor(day_keys: &[chrono::NaiveDate]) -> TsBucket {
+    let (Some(&first), Some(&last)) = (day_keys.first(), day_keys.last()) else {
+        return TsBucket::Day;
+    };
+    for bucket in [
+        TsBucket::Day,
+        TsBucket::Week,
+        TsBucket::Month,
+        TsBucket::Quarter,
+        TsBucket::Year,
+    ] {
+        let mut distinct: Vec<chrono::NaiveDate> =
+            day_keys.iter().map(|&d| ts_bucket_key(d, bucket)).collect();
+        distinct.dedup(); // day_keys sorted -> bucket keys monotonic, dedup suffices
+        let total = periods_in_span(first, last, bucket);
+        if distinct.len() as i64 * 100 >= total * CADENCE_MIN_OCCUPANCY_PCT {
+            return bucket;
+        }
+    }
+    TsBucket::Year
+}
+
+/// Map a dictionary cadence token (describegpt's `x-qsv.cadence`, from its controlled
+/// vocabulary) to the equivalent bucket floor. Unknown/absent tokens map to `None` — the
+/// consumer-side counterpart of the vocab-membership discipline (PR #4321): never trust prose.
+fn bucket_floor_from_cadence(token: &str) -> Option<TsBucket> {
+    match token {
+        "daily" => Some(TsBucket::Day),
+        "weekly" => Some(TsBucket::Week),
+        "monthly" => Some(TsBucket::Month),
+        "quarterly" => Some(TsBucket::Quarter),
+        "annual" => Some(TsBucket::Year),
+        _ => None,
+    }
 }
 
 /// Character cap for a structured count unit (`x-qsv.grain_unit`) before it is rejected as a
@@ -19367,11 +19465,10 @@ fn build_timeseries_panel(
     sems: &[ColSemantics],
     grain_unit: Option<&str>,
     grain: Option<&str>,
+    cadence: Option<&str>,
     dict_icons: Option<&DictData>,
 ) -> CliResult<Option<Panel>> {
     use std::collections::BTreeMap;
-
-    use qsv_dateparser::parse_with_preference;
 
     let Some((date_idx, is_datetime)) = canonical_date_col(stats, sems) else {
         return Ok(None);
@@ -19483,38 +19580,29 @@ fn build_timeseries_panel(
         return Ok(Some(
             Panel::new(
                 t!("viz.title.trend_raw", q_y = y_label, q_date = date_label).into_owned(),
-                PanelKind::TimeSeries { y_label, xs, ys },
+                PanelKind::TimeSeries {
+                    y_label,
+                    xs,
+                    ys,
+                    categorical: false,
+                },
             )
             .with_dict_info(dict_info),
         ));
     }
 
-    // Bucketed paths (AggValue / Count): group rows by calendar period. The granularity widens
-    // with the date column's observed span (from the stats cache, no extra scan) so a multi-year
-    // dataset stays readable.
-    let bucket = {
-        let parse_bound = |o: &Option<String>| {
-            o.as_deref()
-                .map(str::trim)
-                .filter(|t| !t.is_empty())
-                .and_then(|t| parse_with_preference(t, prefer_dmy).ok())
-        };
-        match (
-            parse_bound(&stats[date_idx].min),
-            parse_bound(&stats[date_idx].max),
-        ) {
-            (Some(lo), Some(hi)) => ts_bucket_for_span((hi - lo).num_days().max(0)),
-            _ => TsBucket::Day,
-        }
-    };
-
-    // accumulate (sum, n) per period; Count ignores the sum and uses n.
+    // Bucketed paths (AggValue / Count): group rows by calendar period. Rows are first folded
+    // into distinct days (memory O(distinct days), never O(rows)); the final bucket is then
+    // chosen from the observed days themselves — the span-based ceiling coarsened to the data's
+    // cadence floor — and the day map is re-folded. (sum, n) folds losslessly for Sum/Mean/Count,
+    // so the two-stage fold changes no aggregate. Span-based selection alone rendered quarterly
+    // data as a comb of spikes separated by empty weeks (issue #4216).
     let value_idx = if let Mode::AggValue(i, _) = mode {
         Some(i)
     } else {
         None
     };
-    let mut buckets: BTreeMap<chrono::NaiveDate, (f64, u64)> = BTreeMap::new();
+    let mut days: BTreeMap<chrono::NaiveDate, (f64, u64)> = BTreeMap::new();
     while rdr.read_byte_record(&mut record)? {
         let Some(dt) = parse_record_date(&record, date_idx, prefer_dmy) else {
             continue;
@@ -19527,13 +19615,32 @@ fn build_timeseries_panel(
             },
             None => 0.0,
         };
-        let entry = buckets
-            .entry(ts_bucket_key(dt.date_naive(), bucket))
-            .or_insert((0.0, 0));
+        let entry = days.entry(dt.date_naive()).or_insert((0.0, 0));
         entry.0 += y;
         entry.1 += 1;
     }
-    // a line needs at least two periods
+    let day_keys: Vec<chrono::NaiveDate> = days.keys().copied().collect();
+    let bucket = {
+        let span_bucket = match (day_keys.first(), day_keys.last()) {
+            (Some(&lo), Some(&hi)) => ts_bucket_for_span((hi - lo).num_days().max(0)),
+            _ => TsBucket::Day,
+        };
+        // the dictionary's validated cadence token wins over our own detection; the span-based
+        // ceiling still applies so a 40-year daily dataset doesn't render 14k points.
+        let floor = cadence
+            .and_then(bucket_floor_from_cadence)
+            .unwrap_or_else(|| cadence_floor(&day_keys));
+        span_bucket.max(floor)
+    };
+    let mut buckets: BTreeMap<chrono::NaiveDate, (f64, u64)> = BTreeMap::new();
+    for (&day, &(sum, n)) in &days {
+        let entry = buckets
+            .entry(ts_bucket_key(day, bucket))
+            .or_insert((0.0, 0));
+        entry.0 += sum;
+        entry.1 += n;
+    }
+    // a line needs at least two periods (evaluated on the FINAL fold, not the day map)
     if buckets.len() < 2 {
         return Ok(None);
     }
@@ -19580,6 +19687,7 @@ fn build_timeseries_panel(
                         .into_owned(),
                         xs,
                         ys,
+                        categorical: matches!(bucket, TsBucket::Quarter | TsBucket::Year),
                     },
                 )
                 .with_dict_info(dict_info),
@@ -19597,6 +19705,7 @@ fn build_timeseries_panel(
                             .into_owned(),
                         xs,
                         ys,
+                        categorical: matches!(bucket, TsBucket::Quarter | TsBucket::Year),
                     },
                 )
                 .with_dict_info(dict_info),
@@ -19760,10 +19869,12 @@ const SMART_ANIM_MAX_FRAMES: usize = 30;
 /// exceeding it errors with guidance rather than silently re-bucketing behind their back.
 const SLIDER_MAX_FRAMES: usize = 365;
 
-/// Choose the finest calendar bucket (Day → Week → Month) whose distinct-period count stays within
-/// `SMART_ANIM_MAX_FRAMES`, returning it with the sorted, de-duplicated distinct bucket keys.
-/// Shared by the animated readers and the curvature selector so every time animation
-/// agrees on the same frame axis. Falls back to Month (coarsest) when even weekly exceeds the cap.
+/// Choose the finest calendar bucket (Day → Week → Month → Quarter → Year) whose distinct-period
+/// count stays within `SMART_ANIM_MAX_FRAMES`, returning it with the sorted, de-duplicated
+/// distinct bucket keys. Shared by the animated readers and the curvature selector so every time
+/// animation agrees on the same frame axis. Falls back to Year (coarsest) when even quarterly
+/// exceeds the cap — with yearly frames available, only spans beyond ~30 years overflow now
+/// (issue #4216 widened the ladder, which previously topped out at Month).
 fn choose_anim_bucket(dates: &[chrono::NaiveDate]) -> (TsBucket, Vec<chrono::NaiveDate>) {
     let distinct_for = |bkt: TsBucket| -> Vec<chrono::NaiveDate> {
         let mut d: Vec<chrono::NaiveDate> = dates.iter().map(|&x| ts_bucket_key(x, bkt)).collect();
@@ -19771,11 +19882,17 @@ fn choose_anim_bucket(dates: &[chrono::NaiveDate]) -> (TsBucket, Vec<chrono::Nai
         d.dedup();
         d
     };
-    [TsBucket::Day, TsBucket::Week, TsBucket::Month]
-        .into_iter()
-        .map(|b| (b, distinct_for(b)))
-        .find(|(_, d)| d.len() <= SMART_ANIM_MAX_FRAMES)
-        .unwrap_or_else(|| (TsBucket::Month, distinct_for(TsBucket::Month)))
+    [
+        TsBucket::Day,
+        TsBucket::Week,
+        TsBucket::Month,
+        TsBucket::Quarter,
+        TsBucket::Year,
+    ]
+    .into_iter()
+    .map(|b| (b, distinct_for(b)))
+    .find(|(_, d)| d.len() <= SMART_ANIM_MAX_FRAMES)
+    .unwrap_or_else(|| (TsBucket::Year, distinct_for(TsBucket::Year)))
 }
 
 /// Population standard deviation of a slice (0.0 for < 2 values or non-finite results). Used to put
@@ -19939,9 +20056,10 @@ fn select_drifting_pair(
 
 /// Read the strongest-pair columns (`x_idx`/`y_idx`) together with the canonical date column in one
 /// pass and bucket the points by calendar period for an animated, time-colored cumulative scatter.
-/// The bucket granularity is chosen as the finest (Day/Week/Month) that keeps the frame/slider-step
-/// count legible. Returns `None` (no animation) when fewer than `min_frames` distinct buckets
-/// result or too few points survive — the caller then keeps the static `ScatterPair`.
+/// The bucket granularity is chosen as the finest (Day through Year) that keeps the
+/// frame/slider-step count legible. Returns `None` (no animation) when fewer than `min_frames`
+/// distinct buckets result or too few points survive — the caller then keeps the static
+/// `ScatterPair`.
 fn read_scatter_pair_anim(
     args: &Args,
     x_idx: usize,
@@ -19969,11 +20087,11 @@ fn read_scatter_pair_anim(
     if pts.len() < 2 {
         return Ok(None);
     }
-    // Each distinct bucket is a SLIDER STEP, so pick the finest granularity (Day/Week/Month) that
-    // keeps the step count legible — shared with the drift selector via `choose_anim_bucket` so
-    // both agree on the frame axis. Unlike the trend LINE (`ts_bucket_for_span`, span-based),
-    // this is frame-count-based: a daily series over 8 months (205 daily buckets) coarsens to
-    // ~weekly.
+    // Each distinct bucket is a SLIDER STEP, so pick the finest granularity (Day through Year)
+    // that keeps the step count legible — shared with the drift selector via `choose_anim_bucket`
+    // so both agree on the frame axis. Unlike the trend LINE (`ts_bucket_for_span`,
+    // span-based), this is frame-count-based: a daily series over 8 months (205 daily buckets)
+    // coarsens to ~weekly.
     let dates: Vec<chrono::NaiveDate> = pts.iter().map(|p| p.0).collect();
     let (bkt, distinct) = choose_anim_bucket(&dates);
     if distinct.len() < min_frames {
@@ -20147,9 +20265,10 @@ fn read_geo_anim(
             stride = stride.saturating_mul(2);
         }
         // Striding cannot shrink a bucket below its single first point, so with enough buckets the
-        // cumulative count is irreducible: `choose_anim_bucket` falls back to Month, which on a
-        // decades-long timeline yields hundreds of frames whose repetition alone blows the budget.
-        // Decline the animation rather than emit a panel that ignores its own cap — the caller
+        // cumulative count is irreducible. `choose_anim_bucket` now tops out at Year (issue
+        // #4216), so this is rare — but a dense multi-decade dataset can still overflow via
+        // per-frame point counts. Decline the animation rather than emit a panel that ignores
+        // its own cap — the caller
         // falls back to a static map, which shows the same points without the frame repetition.
         if cumulative_embedded_points(&bucket_lats) > *MAX_SMART_POINTS {
             viz_note(&format!(
@@ -25854,14 +25973,15 @@ impl<'a> SmartCtx<'a> {
         // NOTE this can now legitimately differ from the preference `stats` typed the column
         // under — `viz smart` builds stats with flag_prefer_dmy = false and stats ORs in
         // QSV_PREFER_DMY, and there is no per-column knob to hand it. The consequence is bounded:
-        // the raw cells below are read per the dictionary, while `stats[date_idx].min/max` (used
-        // only to pick bucket granularity) are still env-derived.
+        // the raw cells are read per the dictionary; bucket granularity is derived from those
+        // same parsed cells (issue #4216), so it follows the dictionary preference too.
         let built = {
             let grain = self.dict_data.as_ref().and_then(|d| d.grain.as_deref());
             let grain_unit = self
                 .dict_data
                 .as_ref()
                 .and_then(|d| d.grain_unit.as_deref());
+            let cadence = self.dict_data.as_ref().and_then(|d| d.cadence.as_deref());
             build_timeseries_panel(
                 self.args,
                 &self.stats,
@@ -25870,6 +25990,7 @@ impl<'a> SmartCtx<'a> {
                 &self.col_sems,
                 grain_unit,
                 grain,
+                cadence,
                 self.dict_icons(),
             )?
         };
@@ -26942,7 +27063,13 @@ fn panel_trace_time_series(
     color: &'static str,
     axes: Option<(String, String)>,
 ) -> (Box<dyn Trace>, Option<f64>, bool) {
-    let PanelKind::TimeSeries { y_label, xs, ys } = &panel.kind else {
+    let PanelKind::TimeSeries {
+        y_label,
+        xs,
+        ys,
+        categorical: _,
+    } = &panel.kind
+    else {
         unreachable!("panel_trace dispatches on panel.kind")
     };
     let trace: Box<dyn Trace> = {
@@ -27939,7 +28066,14 @@ fn smart_grid_parts(
                 | PanelKind::BoxOutliers { .. }
                 | PanelKind::Violin { .. }
         );
-        let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
+        // A Quarter/Year-bucketed trend carries non-date-parseable labels ("2024-Q1"): render it
+        // on a category axis via the tick_text mechanism instead of the date axis (issue #4216).
+        let (is_date, ts_ticks) = match &panel.kind {
+            PanelKind::TimeSeries {
+                categorical, xs, ..
+            } => (!*categorical, categorical.then(|| xs.clone())),
+            _ => (false, None),
+        };
         let (trace, bar_max, log_y) = panel_trace(
             panel,
             color,
@@ -28025,7 +28159,7 @@ fn smart_grid_parts(
                     is_date,
                     x_log,
                     theme,
-                    freq_bar_tick_text(panel, freq),
+                    ts_ticks.or_else(|| freq_bar_tick_text(panel, freq)),
                 )
                 .domain(&geom.x_domain)
                 .anchor(yref.clone()),
@@ -29417,7 +29551,14 @@ fn inline_panel_plot_cartesian(
         panel.kind,
         PanelKind::CorrHeatmap { .. } | PanelKind::AssocHeatmap { .. }
     );
-    let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
+    // A Quarter/Year-bucketed trend carries non-date-parseable labels ("2024-Q1"): render it
+    // on a category axis via the tick_text mechanism instead of the date axis (issue #4216).
+    let (is_date, ts_ticks) = match &panel.kind {
+        PanelKind::TimeSeries {
+            categorical, xs, ..
+        } => (!*categorical, categorical.then(|| xs.clone())),
+        _ => (false, None),
+    };
     let is_toprel = matches!(panel.kind, PanelKind::TopRelationships { .. });
     let (trace, bar_max, log_y) =
         panel_trace(panel, color, freq, hist, outliers, None, theme, log_scale);
@@ -29493,7 +29634,7 @@ fn inline_panel_plot_cartesian(
                 is_date,
                 x_log,
                 theme,
-                freq_bar_tick_text(panel, freq),
+                ts_ticks.or_else(|| freq_bar_tick_text(panel, freq)),
             ),
             y,
         )
@@ -31536,8 +31677,10 @@ fn freq_bar_tick_text(panel: &Panel, freq: &FreqMap) -> Option<Vec<String>> {
 /// the axis is typed as a date axis so plotly spaces ticks chronologically. For relationship
 /// panels whose x values span orders of magnitude (`log`), the axis is typed logarithmic — the
 /// panel title names which axis was logged (issue #4223). `tick_text`, when
-/// present (frequency-bar panels), supplies display-only truncated category labels — the bar's
-/// x data keeps the full names, so distinct categories never collapse onto one tick.
+/// present (frequency-bar panels, and Quarter/Year-bucketed trend panels whose "2024-Q1" labels
+/// no date axis can parse — issue #4216), supplies display-only category labels and forces the
+/// category axis — for bars, the x data keeps the full names, so distinct categories never
+/// collapse onto one tick.
 fn styled_x_axis(
     is_box: bool,
     is_date: bool,
@@ -34551,6 +34694,17 @@ mod tests {
         assert_eq!(ts_bucket_for_span(371), TsBucket::Week);
         assert_eq!(ts_bucket_for_span(1825), TsBucket::Week);
         assert_eq!(ts_bucket_for_span(1826), TsBucket::Month);
+        assert_eq!(ts_bucket_for_span(7300), TsBucket::Month);
+        assert_eq!(ts_bucket_for_span(7301), TsBucket::Quarter);
+        assert_eq!(ts_bucket_for_span(18250), TsBucket::Quarter);
+        assert_eq!(ts_bucket_for_span(18251), TsBucket::Year);
+
+        // variant order IS fineness order: bucket selection coarsens via `Ord::max`
+        // (span ceiling vs cadence floor), so this ordering is load-bearing.
+        assert!(TsBucket::Day < TsBucket::Week);
+        assert!(TsBucket::Week < TsBucket::Month);
+        assert!(TsBucket::Month < TsBucket::Quarter);
+        assert!(TsBucket::Quarter < TsBucket::Year);
 
         // a Wednesday truncates to its ISO-week Monday, and to the 1st of its month
         let wed = NaiveDate::from_ymd_opt(2024, 5, 1).unwrap(); // 2024-05-01 is a Wednesday
@@ -34563,9 +34717,101 @@ mod tests {
             ts_bucket_key(wed, TsBucket::Month),
             NaiveDate::from_ymd_opt(2024, 5, 1).unwrap()
         );
-        // labels: ISO date for day/week, YYYY-MM for month
+        // quarters snap to their quarter-start month (1/4/7/10); years to Jan 1
+        assert_eq!(
+            ts_bucket_key(wed, TsBucket::Quarter),
+            NaiveDate::from_ymd_opt(2024, 4, 1).unwrap()
+        );
+        let dec = NaiveDate::from_ymd_opt(2024, 12, 31).unwrap();
+        assert_eq!(
+            ts_bucket_key(dec, TsBucket::Quarter),
+            NaiveDate::from_ymd_opt(2024, 10, 1).unwrap()
+        );
+        assert_eq!(
+            ts_bucket_key(dec, TsBucket::Year),
+            NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()
+        );
+        // labels: ISO date for day/week, YYYY-MM for month, YYYY-Qn for quarter, YYYY for year
         assert_eq!(ts_bucket_label(wed, TsBucket::Day), "2024-05-01");
         assert_eq!(ts_bucket_label(wed, TsBucket::Month), "2024-05");
+        assert_eq!(ts_bucket_label(wed, TsBucket::Quarter), "2024-Q2");
+        assert_eq!(ts_bucket_label(dec, TsBucket::Quarter), "2024-Q4");
+        assert_eq!(ts_bucket_label(dec, TsBucket::Year), "2024");
+    }
+
+    #[test]
+    fn cadence_floor_detects_native_spacing() {
+        use chrono::NaiveDate;
+        let d = |y: i32, m: u32, dd: u32| NaiveDate::from_ymd_opt(y, m, dd).unwrap();
+
+        // 3 years of quarter-start dates: Week occupancy ~12/157 fails, Quarter (12/12) wins.
+        let quarterly: Vec<_> = (0..12i32)
+            .map(|i| d(2021 + i / 4, (i as u32 % 4) * 3 + 1, 1))
+            .collect();
+        assert_eq!(cadence_floor(&quarterly), TsBucket::Quarter);
+
+        // daily data (with weekend gaps) keeps Day: 5 of every 7 days ≈ 71% ≥ 45%.
+        let daily: Vec<_> = (0..60)
+            .map(|i| d(2024, 1, 1) + chrono::Duration::days(i))
+            .filter(|dt| {
+                use chrono::Datelike;
+                dt.weekday().num_days_from_monday() < 5
+            })
+            .collect();
+        assert_eq!(cadence_floor(&daily), TsBucket::Day);
+
+        // monthly data with a couple of missing months still reads Monthly.
+        let monthly: Vec<_> = (0..24i32)
+            .filter(|i| *i != 5 && *i != 13)
+            .map(|i| d(2023 + i / 12, i as u32 % 12 + 1, 1))
+            .collect();
+        assert_eq!(cadence_floor(&monthly), TsBucket::Month);
+
+        // annual data: everything finer than Year is mostly empty.
+        let annual: Vec<_> = (0..6).map(|i| d(2019 + i, 6, 30)).collect();
+        assert_eq!(cadence_floor(&annual), TsBucket::Year);
+
+        // degenerate inputs: empty and single-date default to Day.
+        assert_eq!(cadence_floor(&[]), TsBucket::Day);
+        assert_eq!(cadence_floor(&[d(2024, 5, 1)]), TsBucket::Day);
+    }
+
+    #[test]
+    fn bucket_floor_from_cadence_tokens() {
+        assert_eq!(bucket_floor_from_cadence("daily"), Some(TsBucket::Day));
+        assert_eq!(bucket_floor_from_cadence("weekly"), Some(TsBucket::Week));
+        assert_eq!(bucket_floor_from_cadence("monthly"), Some(TsBucket::Month));
+        assert_eq!(
+            bucket_floor_from_cadence("quarterly"),
+            Some(TsBucket::Quarter)
+        );
+        assert_eq!(bucket_floor_from_cadence("annual"), Some(TsBucket::Year));
+        // out-of-vocab tokens (LLM prose, typos, future tokens) are ignored, never an error
+        assert_eq!(bucket_floor_from_cadence("Quarterly"), None);
+        assert_eq!(bucket_floor_from_cadence("every 3 months"), None);
+        assert_eq!(bucket_floor_from_cadence(""), None);
+    }
+
+    #[test]
+    fn choose_anim_bucket_widens_to_quarter_and_year() {
+        use chrono::NaiveDate;
+        // 40 years of one date per month = 480 monthly buckets: Month (480) and Quarter (160)
+        // both exceed the 30-frame cap, Year (40) still does — the ladder now tops out at Year
+        // instead of overflowing at Month (issue #4216).
+        let dates: Vec<NaiveDate> = (0..480)
+            .map(|i| NaiveDate::from_ymd_opt(1980 + i / 12, i as u32 % 12 + 1, 15).unwrap())
+            .collect();
+        let (bucket, distinct) = choose_anim_bucket(&dates);
+        assert_eq!(bucket, TsBucket::Year);
+        assert_eq!(distinct.len(), 40);
+
+        // 6 years of monthly dates (72 > 30 frames) coarsens to Quarter (24 ≤ 30).
+        let dates: Vec<NaiveDate> = (0..72)
+            .map(|i| NaiveDate::from_ymd_opt(2018 + i / 12, i as u32 % 12 + 1, 15).unwrap())
+            .collect();
+        let (bucket, distinct) = choose_anim_bucket(&dates);
+        assert_eq!(bucket, TsBucket::Quarter);
+        assert_eq!(distinct.len(), 24);
     }
 
     #[test]

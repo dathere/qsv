@@ -52,6 +52,7 @@ SMART_IFRAME = {
     "smart dashboard (--smarter, geospatial)":  "smart_geospatial.html",
     "smart dashboard (geographic outliers)":    "smart_geo_outliers.html",
     "smart dashboard (time-series)":            "smart_timeseries.html",
+    "smart dashboard (quarterly cadence)":      "smart_quarterly_cadence.html",
     "smart dashboard (per-US-state choropleth)":      "smart_us_choropleth.html",
     "smart dashboard (--dictionary infer, treemap)":  "smart_dict_treemap.html",
     "smart dashboard (--dictionary infer, sunburst)": "smart_dict_sunburst.html",
@@ -757,6 +758,15 @@ FIGURES = [
      "the judicious animation gate withholds the (uninformative) animated version — alongside "
      "box-plot summaries of the OHLC columns.",
      True, ["smart", "stock_prices.csv", "--max-charts", "8"]),
+    ("smart dashboard (quarterly cadence)",
+     "Auto dashboard for quarterly_filings: 3 years of <b>quarterly</b> data spans ~1,000 days, "
+     "which the span-based rule alone would bucket by <i>week</i> — ~150 buckets of which only 12 "
+     "are non-empty, a comb of spikes. The cadence-aware floor detects the data's native quarterly "
+     "spacing (most weekly/monthly periods are empty) and buckets the trend by <b>quarter</b> "
+     "instead, rendered as evenly-spaced <code>YYYY-Qn</code> labels on a category axis with no "
+     "inter-quarter gaps. A curated dictionary can also pin the floor explicitly via "
+     "<code>x-qsv.cadence</code> (a describegpt-inferred token).",
+     True, ["smart", "quarterly_filings.csv"]),
     ("smart dashboard (per-US-state choropleth)",
      "`viz smart` reverse-geocodes each point; because every city "
      "resolves to a US state, it adds a per-US-<b>state</b> choropleth (cities-per-state, albers-usa) "

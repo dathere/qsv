@@ -179,6 +179,8 @@ viz:
     bucket_day: "día"
     bucket_week: "semana"
     bucket_month: "mes"
+    bucket_quarter: "trimestre"
+    bucket_year: "año"
     corr_spearman: "Correlación (Spearman ρ — por rangos, robusta a atípicos)"
     corr_pearson: "Correlación (Pearson r)"
     scatter3d: "%{q_x} / %{q_y} / %{q_z} (3D)"

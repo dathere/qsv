@@ -1263,9 +1263,9 @@ dependencies = [
 
 [[package]]
 name = "cached"
-version = "3.0.0-rc.9"
+version = "3.0.0-rc.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e4932539ec684091903b4d24c1420741bc6ff179761921630081b5dd220ad08"
+checksum = "ffb6433e43854f9522d34e7b02815b55c9843921db318099ef9c44f39f3a5a88"
 dependencies = [
  "ahash 0.8.12",
  "blocking",
@@ -1286,9 +1286,9 @@ dependencies = [
 
 [[package]]
 name = "cached_proc_macro"
-version = "3.0.0-rc.8"
+version = "3.0.0-rc.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3dbd93f807d943b19bdea3b401f77068722eda3bc0fbec3ddfbe901b107c8b82"
+checksum = "9e01293a43798b95910ca6051f3e907a41c20bf1b5a7004333b136cfe77302f8"
 dependencies = [
  "darling 0.20.11",
  "proc-macro-crate",
@@ -1299,9 +1299,9 @@ dependencies = [
 
 [[package]]
 name = "cached_proc_macro_types"
-version = "3.0.0-rc.8"
+version = "3.0.0-rc.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d668f0bde2dc9ad1479323d12725830d11695037c7876da06dc8b000956f2d96"
+checksum = "23c7be846c1d739e85fcc6f544377aa603d4e4fdaa8f51119f32a863137f0d5b"
 
 [[package]]
 name = "calamine"

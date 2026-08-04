@@ -3099,6 +3099,52 @@ fn viz_static_three_numeric_no_scatter3d_panic() {
     );
 }
 
+// Premise-pin for the two `viz_static` >8-panel tests below (issue #4343).
+//
+// Those tests are `#[cfg(feature = "viz_static")]` AND `#[ignore]`d, so they neither compile nor
+// run in normal CI. When the 1:1 twin-collapse (issue #4221) landed it silently invalidated their
+// fixture — all 12 columns folded into one panel — and nothing noticed for a month.
+//
+// This test shares their fixture but needs no webdriver: it asserts only that the 12 columns
+// really do survive panel selection. If it fails, fix the fixture in all three places.
+#[test]
+fn viz_smart_twelve_distinct_cardinality_columns_all_charted() {
+    let wrk = Workdir::new("viz_smart_twelve_distinct_cardinality_columns_all_charted");
+    // each column cycles on its OWN modulus => 12 DISTINCT cardinalities (3..=14), so no two
+    // columns are 1:1 twins
+    let headers: Vec<String> = (1..=12).map(|i| format!("cat{i:02}")).collect();
+    let mut rows = format!("{}\n", headers.join(","));
+    for i in 0..90 {
+        let cells: Vec<String> = (1..=12).map(|c| format!("v{}", i % (c + 2))).collect();
+        rows.push_str(&format!("{}\n", cells.join(",")));
+    }
+    wrk.create_from_string("wide.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "wide.csv", "-o", &out_html]);
+    let stderr = wrk.output_stderr(&mut cmd);
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        !stderr.contains("they are 1:1"),
+        "no two columns should collapse as 1:1 twins: {stderr}"
+    );
+    assert!(
+        !stderr.contains("skipped"),
+        "every column should be charted, none skipped: {stderr}"
+    );
+
+    // The two stderr assertions above are the whole test. Deliberately NOT asserted here:
+    //   - panel COUNT: these columns are deterministic functions of the row index, so divisible
+    //     pairs (i%3 vs i%6) are perfectly associated and the HTML path adds a parcats overview
+    //     panel on top of the 12 frequency bars. (The image path used by the viz_static tests
+    //     suppresses composites via `!is_image()`, which is why it gets exactly 12.)
+    //   - column names in the HTML: the data-viewer drawer embeds EVERY CSV column whether or not
+    //     it was charted, so `html.contains("catNN")` holds even for a collapsed column. That looks
+    //     like protection but cannot fail — the exact trap this test exists to guard against.
+}
+
 // Static image export of >8 panels: plotly's typed Layout only has 8 axis fields, so the grid is
 // assembled as raw JSON with domain-positioned xaxis9+ and rendered via StaticExporter::write_fig.
 // Requires a browser/webdriver, so ignored by default.
@@ -3107,11 +3153,15 @@ fn viz_static_three_numeric_no_scatter3d_panic() {
 #[ignore = "requires a browser/webdriver for plotly static export"]
 fn viz_static_more_than_eight_panels() {
     let wrk = Workdir::new("viz_static_more_than_eight_panels");
-    // 12 low-cardinality categorical columns => 12 frequency-bar panels (well past the 8 cap)
+    // 12 low-cardinality categorical columns => 12 frequency-bar panels (well past the 8 cap).
+    // Each column cycles on its OWN modulus, so the 12 columns have 12 DISTINCT cardinalities
+    // (3..=14). `(i + c) % 4` gave every column the same 4 values in a rotated order — a bijection
+    // between every pair — which the 1:1 collapse (issue #4221) correctly folds down to a single
+    // panel, silently invalidating this test's premise (issue #4343).
     let headers: Vec<String> = (1..=12).map(|i| format!("cat{i:02}")).collect();
     let mut rows = format!("{}\n", headers.join(","));
     for i in 0..90 {
-        let cells: Vec<String> = (1..=12).map(|c| format!("v{}", (i + c) % 4)).collect();
+        let cells: Vec<String> = (1..=12).map(|c| format!("v{}", i % (c + 2))).collect();
         rows.push_str(&format!("{}\n", cells.join(",")));
     }
     wrk.create_from_string("wide.csv", &rows);
@@ -3122,19 +3172,34 @@ fn viz_static_more_than_eight_panels() {
     let stderr = wrk.output_stderr(&mut cmd);
     wrk.assert_success(&mut cmd);
 
-    // the old 8-panel ceiling warning must be gone
+    // Load-bearing premise check (issue #4343): all 12 columns must actually be charted. stderr is
+    // emitted during panel selection, before any rendering, so it is unaffected by how plotly
+    // rasterizes text. If this fires, the FIXTURE is wrong — not the >8-panel render path.
     assert!(
-        !stderr.contains("limited to"),
-        "static export should no longer cap at 8 panels: {stderr}"
+        !stderr.contains("they are 1:1"),
+        "fixture regression: columns collapsed as 1:1 twins, so there are not >8 panels to \
+         render. Give each column its own modulus/cardinality. stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("skipped"),
+        "fixture regression: some columns were dropped before rendering, so the >8-panel path may \
+         not be exercised. stderr: {stderr}"
     );
 
     let svg = wrk.read_to_string("dash.svg").unwrap();
     assert!(svg.contains("<svg") || svg.contains("<?xml"));
-    // panels beyond the typed-Layout limit (their column-name titles) must be present in the image
-    for late in ["cat09", "cat10", "cat11", "cat12"] {
+    // All 12 panel titles must be present. >8 titles is itself the proof that the raw-JSON
+    // xaxis9+ grid ran, since the typed Layout tops out at 8 axis fields.
+    for panel in [
+        "cat01", "cat02", "cat03", "cat04", "cat05", "cat06", "cat07", "cat08", "cat09", "cat10",
+        "cat11", "cat12",
+    ] {
         assert!(
-            svg.contains(late),
-            "panel {late} (beyond the 8-axis limit) is missing from the rendered image"
+            svg.contains(panel),
+            "panel {panel} is missing from the rendered image. NOTE: if EVERY title is missing \
+             while the stderr checks above passed, plotly is converting title text to glyph paths \
+             rather than emitting literal <text> — that is a text-rendering limitation, not a \
+             fixture failure; assert on stderr instead."
         );
     }
 }
@@ -3146,10 +3211,12 @@ fn viz_static_more_than_eight_panels() {
 #[ignore = "requires a browser/webdriver for plotly static export"]
 fn viz_static_max_charts_caps_panels() {
     let wrk = Workdir::new("viz_static_max_charts_caps_panels");
+    // Same 12-distinct-cardinality fixture as viz_static_more_than_eight_panels — see the comment
+    // there for why a shared modulus (`(i + c) % 4`) cannot be used (issues #4221 / #4343).
     let headers: Vec<String> = (1..=12).map(|i| format!("cat{i:02}")).collect();
     let mut rows = format!("{}\n", headers.join(","));
     for i in 0..90 {
-        let cells: Vec<String> = (1..=12).map(|c| format!("v{}", (i + c) % 4)).collect();
+        let cells: Vec<String> = (1..=12).map(|c| format!("v{}", i % (c + 2))).collect();
         rows.push_str(&format!("{}\n", cells.join(",")));
     }
     wrk.create_from_string("wide.csv", &rows);
@@ -3157,14 +3224,31 @@ fn viz_static_max_charts_caps_panels() {
     let out_svg = wrk.path("dash.svg").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "wide.csv", "--max-charts", "4", "-o", &out_svg]);
+    let stderr = wrk.output_stderr(&mut cmd);
     wrk.assert_success(&mut cmd);
 
-    let svg = wrk.read_to_string("dash.svg").unwrap();
-    // only the first 4 panels are drawn; later columns are capped out
-    assert!(svg.contains("cat01"));
+    // Load-bearing assertion: the cap is applied during panel selection, so stderr proves it ran.
+    // (The previous fixture collapsed to a single panel, which is BELOW the cap — the cap was
+    // never exercised and this test passed vacuously. See issue #4343.)
     assert!(
-        !svg.contains("cat12"),
-        "--max-charts 4 should cap panels; cat12 must not be drawn"
+        stderr.contains("charting 4 column(s)"),
+        "--max-charts 4 should trim the 12 eligible panels down to 4: {stderr}"
+    );
+    // The trim keeps the HIGHEST-interest panels; `panel_interest` rewards cardinality, so the
+    // low-cardinality cat01 is dropped and the high-cardinality cat12 survives.
+    assert!(
+        stderr.contains("skipped 8:") && stderr.contains("cat01"),
+        "--max-charts 4 should skip the 8 lowest-interest panels, incl. cat01: {stderr}"
+    );
+
+    let svg = wrk.read_to_string("dash.svg").unwrap();
+    assert!(
+        svg.contains("cat12"),
+        "cat12 has the highest cardinality, so it should survive the --max-charts 4 trim"
+    );
+    assert!(
+        !svg.contains("cat01"),
+        "--max-charts 4 should cap panels; cat01 (lowest interest) must not be drawn"
     );
 }
 

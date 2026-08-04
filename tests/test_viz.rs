@@ -10625,6 +10625,154 @@ fn viz_smart_summary_choropleth_county_fips_concept() {
     );
 }
 
+// A summary choropleth + the data-viewer drawer emit the region-click -> SearchBuilder filter
+// chrome: the hook marker, the region column riding as trace `meta`, and the feature-id -> raw
+// spellings map (here the zero-padded "03103" whose raw cells read "3103"). The fixture holds
+// BOTH spellings of the same region ("03103" and "3103"): the map must record only the
+// non-canonical variant, and the chrome must carry the union step that adds the canonical id
+// back into the SearchBuilder values (roborev #4026 — RAWS[loc] alone drops the
+// canonically-spelled rows).
+#[test]
+fn viz_smart_choro_filter_chrome_emitted() {
+    let wrk = Workdir::new("viz_smart_choro_filter_chrome_emitted");
+    wrk.create_from_string(
+        "counties.csv",
+        "fips,pop\n42003,100\n42003,200\n3103,300\n3103,400\n03103,500\n",
+    );
+    wrk.create_from_string(
+        "counties.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"42003","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","id":"03103","properties":{},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "pop": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args([
+        "smart",
+        "counties.csv",
+        "--geojson",
+        "counties.geojson",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("window.__qsvChoroRehook = hook;"),
+        "summary choropleth + drawer should emit the region-click filter chrome"
+    );
+    assert!(
+        html.contains(r#""meta":0"#),
+        "the region column index should ride on the choropleth trace as `meta`"
+    );
+    assert!(
+        html.contains(r#""03103":["3103"]"#),
+        "the feature-id -> raw spellings map should carry ONLY the non-canonical spelling, even \
+         when the canonical one also appears in the data"
+    );
+    assert!(
+        html.contains("[loc].concat(RAWS[loc])"),
+        "critFor must union the canonical feature id with the variant spellings — RAWS[loc] alone \
+         drops rows stored under the canonical spelling"
+    );
+}
+
+// `--preview-threshold 0` disables the data viewer, so the region-click filter chrome (which
+// needs the drawer end of the bridge) must not be emitted even though the choropleth exists.
+#[test]
+fn viz_smart_choro_filter_chrome_absent_without_drawer() {
+    let wrk = Workdir::new("viz_smart_choro_filter_chrome_absent_without_drawer");
+    wrk.create_from_string(
+        "counties.csv",
+        "fips,pop\n42003,100\n42003,200\n36061,300\n36061,400\n",
+    );
+    wrk.create_from_string(
+        "counties.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"42003","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","id":"36061","properties":{},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "pop": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args([
+        "smart",
+        "counties.csv",
+        "--geojson",
+        "counties.geojson",
+        "--preview-threshold",
+        "0",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"choropleth""#),
+        "the summary choropleth itself should still render"
+    );
+    assert!(
+        !html.contains("window.__qsvChoroRehook"),
+        "no drawer -> no region-click filter chrome"
+    );
+}
+
+// A point-in-polygon choropleth derives its regions from lat/lon — no CSV column holds the
+// region values, so there is nothing to filter the data viewer BY: the region-click filter
+// chrome must not be emitted even though the drawer is present.
+#[test]
+fn viz_smart_choro_filter_chrome_absent_for_pip() {
+    let wrk = Workdir::new("viz_smart_choro_filter_chrome_absent_for_pip");
+    wrk.create_from_string("pts.csv", "lat,lon,mag\n5,5,1\n6,6,2\n5,15,3\n6,16,4\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"choropleth""#),
+        "the PIP choropleth itself should render"
+    );
+    assert!(
+        !html.contains("window.__qsvChoroRehook"),
+        "a PIP choropleth has no region column -> no region-click filter chrome"
+    );
+}
+
 // when the `viz smart` PIP choropleth snaps any points, the panel title surfaces the snap
 // metadata (count + the cap applied) — a sub-panel has no below-map annotation surface, and the
 // note must not sit on the map itself.

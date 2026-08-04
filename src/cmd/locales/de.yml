@@ -40,6 +40,8 @@ viz:
     row_is_filtered_out: "Zeile ist herausgefiltert"
     row_not_plotted: "Zeile nicht unter den dargestellten Punkten"
     row_has_no_coordinates: "Zeile hat keine Kartenkoordinaten"
+    region_filter_applied: "Zeilen gefiltert auf %{q_region}"
+    region_filter_cleared: "Regionsfilter aufgehoben"
     extent_points: "Ausdehnungspunkte"
     spatial_extent: "räumliche Ausdehnung"
     full_extent: "gesamte Ausdehnung (inkl. Ausreißer)"

@@ -40,6 +40,8 @@ viz:
     row_is_filtered_out: "riga esclusa dai filtri"
     row_not_plotted: "riga non tra i punti tracciati"
     row_has_no_coordinates: "la riga non ha coordinate sulla mappa"
+    region_filter_applied: "righe filtrate su %{q_region}"
+    region_filter_cleared: "filtro regione rimosso"
     extent_points: "punti di estensione"
     spatial_extent: "estensione spaziale"
     full_extent: "estensione totale (valori anomali inclusi)"

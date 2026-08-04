@@ -47,6 +47,8 @@ viz:
     row_is_filtered_out: "该行已被筛选排除"
     row_not_plotted: "该行不在已绘制的点中"
     row_has_no_coordinates: "该行没有地图坐标"
+    region_filter_applied: "已筛选出 %{q_region} 的行"
+    region_filter_cleared: "已清除区域筛选"
     extent_points: "范围点"
     spatial_extent: "空间范围"
     full_extent: "完整范围(含离群点)"

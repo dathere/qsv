@@ -35218,20 +35218,43 @@ mod tests {
             );
         }
 
+        // Undo rustfmt's string-literal line continuations (`\` + newline + indent) so each
+        // literal reads as the single line describegpt actually emits.
+        //
+        // The CRLF normalization is load-bearing, not defensive: `.gitattributes` sets
+        // `* text=auto` and does NOT exclude `.rs`, so a Windows checkout stores this file with
+        // CRLF. The continuation marker is then `\` + CRLF, `split("\\\n")` matches nothing, no
+        // literal is ever rejoined, and all five assertions below fail -- which is exactly how
+        // this test first broke, on Windows CI only.
+        fn unwrap_continuations(src: &str) -> String {
+            let src = src.replace("\r\n", "\n");
+            let mut joined = String::with_capacity(src.len());
+            for (i, part) in src.split("\\\n").enumerate() {
+                if i == 0 {
+                    joined.push_str(part);
+                } else {
+                    joined.push_str(part.trim_start());
+                }
+            }
+            joined
+        }
+
         let src = std::fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cmd/describegpt.rs"),
         )
         .expect("src/cmd/describegpt.rs must be readable");
-        // Undo rustfmt's string-literal line continuations (`\` + newline + indent) so each
-        // literal reads as the single line describegpt actually emits.
-        let mut joined = String::with_capacity(src.len());
-        for (i, part) in src.split("\\\n").enumerate() {
-            if i == 0 {
-                joined.push_str(part);
-            } else {
-                joined.push_str(part.trim_start());
-            }
-        }
+        let joined = unwrap_continuations(&src);
+
+        // Pin the normalization itself, so a Unix-only run still catches its removal rather than
+        // leaving Windows CI as the sole detector. Normalize to LF BEFORE re-expanding to CRLF --
+        // this must build the same CRLF text whether the checkout was already CRLF or not.
+        let as_crlf = src.replace("\r\n", "\n").replace('\n', "\r\n");
+        assert_eq!(
+            unwrap_continuations(&as_crlf),
+            joined,
+            "continuation unwrapping must be line-ending agnostic (Windows checks out CRLF)"
+        );
+
         for (_, konst) in &warnings {
             assert!(
                 joined.contains(*konst),

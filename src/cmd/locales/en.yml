@@ -312,6 +312,8 @@ viz:
     bucket_day: "day"
     bucket_week: "week"
     bucket_month: "month"
+    bucket_quarter: "quarter"
+    bucket_year: "year"
     # CYCLIC (polar seasonality) PANEL. Its phase noun is a separate key set from
     # `bucket_*`: these name a position WITHIN a cycle ("month of year"), not a
     # bucket width, and languages need not spell the two the same way.

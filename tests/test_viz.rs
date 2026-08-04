@@ -15431,3 +15431,175 @@ fn viz_smart_english_embeds_no_library_locale_assets() {
         "the English language block should be left byte-for-byte as written"
     );
 }
+
+#[test]
+fn viz_smart_trend_quarterly_uses_quarter_bucket_and_category_axis() {
+    // issue #4216: a 3-year quarterly dataset spans ~1000 days, so span-based selection alone
+    // picked Week — ~150 buckets of which only 12 were non-empty, a comb of spikes. The cadence
+    // floor must coarsen it to Quarter, rendered as "YYYY-Qn" labels on a category axis (the
+    // labels are not date-parseable, and a date axis would re-introduce the empty gaps).
+    let wrk = Workdir::new("viz_smart_trend_quarterly_uses_quarter_bucket_and_category_axis");
+    let mut rows = String::from("filing_date,status\n");
+    for year in 2021..=2023 {
+        for (q, month) in [1u8, 4, 7, 10].iter().enumerate() {
+            for k in 0..(q + 2) {
+                let status = if k % 2 == 0 { "open" } else { "closed" };
+                rows.push_str(&format!("{year}-{month:02}-01,{status}\n"));
+            }
+        }
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // quarter-bucketed: the axis title says "per quarter" and the x values are YYYY-Qn
+    assert!(
+        html.contains("per quarter"),
+        "quarterly cadence should coarsen the count trend to quarter buckets; html: {html}"
+    );
+    assert!(
+        html.contains("2021-Q1") && html.contains("2023-Q4"),
+        "quarter buckets should be labeled YYYY-Qn; html: {html}"
+    );
+    // category axis: the quarter labels ride in an explicit ticktext array (date axes have none)
+    assert!(
+        html.contains(r#""ticktext":["2021-Q1"#),
+        "a quarter-bucketed trend must render on a category axis with quarter tick labels; html: \
+         {html}"
+    );
+}
+
+#[test]
+fn viz_smart_trend_dictionary_cadence_overrides_detection() {
+    // A dictionary carrying `x-qsv.cadence: "quarterly"` sets the trend bucket floor even where
+    // the data's own spacing (monthly) would pick a finer bucket (issue #4216).
+    let wrk = Workdir::new("viz_smart_trend_dictionary_cadence_overrides_detection");
+    // 36 DISTINCT monthly values: a cardinality above CATEGORICAL_MAX_CARDINALITY (30) is what
+    // keeps revenue a continuous trend-y candidate rather than a low-card categorical.
+    let mut rows = String::from("report_date,revenue\n");
+    let mut i = 0;
+    for year in 2021..=2023 {
+        for month in 1..=12 {
+            i += 7;
+            rows.push_str(&format!("{year}-{month:02}-01,{}\n", 1000 + i));
+        }
+    }
+    wrk.create_from_string("rev.csv", &rows);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "x-qsv": { "cadence": "quarterly" },
+          "properties": {
+            "report_date": { "type": "string", "title": "Report Date",
+              "x-qsv": { "qsv_type": "Date", "role": "timestamp", "concept": "time.event_timestamp" } },
+            "revenue": { "type": "integer", "title": "Revenue",
+              "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "rev.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // an additive measure sums per period: "(sum/quarter)" proves both the AggValue mode and
+    // the dictionary-imposed Quarter floor (the data alone reads as monthly)
+    assert!(
+        html.contains("sum/quarter"),
+        "the dictionary cadence token must set the bucket floor; html: {html}"
+    );
+    assert!(
+        html.contains("2021-Q1"),
+        "quarter buckets should be labeled YYYY-Qn; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_trend_bogus_dictionary_cadence_falls_back_to_detection() {
+    // An out-of-vocab cadence token (LLM prose, typo, future token) is ignored — never an
+    // error — and the trend falls back to detecting cadence from the data itself (monthly here).
+    let wrk = Workdir::new("viz_smart_trend_bogus_dictionary_cadence_falls_back_to_detection");
+    // 36 DISTINCT monthly values: see the sibling test for why cardinality must exceed 30.
+    let mut rows = String::from("report_date,revenue\n");
+    let mut i = 0;
+    for year in 2021..=2023 {
+        for month in 1..=12 {
+            i += 7;
+            rows.push_str(&format!("{year}-{month:02}-01,{}\n", 1000 + i));
+        }
+    }
+    wrk.create_from_string("rev.csv", &rows);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "x-qsv": { "cadence": "every 3 months" },
+          "properties": {
+            "report_date": { "type": "string", "title": "Report Date",
+              "x-qsv": { "qsv_type": "Date", "role": "timestamp", "concept": "time.event_timestamp" } },
+            "revenue": { "type": "integer", "title": "Revenue",
+              "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "rev.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(
+        html.contains("sum/month"),
+        "an unknown cadence token must fall back to scan-based detection (monthly); html: {html}"
+    );
+    assert!(
+        !html.contains("2021-Q1"),
+        "no quarter labels should appear when the bogus token is ignored; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_trend_multidecade_coarsens_to_year() {
+    // A >50-year span exceeds even the Quarter tier: the span ceiling lands on Year, labeled
+    // as bare years on a category axis (issue #4216 widened the ladder that previously topped
+    // out at Month — which would have been ~720 buckets here).
+    let wrk = Workdir::new("viz_smart_trend_multidecade_coarsens_to_year");
+    let mut rows = String::from("obs_date,event\n");
+    for year in 1960..=2020 {
+        for month in [3u8, 6, 9, 12] {
+            rows.push_str(&format!("{year}-{month:02}-15,e\n"));
+        }
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(
+        html.contains("per year"),
+        "a 60-year span must coarsen the count trend to yearly buckets; html: {html}"
+    );
+    assert!(
+        html.contains(r#""ticktext":["1960","1961"#),
+        "year buckets should render bare years on a category axis; html: {html}"
+    );
+}

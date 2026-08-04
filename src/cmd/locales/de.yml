@@ -168,6 +168,8 @@ viz:
     bucket_day: "Tag"
     bucket_week: "Woche"
     bucket_month: "Monat"
+    bucket_quarter: "Quartal"
+    bucket_year: "Jahr"
     corr_spearman: "Korrelation (Spearman ρ — Ränge, robust gegen Ausreißer)"
     corr_pearson: "Korrelation (Pearson r)"
     scatter3d: "%{q_x} / %{q_y} / %{q_z} (3D)"

@@ -230,6 +230,18 @@ pub(super) fn format_dictionary_jsonschema(
         x_qsv.insert("grain_unit".to_string(), Value::String(gu.to_string()));
     }
 
+    // Deterministic temporal cadence of the event-timestamp column (a `CADENCE_VOCAB` token:
+    // daily/weekly/monthly/quarterly/annual), computed from cached stats — never LLM prose
+    // (the PR #4321 discipline). Same gate and same byte-identity guarantee as `grain`:
+    // omitted entirely when undetectable, so consumers (viz smart's trend-bucket floor,
+    // issue #4216) treat absence as "detect it yourself".
+    if infer_content_type
+        && let Some(c) = infer_cadence(entries)
+        && let Some(x_qsv) = doc.get_mut("x-qsv").and_then(Value::as_object_mut)
+    {
+        x_qsv.insert("cadence".to_string(), Value::String(c.to_string()));
+    }
+
     // LLM-inferred inter-column relationships, gated on the same --infer-content-type path (the
     // prompt only asks for them under that flag). They ride in the top-level x-qsv rather than at
     // the schema root for the same reason `grain` does: it keeps the document a valid draft
@@ -746,9 +758,12 @@ pub(super) struct SemanticMdEntry {
 /// Inferred temporal coverage of the dataset (from the event-timestamp column).
 #[derive(Debug, Serialize)]
 pub(super) struct SemanticMdTemporal {
-    pub(super) column: String,
-    pub(super) start:  String,
-    pub(super) end:    String,
+    pub(super) column:  String,
+    pub(super) start:   String,
+    pub(super) end:     String,
+    /// Deterministic cadence token (see `infer_cadence`); `None` renders nothing so
+    /// pre-existing output stays byte-identical.
+    pub(super) cadence: Option<String>,
 }
 
 /// Inferred spatial reference (WGS84 lat/lon pair) of the dataset.
@@ -1011,11 +1026,12 @@ fn infer_row_count(entries: &[DictionaryEntry]) -> u64 {
         .unwrap_or(0)
 }
 
-/// Infer the dataset's temporal coverage from the event-timestamp column,
-/// preferring the `time.event_timestamp` / `time.created_at` concepts and
-/// falling back to the first column with a `timestamp` role and a min/max.
-fn infer_temporal_coverage(entries: &[DictionaryEntry]) -> Option<SemanticMdTemporal> {
-    let pick = entries
+/// Pick the dataset's event-timestamp column: preferring the `time.event_timestamp` /
+/// `time.created_at` concepts and falling back to the first column with a `timestamp` role and
+/// a min/max. Shared by `infer_temporal_coverage` and `infer_cadence` so the coverage window
+/// and the cadence token can never describe different columns.
+fn pick_temporal_column(entries: &[DictionaryEntry]) -> Option<&DictionaryEntry> {
+    entries
         .iter()
         .find(|e| e.concept == "time.event_timestamp")
         .or_else(|| entries.iter().find(|e| e.concept == "time.created_at"))
@@ -1023,15 +1039,60 @@ fn infer_temporal_coverage(entries: &[DictionaryEntry]) -> Option<SemanticMdTemp
             entries
                 .iter()
                 .find(|e| e.role == "timestamp" && !e.min.is_empty() && !e.max.is_empty())
-        })?;
+        })
+}
+
+/// Infer the dataset's temporal coverage from the event-timestamp column
+/// (see `pick_temporal_column`).
+fn infer_temporal_coverage(entries: &[DictionaryEntry]) -> Option<SemanticMdTemporal> {
+    let pick = pick_temporal_column(entries)?;
     if pick.min.is_empty() || pick.max.is_empty() {
         return None;
     }
     Some(SemanticMdTemporal {
-        column: pick.name.clone(),
-        start:  pick.min.clone(),
-        end:    pick.max.clone(),
+        column:  pick.name.clone(),
+        start:   pick.min.clone(),
+        end:     pick.max.clone(),
+        cadence: infer_cadence(entries).map(ToString::to_string),
     })
+}
+
+/// Deterministic temporal cadence of the event-timestamp column, as a
+/// `dictionary::CADENCE_VOCAB` token — computed entirely from cached stats, never asked of the
+/// LLM (the PR #4321 lesson: machine tokens, not prose). For a stats-typed `Date` column,
+/// `cardinality` IS the distinct-date count, so the average interval between observations is
+/// `span_days / (cardinality - 1)`; mapping it through tolerance bands classifies regular
+/// cadences while anything irregular falls outside every band and is omitted (consumers then
+/// detect cadence themselves — viz smart scans the actual dates). `DateTime` columns are
+/// skipped outright: their cardinality counts distinct timestamps, not days, which would
+/// over-fine the token. The sibling vocabulary in `qsv profile` is
+/// `resources/profiles/dcat-us-v3.yaml`'s accrualPeriodicity slugs.
+fn infer_cadence(entries: &[DictionaryEntry]) -> Option<&'static str> {
+    let pick = pick_temporal_column(entries)?;
+    if pick.r#type != "Date" || pick.cardinality < 3 || pick.min.is_empty() || pick.max.is_empty() {
+        return None;
+    }
+    let parse = |s: &str| qsv_dateparser::parse(s).ok().map(|dt| dt.date_naive());
+    let (lo, hi) = (parse(&pick.min)?, parse(&pick.max)?);
+    let span_days = (hi - lo).num_days();
+    if span_days <= 0 {
+        return None;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let avg_interval = span_days as f64 / (pick.cardinality - 1) as f64;
+    let token = match avg_interval {
+        d if (0.75..=1.5).contains(&d) => Some("daily"),
+        d if (5.5..=9.0).contains(&d) => Some("weekly"),
+        d if (26.0..=35.0).contains(&d) => Some("monthly"),
+        d if (80.0..=100.0).contains(&d) => Some("quarterly"),
+        d if (330.0..=400.0).contains(&d) => Some("annual"),
+        _ => None,
+    };
+    debug_assert!(
+        token.is_none_or(|t| super::dictionary::CADENCE_VOCAB.contains(&t)),
+        "infer_cadence must only emit CADENCE_VOCAB tokens"
+    );
+    token
 }
 
 /// Infer a WGS84 spatial reference when both a latitude and a longitude concept
@@ -2063,5 +2124,151 @@ mod tests {
         assert!(max_e.has_validation);
         assert_eq!(max_e.validation.max_length, "50");
         assert!(max_e.validation.min_length.is_empty());
+    }
+
+    /// A stats-typed Date column with `cardinality` distinct dates spanning min..max.
+    fn temporal_entry(min: &str, max: &str, cardinality: u64) -> DictionaryEntry {
+        let mut e = sample_entry("event_date", "date");
+        e.r#type = "Date".to_string();
+        e.min = min.to_string();
+        e.max = max.to_string();
+        e.cardinality = cardinality;
+        e.concept = "time.event_timestamp".to_string();
+        e.role = "timestamp".to_string();
+        e
+    }
+
+    #[test]
+    fn infer_cadence_maps_average_interval_to_vocab_tokens() {
+        // 3 years of quarterly observations: span 1004 days / 11 intervals ≈ 91.3 → quarterly.
+        let e = temporal_entry("2021-01-01", "2023-10-01", 12);
+        assert_eq!(infer_cadence(std::slice::from_ref(&e)), Some("quarterly"));
+
+        // daily: 365 days / 365 intervals = 1.0
+        let e = temporal_entry("2024-01-01", "2024-12-31", 366);
+        assert_eq!(infer_cadence(std::slice::from_ref(&e)), Some("daily"));
+
+        // weekly: 364 days / 52 intervals = 7.0
+        let e = temporal_entry("2024-01-01", "2024-12-30", 53);
+        assert_eq!(infer_cadence(std::slice::from_ref(&e)), Some("weekly"));
+
+        // monthly: 700 days / 23 intervals ≈ 30.4
+        let e = temporal_entry("2023-01-01", "2024-12-01", 24);
+        assert_eq!(infer_cadence(std::slice::from_ref(&e)), Some("monthly"));
+
+        // annual: 1826 days / 5 intervals ≈ 365.2
+        let e = temporal_entry("2019-06-30", "2024-06-30", 6);
+        assert_eq!(infer_cadence(std::slice::from_ref(&e)), Some("annual"));
+
+        // every emitted token is in the controlled vocabulary
+        for e in [
+            temporal_entry("2021-01-01", "2023-10-01", 12),
+            temporal_entry("2024-01-01", "2024-12-31", 366),
+        ] {
+            let tok = infer_cadence(std::slice::from_ref(&e)).unwrap();
+            assert!(super::super::dictionary::CADENCE_VOCAB.contains(&tok));
+        }
+    }
+
+    #[test]
+    fn infer_cadence_omits_when_unclassifiable() {
+        // irregular spacing (avg ≈ 18 days) falls between the weekly and monthly bands → None,
+        // never a guess: consumers (viz smart) then detect cadence from the data themselves.
+        let e = temporal_entry("2024-01-01", "2024-12-31", 21);
+        assert_eq!(infer_cadence(std::slice::from_ref(&e)), None);
+
+        // DateTime columns are skipped outright — their cardinality counts distinct
+        // timestamps, not days, which would over-fine the token.
+        let mut e = temporal_entry("2021-01-01T00:00:00", "2023-10-01T12:34:56", 5000);
+        e.r#type = "DateTime".to_string();
+        assert_eq!(infer_cadence(std::slice::from_ref(&e)), None);
+
+        // degenerate: too few observations / zero span / missing bounds
+        assert_eq!(
+            infer_cadence(std::slice::from_ref(&temporal_entry(
+                "2024-01-01",
+                "2024-12-31",
+                2
+            ))),
+            None
+        );
+        assert_eq!(
+            infer_cadence(std::slice::from_ref(&temporal_entry(
+                "2024-01-01",
+                "2024-01-01",
+                3
+            ))),
+            None
+        );
+        assert_eq!(
+            infer_cadence(std::slice::from_ref(&temporal_entry("", "", 12))),
+            None
+        );
+    }
+
+    #[test]
+    fn jsonschema_cadence_gated_on_infer_content_type() {
+        let e = temporal_entry("2021-01-01", "2023-10-01", 12);
+        // with --infer-content-type: the deterministic token rides in top-level x-qsv
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&e),
+            "in.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert_eq!(schema["x-qsv"]["cadence"], json!("quarterly"));
+
+        // without the flag: omitted entirely, keeping legacy output byte-identical
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&e),
+            "in.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert!(schema["x-qsv"].get("cadence").is_none());
+
+        // unclassifiable spacing: omitted even under the flag
+        let e = temporal_entry("2024-01-01", "2024-12-31", 21);
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&e),
+            "in.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert!(schema["x-qsv"].get("cadence").is_none());
+    }
+
+    #[test]
+    fn temporal_coverage_carries_cadence() {
+        let e = temporal_entry("2021-01-01", "2023-10-01", 12);
+        let tc = infer_temporal_coverage(std::slice::from_ref(&e)).unwrap();
+        assert_eq!(tc.column, "event_date");
+        assert_eq!(tc.cadence.as_deref(), Some("quarterly"));
+
+        // irregular spacing: coverage still emitted, cadence absent
+        let e = temporal_entry("2024-01-01", "2024-12-31", 21);
+        let tc = infer_temporal_coverage(std::slice::from_ref(&e)).unwrap();
+        assert_eq!(tc.cadence, None);
     }
 }

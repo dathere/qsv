@@ -215,6 +215,16 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     "unknown",
 ];
 
+/// Controlled vocabulary for the dataset-level temporal cadence token
+/// (`x-qsv.cadence`). Unlike `CONCEPT_VOCAB`, this is NOT injected into any LLM
+/// prompt: cadence is computed deterministically from cached stats
+/// (`formatters::infer_cadence`) — a machine token, never prose (the PR #4321
+/// discipline). The const exists so producers (`infer_cadence`) and consumers
+/// (`viz smart`'s trend-bucket floor, issue #4216) share one authoritative
+/// token list; a unit test pins `infer_cadence`'s outputs to it. The sibling
+/// vocabulary in `qsv profile` is dcat-us-v3.yaml's accrualPeriodicity slugs.
+pub(super) const CADENCE_VOCAB: &[&str] = &["daily", "weekly", "monthly", "quarterly", "annual"];
+
 /// Render `CONCEPT_VOCAB` as a comma-separated string for prompt injection.
 pub(super) fn concept_vocab_list() -> String {
     CONCEPT_VOCAB.join(", ")

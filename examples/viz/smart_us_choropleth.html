@@ -74,7 +74,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>332 <a href="#" class="qsv-data-link" onclick="return qsvOpenData()">(Explore)<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg></a></td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>6</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-04 04:23 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-08-04 15:05 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -1638,11 +1638,18 @@
   }
   // id string -> {t: traceIndex, p: pointIndex}. Built once per hook so applying a selection is
   // O(selected) rather than O(points) — the core trace can carry 150k of them.
+  // Above this many plotted points a selection is marked by the PIN ALONE and the dimming restyle
+  // is skipped entirely -- see SEL_DIM_MAX_POINTS on the Rust side for the measurements behind the
+  // number and why dimming is the thing worth dropping.
+  var SEL_DIM_MAX = 50000;
   function buildIndex(gd) {
-    var index = new Map(), traces = [];
+    var index = new Map(), traces = [], points = 0;
     gd.data.forEach(function (t, ti) {
       if (!isPointTrace(t)) return;
       traces.push(ti);
+      // every point costs on a `calc` restyle, including the ones with no id, so the mode test
+      // counts the trace's full length rather than the index's
+      points += t.ids.length;
       for (var p = 0; p < t.ids.length; p++) {
         // "" marks a point whose row is past the preview prefix: nothing to select
         if (t.ids[p]) index.set(t.ids[p], { t: ti, p: p });
@@ -1650,6 +1657,9 @@
     });
     gd.__qsvSelIndex = index;
     gd.__qsvSelTraces = traces;
+    // Fixed for the life of the panel: the trace lengths never change after render, so the mode
+    // cannot flip mid-session and no code path has to undo the other mode's painting.
+    gd.__qsvSelBig = points > SEL_DIM_MAX;
     // The row pin and its halo, located by their sentinel names -- their indexes are not fixed,
     // since the optional extent and --geojson overlay traces sit between them and the points.
     gd.__qsvSelPin = gd.data.findIndex(function (t) { return t && t.name === "qsv-row-pin"; });
@@ -1693,21 +1703,42 @@
     return { lat: lat, lon: lon };
   }
   function pinsFor(gd, ids) {
-    var pts = [], missing = 0;
+    var pts = [], missing = 0, notPlotted = 0;
+    var big = !!gd.__qsvSelBig;
     ids.forEach(function (id) {
-      // a plotted row highlights its own point; only the others need a pin
-      if (gd.__qsvSelIndex.get(String(id))) return;
-      var c = rowCoord(id);
-      if (c) pts.push(c);
+      var loc = gd.__qsvSelIndex.get(String(id));
+      if (loc) {
+        // Normally a plotted row highlights its own point, so only the others need a pin. In
+        // pin-only mode nothing dims that point, so the pin has to carry the plotted rows too.
+        if (!big) return;
+        // Its OWN coordinates, read off the trace -- NOT rowCoord, which goes through the drawer
+        // and therefore only covers the preview prefix. On a 265k-point map against a 50k preview
+        // that would leave every point past row 50,000 with no pin at all.
+        var c = coordArrays(gd, loc.t);
+        if (!c) return;
+        var lat = c.lat[loc.p], lon = c.lon[loc.p];
+        if (!isFinite(lat) || !isFinite(lon)) return;
+        pts.push({ lat: lat, lon: lon, plotted: true });
+        return;
+      }
+      var rc = rowCoord(id);
+      // `notPlotted` is what the note keys off, NOT points.length: in pin-only mode a pin is the
+      // ordinary way a SELECTED row is shown, so "row not among plotted points" would be a lie
+      // for most pins. Only a row with no point of its own earns that note.
+      if (rc) { pts.push({ lat: rc.lat, lon: rc.lon, plotted: false }); notPlotted++; }
       else missing++;
     });
-    return { points: pts, missing: missing };
+    return { points: pts, missing: missing, notPlotted: notPlotted };
   }
   function applyPins(gd, pts) {
     if (!(gd.__qsvSelPin >= 0) || !(gd.__qsvSelPinHalo >= 0)) return;
     var lats = pts.map(function (p) { return p.lat; });
     var lons = pts.map(function (p) { return p.lon; });
-    var text = pts.map(function () { return "row not among plotted points" + "<br>"; });
+    // A pin means two different things now, so it must not claim the wrong one: in pin-only mode
+    // most pins sit ON a plotted point and are simply where the selected row is.
+    var text = pts.map(function (p) {
+      return (p.plotted ? "selected row" : "row not among plotted points") + "<br>";
+    });
     try {
       // halo and core in ONE restyle: they are a single mark and must never disagree, not even
       // for a frame. Values distribute positionally over the trace list.
@@ -1720,6 +1751,13 @@
   }
   function applySelection(gd, ids, pinned) {
     if (!gd.__qsvSelTraces || !gd.__qsvSelTraces.length) return;
+    // Pin-only mode: the pin IS the selection, and `selectedpoints` is `editType: "calc"`, so
+    // setting it here would recalculate every point and its hover string and rebuild the GeoJSON
+    // MapLibre holds -- ~44 MB per click on a 265k-point trace, unreclaimed, which is what froze
+    // the renderer. Returning before the restyle is the whole fix; nothing needs unwinding because
+    // `selectedpoints` is never emitted in the figure and this mode is fixed at buildIndex time,
+    // so no path can have painted dimming that is now left stale.
+    if (gd.__qsvSelBig) return;
     var per = {}, hits = 0;
     gd.__qsvSelTraces.forEach(function (ti) { per[ti] = []; });
     ids.forEach(function (id) {
@@ -1830,6 +1868,11 @@
         byKey[pinTrace.subplot || "map"] = pins.slice();
       }
     }
+    // In pin-only mode every selected row is ALREADY pinned, so walking the ids again would add
+    // each plotted row a second time at the same coordinates. One selected row would then look
+    // like two points and take the fitBounds branch below with a degenerate zero-area box, instead
+    // of the pan-only easeTo that a single point is supposed to get.
+    if (gd.__qsvSelBig) return byKey;
     ids.forEach(function (id) {
       var loc = gd.__qsvSelIndex.get(String(id));
       if (!loc) return;
@@ -1967,11 +2010,14 @@
   var notedNotPlotted = false;
   function notePins(pins) {
     if (!window.__qsvDataNote) return;
-    if (pins.points.length) {
+    // Keyed on `notPlotted`, not on how many pins were drawn: in pin-only mode a pin is the normal
+    // way ANY selected row is shown, so counting pins here would fire "row not among plotted
+    // points" on every single click, about rows that are plotted perfectly well.
+    if (pins.notPlotted) {
       if (notedNotPlotted) return;
       notedNotPlotted = true;
       window.__qsvDataNote("row not among plotted points");
-    } else if (pins.missing) {
+    } else if (pins.missing && !pins.points.length) {
       // nothing was drawn for this selection at all, so this note is its only feedback
       window.__qsvDataNote("row has no map coordinates");
     }

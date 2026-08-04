@@ -38,6 +38,7 @@ viz:
     cluster_click_to_zoom: " - クリックで拡大"
     row_not_in_preview: "この行はプレビューに含まれていません"
     row_is_filtered_out: "この行はフィルターで除外されています"
+    selected_row: "選択された行"
     row_not_plotted: "この行は描画された点に含まれていません"
     row_has_no_coordinates: "この行には地図座標がありません"
     region_filter_applied: "%{q_region} の行に絞り込みました"

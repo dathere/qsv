@@ -44,6 +44,7 @@ viz:
     cluster_click_to_zoom: " - clique para ampliar"
     row_not_in_preview: "linha fora da pré-visualização"
     row_is_filtered_out: "linha excluída pelo filtro"
+    selected_row: "linha selecionada"
     row_not_plotted: "linha não está entre os pontos plotados"
     row_has_no_coordinates: "a linha não tem coordenadas no mapa"
     region_filter_applied: "linhas filtradas para %{q_region}"

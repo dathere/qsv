@@ -53,6 +53,7 @@ viz:
     cluster_click_to_zoom: " - click to zoom in"
     row_not_in_preview: "row not in preview"
     row_is_filtered_out: "row is filtered out"
+    selected_row: "selected row"
     row_not_plotted: "row not among plotted points"
     row_has_no_coordinates: "row has no map coordinates"
     region_filter_applied: "rows filtered to %{q_region}"

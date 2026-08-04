@@ -34,6 +34,7 @@ viz:
     cluster_click_to_zoom: " - haz clic para ampliar"
     row_not_in_preview: "fila no incluida en la vista previa"
     row_is_filtered_out: "fila excluida por el filtro"
+    selected_row: "fila seleccionada"
     row_not_plotted: "fila no incluida entre los puntos trazados"
     row_has_no_coordinates: "la fila no tiene coordenadas en el mapa"
     region_filter_applied: "filas filtradas a %{q_region}"

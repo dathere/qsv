@@ -1057,19 +1057,37 @@ fn infer_temporal_coverage(entries: &[DictionaryEntry]) -> Option<SemanticMdTemp
     })
 }
 
+/// Minimum distinct dates before `infer_cadence` will emit a token. An average interval computed
+/// from only two or three observations says nothing about regularity — three dates spanning 60
+/// days average to 30 whether they are evenly monthly or two adjacent days plus one two months
+/// later — so the token would be a coin flip. Five intervals is the floor at which the average
+/// carries signal; it still admits the shortest realistic annual series (6 yearly observations).
+const CADENCE_MIN_OBSERVATIONS: u64 = 6;
+
 /// Deterministic temporal cadence of the event-timestamp column, as a
 /// `dictionary::CADENCE_VOCAB` token — computed entirely from cached stats, never asked of the
 /// LLM (the PR #4321 lesson: machine tokens, not prose). For a stats-typed `Date` column,
-/// `cardinality` IS the distinct-date count, so the average interval between observations is
+/// `cardinality` IS the distinct-date count, so the AVERAGE interval between observations is
 /// `span_days / (cardinality - 1)`; mapping it through tolerance bands classifies regular
-/// cadences while anything irregular falls outside every band and is omitted (consumers then
-/// detect cadence themselves — viz smart scans the actual dates). `DateTime` columns are
-/// skipped outright: their cardinality counts distinct timestamps, not days, which would
-/// over-fine the token. The sibling vocabulary in `qsv profile` is
+/// cadences while anything whose average falls between bands is omitted.
+///
+/// The average is evidence of cadence, not proof of it: min/max/cardinality cannot distinguish
+/// regular spacing from clustered observations, so a handful of dates that happen to average
+/// into a band are classified as if regular. `CADENCE_MIN_OBSERVATIONS` is the guard — it takes
+/// enough intervals for the average to mean something before any token is emitted — and
+/// consumers must treat the token as a hint that never overrides a direct scan of the actual
+/// dates (`viz::build_timeseries_panel` clamps it so it can only coarsen its own scan).
+///
+/// `DateTime` columns are skipped outright: their cardinality counts distinct timestamps, not
+/// days, which would over-fine the token. The sibling vocabulary in `qsv profile` is
 /// `resources/profiles/dcat-us-v3.yaml`'s accrualPeriodicity slugs.
 fn infer_cadence(entries: &[DictionaryEntry]) -> Option<&'static str> {
     let pick = pick_temporal_column(entries)?;
-    if pick.r#type != "Date" || pick.cardinality < 3 || pick.min.is_empty() || pick.max.is_empty() {
+    if pick.r#type != "Date"
+        || pick.cardinality < CADENCE_MIN_OBSERVATIONS
+        || pick.min.is_empty()
+        || pick.max.is_empty()
+    {
         return None;
     }
     let parse = |s: &str| qsv_dateparser::parse(s).ok().map(|dt| dt.date_naive());
@@ -2182,6 +2200,22 @@ mod tests {
         let mut e = temporal_entry("2021-01-01T00:00:00", "2023-10-01T12:34:56", 5000);
         e.r#type = "DateTime".to_string();
         assert_eq!(infer_cadence(std::slice::from_ref(&e)), None);
+
+        // Too few observations for the average to carry signal. Three dates spanning ~60 days
+        // average to 30 whether they are evenly monthly or two adjacent days plus one two
+        // months later, and min/max/cardinality cannot tell those apart -- so nothing below
+        // CADENCE_MIN_OBSERVATIONS is classified at all.
+        for cardinality in 0..CADENCE_MIN_OBSERVATIONS {
+            assert_eq!(
+                infer_cadence(std::slice::from_ref(&temporal_entry(
+                    "2024-01-01",
+                    "2024-03-01",
+                    cardinality
+                ))),
+                None,
+                "cardinality {cardinality} is below the confidence floor"
+            );
+        }
 
         // degenerate: too few observations / zero span / missing bounds
         assert_eq!(

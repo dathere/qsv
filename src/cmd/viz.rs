@@ -19355,6 +19355,23 @@ fn bucket_floor_from_cadence(token: &str) -> Option<TsBucket> {
     }
 }
 
+/// The trend panel's bucket floor: the data's own scanned cadence, coarsened by the dictionary's
+/// cadence token when one is present.
+///
+/// The token may only COARSEN the scan, never refine it. It is derived from aggregate stats
+/// (min/max/cardinality), which cannot prove regular spacing — clustered dates can average into
+/// a cadence band — whereas `cadence_floor` scans the actual observed days. Any bucket finer
+/// than the scanned floor is by construction under `CADENCE_MIN_OCCUPANCY_PCT` occupied, i.e.
+/// the comb of spikes issue #4216 removed, so a mistaken token must not be able to reintroduce
+/// it. Coarsening is still the token's to decide: it encodes the publisher's declared reporting
+/// period, which outranks occupancy when the two disagree in that direction.
+fn trend_bucket_floor(cadence: Option<&str>, day_keys: &[chrono::NaiveDate]) -> TsBucket {
+    let scan_floor = cadence_floor(day_keys);
+    cadence
+        .and_then(bucket_floor_from_cadence)
+        .map_or(scan_floor, |token_floor| token_floor.max(scan_floor))
+}
+
 /// Character cap for a structured count unit (`x-qsv.grain_unit`) before it is rejected as a
 /// runaway. 40 matches the intent of the legacy grain path's 40-BYTE cap for ASCII, while leaving
 /// a CJK unit — which would blow a 40-byte budget at ~13 characters — comfortable room.
@@ -19625,12 +19642,9 @@ fn build_timeseries_panel(
             (Some(&lo), Some(&hi)) => ts_bucket_for_span((hi - lo).num_days().max(0)),
             _ => TsBucket::Day,
         };
-        // the dictionary's validated cadence token wins over our own detection; the span-based
-        // ceiling still applies so a 40-year daily dataset doesn't render 14k points.
-        let floor = cadence
-            .and_then(bucket_floor_from_cadence)
-            .unwrap_or_else(|| cadence_floor(&day_keys));
-        span_bucket.max(floor)
+        // the span-based ceiling still applies on top of the cadence floor, so a 40-year daily
+        // dataset doesn't render 14k points
+        span_bucket.max(trend_bucket_floor(cadence, &day_keys))
     };
     let mut buckets: BTreeMap<chrono::NaiveDate, (f64, u64)> = BTreeMap::new();
     for (&day, &(sum, n)) in &days {
@@ -19874,7 +19888,10 @@ const SLIDER_MAX_FRAMES: usize = 365;
 /// distinct bucket keys. Shared by the animated readers and the curvature selector so every time
 /// animation agrees on the same frame axis. Falls back to Year (coarsest) when even quarterly
 /// exceeds the cap — with yearly frames available, only spans beyond ~30 years overflow now
-/// (issue #4216 widened the ladder, which previously topped out at Month).
+/// (issue #4216 widened the ladder, which previously topped out at Month). That residual
+/// overflow is still ABOVE the cap, so `viz smart` callers go through
+/// `choose_smart_anim_bucket`, which declines instead; the explicit `--slider` path keeps this
+/// raw fallback because it enforces its own, far larger `SLIDER_MAX_FRAMES` ceiling.
 fn choose_anim_bucket(dates: &[chrono::NaiveDate]) -> (TsBucket, Vec<chrono::NaiveDate>) {
     let distinct_for = |bkt: TsBucket| -> Vec<chrono::NaiveDate> {
         let mut d: Vec<chrono::NaiveDate> = dates.iter().map(|&x| ts_bucket_key(x, bkt)).collect();
@@ -19893,6 +19910,20 @@ fn choose_anim_bucket(dates: &[chrono::NaiveDate]) -> (TsBucket, Vec<chrono::Nai
     .map(|b| (b, distinct_for(b)))
     .find(|(_, d)| d.len() <= SMART_ANIM_MAX_FRAMES)
     .unwrap_or_else(|| (TsBucket::Year, distinct_for(TsBucket::Year)))
+}
+
+/// `choose_anim_bucket` for the `viz smart` animations, which must honor `SMART_ANIM_MAX_FRAMES`
+/// as a hard cap rather than a best effort: `choose_anim_bucket` falls back to Year when even
+/// quarterly overflows, so a span beyond ~30 years still yields more steps than the cap allows.
+/// Returning `None` there makes the caller decline the animation (falling back to the static
+/// panel) instead of emitting a slider that ignores its own documented cap. The EXPLICIT
+/// `--slider` path deliberately does NOT use this: it tolerates up to `SLIDER_MAX_FRAMES` and
+/// errors with guidance past that, because the user picked the column.
+fn choose_smart_anim_bucket(
+    dates: &[chrono::NaiveDate],
+) -> Option<(TsBucket, Vec<chrono::NaiveDate>)> {
+    let (bkt, distinct) = choose_anim_bucket(dates);
+    (distinct.len() <= SMART_ANIM_MAX_FRAMES).then_some((bkt, distinct))
 }
 
 /// Population standard deviation of a slice (0.0 for < 2 values or non-finite results). Used to put
@@ -19983,7 +20014,10 @@ fn read_bucketed_means(
         return Ok(None);
     }
     let dates: Vec<chrono::NaiveDate> = rows.iter().map(|r| r.0).collect();
-    let (bkt, distinct) = choose_anim_bucket(&dates);
+    // decline rather than emit more steps than the cap allows (see `choose_smart_anim_bucket`)
+    let Some((bkt, distinct)) = choose_smart_anim_bucket(&dates) else {
+        return Ok(None);
+    };
     if distinct.len() < min_frames {
         return Ok(None);
     }
@@ -20093,7 +20127,10 @@ fn read_scatter_pair_anim(
     // span-based), this is frame-count-based: a daily series over 8 months (205 daily buckets)
     // coarsens to ~weekly.
     let dates: Vec<chrono::NaiveDate> = pts.iter().map(|p| p.0).collect();
-    let (bkt, distinct) = choose_anim_bucket(&dates);
+    // decline rather than emit more steps than the cap allows (see `choose_smart_anim_bucket`)
+    let Some((bkt, distinct)) = choose_smart_anim_bucket(&dates) else {
+        return Ok(None);
+    };
     if distinct.len() < min_frames {
         return Ok(None);
     }
@@ -20216,7 +20253,10 @@ fn read_geo_anim(
     // bucket the dates: each distinct bucket is one slider step, so pick the finest granularity
     // that keeps the step count legible.
     let dates: Vec<chrono::NaiveDate> = pts.iter().map(|p| p.0).collect();
-    let (bkt, distinct) = choose_anim_bucket(&dates);
+    // decline rather than emit more steps than the cap allows (see `choose_smart_anim_bucket`)
+    let Some((bkt, distinct)) = choose_smart_anim_bucket(&dates) else {
+        return Ok(None);
+    };
     if distinct.len() < min_frames {
         return Ok(None);
     }
@@ -34793,6 +34833,42 @@ mod tests {
     }
 
     #[test]
+    fn trend_bucket_floor_token_can_only_coarsen_the_scan() {
+        let d = |y, m, dd| chrono::NaiveDate::from_ymd_opt(y, m, dd).unwrap();
+
+        // 3 years of quarterly observations: the scan reads Quarter.
+        let quarterly: Vec<_> = (0..12i32)
+            .map(|i| d(2021 + i / 4, (i as u32 % 4) * 3 + 1, 1))
+            .collect();
+        assert_eq!(cadence_floor(&quarterly), TsBucket::Quarter);
+
+        // a wrong-because-too-fine token (aggregate stats cannot prove regular spacing) must NOT
+        // drag the floor below the scan -- that is the comb of spikes issue #4216 removed.
+        assert_eq!(
+            trend_bucket_floor(Some("daily"), &quarterly),
+            TsBucket::Quarter
+        );
+        assert_eq!(
+            trend_bucket_floor(Some("weekly"), &quarterly),
+            TsBucket::Quarter
+        );
+
+        // coarsening is still the token's call: the publisher's declared reporting period
+        // outranks occupancy in that direction.
+        assert_eq!(
+            trend_bucket_floor(Some("annual"), &quarterly),
+            TsBucket::Year
+        );
+
+        // absent and out-of-vocab tokens fall through to the scan
+        assert_eq!(trend_bucket_floor(None, &quarterly), TsBucket::Quarter);
+        assert_eq!(
+            trend_bucket_floor(Some("every 3 months"), &quarterly),
+            TsBucket::Quarter
+        );
+    }
+
+    #[test]
     fn choose_anim_bucket_widens_to_quarter_and_year() {
         use chrono::NaiveDate;
         // 40 years of one date per month = 480 monthly buckets: Month (480) and Quarter (160)
@@ -34810,6 +34886,28 @@ mod tests {
             .map(|i| NaiveDate::from_ymd_opt(2018 + i / 12, i as u32 % 12 + 1, 15).unwrap())
             .collect();
         let (bucket, distinct) = choose_anim_bucket(&dates);
+        assert_eq!(bucket, TsBucket::Quarter);
+        assert_eq!(distinct.len(), 24);
+    }
+
+    #[test]
+    fn choose_smart_anim_bucket_declines_past_the_frame_cap() {
+        use chrono::NaiveDate;
+        // 40 yearly buckets is still above SMART_ANIM_MAX_FRAMES even at the coarsest rung, so
+        // the smart wrapper declines rather than emit a slider that ignores its own cap. The
+        // raw ladder still returns Year for the explicit --slider path, which enforces the far
+        // larger SLIDER_MAX_FRAMES instead.
+        let dates: Vec<NaiveDate> = (0..480)
+            .map(|i| NaiveDate::from_ymd_opt(1980 + i / 12, i as u32 % 12 + 1, 15).unwrap())
+            .collect();
+        assert!(choose_anim_bucket(&dates).1.len() > SMART_ANIM_MAX_FRAMES);
+        assert!(choose_smart_anim_bucket(&dates).is_none());
+
+        // within the cap, the wrapper is transparent
+        let dates: Vec<NaiveDate> = (0..72)
+            .map(|i| NaiveDate::from_ymd_opt(2018 + i / 12, i as u32 % 12 + 1, 15).unwrap())
+            .collect();
+        let (bucket, distinct) = choose_smart_anim_bucket(&dates).unwrap();
         assert_eq!(bucket, TsBucket::Quarter);
         assert_eq!(distinct.len(), 24);
     }

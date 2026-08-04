@@ -867,6 +867,37 @@ const CATEGORICAL_MAX_CARDINALITY: u64 = 30;
 /// flags (a 95%-"Closed" status).
 const CATEGORICAL_DIM_MAX_DOMINANCE: f64 = 0.90;
 
+/// A frequency-bar panel whose SHORTEST drawn bar is at least this fraction of its tallest is
+/// near-uniform: every category holds (nearly) the same count, so the chart is a flat line of
+/// identical bars conveying nothing beyond "these categories exist" — which the axis labels already
+/// say. This is the mirror image of `CATEGORICAL_DIM_MAX_DOMINANCE`/`is_near_constant` (one
+/// category swallowing everything); both ends of the distribution are degenerate, and until now
+/// only the dominated end was screened.
+///
+/// Measured as `antimode_occurrences / mode_occurrences` — least- over most-frequent value —
+/// because that is literally what the eye does when reading a bar chart: compare the shortest bar
+/// to the tallest. Both counts come from the base stats cache every `viz smart` run already
+/// produces (`--cardinality --mode`, see `util::StatsMode::ProfileSchema`), so the screen costs no
+/// extra pass and needs no moarstats.
+///
+/// 0.95 is set from the corpus: across every dataset in `examples/viz` the largest ratio produced
+/// by a NATURAL spread is 0.9116 (`regions_growth.region`, 147 vs 134 rows) while every DESIGNED
+/// balance lands at exactly 1.0 (a 5-channel x 12-week panel, a 4-region equal-quota sample) — the
+/// `[0.95, 1.0)` band is empty there. The margin above 0.9116 buys the shapes exact equality would
+/// miss: a balanced panel whose row count does not divide evenly by its group count (90 rows over 4
+/// groups is 23/23/22/22 = 0.9565 — still a flat bar), or a large balanced panel off by a handful
+/// of rows.
+const FREQBAR_NEAR_UNIFORM_MIN_RATIO: f64 = 0.95;
+
+/// A near-uniform frequency bar is only suppressed at this many categories or more. Below it,
+/// equality is itself the finding rather than an absence of one: a 50/50 boolean flag or a
+/// three-way even split reads at a glance as "this is balanced", which is a fact about the data
+/// worth a panel. Twelve identical bars read as nothing. Same threshold, and the same reasoning, as
+/// `PIE_NEAR_EQUAL_MIN_SLICES` — declared separately rather than aliased because the two screens
+/// govern unrelated chart families and should stay free to diverge. Consistent too with
+/// `CATEGORICAL_DIM_MAX_DOMINANCE`, whose doc comment already defends a 50/50 split as a keeper.
+const FREQBAR_NEAR_UNIFORM_MIN_CATEGORIES: u64 = 4;
+
 /// A discrete integer scale with at most this many distinct levels — a 1..N ordinal rating
 /// (satisfaction 1-5, 1-7 Likert, 1-10 / 0-10 NPS) — is treated as categorical even when a
 /// dictionary tagged it an explicit `measure.*` concept. Much tighter than
@@ -7058,6 +7089,48 @@ fn is_near_constant(s: &crate::cmd::stats::StatsData, n: u64) -> bool {
     #[allow(clippy::cast_precision_loss)]
     let share = dominant as f64 / n as f64;
     share > CATEGORICAL_DIM_MAX_DOMINANCE
+}
+
+/// True when a frequency-bar panel would render as a flat line of near-identical bars (see
+/// `FREQBAR_NEAR_UNIFORM_MIN_RATIO`) — a degenerate panel worth dropping from the dashboard.
+///
+/// Deliberately NOT restricted to `String` columns the way `eligible_categorical_dims` is: that
+/// restriction exists because numeric codes and booleans make poor hierarchy/flow NESTING levels,
+/// a claim about nesting quality that has nothing to do with bar flatness. A uniform 1-5 rating bar
+/// is exactly as flat as a uniform category bar. Booleans need no special case —
+/// `FREQBAR_NEAR_UNIFORM_MIN_CATEGORIES` already excludes them.
+///
+/// `top_n` is the `--limit` top-N cap. Requiring `cardinality <= top_n` AND `nullcount == 0` means
+/// every bar the panel would draw is a real category and the WHOLE domain is drawn — no `Other (N)`
+/// roll-up and no `(NULL)` bucket, either of which is a differently-sized bar that makes the panel
+/// non-flat. A 40-code column with 5 rows each is therefore KEPT: at `--limit 10` it draws ten
+/// short bars beside an `Other (30)` bar six times their height. Two accepted consequences: the
+/// screen is `--limit`-dependent (a 5-category uniform column survives `--limit 3`), and
+/// `--no-other` makes it over-conservative. Both directions keep a panel, which is the safe way to
+/// be wrong.
+///
+/// Every unavailable statistic returns `false` (keep the panel). `mode_occurrences` is `None` when
+/// `--mode-cardinality-cap` dropped the tracker, and `Some(0)` on an all-unique column — that
+/// short-circuit in `stats.rs` emits mode 0 / antimode 1, which would divide to `+inf` and sail
+/// past the ratio test — so the `> 0` check is load-bearing, not defensive. Nulls also fail SAFE
+/// without the explicit `nullcount` gate: the mode tracker counts the empty cell as a value, so a
+/// column with a few nulls has a tiny antimode and reads as strongly non-uniform.
+fn is_near_uniform_freq_bar(s: &crate::cmd::stats::StatsData, top_n: usize) -> bool {
+    if s.cardinality < FREQBAR_NEAR_UNIFORM_MIN_CATEGORIES
+        || s.cardinality > top_n as u64
+        || s.nullcount > 0
+    {
+        return false;
+    }
+    let (Some(mode_occ), Some(antimode_occ)) = (s.mode_occurrences, s.antimode_occurrences) else {
+        return false;
+    };
+    if mode_occ == 0 {
+        return false;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let ratio = antimode_occ as f64 / mode_occ as f64;
+    ratio >= FREQBAR_NEAR_UNIFORM_MIN_RATIO
 }
 
 /// Collect the eligible categorical dimensions shared by the hierarchy (treemap/sunburst) and
@@ -24430,6 +24503,10 @@ struct SmartCtx<'a> {
     sentinel_suspects:   Vec<String>,
     sentinel_hints:      Vec<String>,
     nonnumeric_measures: Vec<String>,
+    /// set by `finalize_panels`: columns whose frequency bar was dropped as near-uniform. Kept
+    /// SEPARATE from `skipped` on purpose — `skipped` means "could not chart at all", while these
+    /// columns are still charted as dashboard dimensions.
+    uniform_bars:        Vec<String>,
 
     /// set by `finalize_panels`: HTML output rendered as an inline-div grid rather than the typed
     /// subplot grid.
@@ -24759,6 +24836,7 @@ impl<'a> SmartCtx<'a> {
             sentinel_suspects: Vec::new(),
             sentinel_hints: Vec::new(),
             nonnumeric_measures: Vec::new(),
+            uniform_bars: Vec::new(),
             inline: false,
         })
     }
@@ -26404,6 +26482,42 @@ impl<'a> SmartCtx<'a> {
     /// Decide the render path, apply the `--max-charts` interest ranking, and emit the deferred
     /// per-column diagnostics. Errors when no chartable column survived.
     fn finalize_panels(&mut self) -> CliResult<()> {
+        // A frequency bar whose categories are all (near-)equally frequent is a flat line of
+        // identical bars: it says nothing the axis labels don't. Drop those panels HERE — after the
+        // dimension pools have already been drawn (`eligible_categorical_dims` for parcats and the
+        // hierarchy, the Sankey filter, the animated-bubble entity all ran back in
+        // `add_relationship_panels`/`add_overview_panels`) — so a balanced dimension is still a
+        // legitimate parcats/treemap/Sankey level and can still drive a `MeasureByDim` breakdown.
+        // Only its own redundant bar goes. Suppressing any earlier (in `classify`, or at the
+        // `panels.push`) would shrink those pools and take the dimension with it.
+        //
+        // Must also land BEFORE the render-path decision and the `--max-charts` trim below, both of
+        // which read `self.panels.len()`: a panel that is not going to be drawn must not flip the
+        // dashboard to the inline path nor evict a different panel from the interest ranking.
+        //
+        // GUARD: if EVERY panel is a uniform bar, keep them all. A flat bar is a poor panel but an
+        // empty dashboard is worse — and `finalize_panels` hard-errors on an empty `self.panels` a
+        // few lines down with a high-cardinality message that would be actively wrong here.
+        // `kept.is_empty()` is the exact condition: the KPI row is prepended later, in `render`, so
+        // no non-column panel can mask an otherwise-empty set.
+        let top_n = self.args.flag_limit.max(1);
+        let mut kept: Vec<Panel> = Vec::with_capacity(self.panels.len());
+        let mut dropped: Vec<Panel> = Vec::new();
+        for p in self.panels.drain(..) {
+            match p.kind {
+                PanelKind::FreqBar { idx } if is_near_uniform_freq_bar(&self.stats[idx], top_n) => {
+                    dropped.push(p);
+                },
+                _ => kept.push(p),
+            }
+        }
+        if kept.is_empty() {
+            self.panels = dropped;
+        } else {
+            self.uniform_bars = dropped.into_iter().map(|p| p.name).collect();
+            self.panels = kept;
+        }
+
         // decide the rendering path. Up to MAX_SUBPLOTS panels always use the typed subplot grid
         // (the only form that supports static image export). For HTML output, more than that
         // switches to an inline-div grid (up to MAX_PANELS_INLINE). Image export can't assemble
@@ -26510,6 +26624,16 @@ impl<'a> SmartCtx<'a> {
                  wrong for the column's actual content.",
                 self.nonnumeric_measures.len(),
                 self.nonnumeric_measures.join(", ")
+            ));
+        }
+        if !self.uniform_bars.is_empty() {
+            viz_note(&format!(
+                "viz smart: {} column(s) have (near-)equally frequent categories, so their \
+                 frequency bar would be a flat line of identical bars: {}. The bar was dropped; \
+                 the column is still used as a dashboard dimension (part-to-whole, flow, and \
+                 measure-by-dimension panels) wherever it qualifies.",
+                self.uniform_bars.len(),
+                self.uniform_bars.join(", ")
             ));
         }
         if self.panels.is_empty() {
@@ -35604,6 +35728,88 @@ mod tests {
         let mut s = stat("String", 9999, Some(0.6));
         s.normalized_entropy = Some(0.99); // near-uniform
         assert!(classify(0, &s).is_none());
+    }
+
+    /// Build the stats a frequency bar's uniformity screen reads: `cardinality` distinct values
+    /// whose most/least frequent counts are `mode_occ`/`antimode_occ`, no nulls.
+    fn uniform_stat(
+        cardinality: u64,
+        mode_occ: u64,
+        antimode_occ: u64,
+    ) -> crate::cmd::stats::StatsData {
+        let mut s = stat("String", cardinality, Some(0.1));
+        s.mode_occurrences = Some(mode_occ);
+        s.antimode_occurrences = Some(antimode_occ);
+        s.nullcount = 0;
+        s
+    }
+
+    #[test]
+    fn near_uniform_bar_flags_exact_balanced_panel() {
+        // the motivating shape: 5 acquisition channels x 12 weeks, every channel exactly 12 rows
+        assert!(is_near_uniform_freq_bar(&uniform_stat(5, 12, 12), 10));
+    }
+
+    #[test]
+    fn near_uniform_bar_flags_uneven_row_count_balance() {
+        // a balanced design whose row count doesn't divide evenly: 90 rows over 4 groups is
+        // 23/23/22/22 = 0.9565. Still a flat bar, and the reason the threshold isn't exact
+        // equality.
+        assert!(is_near_uniform_freq_bar(&uniform_stat(4, 23, 22), 10));
+    }
+
+    #[test]
+    fn near_uniform_bar_keeps_natural_spread() {
+        // `examples/viz/regions_growth.csv` region: 147 vs 134 = 0.9116, the corpus-wide ceiling
+        // for a naturally-occurring spread. Must stay charted.
+        assert!(!is_near_uniform_freq_bar(&uniform_stat(6, 147, 134), 10));
+    }
+
+    #[test]
+    fn near_uniform_bar_keeps_three_categories() {
+        // the `viz_smart_dashboard` `city` shape: 34/33/33 = 0.9706 clears the RATIO but has only
+        // three categories, so the min-category gate keeps it. This gate is load-bearing.
+        assert!(!is_near_uniform_freq_bar(&uniform_stat(3, 34, 33), 10));
+    }
+
+    #[test]
+    fn near_uniform_bar_keeps_fifty_fifty_boolean() {
+        // a balanced flag IS the finding ("this splits evenly"); two equal bars say that at a
+        // glance
+        assert!(!is_near_uniform_freq_bar(&uniform_stat(2, 50, 50), 10));
+    }
+
+    #[test]
+    fn near_uniform_bar_keeps_domain_wider_than_limit() {
+        // 40 codes x 5 rows at --limit 10 draws ten short bars beside an `Other (30)` bar six times
+        // their height -- not a flat chart
+        assert!(!is_near_uniform_freq_bar(&uniform_stat(40, 5, 5), 10));
+    }
+
+    #[test]
+    fn near_uniform_bar_keeps_column_with_nulls() {
+        // a `(NULL)` bucket is its own differently-sized bar, so the panel isn't flat
+        let mut s = uniform_stat(5, 12, 12);
+        s.nullcount = 3;
+        assert!(!is_near_uniform_freq_bar(&s, 10));
+    }
+
+    #[test]
+    fn near_uniform_bar_keeps_when_mode_stat_absent() {
+        // --mode-cardinality-cap drops the tracker; an unavailable statistic must keep the panel
+        let mut s = uniform_stat(5, 12, 12);
+        s.mode_occurrences = None;
+        assert!(!is_near_uniform_freq_bar(&s, 10));
+    }
+
+    #[test]
+    fn near_uniform_bar_all_unique_sentinel_does_not_divide_by_zero() {
+        // an all-unique column short-circuits in stats.rs to mode 0 / antimode 1. Dividing those
+        // yields +inf, which sails past any `>=` ratio test -- so the `mode_occ > 0` guard is
+        // load-bearing, not defensive.
+        let mut s = uniform_stat(9999, 0, 1);
+        s.uniqueness_ratio = Some(1.0);
+        assert!(!is_near_uniform_freq_bar(&s, 10));
     }
 
     #[test]

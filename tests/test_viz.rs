@@ -4131,7 +4131,12 @@ fn viz_smart_collapses_one_to_one_categorical_twins() {
     let regions = ["north", "south", "east"];
     let mut rows = String::from("orgcode,orgfullname,region,amount\n");
     for i in 0..60 {
-        let (code, full) = codes[i % 4];
+        // The code distribution is deliberately UNEVEN (DPR 30, the rest 10 each). An even
+        // 15/15/15/15 split makes the pair a near-uniform frequency bar, which is screened
+        // out before the 1:1 collapse this test is about can be observed. Both members
+        // share the index, so the 1:1 correspondence — the actual subject of the test — is
+        // untouched.
+        let (code, full) = codes[if i < 30 { 0 } else { (i % 3) + 1 }];
         rows.push_str(&format!(
             "{code},{full},{},{}\n",
             regions[(i / 4) % 3],
@@ -8113,7 +8118,10 @@ fn viz_smart_log_scale_skewed_freq_panel() {
     for i in 0..2400usize {
         // ~96% "A", the rest spread thinly across the other categories -> high dynamic range
         let dominated = if i % 25 == 0 { cats[1 + (i % 11)] } else { "A" };
-        rows.push_str(&format!("{dominated},{}\n", cats[i % 10]));
+        // `(i % 15) / 2` gives 8 categories, seven at 320 rows and one at 160. Deliberately NOT an
+        // even `i % 10` split: that is a near-uniform frequency bar, which is screened out of the
+        // dashboard entirely, and this test needs BOTH panels to compare their log/linear axes.
+        rows.push_str(&format!("{dominated},{}\n", cats[(i % 15) / 2]));
     }
     wrk.create_from_string("skew.csv", &rows);
 
@@ -11489,7 +11497,11 @@ fn viz_smart_bivariate_respects_explicit_dictionary() {
     let wrk = Workdir::new("viz_smart_bivariate_respects_explicit_dictionary");
     let mut rows = String::from("code,status\n");
     for i in 0..80 {
-        let code = ["A", "B", "C", "D"][i % 4];
+        // deliberately uneven (A 40, B/C/D ~13 each): an even 20/20/20/20 split is a near-uniform
+        // frequency bar, which is screened off the dashboard along with the custom dictionary title
+        // this test asserts on. The 1:1 code<->status relation is what matters here and is
+        // preserved.
+        let code = ["A", "B", "C", "D"][if i < 40 { 0 } else { (i % 3) + 1 }];
         let status = code;
         rows.push_str(&format!("{code},{status}\n"));
     }
@@ -12207,6 +12219,209 @@ fn viz_smart_dominant_category_hint() {
     assert!(
         html.contains("(dominated by active, 95%)"),
         "dominated freq bar panel should carry the dominance hint; html: {html}"
+    );
+}
+
+/// The `examples/viz/onboarding_funnel.csv` shape: a balanced panel of 5 acquisition channels x 12
+/// weeks, so every channel holds exactly 12 rows, plus the four funnel-stage measures. Used by the
+/// near-uniform frequency bar tests below because it is empirically known to build the
+/// measure-by-dimension panel they assert on -- an ad-hoc fixture has to clear Cramer's V,
+/// HIER_MIN_DIM_CARDINALITY and PARCATS_MIN_DIMS before any composite panel exists at all, and when
+/// it doesn't, the failure looks like a broken screen rather than a thin fixture.
+fn balanced_panel_csv(wrk: &Workdir, name: &str) {
+    let channels = [
+        "Organic Search",
+        "Paid Social",
+        "Email",
+        "Referral",
+        "Partner",
+    ];
+    let mut rows = String::from("channel,week,visits,signups,activated,subscribed\n");
+    for (c, channel) in channels.iter().enumerate() {
+        for week in 1..=12 {
+            // visits vary by channel and week so the MEASURES are informative; only the channel
+            // COUNT is uniform, which is the whole point of the fixture
+            let visits = 1000 + (c as i32 * 700) + (week * 37);
+            rows.push_str(&format!(
+                "{channel},{week:02},{visits},{},{},{}\n",
+                visits / 2,
+                visits / 4,
+                visits / 8
+            ));
+        }
+    }
+    wrk.create_from_string(name, &rows);
+
+    // The dictionary is not optional garnish: the four stage counts are all-distinct integers, so
+    // without an explicit `measure` role `classify` drops them as ID-like and the dashboard has no
+    // measure left to break down by channel. The real gallery dashboard passes its dictionary for
+    // exactly this reason.
+    wrk.create_from_string(
+        "funnel.schema.json",
+        r#"{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "Data Dictionary for the balanced-panel funnel fixture",
+ "type": "object",
+ "properties": {
+  "channel": {"type": "string", "title": "Channel",
+   "x-qsv": {"qsv_type": "String", "role": "dimension", "concept": "category.type"}},
+  "week": {"type": "string", "title": "Week",
+   "x-qsv": {"qsv_type": "String", "role": "dimension", "concept": "time.period"}},
+  "visits": {"type": "integer", "title": "Visits",
+   "x-qsv": {"qsv_type": "Integer", "role": "measure", "concept": "measure.count"}},
+  "signups": {"type": "integer", "title": "Signups",
+   "x-qsv": {"qsv_type": "Integer", "role": "measure", "concept": "measure.count"}},
+  "activated": {"type": "integer", "title": "Activated",
+   "x-qsv": {"qsv_type": "Integer", "role": "measure", "concept": "measure.count"}},
+  "subscribed": {"type": "integer", "title": "Subscribed",
+   "x-qsv": {"qsv_type": "Integer", "role": "measure", "concept": "measure.count"}}
+ }
+}"#,
+    );
+}
+
+#[test]
+fn viz_smart_drops_uniform_frequency_bar() {
+    // a column whose categories are all equally frequent draws a flat line of identical bars, which
+    // says nothing the axis labels don't -- so the bar is dropped and the reason reported
+    let wrk = Workdir::new("viz_smart_drops_uniform_frequency_bar");
+    balanced_panel_csv(&wrk, "funnel.csv");
+
+    let out_html = wrk.path("funnel.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "funnel.csv",
+        "--dictionary",
+        "funnel.schema.json",
+        "-o",
+        &out_html,
+    ]);
+    let stderr = wrk.output_stderr(&mut cmd);
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        stderr.contains("flat line of identical bars") && stderr.contains("channel"),
+        "the uniform-bar note should fire and name channel; stderr: {stderr}"
+    );
+    let html = wrk.read_to_string("funnel.html").unwrap();
+    assert!(
+        !html.contains(r#""name":"channel""#),
+        "channel's own flat frequency bar should be gone; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_uniform_bar_still_a_dimension() {
+    // THE invariant: only the redundant bar goes. The column stays a dashboard dimension, so the
+    // measure-by-dimension panel built from it survives. Suppressing any earlier in the pipeline
+    // (in `classify`, or at the `panels.push`) would shrink the dimension pools and break this.
+    let wrk = Workdir::new("viz_smart_uniform_bar_still_a_dimension");
+    balanced_panel_csv(&wrk, "funnel.csv");
+
+    let out_html = wrk.path("funnel.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "funnel.csv",
+        "--dictionary",
+        "funnel.schema.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("funnel.html").unwrap();
+    assert!(
+        html.contains("Visits by Channel"),
+        "the measure-by-dimension panel keyed on the suppressed column must survive; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_all_uniform_bars_still_renders() {
+    // guard: when EVERY panel is a uniform bar, keep them all rather than fail out with the
+    // "no chartable columns" error, whose high-cardinality wording would be actively wrong here
+    let wrk = Workdir::new("viz_smart_all_uniform_bars_still_renders");
+    let mut rows = String::from("channel,region\n");
+    for c in 0..5 {
+        for r in 0..5 {
+            for _ in 0..2 {
+                rows.push_str(&format!("ch{c},rg{r}\n"));
+            }
+        }
+    }
+    wrk.create_from_string("uniform.csv", &rows);
+
+    let out_html = wrk.path("uniform.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "uniform.csv", "-o", &out_html]);
+    let stderr = wrk.output_stderr(&mut cmd);
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        !stderr.contains("No chartable columns found"),
+        "an all-uniform dataset must still render, not error out; stderr: {stderr}"
+    );
+    let html = wrk.read_to_string("uniform.html").unwrap();
+    assert!(
+        html.contains(r#""type":"bar""#),
+        "the guard should restore the suppressed bars; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_keeps_uniform_bar_beyond_limit() {
+    // 40 codes x 5 rows each at the default --limit 10 draws ten short bars beside an `Other (30)`
+    // bar six times their height. That is not a flat chart, so the screen must not fire.
+    // Locks the `cardinality <= top_n` gate against a future "simplification".
+    let wrk = Workdir::new("viz_smart_keeps_uniform_bar_beyond_limit");
+    let mut rows = String::from("zone,amount\n");
+    for z in 0..40 {
+        for r in 0..5 {
+            rows.push_str(&format!("z{z},{}\n", 10 + z * 3 + r));
+        }
+    }
+    wrk.create_from_string("zones.csv", &rows);
+
+    let out_html = wrk.path("zones.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "zones.csv", "-o", &out_html]);
+    let stderr = wrk.output_stderr(&mut cmd);
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        !stderr.contains("flat line of identical bars"),
+        "a domain wider than --limit rolls up into an `Other` bar and must be kept; stderr: \
+         {stderr}"
+    );
+}
+
+#[test]
+fn viz_smart_keeps_uniform_bar_with_nulls() {
+    // a `(NULL)` bucket is its own differently-sized bar, so the panel isn't flat.
+    // Locks the `nullcount == 0` gate.
+    let wrk = Workdir::new("viz_smart_keeps_uniform_bar_with_nulls");
+    let mut rows = String::from("channel,amount\n");
+    for c in 0..5 {
+        for r in 0..12 {
+            rows.push_str(&format!("ch{c},{}\n", 10 + c * 7 + r));
+        }
+    }
+    for r in 0..6 {
+        rows.push_str(&format!(",{}\n", 100 + r));
+    }
+    wrk.create_from_string("nulls.csv", &rows);
+
+    let out_html = wrk.path("nulls.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "nulls.csv", "-o", &out_html]);
+    let stderr = wrk.output_stderr(&mut cmd);
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        !stderr.contains("flat line of identical bars"),
+        "a column with a null bucket must keep its bar; stderr: {stderr}"
     );
 }
 

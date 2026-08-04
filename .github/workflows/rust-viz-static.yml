@@ -1,0 +1,68 @@
+name: Linux viz static export
+
+# The `viz_static` tests in tests/test_viz.rs render through plotly's headless-browser exporter,
+# so they are `#[ignore]`d and never run in the normal test workflows. That left them invisible:
+# the 1:1 twin-collapse (issue #4221) invalidated two of their fixtures and nothing caught it for
+# a month (issue #4343). This workflow actually runs them.
+#
+# NOTE: this is a safety net, not per-PR protection — it does not run on every PR. Fixture
+# premises that can be checked without a browser belong in a normal `#[test]`, e.g.
+# `viz_smart_twelve_distinct_cardinality_columns_all_charted`.
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'src/cmd/viz.rs'
+      - 'tests/test_viz.rs'
+      - '.github/workflows/rust-viz-static.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'src/cmd/viz.rs'
+      - 'tests/test_viz.rs'
+      - '.github/workflows/rust-viz-static.yml'
+  schedule:
+    # weekly, so driver/browser drift is caught even when viz.rs is untouched
+    - cron: '37 5 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-linux-viz-static-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  viz-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+    - uses: actions/checkout@v7
+    # Chrome and chromedriver MUST be a matched pair — a mismatch fails at runtime with
+    # "Failed to extract static image from browser session", which reads like a code bug.
+    # setup-chrome + setup-chromedriver pin them together.
+    - name: Install Chrome + matching chromedriver
+      uses: browser-actions/setup-chrome@v1
+      with:
+        install-chromedriver: true
+        install-dependencies: true
+    - name: Report browser/driver versions
+      run: |
+        chromedriver --version
+        (chrome --version || google-chrome --version) || echo "chrome not on PATH under that name"
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        targets: x86_64-unknown-linux-gnu
+    - name: Setup Rust-cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: qsv-viz-static-cache
+    # feature_capable + viz_static only — `all_features` would drag in python, magika,
+    # self_update and ui for no benefit on a job that already carries webdriver latency.
+    - name: Run the browser-gated viz tests
+      run: cargo test --verbose --locked --features=feature_capable,viz_static viz_static -- --ignored --test-threads=1

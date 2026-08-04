@@ -5900,8 +5900,9 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b9617811e7142050f4ba68a5826fdef70556feef03e3a95ad30229085383b18"
 dependencies = [
  "getrandom 0.2.17",
  "getrandom 0.4.3",
@@ -5923,8 +5924,9 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "966ca4b2b80071710c2526e1d0c52a7c07157a74ac6a459709515cc6dda832c9"
 dependencies = [
  "atoi_simd",
  "avro-schema",
@@ -5968,8 +5970,9 @@ dependencies = [
 
 [[package]]
 name = "polars-async"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9af82e2b7b4a4c036eadd4dc19bf98f8e4520cd3e7e3f04c9bfcf1019ea0a67a"
 dependencies = [
  "atomic-waker",
  "crossbeam-channel",
@@ -5987,8 +5990,9 @@ dependencies = [
 
 [[package]]
 name = "polars-buffer"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "762edafe40af51ba27003cee55a59672d1f209a8611e9824cfd73fd1dadda077"
 dependencies = [
  "bytemuck",
  "either",
@@ -5999,8 +6003,9 @@ dependencies = [
 
 [[package]]
 name = "polars-compute"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb28d9574178db0acc244c05cc6155c4235a92d90b05c3ebbd9a26d7324954ba"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -6025,8 +6030,9 @@ dependencies = [
 
 [[package]]
 name = "polars-config"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1f18d908862cf377987596c8aca289b7ab31d44eb33eead0324c4b127da1cac"
 dependencies = [
  "polars-error",
  "serde",
@@ -6034,8 +6040,9 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3eaf2490f858c7b1097e7169db2b48362cca8b6342455470d475210dd655cd35"
 dependencies = [
  "bitflags 2.13.1",
  "boxcar",
@@ -6074,8 +6081,9 @@ dependencies = [
 
 [[package]]
 name = "polars-dtype"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdb936fa87de737124aacc778b22254d3281a542d0ed8b175a78020a4f064107"
 dependencies = [
  "boxcar",
  "hashbrown 0.17.1",
@@ -6088,8 +6096,9 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9db40f052ac576cfb1ea2eef531665cca2da7f6d432677e766cd94ed163e0472"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -6102,8 +6111,9 @@ dependencies = [
 
 [[package]]
 name = "polars-expr"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1011169dec4654a0260daed73489a2cac9ad418bdfa065816d5a64fc3263c08c"
 dependencies = [
  "bitflags 2.13.1",
  "hashbrown 0.17.1",
@@ -6128,8 +6138,9 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13af9100e03f5e31d138cb03618d19ab51c33a3b1e52112f306bc476ff2d3b86"
 dependencies = [
  "async-trait",
  "atoi_simd",
@@ -6179,8 +6190,9 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05a6eb0f1835179b8786e625071294c0604fc4c5557662f2238259ec5509d9ec"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -6200,8 +6212,9 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "415761b26631c3f8e0224abcc36e18746e7f2950899a3886c19fe294884cfbdc"
 dependencies = [
  "bitflags 2.13.1",
  "chrono",
@@ -6227,8 +6240,9 @@ dependencies = [
 
 [[package]]
 name = "polars-mem-engine"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acd5a2567a049870f75582c46779b99d9c5caa4da62be0645850d1d423b6f60c"
 dependencies = [
  "memmap2",
  "polars-arrow",
@@ -6247,8 +6261,9 @@ dependencies = [
 
 [[package]]
 name = "polars-ooc"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10add352c8574ab75cef749e4f59c11b88051d4c96324016b8c9a47d49ffc8ae"
 dependencies = [
  "async-trait",
  "boxcar",
@@ -6268,8 +6283,9 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f242ea443264b62ee50256f86bf61e1903423ed700851277f06f3726b38ef8d"
 dependencies = [
  "argminmax",
  "base64 0.22.1",
@@ -6306,8 +6322,9 @@ dependencies = [
 
 [[package]]
 name = "polars-parquet"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ca8e9e3fd75585644c2de8a4ba4d0c0b6538a33c1ab350605a3a2d8c457a4d8"
 dependencies = [
  "async-stream",
  "base64 0.22.1",
@@ -6346,8 +6363,9 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "323ba5b79004b5a76b51d4a668633f77d6ccca09ce70a68ca939461a6666558c"
 dependencies = [
  "bitflags 2.13.1",
  "blake3",
@@ -6389,8 +6407,9 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "968cd19c3381e29621accae5b15a32bce87d5bbbee943aa02079432e144325a4"
 dependencies = [
  "bitflags 2.13.1",
  "bytemuck",
@@ -6404,8 +6423,9 @@ dependencies = [
 
 [[package]]
 name = "polars-schema"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc94280316abcf09547758ce3c3e04120b1f6153eddd66cb36392e70dc02337b"
 dependencies = [
  "indexmap 2.14.0",
  "polars-error",
@@ -6416,8 +6436,9 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0e8690ce23ad39441207d1775402511a9320d1abd521f89f28719ad11091abe"
 dependencies = [
  "bitflags 2.13.1",
  "hex",
@@ -6435,8 +6456,9 @@ dependencies = [
 
 [[package]]
 name = "polars-stream"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90221ab84a9fc6ebd6efa59af6372b9893da9655f9ddc4d730e3bfb9ca3a05dc"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -6479,8 +6501,9 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47452a721944f1b52bd5b53167cbba984dd0473f0283a9eb4c88332fc106ef97"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -6502,8 +6525,9 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.43.2#ae588a9f2c91171f45bace43a99fb7b80b90847b"
+version = "0.55.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb4e0ee58aac33a6e5dd34975f141a098edeaa5948dfbc0a4228bfc9621b6df9"
 dependencies = [
  "argminmax",
  "bincode",

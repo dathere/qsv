@@ -4232,8 +4232,9 @@ fn moarstats_bivariate_uncertainty_coefficient() {
     let u12i = get_column_index(&headers, "u_field1_given_field2")
         .expect("u_field1_given_field2 column should exist");
 
+    // only the first pair row matters (clippy::never_loop forbids a for loop that always breaks)
     let mut found = false;
-    for result in rdr.records() {
+    if let Some(result) = rdr.records().next() {
         let record = result.unwrap();
         let field1 = get_field_value(&record, f1i).unwrap();
         let field2 = get_field_value(&record, f2i).unwrap();
@@ -4261,7 +4262,6 @@ fn moarstats_bivariate_uncertainty_coefficient() {
             "U(source|target) should be in (0, 1) for a non-functional reverse, got \
              {u_source_given_target}"
         );
-        break;
     }
     assert!(found, "Should find source-target field pair with u columns");
 }

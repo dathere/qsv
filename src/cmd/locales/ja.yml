@@ -40,6 +40,8 @@ viz:
     row_is_filtered_out: "この行はフィルターで除外されています"
     row_not_plotted: "この行は描画された点に含まれていません"
     row_has_no_coordinates: "この行には地図座標がありません"
+    region_filter_applied: "%{q_region} の行に絞り込みました"
+    region_filter_cleared: "地域フィルターを解除しました"
     extent_points: "範囲のポイント"
     spatial_extent: "空間範囲"
     full_extent: "全体範囲(外れ値を含む)"

@@ -40,6 +40,8 @@ viz:
     row_is_filtered_out: "ligne exclue par un filtre"
     row_not_plotted: "ligne absente des points tracés"
     row_has_no_coordinates: "la ligne n'a pas de coordonnées cartographiques"
+    region_filter_applied: "lignes filtrées sur %{q_region}"
+    region_filter_cleared: "filtre de région effacé"
     extent_points: "points d'étendue"
     spatial_extent: "étendue spatiale"
     full_extent: "étendue totale (valeurs aberrantes incluses)"

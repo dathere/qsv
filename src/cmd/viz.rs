@@ -10921,6 +10921,179 @@ const MAP_SELECT_CHROME: &str = r##"<script>
 </script>
 "##;
 
+/// Localize + parameterize `CHORO_FILTER_CHROME`. Same contract as [`map_select_chrome`]: bare
+/// placeholders, unconditional substitution, `js_string_literal` for quoting + escaping. The
+/// applied-filter toast keeps a `__QSVREGION__` sentinel INSIDE the translated string; the JS
+/// side substitutes the clicked region id into it at toast time. The feature-id -> raw-spellings
+/// map is serialized as a JS object literal with the same `&`/`<`/`>` escape trio the other
+/// inline JSON payloads use, so no cell value can smuggle a `</script>` into the page.
+fn choro_filter_chrome(region_col: usize, region_raws: &HashMap<String, Vec<String>>) -> String {
+    let raws_json = serde_json::to_string(region_raws)
+        .unwrap_or_else(|_| "{}".to_string())
+        .replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e");
+    CHORO_FILTER_CHROME
+        .replace("__QSV_REGION_COL__", &region_col.to_string())
+        .replace("__QSV_REGION_MAP__", &raws_json)
+        .replace(
+            "__QSVI18N_REGION_FILTER_APPLIED__",
+            &js_string_literal(&t!(
+                "viz.map.region_filter_applied",
+                q_region = "__QSVREGION__"
+            )),
+        )
+        .replace(
+            "__QSVI18N_REGION_FILTER_CLEARED__",
+            &js_string_literal(&t!("viz.map.region_filter_cleared")),
+        )
+}
+
+/// Region-click -> data-viewer filter bridge, emitted only when BOTH exist (a summary choropleth
+/// panel carrying a real CSV region column, and the drawer chrome).
+///
+/// A click on a region while the drawer is open filters the table to that region's rows through
+/// SearchBuilder's public `rebuild()` API — NOT `ColumnControl`, which exposes no way to SET a
+/// selection (only `searchClear()`), and not a bare `column().search()`, which would filter
+/// invisibly. Routing through SearchBuilder makes the filter *visible, editable state*: the
+/// criterion shows in the "Advanced Filter (n)" popover where the reader can inspect, edit or
+/// remove it, its count flows into Clear Filters via the drawer's `filterChanged` hook, and the
+/// drawer's existing clear path (`searchBuilder.rebuild({})`) resets it with everything else.
+///
+/// The clicked `location` is the MATCHED GeoJSON feature id, not necessarily the raw cell value
+/// (`match_region_code` zero-pads short numeric codes and case-folds), so the criterion values
+/// come from the embedded feature-id -> raw-spellings map, falling back to the id itself. A
+/// multi-spelling region becomes an OR sub-group.
+///
+/// The summary choropleth panel is found by its trace `meta` carrying the region column index
+/// (set in `inline_panel_plot_choropleth{,_map}`); hooking follows the `MAP_SELECT_CHROME`
+/// idiom (poll until rendered, wait for `__qsvFs`, token-retired click bindings, re-arm on the
+/// theme toggle and fullscreen), and the drawer is reached only through its public seam.
+const CHORO_FILTER_CHROME: &str = r##"<script>
+(function () {
+  var COL = __QSV_REGION_COL__;
+  var RAWS = __QSV_REGION_MAP__;
+  var MSG_APPLIED = __QSVI18N_REGION_FILTER_APPLIED__;
+  var MSG_CLEARED = __QSVI18N_REGION_FILTER_CLEARED__;
+  function isRegionTrace(t) {
+    return !!(t && (t.type === "choropleth" || t.type === "choroplethmap") && t.meta === COL);
+  }
+  // The criterion we inserted last, in NORMALIZED form — its identity for the toggle and
+  // replace logic. getDetails() hands criteria back enriched with extra properties (observed:
+  // `type: "num"`), so raw JSON equality on the inserted object never matches; the comparison
+  // strips down to the shape we authored. A reader hand-editing the criterion in the Advanced
+  // Filter popover changes that shape, so an edited criterion stops being ours and is left alone.
+  var appliedLoc = null;
+  var appliedKey = null;
+  function normCrit(c) {
+    if (!c) return null;
+    if (c.logic) return { logic: c.logic, criteria: (c.criteria || []).map(normCrit) };
+    return { condition: c.condition, data: c.data, value: c.value };
+  }
+  function keyOf(c) { return JSON.stringify(normCrit(c)); }
+  function critFor(title, loc) {
+    var raws = RAWS[loc] || [loc];
+    var mk = function (v) { return { condition: "=", data: title, value: [v] }; };
+    return raws.length === 1 ? mk(raws[0]) : { logic: "OR", criteria: raws.map(mk) };
+  }
+  function apply(dt, loc) {
+    if (!dt.searchBuilder) return;
+    var title = dt.column(COL).title();
+    var d = dt.searchBuilder.getDetails() || {};
+    var before = d.criteria || [];
+    var crit = before.filter(function (c) { return keyOf(c) !== appliedKey; });
+    // same region, and our criterion was actually still standing -> this click toggles it OFF
+    var toggledOff = appliedLoc === loc && crit.length !== before.length;
+    if (toggledOff) {
+      appliedLoc = null;
+      appliedKey = null;
+    } else {
+      // a top-level OR group would change meaning when our criterion is ANDed beside it;
+      // demote the reader's group one level so both filters keep their semantics
+      if (crit.length > 1 && d.logic === "OR") crit = [{ logic: "OR", criteria: crit }];
+      var ours = critFor(title, loc);
+      appliedKey = keyOf(ours);
+      appliedLoc = loc;
+      crit.push(ours);
+    }
+    dt.searchBuilder.rebuild(crit.length ? { logic: "AND", criteria: crit } : {});
+    // a programmatic rebuild() does NOT fire SearchBuilder's filterChanged hook (observed), so
+    // the drawer's Clear Filters count would go stale; hand it the new count over the seam
+    document.dispatchEvent(new CustomEvent("qsv-data-sb-changed", { detail: { count: crit.length } }));
+    if (window.__qsvDataNote) {
+      window.__qsvDataNote(toggledOff ? MSG_CLEARED : MSG_APPLIED.replace("__QSVREGION__", loc));
+    }
+  }
+  // the drawer builds its DataTable lazily on first open; with the drawer open the instance
+  // normally exists already, but the ready event covers the first-open race
+  function withDT(fn) {
+    if (window.__qsvDataDT) { fn(window.__qsvDataDT); return; }
+    document.addEventListener("qsv-data-dt-ready", function () {
+      if (window.__qsvDataDT) fn(window.__qsvDataDT);
+    }, { once: true });
+  }
+  function onClick(gd, ev) {
+    // with the drawer closed there is no table in sight to filter; the click keeps its old
+    // meaning (hover/zoom only)
+    if (!document.body.classList.contains("qsv-data-open")) return;
+    var p = ev && ev.points && ev.points[0];
+    if (!p) return;
+    var t = gd.data[p.curveNumber];
+    if (!isRegionTrace(t)) return;
+    // `location` is the matched feature id; fall back through pointNumber for a trace variant
+    // that reports the index only
+    var loc = p.location != null ? String(p.location)
+      : (t.locations && p.pointNumber != null && t.locations[p.pointNumber] != null
+        ? String(t.locations[p.pointNumber]) : "");
+    if (!loc) return;
+    withDT(function (dt) { apply(dt, loc); });
+  }
+  // `Plotly.newPlot` detaches listeners on a deferred pass (see `bindClick` in the rows<->map
+  // bridge); same token idiom so exactly one binding fires.
+  function bindClick(gd) {
+    var token = (gd.__qsvChoroToken || 0) + 1;
+    gd.__qsvChoroToken = token;
+    gd.on("plotly_click", function (ev) {
+      if (gd.__qsvChoroToken !== token) return;
+      onClick(gd, ev);
+    });
+  }
+  function bindClickSettled(gd) {
+    bindClick(gd);
+    setTimeout(function () { bindClick(gd); }, 250);
+    setTimeout(function () { bindClick(gd); }, 1200);
+  }
+  function hook() {
+    var tries = hook.tries || 0;
+    var gds = document.querySelectorAll('[id^="qsv-viz-panel-"]');
+    var pending = false;
+    gds.forEach(function (gd) {
+      if (gd.__qsvChoroHooked || gd.__qsvChoroSkip) return;
+      if (!gd.on || (!gd.__qsvFs && tries < 100)) { pending = true; return; }
+      // decided once the panel has rendered: a panel with no region-column choropleth trace is
+      // marked skipped so it never keeps the poll alive
+      if (!(gd.data && gd.data.some(isRegionTrace))) { gd.__qsvChoroSkip = true; return; }
+      gd.__qsvChoroHooked = true;
+      bindClickSettled(gd);
+      // re-arm on our OWN triggers rather than trusting the theme toggle to call the rehook
+      // (same two failure modes the rows<->map bridge documents)
+      if (!gd.__qsvChoroWatch) {
+        gd.__qsvChoroWatch = true;
+        var rearm = function () { bindClickSettled(gd); };
+        var tb = document.getElementById("qsv-theme-toggle");
+        if (tb) tb.addEventListener("click", rearm);
+        document.addEventListener("fullscreenchange", rearm);
+      }
+    });
+    hook.tries = tries + 1;
+    if (pending && hook.tries < 200) setTimeout(hook, 100);
+  }
+  window.__qsvChoroRehook = hook;
+  hook();
+})();
+</script>
+"##;
+
 fn smart_html_page(
     title_text: &str,
     theme: Option<BuiltinTheme>,
@@ -10937,6 +11110,10 @@ fn smart_html_page(
     // the bridge uses to pin a selected row that has no plotted point. Still gated on the drawer
     // actually being present (see `map_select_chrome`).
     map_select: Option<(usize, usize)>,
+    // `Some((region_col, feature_id -> raw spellings))` when a summary choropleth carries a real
+    // CSV region column, so the region-click -> data-viewer SearchBuilder filter is worth
+    // emitting. Still gated on the drawer actually being present (see `choro_filter_chrome`).
+    choro_filter: Option<(usize, &HashMap<String, Vec<String>>)>,
 ) -> String {
     let js = plotly_js_block();
     let meta_table = meta_table.unwrap_or("");
@@ -11009,6 +11186,16 @@ fn smart_html_page(
         && !data_chrome.is_empty()
     {
         map_select_chrome(lat_col, lon_col)
+    } else {
+        String::new()
+    };
+    // region-click -> drawer filter bridge: needs BOTH ends to exist. `choro_filter` says a
+    // summary choropleth panel carries a real CSV region column; a non-empty `data_chrome` is
+    // the same "drawer is on this page" test the rows<->points bridge uses.
+    let choro_filter_chrome = if let Some((region_col, region_raws)) = choro_filter
+        && !data_chrome.is_empty()
+    {
+        choro_filter_chrome(region_col, region_raws)
     } else {
         String::new()
     };
@@ -11085,6 +11272,7 @@ fn smart_html_page(
 {data_chrome}
 {photo_chrome}
 {map_select_chrome}
+{choro_filter_chrome}
 {script}
 <div class="qsv-page-foot">{tp_footer}<div class="qsv-page-foot-right">{button}{logo}</div></div>
 </body>
@@ -14487,6 +14675,12 @@ enum PanelKind {
         /// Colorbar title / measure name (e.g. "count", "median PRICE"). Parameterized so a
         /// region-code summary choropleth can label its aggregate instead of a hardcoded "count".
         measure_label:  String,
+        /// `Some` only for a region-code SUMMARY choropleth (a real CSV region column exists):
+        /// the region column's CSV index plus a matched-feature-id -> raw cell value(s) map
+        /// (only entries where the raw spelling differs from the feature id, e.g. zero-padded
+        /// zips). Drives the region-click -> data-viewer SearchBuilder filter; `None` for the
+        /// geocode-derived and point-in-polygon paths, where no CSV column holds region values.
+        region_filter:  Option<(usize, HashMap<String, Vec<String>>)>,
     },
     /// Filled-region choropleth drawn on a MapLibre tile basemap (`map` subplot) instead of the
     /// projection `geo` subplot — used for a `viz smart` `--geojson` point-in-polygon panel whose
@@ -14508,6 +14702,8 @@ enum PanelKind {
         zoom:           f64,
         /// Colorbar title / measure name (e.g. "count", "median PRICE"). See `Choropleth`.
         measure_label:  String,
+        /// Region column index + feature-id -> raw values map. See `Choropleth::region_filter`.
+        region_filter:  Option<(usize, HashMap<String, Vec<String>>)>,
     },
     /// Categorical part-to-whole hierarchy (`Treemap` or `Sunburst`, per `style`) over 2–3
     /// nested low-cardinality dimensions. Carries the fully precomputed flat plotly arrays
@@ -16517,6 +16713,13 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       // the global box and the ColumnControl widgets are re-read on every draw.
       var sbCount = 0;
       var updateClearFilters = null;
+      // the region-click bridge applies its filter through searchBuilder.rebuild(), which does
+      // NOT fire the filterChanged hook below — it announces the new criteria count over this
+      // seam instead so Clear Filters stays honest
+      document.addEventListener("qsv-data-sb-changed", function (ev) {
+        sbCount = (ev.detail && ev.detail.count) || 0;
+        if (updateClearFilters) updateClearFilters();
+      });
       dt = new DataTable(table, {
         data: rows,
         // render.text(): cell values are DATA, not markup — without it DataTables injects them
@@ -21289,6 +21492,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             feature_id_key: None,
             hover_text,
             measure_label: t!("viz.chart.count").into_owned(),
+            region_filter: None,
         },
     ))
 }
@@ -21493,6 +21697,7 @@ fn build_smart_pip_choropleth_panel(
                 MAP_PANEL_USABLE_HEIGHT_PX,
             )),
             measure_label: t!("viz.chart.count").into_owned(),
+            region_filter: None,
         }
     } else {
         PanelKind::Choropleth {
@@ -21503,6 +21708,7 @@ fn build_smart_pip_choropleth_panel(
             feature_id_key: Some(feature_id_key.to_string()),
             hover_text,
             measure_label: t!("viz.chart.count").into_owned(),
+            region_filter: None,
         }
     };
     Ok(Some(Panel::new(panel_name, kind)))
@@ -21699,6 +21905,11 @@ fn build_smart_summary_choropleth_panels(
     let mut values: Vec<HashMap<String, Vec<f64>>> = vec![HashMap::new(); n_c];
     let mut matched_rows: Vec<u64> = vec![0; n_c];
     let mut total_rows: Vec<u64> = vec![0; n_c];
+    // per matched feature id, the raw cell spellings that differ from it (zero-padded zips,
+    // case-folded codes) — the region-click filter searches the data viewer by RAW value, so it
+    // needs the reverse of what `match_region_code` normalized away. Identity matches are
+    // omitted; the JS side falls back to the feature id itself.
+    let mut raws_by_cand: Vec<HashMap<String, Vec<String>>> = vec![HashMap::new(); n_c];
 
     let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
     let mut record = csv::ByteRecord::new();
@@ -21718,6 +21929,12 @@ fn build_smart_summary_choropleth_panels(
                 continue;
             };
             matched_rows[ci] += 1;
+            if raw != k {
+                let variants = raws_by_cand[ci].entry(k.clone()).or_default();
+                if !variants.iter().any(|v| v == raw) {
+                    variants.push(raw.to_string());
+                }
+            }
             match counts[ci].get_mut(&k) {
                 Some(c) => *c += 1.0,
                 None => {
@@ -21755,6 +21972,7 @@ fn build_smart_summary_choropleth_panels(
         return Ok(None);
     }
     let region_idx = candidates[ci];
+    let region_raws = std::mem::take(&mut raws_by_cand[ci]);
 
     // resolve a human label for a column: dictionary label, else header, else positional.
     let label_of = |idx: usize| {
@@ -21817,6 +22035,7 @@ fn build_smart_summary_choropleth_panels(
                     MAP_PANEL_USABLE_HEIGHT_PX,
                 )),
                 measure_label,
+                region_filter: Some((region_idx, region_raws.clone())),
             }
         } else {
             PanelKind::Choropleth {
@@ -21827,6 +22046,7 @@ fn build_smart_summary_choropleth_panels(
                 feature_id_key: Some(feature_id_key.to_string()),
                 hover_text,
                 measure_label,
+                region_filter: Some((region_idx, region_raws.clone())),
             }
         };
         Panel::new(title, kind)
@@ -28336,6 +28556,8 @@ fn render_smart_grid_page(
         false,
         // ...nor is there a map panel to cross-link the data viewer's rows to.
         None,
+        // ...and no choropleth either (they force the inline path), so no region-click filter.
+        None,
     )
 }
 
@@ -28908,31 +29130,36 @@ fn inline_panel_plot_choropleth_map(panel: &Panel, theme: Option<BuiltinTheme>) 
         center_lat,
         zoom,
         measure_label,
+        region_filter,
     } = &panel.kind
     else {
         unreachable!("smart_inline_panel_plot dispatches on panel.kind")
     };
     let mut plot = Plot::new();
-    plot.add_trace(
-        ChoroplethMap::new(locations.clone(), z.clone())
-            .geojson(geojson.clone())
-            .feature_id_key(feature_id_key.clone())
-            .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
-            .show_scale(true)
-            .color_bar(ColorBar::new().title(escape_hover(measure_label)))
-            .marker(
-                ChoroplethMarker::new()
-                    .line(Line::new().width(0.5))
-                    .opacity(CHOROPLETH_MAP_FILL_OPACITY),
-            )
-            // insert the fill ABOVE every basemap layer. Plotly's default drops it just above
-            // the water layers, so the basemap's roads render on TOP of the regions and muddy
-            // the read; "" lifts it over the roads (a near-opaque fill then reads cleanly, with
-            // the inter-polygon gaps still revealing enough basemap to orient).
-            .below("")
-            .hover_text_array(hover_text.clone())
-            .hover_info(HoverInfo::Text),
-    );
+    let mut cm_trace = ChoroplethMap::new(locations.clone(), z.clone())
+        .geojson(geojson.clone())
+        .feature_id_key(feature_id_key.clone())
+        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+        .show_scale(true)
+        .color_bar(ColorBar::new().title(escape_hover(measure_label)))
+        .marker(
+            ChoroplethMarker::new()
+                .line(Line::new().width(0.5))
+                .opacity(CHOROPLETH_MAP_FILL_OPACITY),
+        )
+        // insert the fill ABOVE every basemap layer. Plotly's default drops it just above
+        // the water layers, so the basemap's roads render on TOP of the regions and muddy
+        // the read; "" lifts it over the roads (a near-opaque fill then reads cleanly, with
+        // the inter-polygon gaps still revealing enough basemap to orient).
+        .below("")
+        .hover_text_array(hover_text.clone())
+        .hover_info(HoverInfo::Text);
+    // region column index rides as trace `meta` so the region-click filter chrome can find
+    // this panel (and its column) without any DOM sentinel.
+    if let Some((rc, _)) = region_filter {
+        cm_trace = cm_trace.meta(*rc);
+    }
+    plot.add_trace(cm_trace);
     // keep the LABELED basemap: since the fill is inserted above every basemap layer
     // (`below("")` on the trace), place names can no longer bleed over the regions — they sit
     // under the fill and show only in the gaps between polygons (water, harbor, parks, and the
@@ -28982,6 +29209,7 @@ fn inline_panel_plot_choropleth(panel: &Panel, theme: Option<BuiltinTheme>) -> P
         feature_id_key,
         hover_text,
         measure_label,
+        region_filter,
     } = &panel.kind
     else {
         unreachable!("smart_inline_panel_plot dispatches on panel.kind")
@@ -28999,6 +29227,11 @@ fn inline_panel_plot_choropleth(panel: &Panel, theme: Option<BuiltinTheme>) -> P
     // built-in geocode-derived panels (iso3 / usa-states) carry neither.
     if let (Some(gj), Some(key)) = (geojson, feature_id_key) {
         trace = trace.geojson(gj.clone()).feature_id_key(key.clone());
+    }
+    // region column index rides as trace `meta` so the region-click filter chrome can find
+    // this panel (and its column) without any DOM sentinel.
+    if let Some((rc, _)) = region_filter {
+        trace = trace.meta(*rc);
     }
     plot.add_trace(trace);
     // frame to the FILLED REGION GEOMETRIES, not the source points (whose bounding box clips
@@ -29951,6 +30184,20 @@ fn render_smart_inline(
     // the bridge needs the coordinate columns too, so it can pin a selected row that has no
     // plotted point; without them there is nothing to emit it for
     let map_select = if has_map_select { map_cols } else { None };
+    // region-click -> drawer filter: a summary choropleth panel carries the region column plus
+    // the feature-id -> raw-spelling map (`None` on the geocode-derived and PIP paths, where no
+    // CSV column holds region values). Both summary panels share one column, so first wins.
+    let choro_filter = panels.iter().find_map(|p| match &p.kind {
+        PanelKind::Choropleth {
+            region_filter: Some((c, m)),
+            ..
+        }
+        | PanelKind::ChoroplethMap {
+            region_filter: Some((c, m)),
+            ..
+        } => Some((*c, m)),
+        _ => None,
+    });
     // panels carry no overall title, so the dashboard title is shown as the page <h1>.
     smart_html_page(
         title_text,
@@ -29964,6 +30211,7 @@ fn render_smart_inline(
         data_chrome,
         has_basemap,
         map_select,
+        choro_filter,
     )
 }
 

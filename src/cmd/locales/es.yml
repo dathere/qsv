@@ -36,6 +36,8 @@ viz:
     row_is_filtered_out: "fila excluida por el filtro"
     row_not_plotted: "fila no incluida entre los puntos trazados"
     row_has_no_coordinates: "la fila no tiene coordenadas en el mapa"
+    region_filter_applied: "filas filtradas a %{q_region}"
+    region_filter_cleared: "filtro de región eliminado"
     extent_points: "puntos de extensión"
     spatial_extent: "extensión espacial"
     full_extent: "extensión completa (incl. atípicos)"

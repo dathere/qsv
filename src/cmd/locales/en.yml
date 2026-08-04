@@ -55,6 +55,8 @@ viz:
     row_is_filtered_out: "row is filtered out"
     row_not_plotted: "row not among plotted points"
     row_has_no_coordinates: "row has no map coordinates"
+    region_filter_applied: "rows filtered to %{q_region}"
+    region_filter_cleared: "region filter cleared"
     # Legend / trace names for the map's geo overlay. Each is emitted from THREE
     # places (the static map, the inline map and the animated-geo path), so a
     # change here moves all three; they were found by grepping RENDERED Spanish

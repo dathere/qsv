@@ -10627,13 +10627,17 @@ fn viz_smart_summary_choropleth_county_fips_concept() {
 
 // A summary choropleth + the data-viewer drawer emit the region-click -> SearchBuilder filter
 // chrome: the hook marker, the region column riding as trace `meta`, and the feature-id -> raw
-// spellings map (here the zero-padded "03103" whose raw cells read "3103").
+// spellings map (here the zero-padded "03103" whose raw cells read "3103"). The fixture holds
+// BOTH spellings of the same region ("03103" and "3103"): the map must record only the
+// non-canonical variant, and the chrome must carry the union step that adds the canonical id
+// back into the SearchBuilder values (roborev #4026 — RAWS[loc] alone drops the
+// canonically-spelled rows).
 #[test]
 fn viz_smart_choro_filter_chrome_emitted() {
     let wrk = Workdir::new("viz_smart_choro_filter_chrome_emitted");
     wrk.create_from_string(
         "counties.csv",
-        "fips,pop\n42003,100\n42003,200\n3103,300\n3103,400\n",
+        "fips,pop\n42003,100\n42003,200\n3103,300\n3103,400\n03103,500\n",
     );
     wrk.create_from_string(
         "counties.geojson",
@@ -10674,7 +10678,13 @@ fn viz_smart_choro_filter_chrome_emitted() {
     );
     assert!(
         html.contains(r#""03103":["3103"]"#),
-        "the feature-id -> raw spellings map should carry the zero-padded fips entry"
+        "the feature-id -> raw spellings map should carry ONLY the non-canonical spelling, even \
+         when the canonical one also appears in the data"
+    );
+    assert!(
+        html.contains("[loc].concat(RAWS[loc])"),
+        "critFor must union the canonical feature id with the variant spellings — RAWS[loc] alone \
+         drops rows stored under the canonical spelling"
     );
 }
 

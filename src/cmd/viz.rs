@@ -10962,8 +10962,9 @@ fn choro_filter_chrome(region_col: usize, region_raws: &HashMap<String, Vec<Stri
 ///
 /// The clicked `location` is the MATCHED GeoJSON feature id, not necessarily the raw cell value
 /// (`match_region_code` zero-pads short numeric codes and case-folds), so the criterion values
-/// come from the embedded feature-id -> raw-spellings map, falling back to the id itself. A
-/// multi-spelling region becomes an OR sub-group.
+/// are the embedded feature-id -> raw-spellings map entries UNIONED with the id itself (a
+/// column can hold both spellings of the same region). A multi-spelling region becomes an OR
+/// sub-group.
 ///
 /// The summary choropleth panel is found by its trace `meta` carrying the region column index
 /// (set in `inline_panel_plot_choropleth{,_map}`); hooking follows the `MAP_SELECT_CHROME`
@@ -10992,7 +10993,10 @@ const CHORO_FILTER_CHROME: &str = r##"<script>
   }
   function keyOf(c) { return JSON.stringify(normCrit(c)); }
   function critFor(title, loc) {
-    var raws = RAWS[loc] || [loc];
+    // UNION the canonical feature id with the variant spellings, never one or the other: a
+    // column can hold BOTH "03103" and "3103" for the same region, and the map only records
+    // the non-canonical spellings, so RAWS[loc] alone would drop the canonically-spelled rows
+    var raws = RAWS[loc] ? [loc].concat(RAWS[loc]) : [loc];
     var mk = function (v) { return { condition: "=", data: title, value: [v] }; };
     return raws.length === 1 ? mk(raws[0]) : { logic: "OR", criteria: raws.map(mk) };
   }
@@ -21908,7 +21912,8 @@ fn build_smart_summary_choropleth_panels(
     // per matched feature id, the raw cell spellings that differ from it (zero-padded zips,
     // case-folded codes) — the region-click filter searches the data viewer by RAW value, so it
     // needs the reverse of what `match_region_code` normalized away. Identity matches are
-    // omitted; the JS side falls back to the feature id itself.
+    // omitted to keep the map sparse; the JS side UNIONS the feature id back in (a column can
+    // hold both spellings of the same region, so neither list alone is sufficient).
     let mut raws_by_cand: Vec<HashMap<String, Vec<String>>> = vec![HashMap::new(); n_c];
 
     let (mut rdr, _headers, _nh) = reader_and_headers(args)?;

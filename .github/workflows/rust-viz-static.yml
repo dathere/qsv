@@ -45,7 +45,7 @@ jobs:
     # "Failed to extract static image from browser session", which reads like a code bug.
     # setup-chrome + setup-chromedriver pin them together.
     - name: Install Chrome + matching chromedriver
-      uses: browser-actions/setup-chrome@v1
+      uses: browser-actions/setup-chrome@v2
       with:
         install-chromedriver: true
         install-dependencies: true

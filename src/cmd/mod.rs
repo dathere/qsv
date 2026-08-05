@@ -142,7 +142,9 @@ pub mod validate;
 // `viz` (and therefore `viz_static`, which enables it) does not work on big-endian
 // targets. Fail loudly here rather than shipping a silently broken `viz` command:
 // `distrib_features` and `all_features` both pull in `viz_static`, so a plain
-// `cargo build -F distrib_features` on s390x/ppc64le would otherwise compile clean.
+// `cargo build -F distrib_features` on s390x would otherwise compile clean.
+// NOTE powerpc64LE is LITTLE-endian, so this guard does not fire for ppc64le — viz is
+// simply never enabled in that target's publish workflow.
 #[cfg(all(feature = "viz", target_endian = "big"))]
 compile_error!(
     "the `viz` feature (and `viz_static`, which enables it) is not supported on big-endian \

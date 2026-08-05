@@ -8,6 +8,11 @@ name: Linux ARM64
 # The feature set below mirrors publish.yml's aarch64-unknown-linux-gnu entry plus `viz`,
 # so a green run here is the evidence gate for adding `viz` to that target.
 #
+# PRE-FLIGHT ONLY: publish.yml's aarch64 entry deliberately does NOT enable `viz` yet, so
+# the ARM Linux release artifact still ships without it. This job exists to earn that
+# change on evidence first; enabling `viz` there is a deliberate follow-up, not an
+# oversight. The same applies to the base-viz step added to rust-musl.yml.
+#
 # Base `viz` only, never `viz_static`: the static tier drives a headless Chromium via
 # webdriver-downloader, which is not something the ARM Linux prebuilt should require.
 

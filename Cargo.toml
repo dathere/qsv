@@ -654,9 +654,12 @@ to = ["csvs_convert", "dep:spreadsheet-ods"]
 # (`viz smart`) from CSV data via the plotly crate. Base feature = self-contained
 # interactive HTML output (plotly_embed_js); NO polars dependency. `viz smart`
 # reuses qsv's in-process stats + frequency caches. See `qsv viz --help` and #302.
-# NOT SUPPORTED ON BIG-ENDIAN TARGETS (s390x, ppc64le) — this applies to BOTH `viz`
-# and `viz_static`, and is enforced by a compile_error! in src/cmd/mod.rs. Keep both
+# NOT SUPPORTED ON BIG-ENDIAN TARGETS (s390x; also powerpc64 BE) — this applies to BOTH
+# `viz` and `viz_static`, and is enforced by a compile_error! in src/cmd/mod.rs. Keep both
 # out of big-endian publish workflows.
+# NOTE powerpc64LE is LITTLE-endian, so the guard deliberately does not fire there. `viz`
+# is simply not enabled for the ppc64le prebuilt: it has no viz CI coverage, and polars
+# does not compile on PowerPC (see docs/publishing_assets/qsv-powerpc64le-*.txt).
 viz = [
     "dep:plotly",
     "dep:opener",

@@ -24,6 +24,7 @@ viz:
     columns: "列数:"
     completeness: "完全性:"
     compiled: "生成日時:"
+    generated_by: "生成ツール:"
     pid: "PID:"
   viewer:
     link_explore: "(詳細表示)"

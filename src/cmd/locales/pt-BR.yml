@@ -30,6 +30,7 @@ viz:
     columns: "Colunas:"
     completeness: "Completude:"
     compiled: "Compilado:"
+    generated_by: "Gerado por:"
     pid: "PID:"
   viewer:
     link_explore: "(Explorar)"

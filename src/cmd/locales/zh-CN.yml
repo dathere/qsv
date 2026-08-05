@@ -31,6 +31,7 @@ viz:
     columns: "列数:"
     completeness: "完整度:"
     compiled: "生成时间:"
+    generated_by: "生成工具:"
     pid: "PID:"
   viewer:
     link_explore: "(浏览)"

@@ -139,6 +139,17 @@ pub mod tojsonl;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod transpose;
 pub mod validate;
+// `viz` (and therefore `viz_static`, which enables it) does not work on big-endian
+// targets. Fail loudly here rather than shipping a silently broken `viz` command:
+// `distrib_features` and `all_features` both pull in `viz_static`, so a plain
+// `cargo build -F distrib_features` on s390x/ppc64le would otherwise compile clean.
+#[cfg(all(feature = "viz", target_endian = "big"))]
+compile_error!(
+    "the `viz` feature (and `viz_static`, which enables it) is not supported on big-endian \
+     targets. Build without them, e.g. drop `viz`/`viz_static` from --features, or use a feature \
+     set that excludes them."
+);
+
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub mod viz;
 #[cfg(all(feature = "viz", feature = "feature_capable"))]

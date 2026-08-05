@@ -1,0 +1,55 @@
+name: Linux ARM64
+
+# aarch64-unknown-linux-gnu is a published target (publish.yml builds it natively on
+# ubuntu-24.04-arm, publish-portable.yml cross-builds it) but had NO test workflow of any
+# kind — every other published platform has one. That gap is why `viz` could not be
+# enabled for the ARM Linux prebuilts on evidence.
+#
+# The feature set below mirrors publish.yml's aarch64-unknown-linux-gnu entry plus `viz`,
+# so a green run here is the evidence gate for adding `viz` to that target.
+#
+# Base `viz` only, never `viz_static`: the static tier drives a headless Chromium via
+# webdriver-downloader, which is not something the ARM Linux prebuilt should require.
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-linux-arm64-tests-${{ github.ref }}-1
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    # Skip CI for MCP-only commits (commit message contains "(mcp):")
+    if: |
+      github.event_name != 'push' ||
+      !contains(github.event.head_commit.message, '(mcp):')
+
+    runs-on: ubuntu-24.04-arm
+    # Hard cap so a hung test fails fast instead of burning the 6-hour GitHub default.
+    timeout-minutes: 90
+
+    steps:
+    - name: apt-get update Ubuntu, libwayland-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install libwayland-dev
+    - uses: actions/checkout@v7
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        targets: aarch64-unknown-linux-gnu
+    - name: Setup Rust-cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: qsv-linux-arm64-cache
+    - name: Run tests
+      run: cargo test --verbose --locked --features=apply,fetch,foreach,lens,color,feature_capable,viz

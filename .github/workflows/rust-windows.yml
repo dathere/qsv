@@ -46,4 +46,9 @@ jobs:
         RUSTFLAGS: -C debuginfo=0
       #   RUSTFLAGS: -C target-cpu=native
       # Windows: jemallocator is not supported on Windows, so we use the system allocator.
+      # NOTE base `viz` only. Adding `viz_static` here pushed this job from ~27min past the
+      # 90min timeout — it pulls ~54 extra crates (plotly_static, fantoccini, native-tls,
+      # icu_segmenter, tar) and the run never reached the tests. Windows ships viz_static in
+      # publish.yml, so that tier still has no Windows coverage; it needs its own
+      # paths-filtered job (like rust-viz-static.yml does for Linux), not a bolt-on here.
       run: cargo test --verbose --locked --no-default-features --features=apply,fetch,foreach,geocode,luau,python,polars,feature_capable,ui,viz

@@ -6189,6 +6189,9 @@ fn viz_smart_smarter_dictionary_combination() {
 // available: the reverse-geocoded place serves as the identifier. Tolerant of an unavailable index
 // (offline CI) — it must always render, and only assert the hover wiring when geocoding
 // contributed.
+// geocode-dependent: without the geocode feature no reverse-geocoded identifier is produced,
+// so the hover `"text":[` wiring this asserts never renders.
+#[cfg(feature = "geocode")]
 #[test]
 fn viz_smart_geo_hover_geocoded_identifier() {
     let wrk = Workdir::new("viz_smart_geo_hover_geocoded_identifier");
@@ -8602,6 +8605,10 @@ fn viz_smart_compressed_plotly_bundle() {
 // A large map panel's figure JSON embeds as a gzip+base64 payload rendered via qsvNewPlotGz; the
 // inflated figure carries the scattermap trace with base64 float32 typed-array coordinates
 // (bdata) and the baked cluster config.
+// geocode-dependent: in a non-geocode build the map panel this asserts on is not emitted as
+// panel 0, so `id="qsv-viz-panel-0-fig"` is absent. NOTE the compression behaviour under test is
+// itself geocode-independent; a non-geo fixture would keep it covered in lean builds too.
+#[cfg(feature = "geocode")]
 #[test]
 fn viz_smart_compressed_map_figure_payload() {
     let wrk = Workdir::new("viz_smart_compressed_map_figure_payload");
@@ -8726,6 +8733,10 @@ fn viz_cdn_replaces_embedded_bundle() {
 // QSV_VIZ_CDN governs only the *bundle*. Figure-payload gzip is still governed by
 // QSV_VIZ_NO_COMPRESS, so a gzipped map figure must keep the `__qsvGunzip` prelude that
 // `qsvNewPlotGz` depends on — dropping it along with the bootstrap would leave the map blank.
+// geocode-dependent for the same reason as viz_smart_compressed_map_figure_payload: the map
+// panel is not emitted as panel 0 in a non-geocode build. The `__qsvGunzip` prelude behaviour
+// under test is itself geocode-independent.
+#[cfg(feature = "geocode")]
 #[test]
 fn viz_cdn_keeps_gz_prelude_for_compressed_map_figures() {
     let wrk = Workdir::new("viz_cdn_keeps_gz_prelude_for_compressed_map_figures");
@@ -8826,6 +8837,9 @@ fn viz_smart_inline_has_theme_toggle() {
     assert!(html.contains("data:image/png;base64,"));
 }
 
+// geocode-dependent: the `qsv-viz-geo-meta` marker renders in non-geocode builds too, so the
+// in-body `if html.contains(...)` guard is entered but "Spatial extent:" never appears.
+#[cfg(feature = "geocode")]
 #[test]
 fn viz_smart_map_geocode_extent_metadata() {
     // a tightly-clustered NYC-area lat/lon dataset: every bounding-box corner + the center
@@ -8897,6 +8911,9 @@ fn viz_smart_map_outlier_markers() {
     );
 }
 
+// geocode-dependent for the same reason as viz_smart_map_geocode_extent_metadata: the
+// `qsv-viz-geo-meta` guard is entered in non-geocode builds but "Spatial extent:" is absent.
+#[cfg(feature = "geocode")]
 #[test]
 fn viz_smart_map_outlier_extent_callout() {
     // A tight NYC cluster plus one point in Pennsylvania. With the `geocode` feature and a usable

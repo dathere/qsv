@@ -1,0 +1,62 @@
+name: Linux ARM64
+
+# aarch64-unknown-linux-gnu is a published target (publish.yml builds it natively on
+# ubuntu-24.04-arm, publish-portable.yml cross-builds it) but had NO test workflow of any
+# kind — every other published platform has one. That gap is why `viz` could not be
+# enabled for the ARM Linux prebuilts on evidence.
+#
+# The feature set below mirrors publish.yml's aarch64-unknown-linux-gnu entry plus `viz`,
+# so a green run here is the evidence gate for adding `viz` to that target.
+#
+# PRE-FLIGHT ONLY: publish.yml's aarch64 entry deliberately does NOT enable `viz` yet, so
+# the ARM Linux release artifact still ships without it. This job exists to earn that
+# change on evidence first; enabling `viz` there is a deliberate follow-up, not an
+# oversight. The same applies to the base-viz step added to rust-musl.yml.
+#
+# Base `viz` only, never `viz_static`: the static tier drives a headless Chromium via
+# webdriver-downloader, which is not something the ARM Linux prebuilt should require.
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-linux-arm64-tests-${{ github.ref }}-1
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    # Skip CI for MCP-only commits (commit message contains "(mcp):")
+    if: |
+      github.event_name != 'push' ||
+      !contains(github.event.head_commit.message, '(mcp):')
+
+    runs-on: ubuntu-24.04-arm
+    # Hard cap so a hung test fails fast instead of burning the 6-hour GitHub default.
+    timeout-minutes: 90
+
+    steps:
+    - name: apt-get update Ubuntu, libwayland-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install libwayland-dev
+    - uses: actions/checkout@v7
+    # Third-party actions pinned to full commit SHAs (Codacy security rule), matching
+    # avx512-bench.yml. Older workflows predate the rule and are grandfathered.
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master @ 2026-06-01
+      with:
+        toolchain: stable
+        targets: aarch64-unknown-linux-gnu
+    - name: Setup Rust-cache
+      uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      with:
+        key: qsv-linux-arm64-cache
+    - name: Run tests
+      run: cargo test --verbose --locked --features=apply,fetch,foreach,lens,color,feature_capable,viz

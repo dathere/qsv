@@ -42,13 +42,15 @@ jobs:
         sudo apt-get update
         sudo apt-get install libwayland-dev
     - uses: actions/checkout@v7
+    # Third-party actions pinned to full commit SHAs (Codacy security rule), matching
+    # avx512-bench.yml. Older workflows predate the rule and are grandfathered.
     - name: Installing Rust toolchain
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master @ 2026-06-01
       with:
         toolchain: stable
         targets: aarch64-unknown-linux-gnu
     - name: Setup Rust-cache
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       with:
         key: qsv-linux-arm64-cache
     - name: Run tests

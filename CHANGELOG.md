@@ -4,17 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [22.0.0] - 2026-08-05 📐 The "Data Schematic" Release 📊
+## [22.0.0] - 2026-08-06 📐 The "Data Schematic" Release 📊
 
-qsv's biggest release ever with 530+ commits since v21.1.0. The headliner is **`viz`** — an entirely new command that turns a CSV into interactive [plotly](https://plotly.com/javascript/) charts and maps, with `viz smart` auto-designing a **Data Schematic** — a neuro-symbolic interactive rendering of a dataset's schema and statistics. It's neuro-symbolic as we combine deterministic algorithms with neural networks, leveraging their respective strengths. Statistics, Heuristics and Algorithms are deterministic and reproducible, while LLMs handle classification, general world knowledge and translations - all while allowing a Human-in-the-loop (Data Stewards, Data Curators, etc.) to correct and refine the results. The dashboard is **self-contained, offline-capable HTML** with static PNG/SVG/PDF export via `viz_static`. See the [gallery](https://dathere.github.io/qsv/gallery.html).
+qsv's biggest release ever with 530+ commits since v21.1.0. The headliner is **`viz`** — an entirely new command that turns a CSV into interactive [plotly](https://plotly.com/javascript/) charts and maps, with `viz smart` auto-designing a **Data Schematic**. Schematics are **self-contained, offline-capable HTML** with static PNG/SVG/PDF export via `viz_static`. See the [gallery](https://dathere.github.io/qsv/gallery.html).
 
-A **Data Schematic** is our take on a modern story-telling Data Dictionary/Data Explorer in the Age of AI. The name is descriptive rather than decorative: a schematic is the drawing form of a *schema*, and `viz smart` already emits a `.schema.json` — the schematic is that schema rendered, with the statistics that back it. A schematic shows components *and how they connect*, which is exactly what a data dictionary cannot: correlation, process order, hierarchy, temporal pacing, spatial pairing. Every claim in one is checkable against the data it describes. The format is defined in [docs/DATA_SCHEMATIC.md](https://github.com/dathere/qsv/blob/master/docs/DATA_SCHEMATIC.md) and is deliberately tool-neutral — `qsv viz smart` produces one (a "qsv Schematic"), but a Data Schematic is no more a qsv artifact than a histogram is a matplotlib artifact.
+A **Data Schematic** is our take on a modern, storytelling data dictionary for the Age of AI. The name is descriptive rather than decorative: a schematic is the drawing form of a *schema*, and `viz smart` renders the editable JSON Schema `describegpt` drafts, together with the statistics that back it. Where a dictionary lists fields, a schematic shows components *and how they connect* — correlation, process order, hierarchy, temporal pacing, spatial pairing — and every claim it makes is checkable against the data it describes.
 
-Since **no release has ever shipped `viz`** (it landed four days after 21.1.0 was tagged), the term arrives at **zero deprecation cost** — there is no installed base calling it anything else.
+It's [neuro-symbolic](https://en.wikipedia.org/wiki/Neuro-symbolic_AI) by construction. Statistics, heuristics and algorithms are deterministic and reproducible, so they decide what gets drawn and what the numbers are. LLMs handle what computation cannot — classification, world knowledge, translation using a general purpose ontology — and a human in the loop (data steward, curator) ratifies or corrects anything the LLM proposes before it's rendered ([see example JSON Schema](https://github.com/dathere/qsv/blob/master/examples/viz/pitt311data.schema.json)). The format is defined in [docs/DATA_SCHEMATIC.md](https://github.com/dathere/qsv/blob/master/docs/DATA_SCHEMATIC.md).
  
 Three more new commands land alongside it: **`denull`** (detect the null sentinels that silently degrade typing), **`fixedwidth`** (convert fixed-width text to CSV) and **`clean`** (remove qsv-generated cache files).
-
-This is a **major** version bump because three changes are breaking. Review the `### Changed` section below before upgrading. MSRV is unchanged at Rust 1.97.
 
 ### Highlights
 

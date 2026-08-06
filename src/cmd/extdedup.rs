@@ -38,11 +38,13 @@ extdedup options:
                                In LINE MODE, <file> is NOT a valid CSV — each duplicate line is
                                prefixed by its 0-based file line index and a tab character.
     -H, --human-readable       Comma separate duplicate count.
-    --memory-limit <arg>       The maximum amount of memory to buffer the on-disk hash table.
+    --memory-limit <arg>       How much memory to use before deduping switches to a
+                               temporary file on disk (see --temp-dir).
                                If less than 50, this is a percentage of total memory.
                                If more than 50, this is the memory in MB to allocate, capped
                                at 90 percent of total memory.
-                               [default: 10]
+                               Defaults to 100 MB. Raising this mostly just uses more memory,
+                               as deduping on disk needs far less memory per row.
     --temp-dir <arg>           Directory to store temporary hash table file.
                                If not specified, defaults to operating system temp directory.
 
@@ -188,7 +190,7 @@ fn dedup_csv(args: Args, mem_limited_buffer: u64) -> Result<u64, crate::clitypes
         }
 
         // Single hash-table touch: insert returns true when the key is new.
-        if dedup_cache.insert(&key) {
+        if dedup_cache.insert(&key)? {
             if !no_output {
                 wtr.write_byte_record(&curr_row)?;
             }
@@ -256,7 +258,7 @@ fn dedup_lines(args: Args, mem_limited_buffer: u64) -> Result<u64, crate::clityp
     for (row_idx, line) in input_reader.lines().enumerate() {
         let line = line?;
         // Single hash-table touch: insert returns true when the line is new.
-        if dedup_cache.insert(&line) {
+        if dedup_cache.insert(&line)? {
             if !no_output {
                 writeln!(output_writer, "{line}")?;
             }
@@ -312,6 +314,25 @@ pub fn calculate_memory_limit(flag_memory_limit: Option<u64>) -> u64 {
         },
         None => MEMORY_LIMITED_BUFFER,
     }
+}
+
+/// `--memory-limit` must NOT carry a docopt `[default:]`.
+///
+/// It used to say `[default: 10]`, which made `flag_memory_limit` always `Some(10)` -
+/// 10 PERCENT of total RAM, ~6.9 GB on a 64 GB box - and left `calculate_memory_limit`'s
+/// `None` arm, the documented 100 MB default, permanently dead. Two disagreeing
+/// defaults, and the documented one lost.
+#[test]
+fn test_extdedup_default_memory_limit_is_unset() {
+    let args: Args = util::get_args(USAGE, &["qsv", "extdedup", "in.csv"]).unwrap();
+    assert!(
+        args.flag_memory_limit.is_none(),
+        "--memory-limit must have no docopt default, so the 100 MB default applies"
+    );
+    assert_eq!(
+        calculate_memory_limit(args.flag_memory_limit),
+        MEMORY_LIMITED_BUFFER
+    );
 }
 
 #[test]

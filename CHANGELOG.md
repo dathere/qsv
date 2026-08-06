@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+- `extdedup`: **`--memory-limit` now defaults to 100 MB instead of 10% of total RAM.** The USAGE carried a docopt `[default: 10]`, so `flag_memory_limit` was always `Some(10)` — a *percentage* — which made `calculate_memory_limit`'s `None` arm, and the 100 MB `MEMORY_LIMITED_BUFFER` it returns, permanently dead code. Two disagreeing defaults, and the documented one lost: on a 64 GB machine `extdedup` buffered **6.87 GB** of row content before spilling, and since the budget counts only `item.len()` and ignores `String`/`HashSet` overhead, real peak RSS was substantially higher still. That is a poor trade now that the on-disk table costs ~18 bytes per row in an evictable, file-backed mapping — buffering is the *more* expensive tier. Dropping the docopt default makes the documented 100 MB default live and the "runs in constant memory" promise in the USAGE true. **Note:** medium-sized inputs that previously stayed entirely in memory will now spill, so a writable temp directory (see `--temp-dir`) matters more than it did. `extsort`'s own `--memory-limit` is deliberately untouched — its buffer is an external merge-sort buffer, where more memory genuinely buys fewer merge passes ([#4355](https://github.com/dathere/qsv/issues/4355)).
+
+### Fixed
+- `extdedup`: **the on-disk hash table could panic when full, and could silently drop rows.** Its keys were 127-byte *chunks* of each row, so a row consumed `ceil(len/127)` keys against a hardcoded 10M-key table that `insert()` never bounds-checked — a 4M-row CSV with 500-byte rows tripped odht's raw `assert!`. Worse, membership was tested as "every chunk is present" rather than by item identity, so a row assembled from one row's head and another row's tail was reported as a duplicate and **silently dropped from the deduplicated output**. Separately, `insert_on_disk`'s failure return was discarded and the spill path drained the in-memory buffer unconditionally, so an item that never reached disk was lost from both tiers and its later duplicates were re-emitted, with no error and a zero exit code. Each row is now a single 128-bit xxh3 key (7.2× smaller table: 130 → 18 bytes per slot), the table **grows by rehashing into a doubled one** so there is no ceiling, and every disk failure is a hard `CliError` instead of a `debug!` log ([#4355](https://github.com/dathere/qsv/issues/4355)).
+
+---
+
 ## [22.0.0] - 2026-08-06 📐 The "Data Schematic" Release 📊
 
 qsv's biggest release ever with 530+ commits since v21.1.0. The headliner is **`viz`** — an entirely new command that turns a CSV into interactive [plotly](https://plotly.com/javascript/) charts and maps, with `viz smart` auto-designing a **Data Schematic**. Schematics are **self-contained, offline-capable HTML** with static PNG/SVG/PDF export via `viz_static`. See the [gallery](https://dathere.github.io/qsv/gallery.html).

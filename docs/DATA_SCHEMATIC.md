@@ -86,6 +86,15 @@ file itself can refute.
 
 ### SHOULD
 
+- **Declared concepts drawn from a named, published vocabulary** rather than ad-hoc strings.
+  A concept identifies what a column *is* across datasets, not merely within one: two columns
+  in different schematics carrying the same concept denote the same real-world thing and are
+  join-compatible. That is what makes a *catalog* of schematics navigable rather than a pile
+  of them. The vocabulary SHOULD be named in the schema and each of its terms resolvable to a
+  definition. A closed vocabulary also makes model-proposed semantics (see MAY) checkable —
+  a model that must choose from a fixed list can be wrong in a way a reader can detect, where
+  free text cannot. Adopting a *general* ontology is explicitly not required; see
+  *Relationship to existing standards*.
 - A persistent identifier (DOI or other citable URL) for the source dataset.
 - A human-readable rendering of the schema alongside the visuals, cross-linked in both
   directions, so the schematic doubles as the dictionary it supersedes.
@@ -161,9 +170,23 @@ schema; it does not replace one.
   scales) belong in a namespaced extension keyword rather than in prose.
 - **Frictionless Table Schema** — an equally valid carrier at Level 1; lacks a relationship
   vocabulary, so Level 2 needs an extension.
+- **W3C CSVW** (CSV on the Web: Tabular Data Model + Metadata Vocabulary) — the closest prior
+  art for describing tabular structure, and a valid Level 1 carrier. Its `tableSchema` covers
+  per-column datatypes and titles, and its `primaryKey`/`foreignKeys` express part of MUST 3's
+  relationship requirement that Frictionless has no vocabulary for. It has no vocabulary for
+  process order, targets or canonical scales, so Level 2 still needs an extension.
 - **DCAT / DCAT-US** — describes a dataset's *catalog* metadata. A schematic describes its
   *internal* structure. They compose: a DCAT distribution can point at a schematic, and a
   schematic can carry the dataset's PID.
+
+**On general ontologies.** A schematic is not required to align its concepts to schema.org,
+QUDT, SKOS or any other general ontology, and this document deliberately does not mandate one.
+The requirement is weaker and cheaper: say which vocabulary you used, and make its terms
+resolvable. That is enough for a reader to check a term and for two schematics to be compared,
+without turning a rendering profile into a semantic-web project — the additive upgrade path
+above is the property most worth protecting, and an ontology-binding requirement is the usual
+way formats like this lose it. A producer that *does* align to a general ontology loses
+nothing: naming it satisfies the SHOULD.
 
 ---
 
@@ -210,6 +233,69 @@ hash alongside them. (The `sha384` values in qsv's output are Subresource Integr
 CDN-loaded third-party JavaScript — unrelated to the bundle.) Adding per-input digests plus
 an attestation that identifies the *computation* rather than merely the output is the
 remaining work for Level 3.
+
+---
+
+## Appendix: the qsv reference vocabulary
+
+Published here to satisfy the SHOULD above for qsv's own schematics, and offered as a
+starting point for other producers. It is a *reference* vocabulary, not a normative part of
+the format — a conforming schematic may use any named, resolvable vocabulary.
+
+All four lists are single-sourced in `src/cmd/describegpt/dictionary.rs` (`CONCEPT_VOCAB`,
+`ROLE_VOCAB`, the relationship kinds, `CADENCE_VOCAB`) and live under the `x-qsv` extension
+keyword in the JSON Schema carrier. This appendix is a **manual transcription** of those
+constants, verified against them when written; nothing currently enforces that it stays in
+step, so treat the source as authoritative if the two disagree.
+
+### `concept` — 43 tokens
+
+The column's real-world semantic identity, and the format's join-discovery mechanism: the same
+concept in two different datasets denotes the same thing. Namespaced and hierarchical. Many
+are seeded deterministically from `content_type`; a model fills the rest, choosing exactly one
+token and never inventing them.
+
+| Namespace | Count | Tokens |
+|---|---|---|
+| `geo.*` — spatial identity (join keys for places) | 14 | `zip_code`, `city`, `county`, `county_fips`, `state`, `state_fips`, `country`, `latitude`, `longitude`, `coordinate_pair`, `street_address`, `census_tract`, `crs_stateplane_x`, `crs_stateplane_y` |
+| `time.*` — temporal axes | 7 | `event_timestamp`, `created_at`, `closed_at`, `updated_at`, `due_at`, `date`, `duration` |
+| `id.*` — entity keys | 4 | `surrogate_key`, `natural_key`, `foreign_key`, `uuid` |
+| `org.*` — organizations | 3 | `agency`, `company`, `industry` |
+| `pii.*` — sensitive personal data | 4 | `email`, `phone`, `full_name`, `address` |
+| `measure.*` — quantities | 3 | `count`, `amount`, `ratio` |
+| `category.*` — categoricals | 3 | `status`, `type`, `channel` |
+| `nyc.*` — a domain extension, illustrative | 4 | `bbl`, `borough`, `community_board`, `complaint_type` |
+| fallback | 1 | `unknown` |
+
+Three properties are worth stating explicitly, because they are what make the vocabulary
+usable rather than decorative:
+
+- **`id.surrogate_key` is reserved** and set deterministically from unique-key detection. A
+  model is instructed not to emit it.
+- **`pii.*` is not a join target.** It marks sensitive data and drives a quality flag; joining
+  catalogs on a person's email is precisely the thing the namespace exists to make visible.
+- **`nyc.*` demonstrates the extension pattern.** A catalog with shared local keys adds its
+  own namespace rather than straining the general ones. This is how a vocabulary grows without
+  a central registry — and why "name your vocabulary" is the requirement rather than "use this
+  one".
+
+### `role` — 4 tokens
+
+`dimension`, `measure`, `identifier`, `timestamp`. `identifier` and `timestamp` are
+re-derived deterministically by qsv; a model's value is used for the rest.
+
+### `relationships[].kind` — 3 tokens
+
+`joint` (members meaningless apart, e.g. lat/lon), `ordered` (members ascend, with an
+`anchor`), `pipeline` (members are process stages, widest/upstream first). Per MUST 4 these
+are **never** inferred from column names or ordering — a pipeline panel is drawn only from an
+explicit declaration.
+
+### `cadence` — 5 tokens
+
+`daily`, `weekly`, `monthly`, `quarterly`, `annual`. Unlike the others this is never sent to a
+model: it is computed deterministically from cached statistics. It is listed here because
+consumers read it.
 
 ---
 

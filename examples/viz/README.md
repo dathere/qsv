@@ -110,7 +110,7 @@ render the dictionary as an in-page **Data Dictionary** tab. The committed ones 
 | `ultimas-4-semanas-glp.schema.json` | 16 | `ultimas-4-semanas-glp.ssv` (not committed) for the Portuguese LPG-prices link-out dashboard |
 | `calidad-aire-pm-colombia.schema.json` | 25 | `calidad-aire-pm-colombia.csv` (not committed) for the Spanish air-quality link-out dashboard — **hand-tuned twice**: `Latitud`/`Longitud` carry explicit `geo.latitude`/`geo.longitude` concepts (viz's header-name fallback only matches the English `lat`/`lon`, so without them there is no map at all), and only the additive columns keep `role=measure`, since viz detects non-additive measures from an English token list and would otherwise SUM Spanish `Promedio`/`Mediana`/`Porcentaje` into meaningless KPI totals |
 
-## The smart dashboard
+## The Data Schematic
 
 `viz smart` auto-profiles the dataset (from qsv's stats cache) and picks a panel
 per column: a **correlation heatmap** over the numeric columns (shown as the
@@ -414,7 +414,7 @@ the United States, otherwise a per-**country** (ISO-3) fill framed to the filled
 via Plotly `fitbounds` (so the regions are never clipped). This auto-panel needs the **`geocode`**
 feature (included in the prebuilt `qsv`/`qsvpy` binaries and any `all_features` build); a minimal
 `viz`-only build shows just the point map. Pairing it with `--dictionary infer` adds LLM-inferred
-field labels (see the [smart dashboard](#the-smart-dashboard) section):
+field labels (see the [Data Schematic](#the-data-schematic) section):
 
 ```bash
 # US point map + per-US-STATE choropleth, derived purely from the lat/lon columns (no flags)

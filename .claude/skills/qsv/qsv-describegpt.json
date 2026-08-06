@@ -1,6 +1,6 @@
 {
   "name": "qsv-describegpt",
-  "version": "21.1.0",
+  "version": "22.0.0",
   "description": "Infer a \"neuro-symbolic\" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, MiniJinja prompt file, using any OpenAI API-compatible cloud/local LLM. (e.g. Markdown, JSON, TOON, JSON Schema, Semantic Markdown, OKF, Everything, Content Type inferencing, Spanish, Mandarin, Controlled Tags; --prompt \"What are the top 10 complaint types by community board & borough by year?\" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result)",
   "category": "documentation",
   "command": {
@@ -48,7 +48,7 @@
       {
         "flag": "--dictionary",
         "type": "flag",
-        "description": "Create a Data Dictionary using a hybrid \"neuro-symbolic\" pipeline - i.e. the Dictionary is populated deterministically using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description (and Content Type when --infer-content-type is set) are populated by the LLM using the same statistical context."
+        "description": "Create a Data Dictionary using a hybrid \"neuro-symbolic\" pipeline - i.e. the Dictionary is populated deterministically using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description (and Content Type when --infer-content-type is set) are populated by the LLM using the same statistical context. The dataset's content language is also auto-detected locally (using whatlang, not the LLM) from sampled values of its text columns, and emitted as detected_language, detected_language_code (ISO 639-3) and detected_language_confidence in the JSON dictionary (top-level) and JSON Schema (\"x-qsv\" object) outputs when detection confidence >= 80% (tunable with a float value in the --language option); the fields are omitted when detection is not confident. When detection is confident, the LLM is also asked to generate its output (Labels, Descriptions, Tags and the dataset Description) in the detected language, unless an explicit language is given with the --language option."
       },
       {
         "flag": "--disk-cache-dir",
@@ -117,7 +117,7 @@
       {
         "flag": "--language",
         "type": "string",
-        "description": "The output language/dialect/tone to use for the response. (e.g., \"Spanish\", \"French\", \"Hindi\", \"Mandarin\", \"Italian\", \"Castilian\", \"Franglais\", \"Taglish\", \"Pig Latin\", \"Valley Girl\", \"Pirate\", \"Shakespearean English\", \"Chavacano\", \"Gen Z\", \"Yoda\", etc.)"
+        "description": "The output language/dialect/tone to use for the response. (e.g., \"Spanish\", \"French\", \"Hindi\", \"Mandarin\", \"Italian\", \"Castilian\", \"Franglais\", \"Taglish\", \"Pig Latin\", \"Valley Girl\", \"Pirate\", \"Shakespearean English\", \"Chavacano\", \"Gen Z\", \"Yoda\", etc.) If set to a string, that language/dialect is ALWAYS used for the response, overriding auto-detection. If set to a float (0.0 to 1.0), it specifies the auto-detection confidence threshold. If not set, auto-detection runs with an 80% confidence threshold."
       },
       {
         "flag": "--markdown-template",

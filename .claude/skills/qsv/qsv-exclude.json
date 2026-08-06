@@ -1,6 +1,6 @@
 {
   "name": "qsv-exclude",
-  "version": "21.1.0",
+  "version": "22.0.0",
   "description": "Removes a set of CSV data from another set based on the specified columns.",
   "category": "utility",
   "command": {
@@ -65,7 +65,6 @@
     ]
   },
   "hints": {
-    "indexed": true,
     "memory": "constant"
   },
   "examples": [

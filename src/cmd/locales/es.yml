@@ -20,6 +20,7 @@ viz:
     columns: "Columnas:"
     completeness: "Integridad:"
     compiled: "Compilado:"
+    generated_by: "Generado por:"
     pid: "PID:"
   viewer:
     link_explore: "(Explorar)"

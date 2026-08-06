@@ -24,6 +24,7 @@ viz:
     columns: "Spalten:"
     completeness: "Vollständigkeit:"
     compiled: "Kompiliert:"
+    generated_by: "Erstellt mit:"
     pid: "PID:"
   viewer:
     link_explore: "(Erkunden)"

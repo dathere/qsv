@@ -284,12 +284,22 @@ usable rather than decorative:
 `dimension`, `measure`, `identifier`, `timestamp`. `identifier` and `timestamp` are
 re-derived deterministically by qsv; a model's value is used for the rest.
 
-### `relationships[].kind` — 3 tokens
+### `relationships[].kind` — 4 tokens
 
-`joint` (members meaningless apart, e.g. lat/lon), `ordered` (members ascend, with an
-`anchor`), `pipeline` (members are process stages, widest/upstream first). Per MUST 4 these
-are **never** inferred from column names or ordering — a pipeline panel is drawn only from an
-explicit declaration.
+Each entry carries a `kind`, two or more `members`, and (for `ordered`) an `anchor`.
+
+| Kind | Meaning |
+|---|---|
+| `joint` | Values occur only in fixed real-world combinations, so one member constrains the others — city + state + zip, or category + subcategory. |
+| `ordered` | Numeric or temporal members that must keep a monotonic order **within every row** — `created_date <= closed_date`, `subtotal <= total`. Members are listed lowest to highest; `anchor` names the one the others are measured from. |
+| `correlated` | Numeric members that move together, positively or negatively — height and weight, quantity and total_price. Unlike the others this asserts a *statistical* association, not a per-row constraint. |
+| `pipeline` | A process whose stages narrow monotonically, each a subset of the one before — planned → committed → spent; impressions → clicks → leads → conversions. Members are listed widest/upstream first. |
+
+Per MUST 4 these are **never** inferred from column names or ordering — a pipeline panel is
+drawn only from an explicit declaration. Consumers differ: `viz smart` renders `pipeline` as
+the funnel/bridge panel, while `synthesize` reads `joint`, `ordered` and `correlated` to keep
+generated rows internally consistent. A declaration is therefore worth making even when the
+schematic itself has no panel for it.
 
 ### `cadence` — 5 tokens
 

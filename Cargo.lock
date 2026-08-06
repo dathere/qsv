@@ -1963,9 +1963,9 @@ dependencies = [
 
 [[package]]
 name = "csv-nose"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d27464626a7d8f43533c2827cb52a18ec65884304c47fe9c187cc2d2be0ace3"
+checksum = "1cadbf8c0c98f7e79edd2c6cbde078408ea79c0bdd3a522b35a65f24852ecb10"
 dependencies = [
  "bytecount",
  "chardetng",
@@ -4860,9 +4860,9 @@ checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
 name = "minijinja"
-version = "2.22.0"
+version = "2.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef84a52be188a1d4124bd717903fdde96ca4705f2b56adfe2d91fcc57fcb6987"
+checksum = "42d74234349a775546a83af0f0c0c0e3a73227dee4950a542cda81a47240b3e6"
 dependencies = [
  "memo-map",
  "percent-encoding",
@@ -4874,9 +4874,9 @@ dependencies = [
 
 [[package]]
 name = "minijinja-contrib"
-version = "2.22.0"
+version = "2.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd6e279dc925840c2d9ebc1e9f85410611d01292561297463ba3e516c3ad94dd"
+checksum = "35c96d8fae7fa4743bbcf06f486ff43f81837f5e8826f8bf525dbc4c0e03be5d"
 dependencies = [
  "minijinja",
  "serde",
@@ -10942,9 +10942,9 @@ dependencies = [
 
 [[package]]
 name = "xml-rs"
-version = "0.8.28"
+version = "0.8.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f"
+checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xterm-color"

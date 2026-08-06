@@ -188,7 +188,7 @@ fn dedup_csv(args: Args, mem_limited_buffer: u64) -> Result<u64, crate::clitypes
         }
 
         // Single hash-table touch: insert returns true when the key is new.
-        if dedup_cache.insert(&key) {
+        if dedup_cache.insert(&key)? {
             if !no_output {
                 wtr.write_byte_record(&curr_row)?;
             }
@@ -256,7 +256,7 @@ fn dedup_lines(args: Args, mem_limited_buffer: u64) -> Result<u64, crate::clityp
     for (row_idx, line) in input_reader.lines().enumerate() {
         let line = line?;
         // Single hash-table touch: insert returns true when the line is new.
-        if dedup_cache.insert(&line) {
+        if dedup_cache.insert(&line)? {
             if !no_output {
                 writeln!(output_writer, "{line}")?;
             }

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+- `extdedup`: **the on-disk hash table could panic when full, and could silently drop rows.** Its keys were 127-byte *chunks* of each row, so a row consumed `ceil(len/127)` keys against a hardcoded 10M-key table that `insert()` never bounds-checked — a 4M-row CSV with 500-byte rows tripped odht's raw `assert!`. Worse, membership was tested as "every chunk is present" rather than by item identity, so a row assembled from one row's head and another row's tail was reported as a duplicate and **silently dropped from the deduplicated output**. Separately, `insert_on_disk`'s failure return was discarded and the spill path drained the in-memory buffer unconditionally, so an item that never reached disk was lost from both tiers and its later duplicates were re-emitted, with no error and a zero exit code. Each row is now a single 128-bit xxh3 key (7.2× smaller table: 130 → 18 bytes per slot), the table **grows by rehashing into a doubled one** so there is no ceiling, and every disk failure is a hard `CliError` instead of a `debug!` log ([#4355](https://github.com/dathere/qsv/issues/4355)).
+
+---
+
 ## [22.0.0] - 2026-08-06 📐 The "Data Schematic" Release 📊
 
 qsv's biggest release ever with 530+ commits since v21.1.0. The headliner is **`viz`** — an entirely new command that turns a CSV into interactive [plotly](https://plotly.com/javascript/) charts and maps, with `viz smart` auto-designing a **Data Schematic**. Schematics are **self-contained, offline-capable HTML** with static PNG/SVG/PDF export via `viz_static`. See the [gallery](https://dathere.github.io/qsv/gallery.html).

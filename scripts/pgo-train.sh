@@ -211,20 +211,35 @@ t moarstats --advanced "$data"
 #      25,000 rows ->  3.03 GiB                      15,000 -> 2.35 GiB
 # 50k keeps the parallel path (5x PARALLEL_THRESHOLD) at ~26% of a hosted runner's RAM.
 biv_data="$data"
+biv_bounded=0
 if [[ "$minimal" -eq 0 ]]; then
   biv_slice=pgo_train_bivariate.csv
   if "$qsv_bin" slice --len 50000 "$data" --output "$biv_slice" >/dev/null 2>&1; then
     # index so the bivariate parallel path (not the sequential fallback) gets trained
     "$qsv_bin" index "$biv_slice" >/dev/null 2>&1 || true
     biv_data="$biv_slice"
+    biv_bounded=1
   else
-    echo "    (bivariate slice failed; falling back to full training data)"
+    echo "    (bivariate slice failed; skipping the --bivariate-stats all variants)"
   fi
+else
+  # minimal-mode data is already tiny (20k rows x 6 cols = 15 pairs), so it is bounded
+  biv_bounded=1
 fi
+
+# Default --bivariate-stats (fast = pearson + covariance) streams and is safe even on the
+# full file: in run 31069999861 aarch64 ran this over all 1M rows in 41s and survived.
 t moarstats --bivariate "$biv_data"
-t moarstats --bivariate --bivariate-stats all "$biv_data"
 t moarstats --advanced --bivariate "$biv_data"
-t moarstats --advanced --bivariate --bivariate-stats all "$biv_data"
+
+# The "all" variants are the OOM risk, so run them ONLY against bounded input. Do NOT fall
+# back to the full file when the slice is unavailable - `t` tolerates a SKIPPED command
+# (harmless), but running this on 1M rows re-arms the 23 GiB workload that kills the runner
+# outright, taking the rest of training with it.
+if [[ "$biv_bounded" -eq 1 ]]; then
+  t moarstats --bivariate --bivariate-stats all "$biv_data"
+  t moarstats --advanced --bivariate --bivariate-stats all "$biv_data"
+fi
 t blake3 "$data"
 t luau map newcol "1 + 1" "$data"
 t profile "$data"

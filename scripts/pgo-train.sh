@@ -180,10 +180,51 @@ t snappy validate pgo_train.snappy
 t validate "$data"
 t moarstats "$data"
 t moarstats --advanced "$data"
-t moarstats --bivariate "$data"
-t moarstats --bivariate --bivariate-stats all "$data"
-t moarstats --advanced --bivariate "$data"
-t moarstats --advanced --bivariate --bivariate-stats all "$data"
+
+# `--bivariate-stats all` is the memory bomb, not `--bivariate` itself. The default
+# (--bivariate-stats fast = pearson + covariance) uses streaming algorithms and stays cheap,
+# which is why plain `--bivariate` finishes in ~40s. Passing "all" additionally enables
+# mi/nmi/u, and those make EVERY field pair accumulate a joint-frequency
+# HashMap<(String, String), u64> keyed by owned strings: on the 1M-row/41-column training
+# file that is 780 pairs x up to 1M distinct (String, String) keys. (spearman/kendall also
+# keep Vec<f64> value vectors, but x_values.push only fires when both sides parse numeric,
+# so that covers just the ~36 numeric/date pairs - a minor term next to the hashmaps.)
+# The -C/--cardinality-threshold guard that would skip MI for high-cardinality fields
+# defaults to 1000000 - exactly the row count here - so it never engages.
+#
+# Measured peak RSS: 23.0 GiB. A GitHub hosted runner has 15.57 GiB, so this OOM-kills the runner
+# VM outright; the agent dies, the `t` helper below never sees an exit code, and training
+# just stops. This is not arch-specific - in run 31069999861 BOTH full-training targets
+# died on this exact command with "runner has received a shutdown signal" / exit 143:
+# aarch64-unknown-linux-gnu (job 92515824811) and x86_64-unknown-linux-gnu (job
+# 92515824877). Windows escapes it only because it trains with --minimal.
+#
+# Train these paths on a bounded slice instead. PGO records WHICH branches execute, not how
+# many rows flow through them, so a slice buys the same profile coverage. The slice is
+# indexed on purpose: compute_all_bivariatestats() only takes the parallel chunked path
+# when an index exists and the row count clears PARALLEL_THRESHOLD (10_000 in
+# src/cmd/moarstats.rs), and that parallel path is the one worth profiling.
+#
+# Peak RSS does NOT scale linearly with rows - 780 pairs x 16 chunks of hashmaps is a large
+# fixed cost - so the slice size was picked by measurement, not arithmetic:
+#   1,000,000 rows -> 23.00 GiB (OOMs the runner)   100,000 -> 7.20 GiB   50,000 -> 4.12 GiB
+#      25,000 rows ->  3.03 GiB                      15,000 -> 2.35 GiB
+# 50k keeps the parallel path (5x PARALLEL_THRESHOLD) at ~26% of a hosted runner's RAM.
+biv_data="$data"
+if [[ "$minimal" -eq 0 ]]; then
+  biv_slice=pgo_train_bivariate.csv
+  if "$qsv_bin" slice --len 50000 "$data" --output "$biv_slice" >/dev/null 2>&1; then
+    # index so the bivariate parallel path (not the sequential fallback) gets trained
+    "$qsv_bin" index "$biv_slice" >/dev/null 2>&1 || true
+    biv_data="$biv_slice"
+  else
+    echo "    (bivariate slice failed; falling back to full training data)"
+  fi
+fi
+t moarstats --bivariate "$biv_data"
+t moarstats --bivariate --bivariate-stats all "$biv_data"
+t moarstats --advanced --bivariate "$biv_data"
+t moarstats --advanced --bivariate --bivariate-stats all "$biv_data"
 t blake3 "$data"
 t luau map newcol "1 + 1" "$data"
 t profile "$data"

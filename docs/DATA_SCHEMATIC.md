@@ -286,14 +286,29 @@ re-derived deterministically by qsv; a model's value is used for the rest.
 
 ### `relationships[].kind` — 4 tokens
 
-Each entry carries a `kind`, two or more `members`, and (for `ordered`) an `anchor`.
+Every entry carries a `kind` and a `members` array. `members` names two or more columns for
+`joint`, `ordered`, `correlated` and the column-encoded `pipeline`; `ordered` additionally
+carries an `anchor`. The **row-encoded** `pipeline` is the exception — see below.
 
 | Kind | Meaning |
 |---|---|
 | `joint` | Values occur only in fixed real-world combinations, so one member constrains the others — city + state + zip, or category + subcategory. |
 | `ordered` | Numeric or temporal members that must keep a monotonic order **within every row** — `created_date <= closed_date`, `subtotal <= total`. Members are listed lowest to highest; `anchor` names the one the others are measured from. |
 | `correlated` | Numeric members that move together, positively or negatively — height and weight, quantity and total_price. Unlike the others this asserts a *statistical* association, not a per-row constraint. |
-| `pipeline` | A process whose stages narrow monotonically, each a subset of the one before — planned → committed → spent; impressions → clicks → leads → conversions. Members are listed widest/upstream first. |
+| `pipeline` | A process whose stages narrow monotonically, each a subset of the one before — planned → committed → spent; impressions → clicks → leads → conversions. Stages are listed widest/upstream first (the *opposite* direction from `ordered`, which ascends). Two encodings; see below. |
+
+**The two pipeline encodings.** Stages may be *columns* or *row values*, and the presence of
+`stage_column` is what discriminates them:
+
+- **Stages as columns** — one column per stage, named in `members` in process order,
+  widest first.
+- **Stages as row values** — the stages are values inside a single category column. The entry
+  carries `stage_column` (that column), `stages` (its values in process order, widest first)
+  and an optional `value_column` to sum, defaulting to counting rows. `members` is still
+  present but is **synthesized**: it holds the stage column, plus the value column only when
+  one was named — so a row-encoded pipeline's `members` may contain a **single** entry. A
+  consumer that assumes `members` always lists the stages, or always holds two or more
+  columns, will misread this encoding.
 
 Per MUST 4 these are **never** inferred from column names or ordering — a pipeline panel is
 drawn only from an explicit declaration. Consumers differ: `viz smart` renders `pipeline` as

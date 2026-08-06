@@ -38,14 +38,13 @@ extdedup options:
                                In LINE MODE, <file> is NOT a valid CSV — each duplicate line is
                                prefixed by its 0-based file line index and a tab character.
     -H, --human-readable       Comma separate duplicate count.
-    --memory-limit <arg>       The maximum amount of memory used to buffer rows before
-                               spilling them to the on-disk hash table.
+    --memory-limit <arg>       How much memory to use before deduping switches to a
+                               temporary file on disk (see --temp-dir).
                                If less than 50, this is a percentage of total memory.
                                If more than 50, this is the memory in MB to allocate, capped
                                at 90 percent of total memory.
-                               Defaults to 100 MB. The on-disk hash table is far more compact
-                               than this buffer, so raising the limit trades a lot of memory
-                               for very little.
+                               Defaults to 100 MB. Raising this mostly just uses more memory,
+                               as deduping on disk needs far less memory per row.
     --temp-dir <arg>           Directory to store temporary hash table file.
                                If not specified, defaults to operating system temp directory.
 

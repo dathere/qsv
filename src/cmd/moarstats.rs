@@ -325,10 +325,14 @@ moarstats options:
                            all values and uses streaming algorithms.
                            [default: fast]
     -C, --cardinality-threshold <n>
-                           Skip mutual information computation for field pairs where either
-                           field has cardinality exceeding this threshold. Helps avoid
-                           expensive computations for high-cardinality fields.
-                           [default: 1000000]
+                           Skip mutual information (mi/nmi/u) for field pairs where either
+                           field's cardinality exceeds this threshold. Such pairs also skip
+                           building their joint-frequency table, which is the dominant memory
+                           cost of --bivariate-stats all.
+                           Defaults to half the row count, floored at 1000, so it stays inert
+                           on small inputs and scales with large ones. Mutual information
+                           between near-unique columns saturates at log(n) and is noise
+                           regardless of how efficiently it is computed.
     -J, --join-inputs <files>
                            Additional datasets to join. Comma-separated list of CSV files to join
                            with the primary input.
@@ -366,8 +370,8 @@ use std::{
 
 use crossbeam_channel;
 use csv::{ReaderBuilder, StringRecord, WriterBuilder};
-use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
-use indexmap::IndexMap;
+use foldhash::{HashMap, HashMapExt};
+use indexmap::{IndexMap, IndexSet};
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use qsv_dateparser::parse_with_preference;
 use rayon::prelude::*;
@@ -1655,16 +1659,38 @@ struct CorrelationState {
 }
 
 /// Statistics tracked during bivariate computation for a field pair
+///
+/// `xy_counts` is keyed on a packed pair of per-column dictionary symbols rather
+/// than on the values themselves. Two heap `String`s per joint cell cost ~200 bytes
+/// once `HashMap` slack is counted, and -- worse -- `entry()` takes its key by value,
+/// so the common path (cell already present) allocated, hashed, compared and then
+/// immediately dropped two `String`s for every pair of every row. See #4356.
+///
+/// Marginal frequencies are deliberately NOT stored here. They are a pure function
+/// of `xy_counts` and are only consumed by MI/NMI/U, so they are derived inside
+/// `finalize_bivariate_pair_stats` instead. Keeping them off this struct means only
+/// the pairs currently being finalized hold marginals, rather than every field pair
+/// holding a pair of maps for the whole run.
 #[derive(Clone, Default)]
 struct BivariateChunkStats {
     correlation_state: CorrelationState,
     x_values:          Vec<f64>, // For Spearman/Kendall (need ranks)
     y_values:          Vec<f64>, // For Spearman/Kendall (need ranks)
-    // Frequency counts for mutual information (more memory efficient than storing all strings)
-    xy_counts:         HashMap<(String, String), u64>, // Joint frequencies
-    x_counts:          HashMap<String, u64>,           // Marginal frequencies for x
-    y_counts:          HashMap<String, u64>,           // Marginal frequencies for y
-    total_pairs:       u64,                            // Total count of pairs
+    /// Joint frequencies, keyed by `pack_joint_key(x_sym, y_sym)`.
+    xy_counts:         HashMap<u64, u64>,
+    total_pairs:       u64, // Total count of pairs
+}
+
+/// What one chunk produces: per-pair statistics plus the dictionaries needed to
+/// interpret the symbols inside them.
+///
+/// Symbols are chunk-local -- each worker interns independently -- so the merge has
+/// to translate them into a shared numbering before joint counts from different
+/// chunks can be added together. `dicts` is empty when frequency counts are not
+/// being computed, since nothing then needs translating.
+struct BivariateChunkOutput {
+    stats: Vec<BivariateChunkStats>,
+    dicts: Vec<ValueDict>,
 }
 
 /// Final bivariate statistics for a field pair
@@ -1693,6 +1719,161 @@ struct BivariateFieldInfo {
     stddev:      Option<f64>, // Pre-computed standard deviation (used for filtering)
     variance:    Option<f64>, // Pre-computed variance (used for filtering)
     cardinality: Option<u64>, // Pre-computed cardinality (used for threshold filtering)
+}
+
+/// Per-column value dictionary: distinct raw values in first-seen order, so a
+/// value's index IS its symbol. foldhash matches the hasher used elsewhere in qsv
+/// (see the same alias in `cat.rs`).
+///
+/// Keyed on `Box<[u8]>` rather than `Box<str>` deliberately. The values come off a
+/// `ByteRecord` as raw bytes, and the accumulation loop must EXCLUDE values that are
+/// not valid UTF-8 rather than lossily decode them -- `from_utf8_lossy` would both
+/// count rows the scan is supposed to skip and merge distinct invalid byte sequences
+/// into a single replacement-character symbol.
+type ValueDict = IndexSet<Box<[u8]>, foldhash::fast::RandomState>;
+
+/// Symbol meaning "this cell has no symbol": empty, not valid UTF-8, or a column
+/// that is not being interned. Never appears in a joint key.
+const NO_SYM: u32 = u32::MAX;
+
+/// Floor for the default `-C/--cardinality-threshold`, which is otherwise half the
+/// row count. Keeps the guard inert on small inputs, where no column is meaningfully
+/// high-cardinality and half the row count would prune ordinary categorical columns.
+const DEFAULT_CARDINALITY_THRESHOLD: u64 = 1_000;
+
+/// Pack two per-column symbols into one joint-frequency key.
+///
+/// x occupies the high half and y the low half, so the two symbols can be recovered
+/// independently when the marginals are derived at finalize time.
+#[inline]
+const fn pack_joint_key(x_sym: u32, y_sym: u32) -> u64 {
+    ((x_sym as u64) << 32) | (y_sym as u64)
+}
+
+/// One field pair's place in the per-chunk statistics vector, with the two columns
+/// it reads resolved to dense slot indices.
+struct PairPlan {
+    /// The `(col_idx, col_idx)` key this pair is reported under.
+    key:             (u16, u16),
+    /// Slot of the x (field1) column in `BivariatePlan::cols`.
+    x_slot:          u32,
+    /// Slot of the y (field2) column in `BivariatePlan::cols`.
+    y_slot:          u32,
+    /// Whether this pair should build a joint-frequency map at all.
+    ///
+    /// False when either side's cardinality exceeds `-C/--cardinality-threshold`.
+    /// The gate used to be applied only at finalize, so an excluded pair still
+    /// accumulated its full joint map and then threw it away; deciding here means it
+    /// is never built. Row COUNTING is unaffected (see `total_pairs` in the scan), so
+    /// the reported `n_pairs` is the same either way.
+    accumulate_freq: bool,
+}
+
+/// Execution plan shared by every chunk of a bivariate run.
+///
+/// Two things it buys over iterating the `field_pairs` map directly:
+///
+///   * Pairs live in a `Vec` in a stable order, so the hot loop indexes into a
+///     `Vec<BivariateChunkStats>` instead of doing a `HashMap` lookup per pair per record -- 780
+///     lookups per row on the 41-column benchmark.
+///   * The distinct COLUMNS taking part in at least one pair are enumerated once (~41 of them,
+///     versus 780 pairs), which is what lets a record be decoded once per column rather than once
+///     per pair. Each column appears in 40 pairs on that file, so the per-pair form re-fetched,
+///     re-validated and re-parsed every value 40 times.
+struct BivariatePlan {
+    /// slot -> (`col_idx`, `field_type`). Order is stable across chunks.
+    cols:  Vec<(usize, FieldType)>,
+    /// Pairs in a stable order; index into this is the index into the per-chunk stats.
+    pairs: Vec<PairPlan>,
+}
+
+/// Build the shared plan from the field-pair map.
+///
+/// Pairs are emitted in sorted key order so that chunk statistics vectors from
+/// different threads line up positionally and merge deterministically.
+///
+/// `cardinality_threshold` decides, per pair, whether a joint-frequency map is worth
+/// building at all -- see `PairPlan::accumulate_freq`.
+fn build_bivariate_plan(
+    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    cardinality_threshold: Option<u64>,
+) -> BivariatePlan {
+    let mut keys: Vec<(u16, u16)> = field_pairs.keys().copied().collect();
+    keys.sort_unstable();
+
+    // col_idx -> slot. A column is shared by every pair it appears in, so its type
+    // must be a property of the column, not of the pair. That holds because the
+    // field type is resolved from the stats row whose name matched that header --
+    // but header lookup is first-match-wins, so duplicate header names could in
+    // principle resolve two differently-typed stats rows onto one col_idx. Keep the
+    // first (matching the existing first-match-wins behavior) and say so loudly
+    // rather than silently decoding a column two different ways.
+    let mut slot_of: HashMap<usize, u32> = HashMap::new();
+    let mut cols: Vec<(usize, FieldType)> = Vec::new();
+    let mut slot_for =
+        |col_idx: usize, field_type: FieldType, cols: &mut Vec<(usize, FieldType)>| {
+            *slot_of.entry(col_idx).or_insert_with(|| {
+                let slot = u32::try_from(cols.len()).unwrap_or(u32::MAX);
+                cols.push((col_idx, field_type));
+                slot
+            })
+        };
+
+    let mut pairs = Vec::with_capacity(keys.len());
+    let mut skipped_high_cardinality = 0_usize;
+    for key in keys {
+        // safety: keys came from field_pairs
+        let Some((field1_info, field2_info)) = field_pairs.get(&key) else {
+            cold_path();
+            continue;
+        };
+        let x_slot = slot_for(field1_info.col_idx, field1_info.field_type, &mut cols);
+        let y_slot = slot_for(field2_info.col_idx, field2_info.field_type, &mut cols);
+
+        for (slot, info) in [(x_slot, field1_info), (y_slot, field2_info)] {
+            if let Some((_, seen_type)) = cols.get(slot as usize)
+                && *seen_type != info.field_type
+            {
+                cold_path();
+                log::warn!(
+                    "bivariate plan: column index {} appears with conflicting field types \
+                     ({seen_type:?} and {:?}); decoding it as {seen_type:?}. This means two stats \
+                     rows resolved to the same CSV column, which duplicate header names can cause.",
+                    info.col_idx,
+                    info.field_type,
+                );
+            }
+        }
+
+        // Same predicate finalize uses, evaluated once here instead of after the
+        // joint map has already been paid for.
+        let exceeds_cardinality = cardinality_threshold.is_some_and(|threshold| {
+            field1_info.cardinality.is_some_and(|c| c > threshold)
+                || field2_info.cardinality.is_some_and(|c| c > threshold)
+        });
+        if exceeds_cardinality {
+            skipped_high_cardinality += 1;
+        }
+
+        pairs.push(PairPlan {
+            key,
+            x_slot,
+            y_slot,
+            accumulate_freq: !exceeds_cardinality,
+        });
+    }
+
+    if skipped_high_cardinality > 0 {
+        log::info!(
+            "bivariate plan: {skipped_high_cardinality} of {} pairs will not accumulate joint \
+             frequencies (cardinality exceeds threshold {:?}); mi/nmi/u are reported empty for \
+             them",
+            pairs.len(),
+            cardinality_threshold,
+        );
+    }
+
+    BivariatePlan { cols, pairs }
 }
 
 /// Update correlation state with a new pair of values using Welford's online algorithm
@@ -2029,11 +2210,14 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
 }
 
 /// Compute mutual information between two categorical/numeric fields from frequency counts
+///
+/// `xy_counts` is keyed by `pack_joint_key(x_sym, y_sym)`; the marginals are keyed by
+/// the corresponding per-column symbol.
 #[allow(clippy::cast_precision_loss)]
 fn compute_mutual_information_from_counts(
-    xy_counts: &HashMap<(String, String), u64>,
-    x_counts: &HashMap<String, u64>,
-    y_counts: &HashMap<String, u64>,
+    xy_counts: &HashMap<u64, u64>,
+    x_counts: &HashMap<u32, u64>,
+    y_counts: &HashMap<u32, u64>,
     total: u64,
 ) -> Option<f64> {
     if total == 0 {
@@ -2044,10 +2228,12 @@ fn compute_mutual_information_from_counts(
 
     // Compute mutual information: MI(X,Y) = sum(p(x,y) * log2(p(x,y) / (p(x) * p(y))))
     let mut mi = 0.0;
-    for ((x_val, y_val), &xy_count) in xy_counts {
+    for (joint_key, &xy_count) in xy_counts {
+        let x_sym = (joint_key >> 32) as u32;
+        let y_sym = (joint_key & 0xFFFF_FFFF) as u32;
         let p_xy = xy_count as f64 / total_f64;
-        let p_x = x_counts.get(x_val).copied().unwrap_or(0) as f64 / total_f64;
-        let p_y = y_counts.get(y_val).copied().unwrap_or(0) as f64 / total_f64;
+        let p_x = x_counts.get(&x_sym).copied().unwrap_or(0) as f64 / total_f64;
+        let p_y = y_counts.get(&y_sym).copied().unwrap_or(0) as f64 / total_f64;
 
         if p_x > 0.0 && p_y > 0.0 && p_xy > 0.0 {
             mi = p_xy.mul_add((p_xy / (p_x * p_y)).log2(), mi);
@@ -2060,8 +2246,10 @@ fn compute_mutual_information_from_counts(
 /// Compute Shannon entropy from frequency counts
 /// Uses the same formula as `compute_all_entropy()`: H(X) = -Σ `p_i` * `log2(p_i)`
 /// where `p_i` = `count_i` / total
+///
+/// Only the counts are read, never the keys, so this is generic over the key type.
 #[allow(clippy::cast_precision_loss)]
-fn compute_entropy_from_counts(counts: &HashMap<String, u64>, total: u64) -> Option<f64> {
+fn compute_entropy_from_counts<K>(counts: &HashMap<K, u64>, total: u64) -> Option<f64> {
     if total == 0 {
         return None;
     }
@@ -2618,58 +2806,135 @@ fn compute_outliers_and_kga(
 
 /// Process a chunk of records and update bivariate statistics
 /// Similar to `count_chunk_outliers` but for bivariate computation
+///
+/// Returns per-pair statistics positionally aligned with `plan.pairs`, plus the
+/// chunk-local value dictionaries the joint-frequency symbols refer to.
 fn compute_chunk_bivariate<I>(
-    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    plan: &BivariatePlan,
     records: I,
     stats_config: BivariateStatsConfig,
-) -> CliResult<HashMap<(u16, u16), BivariateChunkStats>>
+) -> CliResult<BivariateChunkOutput>
 where
     I: Iterator<Item = csv::Result<csv::ByteRecord>>,
 {
-    if field_pairs.is_empty() {
-        return Ok(HashMap::new());
+    if plan.pairs.is_empty() {
+        return Ok(BivariateChunkOutput {
+            stats: Vec::new(),
+            dicts: Vec::new(),
+        });
     }
 
     // Check what we need to compute based on config
     let needs_all_values = stats_config.needs_all_values();
     let needs_freq_counts = stats_config.needs_frequency_counts();
 
-    // Initialize statistics for all field pairs
-    // Pre-allocate vectors with estimated capacity (typical chunk size is 1k-10k records)
+    // Initialize statistics for all field pairs.
+    //
+    // These reservations are paid per pair PER CHUNK, so they are a fixed cost of
+    // `plan.pairs.len() * nchunks` that does not shrink with the row count. On the
+    // 1M-row/41-column benchmark that is 780 pairs x ~16 chunks, which is why the
+    // measured peak RSS bottomed out around 2.3 GiB even on a 15k-row slice (see
+    // scripts/pgo-train.sh). Over-reserving here is therefore expensive in a way that
+    // is easy to miss. Reserve only what this chunk can actually fill:
+    //
+    //   * x_values/y_values are only pushed when BOTH sides parse numeric, so reserving for a pair
+    //     with a non-numeric side is pure waste. On the benchmark only ~36 of 780 pairs are
+    //     numeric/date on both sides, so the blanket reservation wasted ~95% of ~1 GB.
+    //
+    // The field_type gate is an allocation hint only: a Vec still grows on demand, so
+    // a mistyped column costs a realloc, never a wrong answer.
     let estimated_capacity = 5000; // Reasonable estimate for chunk processing
-    let estimated_unique_strings = estimated_capacity.min(1000); // Estimate for string frequency maps
-    let mut chunk_stats: HashMap<(u16, u16), BivariateChunkStats> = field_pairs
-        .keys()
-        .map(|k| {
+    let estimated_unique_values = estimated_capacity.min(1000);
+    let mut chunk_stats: Vec<BivariateChunkStats> = plan
+        .pairs
+        .iter()
+        .map(|pair| {
             let mut stats = BivariateChunkStats::default();
-            // Only allocate value vectors if needed for Spearman/Kendall
-            if needs_all_values {
+            let x_numeric = plan
+                .cols
+                .get(pair.x_slot as usize)
+                .is_some_and(|(_, t)| t.is_numeric_or_date_type());
+            let y_numeric = plan
+                .cols
+                .get(pair.y_slot as usize)
+                .is_some_and(|(_, t)| t.is_numeric_or_date_type());
+            // Only allocate value vectors if needed for Spearman/Kendall AND both
+            // sides can actually yield a numeric value to push.
+            if needs_all_values && x_numeric && y_numeric {
                 stats.x_values.reserve(estimated_capacity);
                 stats.y_values.reserve(estimated_capacity);
             }
-            // Only allocate frequency maps if needed for mutual information
-            if needs_freq_counts {
-                stats.xy_counts.reserve(estimated_unique_strings);
-                stats.x_counts.reserve(estimated_unique_strings / 2);
-                stats.y_counts.reserve(estimated_unique_strings / 2);
+            // Only allocate the joint map if needed for mutual information AND this
+            // pair is actually going to build one. A pair excluded by the cardinality
+            // gate never writes a joint cell, so reserving for it is the same
+            // reserve-what-never-fills waste this function already avoids for
+            // x_values/y_values.
+            if needs_freq_counts && pair.accumulate_freq {
+                stats.xy_counts.reserve(estimated_unique_values);
             }
-            (*k, stats)
+            stats
         })
         .collect();
 
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
-    // Optimization #1: Date parsing cache - Cache parsed dates to avoid re-parsing same strings
-    let mut date_cache: HashMap<String, Option<f64>> = HashMap::with_capacity(estimated_capacity);
+    let ncols = plan.cols.len();
 
-    // Optimization #6: String interning - Cache frequently used strings to reduce allocations.
-    // Only needed if we're computing mutual information. A HashSet suffices since key==value;
-    // saves one clone per cache miss over the prior HashMap<String, String> form.
-    let mut string_interner: HashSet<String> = if needs_freq_counts {
-        HashSet::with_capacity(estimated_unique_strings)
-    } else {
-        HashSet::new()
-    };
+    // A column is interned when its symbols are needed: for the joint keys, or --
+    // even on the `fast` path -- to memoize date parsing. Interning a date column
+    // replaces the old `HashMap<String, Option<f64>>` parse cache with a
+    // `Vec<Option<f64>>` indexed by symbol, which removes the last String allocation
+    // from the scan without making the cache any larger (it already held one entry
+    // per distinct date string).
+    // A column is interned when its symbols are actually used: by a pair that will
+    // build a joint map, or -- even on the `fast` path -- to memoize date parsing.
+    // A column whose every pair is excluded by the cardinality gate is not interned
+    // at all, so an excluded high-cardinality column costs no dictionary either.
+    let mut intern_slot: Vec<bool> = plan
+        .cols
+        .iter()
+        .map(|(_, field_type)| field_type.is_date_or_datetime())
+        .collect();
+    if needs_freq_counts {
+        for pair in &plan.pairs {
+            if pair.accumulate_freq {
+                if let Some(f) = intern_slot.get_mut(pair.x_slot as usize) {
+                    *f = true;
+                }
+                if let Some(f) = intern_slot.get_mut(pair.y_slot as usize) {
+                    *f = true;
+                }
+            }
+        }
+    }
+
+    let mut dicts: Vec<ValueDict> = (0..ncols).map(|_| ValueDict::default()).collect();
+    // Parsed-date memo, indexed by [slot][symbol]. Only date columns ever grow one.
+    let mut date_by_sym: Vec<Vec<Option<f64>>> = (0..ncols).map(|_| Vec::new()).collect();
+
+    // Per-record scratch, indexed by column slot and reused across records.
+    //
+    // Decoding happens ONCE per column per record here, instead of once per pair.
+    // Each column takes part in 40 pairs on the benchmark file, so the per-pair form
+    // re-fetched, re-validated and re-parsed every value 40 times.
+    //
+    //   skip[slot] -- this cell disqualifies every pair it appears in, for this
+    //                 record: the value is empty, or the column is date-typed and the
+    //                 bytes are not valid UTF-8. Both previously `continue`d the pair
+    //                 BEFORE the correlation update, so neither reaches n_pairs.
+    //   num[slot]  -- the parsed numeric value, if any.
+    //   sym[slot]  -- the dictionary symbol, or NO_SYM when the column is not
+    //                 interned. Only read for pairs that accumulate.
+    //   utf8[slot] -- whether the bytes are valid UTF-8. Tracked separately from
+    //                 `sym` because a cell still COUNTS toward total_pairs when its
+    //                 pair is excluded by the cardinality gate (and so has no
+    //                 symbol); invalid UTF-8 is excluded from the frequency counts
+    //                 but still feeds correlation, which is the pre-existing
+    //                 behavior for a non-date column.
+    let mut skip: Vec<bool> = vec![true; ncols];
+    let mut num: Vec<Option<f64>> = vec![None; ncols];
+    let mut sym: Vec<u32> = vec![NO_SYM; ncols];
+    let mut utf8: Vec<bool> = vec![false; ncols];
 
     #[allow(unused_assignments)]
     let mut record: csv::ByteRecord = csv::ByteRecord::new();
@@ -2678,59 +2943,103 @@ where
     for result in records {
         record = result?;
 
-        for ((idx1, idx2), (field1_info, field2_info)) in field_pairs {
-            let value_bytes_x = record.get(field1_info.col_idx).unwrap_or(&[]);
-            let value_bytes_y = record.get(field2_info.col_idx).unwrap_or(&[]);
-
-            if value_bytes_x.is_empty() || value_bytes_y.is_empty() {
+        // Decode pass: one entry per participating column.
+        for (slot, (col_idx, field_type)) in plan.cols.iter().enumerate() {
+            let value_bytes = record.get(*col_idx).unwrap_or(&[]);
+            sym[slot] = NO_SYM;
+            utf8[slot] = false;
+            if value_bytes.is_empty() {
+                skip[slot] = true;
+                num[slot] = None;
                 continue;
             }
+            let is_date = field_type.is_date_or_datetime();
 
-            // safety: chunk_stats is pre-populated with all field pair indices
-            let Some(stats) = chunk_stats.get_mut(&(*idx1, *idx2)) else {
+            // UTF-8 is validated only where it was before: always for a date column
+            // (parsing needs &str), and otherwise only when frequency counts are
+            // being built. The `fast` path must not pay for a check it never used.
+            let utf8_ok = if is_date || needs_freq_counts {
+                from_utf8(value_bytes).is_ok()
+            } else {
+                false
+            };
+            utf8[slot] = utf8_ok;
+
+            if is_date && !utf8_ok {
+                // Invalid UTF-8 in a date column skipped the whole pair before the
+                // correlation update.
                 cold_path();
-                debug_assert!(false, "chunk_stats missing expected key: ({idx1}, {idx2})");
+                skip[slot] = true;
+                num[slot] = None;
                 continue;
-            };
+            }
+            skip[slot] = false;
 
-            // Date parsing needs &str; numeric parsing reads bytes directly to avoid an
-            // allocation on every record. Per-cell from_utf8 is a cheap byte scan compared
-            // to the String allocation it replaces, so we no longer pre-stringify needed
-            // columns into a per-record HashMap.
-            let numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
-                let Ok(x_str) = from_utf8(value_bytes_x) else {
-                    cold_path();
-                    continue;
-                };
-                if let Some(cached) = date_cache.get(x_str) {
-                    *cached
+            if intern_slot[slot] && utf8_ok {
+                // Probe with the borrowed slice FIRST. `insert_full` takes its key by
+                // value, so building the Box up front would allocate and copy on every
+                // row even when the value is already interned -- exactly the per-row
+                // allocation this encoding exists to remove. Only a miss allocates.
+                let dict = &mut dicts[slot];
+                let idx = if let Some(idx) = dict.get_index_of(value_bytes) {
+                    idx
                 } else {
-                    let val = parse_date_to_days(x_str, prefer_dmy);
-                    date_cache.insert(x_str.to_string(), val);
-                    val
+                    dict.insert_full(Box::from(value_bytes)).0
+                };
+                // NO_SYM is u32::MAX, so u32::try_from alone is not enough: an index
+                // equal to the sentinel would be read back as "no symbol", silently
+                // dropping the cell from the frequency counts in release builds and,
+                // for a date column, resizing the memo to 4 billion entries.
+                let (Ok(idx_u32), true) = (u32::try_from(idx), idx != NO_SYM as usize) else {
+                    cold_path();
+                    return fail_incorrectusage_clierror!(
+                        "Column {col_idx} has more than {} distinct values, which exceeds what \
+                         the bivariate joint-frequency encoding can address. Use \
+                         -C/--cardinality-threshold to skip mutual information for \
+                         high-cardinality fields.",
+                        NO_SYM
+                    );
+                };
+                sym[slot] = idx_u32;
+            }
+
+            num[slot] = if is_date {
+                // safety: a date column with invalid UTF-8 was skipped above, and
+                // date columns are always interned, so the symbol is present.
+                let s = sym[slot] as usize;
+                let memo = &mut date_by_sym[slot];
+                if s >= memo.len() {
+                    memo.resize(s + 1, None);
+                    // A fresh slot is indistinguishable from a cached `None`, so parse
+                    // on first sight and store the result.
+                    let parsed = from_utf8(value_bytes)
+                        .ok()
+                        .and_then(|v| parse_date_to_days(v, prefer_dmy));
+                    memo[s] = parsed;
+                    parsed
+                } else {
+                    memo[s]
                 }
             } else {
-                parse_float_opt_from_bytes(value_bytes_x)
+                // Numeric parsing reads bytes directly, so it never allocates.
+                parse_float_opt_from_bytes(value_bytes)
             };
+        }
 
-            let numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
-                let Ok(y_str) = from_utf8(value_bytes_y) else {
-                    cold_path();
-                    continue;
-                };
-                if let Some(cached) = date_cache.get(y_str) {
-                    *cached
-                } else {
-                    let val = parse_date_to_days(y_str, prefer_dmy);
-                    date_cache.insert(y_str.to_string(), val);
-                    val
-                }
-            } else {
-                parse_float_opt_from_bytes(value_bytes_y)
+        for (pair_idx, pair) in plan.pairs.iter().enumerate() {
+            let (x_slot, y_slot) = (pair.x_slot as usize, pair.y_slot as usize);
+            if skip[x_slot] || skip[y_slot] {
+                continue;
+            }
+            // safety: chunk_stats is built from plan.pairs, so indices line up
+            let Some(stats) = chunk_stats.get_mut(pair_idx) else {
+                cold_path();
+                debug_assert!(false, "chunk_stats missing expected index: {pair_idx}");
+                continue;
             };
 
             // For numeric/date types, update correlation state and collect values
-            if let (Some(x_val), Some(y_val)) = (numeric_value_x, numeric_value_y) {
+            if let (Some(x_val), Some(y_val)) = (num[x_slot], num[y_slot]) {
                 update_correlation_state(&mut stats.correlation_state, x_val, y_val);
                 // Only store values if needed for Spearman/Kendall
                 if needs_all_values {
@@ -2739,56 +3048,53 @@ where
                 }
             }
 
-            // Only compute frequency counts if needed for mutual information.
-            // This is the only branch that needs owned strings — allocate lazily here.
+            // Accumulate joint frequency counts - these are needed for mutual
+            // information. Marginal frequencies are derived from xy_counts at
+            // finalization to ensure consistency. Invalid UTF-8 is excluded here but
+            // has already fed correlation above.
             if needs_freq_counts {
-                let (Ok(x_str_ref), Ok(y_str_ref)) =
-                    (from_utf8(value_bytes_x), from_utf8(value_bytes_y))
-                else {
+                if !utf8[x_slot] || !utf8[y_slot] {
                     cold_path();
                     continue;
-                };
-                // NOTE: this is not true string interning — each lookup still yields
-                // a cloned String (needed because xy_counts keys by owned tuples).
-                // The benefit over ad-hoc cloning is one fewer clone on insert (cache
-                // miss). A future change to Arc<str> or SmolStr would give real
-                // interning (cheap clones on cache hit), at the cost of a wider
-                // refactor of xy_counts.
-                let x_str_interned = if let Some(cached) = string_interner.get(x_str_ref) {
-                    cached.clone()
-                } else {
-                    let owned = x_str_ref.to_string();
-                    string_interner.insert(owned.clone());
-                    owned
-                };
-                let y_str_interned = if let Some(cached) = string_interner.get(y_str_ref) {
-                    cached.clone()
-                } else {
-                    let owned = y_str_ref.to_string();
-                    string_interner.insert(owned.clone());
-                    owned
-                };
-
-                // Accumulate joint frequency counts (xy_counts) - these are needed for mutual
-                // information. Marginal frequencies (x_counts, y_counts) will be computed
-                // from xy_counts at finalization to ensure consistency.
+                }
+                // Counted even when the pair is excluded by the cardinality gate, so
+                // the reported n_pairs does not depend on whether the joint map was
+                // built. Only the map itself is skipped.
+                stats.total_pairs += 1;
+                if !pair.accumulate_freq {
+                    continue;
+                }
+                let (x_sym, y_sym) = (sym[x_slot], sym[y_slot]);
+                debug_assert!(
+                    x_sym != NO_SYM && y_sym != NO_SYM,
+                    "an accumulating pair must have both columns interned"
+                );
                 *stats
                     .xy_counts
-                    .entry((x_str_interned, y_str_interned))
+                    .entry(pack_joint_key(x_sym, y_sym))
                     .or_insert(0) += 1;
-                stats.total_pairs += 1;
             }
         }
     }
 
-    Ok(chunk_stats)
+    // The dictionaries only need to outlive the chunk when the merge has symbols to
+    // translate. On the `fast` path they are just date-parse memos -- dropping them
+    // here keeps that path's footprint where it was.
+    if !needs_freq_counts {
+        dicts.clear();
+    }
+
+    Ok(BivariateChunkOutput {
+        stats: chunk_stats,
+        dicts,
+    })
 }
 
 /// Finalize per-pair bivariate statistics from an aggregated `BivariateChunkStats`.
 ///
-/// Caller must have already populated marginal frequencies (`x_counts`/`y_counts`)
-/// from `xy_counts` when mutual information / NMI are requested. This function only
-/// reads from `chunk_stats` — it does not mutate frequency maps.
+/// Marginal frequencies are derived here from `chunk_stats.xy_counts` rather than
+/// being supplied by the caller, so they live only for the duration of this call.
+/// This function only reads from `chunk_stats` — it does not mutate it.
 fn finalize_bivariate_pair_stats(
     pair_key: (u16, u16),
     chunk_stats: &BivariateChunkStats,
@@ -2869,16 +3175,50 @@ fn finalize_bivariate_pair_stats(
         }
     };
 
-    let mutual_information = if !stats_config.mi || chunk_stats.total_pairs == 0 {
+    // Marginal frequencies, derived from the joint counts. Only MI/NMI/U consume
+    // them, and each is skipped when total_pairs is 0 or the cardinality gate fires,
+    // so deriving them under the same condition avoids building maps nothing reads.
+    // Finalize runs under `into_par_iter`, so this bounds live marginals to roughly
+    // the job count rather than one pair of maps per field pair.
+    let needs_marginals = (stats_config.mi || stats_config.nmi || stats_config.u)
+        && chunk_stats.total_pairs > 0
+        && exceeds_cardinality != Some(true);
+    // Symbol-keyed, not dense Vec<u64> indexed by symbol. A dense table would have to
+    // be sized to the COLUMN's cardinality, and two of them are built per pair inside
+    // a rayon finalize -- allocation proportional to something other than this pair's
+    // actual occupancy, which is the same shape as the over-reservation bug this
+    // series already fixed. Integer-keyed maps keep the win (no String hashing, no
+    // per-cell clone) without that exposure.
+    let (x_counts, y_counts) = if needs_marginals {
+        let mut x_counts: HashMap<u32, u64> = HashMap::new();
+        let mut y_counts: HashMap<u32, u64> = HashMap::new();
+        for (joint_key, &count) in &chunk_stats.xy_counts {
+            *x_counts.entry((joint_key >> 32) as u32).or_insert(0) += count;
+            *y_counts
+                .entry((joint_key & 0xFFFF_FFFF) as u32)
+                .or_insert(0) += count;
+        }
+        (x_counts, y_counts)
+    } else {
+        (HashMap::new(), HashMap::new())
+    };
+
+    // The cardinality gate is checked BEFORE the empty-counts check: the scan now
+    // declines to build a joint map for an excluded pair, so its xy_counts is empty
+    // by construction. Testing emptiness first would take the silent branch and lose
+    // the "skipped, cardinality exceeds threshold" log line.
+    let mutual_information = if !stats_config.mi {
         None
     } else if exceeds_cardinality == Some(true) {
         log_skip("mutual information");
         None
+    } else if chunk_stats.total_pairs == 0 {
+        None
     } else {
         compute_mutual_information_from_counts(
             &chunk_stats.xy_counts,
-            &chunk_stats.x_counts,
-            &chunk_stats.y_counts,
+            &x_counts,
+            &y_counts,
             chunk_stats.total_pairs,
         )
     };
@@ -2886,7 +3226,7 @@ fn finalize_bivariate_pair_stats(
     // NMI and the directed uncertainty coefficients (Theil's U) all require MI and the marginal
     // entropies computed from the same frequency counts. Compute them once and share.
     let (normalized_mutual_information, u_field2_given_field1, u_field1_given_field2) =
-        if (!stats_config.nmi && !stats_config.u) || chunk_stats.total_pairs == 0 {
+        if !stats_config.nmi && !stats_config.u {
             (None, None, None)
         } else if exceeds_cardinality == Some(true) {
             if stats_config.nmi {
@@ -2896,18 +3236,20 @@ fn finalize_bivariate_pair_stats(
                 log_skip("uncertainty coefficient");
             }
             (None, None, None)
+        } else if chunk_stats.total_pairs == 0 {
+            (None, None, None)
         } else {
             // x = field1, y = field2 (see the `value_bytes_x`/`value_bytes_y` assignment in the
             // pair accumulation).
-            let h_x = compute_entropy_from_counts(&chunk_stats.x_counts, chunk_stats.total_pairs);
-            let h_y = compute_entropy_from_counts(&chunk_stats.y_counts, chunk_stats.total_pairs);
+            let h_x = compute_entropy_from_counts(&x_counts, chunk_stats.total_pairs);
+            let h_y = compute_entropy_from_counts(&y_counts, chunk_stats.total_pairs);
             let mi = if mutual_information.is_some() {
                 mutual_information
             } else {
                 compute_mutual_information_from_counts(
                     &chunk_stats.xy_counts,
-                    &chunk_stats.x_counts,
-                    &chunk_stats.y_counts,
+                    &x_counts,
+                    &y_counts,
                     chunk_stats.total_pairs,
                 )
             };
@@ -3024,15 +3366,14 @@ fn compute_all_bivariatestats(
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded(nchunks);
 
-        // Process each chunk in parallel. Share the read-only field-pair map via
-        // Arc instead of deep-cloning the HashMap into every worker. The caller
-        // no longer needs `field_pairs` after this call, so we move it directly
-        // into the Arc — zero map clones. `input_path_string` from above is already
+        // Process each chunk in parallel. Share the read-only plan via Arc instead of
+        // deep-cloning it into every worker. `input_path_string` from above is already
         // UTF-8-validated, so no need to re-validate here.
-        let field_pairs_arc = Arc::new(field_pairs);
+        let plan = build_bivariate_plan(&field_pairs, cardinality_threshold);
+        let plan_arc = Arc::new(plan);
         for i in 0..nchunks {
             let send = send.clone();
-            let field_pairs_arc = Arc::clone(&field_pairs_arc);
+            let plan_arc = Arc::clone(&plan_arc);
             let input_path_string_clone = input_path_string.clone();
             pool.execute(move || {
                 // Open index for this thread. If this fails, propagate an error
@@ -3042,29 +3383,38 @@ fn compute_all_bivariatestats(
                 let mut idx_chunk = match rconfig_chunk.indexed() {
                     Ok(Some(idx)) => idx,
                     Ok(None) => {
-                        let _ = send.send(Err(CliError::Other(format!(
-                            "Chunk {i}: index is not available for {input_path_string_clone}"
-                        ))));
+                        let _ = send.send((
+                            i,
+                            Err(CliError::Other(format!(
+                                "Chunk {i}: index is not available for {input_path_string_clone}"
+                            ))),
+                        ));
                         return;
                     },
                     Err(e) => {
-                        let _ = send.send(Err(CliError::Other(format!(
-                            "Chunk {i}: failed to open index: {e}"
-                        ))));
+                        let _ = send.send((
+                            i,
+                            Err(CliError::Other(format!(
+                                "Chunk {i}: failed to open index: {e}"
+                            ))),
+                        ));
                         return;
                     },
                 };
 
                 // Seek to chunk start position
                 if let Err(e) = idx_chunk.seek((i * chunk_size) as u64) {
-                    let _ = send.send(Err(CliError::Other(format!("Chunk {i}: seek failed: {e}"))));
+                    let _ = send.send((
+                        i,
+                        Err(CliError::Other(format!("Chunk {i}: seek failed: {e}"))),
+                    ));
                     return;
                 }
 
                 // Process chunk records
                 let it = idx_chunk.byte_records().take(chunk_size);
-                let result = compute_chunk_bivariate(&field_pairs_arc, it, stats_config);
-                let _ = send.send(result);
+                let result = compute_chunk_bivariate(&plan_arc, it, stats_config);
+                let _ = send.send((i, result));
             });
         }
 
@@ -3072,45 +3422,165 @@ fn compute_all_bivariatestats(
 
         // Aggregate results from all chunks
         // Pre-allocate based on idx_count to avoid repeated reallocations during extend
-        let mut all_stats: HashMap<(u16, u16), BivariateChunkStats> = field_pairs_arc
-            .keys()
-            .map(|k| {
+        let mut all_stats: Vec<BivariateChunkStats> = plan_arc
+            .pairs
+            .iter()
+            .map(|_| {
                 let mut stats = BivariateChunkStats::default();
                 // Pre-allocate value vectors with total capacity if needed
                 if needs_all_values {
                     stats.x_values.reserve(idx_count);
                     stats.y_values.reserve(idx_count);
                 }
-                (*k, stats)
+                stats
             })
             .collect();
 
-        for chunk_result in &recv {
-            let chunk_stats = chunk_result?;
-            for (pair_key, stats) in chunk_stats {
-                if let Some(total_stats) = all_stats.get_mut(&pair_key) {
-                    // Merge correlation states (always needed for Pearson/covariance)
-                    total_stats.correlation_state = merge_correlation_states(
-                        &total_stats.correlation_state,
-                        &stats.correlation_state,
-                    );
-                    // Only merge values if needed for Spearman/Kendall
-                    if needs_all_values {
-                        total_stats.x_values.extend(stats.x_values);
-                        total_stats.y_values.extend(stats.y_values);
-                    }
-                    // Only merge frequency counts if needed for mutual information
-                    // Note: Only xy_counts and total_pairs are collected during chunk processing
-                    // Marginal frequencies (x_counts, y_counts) are computed from xy_counts at
-                    // finalization
-                    if needs_freq_counts {
-                        for ((x_val, y_val), count) in stats.xy_counts {
-                            *total_stats.xy_counts.entry((x_val, y_val)).or_insert(0) += count;
-                        }
-                        total_stats.total_pairs += stats.total_pairs;
+        // Merge chunk results in ASCENDING chunk order -- never in completion order.
+        //
+        // Merging as results arrive makes the output nondeterministic run-to-run:
+        // `merge_correlation_states` is Welford, which is not associative in floating
+        // point, so pearson/covariance drift in their last digits depending on which
+        // worker finished first; and `x_values`/`y_values` are order-sensitive inputs
+        // to the Spearman/Kendall rankings. Measured on the 1M-row NYC311 benchmark
+        // before this fix: three consecutive runs of the SAME binary on the SAME
+        // input produced three different covariance values.
+        // `compute_outliers_and_kga` already orders its merge for exactly this
+        // reason; this mirrors it.
+        //
+        // This is a reorder buffer rather than a collect-then-merge: a chunk that
+        // arrives early is parked, and each arrival merges every consecutively
+        // numbered chunk that is now ready, so a chunk is freed as soon as its
+        // predecessors are in. Buffering ALL chunks first would be equally
+        // deterministic but measurably costlier -- at 1M rows the chunks finish
+        // seconds apart and holding all 16 sets of 780 maps until the last one landed
+        // raised peak RSS by ~1 GiB. (At 50k rows chunks finish together and the two
+        // are indistinguishable.)
+        //
+        // Deliberately NOT covered by a unit test: reproducing the bug needs chunk
+        // completion order to diverge from dispatch order, which only happens when
+        // chunks are big enough to contend. It reproduces on the 539 MB benchmark,
+        // but synthetic fixtures up to 41 columns / 820 pairs / 50k rows all finish
+        // in dispatch order and stay deterministic even with the bug present, so a
+        // test would have to win a race to catch a regression. Correct by
+        // construction instead -- do not delete it as "untested".
+        // Symbols are chunk-local: each worker interned the values it happened to see,
+        // in the order it saw them, so the same symbol means different things in
+        // different chunks. Before joint counts can be added together they are
+        // translated into one shared numbering, built here in chunk order.
+        let ncols = plan_arc.cols.len();
+        let mut global_dicts: Vec<ValueDict> = (0..ncols).map(|_| ValueDict::default()).collect();
+        // Scratch, reused per chunk: remap[slot][chunk_symbol] = global symbol.
+        let mut remap: Vec<Vec<u32>> = (0..ncols).map(|_| Vec::new()).collect();
+
+        let mut merge_chunk = |chunk: BivariateChunkOutput| -> CliResult<()> {
+            let BivariateChunkOutput {
+                stats: chunk_stats,
+                dicts,
+            } = chunk;
+
+            if needs_freq_counts {
+                // An IndexSet iterates in insertion order, and insertion order IS
+                // symbol order, so pushing each value's global index builds a table
+                // indexable by the chunk-local symbol. Anything that reordered this
+                // iteration would silently corrupt every joint key.
+                for (slot, dict) in dicts.into_iter().enumerate() {
+                    let Some(table) = remap.get_mut(slot) else {
+                        cold_path();
+                        continue;
+                    };
+                    table.clear();
+                    table.reserve(dict.len());
+                    for value in dict {
+                        // The merged dictionary can exceed any single chunk's, so the
+                        // NO_SYM sentinel has to be excluded here too, not just at
+                        // intern time.
+                        let idx = if let Some(idx) = global_dicts[slot].get_index_of(&value) {
+                            idx
+                        } else {
+                            global_dicts[slot].insert_full(value).0
+                        };
+                        let (Ok(idx_u32), true) = (u32::try_from(idx), idx != NO_SYM as usize)
+                        else {
+                            cold_path();
+                            return fail_incorrectusage_clierror!(
+                                "Merged column {} has more than {} distinct values, which exceeds \
+                                 what the bivariate joint-frequency encoding can address. Use \
+                                 -C/--cardinality-threshold to skip mutual information for \
+                                 high-cardinality fields.",
+                                plan_arc.cols.get(slot).map_or(slot, |(c, _)| *c),
+                                NO_SYM
+                            );
+                        };
+                        table.push(idx_u32);
                     }
                 }
             }
+
+            for (pair_idx, (total_stats, stats)) in
+                all_stats.iter_mut().zip(chunk_stats).enumerate()
+            {
+                // Merge correlation states (always needed for Pearson/covariance)
+                total_stats.correlation_state = merge_correlation_states(
+                    &total_stats.correlation_state,
+                    &stats.correlation_state,
+                );
+                // Only merge values if needed for Spearman/Kendall
+                if needs_all_values {
+                    total_stats.x_values.extend(stats.x_values);
+                    total_stats.y_values.extend(stats.y_values);
+                }
+                // Only merge frequency counts if needed for mutual information.
+                // Marginal frequencies are derived from xy_counts at finalization.
+                if needs_freq_counts {
+                    let Some(pair) = plan_arc.pairs.get(pair_idx) else {
+                        cold_path();
+                        continue;
+                    };
+                    let (Some(x_remap), Some(y_remap)) = (
+                        remap.get(pair.x_slot as usize),
+                        remap.get(pair.y_slot as usize),
+                    ) else {
+                        cold_path();
+                        continue;
+                    };
+                    for (joint_key, count) in stats.xy_counts {
+                        let x_sym = (joint_key >> 32) as u32;
+                        let y_sym = (joint_key & 0xFFFF_FFFF) as u32;
+                        let (Some(&gx), Some(&gy)) =
+                            (x_remap.get(x_sym as usize), y_remap.get(y_sym as usize))
+                        else {
+                            cold_path();
+                            debug_assert!(false, "joint key references an unknown chunk symbol");
+                            continue;
+                        };
+                        *total_stats
+                            .xy_counts
+                            .entry(pack_joint_key(gx, gy))
+                            .or_insert(0) += count;
+                    }
+                    total_stats.total_pairs += stats.total_pairs;
+                }
+            }
+            Ok(())
+        };
+
+        let mut pending: Vec<Option<BivariateChunkOutput>> = (0..nchunks).map(|_| None).collect();
+        let mut next_chunk = 0_usize;
+
+        for (i, chunk_result) in &recv {
+            let chunk_stats = chunk_result?;
+            if let Some(slot) = pending.get_mut(i) {
+                *slot = Some(chunk_stats);
+            }
+            // Merge the run of chunks that is now contiguous from `next_chunk`.
+            while let Some(slot) = pending.get_mut(next_chunk)
+                && let Some(stats) = slot.take()
+            {
+                merge_chunk(stats)?;
+                next_chunk += 1;
+            }
+
             // Update progress bar
             if let Some(pb) = progress {
                 pb.inc(1);
@@ -3137,36 +3607,23 @@ fn compute_all_bivariatestats(
             log::info!("Phase 2 started... {num_field_pairs} field pairs");
         }
 
-        // Only compute marginal frequencies if we need mutual information
-        if needs_freq_counts {
-            // Compute marginal frequencies from joint frequencies to ensure consistency
-            // This ensures x_counts and y_counts are computed from the same set of records
-            // as xy_counts (only pairs where both fields are non-empty)
-            // This is critical for correct mutual information calculation
-            for chunk_stats in all_stats.values_mut() {
-                // Compute marginal frequencies from joint frequencies
-                // Sum over y to get x_counts, sum over x to get y_counts
-                chunk_stats.x_counts.clear();
-                chunk_stats.y_counts.clear();
-
-                for ((x_val, y_val), &count) in &chunk_stats.xy_counts {
-                    *chunk_stats.x_counts.entry(x_val.clone()).or_insert(0) += count;
-                    *chunk_stats.y_counts.entry(y_val.clone()).or_insert(0) += count;
-                }
-            }
-        }
+        // Marginal frequencies are derived per pair inside
+        // `finalize_bivariate_pair_stats`, from the same `xy_counts` that MI reads --
+        // so they stay consistent (counted only over rows where both fields are
+        // non-empty) without every pair carrying a pair of maps until finalize runs.
 
         // Finalize statistics from aggregated chunk stats (parallelized)
         let final_stats: HashMap<(u16, u16), BivariateStats> = all_stats
             .into_par_iter()
-            .map(|(pair_key, chunk_stats)| {
+            .zip(plan_arc.pairs.par_iter())
+            .map(|(chunk_stats, pair)| {
                 if let Some(pb) = progress {
                     pb.inc(1);
                 }
                 finalize_bivariate_pair_stats(
-                    pair_key,
+                    pair.key,
                     &chunk_stats,
-                    &field_pairs_arc,
+                    &field_pairs,
                     field_names,
                     cardinality_threshold,
                     stats_config,
@@ -3212,8 +3669,6 @@ fn compute_all_bivariatestats_sequential(
         return Ok(HashMap::new());
     }
 
-    let needs_freq_counts = stats_config.needs_frequency_counts();
-
     // Set up progress bar once before iteration (unknown total, ticks per record).
     if let Some(pb) = progress {
         pb.set_style(
@@ -3235,30 +3690,25 @@ fn compute_all_bivariatestats_sequential(
             pb.set_position(processed);
         }
     });
-    let mut all_stats = compute_chunk_bivariate(field_pairs, it, stats_config)?;
+    let plan = build_bivariate_plan(field_pairs, cardinality_threshold);
+    // One chunk, so its symbols are already the only numbering there is -- no remap,
+    // and the dictionaries are dropped with the output.
+    let all_stats = compute_chunk_bivariate(&plan, it, stats_config)?.stats;
 
     if let Some(pb) = progress {
         pb.set_position(processed);
         util::finish_progress(pb);
     }
 
-    // Compute marginal frequencies from joint frequencies (same as parallel path).
-    if needs_freq_counts {
-        for chunk_stats in all_stats.values_mut() {
-            chunk_stats.x_counts.clear();
-            chunk_stats.y_counts.clear();
-            for ((x_val, y_val), &count) in &chunk_stats.xy_counts {
-                *chunk_stats.x_counts.entry(x_val.clone()).or_insert(0) += count;
-                *chunk_stats.y_counts.entry(y_val.clone()).or_insert(0) += count;
-            }
-        }
-    }
+    // Marginal frequencies are derived per pair inside
+    // `finalize_bivariate_pair_stats` (same as the parallel path).
 
     all_stats
         .into_iter()
-        .map(|(pair_key, chunk_stats)| {
+        .zip(plan.pairs.iter())
+        .map(|(chunk_stats, pair)| {
             finalize_bivariate_pair_stats(
-                pair_key,
+                pair.key,
                 &chunk_stats,
                 field_pairs,
                 field_names,
@@ -5041,8 +5491,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 None
             };
 
-            // Get cardinality threshold (default: 1,000,000)
-            let cardinality_threshold = args.flag_cardinality_threshold.or(Some(1_000_000));
+            // Cardinality threshold for mi/nmi/u. The default is relative to the row
+            // count because the old fixed 1,000,000 could never fire on anything
+            // smaller -- on the 1M-row benchmark it sat exactly at the row count, so
+            // the guard was inert on the very file it mattered for.
+            //
+            // Floored so it stays inert on small inputs: on an 8-row fixture nothing
+            // is meaningfully "high cardinality", and half of 8 would prune ordinary
+            // 5-value columns. The fully-unique case is already excluded earlier by
+            // the cardinality == rowcount filter.
+            let cardinality_threshold = args.flag_cardinality_threshold.or_else(|| {
+                Some(
+                    record_count
+                        .map_or(DEFAULT_CARDINALITY_THRESHOLD, |rc| rc / 2)
+                        .max(DEFAULT_CARDINALITY_THRESHOLD),
+                )
+            });
 
             // Log which stats are being computed
             let stats_list: Vec<&str> = [

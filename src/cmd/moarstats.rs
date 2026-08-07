@@ -325,10 +325,14 @@ moarstats options:
                            all values and uses streaming algorithms.
                            [default: fast]
     -C, --cardinality-threshold <n>
-                           Skip mutual information computation for field pairs where either
-                           field has cardinality exceeding this threshold. Helps avoid
-                           expensive computations for high-cardinality fields.
-                           [default: 1000000]
+                           Skip mutual information (mi/nmi/u) for field pairs where either
+                           field's cardinality exceeds this threshold. Such pairs also skip
+                           building their joint-frequency table, which is the dominant memory
+                           cost of --bivariate-stats all.
+                           Defaults to half the row count, floored at 1000, so it stays inert
+                           on small inputs and scales with large ones. Mutual information
+                           between near-unique columns saturates at log(n) and is noise
+                           regardless of how efficiently it is computed.
     -J, --join-inputs <files>
                            Additional datasets to join. Comma-separated list of CSV files to join
                            with the primary input.
@@ -1732,6 +1736,11 @@ type ValueDict = IndexSet<Box<[u8]>, foldhash::fast::RandomState>;
 /// that is not being interned. Never appears in a joint key.
 const NO_SYM: u32 = u32::MAX;
 
+/// Floor for the default `-C/--cardinality-threshold`, which is otherwise half the
+/// row count. Keeps the guard inert on small inputs, where no column is meaningfully
+/// high-cardinality and half the row count would prune ordinary categorical columns.
+const DEFAULT_CARDINALITY_THRESHOLD: u64 = 1_000;
+
 /// Pack two per-column symbols into one joint-frequency key.
 ///
 /// x occupies the high half and y the low half, so the two symbols can be recovered
@@ -1745,11 +1754,19 @@ const fn pack_joint_key(x_sym: u32, y_sym: u32) -> u64 {
 /// it reads resolved to dense slot indices.
 struct PairPlan {
     /// The `(col_idx, col_idx)` key this pair is reported under.
-    key:    (u16, u16),
+    key:             (u16, u16),
     /// Slot of the x (field1) column in `BivariatePlan::cols`.
-    x_slot: u32,
+    x_slot:          u32,
     /// Slot of the y (field2) column in `BivariatePlan::cols`.
-    y_slot: u32,
+    y_slot:          u32,
+    /// Whether this pair should build a joint-frequency map at all.
+    ///
+    /// False when either side's cardinality exceeds `-C/--cardinality-threshold`.
+    /// The gate used to be applied only at finalize, so an excluded pair still
+    /// accumulated its full joint map and then threw it away; deciding here means it
+    /// is never built. Row COUNTING is unaffected (see `total_pairs` in the scan), so
+    /// the reported `n_pairs` is the same either way.
+    accumulate_freq: bool,
 }
 
 /// Execution plan shared by every chunk of a bivariate run.
@@ -1774,8 +1791,12 @@ struct BivariatePlan {
 ///
 /// Pairs are emitted in sorted key order so that chunk statistics vectors from
 /// different threads line up positionally and merge deterministically.
+///
+/// `cardinality_threshold` decides, per pair, whether a joint-frequency map is worth
+/// building at all -- see `PairPlan::accumulate_freq`.
 fn build_bivariate_plan(
     field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    cardinality_threshold: Option<u64>,
 ) -> BivariatePlan {
     let mut keys: Vec<(u16, u16)> = field_pairs.keys().copied().collect();
     keys.sort_unstable();
@@ -1799,6 +1820,7 @@ fn build_bivariate_plan(
         };
 
     let mut pairs = Vec::with_capacity(keys.len());
+    let mut skipped_high_cardinality = 0_usize;
     for key in keys {
         // safety: keys came from field_pairs
         let Some((field1_info, field2_info)) = field_pairs.get(&key) else {
@@ -1823,11 +1845,32 @@ fn build_bivariate_plan(
             }
         }
 
+        // Same predicate finalize uses, evaluated once here instead of after the
+        // joint map has already been paid for.
+        let exceeds_cardinality = cardinality_threshold.is_some_and(|threshold| {
+            field1_info.cardinality.is_some_and(|c| c > threshold)
+                || field2_info.cardinality.is_some_and(|c| c > threshold)
+        });
+        if exceeds_cardinality {
+            skipped_high_cardinality += 1;
+        }
+
         pairs.push(PairPlan {
             key,
             x_slot,
             y_slot,
+            accumulate_freq: !exceeds_cardinality,
         });
+    }
+
+    if skipped_high_cardinality > 0 {
+        log::info!(
+            "bivariate plan: {skipped_high_cardinality} of {} pairs will not accumulate joint \
+             frequencies (cardinality exceeds threshold {:?}); mi/nmi/u are reported empty for \
+             them",
+            pairs.len(),
+            cardinality_threshold,
+        );
     }
 
     BivariatePlan { cols, pairs }
@@ -2839,11 +2882,27 @@ where
     // `Vec<Option<f64>>` indexed by symbol, which removes the last String allocation
     // from the scan without making the cache any larger (it already held one entry
     // per distinct date string).
-    let intern_slot: Vec<bool> = plan
+    // A column is interned when its symbols are actually used: by a pair that will
+    // build a joint map, or -- even on the `fast` path -- to memoize date parsing.
+    // A column whose every pair is excluded by the cardinality gate is not interned
+    // at all, so an excluded high-cardinality column costs no dictionary either.
+    let mut intern_slot: Vec<bool> = plan
         .cols
         .iter()
-        .map(|(_, field_type)| needs_freq_counts || field_type.is_date_or_datetime())
+        .map(|(_, field_type)| field_type.is_date_or_datetime())
         .collect();
+    if needs_freq_counts {
+        for pair in &plan.pairs {
+            if pair.accumulate_freq {
+                if let Some(f) = intern_slot.get_mut(pair.x_slot as usize) {
+                    *f = true;
+                }
+                if let Some(f) = intern_slot.get_mut(pair.y_slot as usize) {
+                    *f = true;
+                }
+            }
+        }
+    }
 
     let mut dicts: Vec<ValueDict> = (0..ncols).map(|_| ValueDict::default()).collect();
     // Parsed-date memo, indexed by [slot][symbol]. Only date columns ever grow one.
@@ -2860,14 +2919,18 @@ where
     //                 bytes are not valid UTF-8. Both previously `continue`d the pair
     //                 BEFORE the correlation update, so neither reaches n_pairs.
     //   num[slot]  -- the parsed numeric value, if any.
-    //   sym[slot]  -- the dictionary symbol, or NO_SYM when the value has none
-    //                 (not interned, or not valid UTF-8). A cell with NO_SYM is
-    //                 excluded from the frequency counts but still feeds correlation,
-    //                 which is the pre-existing behavior for invalid UTF-8 in a
-    //                 non-date column.
+    //   sym[slot]  -- the dictionary symbol, or NO_SYM when the column is not
+    //                 interned. Only read for pairs that accumulate.
+    //   utf8[slot] -- whether the bytes are valid UTF-8. Tracked separately from
+    //                 `sym` because a cell still COUNTS toward total_pairs when its
+    //                 pair is excluded by the cardinality gate (and so has no
+    //                 symbol); invalid UTF-8 is excluded from the frequency counts
+    //                 but still feeds correlation, which is the pre-existing
+    //                 behavior for a non-date column.
     let mut skip: Vec<bool> = vec![true; ncols];
     let mut num: Vec<Option<f64>> = vec![None; ncols];
     let mut sym: Vec<u32> = vec![NO_SYM; ncols];
+    let mut utf8: Vec<bool> = vec![false; ncols];
 
     #[allow(unused_assignments)]
     let mut record: csv::ByteRecord = csv::ByteRecord::new();
@@ -2880,6 +2943,7 @@ where
         for (slot, (col_idx, field_type)) in plan.cols.iter().enumerate() {
             let value_bytes = record.get(*col_idx).unwrap_or(&[]);
             sym[slot] = NO_SYM;
+            utf8[slot] = false;
             if value_bytes.is_empty() {
                 skip[slot] = true;
                 num[slot] = None;
@@ -2890,11 +2954,12 @@ where
             // UTF-8 is validated only where it was before: always for a date column
             // (parsing needs &str), and otherwise only when frequency counts are
             // being built. The `fast` path must not pay for a check it never used.
-            let utf8_ok = if is_date || intern_slot[slot] {
+            let utf8_ok = if is_date || needs_freq_counts {
                 from_utf8(value_bytes).is_ok()
             } else {
                 false
             };
+            utf8[slot] = utf8_ok;
 
             if is_date && !utf8_ok {
                 // Invalid UTF-8 in a date column skipped the whole pair before the
@@ -2981,19 +3046,29 @@ where
 
             // Accumulate joint frequency counts - these are needed for mutual
             // information. Marginal frequencies are derived from xy_counts at
-            // finalization to ensure consistency. A cell without a symbol (invalid
-            // UTF-8) is excluded here but has already fed correlation above.
+            // finalization to ensure consistency. Invalid UTF-8 is excluded here but
+            // has already fed correlation above.
             if needs_freq_counts {
-                let (x_sym, y_sym) = (sym[x_slot], sym[y_slot]);
-                if x_sym == NO_SYM || y_sym == NO_SYM {
+                if !utf8[x_slot] || !utf8[y_slot] {
                     cold_path();
                     continue;
                 }
+                // Counted even when the pair is excluded by the cardinality gate, so
+                // the reported n_pairs does not depend on whether the joint map was
+                // built. Only the map itself is skipped.
+                stats.total_pairs += 1;
+                if !pair.accumulate_freq {
+                    continue;
+                }
+                let (x_sym, y_sym) = (sym[x_slot], sym[y_slot]);
+                debug_assert!(
+                    x_sym != NO_SYM && y_sym != NO_SYM,
+                    "an accumulating pair must have both columns interned"
+                );
                 *stats
                     .xy_counts
                     .entry(pack_joint_key(x_sym, y_sym))
                     .or_insert(0) += 1;
-                stats.total_pairs += 1;
             }
         }
     }
@@ -3124,10 +3199,16 @@ fn finalize_bivariate_pair_stats(
         (HashMap::new(), HashMap::new())
     };
 
-    let mutual_information = if !stats_config.mi || chunk_stats.total_pairs == 0 {
+    // The cardinality gate is checked BEFORE the empty-counts check: the scan now
+    // declines to build a joint map for an excluded pair, so its xy_counts is empty
+    // by construction. Testing emptiness first would take the silent branch and lose
+    // the "skipped, cardinality exceeds threshold" log line.
+    let mutual_information = if !stats_config.mi {
         None
     } else if exceeds_cardinality == Some(true) {
         log_skip("mutual information");
+        None
+    } else if chunk_stats.total_pairs == 0 {
         None
     } else {
         compute_mutual_information_from_counts(
@@ -3141,7 +3222,7 @@ fn finalize_bivariate_pair_stats(
     // NMI and the directed uncertainty coefficients (Theil's U) all require MI and the marginal
     // entropies computed from the same frequency counts. Compute them once and share.
     let (normalized_mutual_information, u_field2_given_field1, u_field1_given_field2) =
-        if (!stats_config.nmi && !stats_config.u) || chunk_stats.total_pairs == 0 {
+        if !stats_config.nmi && !stats_config.u {
             (None, None, None)
         } else if exceeds_cardinality == Some(true) {
             if stats_config.nmi {
@@ -3150,6 +3231,8 @@ fn finalize_bivariate_pair_stats(
             if stats_config.u {
                 log_skip("uncertainty coefficient");
             }
+            (None, None, None)
+        } else if chunk_stats.total_pairs == 0 {
             (None, None, None)
         } else {
             // x = field1, y = field2 (see the `value_bytes_x`/`value_bytes_y` assignment in the
@@ -3282,7 +3365,7 @@ fn compute_all_bivariatestats(
         // Process each chunk in parallel. Share the read-only plan via Arc instead of
         // deep-cloning it into every worker. `input_path_string` from above is already
         // UTF-8-validated, so no need to re-validate here.
-        let plan = build_bivariate_plan(&field_pairs);
+        let plan = build_bivariate_plan(&field_pairs, cardinality_threshold);
         let plan_arc = Arc::new(plan);
         for i in 0..nchunks {
             let send = send.clone();
@@ -3603,7 +3686,7 @@ fn compute_all_bivariatestats_sequential(
             pb.set_position(processed);
         }
     });
-    let plan = build_bivariate_plan(field_pairs);
+    let plan = build_bivariate_plan(field_pairs, cardinality_threshold);
     // One chunk, so its symbols are already the only numbering there is -- no remap,
     // and the dictionaries are dropped with the output.
     let all_stats = compute_chunk_bivariate(&plan, it, stats_config)?.stats;
@@ -5404,8 +5487,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 None
             };
 
-            // Get cardinality threshold (default: 1,000,000)
-            let cardinality_threshold = args.flag_cardinality_threshold.or(Some(1_000_000));
+            // Cardinality threshold for mi/nmi/u. The default is relative to the row
+            // count because the old fixed 1,000,000 could never fire on anything
+            // smaller -- on the 1M-row benchmark it sat exactly at the row count, so
+            // the guard was inert on the very file it mattered for.
+            //
+            // Floored so it stays inert on small inputs: on an 8-row fixture nothing
+            // is meaningfully "high cardinality", and half of 8 would prune ordinary
+            // 5-value columns. The fully-unique case is already excluded earlier by
+            // the cardinality == rowcount filter.
+            let cardinality_threshold = args.flag_cardinality_threshold.or_else(|| {
+                Some(
+                    record_count
+                        .map_or(DEFAULT_CARDINALITY_THRESHOLD, |rc| rc / 2)
+                        .max(DEFAULT_CARDINALITY_THRESHOLD),
+                )
+            });
 
             // Log which stats are being computed
             let stats_list: Vec<&str> = [

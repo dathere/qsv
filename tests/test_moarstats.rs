@@ -4849,6 +4849,99 @@ fn moarstats_bivariate_parallel_matches_sequential() {
 }
 
 #[test]
+fn moarstats_bivariate_cardinality_threshold_default_is_relative() {
+    // The -C default used to be a fixed 1,000,000, which could never fire on any
+    // input smaller than that -- on the 1M-row benchmark it sat exactly AT the row
+    // count, so the guard was inert on the very file it mattered for. It is now half
+    // the row count, floored at 1000.
+    //
+    // Pins both halves of that:
+    //   * the floor keeps it inert on small inputs (a 12-row file gets a threshold of
+    //     1000, not 6, so ordinary low-cardinality columns are still reported);
+    //   * an explicit -C below a column's cardinality still prunes, and prunes ONLY
+    //     mi/nmi/u -- n_pairs and the correlation columns must be unaffected, because
+    //     the scan still counts rows for an excluded pair and only skips building its
+    //     joint-frequency map.
+    let wrk = Workdir::new("moarstats_bivariate_card_threshold");
+
+    // 12 rows. `lo` has cardinality 2, `hi` has cardinality 6. Both are far below the
+    // 1000 floor, so the default must not prune either.
+    let mut rows: Vec<Vec<String>> = vec![svec!["lo", "hi", "val"]];
+    for i in 0..12u32 {
+        rows.push(vec![
+            format!("l{}", i % 2),
+            format!("h{}", i % 6),
+            format!("{}", i % 4),
+        ]);
+    }
+    wrk.create("test.csv", rows);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Default threshold: floored at 1000, so nothing is pruned.
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("test.csv")
+        .args(["--bivariate-stats", "all"]);
+    wrk.assert_success(&mut cmd);
+
+    let rows_default = bivariate_pair_rows(&wrk, "test.stats.bivariate.csv", "lo", "hi");
+    assert_eq!(rows_default.len(), 1, "expected one (lo, hi) row");
+    let default_row = &rows_default[0];
+    assert!(
+        !default_row
+            .get("mutual_information")
+            .unwrap_or(&String::new())
+            .is_empty(),
+        "the 1000 floor must keep the default inert on a 12-row file, but mutual_information \
+         was pruned; row: {default_row:?}"
+    );
+
+    // Explicit threshold of 3: `hi` (cardinality 6) exceeds it, so mi/nmi/u are
+    // dropped for the pair -- but nothing else about the pair may change.
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("test.csv")
+        .args(["--bivariate-stats", "all"])
+        .args(["--cardinality-threshold", "3"]);
+    wrk.assert_success(&mut cmd);
+
+    let rows_pruned = bivariate_pair_rows(&wrk, "test.stats.bivariate.csv", "lo", "hi");
+    assert_eq!(rows_pruned.len(), 1, "expected one (lo, hi) row");
+    let pruned_row = &rows_pruned[0];
+
+    for col in [
+        "mutual_information",
+        "normalized_mutual_information",
+        "u_field2_given_field1",
+        "u_field1_given_field2",
+    ] {
+        assert_eq!(
+            pruned_row.get(col).map(String::as_str),
+            Some(""),
+            "{col} must be empty once the cardinality threshold prunes the pair; row: \
+             {pruned_row:?}"
+        );
+    }
+
+    // n_pairs is counted by the scan whether or not the joint map is built, so
+    // pruning must not change it. This is the regression guard for hoisting the gate
+    // out of finalize and into the accumulation decision.
+    assert_eq!(
+        pruned_row.get("n_pairs"),
+        default_row.get("n_pairs"),
+        "n_pairs must not depend on the cardinality gate"
+    );
+    assert_eq!(
+        pruned_row.get("pearson_correlation"),
+        default_row.get("pearson_correlation"),
+        "the cardinality gate must only affect mi/nmi/u, not the correlation columns"
+    );
+}
+
+#[test]
 fn moarstats_bivariate_skip_states_empty_and_non_utf8() {
     // Pins how EMPTY and INVALID-UTF8 values are excluded from the bivariate
     // frequency counts. This is the guard against a value-encoding change (issue

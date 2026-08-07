@@ -25,6 +25,12 @@
         "description": "Enable bivariate statistics computation. Requires indexed CSV file (index will be auto-created if missing). Computes pairwise correlations, covariances, mutual information, and normalized mutual information between columns. The bivariate statistics are saved to a separate file in the same directory as the input: <FILESTEM>.stats.bivariate.csv."
       },
       {
+        "flag": "--bivariate-batch",
+        "type": "string",
+        "description": "Process at most <n> field pairs per pass over the input, bounding peak memory at the cost of extra passes. Peak memory is otherwise O(columns^2) regardless of row count - a 160-column, 100k-row (60 MB) input needs ~21 GiB with mi/nmi/u enabled. Extra passes are cheap, so prefer the largest <n> that fits. Only applies to indexed input with >= 10,000 rows. Set to 0 to process all pairs in one pass.",
+        "default": "0"
+      },
+      {
         "flag": "--bivariate-stats",
         "type": "string",
         "description": "",
@@ -33,8 +39,7 @@
       {
         "flag": "--cardinality-threshold",
         "type": "string",
-        "description": "",
-        "default": "1000000"
+        "description": ""
       },
       {
         "flag": "--epsilon",

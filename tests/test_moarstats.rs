@@ -4523,6 +4523,414 @@ fn moarstats_bivariate_mixed_field_types() {
     }
 }
 
+/// Collect every row of a bivariate-stats CSV matching the field pair
+/// (`field1`, `field2`) in either ordering, as `(column_name -> value)` maps.
+/// Returns all matches (not just the first) so callers can assert a pair is
+/// emitted exactly once.
+fn bivariate_pair_rows(
+    wrk: &Workdir,
+    path: &str,
+    field1: &str,
+    field2: &str,
+) -> Vec<std::collections::HashMap<String, String>> {
+    let content = wrk.read_to_string(path).unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(content.as_bytes());
+    let headers = rdr.headers().unwrap().clone();
+    let f1_idx = get_column_index(&headers, "field1").expect("field1 column missing");
+    let f2_idx = get_column_index(&headers, "field2").expect("field2 column missing");
+
+    let mut out = Vec::new();
+    for record in rdr.records() {
+        let record = record.unwrap();
+        let f1 = get_field_value(&record, f1_idx).unwrap_or_default();
+        let f2 = get_field_value(&record, f2_idx).unwrap_or_default();
+        if (f1 == field1 && f2 == field2) || (f1 == field2 && f2 == field1) {
+            out.push(
+                headers
+                    .iter()
+                    .enumerate()
+                    .map(|(i, h)| {
+                        (
+                            h.to_string(),
+                            get_field_value(&record, i).unwrap_or_default(),
+                        )
+                    })
+                    .collect(),
+            );
+        }
+    }
+    out
+}
+
+/// Parse a bivariate column as f64 and assert it is within `tol` of `expected`.
+fn assert_bivariate_close(
+    row: &std::collections::HashMap<String, String>,
+    column: &str,
+    expected: f64,
+    tol: f64,
+) {
+    let raw = row
+        .get(column)
+        .unwrap_or_else(|| panic!("column {column} missing from bivariate output; row: {row:?}"));
+    let got: f64 = raw
+        .parse()
+        .unwrap_or_else(|_| panic!("column {column} = {raw:?} does not parse as f64"));
+    assert!(
+        (got - expected).abs() < tol,
+        "{column}: expected {expected}, got {got} (raw {raw:?}, tol {tol})"
+    );
+}
+
+#[test]
+fn moarstats_bivariate_mi_nmi_u_exact_golden() {
+    // EXACT-VALUE golden for mutual information, normalized mutual information and
+    // BOTH directions of the uncertainty coefficient. The rest of the mi/nmi/u test
+    // family only asserts non-emptiness / [0,1] membership, which cannot detect a
+    // wrong joint- or marginal-frequency count. This pins the actual arithmetic so a
+    // change to how joint keys are represented (issue #4356) has a baseline to be
+    // bit-compared against.
+    //
+    // Contingency table (8 rows), hand-computed:
+    //
+    //          tag=p  tag=q  | H(grp) = -(4/8*log2(4/8) + 2/8*log2(2/8) + 2/8*log2(2/8))
+    //   grp=A     4      0   |        = 1.5
+    //   grp=B     2      0   | H(tag) = -(6/8*log2(6/8) + 2/8*log2(2/8))
+    //   grp=C     0      2   |        = 0.8112781244591328
+    //
+    // `tag` is a deterministic function of `grp` (A,B -> p; C -> q), so H(tag|grp) = 0
+    // and therefore MI = H(tag) exactly, which makes U(tag|grp) exactly 1.0 while
+    // U(grp|tag) = MI/H(grp) = 0.5408520829727552. The asymmetry is deliberate: a
+    // swapped-direction bug in the U pair would otherwise be invisible.
+    //
+    // MI  = 0.5*log2(0.5/(0.5*0.75)) + 0.25*log2(0.25/(0.25*0.75))
+    //     + 0.25*log2(0.25/(0.25*0.25))
+    //     = 0.8112781244591328
+    // NMI = MI / sqrt(H(grp)*H(tag)) = 0.735426463334544
+    let wrk = Workdir::new("moarstats_bivariate_mi_golden");
+
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["grp", "tag"],
+            svec!["A", "p"],
+            svec!["A", "p"],
+            svec!["A", "p"],
+            svec!["A", "p"],
+            svec!["B", "p"],
+            svec!["B", "p"],
+            svec!["C", "q"],
+            svec!["C", "q"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // --round 12 so the assertions below are tight; the default of 4 decimals would
+    // only pin ~4 significant digits. 12 decimals is still far coarser than the
+    // ~1e-16 summation-order noise from HashMap iteration order, so this is stable.
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("test.csv")
+        .args(["--bivariate-stats", "all"])
+        .args(["--round", "12"]);
+    wrk.assert_success(&mut cmd);
+
+    let rows = bivariate_pair_rows(&wrk, "test.stats.bivariate.csv", "grp", "tag");
+
+    // Pair canonicalization: (grp, tag) and (tag, grp) must be ONE counter, not two.
+    assert_eq!(
+        rows.len(),
+        1,
+        "the (grp, tag) pair must be emitted exactly once, got {} rows: {rows:?}",
+        rows.len()
+    );
+    let row = &rows[0];
+
+    // Which column is field1 decides the direction of the two U columns.
+    assert_eq!(
+        row.get("field1").map(String::as_str),
+        Some("grp"),
+        "expected field1=grp (header order); the U-direction assertions below assume it"
+    );
+
+    assert_eq!(
+        row.get("n_pairs").map(String::as_str),
+        Some("8"),
+        "all 8 rows have both fields non-empty"
+    );
+
+    assert_bivariate_close(row, "mutual_information", 0.811_278_124_459_132_8, 1e-9);
+    assert_bivariate_close(
+        row,
+        "normalized_mutual_information",
+        0.735_426_463_334_544,
+        1e-9,
+    );
+    // U(field2|field1) = U(tag|grp) = MI / H(tag) = 1.0 exactly (tag is fully
+    // determined by grp).
+    assert_bivariate_close(row, "u_field2_given_field1", 1.0, 1e-9);
+    // U(field1|field2) = U(grp|tag) = MI / H(grp) = 0.8112781244591328 / 1.5
+    assert_bivariate_close(row, "u_field1_given_field2", 0.540_852_082_972_755_2, 1e-9);
+}
+
+/// Project a bivariate-stats CSV down to the field pair plus the columns derived
+/// from integer frequency counts, dropping the correlation columns.
+///
+/// Correlation columns (pearson/spearman/kendall/covariance) are a Welford merge and
+/// therefore depend on how many chunks the input was split into; the frequency
+/// columns are not. Comparing only these makes a chunk-count-invariance assertion
+/// meaningful instead of accidentally magnitude-dependent.
+fn frequency_columns(csv_content: &str) -> Vec<Vec<String>> {
+    const WANTED: [&str; 7] = [
+        "field1",
+        "field2",
+        "mutual_information",
+        "normalized_mutual_information",
+        "u_field2_given_field1",
+        "u_field1_given_field2",
+        "n_pairs",
+    ];
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(csv_content.as_bytes());
+    let headers = rdr.headers().unwrap().clone();
+    let idxs: Vec<usize> = WANTED
+        .iter()
+        .map(|c| {
+            get_column_index(&headers, c)
+                .unwrap_or_else(|| panic!("column {c} missing from bivariate output"))
+        })
+        .collect();
+    rdr.records()
+        .map(|r| {
+            let record = r.unwrap();
+            idxs.iter()
+                .map(|&i| get_field_value(&record, i).unwrap_or_default())
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn moarstats_bivariate_parallel_matches_sequential() {
+    // Regression for the bivariate PARALLEL path, which
+    // `moarstats_parallel_path_matches_sequential` does NOT cover -- that test drives
+    // `--advanced` only and never passes `--bivariate`, so the per-chunk
+    // joint-frequency maps and their merge in `compute_all_bivariatestats` have no
+    // equivalence guard at all.
+    //
+    // This is the test that catches a bad merge: it drives an indexed CSV above
+    // PARALLEL_THRESHOLD (10_000) with `--bivariate-stats all` and compares a
+    // single-chunk run against a multi-chunk run. Any change to how per-chunk joint
+    // keys are represented and reconciled (issue #4356) must keep this green.
+    //
+    // It compares the FREQUENCY-derived columns (mutual_information,
+    // normalized_mutual_information, both uncertainty coefficients, n_pairs) exactly,
+    // and deliberately does NOT compare the correlation columns. Those are not a
+    // reproducible function of the chunk count: pearson/covariance come from a
+    // Welford merge, so folding 16 chunks pairwise is genuinely different arithmetic
+    // from one streaming pass, and they disagree in the last ulps. Verified on the
+    // 1M-row NYC311 benchmark -- a 1-chunk and a 16-chunk run differ in 7 of 780
+    // rows, entirely in the covariance columns, while all 780 rows agree exactly on
+    // every frequency-derived column. Note `--round` counts DECIMAL PLACES, not
+    // significant figures, so the default of 4 does not mask this for a covariance of
+    // ~1e10 (that is ~15 significant digits, i.e. the f64 noise floor).
+    //
+    // The frequency columns are exact because they are derived from integer counts,
+    // which is precisely the property a joint-key encoding change must preserve.
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    if cores < 2 {
+        eprintln!(
+            "skipping moarstats_bivariate_parallel_matches_sequential: needs >= 2 cores to \
+             exercise the multi-chunk path (have {cores})"
+        );
+        return;
+    }
+
+    let wrk = Workdir::new("moarstats_bivariate_parallel");
+
+    // Low-cardinality categorical columns so the joint-frequency maps are actually
+    // populated (mi/nmi/u need `needs_frequency_counts`), plus numeric columns so the
+    // correlation/spearman/kendall paths run too. Cardinalities are kept well below
+    // the row count so no pair is dropped by the cardinality-vs-rowcount filter.
+    let mut rows: Vec<Vec<String>> = vec![svec!["cat_a", "cat_b", "cat_c", "num_x", "num_y"]];
+    for i in 0..15_000u32 {
+        rows.push(vec![
+            format!("a{}", i % 7),
+            format!("b{}", i % 11),
+            format!("c{}", i % 13),
+            format!("{:.4}", 100.0 + f64::from(i % 500) * 1.5),
+            format!("{:.4}", 50.0 - f64::from(i % 313) * 0.25),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("data.csv");
+    wrk.assert_success(&mut idx_cmd);
+
+    // No --force, so the stats cache is built once and reused by both runs below --
+    // any difference can only come from the bivariate code.
+    let shared_opts = "--infer-dates --infer-boolean --cardinality --mode --mad --quartiles \
+                       --percentiles --stats-jsonl";
+
+    let mut prime = wrk.command("moarstats");
+    prime
+        .arg("--bivariate")
+        .args(["--bivariate-stats", "all"])
+        .args(["--stats-options", shared_opts])
+        .arg("data.csv");
+    wrk.assert_success(&mut prime);
+    let primed = wrk.read_to_string("data.stats.bivariate.csv").unwrap();
+    assert!(
+        primed.contains("mutual_information"),
+        "priming run should have produced the mi/nmi/u columns, got header:\n{}",
+        primed.lines().next().unwrap_or_default()
+    );
+
+    // Single chunk (reference): QSV_MAX_JOBS=1 pins njobs=1 regardless of the
+    // runner's core count -> exactly one chunk.
+    let mut cmd1 = wrk.command("moarstats");
+    cmd1.env("QSV_MAX_JOBS", "1")
+        .arg("--bivariate")
+        .args(["--bivariate-stats", "all"])
+        .args(["--jobs", "1"])
+        .args(["--stats-options", shared_opts])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd1);
+    let out1 = wrk.read_to_string("data.stats.bivariate.csv").unwrap();
+
+    // Multiple chunks: QSV_MAX_JOBS=2 + --jobs 2 pins njobs=2, which with 15_000 rows
+    // yields 2 chunks via util::chunk_size / util::num_of_chunks. Capture the log to
+    // prove the multi-chunk merge actually ran.
+    let log_dir = wrk.path("mchunk_logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+    let mut cmd2 = wrk.command("moarstats");
+    cmd2.env("QSV_MAX_JOBS", "2")
+        .env("QSV_LOG_LEVEL", "info")
+        .env("QSV_LOG_DIR", &log_dir)
+        .arg("--bivariate")
+        .args(["--bivariate-stats", "all"])
+        .args(["--jobs", "2"])
+        .args(["--stats-options", shared_opts])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd2);
+    let out2 = wrk.read_to_string("data.stats.bivariate.csv").unwrap();
+
+    assert_eq!(
+        frequency_columns(&out1),
+        frequency_columns(&out2),
+        "multi-chunk bivariate frequency columns must equal the single-chunk reference"
+    );
+
+    // Prove the parallel run genuinely used >= 2 chunks (otherwise the merge would be
+    // untested even though the equality assertion passed).
+    let log_name = format!(
+        "{}_rCURRENT.log",
+        wrk.qsv_bin().file_stem().unwrap().to_string_lossy()
+    );
+    let log = std::fs::read_to_string(log_dir.join(&log_name)).unwrap_or_default();
+    let chunks = log
+        .lines()
+        .filter_map(|l| l.split("Parallelizing bivariate computation: ").nth(1))
+        .filter_map(|s| s.split(" chunks").next())
+        .filter_map(|s| s.trim().parse::<usize>().ok())
+        .max()
+        .unwrap_or(0);
+    assert!(
+        chunks >= 2,
+        "expected the parallel bivariate run to use >= 2 chunks, but the log reported {chunks}; \
+         log ({log_name}):\n{log}"
+    );
+}
+
+#[test]
+fn moarstats_bivariate_skip_states_empty_and_non_utf8() {
+    // Pins how EMPTY and INVALID-UTF8 values are excluded from the bivariate
+    // frequency counts. This is the guard against a value-encoding change (issue
+    // #4356) that decodes with `String::from_utf8_lossy` instead of checking
+    // `from_utf8`: lossy decoding would start counting the invalid rows AND merge
+    // distinct invalid byte sequences into a single replacement-char symbol,
+    // changing n_pairs and every mi/nmi/u value below.
+    //
+    // Note on what is NOT separately observable, so the next reader does not go
+    // hunting for it: the accumulation loop skips empty values BEFORE the correlation
+    // update but skips invalid UTF-8 only inside the frequency branch, AFTER it -- so
+    // on paper an invalid-UTF8 row could raise `correlation_state.count` without
+    // raising `total_pairs` (n_pairs is the max of the two). That divergence is
+    // unreachable in practice: `update_correlation_state` only fires when BOTH sides
+    // parse as numeric, and a byte sequence that is not valid UTF-8 can never parse
+    // as a number. So invalid-UTF8 rows are excluded from both, exactly like empty
+    // ones, and n_pairs below counts only the 4 fully-valid rows.
+    let wrk = Workdir::new("moarstats_bivariate_skip_states");
+
+    // Written as raw bytes so we can embed an invalid UTF-8 sequence (0xFF) that
+    // `wrk.create` (which takes &str) could not express.
+    //
+    // 8 data rows for (lbl, val):
+    //   4 rows fully valid and non-empty
+    //   2 rows with an EMPTY lbl        -> skipped entirely (state 1)
+    //   2 rows with an INVALID-UTF8 lbl -> counted by correlation, not by frequency
+    //                                      (state 2)
+    let mut csv = Vec::new();
+    csv.extend_from_slice(b"lbl,val\n");
+    csv.extend_from_slice(b"aa,1\n");
+    csv.extend_from_slice(b"aa,1\n");
+    csv.extend_from_slice(b"bb,2\n");
+    csv.extend_from_slice(b"bb,2\n");
+    csv.extend_from_slice(b",3\n"); // empty lbl
+    csv.extend_from_slice(b",3\n"); // empty lbl
+    csv.push(b'\xff');
+    csv.extend_from_slice(b",4\n"); // invalid-UTF8 lbl
+    csv.push(b'\xff');
+    csv.extend_from_slice(b",4\n"); // invalid-UTF8 lbl
+    std::fs::write(wrk.path("test.csv"), &csv).unwrap();
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("test.csv")
+        .args(["--bivariate-stats", "all"])
+        .args(["--round", "12"]);
+    wrk.assert_success(&mut cmd);
+
+    let rows = bivariate_pair_rows(&wrk, "test.stats.bivariate.csv", "lbl", "val");
+    assert_eq!(
+        rows.len(),
+        1,
+        "expected exactly one (lbl, val) row, got {rows:?}"
+    );
+    let row = &rows[0];
+
+    // Only the 4 fully-valid rows are counted: the 2 empty-lbl rows and the 2
+    // invalid-UTF8 rows are both excluded. `lbl` is non-numeric so the correlation
+    // state stays at 0 and n_pairs = max(0, total_pairs) = total_pairs = 4. Lossy
+    // decoding of the invalid rows would make this 6.
+    assert_eq!(
+        row.get("n_pairs").map(String::as_str),
+        Some("4"),
+        "empty and invalid-UTF8 values must both be excluded from the frequency counts; full row: \
+         {row:?}"
+    );
+
+    // The frequency branch saw only the 4 valid rows: lbl in {aa, bb} paired with
+    // val in {1, 2}, perfectly determined both ways. So MI = H(lbl) = H(val) = 1 bit
+    // and both U directions are exactly 1.0. If invalid UTF-8 were lossily decoded
+    // instead of skipped, a third symbol would appear and every one of these would
+    // change.
+    assert_bivariate_close(row, "mutual_information", 1.0, 1e-9);
+    assert_bivariate_close(row, "normalized_mutual_information", 1.0, 1e-9);
+    assert_bivariate_close(row, "u_field2_given_field1", 1.0, 1e-9);
+    assert_bivariate_close(row, "u_field1_given_field2", 1.0, 1e-9);
+}
+
 #[test]
 #[serial]
 fn moarstats_bivariate_with_join() {

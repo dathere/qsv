@@ -4856,12 +4856,11 @@ fn moarstats_bivariate_cardinality_threshold_default_is_relative() {
     // the row count, floored at 1000.
     //
     // Pins both halves of that:
-    //   * the floor keeps it inert on small inputs (a 12-row file gets a threshold of
-    //     1000, not 6, so ordinary low-cardinality columns are still reported);
-    //   * an explicit -C below a column's cardinality still prunes, and prunes ONLY
-    //     mi/nmi/u -- n_pairs and the correlation columns must be unaffected, because
-    //     the scan still counts rows for an excluded pair and only skips building its
-    //     joint-frequency map.
+    //   * the floor keeps it inert on small inputs (a 12-row file gets a threshold of 1000, not 6,
+    //     so ordinary low-cardinality columns are still reported);
+    //   * an explicit -C below a column's cardinality still prunes, and prunes ONLY mi/nmi/u --
+    //     n_pairs and the correlation columns must be unaffected, because the scan still counts
+    //     rows for an excluded pair and only skips building its joint-frequency map.
     let wrk = Workdir::new("moarstats_bivariate_card_threshold");
 
     // 12 rows. `lo` has cardinality 2, `hi` has cardinality 6. Both are far below the
@@ -4895,8 +4894,8 @@ fn moarstats_bivariate_cardinality_threshold_default_is_relative() {
             .get("mutual_information")
             .unwrap_or(&String::new())
             .is_empty(),
-        "the 1000 floor must keep the default inert on a 12-row file, but mutual_information \
-         was pruned; row: {default_row:?}"
+        "the 1000 floor must keep the default inert on a 12-row file, but mutual_information was \
+         pruned; row: {default_row:?}"
     );
 
     // Explicit threshold of 3: `hi` (cardinality 6) exceeds it, so mi/nmi/u are

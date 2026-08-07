@@ -2651,8 +2651,8 @@ where
     //     with a non-numeric side is pure waste. On the benchmark only ~36 of 780 pairs are
     //     numeric/date on both sides, so the blanket reservation wasted ~95% of ~1 GB.
     //   * x_counts/y_counts are NEVER written in this function -- the marginals are derived from
-    //     xy_counts at finalize time -- so reserving them here allocated maps that stayed empty for
-    //     the life of the chunk.
+    //     xy_counts by the caller at finalize time -- so reserving them here allocated maps that
+    //     stayed empty for the life of the chunk.
     //
     // The field_type gate is an allocation hint only: a Vec still grows on demand, so
     // a mistyped column costs a realloc, never a wrong answer.
@@ -3085,29 +3085,38 @@ fn compute_all_bivariatestats(
                 let mut idx_chunk = match rconfig_chunk.indexed() {
                     Ok(Some(idx)) => idx,
                     Ok(None) => {
-                        let _ = send.send(Err(CliError::Other(format!(
-                            "Chunk {i}: index is not available for {input_path_string_clone}"
-                        ))));
+                        let _ = send.send((
+                            i,
+                            Err(CliError::Other(format!(
+                                "Chunk {i}: index is not available for {input_path_string_clone}"
+                            ))),
+                        ));
                         return;
                     },
                     Err(e) => {
-                        let _ = send.send(Err(CliError::Other(format!(
-                            "Chunk {i}: failed to open index: {e}"
-                        ))));
+                        let _ = send.send((
+                            i,
+                            Err(CliError::Other(format!(
+                                "Chunk {i}: failed to open index: {e}"
+                            ))),
+                        ));
                         return;
                     },
                 };
 
                 // Seek to chunk start position
                 if let Err(e) = idx_chunk.seek((i * chunk_size) as u64) {
-                    let _ = send.send(Err(CliError::Other(format!("Chunk {i}: seek failed: {e}"))));
+                    let _ = send.send((
+                        i,
+                        Err(CliError::Other(format!("Chunk {i}: seek failed: {e}"))),
+                    ));
                     return;
                 }
 
                 // Process chunk records
                 let it = idx_chunk.byte_records().take(chunk_size);
                 let result = compute_chunk_bivariate(&field_pairs_arc, it, stats_config);
-                let _ = send.send(result);
+                let _ = send.send((i, result));
             });
         }
 
@@ -3128,8 +3137,35 @@ fn compute_all_bivariatestats(
             })
             .collect();
 
-        for chunk_result in &recv {
-            let chunk_stats = chunk_result?;
+        // Merge chunk results in ASCENDING chunk order -- never in completion order.
+        //
+        // Merging as results arrive makes the output nondeterministic run-to-run:
+        // `merge_correlation_states` is Welford, which is not associative in floating
+        // point, so pearson/covariance drift in their last digits depending on which
+        // worker finished first; and `x_values`/`y_values` are order-sensitive inputs
+        // to the Spearman/Kendall rankings. Measured on the 1M-row NYC311 benchmark
+        // before this fix: three consecutive runs of the SAME binary on the SAME
+        // input produced three different covariance values.
+        // `compute_outliers_and_kga` already orders its merge for exactly this
+        // reason; this mirrors it.
+        //
+        // This is a reorder buffer rather than a collect-then-merge: a chunk that
+        // arrives early is parked, and each arrival merges every consecutively
+        // numbered chunk that is now ready, so a chunk is freed as soon as its
+        // predecessors are in. Buffering ALL chunks first would be equally
+        // deterministic but measurably costlier -- at 1M rows the chunks finish
+        // seconds apart and holding all 16 sets of 780 maps until the last one landed
+        // raised peak RSS by ~1 GiB. (At 50k rows chunks finish together and the two
+        // are indistinguishable.)
+        //
+        // Deliberately NOT covered by a unit test: reproducing the bug needs chunk
+        // completion order to diverge from dispatch order, which only happens when
+        // chunks are big enough to contend. It reproduces on the 539 MB benchmark,
+        // but synthetic fixtures up to 41 columns / 820 pairs / 50k rows all finish
+        // in dispatch order and stay deterministic even with the bug present, so a
+        // test would have to win a race to catch a regression. Correct by
+        // construction instead -- do not delete it as "untested".
+        let mut merge_chunk = |chunk_stats: HashMap<(u16, u16), BivariateChunkStats>| {
             for (pair_key, stats) in chunk_stats {
                 if let Some(total_stats) = all_stats.get_mut(&pair_key) {
                     // Merge correlation states (always needed for Pearson/covariance)
@@ -3142,18 +3178,35 @@ fn compute_all_bivariatestats(
                         total_stats.x_values.extend(stats.x_values);
                         total_stats.y_values.extend(stats.y_values);
                     }
-                    // Only merge frequency counts if needed for mutual information
-                    // Note: Only xy_counts and total_pairs are collected during chunk processing
-                    // Marginal frequencies (x_counts, y_counts) are computed from xy_counts at
-                    // finalization
+                    // Only merge frequency counts if needed for mutual information.
+                    // Marginal frequencies are derived from xy_counts at finalization.
                     if needs_freq_counts {
-                        for ((x_val, y_val), count) in stats.xy_counts {
-                            *total_stats.xy_counts.entry((x_val, y_val)).or_insert(0) += count;
+                        for (joint_key, count) in stats.xy_counts {
+                            *total_stats.xy_counts.entry(joint_key).or_insert(0) += count;
                         }
                         total_stats.total_pairs += stats.total_pairs;
                     }
                 }
             }
+        };
+
+        let mut pending: Vec<Option<HashMap<(u16, u16), BivariateChunkStats>>> =
+            (0..nchunks).map(|_| None).collect();
+        let mut next_chunk = 0_usize;
+
+        for (i, chunk_result) in &recv {
+            let chunk_stats = chunk_result?;
+            if let Some(slot) = pending.get_mut(i) {
+                *slot = Some(chunk_stats);
+            }
+            // Merge the run of chunks that is now contiguous from `next_chunk`.
+            while let Some(slot) = pending.get_mut(next_chunk)
+                && let Some(stats) = slot.take()
+            {
+                merge_chunk(stats);
+                next_chunk += 1;
+            }
+
             // Update progress bar
             if let Some(pb) = progress {
                 pb.inc(1);

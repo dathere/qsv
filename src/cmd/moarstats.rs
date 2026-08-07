@@ -2864,8 +2864,12 @@ where
                 stats.x_values.reserve(estimated_capacity);
                 stats.y_values.reserve(estimated_capacity);
             }
-            // Only allocate the joint map if needed for mutual information.
-            if needs_freq_counts {
+            // Only allocate the joint map if needed for mutual information AND this
+            // pair is actually going to build one. A pair excluded by the cardinality
+            // gate never writes a joint cell, so reserving for it is the same
+            // reserve-what-never-fills waste this function already avoids for
+            // x_values/y_values.
+            if needs_freq_counts && pair.accumulate_freq {
                 stats.xy_counts.reserve(estimated_unique_values);
             }
             stats

@@ -1833,12 +1833,48 @@ fn sorted_pair_keys(
     keys
 }
 
+/// The run-wide `col_idx -> FieldType` decision, made ONCE over the full key list.
+///
+/// A column's decode type must be a property of the COLUMN, not of whichever pair
+/// happens to reach it first. Normally those coincide, but header lookup when building
+/// `field_pairs` is first-match-wins, so duplicate header names can resolve two
+/// differently-typed stats rows onto a single `col_idx` -- and then the two pairs
+/// disagree about that column's type.
+///
+/// Resolving that per plan was a real bug under `--bivariate-batch`: the full plan
+/// walks every key and takes the first type, while a batch walks only its own slice
+/// and can take a different one. On a 3-column `a,b,a` file whose first `a` is Integer
+/// and second is Date, `--bivariate-batch 1` put key (1,0) in a pass of its own, where
+/// column 0 decoded as Date instead of Integer and the pair's covariance came out
+/// 0.0009 instead of 78.0268. Deciding here, over `sorted_pair_keys`, makes every
+/// sub-plan agree with the full plan by construction (roborev job 4110).
+fn canonical_field_types(
+    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    keys: &[(u16, u16)],
+) -> HashMap<usize, FieldType> {
+    let mut types: HashMap<usize, FieldType> = HashMap::new();
+    for &key in keys {
+        let Some((field1_info, field2_info)) = field_pairs.get(&key) else {
+            cold_path();
+            continue;
+        };
+        for info in [field1_info, field2_info] {
+            types.entry(info.col_idx).or_insert(info.field_type);
+        }
+    }
+    types
+}
+
 /// Build the shared plan for `keys`.
 ///
 /// `keys` MUST be ascending (see `sorted_pair_keys`) and every key must be present in
 /// `field_pairs`. `keys` MAY be a SUBSET of `field_pairs.keys()` -- one batch of a
 /// multi-pass run (`--bivariate-batch`). `field_pairs` is still passed WHOLE, because
 /// `accumulate_freq` needs each pair's cardinalities; only `keys` is partitioned.
+///
+/// `col_types` MUST come from `canonical_field_types` over the FULL key list, never
+/// over `keys` -- that is what keeps a batch's decode types identical to the unbatched
+/// run's. See that function for the bug this prevents.
 ///
 /// A sub-plan's `cols` narrows to just the columns its own pairs touch, numbered
 /// `0..m-1` in first-touch order. That renumbering needs no extra code because
@@ -1856,6 +1892,7 @@ fn sorted_pair_keys(
 fn build_bivariate_plan(
     field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
     keys: &[(u16, u16)],
+    col_types: &HashMap<usize, FieldType>,
     cardinality_threshold: Option<u64>,
     report: bool,
 ) -> BivariatePlan {
@@ -1864,23 +1901,23 @@ fn build_bivariate_plan(
         "build_bivariate_plan requires ascending keys; chunk stats align positionally"
     );
 
-    // col_idx -> slot. A column is shared by every pair it appears in, so its type
-    // must be a property of the column, not of the pair. That holds because the
-    // field type is resolved from the stats row whose name matched that header --
-    // but header lookup is first-match-wins, so duplicate header names could in
-    // principle resolve two differently-typed stats rows onto one col_idx. Keep the
-    // first (matching the existing first-match-wins behavior) and say so loudly
-    // rather than silently decoding a column two different ways.
+    // col_idx -> slot. The TYPE stored alongside comes from the run-wide `col_types`,
+    // not from the pair being walked, so a batch cannot decode a column differently
+    // from the full plan.
     let mut slot_of: HashMap<usize, u32> = HashMap::new();
     let mut cols: Vec<(usize, FieldType)> = Vec::new();
-    let mut slot_for =
-        |col_idx: usize, field_type: FieldType, cols: &mut Vec<(usize, FieldType)>| {
-            *slot_of.entry(col_idx).or_insert_with(|| {
-                let slot = u32::try_from(cols.len()).unwrap_or(u32::MAX);
-                cols.push((col_idx, field_type));
-                slot
-            })
-        };
+    let mut slot_for = |col_idx: usize, fallback: FieldType, cols: &mut Vec<(usize, FieldType)>| {
+        *slot_of.entry(col_idx).or_insert_with(|| {
+            let slot = u32::try_from(cols.len()).unwrap_or(u32::MAX);
+            // The fallback cannot normally fire: `col_types` is built from the
+            // full key list, which is a superset of `keys`.
+            cols.push((
+                col_idx,
+                col_types.get(&col_idx).copied().unwrap_or(fallback),
+            ));
+            slot
+        })
+    };
 
     let mut pairs = Vec::with_capacity(keys.len());
     let mut skipped_high_cardinality = 0_usize;
@@ -1893,12 +1930,9 @@ fn build_bivariate_plan(
         let x_slot = slot_for(field1_info.col_idx, field1_info.field_type, &mut cols);
         let y_slot = slot_for(field2_info.col_idx, field2_info.field_type, &mut cols);
 
-        // Gated on `report` because this check is PLAN-LOCAL: `cols.get(slot)` only
-        // sees columns this plan has enumerated, so under batching two conflicting
-        // stats rows landing in different batches would not be compared at all. The
-        // once-per-run full-plan build is the only one that sees every column, so it
-        // is the only one that can detect the conflict -- and letting sub-plans warn
-        // too would emit the same message once per batch anyway.
+        // Gated on `report` so the warning is emitted once per run rather than once per
+        // pass. The comparison itself is now batch-independent -- it is against the
+        // run-wide canonical type, not against whatever this plan happened to see first.
         if report {
             for (slot, info) in [(x_slot, field1_info), (y_slot, field2_info)] {
                 if let Some((_, seen_type)) = cols.get(slot as usize)
@@ -3598,10 +3632,16 @@ fn compute_all_bivariatestats(
         // table -- ~16 bytes per pair, no per-row data -- so this costs ~200 KB even at
         // 12,720 pairs. See `build_bivariate_plan`'s `report` parameter for why each of
         // the two would otherwise be wrong rather than merely repeated.
+        //
+        // The canonical column types are decided here too, over the FULL key list, and
+        // handed to every pass -- see `canonical_field_types` for why deciding them per
+        // plan silently changed results under batching.
+        let col_types = canonical_field_types(&field_pairs, &sorted_keys);
         if nbatches > 1 {
             drop(build_bivariate_plan(
                 &field_pairs,
                 &sorted_keys,
+                &col_types,
                 cardinality_threshold,
                 true,
             ));
@@ -3628,6 +3668,7 @@ fn compute_all_bivariatestats(
             let plan_arc = Arc::new(build_bivariate_plan(
                 &field_pairs,
                 batch_keys,
+                &col_types,
                 cardinality_threshold,
                 nbatches == 1,
             ));
@@ -3884,7 +3925,14 @@ fn compute_all_bivariatestats_sequential(
     // `HashMap` order, and `all_stats` below is zipped positionally against
     // `plan.pairs`.
     let sorted_keys = sorted_pair_keys(field_pairs);
-    let plan = build_bivariate_plan(field_pairs, &sorted_keys, cardinality_threshold, true);
+    let col_types = canonical_field_types(field_pairs, &sorted_keys);
+    let plan = build_bivariate_plan(
+        field_pairs,
+        &sorted_keys,
+        &col_types,
+        cardinality_threshold,
+        true,
+    );
     // One chunk, so its symbols are already the only numbering there is -- no remap,
     // and the dictionaries are dropped with the output.
     let all_stats = compute_chunk_bivariate(&plan, it, stats_config)?.stats;
@@ -7180,9 +7228,10 @@ mod tests {
     fn build_bivariate_plan_subset_renumbers_slots() {
         let field_pairs = sample_field_pairs();
         let keys = sorted_pair_keys(&field_pairs);
+        let col_types = canonical_field_types(&field_pairs, &keys);
         assert_eq!(keys.len(), 6);
 
-        let full = build_bivariate_plan(&field_pairs, &keys, None, false);
+        let full = build_bivariate_plan(&field_pairs, &keys, &col_types, None, false);
         assert_eq!(full.pairs.len(), 6);
         assert_eq!(full.cols.len(), 4);
 
@@ -7190,7 +7239,7 @@ mod tests {
         // (10,20),(10,30) touches 3 of the 4 columns -- deliberately NOT a slice like
         // (10,40),(20,30), which touches all four and so could not detect narrowing.
         let batch = &keys[0..2];
-        let sub = build_bivariate_plan(&field_pairs, batch, None, false);
+        let sub = build_bivariate_plan(&field_pairs, batch, &col_types, None, false);
         assert_eq!(sub.pairs.len(), 2);
 
         let mut touched: Vec<usize> = batch
@@ -7221,13 +7270,14 @@ mod tests {
     fn build_bivariate_plan_batches_cover_every_pair_in_order() {
         let field_pairs = sample_field_pairs();
         let keys = sorted_pair_keys(&field_pairs);
-        let full = build_bivariate_plan(&field_pairs, &keys, None, false);
+        let col_types = canonical_field_types(&field_pairs, &keys);
+        let full = build_bivariate_plan(&field_pairs, &keys, &col_types, None, false);
 
         for k in 1..=keys.len() + 2 {
             let batched: Vec<(u16, u16)> = keys
                 .chunks(k)
                 .flat_map(|batch| {
-                    build_bivariate_plan(&field_pairs, batch, None, false)
+                    build_bivariate_plan(&field_pairs, batch, &col_types, None, false)
                         .pairs
                         .into_iter()
                         .map(|p| p.key)
@@ -7235,6 +7285,72 @@ mod tests {
                 .collect();
             let expected: Vec<(u16, u16)> = full.pairs.iter().map(|p| p.key).collect();
             assert_eq!(batched, expected, "batch width {k} changed the pair order");
+        }
+    }
+
+    /// A column's decode type must not depend on which batch reaches it first.
+    ///
+    /// Duplicate header names make `field_pairs` resolve two differently-typed stats
+    /// rows onto one `col_idx` (header lookup is first-match-wins), so the two pairs
+    /// disagree about that column's type. Before `canonical_field_types`, each plan
+    /// resolved that independently: the full plan took the first type in the full key
+    /// order, while a batch took the first type in ITS slice. On a real `a,b,a` file
+    /// that flipped column 0 from Integer to Date under `--bivariate-batch 1` and
+    /// changed the covariance from 78.0268 to 0.0009 (roborev job 4110).
+    #[test]
+    fn build_bivariate_plan_column_type_is_batch_independent() {
+        let info = |col_idx: usize, field_type: FieldType| BivariateFieldInfo {
+            col_idx,
+            field_type,
+            stddev: None,
+            variance: None,
+            cardinality: Some(5),
+        };
+        // Mirrors headers `a,b,a` where stats infers Integer for the first `a` and Date
+        // for the second, and both resolve to col_idx 0. Keys are the (col_idx, col_idx)
+        // pairs that enumeration produces: (0,0), (0,1) and (1,0).
+        let mut field_pairs = HashMap::new();
+        field_pairs.insert(
+            (0_u16, 0_u16),
+            (info(0, FieldType::TInteger), info(0, FieldType::TDate)),
+        );
+        field_pairs.insert(
+            (0_u16, 1_u16),
+            (info(0, FieldType::TInteger), info(1, FieldType::TInteger)),
+        );
+        // The pair that used to poison a batch: col 0 appears here as the DATE row.
+        field_pairs.insert(
+            (1_u16, 0_u16),
+            (info(1, FieldType::TInteger), info(0, FieldType::TDate)),
+        );
+
+        let keys = sorted_pair_keys(&field_pairs);
+        let col_types = canonical_field_types(&field_pairs, &keys);
+        assert_eq!(col_types.get(&0), Some(&FieldType::TInteger));
+
+        let type_of = |plan: &BivariatePlan, col_idx: usize| {
+            plan.cols
+                .iter()
+                .find(|(c, _)| *c == col_idx)
+                .map(|(_, t)| *t)
+        };
+
+        let full = build_bivariate_plan(&field_pairs, &keys, &col_types, None, false);
+        assert_eq!(type_of(&full, 0), Some(FieldType::TInteger));
+
+        // Every batch width must agree with the full plan about column 0 -- including
+        // width 1, which isolates key (1,0), the slice that used to yield TDate.
+        for k in 1..=keys.len() {
+            for batch in keys.chunks(k) {
+                let sub = build_bivariate_plan(&field_pairs, batch, &col_types, None, false);
+                if let Some(t) = type_of(&sub, 0) {
+                    assert_eq!(
+                        t,
+                        FieldType::TInteger,
+                        "batch width {k}, batch {batch:?} decoded column 0 as {t:?}"
+                    );
+                }
+            }
         }
     }
 

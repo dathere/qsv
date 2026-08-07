@@ -5053,6 +5053,80 @@ fn moarstats_bivariate_batch_identical_across_k() {
 }
 
 #[test]
+fn moarstats_bivariate_batch_identical_with_duplicate_headers() {
+    // Regression for roborev job 4110: `--bivariate-batch` changed the OUTPUT, not just
+    // the memory profile, when a CSV had duplicate header names.
+    //
+    // Header lookup when building `field_pairs` is first-match-wins, so both stats rows
+    // named `a` below resolve to col_idx 0 -- but each carries its own inferred type
+    // (the first `a` is Integer, the second is Date). Enumeration therefore emits keys
+    // (0,0), (0,1) and (1,0), and (1,0) is the one whose col-0 side is the DATE row.
+    //
+    // A plan picks a column's decode type from the first pair that touches it, so the
+    // full plan chose Integer (from key (0,0)) while `--bivariate-batch 1` isolated key
+    // (1,0) in a pass of its own and chose Date -- decoding an integer column as a date
+    // and reporting covariance 0.0009 instead of 78.0268. The types are now decided once
+    // run-wide by `canonical_field_types`, so every batch agrees with the full plan.
+    let wrk = Workdir::new("moarstats_bivariate_batch_dupheaders");
+
+    // 15,000 rows clears PARALLEL_THRESHOLD so the indexed parallel path runs, which is
+    // the only path `--bivariate-batch` applies to.
+    let mut rows: Vec<Vec<String>> = vec![svec!["a", "b", "a"]];
+    for i in 0..15_000u32 {
+        rows.push(vec![
+            format!("{}", i % 977),
+            format!("{}", (i * 7) % 383),
+            format!("2020-{:02}-{:02}", (i % 12) + 1, (i % 27) + 1),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("data.csv");
+    wrk.assert_success(&mut idx_cmd);
+
+    let shared_opts = "--infer-dates --infer-boolean --cardinality --mode --mad --quartiles \
+                       --percentiles --stats-jsonl";
+
+    let run = |k: &str| -> String {
+        let mut cmd = wrk.command("moarstats");
+        cmd.env("QSV_MAX_JOBS", "2")
+            .arg("--bivariate")
+            .args(["--bivariate-stats", "all"])
+            .args(["--jobs", "2"])
+            .args(["--bivariate-batch", k])
+            .args(["--stats-options", shared_opts])
+            .arg("data.csv");
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string("data.stats.bivariate.csv").unwrap()
+    };
+
+    let unbatched = run("0");
+    // Guard the premise: if stats ever stopped inferring the third column as a date,
+    // the two `a` rows would agree and this test would pass without exercising anything.
+    let stats = wrk.read_to_string("data.stats.csv").unwrap();
+    let types: Vec<&str> = stats
+        .lines()
+        .skip(1)
+        .filter_map(|l| l.split(',').nth(1))
+        .collect();
+    assert_eq!(
+        types,
+        vec!["Integer", "Integer", "Date"],
+        "premise broken: the two same-named columns must infer DIFFERENT types\n{stats}"
+    );
+
+    for k in ["1", "2"] {
+        assert_eq!(
+            unbatched,
+            run(k),
+            "--bivariate-batch {k} changed the output on a duplicate-header CSV; a column's \
+             decode type must be decided run-wide, not per batch"
+        );
+    }
+}
+
+#[test]
 fn moarstats_bivariate_skip_states_empty_and_non_utf8() {
     // Pins how EMPTY and INVALID-UTF8 values are excluded from the bivariate
     // frequency counts. This is the guard against a value-encoding change (issue

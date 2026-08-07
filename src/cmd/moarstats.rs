@@ -366,8 +366,8 @@ use std::{
 
 use crossbeam_channel;
 use csv::{ReaderBuilder, StringRecord, WriterBuilder};
-use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
-use indexmap::IndexMap;
+use foldhash::{HashMap, HashMapExt};
+use indexmap::{IndexMap, IndexSet};
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use qsv_dateparser::parse_with_preference;
 use rayon::prelude::*;
@@ -1656,6 +1656,12 @@ struct CorrelationState {
 
 /// Statistics tracked during bivariate computation for a field pair
 ///
+/// `xy_counts` is keyed on a packed pair of per-column dictionary symbols rather
+/// than on the values themselves. Two heap `String`s per joint cell cost ~200 bytes
+/// once `HashMap` slack is counted, and -- worse -- `entry()` takes its key by value,
+/// so the common path (cell already present) allocated, hashed, compared and then
+/// immediately dropped two `String`s for every pair of every row. See #4356.
+///
 /// Marginal frequencies are deliberately NOT stored here. They are a pure function
 /// of `xy_counts` and are only consumed by MI/NMI/U, so they are derived inside
 /// `finalize_bivariate_pair_stats` instead. Keeping them off this struct means only
@@ -1666,9 +1672,21 @@ struct BivariateChunkStats {
     correlation_state: CorrelationState,
     x_values:          Vec<f64>, // For Spearman/Kendall (need ranks)
     y_values:          Vec<f64>, // For Spearman/Kendall (need ranks)
-    // Joint frequencies for mutual information (more memory efficient than storing all strings)
-    xy_counts:         HashMap<(String, String), u64>,
+    /// Joint frequencies, keyed by `pack_joint_key(x_sym, y_sym)`.
+    xy_counts:         HashMap<u64, u64>,
     total_pairs:       u64, // Total count of pairs
+}
+
+/// What one chunk produces: per-pair statistics plus the dictionaries needed to
+/// interpret the symbols inside them.
+///
+/// Symbols are chunk-local -- each worker interns independently -- so the merge has
+/// to translate them into a shared numbering before joint counts from different
+/// chunks can be added together. `dicts` is empty when frequency counts are not
+/// being computed, since nothing then needs translating.
+struct BivariateChunkOutput {
+    stats: Vec<BivariateChunkStats>,
+    dicts: Vec<ValueDict>,
 }
 
 /// Final bivariate statistics for a field pair
@@ -1697,6 +1715,30 @@ struct BivariateFieldInfo {
     stddev:      Option<f64>, // Pre-computed standard deviation (used for filtering)
     variance:    Option<f64>, // Pre-computed variance (used for filtering)
     cardinality: Option<u64>, // Pre-computed cardinality (used for threshold filtering)
+}
+
+/// Per-column value dictionary: distinct raw values in first-seen order, so a
+/// value's index IS its symbol. foldhash matches the hasher used elsewhere in qsv
+/// (see the same alias in `cat.rs`).
+///
+/// Keyed on `Box<[u8]>` rather than `Box<str>` deliberately. The values come off a
+/// `ByteRecord` as raw bytes, and the accumulation loop must EXCLUDE values that are
+/// not valid UTF-8 rather than lossily decode them -- `from_utf8_lossy` would both
+/// count rows the scan is supposed to skip and merge distinct invalid byte sequences
+/// into a single replacement-character symbol.
+type ValueDict = IndexSet<Box<[u8]>, foldhash::fast::RandomState>;
+
+/// Symbol meaning "this cell has no symbol": empty, not valid UTF-8, or a column
+/// that is not being interned. Never appears in a joint key.
+const NO_SYM: u32 = u32::MAX;
+
+/// Pack two per-column symbols into one joint-frequency key.
+///
+/// x occupies the high half and y the low half, so the two symbols can be recovered
+/// independently when the marginals are derived at finalize time.
+#[inline]
+const fn pack_joint_key(x_sym: u32, y_sym: u32) -> u64 {
+    ((x_sym as u64) << 32) | (y_sym as u64)
 }
 
 /// One field pair's place in the per-chunk statistics vector, with the two columns
@@ -2125,11 +2167,14 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
 }
 
 /// Compute mutual information between two categorical/numeric fields from frequency counts
+///
+/// `xy_counts` is keyed by `pack_joint_key(x_sym, y_sym)`; the marginals are keyed by
+/// the corresponding per-column symbol.
 #[allow(clippy::cast_precision_loss)]
 fn compute_mutual_information_from_counts(
-    xy_counts: &HashMap<(String, String), u64>,
-    x_counts: &HashMap<String, u64>,
-    y_counts: &HashMap<String, u64>,
+    xy_counts: &HashMap<u64, u64>,
+    x_counts: &HashMap<u32, u64>,
+    y_counts: &HashMap<u32, u64>,
     total: u64,
 ) -> Option<f64> {
     if total == 0 {
@@ -2140,10 +2185,12 @@ fn compute_mutual_information_from_counts(
 
     // Compute mutual information: MI(X,Y) = sum(p(x,y) * log2(p(x,y) / (p(x) * p(y))))
     let mut mi = 0.0;
-    for ((x_val, y_val), &xy_count) in xy_counts {
+    for (joint_key, &xy_count) in xy_counts {
+        let x_sym = (joint_key >> 32) as u32;
+        let y_sym = (joint_key & 0xFFFF_FFFF) as u32;
         let p_xy = xy_count as f64 / total_f64;
-        let p_x = x_counts.get(x_val).copied().unwrap_or(0) as f64 / total_f64;
-        let p_y = y_counts.get(y_val).copied().unwrap_or(0) as f64 / total_f64;
+        let p_x = x_counts.get(&x_sym).copied().unwrap_or(0) as f64 / total_f64;
+        let p_y = y_counts.get(&y_sym).copied().unwrap_or(0) as f64 / total_f64;
 
         if p_x > 0.0 && p_y > 0.0 && p_xy > 0.0 {
             mi = p_xy.mul_add((p_xy / (p_x * p_y)).log2(), mi);
@@ -2156,8 +2203,10 @@ fn compute_mutual_information_from_counts(
 /// Compute Shannon entropy from frequency counts
 /// Uses the same formula as `compute_all_entropy()`: H(X) = -Σ `p_i` * `log2(p_i)`
 /// where `p_i` = `count_i` / total
+///
+/// Only the counts are read, never the keys, so this is generic over the key type.
 #[allow(clippy::cast_precision_loss)]
-fn compute_entropy_from_counts(counts: &HashMap<String, u64>, total: u64) -> Option<f64> {
+fn compute_entropy_from_counts<K>(counts: &HashMap<K, u64>, total: u64) -> Option<f64> {
     if total == 0 {
         return None;
     }
@@ -2715,17 +2764,21 @@ fn compute_outliers_and_kga(
 /// Process a chunk of records and update bivariate statistics
 /// Similar to `count_chunk_outliers` but for bivariate computation
 ///
-/// Returns per-pair statistics positionally aligned with `plan.pairs`.
+/// Returns per-pair statistics positionally aligned with `plan.pairs`, plus the
+/// chunk-local value dictionaries the joint-frequency symbols refer to.
 fn compute_chunk_bivariate<I>(
     plan: &BivariatePlan,
     records: I,
     stats_config: BivariateStatsConfig,
-) -> CliResult<Vec<BivariateChunkStats>>
+) -> CliResult<BivariateChunkOutput>
 where
     I: Iterator<Item = csv::Result<csv::ByteRecord>>,
 {
     if plan.pairs.is_empty() {
-        return Ok(Vec::new());
+        return Ok(BivariateChunkOutput {
+            stats: Vec::new(),
+            dicts: Vec::new(),
+        });
     }
 
     // Check what we need to compute based on config
@@ -2744,14 +2797,11 @@ where
     //   * x_values/y_values are only pushed when BOTH sides parse numeric, so reserving for a pair
     //     with a non-numeric side is pure waste. On the benchmark only ~36 of 780 pairs are
     //     numeric/date on both sides, so the blanket reservation wasted ~95% of ~1 GB.
-    //   * x_counts/y_counts are NEVER written in this function -- the marginals are derived from
-    //     xy_counts by the caller at finalize time -- so reserving them here allocated maps that
-    //     stayed empty for the life of the chunk.
     //
     // The field_type gate is an allocation hint only: a Vec still grows on demand, so
     // a mistyped column costs a realloc, never a wrong answer.
     let estimated_capacity = 5000; // Reasonable estimate for chunk processing
-    let estimated_unique_strings = estimated_capacity.min(1000); // Estimate for string frequency maps
+    let estimated_unique_values = estimated_capacity.min(1000);
     let mut chunk_stats: Vec<BivariateChunkStats> = plan
         .pairs
         .iter()
@@ -2772,9 +2822,8 @@ where
                 stats.y_values.reserve(estimated_capacity);
             }
             // Only allocate the joint map if needed for mutual information.
-            // x_counts/y_counts are deliberately NOT reserved here (see above).
             if needs_freq_counts {
-                stats.xy_counts.reserve(estimated_unique_strings);
+                stats.xy_counts.reserve(estimated_unique_values);
             }
             stats
         })
@@ -2782,34 +2831,43 @@ where
 
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
-    // Optimization #1: Date parsing cache - Cache parsed dates to avoid re-parsing same strings
-    let mut date_cache: HashMap<String, Option<f64>> = HashMap::with_capacity(estimated_capacity);
+    let ncols = plan.cols.len();
 
-    // Optimization #6: String interning - Cache frequently used strings to reduce allocations.
-    // Only needed if we're computing mutual information. A HashSet suffices since key==value;
-    // saves one clone per cache miss over the prior HashMap<String, String> form.
-    let mut string_interner: HashSet<String> = if needs_freq_counts {
-        HashSet::with_capacity(estimated_unique_strings)
-    } else {
-        HashSet::new()
-    };
+    // A column is interned when its symbols are needed: for the joint keys, or --
+    // even on the `fast` path -- to memoize date parsing. Interning a date column
+    // replaces the old `HashMap<String, Option<f64>>` parse cache with a
+    // `Vec<Option<f64>>` indexed by symbol, which removes the last String allocation
+    // from the scan without making the cache any larger (it already held one entry
+    // per distinct date string).
+    let intern_slot: Vec<bool> = plan
+        .cols
+        .iter()
+        .map(|(_, field_type)| needs_freq_counts || field_type.is_date_or_datetime())
+        .collect();
+
+    let mut dicts: Vec<ValueDict> = (0..ncols).map(|_| ValueDict::default()).collect();
+    // Parsed-date memo, indexed by [slot][symbol]. Only date columns ever grow one.
+    let mut date_by_sym: Vec<Vec<Option<f64>>> = (0..ncols).map(|_| Vec::new()).collect();
 
     // Per-record scratch, indexed by column slot and reused across records.
     //
     // Decoding happens ONCE per column per record here, instead of once per pair.
     // Each column takes part in 40 pairs on the benchmark file, so the per-pair form
-    // re-fetched and re-parsed every value 40 times.
+    // re-fetched, re-validated and re-parsed every value 40 times.
     //
-    //   skip[slot]  -- this cell disqualifies every pair it appears in, for this
-    //                  record: the value is empty, or the column is date-typed and
-    //                  the bytes are not valid UTF-8. Both cases previously
-    //                  `continue`d the pair BEFORE the correlation update, so
-    //                  neither reaches n_pairs.
-    //   num[slot]   -- the parsed numeric value, if any (date columns via
-    //                  parse_date_to_days, everything else via fast_float2).
-    let ncols = plan.cols.len();
+    //   skip[slot] -- this cell disqualifies every pair it appears in, for this
+    //                 record: the value is empty, or the column is date-typed and the
+    //                 bytes are not valid UTF-8. Both previously `continue`d the pair
+    //                 BEFORE the correlation update, so neither reaches n_pairs.
+    //   num[slot]  -- the parsed numeric value, if any.
+    //   sym[slot]  -- the dictionary symbol, or NO_SYM when the value has none
+    //                 (not interned, or not valid UTF-8). A cell with NO_SYM is
+    //                 excluded from the frequency counts but still feeds correlation,
+    //                 which is the pre-existing behavior for invalid UTF-8 in a
+    //                 non-date column.
     let mut skip: Vec<bool> = vec![true; ncols];
     let mut num: Vec<Option<f64>> = vec![None; ncols];
+    let mut sym: Vec<u32> = vec![NO_SYM; ncols];
 
     #[allow(unused_assignments)]
     let mut record: csv::ByteRecord = csv::ByteRecord::new();
@@ -2821,33 +2879,73 @@ where
         // Decode pass: one entry per participating column.
         for (slot, (col_idx, field_type)) in plan.cols.iter().enumerate() {
             let value_bytes = record.get(*col_idx).unwrap_or(&[]);
+            sym[slot] = NO_SYM;
             if value_bytes.is_empty() {
                 skip[slot] = true;
                 num[slot] = None;
                 continue;
             }
-            if field_type.is_date_or_datetime() {
-                // Date parsing needs &str. Invalid UTF-8 in a date column skipped the
-                // whole pair before the correlation update, so it sets `skip`.
-                let Ok(s) = from_utf8(value_bytes) else {
+            let is_date = field_type.is_date_or_datetime();
+
+            // UTF-8 is validated only where it was before: always for a date column
+            // (parsing needs &str), and otherwise only when frequency counts are
+            // being built. The `fast` path must not pay for a check it never used.
+            let utf8_ok = if is_date || intern_slot[slot] {
+                from_utf8(value_bytes).is_ok()
+            } else {
+                false
+            };
+
+            if is_date && !utf8_ok {
+                // Invalid UTF-8 in a date column skipped the whole pair before the
+                // correlation update.
+                cold_path();
+                skip[slot] = true;
+                num[slot] = None;
+                continue;
+            }
+            skip[slot] = false;
+
+            if intern_slot[slot] && utf8_ok {
+                let (idx, _) = dicts[slot].insert_full(Box::from(value_bytes));
+                let Ok(idx_u32) = u32::try_from(idx) else {
                     cold_path();
-                    skip[slot] = true;
-                    num[slot] = None;
-                    continue;
+                    return fail_incorrectusage_clierror!(
+                        "Column {col_idx} has more than {} distinct values, which exceeds what \
+                         the bivariate joint-frequency encoding can address. Use \
+                         -C/--cardinality-threshold to skip mutual information for \
+                         high-cardinality fields.",
+                        u32::MAX
+                    );
                 };
-                skip[slot] = false;
-                num[slot] = if let Some(cached) = date_cache.get(s) {
-                    *cached
+                debug_assert!(
+                    idx_u32 != NO_SYM,
+                    "symbol collided with the NO_SYM sentinel"
+                );
+                sym[slot] = idx_u32;
+            }
+
+            num[slot] = if is_date {
+                // safety: a date column with invalid UTF-8 was skipped above, and
+                // date columns are always interned, so the symbol is present.
+                let s = sym[slot] as usize;
+                let memo = &mut date_by_sym[slot];
+                if s >= memo.len() {
+                    memo.resize(s + 1, None);
+                    // A fresh slot is indistinguishable from a cached `None`, so parse
+                    // on first sight and store the result.
+                    let parsed = from_utf8(value_bytes)
+                        .ok()
+                        .and_then(|v| parse_date_to_days(v, prefer_dmy));
+                    memo[s] = parsed;
+                    parsed
                 } else {
-                    let val = parse_date_to_days(s, prefer_dmy);
-                    date_cache.insert(s.to_string(), val);
-                    val
-                };
+                    memo[s]
+                }
             } else {
                 // Numeric parsing reads bytes directly, so it never allocates.
-                skip[slot] = false;
-                num[slot] = parse_float_opt_from_bytes(value_bytes);
-            }
+                parse_float_opt_from_bytes(value_bytes)
+            };
         }
 
         for (pair_idx, pair) in plan.pairs.iter().enumerate() {
@@ -2872,51 +2970,36 @@ where
                 }
             }
 
-            // Only compute frequency counts if needed for mutual information.
-            // This is the only branch that needs owned strings — allocate lazily here.
+            // Accumulate joint frequency counts - these are needed for mutual
+            // information. Marginal frequencies are derived from xy_counts at
+            // finalization to ensure consistency. A cell without a symbol (invalid
+            // UTF-8) is excluded here but has already fed correlation above.
             if needs_freq_counts {
-                let value_bytes_x = record.get(plan.cols[x_slot].0).unwrap_or(&[]);
-                let value_bytes_y = record.get(plan.cols[y_slot].0).unwrap_or(&[]);
-                let (Ok(x_str_ref), Ok(y_str_ref)) =
-                    (from_utf8(value_bytes_x), from_utf8(value_bytes_y))
-                else {
+                let (x_sym, y_sym) = (sym[x_slot], sym[y_slot]);
+                if x_sym == NO_SYM || y_sym == NO_SYM {
                     cold_path();
                     continue;
-                };
-                // NOTE: this is not true string interning — each lookup still yields
-                // a cloned String (needed because xy_counts keys by owned tuples).
-                // The benefit over ad-hoc cloning is one fewer clone on insert (cache
-                // miss). A future change to Arc<str> or SmolStr would give real
-                // interning (cheap clones on cache hit), at the cost of a wider
-                // refactor of xy_counts.
-                let x_str_interned = if let Some(cached) = string_interner.get(x_str_ref) {
-                    cached.clone()
-                } else {
-                    let owned = x_str_ref.to_string();
-                    string_interner.insert(owned.clone());
-                    owned
-                };
-                let y_str_interned = if let Some(cached) = string_interner.get(y_str_ref) {
-                    cached.clone()
-                } else {
-                    let owned = y_str_ref.to_string();
-                    string_interner.insert(owned.clone());
-                    owned
-                };
-
-                // Accumulate joint frequency counts (xy_counts) - these are needed for mutual
-                // information. Marginal frequencies (x_counts, y_counts) will be computed
-                // from xy_counts at finalization to ensure consistency.
+                }
                 *stats
                     .xy_counts
-                    .entry((x_str_interned, y_str_interned))
+                    .entry(pack_joint_key(x_sym, y_sym))
                     .or_insert(0) += 1;
                 stats.total_pairs += 1;
             }
         }
     }
 
-    Ok(chunk_stats)
+    // The dictionaries only need to outlive the chunk when the merge has symbols to
+    // translate. On the `fast` path they are just date-parse memos -- dropping them
+    // here keeps that path's footprint where it was.
+    if !needs_freq_counts {
+        dicts.clear();
+    }
+
+    Ok(BivariateChunkOutput {
+        stats: chunk_stats,
+        dicts,
+    })
 }
 
 /// Finalize per-pair bivariate statistics from an aggregated `BivariateChunkStats`.
@@ -3012,12 +3095,20 @@ fn finalize_bivariate_pair_stats(
     let needs_marginals = (stats_config.mi || stats_config.nmi || stats_config.u)
         && chunk_stats.total_pairs > 0
         && exceeds_cardinality != Some(true);
+    // Symbol-keyed, not dense Vec<u64> indexed by symbol. A dense table would have to
+    // be sized to the COLUMN's cardinality, and two of them are built per pair inside
+    // a rayon finalize -- allocation proportional to something other than this pair's
+    // actual occupancy, which is the same shape as the over-reservation bug this
+    // series already fixed. Integer-keyed maps keep the win (no String hashing, no
+    // per-cell clone) without that exposure.
     let (x_counts, y_counts) = if needs_marginals {
-        let mut x_counts: HashMap<String, u64> = HashMap::new();
-        let mut y_counts: HashMap<String, u64> = HashMap::new();
-        for ((x_val, y_val), &count) in &chunk_stats.xy_counts {
-            *x_counts.entry(x_val.clone()).or_insert(0) += count;
-            *y_counts.entry(y_val.clone()).or_insert(0) += count;
+        let mut x_counts: HashMap<u32, u64> = HashMap::new();
+        let mut y_counts: HashMap<u32, u64> = HashMap::new();
+        for (joint_key, &count) in &chunk_stats.xy_counts {
+            *x_counts.entry((joint_key >> 32) as u32).or_insert(0) += count;
+            *y_counts
+                .entry((joint_key & 0xFFFF_FFFF) as u32)
+                .or_insert(0) += count;
         }
         (x_counts, y_counts)
     } else {
@@ -3277,8 +3368,54 @@ fn compute_all_bivariatestats(
         // in dispatch order and stay deterministic even with the bug present, so a
         // test would have to win a race to catch a regression. Correct by
         // construction instead -- do not delete it as "untested".
-        let mut merge_chunk = |chunk_stats: Vec<BivariateChunkStats>| {
-            for (total_stats, stats) in all_stats.iter_mut().zip(chunk_stats) {
+        // Symbols are chunk-local: each worker interned the values it happened to see,
+        // in the order it saw them, so the same symbol means different things in
+        // different chunks. Before joint counts can be added together they are
+        // translated into one shared numbering, built here in chunk order.
+        let ncols = plan_arc.cols.len();
+        let mut global_dicts: Vec<ValueDict> = (0..ncols).map(|_| ValueDict::default()).collect();
+        // Scratch, reused per chunk: remap[slot][chunk_symbol] = global symbol.
+        let mut remap: Vec<Vec<u32>> = (0..ncols).map(|_| Vec::new()).collect();
+
+        let mut merge_chunk = |chunk: BivariateChunkOutput| -> CliResult<()> {
+            let BivariateChunkOutput {
+                stats: chunk_stats,
+                dicts,
+            } = chunk;
+
+            if needs_freq_counts {
+                // An IndexSet iterates in insertion order, and insertion order IS
+                // symbol order, so pushing each value's global index builds a table
+                // indexable by the chunk-local symbol. Anything that reordered this
+                // iteration would silently corrupt every joint key.
+                for (slot, dict) in dicts.into_iter().enumerate() {
+                    let Some(table) = remap.get_mut(slot) else {
+                        cold_path();
+                        continue;
+                    };
+                    table.clear();
+                    table.reserve(dict.len());
+                    for value in dict {
+                        let (idx, _) = global_dicts[slot].insert_full(value);
+                        let Ok(idx_u32) = u32::try_from(idx) else {
+                            cold_path();
+                            return fail_incorrectusage_clierror!(
+                                "Merged column {} has more than {} distinct values, which exceeds \
+                                 what the bivariate joint-frequency encoding can address. Use \
+                                 -C/--cardinality-threshold to skip mutual information for \
+                                 high-cardinality fields.",
+                                plan_arc.cols.get(slot).map_or(slot, |(c, _)| *c),
+                                u32::MAX
+                            );
+                        };
+                        table.push(idx_u32);
+                    }
+                }
+            }
+
+            for (pair_idx, (total_stats, stats)) in
+                all_stats.iter_mut().zip(chunk_stats).enumerate()
+            {
                 // Merge correlation states (always needed for Pearson/covariance)
                 total_stats.correlation_state = merge_correlation_states(
                     &total_stats.correlation_state,
@@ -3292,16 +3429,39 @@ fn compute_all_bivariatestats(
                 // Only merge frequency counts if needed for mutual information.
                 // Marginal frequencies are derived from xy_counts at finalization.
                 if needs_freq_counts {
+                    let Some(pair) = plan_arc.pairs.get(pair_idx) else {
+                        cold_path();
+                        continue;
+                    };
+                    let (Some(x_remap), Some(y_remap)) = (
+                        remap.get(pair.x_slot as usize),
+                        remap.get(pair.y_slot as usize),
+                    ) else {
+                        cold_path();
+                        continue;
+                    };
                     for (joint_key, count) in stats.xy_counts {
-                        *total_stats.xy_counts.entry(joint_key).or_insert(0) += count;
+                        let x_sym = (joint_key >> 32) as u32;
+                        let y_sym = (joint_key & 0xFFFF_FFFF) as u32;
+                        let (Some(&gx), Some(&gy)) =
+                            (x_remap.get(x_sym as usize), y_remap.get(y_sym as usize))
+                        else {
+                            cold_path();
+                            debug_assert!(false, "joint key references an unknown chunk symbol");
+                            continue;
+                        };
+                        *total_stats
+                            .xy_counts
+                            .entry(pack_joint_key(gx, gy))
+                            .or_insert(0) += count;
                     }
                     total_stats.total_pairs += stats.total_pairs;
                 }
             }
+            Ok(())
         };
 
-        let mut pending: Vec<Option<Vec<BivariateChunkStats>>> =
-            (0..nchunks).map(|_| None).collect();
+        let mut pending: Vec<Option<BivariateChunkOutput>> = (0..nchunks).map(|_| None).collect();
         let mut next_chunk = 0_usize;
 
         for (i, chunk_result) in &recv {
@@ -3313,7 +3473,7 @@ fn compute_all_bivariatestats(
             while let Some(slot) = pending.get_mut(next_chunk)
                 && let Some(stats) = slot.take()
             {
-                merge_chunk(stats);
+                merge_chunk(stats)?;
                 next_chunk += 1;
             }
 
@@ -3427,7 +3587,9 @@ fn compute_all_bivariatestats_sequential(
         }
     });
     let plan = build_bivariate_plan(field_pairs);
-    let all_stats = compute_chunk_bivariate(&plan, it, stats_config)?;
+    // One chunk, so its symbols are already the only numbering there is -- no remap,
+    // and the dictionaries are dropped with the output.
+    let all_stats = compute_chunk_bivariate(&plan, it, stats_config)?.stats;
 
     if let Some(pb) = progress {
         pb.set_position(processed);

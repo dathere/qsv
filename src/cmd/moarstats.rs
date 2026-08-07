@@ -1699,6 +1699,98 @@ struct BivariateFieldInfo {
     cardinality: Option<u64>, // Pre-computed cardinality (used for threshold filtering)
 }
 
+/// One field pair's place in the per-chunk statistics vector, with the two columns
+/// it reads resolved to dense slot indices.
+struct PairPlan {
+    /// The `(col_idx, col_idx)` key this pair is reported under.
+    key:    (u16, u16),
+    /// Slot of the x (field1) column in `BivariatePlan::cols`.
+    x_slot: u32,
+    /// Slot of the y (field2) column in `BivariatePlan::cols`.
+    y_slot: u32,
+}
+
+/// Execution plan shared by every chunk of a bivariate run.
+///
+/// Two things it buys over iterating the `field_pairs` map directly:
+///
+///   * Pairs live in a `Vec` in a stable order, so the hot loop indexes into a
+///     `Vec<BivariateChunkStats>` instead of doing a `HashMap` lookup per pair per record -- 780
+///     lookups per row on the 41-column benchmark.
+///   * The distinct COLUMNS taking part in at least one pair are enumerated once (~41 of them,
+///     versus 780 pairs), which is what lets a record be decoded once per column rather than once
+///     per pair. Each column appears in 40 pairs on that file, so the per-pair form re-fetched,
+///     re-validated and re-parsed every value 40 times.
+struct BivariatePlan {
+    /// slot -> (`col_idx`, `field_type`). Order is stable across chunks.
+    cols:  Vec<(usize, FieldType)>,
+    /// Pairs in a stable order; index into this is the index into the per-chunk stats.
+    pairs: Vec<PairPlan>,
+}
+
+/// Build the shared plan from the field-pair map.
+///
+/// Pairs are emitted in sorted key order so that chunk statistics vectors from
+/// different threads line up positionally and merge deterministically.
+fn build_bivariate_plan(
+    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+) -> BivariatePlan {
+    let mut keys: Vec<(u16, u16)> = field_pairs.keys().copied().collect();
+    keys.sort_unstable();
+
+    // col_idx -> slot. A column is shared by every pair it appears in, so its type
+    // must be a property of the column, not of the pair. That holds because the
+    // field type is resolved from the stats row whose name matched that header --
+    // but header lookup is first-match-wins, so duplicate header names could in
+    // principle resolve two differently-typed stats rows onto one col_idx. Keep the
+    // first (matching the existing first-match-wins behavior) and say so loudly
+    // rather than silently decoding a column two different ways.
+    let mut slot_of: HashMap<usize, u32> = HashMap::new();
+    let mut cols: Vec<(usize, FieldType)> = Vec::new();
+    let mut slot_for =
+        |col_idx: usize, field_type: FieldType, cols: &mut Vec<(usize, FieldType)>| {
+            *slot_of.entry(col_idx).or_insert_with(|| {
+                let slot = u32::try_from(cols.len()).unwrap_or(u32::MAX);
+                cols.push((col_idx, field_type));
+                slot
+            })
+        };
+
+    let mut pairs = Vec::with_capacity(keys.len());
+    for key in keys {
+        // safety: keys came from field_pairs
+        let Some((field1_info, field2_info)) = field_pairs.get(&key) else {
+            cold_path();
+            continue;
+        };
+        let x_slot = slot_for(field1_info.col_idx, field1_info.field_type, &mut cols);
+        let y_slot = slot_for(field2_info.col_idx, field2_info.field_type, &mut cols);
+
+        for (slot, info) in [(x_slot, field1_info), (y_slot, field2_info)] {
+            if let Some((_, seen_type)) = cols.get(slot as usize)
+                && *seen_type != info.field_type
+            {
+                cold_path();
+                log::warn!(
+                    "bivariate plan: column index {} appears with conflicting field types \
+                     ({seen_type:?} and {:?}); decoding it as {seen_type:?}. This means two stats \
+                     rows resolved to the same CSV column, which duplicate header names can cause.",
+                    info.col_idx,
+                    info.field_type,
+                );
+            }
+        }
+
+        pairs.push(PairPlan {
+            key,
+            x_slot,
+            y_slot,
+        });
+    }
+
+    BivariatePlan { cols, pairs }
+}
+
 /// Update correlation state with a new pair of values using Welford's online algorithm
 #[inline]
 #[allow(clippy::cast_precision_loss)]
@@ -2622,16 +2714,18 @@ fn compute_outliers_and_kga(
 
 /// Process a chunk of records and update bivariate statistics
 /// Similar to `count_chunk_outliers` but for bivariate computation
+///
+/// Returns per-pair statistics positionally aligned with `plan.pairs`.
 fn compute_chunk_bivariate<I>(
-    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    plan: &BivariatePlan,
     records: I,
     stats_config: BivariateStatsConfig,
-) -> CliResult<HashMap<(u16, u16), BivariateChunkStats>>
+) -> CliResult<Vec<BivariateChunkStats>>
 where
     I: Iterator<Item = csv::Result<csv::ByteRecord>>,
 {
-    if field_pairs.is_empty() {
-        return Ok(HashMap::new());
+    if plan.pairs.is_empty() {
+        return Ok(Vec::new());
     }
 
     // Check what we need to compute based on config
@@ -2641,7 +2735,7 @@ where
     // Initialize statistics for all field pairs.
     //
     // These reservations are paid per pair PER CHUNK, so they are a fixed cost of
-    // `field_pairs.len() * nchunks` that does not shrink with the row count. On the
+    // `plan.pairs.len() * nchunks` that does not shrink with the row count. On the
     // 1M-row/41-column benchmark that is 780 pairs x ~16 chunks, which is why the
     // measured peak RSS bottomed out around 2.3 GiB even on a 15k-row slice (see
     // scripts/pgo-train.sh). Over-reserving here is therefore expensive in a way that
@@ -2658,16 +2752,22 @@ where
     // a mistyped column costs a realloc, never a wrong answer.
     let estimated_capacity = 5000; // Reasonable estimate for chunk processing
     let estimated_unique_strings = estimated_capacity.min(1000); // Estimate for string frequency maps
-    let mut chunk_stats: HashMap<(u16, u16), BivariateChunkStats> = field_pairs
+    let mut chunk_stats: Vec<BivariateChunkStats> = plan
+        .pairs
         .iter()
-        .map(|(k, (field1_info, field2_info))| {
+        .map(|pair| {
             let mut stats = BivariateChunkStats::default();
+            let x_numeric = plan
+                .cols
+                .get(pair.x_slot as usize)
+                .is_some_and(|(_, t)| t.is_numeric_or_date_type());
+            let y_numeric = plan
+                .cols
+                .get(pair.y_slot as usize)
+                .is_some_and(|(_, t)| t.is_numeric_or_date_type());
             // Only allocate value vectors if needed for Spearman/Kendall AND both
             // sides can actually yield a numeric value to push.
-            if needs_all_values
-                && field1_info.field_type.is_numeric_or_date_type()
-                && field2_info.field_type.is_numeric_or_date_type()
-            {
+            if needs_all_values && x_numeric && y_numeric {
                 stats.x_values.reserve(estimated_capacity);
                 stats.y_values.reserve(estimated_capacity);
             }
@@ -2676,7 +2776,7 @@ where
             if needs_freq_counts {
                 stats.xy_counts.reserve(estimated_unique_strings);
             }
-            (*k, stats)
+            stats
         })
         .collect();
 
@@ -2694,6 +2794,23 @@ where
         HashSet::new()
     };
 
+    // Per-record scratch, indexed by column slot and reused across records.
+    //
+    // Decoding happens ONCE per column per record here, instead of once per pair.
+    // Each column takes part in 40 pairs on the benchmark file, so the per-pair form
+    // re-fetched and re-parsed every value 40 times.
+    //
+    //   skip[slot]  -- this cell disqualifies every pair it appears in, for this
+    //                  record: the value is empty, or the column is date-typed and
+    //                  the bytes are not valid UTF-8. Both cases previously
+    //                  `continue`d the pair BEFORE the correlation update, so
+    //                  neither reaches n_pairs.
+    //   num[slot]   -- the parsed numeric value, if any (date columns via
+    //                  parse_date_to_days, everything else via fast_float2).
+    let ncols = plan.cols.len();
+    let mut skip: Vec<bool> = vec![true; ncols];
+    let mut num: Vec<Option<f64>> = vec![None; ncols];
+
     #[allow(unused_assignments)]
     let mut record: csv::ByteRecord = csv::ByteRecord::new();
 
@@ -2701,59 +2818,52 @@ where
     for result in records {
         record = result?;
 
-        for ((idx1, idx2), (field1_info, field2_info)) in field_pairs {
-            let value_bytes_x = record.get(field1_info.col_idx).unwrap_or(&[]);
-            let value_bytes_y = record.get(field2_info.col_idx).unwrap_or(&[]);
-
-            if value_bytes_x.is_empty() || value_bytes_y.is_empty() {
+        // Decode pass: one entry per participating column.
+        for (slot, (col_idx, field_type)) in plan.cols.iter().enumerate() {
+            let value_bytes = record.get(*col_idx).unwrap_or(&[]);
+            if value_bytes.is_empty() {
+                skip[slot] = true;
+                num[slot] = None;
                 continue;
             }
+            if field_type.is_date_or_datetime() {
+                // Date parsing needs &str. Invalid UTF-8 in a date column skipped the
+                // whole pair before the correlation update, so it sets `skip`.
+                let Ok(s) = from_utf8(value_bytes) else {
+                    cold_path();
+                    skip[slot] = true;
+                    num[slot] = None;
+                    continue;
+                };
+                skip[slot] = false;
+                num[slot] = if let Some(cached) = date_cache.get(s) {
+                    *cached
+                } else {
+                    let val = parse_date_to_days(s, prefer_dmy);
+                    date_cache.insert(s.to_string(), val);
+                    val
+                };
+            } else {
+                // Numeric parsing reads bytes directly, so it never allocates.
+                skip[slot] = false;
+                num[slot] = parse_float_opt_from_bytes(value_bytes);
+            }
+        }
 
-            // safety: chunk_stats is pre-populated with all field pair indices
-            let Some(stats) = chunk_stats.get_mut(&(*idx1, *idx2)) else {
-                cold_path();
-                debug_assert!(false, "chunk_stats missing expected key: ({idx1}, {idx2})");
+        for (pair_idx, pair) in plan.pairs.iter().enumerate() {
+            let (x_slot, y_slot) = (pair.x_slot as usize, pair.y_slot as usize);
+            if skip[x_slot] || skip[y_slot] {
                 continue;
-            };
-
-            // Date parsing needs &str; numeric parsing reads bytes directly to avoid an
-            // allocation on every record. Per-cell from_utf8 is a cheap byte scan compared
-            // to the String allocation it replaces, so we no longer pre-stringify needed
-            // columns into a per-record HashMap.
-            let numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
-                let Ok(x_str) = from_utf8(value_bytes_x) else {
-                    cold_path();
-                    continue;
-                };
-                if let Some(cached) = date_cache.get(x_str) {
-                    *cached
-                } else {
-                    let val = parse_date_to_days(x_str, prefer_dmy);
-                    date_cache.insert(x_str.to_string(), val);
-                    val
-                }
-            } else {
-                parse_float_opt_from_bytes(value_bytes_x)
-            };
-
-            let numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
-                let Ok(y_str) = from_utf8(value_bytes_y) else {
-                    cold_path();
-                    continue;
-                };
-                if let Some(cached) = date_cache.get(y_str) {
-                    *cached
-                } else {
-                    let val = parse_date_to_days(y_str, prefer_dmy);
-                    date_cache.insert(y_str.to_string(), val);
-                    val
-                }
-            } else {
-                parse_float_opt_from_bytes(value_bytes_y)
+            }
+            // safety: chunk_stats is built from plan.pairs, so indices line up
+            let Some(stats) = chunk_stats.get_mut(pair_idx) else {
+                cold_path();
+                debug_assert!(false, "chunk_stats missing expected index: {pair_idx}");
+                continue;
             };
 
             // For numeric/date types, update correlation state and collect values
-            if let (Some(x_val), Some(y_val)) = (numeric_value_x, numeric_value_y) {
+            if let (Some(x_val), Some(y_val)) = (num[x_slot], num[y_slot]) {
                 update_correlation_state(&mut stats.correlation_state, x_val, y_val);
                 // Only store values if needed for Spearman/Kendall
                 if needs_all_values {
@@ -2765,6 +2875,8 @@ where
             // Only compute frequency counts if needed for mutual information.
             // This is the only branch that needs owned strings — allocate lazily here.
             if needs_freq_counts {
+                let value_bytes_x = record.get(plan.cols[x_slot].0).unwrap_or(&[]);
+                let value_bytes_y = record.get(plan.cols[y_slot].0).unwrap_or(&[]);
                 let (Ok(x_str_ref), Ok(y_str_ref)) =
                     (from_utf8(value_bytes_x), from_utf8(value_bytes_y))
                 else {
@@ -3067,15 +3179,14 @@ fn compute_all_bivariatestats(
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded(nchunks);
 
-        // Process each chunk in parallel. Share the read-only field-pair map via
-        // Arc instead of deep-cloning the HashMap into every worker. The caller
-        // no longer needs `field_pairs` after this call, so we move it directly
-        // into the Arc — zero map clones. `input_path_string` from above is already
+        // Process each chunk in parallel. Share the read-only plan via Arc instead of
+        // deep-cloning it into every worker. `input_path_string` from above is already
         // UTF-8-validated, so no need to re-validate here.
-        let field_pairs_arc = Arc::new(field_pairs);
+        let plan = build_bivariate_plan(&field_pairs);
+        let plan_arc = Arc::new(plan);
         for i in 0..nchunks {
             let send = send.clone();
-            let field_pairs_arc = Arc::clone(&field_pairs_arc);
+            let plan_arc = Arc::clone(&plan_arc);
             let input_path_string_clone = input_path_string.clone();
             pool.execute(move || {
                 // Open index for this thread. If this fails, propagate an error
@@ -3115,7 +3226,7 @@ fn compute_all_bivariatestats(
 
                 // Process chunk records
                 let it = idx_chunk.byte_records().take(chunk_size);
-                let result = compute_chunk_bivariate(&field_pairs_arc, it, stats_config);
+                let result = compute_chunk_bivariate(&plan_arc, it, stats_config);
                 let _ = send.send((i, result));
             });
         }
@@ -3124,16 +3235,17 @@ fn compute_all_bivariatestats(
 
         // Aggregate results from all chunks
         // Pre-allocate based on idx_count to avoid repeated reallocations during extend
-        let mut all_stats: HashMap<(u16, u16), BivariateChunkStats> = field_pairs_arc
-            .keys()
-            .map(|k| {
+        let mut all_stats: Vec<BivariateChunkStats> = plan_arc
+            .pairs
+            .iter()
+            .map(|_| {
                 let mut stats = BivariateChunkStats::default();
                 // Pre-allocate value vectors with total capacity if needed
                 if needs_all_values {
                     stats.x_values.reserve(idx_count);
                     stats.y_values.reserve(idx_count);
                 }
-                (*k, stats)
+                stats
             })
             .collect();
 
@@ -3165,32 +3277,30 @@ fn compute_all_bivariatestats(
         // in dispatch order and stay deterministic even with the bug present, so a
         // test would have to win a race to catch a regression. Correct by
         // construction instead -- do not delete it as "untested".
-        let mut merge_chunk = |chunk_stats: HashMap<(u16, u16), BivariateChunkStats>| {
-            for (pair_key, stats) in chunk_stats {
-                if let Some(total_stats) = all_stats.get_mut(&pair_key) {
-                    // Merge correlation states (always needed for Pearson/covariance)
-                    total_stats.correlation_state = merge_correlation_states(
-                        &total_stats.correlation_state,
-                        &stats.correlation_state,
-                    );
-                    // Only merge values if needed for Spearman/Kendall
-                    if needs_all_values {
-                        total_stats.x_values.extend(stats.x_values);
-                        total_stats.y_values.extend(stats.y_values);
+        let mut merge_chunk = |chunk_stats: Vec<BivariateChunkStats>| {
+            for (total_stats, stats) in all_stats.iter_mut().zip(chunk_stats) {
+                // Merge correlation states (always needed for Pearson/covariance)
+                total_stats.correlation_state = merge_correlation_states(
+                    &total_stats.correlation_state,
+                    &stats.correlation_state,
+                );
+                // Only merge values if needed for Spearman/Kendall
+                if needs_all_values {
+                    total_stats.x_values.extend(stats.x_values);
+                    total_stats.y_values.extend(stats.y_values);
+                }
+                // Only merge frequency counts if needed for mutual information.
+                // Marginal frequencies are derived from xy_counts at finalization.
+                if needs_freq_counts {
+                    for (joint_key, count) in stats.xy_counts {
+                        *total_stats.xy_counts.entry(joint_key).or_insert(0) += count;
                     }
-                    // Only merge frequency counts if needed for mutual information.
-                    // Marginal frequencies are derived from xy_counts at finalization.
-                    if needs_freq_counts {
-                        for (joint_key, count) in stats.xy_counts {
-                            *total_stats.xy_counts.entry(joint_key).or_insert(0) += count;
-                        }
-                        total_stats.total_pairs += stats.total_pairs;
-                    }
+                    total_stats.total_pairs += stats.total_pairs;
                 }
             }
         };
 
-        let mut pending: Vec<Option<HashMap<(u16, u16), BivariateChunkStats>>> =
+        let mut pending: Vec<Option<Vec<BivariateChunkStats>>> =
             (0..nchunks).map(|_| None).collect();
         let mut next_chunk = 0_usize;
 
@@ -3241,14 +3351,15 @@ fn compute_all_bivariatestats(
         // Finalize statistics from aggregated chunk stats (parallelized)
         let final_stats: HashMap<(u16, u16), BivariateStats> = all_stats
             .into_par_iter()
-            .map(|(pair_key, chunk_stats)| {
+            .zip(plan_arc.pairs.par_iter())
+            .map(|(chunk_stats, pair)| {
                 if let Some(pb) = progress {
                     pb.inc(1);
                 }
                 finalize_bivariate_pair_stats(
-                    pair_key,
+                    pair.key,
                     &chunk_stats,
-                    &field_pairs_arc,
+                    &field_pairs,
                     field_names,
                     cardinality_threshold,
                     stats_config,
@@ -3315,7 +3426,8 @@ fn compute_all_bivariatestats_sequential(
             pb.set_position(processed);
         }
     });
-    let all_stats = compute_chunk_bivariate(field_pairs, it, stats_config)?;
+    let plan = build_bivariate_plan(field_pairs);
+    let all_stats = compute_chunk_bivariate(&plan, it, stats_config)?;
 
     if let Some(pb) = progress {
         pb.set_position(processed);
@@ -3327,9 +3439,10 @@ fn compute_all_bivariatestats_sequential(
 
     all_stats
         .into_iter()
-        .map(|(pair_key, chunk_stats)| {
+        .zip(plan.pairs.iter())
+        .map(|(chunk_stats, pair)| {
             finalize_bivariate_pair_stats(
-                pair_key,
+                pair.key,
                 &chunk_stats,
                 field_pairs,
                 field_names,

@@ -333,6 +333,24 @@ moarstats options:
                            on small inputs and scales with large ones. Mutual information
                            between near-unique columns saturates at log(n) and is noise
                            regardless of how efficiently it is computed.
+    --bivariate-batch <n>  Process at most <n> field pairs per pass over the input,
+                           bounding peak memory to roughly <n> x the chunk count (which
+                           tracks --jobs), at the cost of ceil(pairs / n) extra passes.
+                           Peak memory is otherwise O(columns^2), independent of the row
+                           count: a 160-column, 100k-row (60 MB) input needs ~21 GiB
+                           with mi/nmi/u enabled, more than twice what a 41-column,
+                           1M-row (539 MB) input needs.
+                           Batching that same input into 13 passes cut peak memory
+                           7.6x, to 2.8 GiB, for no measurable wall-clock cost.
+                           Extra passes are cheaper than the scan count suggests: the
+                           dominant per-pair work is done once in total however the
+                           pairs are split, and only the per-record column decode
+                           repeats. Time cost appears once <n> gets small relative to
+                           the column count (on a 20-column file, n=1 tripled the wall
+                           clock), so prefer the largest <n> that fits in memory.
+                           Only applies to the indexed parallel path (>= 10,000 rows).
+                           Set to 0 to process all pairs in one pass (no extra I/O).
+                           [default: 0]
     -J, --join-inputs <files>
                            Additional datasets to join. Comma-separated list of CSV files to join
                            with the primary input.
@@ -401,6 +419,7 @@ struct Args {
     flag_bivariate:             bool,
     flag_bivariate_stats:       String,
     flag_cardinality_threshold: Option<u64>,
+    flag_bivariate_batch:       usize,
     flag_join_inputs:           Option<String>,
     flag_join_keys:             Option<String>,
     flag_join_type:             Option<String>,
@@ -1787,19 +1806,63 @@ struct BivariatePlan {
     pairs: Vec<PairPlan>,
 }
 
-/// Build the shared plan from the field-pair map.
+/// Whether BOTH sides of a pair can ever yield a numeric value.
 ///
-/// Pairs are emitted in sorted key order so that chunk statistics vectors from
-/// different threads line up positionally and merge deterministically.
+/// `x_values`/`y_values` are only pushed when both sides parse numeric, so this is
+/// the gate for reserving them. It is an allocation hint only -- a `Vec` still grows
+/// on demand, so a mistyped column costs a realloc, never a wrong answer.
+fn pair_is_numeric(plan: &BivariatePlan, pair: &PairPlan) -> bool {
+    let numeric = |slot: u32| {
+        plan.cols
+            .get(slot as usize)
+            .is_some_and(|(_, t)| t.is_numeric_or_date_type())
+    };
+    numeric(pair.x_slot) && numeric(pair.y_slot)
+}
+
+/// The canonical pair ordering: every plan, full or partial, walks keys in this order.
+///
+/// `field_pairs.keys()` comes out in `HashMap` order, so sorting is load-bearing rather
+/// than cosmetic -- per-chunk statistics vectors from different threads line up
+/// positionally only because every worker walks the same plan in the same order.
+fn sorted_pair_keys(
+    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+) -> Vec<(u16, u16)> {
+    let mut keys: Vec<(u16, u16)> = field_pairs.keys().copied().collect();
+    keys.sort_unstable();
+    keys
+}
+
+/// Build the shared plan for `keys`.
+///
+/// `keys` MUST be ascending (see `sorted_pair_keys`) and every key must be present in
+/// `field_pairs`. `keys` MAY be a SUBSET of `field_pairs.keys()` -- one batch of a
+/// multi-pass run (`--bivariate-batch`). `field_pairs` is still passed WHOLE, because
+/// `accumulate_freq` needs each pair's cardinalities; only `keys` is partitioned.
+///
+/// A sub-plan's `cols` narrows to just the columns its own pairs touch, numbered
+/// `0..m-1` in first-touch order. That renumbering needs no extra code because
+/// `slot_of`/`cols` are call-local, and nothing outside a plan holds a slot index
+/// across plans: `compute_chunk_bivariate` reads only `plan.cols`/`plan.pairs`, the
+/// merge sizes `global_dicts`/`remap` from `plan.cols.len()`, and
+/// `finalize_bivariate_pair_stats` takes `pair.key`, never a slot.
 ///
 /// `cardinality_threshold` decides, per pair, whether a joint-frequency map is worth
 /// building at all -- see `PairPlan::accumulate_freq`.
+///
+/// `report` controls the two summary log lines. Only the once-per-run full-plan build
+/// passes `true`; per-batch builds pass `false`, because both lines are wrong or
+/// misleading when computed over a subset -- see the comments at each site.
 fn build_bivariate_plan(
     field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    keys: &[(u16, u16)],
     cardinality_threshold: Option<u64>,
+    report: bool,
 ) -> BivariatePlan {
-    let mut keys: Vec<(u16, u16)> = field_pairs.keys().copied().collect();
-    keys.sort_unstable();
+    debug_assert!(
+        keys.is_sorted(),
+        "build_bivariate_plan requires ascending keys; chunk stats align positionally"
+    );
 
     // col_idx -> slot. A column is shared by every pair it appears in, so its type
     // must be a property of the column, not of the pair. That holds because the
@@ -1821,7 +1884,7 @@ fn build_bivariate_plan(
 
     let mut pairs = Vec::with_capacity(keys.len());
     let mut skipped_high_cardinality = 0_usize;
-    for key in keys {
+    for &key in keys {
         // safety: keys came from field_pairs
         let Some((field1_info, field2_info)) = field_pairs.get(&key) else {
             cold_path();
@@ -1830,18 +1893,27 @@ fn build_bivariate_plan(
         let x_slot = slot_for(field1_info.col_idx, field1_info.field_type, &mut cols);
         let y_slot = slot_for(field2_info.col_idx, field2_info.field_type, &mut cols);
 
-        for (slot, info) in [(x_slot, field1_info), (y_slot, field2_info)] {
-            if let Some((_, seen_type)) = cols.get(slot as usize)
-                && *seen_type != info.field_type
-            {
-                cold_path();
-                log::warn!(
-                    "bivariate plan: column index {} appears with conflicting field types \
-                     ({seen_type:?} and {:?}); decoding it as {seen_type:?}. This means two stats \
-                     rows resolved to the same CSV column, which duplicate header names can cause.",
-                    info.col_idx,
-                    info.field_type,
-                );
+        // Gated on `report` because this check is PLAN-LOCAL: `cols.get(slot)` only
+        // sees columns this plan has enumerated, so under batching two conflicting
+        // stats rows landing in different batches would not be compared at all. The
+        // once-per-run full-plan build is the only one that sees every column, so it
+        // is the only one that can detect the conflict -- and letting sub-plans warn
+        // too would emit the same message once per batch anyway.
+        if report {
+            for (slot, info) in [(x_slot, field1_info), (y_slot, field2_info)] {
+                if let Some((_, seen_type)) = cols.get(slot as usize)
+                    && *seen_type != info.field_type
+                {
+                    cold_path();
+                    log::warn!(
+                        "bivariate plan: column index {} appears with conflicting field types \
+                         ({seen_type:?} and {:?}); decoding it as {seen_type:?}. This means two \
+                         stats rows resolved to the same CSV column, which duplicate header names \
+                         can cause.",
+                        info.col_idx,
+                        info.field_type,
+                    );
+                }
             }
         }
 
@@ -1863,7 +1935,10 @@ fn build_bivariate_plan(
         });
     }
 
-    if skipped_high_cardinality > 0 {
+    // Gated on `report` because the denominator is `pairs.len()`, which under batching
+    // is the BATCH size -- "32 of 32 pairs" once per pass is actively misleading, not
+    // merely repetitive. The full-plan build reports the true run-wide figures.
+    if report && skipped_high_cardinality > 0 {
         log::info!(
             "bivariate plan: {skipped_high_cardinality} of {} pairs will not accumulate joint \
              frequencies (cardinality exceeds threshold {:?}); mi/nmi/u are reported empty for \
@@ -2850,17 +2925,9 @@ where
         .iter()
         .map(|pair| {
             let mut stats = BivariateChunkStats::default();
-            let x_numeric = plan
-                .cols
-                .get(pair.x_slot as usize)
-                .is_some_and(|(_, t)| t.is_numeric_or_date_type());
-            let y_numeric = plan
-                .cols
-                .get(pair.y_slot as usize)
-                .is_some_and(|(_, t)| t.is_numeric_or_date_type());
             // Only allocate value vectors if needed for Spearman/Kendall AND both
             // sides can actually yield a numeric value to push.
-            if needs_all_values && x_numeric && y_numeric {
+            if needs_all_values && pair_is_numeric(plan, pair) {
                 stats.x_values.reserve(estimated_capacity);
                 stats.y_values.reserve(estimated_capacity);
             }
@@ -3286,6 +3353,110 @@ fn finalize_bivariate_pair_stats(
     ))
 }
 
+/// Fold one chunk's output into the run-wide accumulators.
+///
+/// Extracted from a closure so it can be called from inside the `--bivariate-batch`
+/// pass loop, where the accumulators are re-created each iteration and a closure's
+/// captures would have to be re-formed with them.
+///
+/// `pending` is deliberately NOT a parameter: the drain loop borrows
+/// `pending.get_mut(next_chunk)` in its `while let` guard while this runs, which only
+/// type-checks because the merge does not also hold it.
+fn merge_bivariate_chunk(
+    chunk: BivariateChunkOutput,
+    plan: &BivariatePlan,
+    all_stats: &mut [BivariateChunkStats],
+    global_dicts: &mut [ValueDict],
+    remap: &mut [Vec<u32>],
+    needs_all_values: bool,
+    needs_freq_counts: bool,
+) -> CliResult<()> {
+    let BivariateChunkOutput {
+        stats: chunk_stats,
+        dicts,
+    } = chunk;
+
+    if needs_freq_counts {
+        // An IndexSet iterates in insertion order, and insertion order IS
+        // symbol order, so pushing each value's global index builds a table
+        // indexable by the chunk-local symbol. Anything that reordered this
+        // iteration would silently corrupt every joint key.
+        for (slot, dict) in dicts.into_iter().enumerate() {
+            let Some(table) = remap.get_mut(slot) else {
+                cold_path();
+                continue;
+            };
+            table.clear();
+            table.reserve(dict.len());
+            for value in dict {
+                // The merged dictionary can exceed any single chunk's, so the
+                // NO_SYM sentinel has to be excluded here too, not just at
+                // intern time.
+                let idx = if let Some(idx) = global_dicts[slot].get_index_of(&value) {
+                    idx
+                } else {
+                    global_dicts[slot].insert_full(value).0
+                };
+                let (Ok(idx_u32), true) = (u32::try_from(idx), idx != NO_SYM as usize) else {
+                    cold_path();
+                    return fail_incorrectusage_clierror!(
+                        "Merged column {} has more than {} distinct values, which exceeds what \
+                         the bivariate joint-frequency encoding can address. Use \
+                         -C/--cardinality-threshold to skip mutual information for \
+                         high-cardinality fields.",
+                        plan.cols.get(slot).map_or(slot, |(c, _)| *c),
+                        NO_SYM
+                    );
+                };
+                table.push(idx_u32);
+            }
+        }
+    }
+
+    for (pair_idx, (total_stats, stats)) in all_stats.iter_mut().zip(chunk_stats).enumerate() {
+        // Merge correlation states (always needed for Pearson/covariance)
+        total_stats.correlation_state =
+            merge_correlation_states(&total_stats.correlation_state, &stats.correlation_state);
+        // Only merge values if needed for Spearman/Kendall
+        if needs_all_values {
+            total_stats.x_values.extend(stats.x_values);
+            total_stats.y_values.extend(stats.y_values);
+        }
+        // Only merge frequency counts if needed for mutual information.
+        // Marginal frequencies are derived from xy_counts at finalization.
+        if needs_freq_counts {
+            let Some(pair) = plan.pairs.get(pair_idx) else {
+                cold_path();
+                continue;
+            };
+            let (Some(x_remap), Some(y_remap)) = (
+                remap.get(pair.x_slot as usize),
+                remap.get(pair.y_slot as usize),
+            ) else {
+                cold_path();
+                continue;
+            };
+            for (joint_key, count) in stats.xy_counts {
+                let x_sym = (joint_key >> 32) as u32;
+                let y_sym = (joint_key & 0xFFFF_FFFF) as u32;
+                let (Some(&gx), Some(&gy)) =
+                    (x_remap.get(x_sym as usize), y_remap.get(y_sym as usize))
+                else {
+                    cold_path();
+                    debug_assert!(false, "joint key references an unknown chunk symbol");
+                    continue;
+                };
+                *total_stats
+                    .xy_counts
+                    .entry(pack_joint_key(gx, gy))
+                    .or_insert(0) += count;
+            }
+            total_stats.total_pairs += stats.total_pairs;
+        }
+    }
+    Ok(())
+}
+
 /// Compute all bivariate statistics
 /// Uses parallel chunked processing when an index is available and there
 /// are more than 10,000 records.
@@ -3299,6 +3470,7 @@ fn compute_all_bivariatestats(
     cardinality_threshold: Option<u64>,
     stats_config: BivariateStatsConfig,
     flag_jobs: Option<usize>,
+    flag_bivariate_batch: usize,
 ) -> CliResult<HashMap<(u16, u16), BivariateStats>> {
     if field_pairs.is_empty() {
         return Ok(HashMap::new());
@@ -3307,6 +3479,18 @@ fn compute_all_bivariatestats(
     // Check what we need based on config
     let needs_all_values = stats_config.needs_all_values();
     let needs_freq_counts = stats_config.needs_frequency_counts();
+
+    // Batching partitions the pairs across repeated passes of the CHUNKED scan, so it
+    // only exists on the indexed parallel path. Say so rather than silently ignoring
+    // the flag -- a user tuning it on a small file would otherwise get no feedback.
+    let warn_batch_ignored = |why: &str| {
+        if flag_bivariate_batch > 0 {
+            log::info!(
+                "--bivariate-batch {flag_bivariate_batch} ignored: {why}, so bivariate statistics \
+                 are computed in a single sequential pass."
+            );
+        }
+    };
 
     // Check if index exists for parallel processing
     let input_path_str = input_path
@@ -3325,6 +3509,9 @@ fn compute_all_bivariatestats(
 
         // Only parallelize if file is large enough
         if idx_count < PARALLEL_THRESHOLD {
+            warn_batch_ignored(&format!(
+                "{idx_count} rows is below the {PARALLEL_THRESHOLD}-row parallel threshold"
+            ));
             // Fall back to sequential for small files
             let mut rdr = rconfig.reader_file()?;
             let _headers = rdr.headers()?.clone();
@@ -3343,253 +3530,37 @@ fn compute_all_bivariatestats(
         let chunk_size = util::chunk_size(idx_count, njobs);
         let nchunks = util::num_of_chunks(idx_count, chunk_size);
 
-        winfo!("Parallelizing bivariate computation: {nchunks} chunks, {njobs} jobs");
+        // The pair ordering is fixed ONCE here. Batches are contiguous slices of it, so
+        // every pass walks its pairs in the same relative order a single pass would --
+        // which is what lets a batched run reproduce an unbatched one.
+        let sorted_keys = sorted_pair_keys(&field_pairs);
+        let npairs = sorted_keys.len();
 
-        // Setup progress bar if requested
-        if let Some(pb) = progress {
-            pb.set_style(
-                ProgressStyle::default_bar()
-                    .template(
-                        "[{elapsed_precise}] [{wide_bar} {percent}%{msg}] ({per_sec} - {eta})",
-                    )
-                    .unwrap(),
+        // `--bivariate-batch 0` means "every pair in one pass". Resolve it to a concrete
+        // slice width BEFORE calling `chunks()`, which PANICS on a width of 0.
+        let batch_size = if flag_bivariate_batch == 0 {
+            npairs
+        } else {
+            flag_bivariate_batch
+        }
+        .clamp(1, npairs.max(1));
+        let nbatches = npairs.div_ceil(batch_size);
+
+        if nbatches > 1 {
+            winfo!(
+                "Parallelizing bivariate computation: {npairs} pairs in {nbatches} passes of up \
+                 to {batch_size} pairs; {nchunks} chunks, {njobs} jobs per pass"
             );
-            pb.set_message(format!(" of {} chunks", HumanCount(nchunks as u64)));
-            pb.set_length(nchunks as u64);
-            log::info!("Progress started... {nchunks} chunks");
+        } else {
+            winfo!("Parallelizing bivariate computation: {nchunks} chunks, {njobs} jobs");
         }
 
-        // Retain freed jemalloc pages for this parallel, hashmap-heavy bivariate
-        // pass (no-op when background_thread is active or QSV_NO_ALLOC_TUNING is set).
-        util::retain_alloc_pages_for_aggregation();
-
-        let pool = ThreadPool::new(njobs);
-        let (send, recv) = crossbeam_channel::bounded(nchunks);
-
-        // Process each chunk in parallel. Share the read-only plan via Arc instead of
-        // deep-cloning it into every worker. `input_path_string` from above is already
-        // UTF-8-validated, so no need to re-validate here.
-        let plan = build_bivariate_plan(&field_pairs, cardinality_threshold);
-        let plan_arc = Arc::new(plan);
-        for i in 0..nchunks {
-            let send = send.clone();
-            let plan_arc = Arc::clone(&plan_arc);
-            let input_path_string_clone = input_path_string.clone();
-            pool.execute(move || {
-                // Open index for this thread. If this fails, propagate an error
-                // through the channel — dropping the chunk silently would
-                // produce incorrect bivariate stats without any indication.
-                let rconfig_chunk = Config::new(Some(&input_path_string_clone));
-                let mut idx_chunk = match rconfig_chunk.indexed() {
-                    Ok(Some(idx)) => idx,
-                    Ok(None) => {
-                        let _ = send.send((
-                            i,
-                            Err(CliError::Other(format!(
-                                "Chunk {i}: index is not available for {input_path_string_clone}"
-                            ))),
-                        ));
-                        return;
-                    },
-                    Err(e) => {
-                        let _ = send.send((
-                            i,
-                            Err(CliError::Other(format!(
-                                "Chunk {i}: failed to open index: {e}"
-                            ))),
-                        ));
-                        return;
-                    },
-                };
-
-                // Seek to chunk start position
-                if let Err(e) = idx_chunk.seek((i * chunk_size) as u64) {
-                    let _ = send.send((
-                        i,
-                        Err(CliError::Other(format!("Chunk {i}: seek failed: {e}"))),
-                    ));
-                    return;
-                }
-
-                // Process chunk records
-                let it = idx_chunk.byte_records().take(chunk_size);
-                let result = compute_chunk_bivariate(&plan_arc, it, stats_config);
-                let _ = send.send((i, result));
-            });
-        }
-
-        drop(send);
-
-        // Aggregate results from all chunks
-        // Pre-allocate based on idx_count to avoid repeated reallocations during extend
-        let mut all_stats: Vec<BivariateChunkStats> = plan_arc
-            .pairs
-            .iter()
-            .map(|_| {
-                let mut stats = BivariateChunkStats::default();
-                // Pre-allocate value vectors with total capacity if needed
-                if needs_all_values {
-                    stats.x_values.reserve(idx_count);
-                    stats.y_values.reserve(idx_count);
-                }
-                stats
-            })
-            .collect();
-
-        // Merge chunk results in ASCENDING chunk order -- never in completion order.
-        //
-        // Merging as results arrive makes the output nondeterministic run-to-run:
-        // `merge_correlation_states` is Welford, which is not associative in floating
-        // point, so pearson/covariance drift in their last digits depending on which
-        // worker finished first; and `x_values`/`y_values` are order-sensitive inputs
-        // to the Spearman/Kendall rankings. Measured on the 1M-row NYC311 benchmark
-        // before this fix: three consecutive runs of the SAME binary on the SAME
-        // input produced three different covariance values.
-        // `compute_outliers_and_kga` already orders its merge for exactly this
-        // reason; this mirrors it.
-        //
-        // This is a reorder buffer rather than a collect-then-merge: a chunk that
-        // arrives early is parked, and each arrival merges every consecutively
-        // numbered chunk that is now ready, so a chunk is freed as soon as its
-        // predecessors are in. Buffering ALL chunks first would be equally
-        // deterministic but measurably costlier -- at 1M rows the chunks finish
-        // seconds apart and holding all 16 sets of 780 maps until the last one landed
-        // raised peak RSS by ~1 GiB. (At 50k rows chunks finish together and the two
-        // are indistinguishable.)
-        //
-        // Deliberately NOT covered by a unit test: reproducing the bug needs chunk
-        // completion order to diverge from dispatch order, which only happens when
-        // chunks are big enough to contend. It reproduces on the 539 MB benchmark,
-        // but synthetic fixtures up to 41 columns / 820 pairs / 50k rows all finish
-        // in dispatch order and stay deterministic even with the bug present, so a
-        // test would have to win a race to catch a regression. Correct by
-        // construction instead -- do not delete it as "untested".
-        // Symbols are chunk-local: each worker interned the values it happened to see,
-        // in the order it saw them, so the same symbol means different things in
-        // different chunks. Before joint counts can be added together they are
-        // translated into one shared numbering, built here in chunk order.
-        let ncols = plan_arc.cols.len();
-        let mut global_dicts: Vec<ValueDict> = (0..ncols).map(|_| ValueDict::default()).collect();
-        // Scratch, reused per chunk: remap[slot][chunk_symbol] = global symbol.
-        let mut remap: Vec<Vec<u32>> = (0..ncols).map(|_| Vec::new()).collect();
-
-        let mut merge_chunk = |chunk: BivariateChunkOutput| -> CliResult<()> {
-            let BivariateChunkOutput {
-                stats: chunk_stats,
-                dicts,
-            } = chunk;
-
-            if needs_freq_counts {
-                // An IndexSet iterates in insertion order, and insertion order IS
-                // symbol order, so pushing each value's global index builds a table
-                // indexable by the chunk-local symbol. Anything that reordered this
-                // iteration would silently corrupt every joint key.
-                for (slot, dict) in dicts.into_iter().enumerate() {
-                    let Some(table) = remap.get_mut(slot) else {
-                        cold_path();
-                        continue;
-                    };
-                    table.clear();
-                    table.reserve(dict.len());
-                    for value in dict {
-                        // The merged dictionary can exceed any single chunk's, so the
-                        // NO_SYM sentinel has to be excluded here too, not just at
-                        // intern time.
-                        let idx = if let Some(idx) = global_dicts[slot].get_index_of(&value) {
-                            idx
-                        } else {
-                            global_dicts[slot].insert_full(value).0
-                        };
-                        let (Ok(idx_u32), true) = (u32::try_from(idx), idx != NO_SYM as usize)
-                        else {
-                            cold_path();
-                            return fail_incorrectusage_clierror!(
-                                "Merged column {} has more than {} distinct values, which exceeds \
-                                 what the bivariate joint-frequency encoding can address. Use \
-                                 -C/--cardinality-threshold to skip mutual information for \
-                                 high-cardinality fields.",
-                                plan_arc.cols.get(slot).map_or(slot, |(c, _)| *c),
-                                NO_SYM
-                            );
-                        };
-                        table.push(idx_u32);
-                    }
-                }
-            }
-
-            for (pair_idx, (total_stats, stats)) in
-                all_stats.iter_mut().zip(chunk_stats).enumerate()
-            {
-                // Merge correlation states (always needed for Pearson/covariance)
-                total_stats.correlation_state = merge_correlation_states(
-                    &total_stats.correlation_state,
-                    &stats.correlation_state,
-                );
-                // Only merge values if needed for Spearman/Kendall
-                if needs_all_values {
-                    total_stats.x_values.extend(stats.x_values);
-                    total_stats.y_values.extend(stats.y_values);
-                }
-                // Only merge frequency counts if needed for mutual information.
-                // Marginal frequencies are derived from xy_counts at finalization.
-                if needs_freq_counts {
-                    let Some(pair) = plan_arc.pairs.get(pair_idx) else {
-                        cold_path();
-                        continue;
-                    };
-                    let (Some(x_remap), Some(y_remap)) = (
-                        remap.get(pair.x_slot as usize),
-                        remap.get(pair.y_slot as usize),
-                    ) else {
-                        cold_path();
-                        continue;
-                    };
-                    for (joint_key, count) in stats.xy_counts {
-                        let x_sym = (joint_key >> 32) as u32;
-                        let y_sym = (joint_key & 0xFFFF_FFFF) as u32;
-                        let (Some(&gx), Some(&gy)) =
-                            (x_remap.get(x_sym as usize), y_remap.get(y_sym as usize))
-                        else {
-                            cold_path();
-                            debug_assert!(false, "joint key references an unknown chunk symbol");
-                            continue;
-                        };
-                        *total_stats
-                            .xy_counts
-                            .entry(pack_joint_key(gx, gy))
-                            .or_insert(0) += count;
-                    }
-                    total_stats.total_pairs += stats.total_pairs;
-                }
-            }
-            Ok(())
-        };
-
-        let mut pending: Vec<Option<BivariateChunkOutput>> = (0..nchunks).map(|_| None).collect();
-        let mut next_chunk = 0_usize;
-
-        for (i, chunk_result) in &recv {
-            let chunk_stats = chunk_result?;
-            if let Some(slot) = pending.get_mut(i) {
-                *slot = Some(chunk_stats);
-            }
-            // Merge the run of chunks that is now contiguous from `next_chunk`.
-            while let Some(slot) = pending.get_mut(next_chunk)
-                && let Some(stats) = slot.take()
-            {
-                merge_chunk(stats)?;
-                next_chunk += 1;
-            }
-
-            // Update progress bar
-            if let Some(pb) = progress {
-                pb.inc(1);
-            }
-        }
-
-        winfo!("Finalizing bivariate statistics...");
-        // Update progress bar for Phase 2: final statistics computation
-        let num_field_pairs = all_stats.len();
+        // ONE monotonic progress bar for the whole run, set up once. The old two-phase
+        // bar called `set_position(0)` between scan and finalize, which under batching
+        // would reset 2 x nbatches times -- and since {eta}/{per_sec} are derived from
+        // elapsed-vs-position, every reset makes them nonsense for the rest of the run.
+        // Length counts both units of work: nbatches x nchunks chunk merges, plus one
+        // tick per pair finalized.
         if let Some(pb) = progress {
             pb.set_style(
                 ProgressStyle::default_bar()
@@ -3599,45 +3570,264 @@ fn compute_all_bivariatestats(
                     .unwrap(),
             );
             pb.set_message(format!(
-                " of {} field pairs",
-                HumanCount(num_field_pairs as u64)
+                " of {} field pairs in {} pass(es)",
+                HumanCount(npairs as u64),
+                HumanCount(nbatches as u64)
             ));
-            pb.set_length(num_field_pairs as u64);
-            pb.set_position(0); // Reset position for Phase 2
-            log::info!("Phase 2 started... {num_field_pairs} field pairs");
+            pb.set_length((nbatches * nchunks + npairs) as u64);
+            log::info!("Progress started... {nbatches} x {nchunks} chunks, {npairs} pairs");
         }
 
-        // Marginal frequencies are derived per pair inside
-        // `finalize_bivariate_pair_stats`, from the same `xy_counts` that MI reads --
-        // so they stay consistent (counted only over rows where both fields are
-        // non-empty) without every pair carrying a pair of maps until finalize runs.
+        // Retain freed jemalloc pages for this parallel, hashmap-heavy bivariate
+        // pass (no-op when background_thread is active or QSV_NO_ALLOC_TUNING is set).
+        //
+        // This is NOT in tension with batching: retained pages are reused by the next
+        // pass rather than returned and re-faulted, so RSS plateaus at the high-water
+        // pass instead of ratcheting up across passes.
+        util::retain_alloc_pages_for_aggregation();
 
-        // Finalize statistics from aggregated chunk stats (parallelized)
-        let final_stats: HashMap<(u16, u16), BivariateStats> = all_stats
-            .into_par_iter()
-            .zip(plan_arc.pairs.par_iter())
-            .map(|(chunk_stats, pair)| {
+        // ONE pool for the whole run. Building it per pass would spawn `njobs` OS
+        // threads every pass (199 x njobs on a 160-column file). Reuse is safe because
+        // a pass fully drains before the next dispatches -- see the drain loop below --
+        // so no two passes' chunk statistics are ever live at the same time.
+        let pool = ThreadPool::new(njobs);
+
+        // The two plan-build diagnostics are only correct run-wide, so when batching is
+        // active they are emitted from one throwaway full-plan build here and suppressed
+        // in the per-pass builds. A `BivariatePlan` is a `Vec<PairPlan>` plus a column
+        // table -- ~16 bytes per pair, no per-row data -- so this costs ~200 KB even at
+        // 12,720 pairs. See `build_bivariate_plan`'s `report` parameter for why each of
+        // the two would otherwise be wrong rather than merely repeated.
+        if nbatches > 1 {
+            drop(build_bivariate_plan(
+                &field_pairs,
+                &sorted_keys,
+                cardinality_threshold,
+                true,
+            ));
+        }
+
+        let mut final_stats: HashMap<(u16, u16), BivariateStats> = HashMap::with_capacity(npairs);
+
+        for (batch_no, batch_keys) in sorted_keys.chunks(batch_size).enumerate() {
+            // Only when batching: a multi-pass run is otherwise silent between the
+            // dispatch message and completion -- minutes, on a large input, for anyone
+            // not using --progressbar. A single pass stays exactly as quiet as before.
+            if nbatches > 1 {
+                winfo!(
+                    "  pass {}/{nbatches} ({} pairs)...",
+                    batch_no + 1,
+                    batch_keys.len()
+                );
+            }
+
+            // Only the KEY LIST is partitioned -- `field_pairs` is passed whole to both
+            // the plan build and the finalize below. `finalize_bivariate_pair_stats`
+            // looks its pair up in this map and hard-errors on a miss, so narrowing it
+            // to the batch would turn into an "Invariant violation", not a wrong number.
+            let plan_arc = Arc::new(build_bivariate_plan(
+                &field_pairs,
+                batch_keys,
+                cardinality_threshold,
+                nbatches == 1,
+            ));
+
+            let (send, recv) = crossbeam_channel::bounded(nchunks);
+
+            // Process each chunk in parallel. Share the read-only plan via Arc instead of
+            // deep-cloning it into every worker. `input_path_string` from above is already
+            // UTF-8-validated, so no need to re-validate here.
+            for i in 0..nchunks {
+                let send = send.clone();
+                let plan_arc = Arc::clone(&plan_arc);
+                let input_path_string_clone = input_path_string.clone();
+                pool.execute(move || {
+                    // Open index for this thread. If this fails, propagate an error
+                    // through the channel — dropping the chunk silently would
+                    // produce incorrect bivariate stats without any indication.
+                    let rconfig_chunk = Config::new(Some(&input_path_string_clone));
+                    let mut idx_chunk = match rconfig_chunk.indexed() {
+                        Ok(Some(idx)) => idx,
+                        Ok(None) => {
+                            let _ = send.send((
+                                i,
+                                Err(CliError::Other(format!(
+                                    "Chunk {i}: index is not available for \
+                                     {input_path_string_clone}"
+                                ))),
+                            ));
+                            return;
+                        },
+                        Err(e) => {
+                            let _ = send.send((
+                                i,
+                                Err(CliError::Other(format!(
+                                    "Chunk {i}: failed to open index: {e}"
+                                ))),
+                            ));
+                            return;
+                        },
+                    };
+
+                    // Seek to chunk start position
+                    if let Err(e) = idx_chunk.seek((i * chunk_size) as u64) {
+                        let _ = send.send((
+                            i,
+                            Err(CliError::Other(format!("Chunk {i}: seek failed: {e}"))),
+                        ));
+                        return;
+                    }
+
+                    // Process chunk records
+                    let it = idx_chunk.byte_records().take(chunk_size);
+                    let result = compute_chunk_bivariate(&plan_arc, it, stats_config);
+                    let _ = send.send((i, result));
+                });
+            }
+
+            drop(send);
+
+            // Everything from here to the end of the pass is sized by THIS BATCH's pair
+            // count, and is dropped when the pass ends. That drop is the memory bound:
+            // peak is O(batch_size x nchunks) rather than O(pairs).
+            let mut all_stats: Vec<BivariateChunkStats> = plan_arc
+                .pairs
+                .iter()
+                .map(|pair| {
+                    let mut stats = BivariateChunkStats::default();
+                    // Pre-allocate value vectors with total capacity if needed.
+                    //
+                    // Gated on BOTH sides being numeric, mirroring `compute_chunk_bivariate`:
+                    // x_values/y_values are only pushed when both sides parse numeric, so
+                    // reserving idx_count for a pair with a non-numeric side reserves capacity
+                    // that can never be filled. This gate was missing here (the closure ignored
+                    // the pair entirely) while the per-chunk twin has always had it -- on the
+                    // 41-column benchmark that reserved for all 780 pairs where only ~36 can
+                    // ever fill, and it scales with pairs x rows (#4360).
+                    if needs_all_values && pair_is_numeric(&plan_arc, pair) {
+                        stats.x_values.reserve(idx_count);
+                        stats.y_values.reserve(idx_count);
+                    }
+                    stats
+                })
+                .collect();
+
+            // Merge chunk results in ASCENDING chunk order -- never in completion order.
+            //
+            // Merging as results arrive makes the output nondeterministic run-to-run:
+            // `merge_correlation_states` is Welford, which is not associative in floating
+            // point, so pearson/covariance drift in their last digits depending on which
+            // worker finished first; and `x_values`/`y_values` are order-sensitive inputs
+            // to the Spearman/Kendall rankings. Measured on the 1M-row NYC311 benchmark
+            // before this fix: three consecutive runs of the SAME binary on the SAME
+            // input produced three different covariance values.
+            // `compute_outliers_and_kga` already orders its merge for exactly this
+            // reason; this mirrors it.
+            //
+            // This is a reorder buffer rather than a collect-then-merge: a chunk that
+            // arrives early is parked, and each arrival merges every consecutively
+            // numbered chunk that is now ready, so a chunk is freed as soon as its
+            // predecessors are in. Buffering ALL chunks first would be equally
+            // deterministic but measurably costlier -- at 1M rows the chunks finish
+            // seconds apart and holding all 16 sets of 780 maps until the last one landed
+            // raised peak RSS by ~1 GiB. (At 50k rows chunks finish together and the two
+            // are indistinguishable.)
+            //
+            // Deliberately NOT covered by a unit test: reproducing the bug needs chunk
+            // completion order to diverge from dispatch order, which only happens when
+            // chunks are big enough to contend. It reproduces on the 539 MB benchmark,
+            // but synthetic fixtures up to 41 columns / 820 pairs / 50k rows all finish
+            // in dispatch order and stay deterministic even with the bug present, so a
+            // test would have to win a race to catch a regression. Correct by
+            // construction instead -- do not delete it as "untested".
+            //
+            // Symbols are chunk-local: each worker interned the values it happened to see,
+            // in the order it saw them, so the same symbol means different things in
+            // different chunks. Before joint counts can be added together they are
+            // translated into one shared numbering, built here in chunk order.
+            //
+            // Batching does NOT perturb any of this. A column's dictionary is built from
+            // first-seen order over the same rows in the same chunks regardless of which
+            // pairs share the pass, so a pair's joint counts -- and therefore mi/nmi/u --
+            // are identical however the pairs are partitioned. Note the subtlety that
+            // makes this hold: `intern_slot` in `compute_chunk_bivariate` is "date column
+            // OR touched by an accumulating pair", NOT "present in plan.cols", so a column
+            // that reaches a pass only via a cardinality-excluded pair goes uninterned
+            // there -- and contributes no joint counts there either, so nothing is lost.
+            let ncols = plan_arc.cols.len();
+            let mut global_dicts: Vec<ValueDict> =
+                (0..ncols).map(|_| ValueDict::default()).collect();
+            // Scratch, reused per chunk: remap[slot][chunk_symbol] = global symbol.
+            let mut remap: Vec<Vec<u32>> = (0..ncols).map(|_| Vec::new()).collect();
+
+            let mut pending: Vec<Option<BivariateChunkOutput>> =
+                (0..nchunks).map(|_| None).collect();
+            let mut next_chunk = 0_usize;
+
+            for (i, chunk_result) in &recv {
+                let chunk_stats = chunk_result?;
+                if let Some(slot) = pending.get_mut(i) {
+                    *slot = Some(chunk_stats);
+                }
+                // Merge the run of chunks that is now contiguous from `next_chunk`.
+                while let Some(slot) = pending.get_mut(next_chunk)
+                    && let Some(stats) = slot.take()
+                {
+                    merge_bivariate_chunk(
+                        stats,
+                        &plan_arc,
+                        &mut all_stats,
+                        &mut global_dicts,
+                        &mut remap,
+                        needs_all_values,
+                        needs_freq_counts,
+                    )?;
+                    next_chunk += 1;
+                }
+
+                // Update progress bar
                 if let Some(pb) = progress {
                     pb.inc(1);
                 }
-                finalize_bivariate_pair_stats(
-                    pair.key,
-                    &chunk_stats,
-                    &field_pairs,
-                    field_names,
-                    cardinality_threshold,
-                    stats_config,
-                )
-            })
-            .collect::<CliResult<HashMap<_, _>>>()?;
+            }
 
-        // Finish progress bar after final statistics computation
+            // Marginal frequencies are derived per pair inside
+            // `finalize_bivariate_pair_stats`, from the same `xy_counts` that MI reads --
+            // so they stay consistent (counted only over rows where both fields are
+            // non-empty) without every pair carrying a pair of maps until finalize runs.
+            //
+            // Finalize has to happen HERE, inside the pass: it consumes `all_stats` by
+            // value, and hoisting it out of the loop would mean keeping every pass's
+            // accumulators alive to the end -- exactly what batching exists to avoid.
+            final_stats.extend(
+                all_stats
+                    .into_par_iter()
+                    .zip(plan_arc.pairs.par_iter())
+                    .map(|(chunk_stats, pair)| {
+                        if let Some(pb) = progress {
+                            pb.inc(1);
+                        }
+                        finalize_bivariate_pair_stats(
+                            pair.key,
+                            &chunk_stats,
+                            &field_pairs,
+                            field_names,
+                            cardinality_threshold,
+                            stats_config,
+                        )
+                    })
+                    .collect::<CliResult<Vec<_>>>()?,
+            );
+        }
+
+        // Finish progress bar after every pass has been finalized.
         if let Some(pb) = progress {
             util::finish_progress(pb);
         }
 
         Ok(final_stats)
     } else {
+        warn_batch_ignored("the input has no index");
         // Sequential fallback when no index exists
         let mut rdr = rconfig.reader_file()?;
         let _headers = rdr.headers()?.clone();
@@ -3690,7 +3880,11 @@ fn compute_all_bivariatestats_sequential(
             pb.set_position(processed);
         }
     });
-    let plan = build_bivariate_plan(field_pairs, cardinality_threshold);
+    // The sort is load-bearing, not cosmetic: `field_pairs.keys()` comes out in
+    // `HashMap` order, and `all_stats` below is zipped positionally against
+    // `plan.pairs`.
+    let sorted_keys = sorted_pair_keys(field_pairs);
+    let plan = build_bivariate_plan(field_pairs, &sorted_keys, cardinality_threshold, true);
     // One chunk, so its symbols are already the only numbering there is -- no remap,
     // and the dictionaries are dropped with the output.
     let all_stats = compute_chunk_bivariate(&plan, it, stats_config)?.stats;
@@ -5534,6 +5728,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 cardinality_threshold,
                 stats_config,
                 args.flag_jobs,
+                args.flag_bivariate_batch,
             );
 
             // Clean up progress bar if it was created
@@ -6949,5 +7144,106 @@ mod tests {
         assert!(!stats_options_redirect_output("-so"));
         assert!(!stats_options_redirect_output("-Eso"));
         assert!(!stats_options_redirect_output("--select output"));
+    }
+
+    /// Build a `field_pairs` map over four columns at `col_idx` 10/20/30/40, with every
+    /// upper-triangle pair present (6 pairs).
+    fn sample_field_pairs() -> HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)> {
+        let info = |col_idx: usize| BivariateFieldInfo {
+            col_idx,
+            field_type: FieldType::TString,
+            stddev: None,
+            variance: None,
+            cardinality: Some(5),
+        };
+        let cols = [10_usize, 20, 30, 40];
+        let mut field_pairs = HashMap::new();
+        for (i, &a) in cols.iter().enumerate() {
+            for &b in &cols[i + 1..] {
+                let (ka, kb) = (
+                    u16::try_from(a).unwrap_or_default(),
+                    u16::try_from(b).unwrap_or_default(),
+                );
+                field_pairs.insert((ka, kb), (info(a), info(b)));
+            }
+        }
+        field_pairs
+    }
+
+    /// A sub-plan must enumerate ONLY the columns its own pairs touch, renumbering their
+    /// slots densely from 0. This is the invariant `--bivariate-batch` rests on: slots
+    /// index into `plan.cols`, and the merge sizes `global_dicts`/`remap` from
+    /// `plan.cols.len()`, so a sub-plan that kept the full-plan numbering would index
+    /// past the end -- or, worse, silently attribute one column's dictionary to another
+    /// and corrupt every joint key.
+    #[test]
+    fn build_bivariate_plan_subset_renumbers_slots() {
+        let field_pairs = sample_field_pairs();
+        let keys = sorted_pair_keys(&field_pairs);
+        assert_eq!(keys.len(), 6);
+
+        let full = build_bivariate_plan(&field_pairs, &keys, None, false);
+        assert_eq!(full.pairs.len(), 6);
+        assert_eq!(full.cols.len(), 4);
+
+        // Take a 2-key slice and check the plan narrows to just those pairs' columns.
+        // (10,20),(10,30) touches 3 of the 4 columns -- deliberately NOT a slice like
+        // (10,40),(20,30), which touches all four and so could not detect narrowing.
+        let batch = &keys[0..2];
+        let sub = build_bivariate_plan(&field_pairs, batch, None, false);
+        assert_eq!(sub.pairs.len(), 2);
+
+        let mut touched: Vec<usize> = batch
+            .iter()
+            .flat_map(|&(a, b)| [a as usize, b as usize])
+            .collect();
+        touched.sort_unstable();
+        touched.dedup();
+        assert_eq!(sub.cols.len(), touched.len());
+        assert!(sub.cols.len() < full.cols.len());
+
+        let mut seen: Vec<usize> = sub.cols.iter().map(|(c, _)| *c).collect();
+        seen.sort_unstable();
+        assert_eq!(seen, touched);
+
+        // Every slot must resolve, within THIS plan, back to the pair's own columns.
+        for (pair, &(ka, kb)) in sub.pairs.iter().zip(batch) {
+            assert_eq!(pair.key, (ka, kb));
+            assert_eq!(sub.cols[pair.x_slot as usize].0, ka as usize);
+            assert_eq!(sub.cols[pair.y_slot as usize].0, kb as usize);
+        }
+    }
+
+    /// Concatenating every batch of a `chunks(k)` partition must reproduce the full
+    /// plan's pair order exactly -- that ordering is what makes a batched run reproduce
+    /// an unbatched one.
+    #[test]
+    fn build_bivariate_plan_batches_cover_every_pair_in_order() {
+        let field_pairs = sample_field_pairs();
+        let keys = sorted_pair_keys(&field_pairs);
+        let full = build_bivariate_plan(&field_pairs, &keys, None, false);
+
+        for k in 1..=keys.len() + 2 {
+            let batched: Vec<(u16, u16)> = keys
+                .chunks(k)
+                .flat_map(|batch| {
+                    build_bivariate_plan(&field_pairs, batch, None, false)
+                        .pairs
+                        .into_iter()
+                        .map(|p| p.key)
+                })
+                .collect();
+            let expected: Vec<(u16, u16)> = full.pairs.iter().map(|p| p.key).collect();
+            assert_eq!(batched, expected, "batch width {k} changed the pair order");
+        }
+    }
+
+    /// `--bivariate-batch` must default to 0, which means "every pair in one pass".
+    /// A non-zero default would silently impose extra passes over the input on every
+    /// existing user.
+    #[test]
+    fn bivariate_batch_defaults_to_zero() {
+        let args: Args = util::get_args(USAGE, &["qsv", "moarstats", "in.csv"]).unwrap();
+        assert_eq!(args.flag_bivariate_batch, 0);
     }
 }

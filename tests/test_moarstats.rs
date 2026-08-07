@@ -4942,6 +4942,117 @@ fn moarstats_bivariate_cardinality_threshold_default_is_relative() {
 }
 
 #[test]
+fn moarstats_bivariate_batch_identical_across_k() {
+    // `--bivariate-batch <n>` processes n field pairs per pass over the input so peak
+    // memory is O(n x chunks) instead of O(columns^2) (#4360). Splitting the pairs
+    // across passes must not change a single byte of the output.
+    //
+    // This is a STRICTER assertion than `moarstats_bivariate_parallel_matches_sequential`
+    // above, which compares only the frequency-derived columns. That test varies the
+    // CHUNK count, so pearson/covariance legitimately differ in their last ulps -- folding
+    // N chunks pairwise is different arithmetic from one streaming pass. Here the chunk
+    // count is pinned and only the PAIR partition varies, so there is no such excuse:
+    //   * pearson/covariance -- same Welford fold order, per pair;
+    //   * spearman/kendall   -- x_values/y_values extended in the same chunk order;
+    //   * mi/nmi/u           -- derived from integer joint counts, and a column's dictionary
+    //     symbols come from first-seen order over the same rows in the same chunks, independent of
+    //     which other pairs share the pass.
+    // So every column must match exactly, and any diff here is diagnostic of something
+    // batch-dependent rather than a reason to loosen this to "approximately equal".
+    //
+    // QSV_MAX_JOBS is pinned across every run for exactly that reason: if the chunk count
+    // were allowed to float, this would fail for the unrelated Welford reason above.
+    let wrk = Workdir::new("moarstats_bivariate_batch");
+
+    // 15,000 rows clears PARALLEL_THRESHOLD (10_000) so the indexed parallel path -- the
+    // only one batching applies to -- is what runs. 5 columns => 10 pairs, so a batch of
+    // 3 is 4 passes and a batch of 1 is 10 passes. Low-cardinality categoricals populate
+    // the joint-frequency maps (mi/nmi/u), numerics drive correlation/spearman/kendall.
+    let mut rows: Vec<Vec<String>> = vec![svec!["cat_a", "cat_b", "cat_c", "num_x", "num_y"]];
+    for i in 0..15_000u32 {
+        rows.push(vec![
+            format!("a{}", i % 7),
+            format!("b{}", i % 11),
+            format!("c{}", i % 13),
+            format!("{:.4}", 100.0 + f64::from(i % 500) * 1.5),
+            format!("{:.4}", 50.0 - f64::from(i % 313) * 0.25),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("data.csv");
+    wrk.assert_success(&mut idx_cmd);
+
+    let shared_opts = "--infer-dates --infer-boolean --cardinality --mode --mad --quartiles \
+                       --percentiles --stats-jsonl";
+
+    let log_dir = wrk.path("batch_logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+
+    // No --force, so the stats cache is built by the first run and reused by the rest --
+    // any difference between the outputs can only come from the bivariate code.
+    let run = |k: &str| -> String {
+        let mut cmd = wrk.command("moarstats");
+        cmd.env("QSV_MAX_JOBS", "2")
+            .env("QSV_LOG_LEVEL", "info")
+            .env("QSV_LOG_DIR", &log_dir)
+            .arg("--bivariate")
+            .args(["--bivariate-stats", "all"])
+            .args(["--jobs", "2"])
+            .args(["--bivariate-batch", k])
+            .args(["--stats-options", shared_opts])
+            .arg("data.csv");
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string("data.stats.bivariate.csv").unwrap()
+    };
+
+    // 0 = every pair in one pass (the default, and today's code path).
+    let unbatched = run("0");
+    assert!(
+        unbatched.contains("mutual_information"),
+        "expected the mi/nmi/u columns, got header:\n{}",
+        unbatched.lines().next().unwrap_or_default()
+    );
+    // 5 columns -> 10 pairs -> 10 data rows + 1 header. Guards against a silently
+    // empty or truncated output satisfying the equality assertions below.
+    assert_eq!(
+        unbatched.lines().filter(|l| !l.trim().is_empty()).count(),
+        11,
+        "expected 1 header + 10 field pairs:\n{unbatched}"
+    );
+
+    for k in ["100", "3", "1"] {
+        assert_eq!(
+            unbatched,
+            run(k),
+            "--bivariate-batch {k} changed the output; batching partitions pairs, not rows, so \
+             every column must be identical to the unbatched run"
+        );
+    }
+
+    // Prove batching actually engaged, rather than every run quietly taking the
+    // single-pass path and making the equality assertions vacuous.
+    let log_name = format!(
+        "{}_rCURRENT.log",
+        wrk.qsv_bin().file_stem().unwrap().to_string_lossy()
+    );
+    let log = std::fs::read_to_string(log_dir.join(&log_name)).unwrap_or_default();
+    let max_passes = log
+        .lines()
+        .filter_map(|l| l.split(" pairs in ").nth(1))
+        .filter_map(|s| s.split(" passes").next())
+        .filter_map(|s| s.trim().parse::<usize>().ok())
+        .max()
+        .unwrap_or(0);
+    assert_eq!(
+        max_passes, 10,
+        "expected --bivariate-batch 1 to report 10 passes over 10 pairs, but the log's highest \
+         pass count was {max_passes}; log ({log_name}):\n{log}"
+    );
+}
+
+#[test]
 fn moarstats_bivariate_skip_states_empty_and_non_utf8() {
     // Pins how EMPTY and INVALID-UTF8 values are excluded from the bivariate
     // frequency counts. This is the guard against a value-encoding change (issue

@@ -2907,21 +2907,30 @@ where
             skip[slot] = false;
 
             if intern_slot[slot] && utf8_ok {
-                let (idx, _) = dicts[slot].insert_full(Box::from(value_bytes));
-                let Ok(idx_u32) = u32::try_from(idx) else {
+                // Probe with the borrowed slice FIRST. `insert_full` takes its key by
+                // value, so building the Box up front would allocate and copy on every
+                // row even when the value is already interned -- exactly the per-row
+                // allocation this encoding exists to remove. Only a miss allocates.
+                let dict = &mut dicts[slot];
+                let idx = if let Some(idx) = dict.get_index_of(value_bytes) {
+                    idx
+                } else {
+                    dict.insert_full(Box::from(value_bytes)).0
+                };
+                // NO_SYM is u32::MAX, so u32::try_from alone is not enough: an index
+                // equal to the sentinel would be read back as "no symbol", silently
+                // dropping the cell from the frequency counts in release builds and,
+                // for a date column, resizing the memo to 4 billion entries.
+                let (Ok(idx_u32), true) = (u32::try_from(idx), idx != NO_SYM as usize) else {
                     cold_path();
                     return fail_incorrectusage_clierror!(
                         "Column {col_idx} has more than {} distinct values, which exceeds what \
                          the bivariate joint-frequency encoding can address. Use \
                          -C/--cardinality-threshold to skip mutual information for \
                          high-cardinality fields.",
-                        u32::MAX
+                        NO_SYM
                     );
                 };
-                debug_assert!(
-                    idx_u32 != NO_SYM,
-                    "symbol collided with the NO_SYM sentinel"
-                );
                 sym[slot] = idx_u32;
             }
 
@@ -3396,8 +3405,16 @@ fn compute_all_bivariatestats(
                     table.clear();
                     table.reserve(dict.len());
                     for value in dict {
-                        let (idx, _) = global_dicts[slot].insert_full(value);
-                        let Ok(idx_u32) = u32::try_from(idx) else {
+                        // The merged dictionary can exceed any single chunk's, so the
+                        // NO_SYM sentinel has to be excluded here too, not just at
+                        // intern time.
+                        let idx = if let Some(idx) = global_dicts[slot].get_index_of(&value) {
+                            idx
+                        } else {
+                            global_dicts[slot].insert_full(value).0
+                        };
+                        let (Ok(idx_u32), true) = (u32::try_from(idx), idx != NO_SYM as usize)
+                        else {
                             cold_path();
                             return fail_incorrectusage_clierror!(
                                 "Merged column {} has more than {} distinct values, which exceeds \
@@ -3405,7 +3422,7 @@ fn compute_all_bivariatestats(
                                  -C/--cardinality-threshold to skip mutual information for \
                                  high-cardinality fields.",
                                 plan_arc.cols.get(slot).map_or(slot, |(c, _)| *c),
-                                u32::MAX
+                                NO_SYM
                             );
                         };
                         table.push(idx_u32);

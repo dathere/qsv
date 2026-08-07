@@ -334,22 +334,13 @@ moarstats options:
                            between near-unique columns saturates at log(n) and is noise
                            regardless of how efficiently it is computed.
     --bivariate-batch <n>  Process at most <n> field pairs per pass over the input,
-                           bounding peak memory to roughly <n> x the chunk count (which
-                           tracks --jobs), at the cost of ceil(pairs / n) extra passes.
-                           Peak memory is otherwise O(columns^2), independent of the row
-                           count: a 160-column, 100k-row (60 MB) input needs ~21 GiB
-                           with mi/nmi/u enabled, more than twice what a 41-column,
-                           1M-row (539 MB) input needs.
-                           Batching that same input into 13 passes cut peak memory
-                           7.6x, to 2.8 GiB, for no measurable wall-clock cost.
-                           Extra passes are cheaper than the scan count suggests: the
-                           dominant per-pair work is done once in total however the
-                           pairs are split, and only the per-record column decode
-                           repeats. Time cost appears once <n> gets small relative to
-                           the column count (on a 20-column file, n=1 tripled the wall
-                           clock), so prefer the largest <n> that fits in memory.
-                           Only applies to the indexed parallel path (>= 10,000 rows).
-                           Set to 0 to process all pairs in one pass (no extra I/O).
+                           bounding peak memory at the cost of extra passes.
+                           Peak memory is otherwise O(columns^2) regardless of row
+                           count - a 160-column, 100k-row (60 MB) input needs ~21 GiB
+                           with mi/nmi/u enabled. Extra passes are cheap, so prefer
+                           the largest <n> that fits.
+                           Only applies to indexed input with >= 10,000 rows.
+                           Set to 0 to process all pairs in one pass.
                            [default: 0]
     -J, --join-inputs <files>
                            Additional datasets to join. Comma-separated list of CSV files to join

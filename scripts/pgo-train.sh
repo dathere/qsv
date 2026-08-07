@@ -181,35 +181,41 @@ t validate "$data"
 t moarstats "$data"
 t moarstats --advanced "$data"
 
-# `--bivariate-stats all` is the memory bomb, not `--bivariate` itself. The default
-# (--bivariate-stats fast = pearson + covariance) uses streaming algorithms and stays cheap,
-# which is why plain `--bivariate` finishes in ~40s. Passing "all" additionally enables
-# mi/nmi/u, and those make EVERY field pair accumulate a joint-frequency
-# HashMap<(String, String), u64> keyed by owned strings: on the 1M-row/41-column training
-# file that is 780 pairs x up to 1M distinct (String, String) keys. (spearman/kendall also
-# keep Vec<f64> value vectors, but x_values.push only fires when both sides parse numeric,
-# so that covers just the ~36 numeric/date pairs - a minor term next to the hashmaps.)
-# The -C/--cardinality-threshold guard that would skip MI for high-cardinality fields
-# defaults to 1000000 - exactly the row count here - so it never engages.
+# `--bivariate-stats all` USED TO BE a memory bomb. The default (--bivariate-stats fast =
+# pearson + covariance) uses streaming algorithms and stays cheap, which is why plain
+# `--bivariate` finishes in ~40s. Passing "all" additionally enables mi/nmi/u, and those make
+# EVERY field pair accumulate a joint-frequency map. Those maps were keyed by owned String
+# pairs -- on the 1M-row/41-column training file, 780 pairs x ~123M joint cells at ~200 bytes
+# each -- and the -C/--cardinality-threshold guard that would have skipped MI for
+# high-cardinality fields defaulted to 1000000, exactly the row count here, so it never
+# engaged.
 #
-# Measured peak RSS: 23.0 GiB. A GitHub hosted runner has 15.57 GiB, so this OOM-kills the runner
-# VM outright; the agent dies, the `t` helper below never sees an exit code, and training
-# just stops. This is not arch-specific - in run 31069999861 BOTH full-training targets
+# Measured peak RSS was 23.0 GiB against a GitHub hosted runner's 15.57 GiB, so it OOM-killed
+# the runner VM outright; the agent died, the `t` helper below never saw an exit code, and
+# training just stopped. Not arch-specific - in run 31069999861 BOTH full-training targets
 # died on this exact command with "runner has received a shutdown signal" / exit 143:
 # aarch64-unknown-linux-gnu (job 92515824811) and x86_64-unknown-linux-gnu (job
-# 92515824877). Windows escapes it only because it trains with --minimal.
+# 92515824877). Windows escaped it only because it trains with --minimal.
 #
-# Train these paths on a bounded slice instead. PGO records WHICH branches execute, not how
-# many rows flow through them, so a slice buys the same profile coverage. The slice is
-# indexed on purpose: compute_all_bivariatestats() only takes the parallel chunked path
-# when an index exists and the row count clears PARALLEL_THRESHOLD (10_000 in
+# FIXED in #4356: joint keys are now a packed pair of u32 symbols from per-column value
+# dictionaries, columns are decoded once per record instead of once per pair, and -C defaults
+# to half the row count (floored at 1000) instead of a fixed 1,000,000. Measured peak RSS on
+# the FULL 1M rows is now 8.05 GiB, well inside a hosted runner, and wall clock went 455s ->
+# 64s. The full file would survive today.
+#
+# The slice stays anyway, for two reasons that have nothing to do with the old OOM:
+#   1. PGO records WHICH branches execute, not how many rows flow through them, so a slice
+#      buys the same profile coverage. Volume was never the point.
+#   2. 8.05 GiB is still ~52% of a hosted runner's RAM. A training harness should not sit that
+#      close to the ceiling when it gains nothing by doing so.
+# The slice is indexed on purpose: compute_all_bivariatestats() only takes the parallel
+# chunked path when an index exists and the row count clears PARALLEL_THRESHOLD (10_000 in
 # src/cmd/moarstats.rs), and that parallel path is the one worth profiling.
 #
-# Peak RSS does NOT scale linearly with rows - 780 pairs x 16 chunks of hashmaps is a large
-# fixed cost - so the slice size was picked by measurement, not arithmetic:
-#   1,000,000 rows -> 23.00 GiB (OOMs the runner)   100,000 -> 7.20 GiB   50,000 -> 4.12 GiB
-#      25,000 rows ->  3.03 GiB                      15,000 -> 2.35 GiB
-# 50k keeps the parallel path (5x PARALLEL_THRESHOLD) at ~26% of a hosted runner's RAM.
+# Peak RSS by slice size, re-measured after #4356 (previous figures in parentheses):
+#   1,000,000 rows -> 8.05 GiB (was 23.00)   200,000 -> 3.01 GiB (was ~11.1)
+#      50,000 rows -> 1.31 GiB (was  4.12)
+# 50k keeps the parallel path (5x PARALLEL_THRESHOLD) at ~8% of a hosted runner's RAM.
 biv_data="$data"
 biv_bounded=0
 if [[ "$minimal" -eq 0 ]]; then
@@ -232,10 +238,11 @@ fi
 t moarstats --bivariate "$biv_data"
 t moarstats --advanced --bivariate "$biv_data"
 
-# The "all" variants are the OOM risk, so run them ONLY against bounded input. Do NOT fall
-# back to the full file when the slice is unavailable - `t` tolerates a SKIPPED command
-# (harmless), but running this on 1M rows re-arms the 23 GiB workload that kills the runner
-# outright, taking the rest of training with it.
+# The "all" variants run ONLY against bounded input. Since #4356 the full file would no
+# longer kill the runner (8.05 GiB vs 15.57 GiB), so this is now headroom rather than
+# survival - but still do NOT fall back to the full file when the slice is unavailable:
+# `t` tolerates a SKIPPED command (harmless), whereas silently promoting training to a
+# 8 GiB, 64s workload trades a no-op for the largest single step in the run.
 if [[ "$biv_bounded" -eq 1 ]]; then
   t moarstats --bivariate --bivariate-stats all "$biv_data"
   t moarstats --advanced --bivariate --bivariate-stats all "$biv_data"

@@ -1655,16 +1655,20 @@ struct CorrelationState {
 }
 
 /// Statistics tracked during bivariate computation for a field pair
+///
+/// Marginal frequencies are deliberately NOT stored here. They are a pure function
+/// of `xy_counts` and are only consumed by MI/NMI/U, so they are derived inside
+/// `finalize_bivariate_pair_stats` instead. Keeping them off this struct means only
+/// the pairs currently being finalized hold marginals, rather than every field pair
+/// holding a pair of maps for the whole run.
 #[derive(Clone, Default)]
 struct BivariateChunkStats {
     correlation_state: CorrelationState,
     x_values:          Vec<f64>, // For Spearman/Kendall (need ranks)
     y_values:          Vec<f64>, // For Spearman/Kendall (need ranks)
-    // Frequency counts for mutual information (more memory efficient than storing all strings)
-    xy_counts:         HashMap<(String, String), u64>, // Joint frequencies
-    x_counts:          HashMap<String, u64>,           // Marginal frequencies for x
-    y_counts:          HashMap<String, u64>,           // Marginal frequencies for y
-    total_pairs:       u64,                            // Total count of pairs
+    // Joint frequencies for mutual information (more memory efficient than storing all strings)
+    xy_counts:         HashMap<(String, String), u64>,
+    total_pairs:       u64, // Total count of pairs
 }
 
 /// Final bivariate statistics for a field pair
@@ -2634,24 +2638,43 @@ where
     let needs_all_values = stats_config.needs_all_values();
     let needs_freq_counts = stats_config.needs_frequency_counts();
 
-    // Initialize statistics for all field pairs
-    // Pre-allocate vectors with estimated capacity (typical chunk size is 1k-10k records)
+    // Initialize statistics for all field pairs.
+    //
+    // These reservations are paid per pair PER CHUNK, so they are a fixed cost of
+    // `field_pairs.len() * nchunks` that does not shrink with the row count. On the
+    // 1M-row/41-column benchmark that is 780 pairs x ~16 chunks, which is why the
+    // measured peak RSS bottomed out around 2.3 GiB even on a 15k-row slice (see
+    // scripts/pgo-train.sh). Over-reserving here is therefore expensive in a way that
+    // is easy to miss. Reserve only what this chunk can actually fill:
+    //
+    //   * x_values/y_values are only pushed when BOTH sides parse numeric, so reserving for a pair
+    //     with a non-numeric side is pure waste. On the benchmark only ~36 of 780 pairs are
+    //     numeric/date on both sides, so the blanket reservation wasted ~95% of ~1 GB.
+    //   * x_counts/y_counts are NEVER written in this function -- the marginals are derived from
+    //     xy_counts at finalize time -- so reserving them here allocated maps that stayed empty for
+    //     the life of the chunk.
+    //
+    // The field_type gate is an allocation hint only: a Vec still grows on demand, so
+    // a mistyped column costs a realloc, never a wrong answer.
     let estimated_capacity = 5000; // Reasonable estimate for chunk processing
     let estimated_unique_strings = estimated_capacity.min(1000); // Estimate for string frequency maps
     let mut chunk_stats: HashMap<(u16, u16), BivariateChunkStats> = field_pairs
-        .keys()
-        .map(|k| {
+        .iter()
+        .map(|(k, (field1_info, field2_info))| {
             let mut stats = BivariateChunkStats::default();
-            // Only allocate value vectors if needed for Spearman/Kendall
-            if needs_all_values {
+            // Only allocate value vectors if needed for Spearman/Kendall AND both
+            // sides can actually yield a numeric value to push.
+            if needs_all_values
+                && field1_info.field_type.is_numeric_or_date_type()
+                && field2_info.field_type.is_numeric_or_date_type()
+            {
                 stats.x_values.reserve(estimated_capacity);
                 stats.y_values.reserve(estimated_capacity);
             }
-            // Only allocate frequency maps if needed for mutual information
+            // Only allocate the joint map if needed for mutual information.
+            // x_counts/y_counts are deliberately NOT reserved here (see above).
             if needs_freq_counts {
                 stats.xy_counts.reserve(estimated_unique_strings);
-                stats.x_counts.reserve(estimated_unique_strings / 2);
-                stats.y_counts.reserve(estimated_unique_strings / 2);
             }
             (*k, stats)
         })
@@ -2786,9 +2809,9 @@ where
 
 /// Finalize per-pair bivariate statistics from an aggregated `BivariateChunkStats`.
 ///
-/// Caller must have already populated marginal frequencies (`x_counts`/`y_counts`)
-/// from `xy_counts` when mutual information / NMI are requested. This function only
-/// reads from `chunk_stats` — it does not mutate frequency maps.
+/// Marginal frequencies are derived here from `chunk_stats.xy_counts` rather than
+/// being supplied by the caller, so they live only for the duration of this call.
+/// This function only reads from `chunk_stats` — it does not mutate it.
 fn finalize_bivariate_pair_stats(
     pair_key: (u16, u16),
     chunk_stats: &BivariateChunkStats,
@@ -2869,6 +2892,26 @@ fn finalize_bivariate_pair_stats(
         }
     };
 
+    // Marginal frequencies, derived from the joint counts. Only MI/NMI/U consume
+    // them, and each is skipped when total_pairs is 0 or the cardinality gate fires,
+    // so deriving them under the same condition avoids building maps nothing reads.
+    // Finalize runs under `into_par_iter`, so this bounds live marginals to roughly
+    // the job count rather than one pair of maps per field pair.
+    let needs_marginals = (stats_config.mi || stats_config.nmi || stats_config.u)
+        && chunk_stats.total_pairs > 0
+        && exceeds_cardinality != Some(true);
+    let (x_counts, y_counts) = if needs_marginals {
+        let mut x_counts: HashMap<String, u64> = HashMap::new();
+        let mut y_counts: HashMap<String, u64> = HashMap::new();
+        for ((x_val, y_val), &count) in &chunk_stats.xy_counts {
+            *x_counts.entry(x_val.clone()).or_insert(0) += count;
+            *y_counts.entry(y_val.clone()).or_insert(0) += count;
+        }
+        (x_counts, y_counts)
+    } else {
+        (HashMap::new(), HashMap::new())
+    };
+
     let mutual_information = if !stats_config.mi || chunk_stats.total_pairs == 0 {
         None
     } else if exceeds_cardinality == Some(true) {
@@ -2877,8 +2920,8 @@ fn finalize_bivariate_pair_stats(
     } else {
         compute_mutual_information_from_counts(
             &chunk_stats.xy_counts,
-            &chunk_stats.x_counts,
-            &chunk_stats.y_counts,
+            &x_counts,
+            &y_counts,
             chunk_stats.total_pairs,
         )
     };
@@ -2899,15 +2942,15 @@ fn finalize_bivariate_pair_stats(
         } else {
             // x = field1, y = field2 (see the `value_bytes_x`/`value_bytes_y` assignment in the
             // pair accumulation).
-            let h_x = compute_entropy_from_counts(&chunk_stats.x_counts, chunk_stats.total_pairs);
-            let h_y = compute_entropy_from_counts(&chunk_stats.y_counts, chunk_stats.total_pairs);
+            let h_x = compute_entropy_from_counts(&x_counts, chunk_stats.total_pairs);
+            let h_y = compute_entropy_from_counts(&y_counts, chunk_stats.total_pairs);
             let mi = if mutual_information.is_some() {
                 mutual_information
             } else {
                 compute_mutual_information_from_counts(
                     &chunk_stats.xy_counts,
-                    &chunk_stats.x_counts,
-                    &chunk_stats.y_counts,
+                    &x_counts,
+                    &y_counts,
                     chunk_stats.total_pairs,
                 )
             };
@@ -3137,24 +3180,10 @@ fn compute_all_bivariatestats(
             log::info!("Phase 2 started... {num_field_pairs} field pairs");
         }
 
-        // Only compute marginal frequencies if we need mutual information
-        if needs_freq_counts {
-            // Compute marginal frequencies from joint frequencies to ensure consistency
-            // This ensures x_counts and y_counts are computed from the same set of records
-            // as xy_counts (only pairs where both fields are non-empty)
-            // This is critical for correct mutual information calculation
-            for chunk_stats in all_stats.values_mut() {
-                // Compute marginal frequencies from joint frequencies
-                // Sum over y to get x_counts, sum over x to get y_counts
-                chunk_stats.x_counts.clear();
-                chunk_stats.y_counts.clear();
-
-                for ((x_val, y_val), &count) in &chunk_stats.xy_counts {
-                    *chunk_stats.x_counts.entry(x_val.clone()).or_insert(0) += count;
-                    *chunk_stats.y_counts.entry(y_val.clone()).or_insert(0) += count;
-                }
-            }
-        }
+        // Marginal frequencies are derived per pair inside
+        // `finalize_bivariate_pair_stats`, from the same `xy_counts` that MI reads --
+        // so they stay consistent (counted only over rows where both fields are
+        // non-empty) without every pair carrying a pair of maps until finalize runs.
 
         // Finalize statistics from aggregated chunk stats (parallelized)
         let final_stats: HashMap<(u16, u16), BivariateStats> = all_stats
@@ -3212,8 +3241,6 @@ fn compute_all_bivariatestats_sequential(
         return Ok(HashMap::new());
     }
 
-    let needs_freq_counts = stats_config.needs_frequency_counts();
-
     // Set up progress bar once before iteration (unknown total, ticks per record).
     if let Some(pb) = progress {
         pb.set_style(
@@ -3235,24 +3262,15 @@ fn compute_all_bivariatestats_sequential(
             pb.set_position(processed);
         }
     });
-    let mut all_stats = compute_chunk_bivariate(field_pairs, it, stats_config)?;
+    let all_stats = compute_chunk_bivariate(field_pairs, it, stats_config)?;
 
     if let Some(pb) = progress {
         pb.set_position(processed);
         util::finish_progress(pb);
     }
 
-    // Compute marginal frequencies from joint frequencies (same as parallel path).
-    if needs_freq_counts {
-        for chunk_stats in all_stats.values_mut() {
-            chunk_stats.x_counts.clear();
-            chunk_stats.y_counts.clear();
-            for ((x_val, y_val), &count) in &chunk_stats.xy_counts {
-                *chunk_stats.x_counts.entry(x_val.clone()).or_insert(0) += count;
-                *chunk_stats.y_counts.entry(y_val.clone()).or_insert(0) += count;
-            }
-        }
-    }
+    // Marginal frequencies are derived per pair inside
+    // `finalize_bivariate_pair_stats` (same as the parallel path).
 
     all_stats
         .into_iter()

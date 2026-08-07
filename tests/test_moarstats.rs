@@ -4809,8 +4809,9 @@ fn moarstats_bivariate_parallel_matches_sequential() {
     // prove the multi-chunk merge actually ran.
     let log_dir = wrk.path("mchunk_logs");
     std::fs::create_dir_all(&log_dir).unwrap();
-    let mut cmd2 = wrk.command("moarstats");
-    cmd2.env("QSV_MAX_JOBS", "2")
+    let mut cmd_2 = wrk.command("moarstats");
+    cmd_2
+        .env("QSV_MAX_JOBS", "2")
         .env("QSV_LOG_LEVEL", "info")
         .env("QSV_LOG_DIR", &log_dir)
         .arg("--bivariate")
@@ -4818,7 +4819,7 @@ fn moarstats_bivariate_parallel_matches_sequential() {
         .args(["--jobs", "2"])
         .args(["--stats-options", shared_opts])
         .arg("data.csv");
-    wrk.assert_success(&mut cmd2);
+    wrk.assert_success(&mut cmd_2);
     let out2 = wrk.read_to_string("data.stats.bivariate.csv").unwrap();
 
     assert_eq!(

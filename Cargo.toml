@@ -510,7 +510,17 @@ plotly = { git = "https://github.com/plotly/plotly.rs", rev = "00fe0512e9f924bd0
 #   1. `with_dns_resolver` lands in a published object_store release AND polars
 #      drops its own [patch.crates-io] object_store override; OR
 #   2. polars feature-gates the with_dns_resolver call so non-cloud consumers
-#      don't need the forked method; OR
+#      don't need the forked method.
+#
+# SECURITY: this patch also pins the tree to the object_store 0.13 line, which
+# pulls quick-xml 0.39.4 and holds RUSTSEC-2026-0194 / -0195 open (both need
+# quick-xml >= 0.41.0). object_store already shipped the fix in 0.14 (0.14.1
+# requires quick-xml ^0.41.0), but polars-io 0.55.2 requires object_store
+# ^0.13.1 and a [patch] must stay semver-compatible with that requirement, so
+# 0.14 cannot be forced in. Both advisories clear when polars-io moves to
+# object_store 0.14 -- revisit this patch then, since polars will likely need
+# the same fork treatment on the 0.14 line. See dathere/qsv#4131 / #4132 and
+# the entries in .cargo/audit.toml.
 object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", rev = "f50a6e5c564b2b5933eca15cd20ff9b5614374a1" }
 
 # pinned to git master for check_interval::UpdateCheckGuard, which is not yet in a

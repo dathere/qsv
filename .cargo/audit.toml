@@ -1,12 +1,19 @@
 # cargo-audit configuration (read by the daily `security-audit.yml` workflow
 # via rustsec/audit-check, and by local `cargo audit` runs).
-
-# All entries below are "unmaintained" advisories (not vulnerabilities) for
-# transitive dependencies that qsv cannot upgrade directly; each clears once the
-# named upstream crate updates. Re-evaluate periodically and drop entries as
-# upstreams migrate.
+#
+# NOTE: cargo-audit only reads `.cargo/audit.toml`. A config at the repo root is
+# silently ignored — an `audit.toml` used to sit there and never took effect.
+# Add all suppressions HERE.
+#
+# Entries are transitive-dependency advisories that qsv cannot resolve directly;
+# each clears once the named upstream crate updates. Re-evaluate periodically and
+# drop entries as upstreams migrate.
 [advisories]
 ignore = [
+    # ---------------------------------------------------------------------
+    # "unmaintained" advisories (informational, not vulnerabilities)
+    # ---------------------------------------------------------------------
+
     # RUSTSEC-2026-0173: proc-macro-error2 is unmaintained.
     # Transitive, build-only (proc-macro) dep, and NOT actually compiled by qsv:
     #   qsv -> jaq-std/jaq-json -> jiff -> defmt (optional) -> defmt-macros -> proc-macro-error2
@@ -30,4 +37,47 @@ ignore = [
     # Build/runtime path for static viz export; clears when plotly's deps move to
     # reqwest 0.12 (which dropped rustls-pemfile 1.x).
     "RUSTSEC-2025-0134",
+
+    # ---------------------------------------------------------------------
+    # vulnerabilities
+    # ---------------------------------------------------------------------
+
+    # RUSTSEC-2026-0235: insufficient archive validation in rkyv 0.7.x can cause
+    # out-of-bounds reads for archives containing Rc/Arc.
+    # NOT actually compiled by qsv:
+    #   qsv (also via spreadsheet-ods, csvs_convert) -> rust_decimal 1.42.1 -> rkyv 0.7.46
+    # `rkyv` is an OPTIONAL dependency of rust_decimal, gated behind its `rkyv`
+    # feature. qsv declares `rust_decimal = { default-features = false }` and none
+    # of the three dependents request that feature, so (feature unification being
+    # global) rkyv 0.7.46 only appears in Cargo.lock and is never built or linked:
+    #   `cargo tree -i rkyv@0.7.46 --all-features` -> empty.
+    # The rkyv that IS compiled (0.8.18, via geosuggest-core/geosuggest-utils/kiddo)
+    # is >= the patched 0.8.17 and unaffected.
+    # rust_decimal 1.42.1 is the latest release, so there is no upgrade available;
+    # it already carries `rkyv-0_8` as a dev-dependency, so this clears when
+    # rust_decimal completes its migration to rkyv 0.8.
+    # See dathere/qsv#4346.
+    "RUSTSEC-2026-0235",
+
+    # RUSTSEC-2026-0194: quadratic run time when checking a start tag for
+    # duplicate attribute names in quick-xml.
+    # RUSTSEC-2026-0195: unbounded namespace-declaration allocation in `NsReader`
+    # enables memory-exhaustion denial of service in quick-xml.
+    #   qsv (also via polars -> polars-io) -> object_store 0.13.2 -> quick-xml 0.39.4
+    # UNLIKE the entries above, this code IS compiled and linked; it is reachable
+    # when parsing XML responses from cloud object stores (s3://, az://).
+    # Both advisories need quick-xml >= 0.41.0. object_store already shipped that
+    # in 0.14.0 (0.14.1 requires quick-xml ^0.41.0) -- the blocker is POLARS, not
+    # object_store: polars-io 0.55.2 (latest) requires object_store ^0.13.1, and
+    # qsv must [patch.crates-io] the 0.13 line to a fork carrying polars' own
+    # `with_dns_resolver` addition (see the patch section in Cargo.toml). A patch
+    # must stay semver-compatible with the requirement, so 0.14 cannot be forced
+    # in. Clears when polars-io moves to object_store 0.14.
+    # See dathere/qsv#4131 / #4132.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
 ]
+
+[yanked]
+enabled = true # Warn for yanked crates in Cargo.lock (default: true)
+update_index = true # Auto-update the crates.io index (default: true)

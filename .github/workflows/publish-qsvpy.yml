@@ -59,7 +59,7 @@ jobs:
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
-            job-timeout: 270
+            job-timeout: 330
           # - os: windows-latest
           #   os-name: windows
           #   target: x86_64-pc-windows-gnu

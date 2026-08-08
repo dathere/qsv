@@ -78,7 +78,7 @@ jobs:
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags:
-            job-timeout: 270
+            job-timeout: 330
           # - os: windows-latest
           #   os-name: windows
           #   target: i686-pc-windows-msvc
@@ -101,7 +101,7 @@ jobs:
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags:
-            job-timeout: 270
+            job-timeout: 330
           # - os: macos-12
           #   os-name: macos
           #   target: x86_64-apple-darwin

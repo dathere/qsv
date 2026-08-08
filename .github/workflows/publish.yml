@@ -32,9 +32,8 @@ jobs:
     runs-on: ${{ matrix.job.os }}
     # Cap each target below GitHub's hard 6h job limit so a stalled build fails as an
     # explicit timeout instead of an opaque "exceeded the maximum execution time" after
-    # burning the full 6h (run 31243109948 did that twice on Windows). Windows gets 270
-    # (its best-known green run is 3h28m); everything else inherits 240 (Linux gnu's
-    # worst observed run is 3h01m).
+    # burning the full 6h (run 31243109948 did that twice on Windows). Windows gets 330;
+    # everything else inherits 240 (Linux gnu ran 177m in run 31261021249).
     timeout-minutes: ${{ matrix.job.job-timeout || 240 }}
     strategy:
       # don't cancel the other target builds if one fails; each platform publishes independently
@@ -100,9 +99,14 @@ jobs:
             pgo: true
             pgo-train-flags: --minimal
             pgo-lto:
-            # Windows is the slowest target: best-known green run is 3h28m. If this cap
-            # is hit, drop `pgo` here before dropping `viz` - it removes a full qsv build.
-            job-timeout: 270
+            # Windows is the slowest target. 330 (not 270) because `qsvmcp` - not `qsv` -
+            # is the most expensive step here: the qsvmcp feature adds get, get_cloud, mcp,
+            # profile and synthesize on top of the polars+viz set this entry builds for
+            # `qsv`. In run 31261021249 the msvc qsv PGO build took 139m and qsvmcp ran
+            # longer still. The old 270 was calibrated on a 3h28m pre-viz baseline that
+            # predates viz being in BOTH builds. If this cap is ever hit, drop `pgo` here
+            # before dropping `viz` - it removes a full qsv build.
+            job-timeout: 330
           # - os: windows-latest
           #   os-name: windows
           #   target: i686-pc-windows-msvc
@@ -135,7 +139,7 @@ jobs:
             pgo-train-flags: --minimal
             pgo-lto:
             # see the msvc entry - Windows is the slowest target.
-            job-timeout: 270
+            job-timeout: 330
           # - os: macos-12
           #   os-name: macos
           #   target: x86_64-apple-darwin

@@ -1,0 +1,220 @@
+name: Publish target (reusable)
+
+# Reusable build-and-publish job for ONE target triple.
+#
+# Callers:
+#   publish.yml          - the full release matrix (all targets)
+#   publish-windows.yml  - Windows only, so a Windows-only failure can be retried
+#                          without rebuilding and re-uploading the other targets
+#
+# Keep the build logic HERE, not in the callers. Before this file existed, publish.yml,
+# publish-portable.yml and publish-qsvpy.yml each carried their own copy of these steps,
+# and they drifted - the viz_static that blew the 6h job cap on Windows (run 31243109948)
+# had to be fixed in three places.
+#
+# NOTE: `timeout-minutes` cannot be set on a job that calls a reusable workflow (the
+# caller may only use name/uses/with/secrets/strategy/needs/if/concurrency/permissions),
+# so the cap lives here and comes in via the `job_timeout` input.
+
+# QSV_KIND must be set HERE, not in the caller: a workflow-level `env` in the calling
+# workflow does NOT propagate into a reusable workflow. Without it build.rs falls back to
+# "compiled" (src/build.rs), which mis-stamps `qsv --version` and breaks the
+# starts_with("prebuilt") check self-update relies on. The PGO step overrides it to
+# prebuilt-pgo at step level.
+env:
+  QSV_KIND: prebuilt
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: runner image, e.g. ubuntu-24.04 / windows-latest
+        type: string
+        required: true
+      os_name:
+        description: linux | windows | macos
+        type: string
+        required: true
+      target:
+        description: target triple
+        type: string
+        required: true
+      previous_tag:
+        description: release tag to build and upload to
+        type: string
+        required: true
+      rust:
+        type: string
+        default: stable
+      addl_build_args:
+        description: "--features=... for the qsv binary"
+        type: string
+        default: ''
+      default_features:
+        description: e.g. --no-default-features
+        type: string
+        default: ''
+      addl_qsvlite_features:
+        type: string
+        default: ''
+      addl_qsvdp_features:
+        type: string
+        default: ''
+      addl_rustflags:
+        type: string
+        default: ''
+      musl_prep:
+        type: boolean
+        default: false
+      pgo:
+        description: PGO-optimize the qsv binary (native runners only)
+        type: boolean
+        default: false
+      pgo_train_flags:
+        type: string
+        default: ''
+      pgo_lto:
+        type: string
+        default: ''
+      job_timeout:
+        description: >-
+          Job cap in minutes. Below GitHub's hard 6h limit so a stalled build fails as an
+          explicit timeout instead of an opaque "exceeded the maximum execution time".
+        type: number
+        default: 240
+    secrets:
+      QSV_ZIPSIGN_PRIV_KEY:
+        required: true
+
+jobs:
+  build:
+    name: ${{ inputs.target }}
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: ${{ inputs.job_timeout }}
+    steps:
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        # NOTE: dtolnay/rust-toolchain does NOT support the actions-rs-style
+        # `profile:`/`override:` inputs (they emit "Unexpected input(s)" warnings
+        # and are ignored). It sets `toolchain` as the rustup DEFAULT, which a
+        # leftover per-directory `rustup override` on a self-hosted runner can
+        # silently win over. The PGO step pins RUSTUP_TOOLCHAIN to guard against that.
+        toolchain: ${{ inputs.rust }}
+        target: ${{ inputs.target }}
+    - name: Checkout repository
+      uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.previous_tag }}
+    - name: apt-get update Ubuntu, libwayland-dev
+      if: ${{ inputs.os_name == 'linux' }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install libwayland-dev
+    - name: build prep for x86_64-unknown-linux-musl
+      if: ${{ inputs.musl_prep }}
+      run: |
+        sudo apt-get install musl-tools musl-dev
+        sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
+    # PGO-optimized qsv build for native-runner targets (issue #1448). build-pgo.sh
+    # runs the instrument -> train -> optimize cycle and leaves the binary in the same
+    # target/<target>/<profile>/ path the "Copy binaries" step globs. QSV_KIND is set to
+    # prebuilt-pgo so `qsv --version` reflects the PGO build (util.rs starts_with("prebuilt")
+    # still treats it as a prebuilt for self-update).
+    - name: Build qsv (PGO)
+      if: ${{ inputs.pgo }}
+      shell: bash
+      env:
+        QSV_KIND: prebuilt-pgo
+        # pin the toolchain for the bare `cargo pgo` invocations in build-pgo.sh;
+        # RUSTUP_TOOLCHAIN beats any leftover per-directory `rustup override` on a
+        # self-hosted runner (which previously forced a stale, sub-MSRV nightly).
+        RUSTUP_TOOLCHAIN: ${{ inputs.rust }}
+        TARGET: ${{ inputs.target }}
+        DEFAULT_FEATURES: ${{ inputs.default_features }}
+        RUSTFLAGS: ${{ inputs.addl_rustflags }}
+        PGO_LTO: ${{ inputs.pgo_lto }}
+        TRAIN_FLAGS: ${{ inputs.pgo_train_flags }}
+        ADDL_BUILD_ARGS: ${{ inputs.addl_build_args }}
+      run: |
+        # strip the leading "--features=" to get the bare comma-separated feature list
+        export QSV_FEATURES="${ADDL_BUILD_ARGS#--features=}"
+        chmod +x scripts/build-pgo.sh scripts/pgo-train.sh
+        ./scripts/build-pgo.sh
+    # actions-rs/cargo is archived/Node20-deprecated (qsv #4002), so invoke cargo directly.
+    # All active targets in this workflow build with plain cargo (no use-cross: true), so the
+    # cross/cargo conditional is unneeded here. `+${{ inputs.rust }}` pins the toolchain to
+    # guard against a stale per-directory rustup override on self-hosted runners (see note above).
+    - name: Build qsv (normal)
+      if: ${{ !inputs.pgo }}
+      env:
+        RUSTFLAGS: ${{ inputs.addl_rustflags }}
+      shell: bash
+      run: cargo +${{ inputs.rust }} build --profile ${{ contains(inputs.addl_build_args, 'luau') && 'release-luau' || 'release' }} --locked --bin qsv --target ${{ inputs.target }} ${{ inputs.addl_build_args }},feature_capable ${{ inputs.default_features }}
+    # NOTE: qsvlite/qsvdp/qsvmcp used to build with RUSTFLAGS=--emit=asm, added in 2022
+    # (f9bc937c4) and later commented out for the qsv step but left on these three.
+    # Nothing consumes the .s files, and with codegen-units=1 + fat LTO it makes rustc
+    # write assembly for the whole crate. On Windows that turned the viz-enabled qsvmcp
+    # build from ~57min (pre-viz baseline) into >190min without finishing, blowing the
+    # job cap in run 31261021249. Do not reintroduce it here; use a local build if you
+    # need the asm.
+    - name: Build qsvlite
+      env:
+        RUSTFLAGS: ${{ inputs.addl_rustflags }}
+      shell: bash
+      run: cargo +${{ inputs.rust }} build --release --locked --bin qsvlite --features=lite,self_update,${{ inputs.addl_qsvlite_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+    - name: Build qsvdp
+      # qsvdp (datapusher_plus) is a Linux deployment helper, so only build it for x86_64
+      # Linux. Skip aarch64-unknown-linux-gnu (its Polars fat-LTO link OOM-kills the hosted
+      # ARM runner — qsvmcp is already excluded there too) and all non-Linux targets.
+      if: ${{ inputs.target != 'aarch64-unknown-linux-gnu' && inputs.os_name == 'linux' }}
+      env:
+        RUSTFLAGS: ${{ inputs.addl_rustflags }}
+      shell: bash
+      run: cargo +${{ inputs.rust }} build --release --locked --bin qsvdp --features=datapusher_plus,${{ inputs.addl_qsvdp_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+    - name: Build qsvmcp
+      if: ${{ inputs.target != 'x86_64-unknown-linux-musl' && inputs.target != 'aarch64-unknown-linux-gnu' }}
+      env:
+        RUSTFLAGS: ${{ inputs.addl_rustflags }}
+      shell: bash
+      run: cargo +${{ inputs.rust }} build --release --locked --bin qsvmcp ${{ inputs.addl_qsvlite_features != '' && format('--features=qsvmcp,{0}', inputs.addl_qsvlite_features) || '--features=qsvmcp' }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+    - name: Copy binaries to working dir
+      shell: bash
+      run: |
+        mkdir qsv-${{ inputs.previous_tag }}
+        # Ship qsv's license and the third-party notices with every archive:
+        # the vendored MIT/BSD components require their notices to travel with copies.
+        cp LICENSE-MIT COPYING THIRD_PARTY_NOTICES.md qsv-${{ inputs.previous_tag }}/
+        # qsv uses release-luau (panic=unwind, qsv #3937) when built with luau, else release; the other bins use release
+        for d in release-luau release; do
+          rm -f target/${{ inputs.target }}/$d/*.d 2>/dev/null || true
+          cp -v target/${{ inputs.target }}/$d/qsv* qsv-${{ inputs.previous_tag }} 2>/dev/null || true
+        done
+    - name: Create README
+      shell: bash
+      run: |
+        cat docs/publishing_assets/README.txt docs/publishing_assets/qsv-${{ inputs.target }}.txt > qsv-${{ inputs.previous_tag }}/README
+    - name: zip up binaries
+      run: 7z a -tzip qsv-${{ inputs.previous_tag }}-${{ inputs.target }}.zip ./qsv-${{ inputs.previous_tag }}/* -mx=9 -mmt=on
+    - name: install zipsign
+      run: |
+        cargo install zipsign
+    - name: Fetch zipsign private key
+      # replaces mobiledevops/secret-to-file-action (Node20-deprecated, qsv #4002):
+      # decode the base64 secret to qsvpriv.key. bash shell + `base64 -d` work on all
+      # runners (incl. Windows git-bash, macOS/BSD). Secret passed via env, not inlined.
+      shell: bash
+      env:
+        ZIPSIGN_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}
+      run: printf '%s' "$ZIPSIGN_KEY" | base64 -d > qsvpriv.key
+    - name: zipsign binary
+      run: |
+        zipsign sign zip qsv-${{ inputs.previous_tag }}-${{ inputs.target }}.zip qsvpriv.key
+    - name: Upload zipped binaries to release
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: qsv-${{ inputs.previous_tag }}-${{ inputs.target }}.zip
+        asset_name: qsv-${{ inputs.previous_tag }}-${{ inputs.target }}.zip
+        overwrite: true
+        tag: ${{ inputs.previous_tag }}

@@ -1,0 +1,117 @@
+name: Publish (Windows only)
+
+# Rebuild and re-upload ONLY the Windows targets for the current release tag.
+#
+# Why this exists: publish.yml rebuilds all five targets, and its upload step runs with
+# overwrite: true. When only Windows fails - which is the common case, since Windows is
+# by far the slowest target - re-running publish.yml also rebuilds and REPLACES the Linux
+# and ARM artifacts that already published successfully. PGO output is not deterministic,
+# so those replacements are not byte-identical to what users may already have downloaded.
+#
+# The two matrix entries below MUST stay identical to publish.yml's Windows entries, or a
+# retry would ship binaries built with different features than the full run would have.
+# scripts/check-publish-matrix-sync.py enforces that and runs in CI - if you edit a Windows
+# entry here or in publish.yml, edit both.
+#
+# Manual dispatch only: a tag push should run the full publish.yml.
+
+# see publish-target.yml - a caller's workflow-level env does NOT reach a reusable
+# workflow, so QSV_KIND is set there, not here.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze-tags:
+    runs-on: ubuntu-22.04
+    outputs:
+      previous-tag: ${{ steps.previoustag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Get previous tag
+        id: previoustag
+        uses: "WyriHaximus/github-action-get-previous-tag@v2"
+
+  publish:
+    name: Publish for ${{ matrix.job.target }}
+    needs: analyze-tags
+    strategy:
+      # don't cancel the other target build if one fails; each publishes independently
+      fail-fast: false
+      matrix:
+        rust: [stable]
+        job:
+          #### KEEP IN SYNC WITH publish.yml (enforced by check-publish-matrix-sync.py) ####
+          - os: windows-latest
+            os-name: windows
+            target: x86_64-pc-windows-msvc
+            architecture: x86_64
+            use-cross: false
+            # viz_static is deliberately absent: it does not finish a Windows release
+            # build inside the 6h job cap (run 31243109948). See Cargo.toml's viz_static
+            # note. Windows ships interactive HTML dashboards, no static image export.
+            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,magika,color,viz
+            # Windows: jemallocator is not supported on Windows, so we use the system allocator.
+            default-features: --no-default-features
+            addl-qsvlite-features:
+            addl-qsvdp-features:
+            addl-rustflags:
+            # native runner - PGO with --minimal training (benchmarks.sh data prep
+            # does not run natively on Windows; train via git-bash on a synthesized CSV)
+            pgo: true
+            pgo-train-flags: --minimal
+            pgo-lto:
+            # Windows is the slowest target. 330 (not 270) because `qsvmcp` - not `qsv` -
+            # is the most expensive step here: the qsvmcp feature adds get, get_cloud, mcp,
+            # profile and synthesize on top of the polars+viz set this entry builds for
+            # `qsv`. In run 31261021249 the msvc qsv PGO build took 139m and qsvmcp ran
+            # longer still. The old 270 was calibrated on a 3h28m pre-viz baseline that
+            # predates viz being in BOTH builds. If this cap is ever hit, drop `pgo` here
+            # before dropping `viz` - it removes a full qsv build.
+            job-timeout: 330
+          - os: windows-latest
+            os-name: windows
+            target: x86_64-pc-windows-gnu
+            architecture: x86_64
+            use-cross: false
+            # viz_static deliberately absent - see the msvc entry above.
+            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,color,viz
+            # Windows: jemallocator is not supported on Windows, so we use the system allocator.
+            default-features: --no-default-features
+            addl-qsvlite-features:
+            addl-qsvdp-features:
+            addl-rustflags:
+            # PGO disabled for windows-gnu: the msvc host cross-compiles to the gnu
+            # target, but rustup's stable rust-std for x86_64-pc-windows-gnu does not
+            # ship the profiler runtime, so PGO instrumentation fails to build
+            # (error[E0463]: can't find crate for `profiler_builtins`). Supplying it
+            # would require nightly + -Zbuild-std. Fall back to a normal optimized
+            # build; PGO stays enabled for msvc + linux + macOS targets.
+            pgo: false
+            pgo-train-flags: --minimal
+            pgo-lto:
+            # see the msvc entry - Windows is the slowest target.
+            job-timeout: 330
+          #### END KEEP IN SYNC ####
+    uses: ./.github/workflows/publish-target.yml
+    with:
+      os: ${{ matrix.job.os }}
+      os_name: ${{ matrix.job.os-name }}
+      target: ${{ matrix.job.target }}
+      previous_tag: ${{ needs.analyze-tags.outputs.previous-tag }}
+      rust: ${{ matrix.rust }}
+      addl_build_args: ${{ matrix.job.addl-build-args }}
+      default_features: ${{ matrix.job.default-features }}
+      addl_qsvlite_features: ${{ matrix.job.addl-qsvlite-features }}
+      addl_qsvdp_features: ${{ matrix.job.addl-qsvdp-features }}
+      addl_rustflags: ${{ matrix.job.addl-rustflags }}
+      # no musl-prep key on the Windows entries (it is musl-only), so pass the literal
+      musl_prep: false
+      pgo: ${{ matrix.job.pgo || false }}
+      pgo_train_flags: ${{ matrix.job.pgo-train-flags }}
+      pgo_lto: ${{ matrix.job.pgo-lto }}
+      job_timeout: ${{ matrix.job.job-timeout || 240 }}
+    secrets:
+      QSV_ZIPSIGN_PRIV_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}

@@ -4,7 +4,7 @@ description: Build an interactive HTML dashboard — a Data Schematic — with c
 argument-hint: "<description> [data source]"
 ---
 
-# /build-dashboard - Build Interactive Dashboards
+# /build-dashboard - Build Interactive Data Schematics
 
 Build a self-contained interactive HTML Data Schematic with charts, filters, tables, and professional styling. Opens directly in a browser -- no server or dependencies required.
 
@@ -168,8 +168,8 @@ Every Data Schematic follows this structure:
     </style>
 </head>
 <body>
-    <div class="Data Schematic-container">
-        <header class="Data Schematic-header">
+    <div class="data-schematic-container">
+        <header class="data-schematic-header">
             <h1>Data Schematic Title</h1>
             <div class="filters">
                 <!-- Filter controls -->
@@ -188,7 +188,7 @@ Every Data Schematic follows this structure:
             <!-- Data table -->
         </section>
 
-        <footer class="Data Schematic-footer">
+        <footer class="data-schematic-footer">
             <span>Data as of: <span id="data-date"></span></span>
         </footer>
     </div>
@@ -198,7 +198,7 @@ Every Data Schematic follows this structure:
         const DATA = [];
 
         // Data Schematic logic
-        class Data Schematic {
+        class DataSchematic {
             constructor(data) {
                 this.rawData = data;
                 this.filteredData = data;
@@ -227,7 +227,7 @@ Every Data Schematic follows this structure:
             // ... methods for each section
         }
 
-        const Data Schematic = new Data Schematic(DATA);
+        const dataSchematic = new DataSchematic(DATA);
     </script>
 </body>
 </html>
@@ -473,7 +473,7 @@ function updateChart(chart, newLabels, newData) {
 ```html
 <div class="filter-group">
     <label for="filter-region">Region</label>
-    <select id="filter-region" onchange="Data Schematic.applyFilters()">
+    <select id="filter-region" onchange="dataSchematic.applyFilters()">
         <option value="all">All Regions</option>
     </select>
 </div>
@@ -504,9 +504,9 @@ function getFilterValue(selectId) {
 ```html
 <div class="filter-group">
     <label>Date Range</label>
-    <input type="date" id="filter-date-start" onchange="Data Schematic.applyFilters()">
+    <input type="date" id="filter-date-start" onchange="dataSchematic.applyFilters()">
     <span>to</span>
-    <input type="date" id="filter-date-end" onchange="Data Schematic.applyFilters()">
+    <input type="date" id="filter-date-end" onchange="dataSchematic.applyFilters()">
 </div>
 ```
 
@@ -650,13 +650,13 @@ body {
     line-height: 1.5;
 }
 
-.Data Schematic-container {
+.data-schematic-container {
     max-width: 1400px;
     margin: 0 auto;
     padding: var(--gap);
 }
 
-.Data Schematic-header {
+.data-schematic-header {
     background: var(--bg-header);
     color: var(--text-on-dark);
     padding: 20px 24px;
@@ -669,7 +669,7 @@ body {
     gap: 12px;
 }
 
-.Data Schematic-header h1 {
+.data-schematic-header h1 {
     font-size: 20px;
     font-weight: 600;
 }
@@ -835,7 +835,7 @@ body {
 
 ```css
 @media (max-width: 768px) {
-    .Data Schematic-header {
+    .data-schematic-header {
         flex-direction: column;
         align-items: flex-start;
     }
@@ -856,7 +856,7 @@ body {
 
 @media print {
     body { background: white; }
-    .Data Schematic-container { max-width: none; }
+    .data-schematic-container { max-width: none; }
     .filters { display: none; }
     .chart-container { break-inside: avoid; }
     .kpi-card { border: 1px solid #dee2e6; box-shadow: none; }

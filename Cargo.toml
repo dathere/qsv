@@ -592,7 +592,7 @@ distrib_features = [
     "viz_static",
 ]
 all_features = ["distrib_features", "magika", "self_update", "ui"]
-qsvmcp = ["feature_capable", "geocode", "get", "get_cloud", "mcp", "polars", "profile", "self_update", "synthesize", "to", "viz_static"]
+qsvmcp = ["feature_capable", "geocode", "get", "get_cloud", "mcp", "polars", "profile", "self_update", "synthesize", "to", "viz"]
 apply = [
     "base62",
     "base64-simd",
@@ -682,6 +682,11 @@ viz = [
 # which drives a headless Chromium/Firefox (webdriver auto-downloaded). Requires a
 # browser at runtime, so keep it out of headless-only publish targets. It also
 # inherits `viz`'s big-endian restriction above (enforced at compile time).
+# DO NOT enable on Windows publish targets: it pulls ~54 extra crates (plotly_static,
+# fantoccini, webdriver-downloader, native-tls, icu_segmenter) and the resulting `qsv`
+# release compilation unit does not finish inside GitHub's 6h job cap — observed under
+# both fat LTO and thin LTO+PGO instrumentation (run 31243109948). This is also why
+# `qsvmcp` uses plain `viz`: publish.yml builds qsvmcp on Windows with --features=qsvmcp.
 viz_static = ["viz", "plotly/static_export_default", "webdriver-downloader"]
 lens = ["csvlens"]
 lite = []

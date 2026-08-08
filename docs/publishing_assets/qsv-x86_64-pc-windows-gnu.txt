@@ -3,4 +3,13 @@ cross-compilation limitations using GitHub's Action Runners.
 
 Compile qsv natively on this platform if you want to use mimalloc.
 
-The `foreach` feature is also not enabled, as it only works on Unix-like OSes.
+The `viz` command is enabled, but the `viz_static` tier is not. `qsv viz` and
+`qsv viz smart` produce self-contained interactive HTML, which is the primary
+output format. Static image export (`-o chart.png`, `.svg`, `.pdf`, `.jpeg`,
+`.webp`) is unavailable on this prebuilt and will report that qsv was not built
+with `viz_static`.
+
+`viz_static` drives a headless Chromium/Firefox via an auto-downloaded webdriver,
+and building it does not complete inside GitHub's Action Runner job limit on
+Windows. Compile qsv natively on this platform with `--features viz_static` if
+you need static image export.

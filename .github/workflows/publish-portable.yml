@@ -27,6 +27,9 @@ jobs:
     name: Publish for ${{ matrix.job.target }}
     needs: analyze-tags
     runs-on: ${{ matrix.job.os }}
+    # see publish.yml - cap below GitHub's hard 6h limit so a stalled build fails as an
+    # explicit timeout rather than burning the full 6h.
+    timeout-minutes: ${{ matrix.job.job-timeout || 240 }}
     strategy:
       matrix:
         rust: [stable]
@@ -67,12 +70,15 @@ jobs:
             target: x86_64-pc-windows-msvc
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,prompt,foreach,viz_static,viz
+            # viz_static deliberately absent on Windows - it does not finish a release
+            # build inside the 6h job cap. See Cargo.toml's viz_static note.
+            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,prompt,foreach,viz
             # Windows: jemallocator is not supported on Windows, so we use the system allocator.
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags:
+            job-timeout: 270
           # - os: windows-latest
           #   os-name: windows
           #   target: i686-pc-windows-msvc
@@ -88,12 +94,14 @@ jobs:
             target: x86_64-pc-windows-gnu
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,prompt,viz,viz_static
+            # viz_static deliberately absent - see the msvc entry above.
+            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,prompt,viz
             # Windows: jemallocator is not supported on Windows, so we use the system allocator.
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags:
+            job-timeout: 270
           # - os: macos-12
           #   os-name: macos
           #   target: x86_64-apple-darwin

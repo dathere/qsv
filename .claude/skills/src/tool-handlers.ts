@@ -780,9 +780,11 @@ export async function handleToolCall(
     }
 
     // viz is HTML-only over MCP. viz infers its output format from the -o
-    // extension, and qsvmcp is built with viz_static — so a non-HTML --output
-    // (.png/.svg/.pdf/.jpeg/.webp) would trigger the browser/webdriver-backed
-    // static-export path, which is intentionally CLI-only. Reject it early.
+    // extension, so a non-HTML --output (.png/.svg/.pdf/.jpeg/.webp) asks for the
+    // browser/webdriver-backed static-export path, which is intentionally CLI-only.
+    // qsvmcp is built with plain `viz` (not `viz_static`), so that path is not even
+    // compiled in — but reject it here anyway to give a clear message instead of
+    // qsv's generic "not built with viz_static" error.
     if (commandName === "viz" && outputFile && !isHelpRequest) {
       const lastDot = outputFile.lastIndexOf(".");
       const lastSep = Math.max(outputFile.lastIndexOf("/"), outputFile.lastIndexOf("\\"));

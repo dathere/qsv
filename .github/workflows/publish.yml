@@ -42,7 +42,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,to,lens,prompt,magika,color,viz_static,viz
+            addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,to,lens,prompt,magika,color,viz_static,viz,profile,synthesize
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
@@ -57,7 +57,7 @@ jobs:
             architecture: x86_64
             musl-prep: true
             use-cross: false
-            addl-build-args: --features=apply,fetch,foreach,self_update,lens,color
+            addl-build-args: --features=apply,fetch,foreach,self_update,lens,color,synthesize
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
@@ -160,7 +160,7 @@ jobs:
             architecture: aarch64
             # build natively on GitHub's hosted ARM runner instead of QEMU cross-compiling
             use-cross: false
-            addl-build-args: --features=apply,fetch,foreach,self_update,lens,color
+            addl-build-args: --features=apply,fetch,foreach,self_update,lens,color,synthesize
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:

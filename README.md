@@ -225,15 +225,24 @@ scoop install qsv
 # Void Linux (https://voidlinux.org/packages/?arch=x86_64&q=qsv)
 sudo xbps-install qsv
 
+# WinGet on Windows (https://github.com/microsoft/winget-pkgs)
+winget install datHere.qsv
+
 # Conda-forge (https://anaconda.org/conda-forge/qsv)
 conda install conda-forge::qsv
 ```
+
+The WinGet package installs the same x86_64 Windows archive as the prebuilt binaries above, putting
+`qsv`, `qsvlite` and `qsvmcp` on your PATH. The archive's other binaries are extracted alongside them
+— notably `qsvp.exe`, the portable build to fall back on if you get an `Illegal instruction (SIGILL)`
+error on an older CPU. Prefer `winget upgrade datHere.qsv` over qsv's own `qsv --update`, as the
+latter leaves WinGet's recorded version stale.
 
 Note that qsv provided by these package managers/distros enable different features (Homebrew, for instance, enables the `apply`, `fetch`, `foreach`, `geocode`, `lens`, `luau` and `to` features. However, it does automatically install shell completion for `bash`, `fish` and `zsh` shells).
 
 To find out what features are enabled in a package/distro's qsv, run `qsv --version` ([more info](https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#version-details)).
 
-In the true spirit of open source, these packages are maintained by volunteers who wanted to make qsv easier to install in various environments. They are much appreciated, and we loosely collaborate with the package maintainers through GitHub, but know that these packages are maintained by third-parties.
+In the true spirit of open source, these packages are maintained by volunteers who wanted to make qsv easier to install in various environments. They are much appreciated, and we loosely collaborate with the package maintainers through GitHub, but know that these packages are maintained by third-parties. The exceptions are the WinGet package above and the Debian package below, which datHere maintains.
 
 #### Debian package
 datHere also maintains a Debian package targeting the latest Ubuntu LTS on x86_64 architecture to make it easier to install qsv with DataPusher+.

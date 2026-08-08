@@ -6,8 +6,10 @@ on:
       - '*'
   workflow_dispatch:
 
-env:
-  QSV_KIND: prebuilt
+# NOTE: QSV_KIND is deliberately NOT set here. The build now happens in the reusable
+# publish-target.yml, and a caller's workflow-level env does NOT propagate into a reusable
+# workflow - setting it here would look effective while build.rs silently fell back to
+# "compiled". It is set in publish-target.yml instead.
 
 jobs:
   analyze-tags:
@@ -29,12 +31,6 @@ jobs:
   publish:
     name: Publish for ${{ matrix.job.target }}
     needs: analyze-tags
-    runs-on: ${{ matrix.job.os }}
-    # Cap each target below GitHub's hard 6h job limit so a stalled build fails as an
-    # explicit timeout instead of an opaque "exceeded the maximum execution time" after
-    # burning the full 6h (run 31243109948 did that twice on Windows). Windows gets 330;
-    # everything else inherits 240 (Linux gnu ran 177m in run 31261021249).
-    timeout-minutes: ${{ matrix.job.job-timeout || 240 }}
     strategy:
       # don't cancel the other target builds if one fails; each platform publishes independently
       fail-fast: false
@@ -205,127 +201,28 @@ jobs:
           #   addl-qsvlite-features:
           #   addl-qsvdp-features:
           #   addl-rustflags:
-
-    steps:
-    - name: Installing Rust toolchain
-      uses: dtolnay/rust-toolchain@master
-      with:
-        # NOTE: dtolnay/rust-toolchain does NOT support the actions-rs-style
-        # `profile:`/`override:` inputs (they emit "Unexpected input(s)" warnings
-        # and are ignored). It sets `toolchain` as the rustup DEFAULT, which a
-        # leftover per-directory `rustup override` on a self-hosted runner can
-        # silently win over. The PGO step pins RUSTUP_TOOLCHAIN to guard against that.
-        toolchain: ${{ matrix.rust }}
-        target: ${{ matrix.job.target }}
-    - name: Checkout repository
-      uses: actions/checkout@v7
-      with:
-        ref: ${{ needs.analyze-tags.outputs.previous-tag }}
-    - name: apt-get update Ubuntu, libwayland-dev
-      if: ${{ matrix.job.os-name == 'linux' }}
-      run: |
-        sudo apt-get update
-        sudo apt-get install libwayland-dev
-    - name: build prep for x86_64-unknown-linux-musl
-      if: ${{ matrix.job.musl-prep }}
-      run: |
-        sudo apt-get install musl-tools musl-dev
-        sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
-    # PGO-optimized qsv build for native-runner targets (issue #1448). build-pgo.sh
-    # runs the instrument -> train -> optimize cycle and leaves the binary in the same
-    # target/<target>/<profile>/ path the "Copy binaries" step globs. QSV_KIND is set to
-    # prebuilt-pgo so `qsv --version` reflects the PGO build (util.rs starts_with("prebuilt")
-    # still treats it as a prebuilt for self-update).
-    - name: Build qsv (PGO)
-      if: ${{ matrix.job.pgo }}
-      shell: bash
-      env:
-        QSV_KIND: prebuilt-pgo
-        # pin the toolchain for the bare `cargo pgo` invocations in build-pgo.sh;
-        # RUSTUP_TOOLCHAIN beats any leftover per-directory `rustup override` on a
-        # self-hosted runner (which previously forced a stale, sub-MSRV nightly).
-        RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
-        TARGET: ${{ matrix.job.target }}
-        DEFAULT_FEATURES: ${{ matrix.job.default-features }}
-        RUSTFLAGS: ${{ matrix.job.addl-rustflags }}
-        PGO_LTO: ${{ matrix.job.pgo-lto }}
-        TRAIN_FLAGS: ${{ matrix.job.pgo-train-flags }}
-        ADDL_BUILD_ARGS: ${{ matrix.job.addl-build-args }}
-      run: |
-        # strip the leading "--features=" to get the bare comma-separated feature list
-        export QSV_FEATURES="${ADDL_BUILD_ARGS#--features=}"
-        chmod +x scripts/build-pgo.sh scripts/pgo-train.sh
-        ./scripts/build-pgo.sh
-    # actions-rs/cargo is archived/Node20-deprecated (qsv #4002), so invoke cargo directly.
-    # All active targets in this workflow build with plain cargo (no use-cross: true), so the
-    # cross/cargo conditional is unneeded here. `+${{ matrix.rust }}` pins the toolchain to
-    # guard against a stale per-directory rustup override on self-hosted runners (see note above).
-    - name: Build qsv (normal)
-      if: ${{ !matrix.job.pgo }}
-      # env:
-      #   RUSTFLAGS: --emit=asm
-      env:
-        RUSTFLAGS: ${{ matrix.job.addl-rustflags }}
-      shell: bash
-      run: cargo +${{ matrix.rust }} build --profile ${{ contains(matrix.job.addl-build-args, 'luau') && 'release-luau' || 'release' }} --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
-    - name: Build qsvlite
-      env:
-        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
-      shell: bash
-      run: cargo +${{ matrix.rust }} build --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
-    - name: Build qsvdp
-      # qsvdp (datapusher_plus) is a Linux deployment helper, so only build it for x86_64
-      # Linux. Skip aarch64-unknown-linux-gnu (its Polars fat-LTO link OOM-kills the hosted
-      # ARM runner — qsvmcp is already excluded there too) and all non-Linux targets.
-      if: ${{ matrix.job.target != 'aarch64-unknown-linux-gnu' && matrix.job.os-name == 'linux' }}
-      env:
-        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
-      shell: bash
-      run: cargo +${{ matrix.rust }} build --release --locked --bin qsvdp --features=datapusher_plus,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
-    - name: Build qsvmcp
-      if: ${{ matrix.job.target != 'x86_64-unknown-linux-musl' && matrix.job.target != 'aarch64-unknown-linux-gnu' }}
-      env:
-        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
-      shell: bash
-      run: cargo +${{ matrix.rust }} build --release --locked --bin qsvmcp ${{ matrix.job.addl-qsvlite-features != '' && format('--features=qsvmcp,{0}', matrix.job.addl-qsvlite-features) || '--features=qsvmcp' }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
-    - name: Copy binaries to working dir
-      shell: bash
-      run: |
-        mkdir qsv-${{ needs.analyze-tags.outputs.previous-tag }}
-        # Ship qsv's license and the third-party notices with every archive:
-        # the vendored MIT/BSD components require their notices to travel with copies.
-        cp LICENSE-MIT COPYING THIRD_PARTY_NOTICES.md qsv-${{ needs.analyze-tags.outputs.previous-tag }}/
-        # qsv uses release-luau (panic=unwind, qsv #3937) when built with luau, else release; the other bins use release
-        for d in release-luau release; do
-          rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
-          cp -v target/${{ matrix.job.target }}/$d/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }} 2>/dev/null || true
-        done
-    - name: Create README
-      shell: bash
-      run: |
-        cat docs/publishing_assets/README.txt docs/publishing_assets/qsv-${{ matrix.job.target }}.txt > qsv-${{ needs.analyze-tags.outputs.previous-tag }}/README
-    - name: zip up binaries
-      run: 7z a -tzip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip ./qsv-${{ needs.analyze-tags.outputs.previous-tag }}/* -mx=9 -mmt=on
-    - name: install zipsign
-      run: |
-        cargo install zipsign
-    - name: Fetch zipsign private key
-      # replaces mobiledevops/secret-to-file-action (Node20-deprecated, qsv #4002):
-      # decode the base64 secret to qsvpriv.key. bash shell + `base64 -d` work on all
-      # runners (incl. Windows git-bash, macOS/BSD). Secret passed via env, not inlined.
-      shell: bash
-      env:
-        ZIPSIGN_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}
-      run: printf '%s' "$ZIPSIGN_KEY" | base64 -d > qsvpriv.key
-    - name: zipsign binary
-      run: |
-        zipsign sign zip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip qsvpriv.key
-    - name: Upload zipped binaries to release
-      uses: svenstaro/upload-release-action@v2
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip
-        asset_name: qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip
-        overwrite: true
-        tag: ${{ needs.analyze-tags.outputs.previous-tag }}    
- 
+    # The build steps live in the reusable publish-target.yml so publish-windows.yml can
+    # rebuild ONLY the Windows targets without re-running - and re-uploading - the others.
+    # `timeout-minutes` is not a legal key on a job that calls a reusable workflow, so the
+    # cap is passed as the job_timeout input instead.
+    uses: ./.github/workflows/publish-target.yml
+    with:
+      os: ${{ matrix.job.os }}
+      os_name: ${{ matrix.job.os-name }}
+      target: ${{ matrix.job.target }}
+      previous_tag: ${{ needs.analyze-tags.outputs.previous-tag }}
+      rust: ${{ matrix.rust }}
+      addl_build_args: ${{ matrix.job.addl-build-args }}
+      default_features: ${{ matrix.job.default-features }}
+      addl_qsvlite_features: ${{ matrix.job.addl-qsvlite-features }}
+      addl_qsvdp_features: ${{ matrix.job.addl-qsvdp-features }}
+      addl_rustflags: ${{ matrix.job.addl-rustflags }}
+      # `|| false` / `|| 240`: these keys are absent on most matrix entries, and an empty
+      # string is not a legal value for a typed boolean/number input.
+      musl_prep: ${{ matrix.job.musl-prep || false }}
+      pgo: ${{ matrix.job.pgo || false }}
+      pgo_train_flags: ${{ matrix.job.pgo-train-flags }}
+      pgo_lto: ${{ matrix.job.pgo-lto }}
+      job_timeout: ${{ matrix.job.job-timeout || 240 }}
+    secrets:
+      QSV_ZIPSIGN_PRIV_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}

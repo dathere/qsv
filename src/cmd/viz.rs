@@ -25,8 +25,9 @@ auto-hidden when stderr is not a terminal (e.g. piped or redirected). Set the QS
 environment variable to a falsy value (0/false/off) to disable it.
 
 Chart types (subcommands):
-    smart       Auto-dashboard. Picks an appropriate chart per column from the
-                dataset's statistics & frequency distribution (no --x/--y needed).
+    smart       Auto-dashboard (Data Schematic). Picks an appropriate chart per
+                column from the dataset's statistics & frequency distribution
+                (no --x/--y needed).
     bar         Bar chart.        --x = category column, --y = value column.
     line        Line chart.       --x = x column, --y = y column.
     scatter     Scatter plot.     --x = x column, --y = y column.
@@ -99,8 +100,8 @@ panels, so no --x/--y is needed:
     - low-cardinality / boolean -> frequency bar chart
     - ID-like (near-unique) and all-empty columns are skipped
 
-  Overview panels (each leads the dashboard on its own full-width row):
-    - KPI overview row (leads the dashboard when the dataset has headline numeric
+  Overview panels (each leads the Data Schematic on its own full-width row):
+    - KPI overview row (leads the Data Schematic when the dataset has headline numeric
       measures): a strip of "big number" tiles, one per headline measure (summed
       for extensive quantities, averaged for intensive ones). A measure tile
       becomes a GAUGE when the dictionary supplies a validated `x-qsv.gauge_range`
@@ -328,7 +329,7 @@ viz options:
                            the rendered chart carries an on-screen "node order" button to
                            flip between the two layouts, and link ribbons are always
                            colored by their source node. Applies to the `sankey` chart
-                           and the `smart` dashboard flow panel.
+                           and the `smart` Data Schematic flow panel.
     --bins <n>             Number of bins. For histogram: bins along the x-axis
                            (default: auto). For contour: the per-axis resolution of
                            the density grid (default: 20).
@@ -348,7 +349,7 @@ viz options:
                            still real Tukey whiskers). For `viz box` the default is
                            outliers. For `viz smart` this flag OVERRIDES the default
                            size-based heuristic, which overlays all points on a column
-                           with few non-null values (<=1,000) — unless the dashboard has
+                           with few non-null values (<=1,000) — unless the Data Schematic has
                            more than 8 panels, where all-points cells turn to noise, so
                            the overlay drops to outliers-only — and only the outliers
                            for a medium one (<=10,000 values). Above that, a
@@ -462,7 +463,7 @@ choropleth options:
                            cannot be combined with --no-snap.
 
 smart options:
-    --max-charts <n>       Maximum number of panels in the dashboard. 0 (the default)
+    --max-charts <n>       Maximum number of panels in the Data Schematic. 0 (the default)
                            means auto: draw every eligible column (up to 64), for both
                            HTML and static image export (png/svg/pdf/...). Up to 8
                            cartesian panels render as one typed subplot grid; beyond 8,
@@ -471,11 +472,11 @@ smart options:
                            one image. Set a positive <n> to cap the panel count instead.
                            Eligible columns beyond the cap are reported but not drawn.
                            [default: 0]
-    --grid-cols <n>        Number of columns in the dashboard grid for the per-column
+    --grid-cols <n>        Number of columns in the Data Schematic grid for the per-column
                            distribution panels. Overview panels (map/geo, correlation,
                            time-series) always span the full width. [default: 2]
     --preview-threshold <n>  Row threshold for the interactive data viewer drawer of
-                           HTML dashboards. Next to the row count in the dashboard
+                           HTML dashboards. Next to the row count in the Data Schematic
                            metadata, an "(Explore)" link opens the underlying table
                            in a bottom drawer (with global, per-column and builder
                            search) when the dataset has at most <n> rows and ALL rows
@@ -522,7 +523,7 @@ smart options:
                            served by the ordinary browser cache.
                            OFF by default, and deliberately so: images load from whatever
                            third-party host the DATA names, so enabling this makes everyone
-                           who opens the dashboard request those URLs directly (revealing
+                           who opens the Data Schematic request those URLs directly (revealing
                            their IP to that host). Nothing is fetched until a viewer dwells.
                            Embedding every mapped point's URLs also grows the HTML. Applies to
                            HTML output only - static image exports (PNG/SVG/PDF) are
@@ -536,7 +537,7 @@ smart options:
                            categories were rolled up) and is shown by default. When just
                            ONE category is left over, it is charted under its own name
                            instead of as an opaque "Other (1)" bar.
-    --smarter              Before building the dashboard, run `qsv moarstats --advanced`
+    --smarter              Before building the Data Schematic, run `qsv moarstats --advanced`
                            to enrich the stats cache with distribution-shape statistics
                            (bimodality, entropy, skewness, outlier share, Gini). This unlocks
                            histograms for bimodal columns, frequency bars for concentrated
@@ -550,7 +551,7 @@ smart options:
                            in map hovers, with or without --smarter. Only affects `smart`.
                            Applied only with default
                            parsing; inputs using --no-headers or a custom --delimiter
-                           fall back to the standard dashboard.
+                           fall back to the standard Data Schematic.
     --hierarchy-style <k>  For `smart`, the chart used for the categorical part-to-whole
                            hierarchy panel (built when 2+ low-cardinality dimensions exist).
                            One of: auto (default), treemap, sunburst, icicle. auto follows
@@ -578,7 +579,7 @@ smart options:
                            Set QSV_VIZ_DICT_FRESH=1 to ignore an existing sidecar and bypass
                            describegpt's completion cache, forcing a genuinely fresh inference
                            that overwrites the sidecar on success.
-                           Generation/read failures soft-fall back to the stats-only dashboard.
+                           Generation/read failures soft-fall back to the stats-only Data Schematic.
                            The dictionary also drives the KPI overview row via two optional
                            per-field hints in a property's "x-qsv" object (edit them in the saved
                            schema to fine-tune). A "gauge_range" of [min, max] on a continuous
@@ -619,31 +620,31 @@ smart options:
                            (a glossary, README, data dictionary, PDF, etc.) forwarded to
                            describegpt as --context-file when `--dictionary infer` generates the
                            dictionary. Better context yields better role/concept/label/grain
-                           tags, hence a better dashboard. Ignored unless `--dictionary infer`
+                           tags, hence a better Data Schematic. Ignored unless `--dictionary infer`
                            is used (it does not apply when reading an existing dictionary file).
                            Only affects `smart`.
     --dict-info            When a usable Data Dictionary is available (per --dictionary), add
-                           a "Data Dictionary" link beneath the dashboard title and an info
+                           a "Data Dictionary" link beneath the Data Schematic title and an info
                            icon on each panel title: hovering shows that column's dictionary
                            description; clicking opens a human-friendly rendering of the
                            dictionary in a side drawer NEXT TO the plots (embedded in the
-                           dashboard file - no extra file is written), scrolled to and
+                           Data Schematic file - no extra file is written), scrolled to and
                            highlighting that column's entry. The drawer is open by default
                            on load and can be dismissed with its close button or Esc. The
                            dictionary page carries a
                            role-tinted table of contents and per-column "View chart" links
                            back to the panels, plus a row of download buttons: the
                            dictionary itself as JSON Schema, the frequency counts the
-                           dashboard actually charted, and every generated sidecar this run
+                           Data Schematic actually charted, and every generated sidecar this run
                            read (the stats cache and its metadata, the frequency cache when
                            it was reused, and the bivariate stats CSV when freshly written).
                            A sidecar qsv wrote but viz never read - the human-readable
                            <stem>.stats.csv - is NOT offered, since nothing can show it
-                           describes the same computation the dashboard used.
+                           describes the same computation the Data Schematic used.
                            Every file is BUNDLED into the HTML, so anyone you send the
-                           dashboard to can download them with no access to your machine;
+                           Data Schematic to can download them with no access to your machine;
                            absolute local paths are stripped from the embedded metadata so
-                           sharing a dashboard doesn't disclose your directory layout.
+                           sharing a Data Schematic doesn't disclose your directory layout.
                            Sidecars over 4 MB are skipped with a note.
                            The drawer's popout button opens the same
                            document in its own browser tab instead (needs a browser that
@@ -653,7 +654,7 @@ smart options:
     --dataset-pid <value>  A persistent identifier (PID) for the dataset - typically a full
                            URL such as a DOI (https://doi.org/10.1234/abc) or other citable
                            link. When set, a "PID" row is added to the metadata table at the
-                           top of the dashboard. http(s) and mailto values become a clickable
+                           top of the Data Schematic. http(s) and mailto values become a clickable
                            link (opened in a new tab); any other scheme is shown as plain text
                            rather than linked. HTML output only. Only affects `smart`.
     --bivariate            Add two pairwise-association overview panels driven by
@@ -778,7 +779,7 @@ smart options:
                            seaborn_dark, matplotlib, plotnine (case-insensitive;
                            hyphens accepted). When omitted, qsv's built-in look
                            is used. Applies to all chart types, including `smart`.
-    --language <lang>      Render the dashboard UI in this language. Accepts a
+    --language <lang>      Render the Data Schematic UI in this language. Accepts a
                            BCP-47/ISO 639 code (es, spa) or an English language
                            name (Spanish). Overrides the language detected in a
                            data dictionary, and is also forwarded to describegpt
@@ -867,7 +868,7 @@ use crate::{
 /// rendered as an inline-div grid of independent plots instead (see `render_smart_inline`).
 const MAX_SUBPLOTS: usize = 8;
 
-/// Hard ceiling on panels for the inline-div HTML dashboard (used when `--max-charts` exceeds
+/// Hard ceiling on panels for the inline-div HTML Data Schematic (used when `--max-charts` exceeds
 /// `MAX_SUBPLOTS` and the output is HTML). Bounds the page size for very wide datasets.
 const MAX_PANELS_INLINE: usize = 64;
 
@@ -906,7 +907,7 @@ const HIER_MAX_NODES: usize = 200;
 const HIER_MIN_DIMS: usize = 2;
 /// A dimension needs at least this many distinct values to be worth a hierarchy level: a 2-value
 /// (boolean-like) column is a trivial split better shown as a single bar, and nesting by it would
-/// needlessly force the whole dashboard onto the inline (non-typed-grid) render path.
+/// needlessly force the whole Data Schematic onto the inline (non-typed-grid) render path.
 const HIER_MIN_DIM_CARDINALITY: u64 = 3;
 /// Path separator used to build collision-free plotly node `ids` (US control char, which
 /// cannot occur in trimmed cell text).
@@ -951,7 +952,7 @@ const SANKEY_MAX_OTHER_FRACTION: f64 = 0.50;
 
 /// Opacity for a Sankey link ribbon, tinted from its SOURCE node's `PALETTE` color so each
 /// flow is traceable back to where it originates (translucent enough to read overlaps and to
-/// hold contrast against both the light and dark dashboard themes).
+/// hold contrast against both the light and dark Data Schematic themes).
 const SANKEY_LINK_ALPHA: f64 = 0.45;
 
 /// Plotly `maxdepth` for sunburst panels: the number of levels rendered at once from the current
@@ -1104,10 +1105,10 @@ const SMART_CONTOUR_LOG_MIN_SHARE: f64 = 0.1;
 const SMART_BOX_ALL_MAX: u64 = 1_000;
 const SMART_BOX_OUTLIERS_MAX: u64 = 10_000;
 
-/// Above this many surviving dashboard panels, the size-based all-points box overlay
+/// Above this many surviving Data Schematic panels, the size-based all-points box overlay
 /// (`SMART_BOX_ALL_MAX`) is demoted to outliers-only: a thousand jittered points per panel reads
 /// fine at 2-panel size but turns to noise at postage-stamp cell size. Matches `MAX_SUBPLOTS` —
-/// past the typed-grid cap the dashboard switches to the denser inline grid. An explicit
+/// past the typed-grid cap the Data Schematic switches to the denser inline grid. An explicit
 /// `--box-points` mode is the user's call and is never demoted.
 const SMART_ALL_POINTS_MAX_PANELS: usize = MAX_SUBPLOTS;
 
@@ -1199,8 +1200,8 @@ const LABEL_MAX_BARS: usize = 40;
 /// that froze on the first pan/zoom. Originally 50K back when every embedded point cost ~200
 /// plaintext bytes; raised to 150K after the compressed-payload work (trace-level hovertemplates
 /// + float32 typed arrays + gzip'd figure payloads) cut the marginal cost to ~16 bytes/point (a
-///   150K-point map dashboard is ~4.4 MB all-in) and MapLibre GL measured a steady 61 fps pan/zoom
-///   at 150K-250K markers.
+///   150K-point map Data Schematic is ~4.4 MB all-in) and MapLibre GL measured a steady 61 fps
+///   pan/zoom at 150K-250K markers.
 const DEFAULT_MAX_SMART_POINTS: usize = 150_000;
 
 /// The resolved per-panel point budget, overridable with the `QSV_VIZ_MAX_POINTS` env var (an
@@ -1238,8 +1239,8 @@ const MAP_SELECTED_POINT_COLOR: &str = "#ff2d95";
 const MAP_UNSELECTED_POINT_OPACITY: f64 = 0.12;
 
 /// Trace name of the "row pin" — the marker that stands in for a selected data-viewer row whose
-/// point was never plotted (the map draws at most `MAX_SMART_POINTS`, so on a downsampled dashboard
-/// most rows have no point of their own). Emitted EMPTY and filled in by the bridge.
+/// point was never plotted (the map draws at most `MAX_SMART_POINTS`, so on a downsampled Data
+/// Schematic most rows have no point of their own). Emitted EMPTY and filled in by the bridge.
 ///
 /// Deliberately NOT localized: this is the handle the JS finds the trace by, since its index shifts
 /// with the optional extent/`--geojson` overlay traces that may precede it. It never reaches a
@@ -1309,20 +1310,20 @@ const BUBBLE_MIN_PX: f64 = 6.0;
 const BUBBLE_MAX_PX: f64 = 40.0;
 
 /// Vertical space (in pixels) allotted to each row of subplots in the `viz smart`
-/// dashboard. The total plot height scales with the number of rows so panels stay
+/// Data Schematic. The total plot height scales with the number of rows so panels stay
 /// readable instead of being crammed into plotly's ~450px default.
 const ROW_HEIGHT_PX: usize = 320;
 
 /// Taller height (in pixels) for full-width "overview" panels (map/geo, correlation heatmap and
-/// its drill-downs, time-series) in the inline HTML dashboard, so they get more room than the
+/// its drill-downs, time-series) in the inline HTML Data Schematic, so they get more room than the
 /// per-column box/bar/histogram panels — and, for a map, so the spatial-extent caption below it
 /// has space.
 const OVERVIEW_ROW_HEIGHT_PX: usize = 420;
 
 /// Taller height (in pixels) for geographic overview panels (`Map`/`Geo`/`Choropleth`/
-/// `ChoroplethMap`) in the inline HTML dashboard. A world/continental map at the default overview
-/// height renders its points cramped into a short band; maps get their own taller base so the
-/// markers are legible and the projection fills the cell. Fixed (not extent-aspect-driven) so
+/// `ChoroplethMap`) in the inline HTML Data Schematic. A world/continental map at the default
+/// overview height renders its points cramped into a short band; maps get their own taller base so
+/// the markers are legible and the projection fills the cell. Fixed (not extent-aspect-driven) so
 /// `MAP_PANEL_USABLE_HEIGHT_PX` — which `map_center_zoom` uses to frame the map — stays a constant.
 const MAP_ROW_HEIGHT_PX: usize = 540;
 
@@ -1371,7 +1372,7 @@ const KPI_ROW_HEIGHT_PX: usize = 230;
 /// gauge number without overlapping it.
 const KPI_ROW_GAUGE_HEIGHT_PX: usize = 250;
 
-/// Horizontal space (in pixels) per dashboard grid column, used to auto-size the `viz
+/// Horizontal space (in pixels) per Data Schematic grid column, used to auto-size the `viz
 /// smart` static image export width.
 const SMART_COL_WIDTH_PX: usize = 500;
 
@@ -1408,13 +1409,13 @@ const MAP_PANEL_USABLE_HEIGHT_PX: f64 = MAP_ROW_HEIGHT_PX as f64 - 48.0 - 20.0;
 /// from the live plot-div width in the browser (a possible follow-up).
 const MAP_PANEL_ASSUMED_WIDTH_PX: f64 = 960.0;
 
-/// Soft qualitative palette (Vega/Tableau-10) for coloring dashboard panels — distinct
+/// Soft qualitative palette (Vega/Tableau-10) for coloring Data Schematic panels — distinct
 /// but harmonious, and friendlier than plotly's saturated defaults.
 const PALETTE: [&str; 8] = [
     "#4C78A8", "#F58518", "#54A24B", "#E45756", "#72B7B2", "#EECA3B", "#B279A2", "#FF9DA6",
 ];
 
-/// Shared UI font stack and "ink" color for all dashboard text.
+/// Shared UI font stack and "ink" color for all Data Schematic text.
 const FONT_FAMILY: &str = "Helvetica Neue, Helvetica, Arial, sans-serif";
 const INK: &str = "#2A3F5F";
 const PAPER_BG: &str = "#FFFFFF";
@@ -1437,7 +1438,7 @@ const GEO_LAND_DARK: &str = "#2a3138";
 const GEO_WATER_DARK: &str = "#16202b";
 const GEO_BG_DARK: &str = "#111111";
 
-/// Dashboard plot margins (pixels). Kept as named constants because the title-band math
+/// Data Schematic plot margins (pixels). Kept as named constants because the title-band math
 /// below needs the plot-area height (total height minus these margins).
 const TOP_MARGIN_PX: usize = 80;
 const BOTTOM_MARGIN_PX: usize = 60;
@@ -1445,16 +1446,16 @@ const BOTTOM_MARGIN_PX: usize = 60;
 /// Pixels reserved above the top row of panels for their titles, and the gap (in pixels)
 /// between a cell's top edge and its title. Both are kept in *pixels* (converted to paper
 /// fractions via the plot-area height) so neither the band nor the offset scales with the
-/// dashboard height — otherwise a tall dashboard's title would drift past `y=1` and overlap
-/// the dashboard title. The band must comfortably exceed `TITLE_OFFSET_PX` plus the title's
-/// rendered glyph height (~17px for the 13px font).
+/// Data Schematic height — otherwise a tall Data Schematic's title would drift past `y=1` and
+/// overlap the Data Schematic title. The band must comfortably exceed `TITLE_OFFSET_PX` plus the
+/// title's rendered glyph height (~17px for the 13px font).
 const TITLE_BAND_PX: usize = 32;
 const TITLE_OFFSET_PX: usize = 6;
 /// Extra band pixels reserved when panels carry a subtitle (dictionary label under the title),
 /// so the second, smaller line clears the chart above without overlap.
 const TITLE_SUBTITLE_EXTRA_PX: usize = 16;
 
-/// Default dashboard left margin (pixels), widened when a correlation-heatmap panel is present
+/// Default Data Schematic left margin (pixels), widened when a correlation-heatmap panel is present
 /// so its (long) numeric-column tick labels aren't clipped.
 const DEFAULT_LEFT_MARGIN_PX: usize = 60;
 
@@ -1476,7 +1477,7 @@ fn value_log_axis_title() -> String {
 const LOG_AXIS_TITLE_MARGIN_PX: usize = 20;
 
 /// `viz smart` correlation-heatmap panel tuning. Long numeric-column names would clip against
-/// the dashboard's left margin, so its axis tick labels are truncated to this many characters
+/// the Data Schematic's left margin, so its axis tick labels are truncated to this many characters
 /// and the left margin is widened (≈ this many pixels per character) to fit them. In-cell `r`
 /// value labels are only drawn when the matrix is small enough to stay legible in one cell.
 const CORR_LABEL_MAX_CHARS: usize = 16;
@@ -1575,9 +1576,9 @@ fn other_text(distinct: u64) -> String {
 /// Muted grey for the aggregate `(NULL)` / `Other (N)` frequency bars so they read as summary
 /// buckets, visually distinct from the palette-colored real categories.
 const MUTED_COLOR: &str = "#999999";
-/// Bridge delta colours (issue #4222). A bridge's step bars are the only place in the dashboard
-/// where a bar's SIGN is the message, so they get their own semantics rather than the panel hue:
-/// a shortfall against the previous stage and an overrun beyond it must not look alike.
+/// Bridge delta colours (issue #4222). A bridge's step bars are the only place in the Data
+/// Schematic where a bar's SIGN is the message, so they get their own semantics rather than the
+/// panel hue: a shortfall against the previous stage and an overrun beyond it must not look alike.
 const BRIDGE_DOWN_COLOR: &str = "#c0504d";
 const BRIDGE_UP_COLOR: &str = "#4f8a5b";
 
@@ -1715,7 +1716,7 @@ struct Args {
     flag_slider_cumulative:  bool,
     flag_annotation:         Option<String>,
     flag_theme:              Option<String>,
-    // Dashboard UI language. "auto" (the default) means "follow the data dictionary's
+    // Data Schematic UI language. "auto" (the default) means "follow the data dictionary's
     // detected language, else English"; an explicit value always wins. Resolved once in
     // run() via viz_i18n::resolve.
     flag_language:           Option<String>,
@@ -1981,7 +1982,7 @@ enum SmartRender {
         theme:       Option<BuiltinTheme>,
         /// The embedded `--dict-info` Data Dictionary document (HTML output only).
         dict_page:   Option<String>,
-        /// The top-of-dashboard metadata table (HTML output only).
+        /// The top-of-Data Schematic metadata table (HTML output only).
         metadata:    Option<String>,
         /// The data viewer drawer chrome (issue #4283; HTML output only).
         data_chrome: Option<String>,
@@ -1996,7 +1997,7 @@ enum SmartRender {
     Inline(String),
 }
 
-/// Write a pre-assembled inline-div dashboard HTML string to `--output` (or stdout), honoring
+/// Write a pre-assembled inline-div Data Schematic HTML string to `--output` (or stdout), honoring
 /// `--open`. When `--open` is set without `--output`, the HTML is also written to a securely
 /// created temporary file which is then opened — mirroring plotly's own `Plot::show()` for the
 /// single-`Plot` path.
@@ -2020,7 +2021,9 @@ fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
                     .tempfile()?;
                 tmp.write_all(html.as_bytes())?;
                 let (_file, path) = tmp.keep().map_err(|e| {
-                    crate::CliError::Other(format!("Could not persist temp dashboard file: {e}"))
+                    crate::CliError::Other(format!(
+                        "Could not persist temp Data Schematic file: {e}"
+                    ))
                 })?;
                 open_path(&path.to_string_lossy())?;
             }
@@ -2271,8 +2274,8 @@ fn build_plot(
     }
     // `x unified` (plotly.js) shows one tooltip per x across every trace — ideal for an ordered
     // x-axis (line trends, OHLC sessions) but wrong for unordered clouds, so it's scoped to those
-    // chart kinds. The smart dashboard builds its own layout and never calls build_layout, so this
-    // can't leak onto its heterogeneous panels.
+    // chart kinds. The smart Data Schematic builds its own layout and never calls build_layout, so
+    // this can't leak onto its heterogeneous panels.
     if matches!(
         chart_kind(args),
         Chart::Line | Chart::Candlestick | Chart::Ohlc
@@ -3342,8 +3345,8 @@ fn scale_bubble_sizes(values: &[f64]) -> Vec<usize> {
 const MAP_DENSITY_RADIUS_PX: u8 = 20;
 
 /// Density radius for the `viz smart` auto map panel. Smaller than the standalone `viz map`
-/// default because the dashboard panel is small: a large radius saturates the whole built-up area
-/// into one flat blob, hiding the internal hotspots a smaller radius reveals.
+/// default because the Data Schematic panel is small: a large radius saturates the whole built-up
+/// area into one flat blob, hiding the internal hotspots a smaller radius reveals.
 const MAP_SMART_DENSITY_RADIUS_PX: u8 = 8;
 
 /// Resolve a `--style` name to its plotly MapLibre `MapStyle`. Every MapLibre bundled style
@@ -3558,7 +3561,7 @@ fn map_center_zoom(
     (center, zoom)
 }
 
-/// The theme-appropriate Carto basemap for a smart-dashboard map panel. Data-overlay panels
+/// The theme-appropriate Carto basemap for a smart-Data Schematic map panel. Data-overlay panels
 /// (density heatmaps, choropleth fills) use the label-free Carto variant so basemap place names
 /// don't compete with the data; ordinary point maps keep labels for street/city context. The
 /// theme-toggle JS preserves this labeled-vs-nolabels distinction per subplot (see
@@ -5555,8 +5558,9 @@ impl SnapCap {
     ///
     /// Deliberately NOT localized: every one of this command's stderr diagnostics is English, so
     /// substituting a translated phrase here would emit a half-Spanish English sentence. The
-    /// dashboard's own below-map note uses [`SnapCap::basis_phrase_localized`] instead; the two
-    /// are pinned byte-identical under English by `snap_basis_catalog_matches_english_phrase`.
+    /// Data Schematic's own below-map note uses [`SnapCap::basis_phrase_localized`] instead; the
+    /// two are pinned byte-identical under English by
+    /// `snap_basis_catalog_matches_english_phrase`.
     const fn basis_phrase_en(&self) -> &'static str {
         match self.basis {
             SnapCapBasis::Explicit => "--snap-max-dist",
@@ -5582,7 +5586,7 @@ impl SnapCap {
         }
     }
 
-    /// Same provenance phrase, in the dashboard's language, for the below-map coverage note.
+    /// Same provenance phrase, in the Data Schematic's language, for the below-map coverage note.
     ///
     /// The keys are spelled out per arm rather than mapped over a runtime key, because
     /// `every_t_key_used_in_this_file_exists_in_the_catalog` only verifies literal keys and hard-
@@ -7042,7 +7046,7 @@ fn parcats_order_toggle_menu(ordered: &[Vec<String>]) -> UpdateMenu {
         // Lift the pill clear of the FIRST dimension's axis label, which parcats draws just inside
         // the top-left of the plot area — exactly where a y=1/bottom-anchored button lands, so the
         // two overlapped. Bottom padding in PIXELS (not a fractional `y` bump, which would resolve
-        // to a different gap on a tall standalone chart than on a short dashboard panel), and
+        // to a different gap on a tall standalone chart than on a short Data Schematic panel), and
         // plotly's automargin grows the top margin to keep the lifted pill inside the panel.
         // Sankey needs none of this: its node labels sit beside the nodes, not above them.
         .pad(plotly::common::Pad::new(0, PARCATS_TOGGLE_LABEL_GAP, 0))
@@ -8764,7 +8768,7 @@ fn dark_chart_palette(
 /// so flipping `body.qsv-dark` recolors the page instantly, while the script calls
 /// `Plotly.relayout` on every live graph div to recolor the plots themselves. An explicit
 /// `theme` is authoritative — it sets the initial mode and wins over any saved/OS preference
-/// (so `--theme plotly_dark` always opens dark); only an unthemed dashboard (`theme == None`)
+/// (so `--theme plotly_dark` always opens dark); only an unthemed Data Schematic (`theme == None`)
 /// defers to the viewer's saved choice then OS preference. Known limitation: geo/scene/polar/pie
 /// panels flip their background, font, and
 /// container color, but basemap fills, map tiles, and trace marker colors do NOT re-theme
@@ -8937,8 +8941,8 @@ fn third_party_footer(datatables: bool) -> String {
 
 /// Styling for `third_party_footer`.
 ///
-/// Every color is `var(--qsv-*, <fallback>)`. Inside a `viz smart` dashboard those variables are
-/// defined by `STYLE_TEMPLATE` and re-bound under `body.qsv-dark`, so the footer re-themes with
+/// Every color is `var(--qsv-*, <fallback>)`. Inside a `viz smart` Data Schematic those variables
+/// are defined by `STYLE_TEMPLATE` and re-bound under `body.qsv-dark`, so the footer re-themes with
 /// the rest of the page for free — in both directions, and through the runtime Theme toggle.
 ///
 /// The fallbacks are LIGHT-only, deliberately. They apply on exactly one page: the standalone
@@ -9031,9 +9035,9 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
   var DARK = { paper: "__DARK_PAPER__", plot: "__DARK_PAPER__", font: "__DARK_FONT__", grid: "__DARK_GRID__", line: "__DARK_LINE__", zero: "__DARK_ZERO__", bg: "__DARK_PAPER__", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapStyle: "carto-darkmatter", mapStyleNoLabels: "carto-darkmatter-nolabels" };
   var LIGHT = { paper: "__LIGHT_PAPER__", plot: "__LIGHT_PAPER__", font: "__LIGHT_FONT__", grid: "__LIGHT_GRID__", line: "__LIGHT_LINE__", zero: "__LIGHT_ZERO__", bg: "__LIGHT_PAPER__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapStyle: "carto-positron", mapStyleNoLabels: "carto-positron-nolabels" };
   function isDark() {
-    // An explicit --theme is authoritative: it wins over a stale cross-dashboard
+    // An explicit --theme is authoritative: it wins over a stale cross-Data Schematic
     // saved preference (the localStorage key is shared across all qsv viz pages,
-    // so a "light" toggle on one dashboard must not override --theme plotly_dark
+    // so a "light" toggle on one Data Schematic must not override --theme plotly_dark
     // on another).
     if (themeDefaultMode === "dark") return true;
     if (themeDefaultMode === "light") return false;
@@ -9491,9 +9495,9 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
   }
   // WHEN to paint is the hard part: plotly creates the cluster layers only when `cluster.enabled`
   // flips on, and there is no event that reliably lands after that. `styledata` and `plotly_restyle`
-  // both fire well BEFORE the layers exist (on a heavy dashboard the gap outran a bounded retry, and
+  // both fire well BEFORE the layers exist (on a heavy Data Schematic the gap outran a bounded retry, and
   // the ramp silently didn't take), and MapLibre's `idle` never fires at all under plotly's usage
-  // (measured: 0 firings on a 28-panel dashboard, even after a pan). So don't guess — poll a cheap
+  // (measured: 0 firings on a 28-panel Data Schematic, even after a pan). So don't guess — poll a cheap
   // predicate and repaint whenever the layers are found unpainted. Our ramp is a step EXPRESSION (an
   // array) while plotly's default is a plain color string, so "needs paint" is a type check, and the
   // scan short-circuits to false on the common case of a map with no cluster layers at all.
@@ -9849,7 +9853,7 @@ const PARCATS_ORDER_DURATION_MS: u32 = 500;
 /// out.
 ///
 /// The listener is a single delegated capture-phase handler on `document`: it covers every panel
-/// of a dashboard at once and, unlike a `gd.on(...)` plotly listener, survives the fullscreen
+/// of a Data Schematic at once and, unlike a `gd.on(...)` plotly listener, survives the fullscreen
 /// chrome's `Plotly.newPlot` re-render without any rehook. Charts with no parcats trace never
 /// match, so the script is inert on every other page.
 fn parcats_order_script() -> String {
@@ -9998,8 +10002,8 @@ const PHOTO_DWELL_MS: u32 = 2000;
 
 /// `--photos` chrome: the hover-dwell photo preview `<style>` + `<script>`, injected into a `viz
 /// smart` HTML page ONLY when an image-URL column was detected and the flag was given (mirroring
-/// `dict_chrome`). Every other dashboard omits it entirely and so never references an off-origin
-/// URL.
+/// `dict_chrome`). Every other Data Schematic omits it entirely and so never references an
+/// off-origin URL.
 ///
 /// The preview is a SMALL card anchored beside the pointer (offset by `GAP`, flipped at the
 /// viewport edges) rather than a full-screen overlay, so the marker it describes and the points
@@ -10008,7 +10012,7 @@ const PHOTO_DWELL_MS: u32 = 2000;
 ///
 /// The script reads each point's `|`-joined image URLs from the trace `customdata` that
 /// `build_map_panel` embedded. Nothing is fetched on load: the `<img>` `src` is assigned only
-/// after the pointer rests on a point for `PHOTO_DWELL_MS`, so opening the dashboard makes no
+/// after the pointer rests on a point for `PHOTO_DWELL_MS`, so opening the Data Schematic makes no
 /// third-party request at all and a viewer who never dwells makes none either.
 ///
 /// To spare the image host, a dwelled image is fetched at most ONCE and then served locally:
@@ -10525,7 +10529,7 @@ const MAP_SELECT_CHROME: &str = r##"<script>
   function isPointTrace(t) {
     return !!(t && (t.type === "scattermap" || t.type === "scattergeo") && t.ids && t.ids.length);
   }
-  // Type-gated, NOT matched on the name alone: trace names elsewhere in a dashboard come from the
+  // Type-gated, NOT matched on the name alone: trace names elsewhere in a Data Schematic come from the
   // data (series values, category labels), so a row whose category happened to read "qsv-row-pin"
   // could otherwise make a bar panel look pin-bearing. Only a `Map`/`Geo` panel ever emits these
   // names on these types, and none of the trace names on those panels are data-derived.
@@ -10584,7 +10588,7 @@ const MAP_SELECT_CHROME: &str = r##"<script>
   // ---- the row pin -----------------------------------------------------------------------------
   //
   // The map draws at most `MAX_SMART_POINTS`, so on a large dataset most drawer rows have no point
-  // of their own -- on the Pittsburgh 311 dashboard only ~16% do. Such a row still HAS a location:
+  // of their own -- on the Pittsburgh 311 Data Schematic only ~16% do. Such a row still HAS a location:
   // its coordinates sit in the drawer, in the same columns the map was built from. The pin marks
   // that location explicitly rather than panning to bare ground, which would invite reading a
   // neighbouring point as the selected record.
@@ -10730,7 +10734,7 @@ const MAP_SELECT_CHROME: &str = r##"<script>
   // so are the baked extent buttons, whose relayout args are absolute.
   //
   // Deliberately scoped to drawer-bearing pages: this whole script is only emitted when there is
-  // a data viewer to cross-link to, so a map dashboard without one keeps the older behavior of
+  // a data viewer to cross-link to, so a map Data Schematic without one keeps the older behavior of
   // snapping back to the baked camera on a re-render. Do NOT "fix" that by hoisting this into
   // `fullscreen_script` — its per-panel bodies are wrapped in swallowing `try {} catch {}`, so an
   // unrelated helper throwing there would take the mirror down with it.
@@ -10921,7 +10925,7 @@ const MAP_SELECT_CHROME: &str = r##"<script>
     if (reported) notePins(reported);
   });
   // Why a pinned row looks different from a plotted one. The pin's own hover label carries the
-  // explanation, so the note only has to make the reader look once — on a downsampled dashboard
+  // explanation, so the note only has to make the reader look once — on a downsampled Data Schematic
   // most selections produce a pin, and a note every time would be pure noise.
   var notedNotPlotted = false;
   function notePins(pins) {
@@ -11233,9 +11237,10 @@ fn smart_html_page(
     let fs_prelude =
         assumed_map_dims_prelude(MAP_PANEL_ASSUMED_WIDTH_PX, MAP_PANEL_USABLE_HEIGHT_PX);
     // The inline-div grid has no overall plot title (panels carry only their own), so it shows the
-    // dashboard title as a page `<h1>`. The typed-`Plot` grid already bakes the dashboard title
-    // into its layout (needed for static image export), so its wrapper suppresses the `<h1>` to
-    // avoid rendering the title twice. The `<title>` (browser tab) is always set either way.
+    // Data Schematic title as a page `<h1>`. The typed-`Plot` grid already bakes the Data Schematic
+    // title into its layout (needed for static image export), so its wrapper suppresses the
+    // `<h1>` to avoid rendering the title twice. The `<title>` (browser tab) is always set
+    // either way.
     let heading = if show_heading {
         format!("<h1 class=\"qsv-viz-title\">{title}</h1>")
     } else {
@@ -11257,7 +11262,7 @@ fn smart_html_page(
                 // key on title AND dictionary content: two dashboards can share a title (e.g.
                 // same file basename in different directories), and qsvOpenDict skips
                 // rewriting an existing dict tab — a title-only key would then show the
-                // FIRST dashboard's dictionary for both. Hashing the page in keeps the tab
+                // FIRST Data Schematic's dictionary for both. Hashing the page in keeps the tab
                 // per-dictionary while a same-content reload still reuses it.
                 dict_script_template().replace(
                     "__QSVDICTKEY__",
@@ -11383,7 +11388,7 @@ fn smart_html_page(
 /// the tex-svg MathJax bundle (~2.0MB). Smart dashboards only ever render plain-text titles and
 /// labels (column names + stat-derived strings), never LaTeX `$...$`, and plotly guards its only
 /// MathJax use behind `typeof MathJax != "undefined"`, so the bundle is dead weight here —
-/// dropping it shrinks each self-contained dashboard by ~31% with no visual change.
+/// dropping it shrinks each self-contained Data Schematic by ~31% with no visual change.
 ///
 /// Neither minified payload contains the literal `</script>`, so cutting after the first close
 /// tag cleanly isolates the plotly.js tag. Guarded by a `Plotly` marker check (present only in
@@ -11417,7 +11422,7 @@ const PLOTLY_CDN_FALLBACK: &str = concat!(
 ///
 /// Under `QSV_VIZ_CDN=1` the emitted page executes plotly.js straight from `cdn.plot.ly`, so
 /// without Subresource Integrity a compromised or tampered CDN response is arbitrary script
-/// execution in every viewer of a published dashboard. The URL is version-pinned and therefore
+/// execution in every viewer of a published Data Schematic. The URL is version-pinned and therefore
 /// immutable, which is what makes a baked hash safe.
 ///
 /// Verified: the digest below is the sha384 of `https://cdn.plot.ly/plotly-3.7.0.min.js`, which is
@@ -11509,7 +11514,7 @@ fn viz_cdn() -> bool {
 /// Intended for regenerating dictionary-driven artifacts (e.g. the `examples/viz` gallery's
 /// `--dictionary infer` dashboards) after a describegpt or prompt-file change. Note a successful
 /// re-infer OVERWRITES the sidecar, including a hand-edited one; a failed infer leaves it untouched
-/// and soft-falls back to the stats-only dashboard.
+/// and soft-falls back to the stats-only Data Schematic.
 fn viz_dict_fresh() -> bool {
     util::get_envvar_flag("QSV_VIZ_DICT_FRESH")
 }
@@ -12528,7 +12533,7 @@ fn wants_violin(
 /// Frequency bars and measure-by-dimension bars decide from their values (high dynamic range); box
 /// panels carry the verdict resolved at classification time (`Panel::value_log`, from the cached
 /// min/max — see `box_panel_logs`); every other panel kind is always linear. Used both to gate the
-/// panel's y-axis title cue and to size the dashboard's left margin to fit it.
+/// panel's y-axis title cue and to size the Data Schematic's left margin to fit it.
 fn panel_is_log(panel: &Panel, freq: &FreqMap, log_scale: LogScale) -> bool {
     match &panel.kind {
         PanelKind::FreqBar { idx } => {
@@ -13108,7 +13113,7 @@ fn write_dictionary_sidecar(path: &std::path::Path, contents: &str) -> std::io::
 }
 
 /// Largest sidecar `collect_sidecar_downloads` will embed in the Data Dictionary page. The bytes
-/// ride as a base64 `data:` URI (4/3 inflation) inside the dashboard HTML, so an unbounded
+/// ride as a base64 `data:` URI (4/3 inflation) inside the Data Schematic HTML, so an unbounded
 /// embed would balloon the file. Most sidecars are bounded by COLUMN count and stay tiny, but the
 /// `frequency` cache stores complete per-value data for every column and can reach hundreds of MB
 /// on a wide, high-cardinality dataset — hence the cap (and the size check BEFORE the read).
@@ -13138,8 +13143,8 @@ fn sidecar_mime(path: &std::path::Path) -> &'static str {
     }
 }
 
-/// Sidecar metadata keys that hold an absolute local filesystem path. A dashboard is made to be
-/// SHARED, so embedding these verbatim would hand every recipient the author's directory layout
+/// Sidecar metadata keys that hold an absolute local filesystem path. A Data Schematic is made to
+/// be SHARED, so embedding these verbatim would hand every recipient the author's directory layout
 /// (`/Users/jane/clients/acme/…`). `redact_sidecar_paths` rewrites each to its bare file name.
 const SIDECAR_PATH_KEYS: [&str; 3] = ["canonical_input_path", "canonical_stats_path", "arg_input"];
 
@@ -13173,7 +13178,7 @@ fn redact_path_keys(obj: &mut serde_json::Value) {
 }
 
 /// Strip absolute local paths out of a sidecar's metadata before it is embedded in the shareable
-/// dashboard. Returns the bytes unchanged for `SidecarRedaction::None`, and also whenever the
+/// Data Schematic. Returns the bytes unchanged for `SidecarRedaction::None`, and also whenever the
 /// metadata can't be parsed — a sidecar we don't understand is left alone rather than mangled,
 /// since the download is a convenience and corrupting it would be worse than the leak it avoids
 /// (qsv writes these files, so an unparseable one means a hand-edit or a format change, not
@@ -13215,8 +13220,8 @@ fn redact_sidecar_paths(bytes: Vec<u8>, kind: SidecarRedaction) -> Vec<u8> {
 
 /// Read one sidecar for embedding, or `None` when it is absent, unreadable, or over
 /// `MAX_SIDECAR_EMBED_BYTES`. Every failure is a SOFT skip (matching the dictionary loader's
-/// fail-to-stats philosophy) — a missing download is never worth failing a dashboard over — but an
-/// over-cap skip emits a `viz_note` so the omission is never silent.
+/// fail-to-stats philosophy) — a missing download is never worth failing a Data Schematic over —
+/// but an over-cap skip emits a `viz_note` so the omission is never silent.
 fn read_sidecar(
     path: &std::path::Path,
     short: &'static str,
@@ -13245,8 +13250,8 @@ fn read_sidecar(
 /// The generated sidecars this `viz smart` run ACTUALLY consumed, for the `--dict-info` Data
 /// Dictionary page's download row. Never speculative: a sidecar that merely exists on disk but was
 /// not used (a stale bivariate CSV from a prior run, a frequency cache rejected as
-/// stale/incompatible) is deliberately NOT offered, since handing the reader a file the dashboard
-/// wasn't built from is worse than offering nothing.
+/// stale/incompatible) is deliberately NOT offered, since handing the reader a file the Data
+/// Schematic wasn't built from is worse than offering nothing.
 ///
 /// Each path is derived exactly the way its CONSUMER derives it — do not "simplify" this by
 /// canonicalizing once up front:
@@ -13281,7 +13286,7 @@ fn collect_sidecar_downloads(
     // options it was built with.
     //
     // The human-readable `.stats.csv` is deliberately NOT offered. viz never reads it, so it can't
-    // be shown to be the stats behind this dashboard: an explicit `qsv stats --select … -o
+    // be shown to be the stats behind this Data Schematic: an explicit `qsv stats --select … -o
     // <stem>.stats.csv` leaves a file that is newer than the source yet describes a different
     // computation than the cache viz actually used, and no mtime test can tell the two apart. The
     // same numbers ride in `.stats.csv.data.jsonl`, which viz demonstrably did read.
@@ -13312,12 +13317,12 @@ fn collect_sidecar_downloads(
         out.push(sc);
     }
 
-    // the frequency counts the dashboard actually CHARTED. Generated in memory (nothing is written
-    // to disk), so unlike the cache above it is always available — whether the bars came from a
-    // cache hit or a full recompute — and it is exactly what the reader sees in the panels,
-    // aggregate `(NULL)`/`Other (N)` buckets included, already capped at --limit. Named off the
-    // stats anchor, so a `dc:` handle yields `<cached name>.viz-frequency.csv` rather than a
-    // download named after the literal `dc:` string.
+    // the frequency counts the Data Schematic actually CHARTED. Generated in memory (nothing is
+    // written to disk), so unlike the cache above it is always available — whether the bars
+    // came from a cache hit or a full recompute — and it is exactly what the reader sees in the
+    // panels, aggregate `(NULL)`/`Other (N)` buckets included, already capped at --limit. Named
+    // off the stats anchor, so a `dc:` handle yields `<cached name>.viz-frequency.csv` rather
+    // than a download named after the literal `dc:` string.
     if let Some(sc) = charted_frequency_csv(
         stats_anchor.unwrap_or_else(|| std::path::Path::new("data")),
         stats,
@@ -13341,15 +13346,15 @@ fn collect_sidecar_downloads(
     out
 }
 
-/// The frequency-bar counts this dashboard charted, as a CSV download (`<stem>.viz-frequency.csv`)
-/// built in memory — no file is written.
+/// The frequency-bar counts this Data Schematic charted, as a CSV download
+/// (`<stem>.viz-frequency.csv`) built in memory — no file is written.
 ///
 /// This is deliberately NOT the same thing as the `frequency` cache sidecar: the cache is the full
 /// per-value distribution of every column and only exists when `qsv frequency --frequency-jsonl`
 /// was run, whereas this is precisely what the panels show — only the charted columns, already
 /// truncated to `--limit`, with the synthetic `(NULL)` / `Other (N)` aggregate buckets included and
 /// flagged as such. Columns follow `stats` (the dataset's header order) and bars keep their
-/// plotted order, so the file reads in the same sequence as the dashboard.
+/// plotted order, so the file reads in the same sequence as the Data Schematic.
 ///
 /// Returns `None` when no frequency panel was drawn.
 fn charted_frequency_csv(
@@ -13599,7 +13604,7 @@ fn parse_bivariate_csv(path: &std::path::Path) -> CliResult<Vec<BivariateRow>> {
 /// `--bivariate` sidecar CSV (written by the `--smarter` moarstats subprocess above when
 /// `--bivariate` is enabled). Soft-fails (warns, returns `(None, None)`) when the sidecar is
 /// missing/unreadable or carries no usable pairs, matching `--smarter`'s own degrade-gracefully
-/// convention — a `--bivariate` run never aborts the dashboard over this. Pairs touching a
+/// convention — a `--bivariate` run never aborts the Data Schematic over this. Pairs touching a
 /// `Route::Skip` (identifier/PII/free-text) column or a map lat/lon column are dropped, mirroring
 /// every other per-column panel builder's exclusions. The ranked bar additionally requires
 /// co-occurrence support (`BIVARIATE_MIN_SUPPORT_RATIO`) — see its comment — so it can drop to
@@ -13958,7 +13963,7 @@ fn sankey_concept_family(concept: &str) -> Option<&str> {
 
 /// Semantic ranking tier for a candidate Sankey pair given both columns' dictionary concepts
 /// (lower = preferred). Additive over the statistical gate: when either concept is absent this
-/// returns the neutral tier, so a dictionary-less dashboard ranks purely on the statistics.
+/// returns the neutral tier, so a dictionary-less Data Schematic ranks purely on the statistics.
 /// - Tier 0 (preferred): a CROSS-FAMILY bridge (e.g. `nyc.complaint_type` → `category.status`,
 ///   `org.agency` → `category.status`) — the pair spans two different concept families, which is
 ///   what makes a flow tell a story.
@@ -14188,7 +14193,7 @@ fn sort_line_xy(xs: Vec<String>, ys: Vec<f64>) -> (Vec<String>, Vec<f64>) {
 
 // ===== viz smart: cache-driven auto-dashboard =====
 
-/// A single dashboard panel: a column and the chart chosen for it.
+/// A single Data Schematic panel: a column and the chart chosen for it.
 struct Panel {
     name:            String,
     /// Optional secondary line shown beneath the title (smaller, muted). Carries the
@@ -14205,7 +14210,7 @@ struct Panel {
     /// speaks for a distribution panel's single value axis (issue #4223). Resolved at panel-build
     /// time by `relationship_axis_log` from the plotted values + `--log-scale`.
     axis_log:        (bool, bool),
-    /// How much this panel is worth keeping when the dashboard overflows `--max-charts`:
+    /// How much this panel is worth keeping when the Data Schematic overflows `--max-charts`:
     /// per-column panels get a stats-driven `panel_interest` score; overview panels
     /// (correlation, time-series, map, …) keep the `Panel::new` default of `f64::INFINITY`
     /// so they always survive. Ties (and the no-overflow case) preserve document order.
@@ -14461,7 +14466,7 @@ enum PanelKind {
     /// cumulative frame is a contiguous prefix; `bucket_labels` names each time bucket in
     /// chronological order (one per distinct bucket). Axis ranges are pinned globally so nothing
     /// jumps. Rendered as its own inline Plot (slider + Play/Pause), so (like map/geo/3D) its
-    /// presence forces the inline dashboard path and it is HTML-only (no static-export
+    /// presence forces the inline Data Schematic path and it is HTML-only (no static-export
     /// composition).
     AnimatedScatterPair {
         xs:            Vec<f64>,
@@ -14653,8 +14658,8 @@ enum PanelKind {
     /// 3D scatter of the three numeric columns that form the strongest-correlation triple — a
     /// spatial drill-down for the correlation heatmap. Carries the three columns' precomputed,
     /// row-aligned values plus their axis labels. Like `Map`, a 3D `scene` doesn't compose with the
-    /// typed x/y subplot grid, so a dashboard containing this panel always renders via the inline
-    /// path.
+    /// typed x/y subplot grid, so a Data Schematic containing this panel always renders via the
+    /// inline path.
     Scatter3D {
         xs:     Vec<f64>,
         ys:     Vec<f64>,
@@ -14669,7 +14674,7 @@ enum PanelKind {
     /// Geographic point map over an auto-detected latitude/longitude column pair. Carries the
     /// precomputed, row-aligned coordinates (already downsampled to `MAX_SMART_POINTS`). `density`
     /// requests a heatmap render instead of discrete markers when the source had many rows.
-    /// MapLibre `map` subplots don't compose with the typed x/y subplot grid, so a dashboard
+    /// MapLibre `map` subplots don't compose with the typed x/y subplot grid, so a Data Schematic
     /// containing this panel always renders via the inline path.
     /// `outlier_lats`/`outlier_lons` carry the geographic outliers (far from the cluster centroid),
     /// drawn as a distinct marker trace on top of the core points.
@@ -14714,7 +14719,7 @@ enum PanelKind {
         /// (and `outlier_photos` to `outlier_lats`/`outlier_lons`). Emitted as the trace's
         /// `customdata`, which the hover-dwell lightbox JS reads; an empty string means that row
         /// has no photo and dwelling on it does nothing. BOTH vectors are empty when `--photos`
-        /// is off, and no `customdata` is emitted at all — so a default dashboard embeds no
+        /// is off, and no `customdata` is emitted at all — so a default Data Schematic embeds no
         /// third-party URLs and its viewers' browsers request nothing off-origin.
         photos:             Vec<String>,
         outlier_photos:     Vec<String>,
@@ -14731,8 +14736,8 @@ enum PanelKind {
     /// Geographic point map drawn on a `ScatterGeo` projection basemap (coastlines/land/countries,
     /// no network tiles) instead of a MapLibre tile map — used for `viz smart` when the coordinates
     /// span a continental/global extent. Like `Map`, the `geo` subplot doesn't compose with the
-    /// typed x/y grid, so a dashboard containing this panel always renders via the inline path.
-    /// `outlier_lats`/`outlier_lons` carry the geographic outliers (see `Map`).
+    /// typed x/y grid, so a Data Schematic containing this panel always renders via the inline
+    /// path. `outlier_lats`/`outlier_lons` carry the geographic outliers (see `Map`).
     Geo {
         lats:               Vec<f64>,
         lons:               Vec<f64>,
@@ -14755,7 +14760,7 @@ enum PanelKind {
     /// the point Map/Geo panel when geocode resolves the coordinates to 2+ distinct countries,
     /// coloring each country by its row count. Carries precomputed `locations` (ISO-3 codes)
     /// and `z` (counts). Like `Geo`, the `geo` subplot doesn't compose with the typed x/y grid,
-    /// so a dashboard containing this panel always renders via the inline path.
+    /// so a Data Schematic containing this panel always renders via the inline path.
     Choropleth {
         locations:      Vec<String>,
         z:              Vec<f64>,
@@ -14783,7 +14788,7 @@ enum PanelKind {
     /// where the projection basemap's coastline/street detail is too coarse. Carries the user
     /// GeoJSON plus a precomputed center/zoom so render frames the metro area without re-scanning
     /// geometry. Like `Choropleth`, the `map` subplot doesn't compose with the typed x/y grid, so a
-    /// dashboard containing this panel always renders via the inline path.
+    /// Data Schematic containing this panel always renders via the inline path.
     ChoroplethMap {
         locations:      Vec<String>,
         z:              Vec<f64>,
@@ -14804,7 +14809,8 @@ enum PanelKind {
     /// nested low-cardinality dimensions. Carries the fully precomputed flat plotly arrays
     /// (`labels`/`parents`/`values` keyed by path-joined `ids`) so the render loop stays a pure
     /// assembly step. Like `Map`/`Scatter3D`, a domain-based trace doesn't compose with the typed
-    /// x/y subplot grid, so a dashboard containing this panel always renders via the inline path.
+    /// x/y subplot grid, so a Data Schematic containing this panel always renders via the inline
+    /// path.
     Hierarchy {
         style:   HierStyle,
         labels:  Vec<String>,
@@ -15006,7 +15012,8 @@ fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Ve
 /// The panel a column is routed to once a describegpt Data Dictionary's semantic signals are
 /// folded into `viz smart`. Distilled from `role` / `concept` / `content_type` by
 /// `derive_semantics`. `Defer` (no usable signal, or any column absent from the dictionary) falls
-/// back to the statistical `classify`, so a dashboard built without `--dictionary` is unchanged.
+/// back to the statistical `classify`, so a Data Schematic built without `--dictionary` is
+/// unchanged.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 enum Route {
     /// No semantic signal -> defer to the statistical heuristic (`classify`).
@@ -15175,7 +15182,7 @@ struct DictData {
     /// (jsonschema top-level `x-qsv.detected_language_code`, e.g. "spa"). describegpt OMITS
     /// the field entirely below its 0.8 confidence threshold, so absence is normal and
     /// presence already implies confidence -- viz applies no threshold of its own. Drives the
-    /// dashboard UI language unless `--language` overrides it.
+    /// Data Schematic UI language unless `--language` overrides it.
     detected_language:   Option<String>,
 }
 
@@ -15200,7 +15207,7 @@ fn route_from_concept(concept: &str) -> Option<(Route, Option<Agg>)> {
             // a duration is a SPAN (a magnitude), not a point in time: it has no place on a time
             // axis and can't be the time-series x column (`canonical_date_col` only accepts stats
             // type Date/DateTime), so routing the whole `time` namespace to Temporal dropped
-            // duration columns from the dashboard entirely. describegpt deliberately keeps
+            // duration columns from the Data Schematic entirely. describegpt deliberately keeps
             // `role: measure` for durations (see is_temporal_content_type in
             // cmd/describegpt/dictionary.rs, issue #4177), but concept outranks role here, so the
             // leaf has to be special-cased. Mean, not Sum: summing "days to close" across records
@@ -15735,7 +15742,7 @@ fn classify_with_semantics(
 /// Structural only, by design: no column-existence, type or eligibility check happens here. That
 /// mirrors `xq_range`'s split — shape at parse time, validity at the consumption site — and it
 /// matters because dictionaries are hand-editable. A malformed or stale declaration must degrade
-/// to "no funnel", never to an error; this is a dashboard, not a validator.
+/// to "no funnel", never to an error; this is a Data Schematic, not a validator.
 ///
 /// JSONSchema-only. The legacy flat `{"fields":[…]}` dictionary has nowhere to put a row-encoded
 /// declaration, so supporting it there would be half a feature.
@@ -15937,7 +15944,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
 }
 
 /// Deterministic 8-hex-digit FNV-1a hash. Stable across runs and toolchains (unlike
-/// `DefaultHasher`), so tests can assert dictionary anchor ids and each dashboard gets a
+/// `DefaultHasher`), so tests can assert dictionary anchor ids and each Data Schematic gets a
 /// reproducible dictionary-tab window name.
 fn dict_short_hash(s: &str) -> String {
     let mut h: u32 = 0x811c_9dc5;
@@ -16354,7 +16361,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
      behaves exactly as if the vh unit were used directly; an EMBEDDED page has the parent
      overwrite it with a hundredth of the parent's viewport (see the qsvVizViewport handshake).
      That indirection exists because vh inside an auto-sized iframe resolves against the IFRAME,
-     which the gallery has grown to the dashboard's full content height — so "55vh" meant 55% of
+     which the gallery has grown to the Data Schematic's full content height — so "55vh" meant 55% of
      the whole document and the drawer opened far taller than the window it had to fit in. */
   /* declared on :root, NOT on the body rule below — the handshake writes this var to
      documentElement's inline style (as --qsv-data-h already does), and re-declaring it on body
@@ -16657,7 +16664,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       window.parent.scrollTo({ top: Math.max(0, y), behavior: "instant" });
     } catch (e) {}
   }
-  // Any reader input over the dashboard invalidates a pending reveal re-align series: the
+  // Any reader input over the Data Schematic invalidates a pending reveal re-align series: the
   // reader has taken over scrolling, and a late re-align would yank them back down even with
   // the drawer still open. The arming click's own pointerdown fires BEFORE show() captures its
   // sequence number, so it never cancels the series it starts.
@@ -16668,7 +16675,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   var parentVh = 0;
   function viewportH() { return parentVh || window.innerHeight; }
   // Asked at load AND again on every open. The load-time ask races the embedder: the gallery
-  // installs its listener far below the iframe markup, so a dashboard near the top of the page
+  // installs its listener far below the iframe markup, so a Data Schematic near the top of the page
   // can post before anything is listening, and a dropped answer has no other recovery — the
   // drawer would stay sized to the iframe until the parent happened to resize.
   function askViewport() {
@@ -17161,11 +17168,11 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     document.body.classList.remove("qsv-data-open");
     window.dispatchEvent(new Event("resize"));
     // return focus to the Explore/Preview link in the metadata table — the top of the
-    // dashboard — which also scrolls it back into view
+    // Data Schematic — which also scrolls it back into view
     var link = document.querySelector("a.qsv-data-link");
     if (link) {
       link.focus();
-      // embedded: scroll the parent back to the top of this dashboard (see revealTop)
+      // embedded: scroll the parent back to the top of this Data Schematic (see revealTop)
       revealTop(link);
     }
     return false;
@@ -17237,7 +17244,7 @@ fn strip_dataset_attribution(desc: &str) -> String {
 
 /// Render a small, safe subset of Markdown to HTML for `--dict-info` descriptions
 /// (per-column and dataset-level). The text is untrusted describegpt/LLM output that
-/// gets embedded inside the dashboard's `<script type="text/html">` template, so this
+/// gets embedded inside the Data Schematic's `<script type="text/html">` template, so this
 /// MUST NOT emit any raw/passthrough HTML: every literal run is `html_escape`d and only
 /// a fixed whitelist of tags (`p`, `ul`, `li`, `strong`, `em`, `code`, `a`) is ever
 /// produced. That single invariant guarantees both that no injected HTML/JS can execute
@@ -17330,7 +17337,7 @@ fn localize_dict_heading(heading: &str) -> String {
 ///
 /// `x-qsv.generated_by` is authored by `describegpt` when the dictionary is generated and stored
 /// verbatim in the schema, so its labels are English no matter what `viz --language` selects --
-/// the dictionary is written once, the dashboard locale is chosen later and may differ.
+/// the dictionary is written once, the Data Schematic locale is chosen later and may differ.
 /// Translating it HERE, at render time, localizes the drawer without touching the schema: the
 /// stored provenance stays a stable machine-readable record, `parse_dict_model` still reads its
 /// `Model:` line out of the raw JSON, and the "Export `JSONSchema`" button still serves the
@@ -17692,7 +17699,7 @@ fn dict_role_slug(role: Option<&str>) -> &'static str {
 }
 
 /// Render the human-friendly Data Dictionary document for `--dict-info`: a standalone,
-/// script-tag-free HTML page embedded in the dashboard (inside a `<script type="text/html">`
+/// script-tag-free HTML page embedded in the Data Schematic (inside a `<script type="text/html">`
 /// template), shown in the in-page drawer by `qsvOpenDict` and opened in its own browser tab
 /// by `qsvOpenDictTab`.
 ///
@@ -18104,12 +18111,12 @@ fn render_dict_page_html(
     };
 
     // Fixed neutral light/dark palettes keyed on `qsv-dark` (set on the standalone page's body
-    // by `qsvOpenDictTab`, inherited from the dashboard body in the drawer), mirroring the
-    // dashboard's theme-toggle convention. Every rule is scoped under `.qsv-dict-doc` /
+    // by `qsvOpenDictTab`, inherited from the Data Schematic body in the drawer), mirroring the
+    // Data Schematic's theme-toggle convention. Every rule is scoped under `.qsv-dict-doc` /
     // `.qsv-dict-body` / `#qsv-dict-drawer`, because the drawer adopts this whole `<style>` into
-    // the DASHBOARD's head — an unscoped `body` rule would restyle the dashboard itself. The
-    // drawer rules ride along here (inert in the standalone page) so the drawer and the page
-    // stay one document with one stylesheet. NOTE: this page must never contain a literal
+    // the Data Schematic's head — an unscoped `body` rule would restyle the Data Schematic itself.
+    // The drawer rules ride along here (inert in the standalone page) so the drawer and the
+    // page stay one document with one stylesheet. NOTE: this page must never contain a literal
     // `</script>` (it is embedded in a `<script type="text/html">` template), so it is
     // script-tag-free by design — standalone-tab interactivity is inline `onclick` handlers
     // only, which the drawer strips.
@@ -18133,7 +18140,7 @@ fn render_dict_page_html(
   .qsv-dark .qsv-dict-back {{ color: #6ea8ff; }}
   .qsv-dict-dataset-desc {{ font-size: 14px; line-height: 1.5; }}
   .qsv-dict-grain {{ font-size: 13px; }}
-  /* the download row: the JSONSchema export plus one link per sidecar this dashboard was built
+  /* the download row: the JSONSchema export plus one link per sidecar this Data Schematic was built
      from, wrapping onto as many lines as they need */
   .qsv-dict-downloads {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }}
   .qsv-dict-export {{ display: inline-block; font-size: 12px; padding: 3px 11px; border: 1px solid rgba(128, 128, 128, 0.45); border-radius: 6px; color: inherit; text-decoration: none; }}
@@ -18178,7 +18185,7 @@ fn render_dict_page_html(
   dl.qsv-dict-meta dd {{ margin: 0; overflow-wrap: anywhere; }}
   footer.qsv-dict-prov {{ margin-top: 20px; font-size: 11px; color: #888888; }}
   footer.qsv-dict-prov pre {{ white-space: pre-wrap; font-family: inherit; }}
-  /* ---- in-page drawer chrome (adopted into the dashboard head on first open; inert here) ---- */
+  /* ---- in-page drawer chrome (adopted into the Data Schematic head on first open; inert here) ---- */
   #qsv-dict-drawer {{ position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 42vw); transform: translateX(103%); transition: transform 0.22s ease; z-index: 1100; display: flex; flex-direction: column; background: #ffffff; color: #222222; border-left: 1px solid rgba(128, 128, 128, 0.4); box-shadow: -6px 0 18px rgba(0, 0, 0, 0.18); font-family: {FONT_FAMILY}; }}
   .qsv-dark #qsv-dict-drawer {{ background: #14171c; color: #d7dce2; }}
   #qsv-dict-drawer.open {{ transform: none; }}
@@ -18297,7 +18304,7 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
                 Err(e) => {
                     viz_note(&format!(
                         "viz smart --dictionary infer: could not read existing dictionary '{}' \
-                         ({e}); building the dashboard from statistics alone.",
+                         ({e}); building the Data Schematic from statistics alone.",
                         sidecar.display()
                     ));
                     return Ok(None);
@@ -18359,7 +18366,7 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
                 Err(e) => {
                     viz_note(&format!(
                         "viz smart --dictionary infer: describegpt failed ({e}); building the \
-                         dashboard from statistics alone (no semantic hints)."
+                         Data Schematic from statistics alone (no semantic hints)."
                     ));
                     return Ok(None);
                 },
@@ -18371,7 +18378,7 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
             Err(e) => {
                 viz_note(&format!(
                     "viz smart --dictionary: could not read dictionary file '{spec}' ({e}); \
-                     building the dashboard from statistics alone (no semantic hints)."
+                     building the Data Schematic from statistics alone (no semantic hints)."
                 ));
                 return Ok(None);
             },
@@ -18428,7 +18435,7 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
     if data.is_none() {
         viz_note(&format!(
             "viz smart --dictionary: '{source_label}' is not a recognizable describegpt \
-             dictionary (JSON Schema or JSON); building the dashboard from statistics alone."
+             dictionary (JSON Schema or JSON); building the Data Schematic from statistics alone."
         ));
     }
     // The raw JSON rides along so --dict-info can render the full dictionary page from fields
@@ -18890,7 +18897,7 @@ fn mean_is_outlier_driven(s: &crate::cmd::stats::StatsData) -> bool {
 /// Zero share at or above which zeros stop being incidental and start reshaping how the
 /// distribution must be read. Shared by `box_shape_hint`'s "% zeros" title part and the Lorenz
 /// panel's flat-run caveat (`lorenz_caveat`) so the two can never disagree about whether the same
-/// column is zero-inflated — they are routinely shown on the same dashboard.
+/// column is zero-inflated — they are routinely shown on the same Data Schematic.
 const ZERO_SHARE_MIN: f64 = 0.30;
 
 /// Share of zero values among a numeric column's non-null values, from the streaming sign
@@ -19008,8 +19015,8 @@ fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
 /// the point.
 const LORENZ_GINI_MIN: f64 = 0.5;
 
-/// Cap on how many Lorenz-curve panels a single smart dashboard adds (strongest Gini first), so a
-/// wide finance table can't spawn a full-width overview panel — and a data pass — per column.
+/// Cap on how many Lorenz-curve panels a single smart Data Schematic adds (strongest Gini first),
+/// so a wide finance table can't spawn a full-width overview panel — and a data pass — per column.
 const LORENZ_MAX_PANELS: usize = 3;
 
 /// Vertex cap for a rendered Lorenz curve. The cumulative curve is computed EXACTLY over every
@@ -19296,7 +19303,7 @@ fn dominant_share_stat(s: &crate::cmd::stats::StatsData) -> Option<f64> {
     share.is_finite().then_some(share)
 }
 
-/// Score how much a per-column panel is worth keeping when the dashboard overflows
+/// Score how much a per-column panel is worth keeping when the Data Schematic overflows
 /// `--max-charts`, from the column's cached statistics alone (no data pass). This is a
 /// heuristic, not a science: the goal is that on a wide dataset the surviving panels are the
 /// informative ones, not the leftmost ones.
@@ -19377,7 +19384,8 @@ fn code_twin_base(name: &str) -> Option<&str> {
 /// frequency bar (`Dimension`) AND its name is `<base>_code`/`_id`/`_key` AND a sibling column
 /// named `<base>` ALSO routes to a Dimension bar. Conservative on purpose: it only fires between
 /// two charted dimensions, so a lone `*_code` (whose label isn't itself charted) is kept; and the
-/// caller applies it only when a dictionary is present, so a stats-only dashboard is unchanged.
+/// caller applies it only when a dictionary is present, so a stats-only Data Schematic is
+/// unchanged.
 fn dimension_code_twins(
     stats: &[crate::cmd::stats::StatsData],
     sems: &[ColSemantics],
@@ -19414,7 +19422,7 @@ fn dimension_code_twins(
 /// This is the DATA-DRIVEN counterpart of `dimension_code_twins`, which recognizes the same
 /// redundancy from NAMES alone (`subject` + `subject_code`) and only with a dictionary present.
 /// Neither `magencyacro` nor `magencyname` is the other's `<base>_code`, and the reporting
-/// dashboard has no dictionary, so the name rule cannot see this pair. Both feed the same
+/// Data Schematic has no dictionary, so the name rule cannot see this pair. Both feed the same
 /// suppression set, so every downstream consumer — the per-column panel loop, `dim_indices`, and
 /// `eligible_categorical_dims` (hence parcats and the hierarchy panel) — inherits the verdict.
 ///
@@ -20698,7 +20706,7 @@ fn read_geo_anim(
     // (buckets `0..=k`), plus a base trace holding every point, so the serialized total is NOT the
     // distinct-point count: a point in bucket `b` is repeated once per frame from `b` onward.
     // Budgeting against the distinct count instead would overshoot the cap by ~nb/2 (30 buckets =>
-    // ~15x), which is how a nominal 150k-point dashboard grew to tens of MB of HTML.
+    // ~15x), which is how a nominal 150k-point Data Schematic grew to tens of MB of HTML.
     let embedded = cumulative_embedded_points(&bucket_lats);
     if embedded > *MAX_SMART_POINTS {
         // A uniform per-bucket stride does NOT shrink the total proportionally: `step_by` keeps
@@ -21788,7 +21796,7 @@ fn build_smart_pip_choropleth_panel(
         // "valid data that happens to yield <2 regions", it means the boundary file does not
         // cover the points at all (wrong --geojson, or lat/lon swapped so everything lands in the
         // ocean). Without this the run is completely silent — the boundary overlay still draws,
-        // so the dashboard shows outlined regions with no fill and no explanation.
+        // so the Data Schematic shows outlined regions with no fill and no explanation.
         if total > 0 && dropped == total {
             viz_note(&format!(
                 "viz smart: none of the {total} points fell inside any --geojson region, so no \
@@ -21799,7 +21807,7 @@ fn build_smart_pip_choropleth_panel(
         return Ok(None);
     }
     // only report after we know a panel will actually render, so the note never describes a map the
-    // dashboard drops.
+    // Data Schematic drops.
     if snapped > 0 {
         viz_note(&format!(
             "viz smart: {snapped} of {total} points were snapped to the nearest region (cap {} \
@@ -22717,7 +22725,7 @@ fn build_map_panel(
     let size_idx = first_col_by_concepts(col_sems, MAP_MEASURE_CONCEPTS, lat_idx, lon_idx, &[]);
 
     // opt-in `--photos`: the image-URL columns whose per-row values ride along as `customdata` for
-    // the hover-dwell lightbox. Empty unless the flag is set, so a default dashboard embeds no
+    // the hover-dwell lightbox. Empty unless the flag is set, so a default Data Schematic embeds no
     // off-origin URL and its viewers' browsers request nothing from a third-party image host.
     let photo_idxs: Vec<usize> = if args.flag_photos {
         image_url_cols(stats)
@@ -24132,7 +24140,7 @@ const KPI_LABEL_MARK: &str = "qsv-kpi-label";
 
 /// The word-wrapped subtitle label for one KPI tile, centered under the tile at paper-y `y_top`
 /// (anchored at its top so it hangs down into the band reserved below the indicator). Smaller than
-/// the number it captions; `font` follows the dashboard's themed/non-themed convention.
+/// the number it captions; `font` follows the Data Schematic's themed/non-themed convention.
 ///
 /// `max_chars` is a CHARACTER budget, which cannot track the tile's pixel width — the same page
 /// renders its KPI row anywhere from ~580px wide (narrow window, or the `--dict-info` drawer open)
@@ -24163,8 +24171,8 @@ fn kpi_label_annotation(
 /// that CONTAINS the observed value (else it falls back to a plain number — never a misleading
 /// gauge), and a "vs target" delta when the dictionary supplies a `target` (a semantically
 /// justified goal, never a fabricated prior-period baseline). Returns `None` when no measure tile
-/// results (dataset completeness now lives in the dashboard header, not as a KPI tile, so the row
-/// is worth drawing only when there is at least one measure to headline).
+/// results (dataset completeness now lives in the Data Schematic header, not as a KPI tile, so the
+/// row is worth drawing only when there is at least one measure to headline).
 fn build_kpi_row(
     stats: &[crate::cmd::stats::StatsData],
     panels: &[Panel],
@@ -24179,10 +24187,11 @@ fn build_kpi_row(
     // datasets) now rides quietly in the header table below "Columns:". The KPI row leads purely
     // with the headline MEASURES.
     //
-    // headline measures: the numeric columns the dashboard already treats as continuous measures
-    // (i.e. those that earned a box/violin/histogram distribution panel), summed (extensive) or
-    // averaged (intensive), up to the remaining tile budget. Keying off the built panels keeps the
-    // KPI measures consistent with the charts and works at any data size (no re-classification).
+    // headline measures: the numeric columns the Data Schematic already treats as continuous
+    // measures (i.e. those that earned a box/violin/histogram distribution panel), summed
+    // (extensive) or averaged (intensive), up to the remaining tile budget. Keying off the
+    // built panels keeps the KPI measures consistent with the charts and works at any data size
+    // (no re-classification).
     for p in panels {
         if tiles.len() >= KPI_MAX_TILES {
             break;
@@ -24290,7 +24299,7 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
     // (LLM-backed) describegpt pass whose every verdict is then discarded.
     //
     // A notice rather than an error, matching the dictionary loader's fail-to-stats philosophy:
-    // the dashboard still renders from stats alone (see
+    // the Data Schematic still renders from stats alone (see
     // `viz_smart_bivariate_soft_fails_with_no_headers`).
     if args.flag_no_headers && args.flag_dictionary.is_some() {
         viz_note(
@@ -24345,7 +24354,7 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
     // Non-default parsing (--no-headers / custom --delimiter) forces the stats path to
     // regenerate. get_stats_records keys its `.stats.csv.data.jsonl` cache only by mtime + stat
     // sufficiency, NOT by parsing options, so without this a current default-parsing cache (e.g.
-    // from an earlier headered `qsv stats` run) would be reused and the dashboard would render
+    // from an earlier headered `qsv stats` run) would be reused and the Data Schematic would render
     // from incorrectly parsed stats (row 1 as headers vs data, or a mis-split delimiter).
     let force_stats_regen = args.flag_no_headers || args.flag_delimiter.is_some();
 
@@ -24369,7 +24378,7 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
         if args.flag_no_headers || args.flag_delimiter.is_some() {
             viz_note(
                 "viz smart --smarter: moarstats enrichment is only applied with default parsing; \
-                 --no-headers / --delimiter inputs use the standard dashboard instead.",
+                 --no-headers / --delimiter inputs use the standard Data Schematic instead.",
             );
         } else {
             // Enrich the stats cache with moarstats advanced distribution-shape stats so
@@ -24384,7 +24393,8 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
             //
             // --stats-options mirrors moarstats' own default plus --dates-whitelist sniff, so the
             // regenerated cache infers dates the same way viz smart does (for the time-series
-            // panel). Soft-fail: a moarstats error degrades to the plain ProfileSchema dashboard.
+            // panel). Soft-fail: a moarstats error degrades to the plain ProfileSchema Data
+            // Schematic.
             let stats_opts = "--infer-dates --infer-boolean --cardinality --mode --mad \
                               --quartiles --percentiles --force --stats-jsonl --dates-whitelist \
                               sniff";
@@ -24403,10 +24413,11 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
                 moar_argv.extend(["--bivariate", "--bivariate-stats", "nmi,u,pearson,spearman"]);
                 // Remove any stale bivariate sidecar from a prior run BEFORE moarstats runs.
                 // moarstats (re)writes it only when the fresh run yields pairs, so clearing it
-                // first means a pair-less or failed current run leaves NO sidecar for the dashboard
-                // to read (it then soft-fails) instead of charting association stats computed for
-                // since-changed data. Snapshot the pre-run mtime FIRST so that even if the removal
-                // fails (e.g. a locked/read-only file), a stale copy whose mtime never advances is
+                // first means a pair-less or failed current run leaves NO sidecar for the Data
+                // Schematic to read (it then soft-fails) instead of charting
+                // association stats computed for since-changed data. Snapshot the
+                // pre-run mtime FIRST so that even if the removal fails (e.g. a
+                // locked/read-only file), a stale copy whose mtime never advances is
                 // still caught as not-fresh below rather than trusted.
                 let sidecar = bivariate_csv_path(&input);
                 sidecar_before = std::fs::metadata(&sidecar).and_then(|m| m.modified()).ok();
@@ -24437,7 +24448,7 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
             if let Err(e) = &moar_result {
                 viz_note(&format!(
                     "viz smart --smarter: moarstats enrichment failed ({e}); falling back to \
-                     standard stats. Dashboard will omit advanced refinements."
+                     standard stats. Data Schematic will omit advanced refinements."
                 ));
             }
             // Trust the sidecar only when THIS run actually wrote it: moarstats must have succeeded
@@ -24482,11 +24493,11 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
 /// `diskcache::resolve_dc_path` auto-refreshes a stale entry — a network fetch that can
 /// materialize a DIFFERENT CSV — so two resolutions within one run can disagree. Feeding the
 /// result to BOTH `get_stats_records` (which then has no `dc:` prefix left to re-resolve) and the
-/// `--dict-info` stats anchor is what makes the offered sidecars provably the ones the dashboard's
-/// stats came from.
+/// `--dict-info` stats anchor is what makes the offered sidecars provably the ones the Data
+/// Schematic's stats came from.
 ///
 /// A resolution failure falls back to the raw input, which simply won't canonicalize later — no
-/// stats downloads, rather than a failed dashboard.
+/// stats downloads, rather than a failed Data Schematic.
 fn resolve_stats_input_path(input: &str) -> String {
     #[cfg(feature = "get")]
     if let Some(dc_name) = input.strip_prefix("dc:") {
@@ -24532,7 +24543,7 @@ struct SmartCtx<'a> {
     twin_suppress:  std::collections::HashSet<usize>,
 
     /// the geographic overview panels, built up front and prepended last so they lead the
-    /// dashboard and survive the panel cap.
+    /// Data Schematic and survive the panel cap.
     map_panel:         Option<(Panel, (usize, usize))>,
     choropleth_panel:  Option<Panel>,
     summary_choros:    Option<(Vec<Panel>, usize)>,
@@ -24668,7 +24679,7 @@ impl<'a> SmartCtx<'a> {
                 progress.suspend(|| {
                     winfo!(
                         "Note: detected language '{code}' is not in the curated localization set \
-                         ({}); rendering the dashboard in English.",
+                         ({}); rendering the Data Schematic in English.",
                         viz_i18n::curated_list()
                     );
                 });
@@ -24684,7 +24695,7 @@ impl<'a> SmartCtx<'a> {
         // Resolve the date-parsing preference per column ONCE (issue #4303). A dictionary that
         // declares a column's strftime format (`content_type: "date:%m/%d/%Y"`) is authoritative
         // for that column; QSV_PREFER_DMY is the fallback wherever the dictionary is silent, so a
-        // dashboard built without a dictionary is byte-identical to before.
+        // Data Schematic built without a dictionary is byte-identical to before.
         let env_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
         let dmy_prefs: Vec<bool> = stats
             .iter()
@@ -24695,7 +24706,7 @@ impl<'a> SmartCtx<'a> {
             .collect();
 
         // De-duplicate code/label twins (subject + subject_code -> chart only "subject"). Gated on
-        // a dictionary being present so a stats-only dashboard is byte-identical; timezone
+        // a dictionary being present so a stats-only Data Schematic is byte-identical; timezone
         // twins and IDs are already de-duplicated by the Temporal/Skip routing above.
         let mut twin_suppress = if dict_data.is_some() {
             dimension_code_twins(&stats, &col_sems)
@@ -24705,9 +24716,9 @@ impl<'a> SmartCtx<'a> {
         // ... and the same redundancy detected from the DATA rather than the names: two
         // categorical columns in a 1:1 correspondence chart as identical bars and waste a parcats
         // axis on the same variable (issue #4221). Deliberately NOT dictionary-gated — the name
-        // rule above can only fire on a `<base>_code` spelling, and the reporting dashboard has
-        // neither that spelling nor a dictionary. Soft-fail: a dashboard with a duplicate panel
-        // beats no dashboard.
+        // rule above can only fire on a `<base>_code` spelling, and the reporting Data Schematic
+        // has neither that spelling nor a dictionary. Soft-fail: a Data Schematic with a
+        // duplicate panel beats no Data Schematic.
         match one_to_one_categorical_twins(args, &stats, &col_sems) {
             Ok(dupes) => twin_suppress.extend(dupes),
             Err(e) => viz_note(&format!(
@@ -24719,7 +24730,7 @@ impl<'a> SmartCtx<'a> {
         // Build the geographic map panel up front (one data pass) so we can learn which lat/lon
         // columns it ACTUALLY consumed. Those columns are charted on the map only —
         // excluded from per-column distribution panels, the correlation matrix, and the
-        // time-series y so a map dashboard doesn't redundantly box/histogram its
+        // time-series y so a map Data Schematic doesn't redundantly box/histogram its
         // coordinates or plot e.g. latitude vs time.
         //
         // The map panel is built for BOTH HTML and static image output. The MapLibre tile basemap
@@ -24943,8 +24954,8 @@ impl<'a> SmartCtx<'a> {
         })
     }
 
-    /// Classify each column into a dashboard panel, accumulating the panel set, the skipped-column
-    /// list, and the three deferred sentinel/measure diagnostics.
+    /// Classify each column into a Data Schematic panel, accumulating the panel set, the
+    /// skipped-column list, and the three deferred sentinel/measure diagnostics.
     ///
     /// Destructures the context up front so the loop can push to `panels` while iterating `stats`
     /// and still reach the lazy `nrows` row-count -- disjoint field borrows the borrow checker
@@ -25839,7 +25850,7 @@ impl<'a> SmartCtx<'a> {
             Some(d) if !d.pipelines.is_empty() => d.pipelines.clone(),
             _ => return Ok(None),
         };
-        // First declaration that validates wins; a dashboard with two funnels is out of scope.
+        // First declaration that validates wins; a Data Schematic with two funnels is out of scope.
         for spec in &specs {
             let built = match spec {
                 PipelineSpec::Columns { members } => {
@@ -26162,7 +26173,7 @@ impl<'a> SmartCtx<'a> {
     /// Prepend the cross-column overview panels: the winning animated panel, measure-by-dimension,
     /// grouped violin, Lorenz curves, parcats, hierarchy, time-series, cyclic profile, and finally
     /// the geographic panels. Each is `insert(0, ..)`-ed, so the LAST one inserted leads the
-    /// dashboard — the order of these blocks IS the final top-to-bottom order.
+    /// Data Schematic — the order of these blocks IS the final top-to-bottom order.
     fn add_overview_panels(&mut self) -> CliResult<()> {
         // ARBITRATION (§5): insert the single winning animated panel — T3 (bubble) first, else T2
         // (geo) — as a leading overview row. Prepending here (before the measure-by-dim / grouped-
@@ -26514,10 +26525,10 @@ impl<'a> SmartCtx<'a> {
             self.panels.insert(0, panel);
         }
 
-        // prepend the geographic overview panels (built up front, above) so they lead the dashboard
-        // and survive the panel cap. Insert the per-country choropleth first, then the point map at
-        // index 0, yielding [map, choropleth, ...] — the point map for spatial detail, the
-        // choropleth beside it for the per-jurisdiction aggregate.
+        // prepend the geographic overview panels (built up front, above) so they lead the Data
+        // Schematic and survive the panel cap. Insert the per-country choropleth first,
+        // then the point map at index 0, yielding [map, choropleth, ...] — the point map
+        // for spatial detail, the choropleth beside it for the per-jurisdiction aggregate.
         if let Some(mut panel) = self.choropleth_panel.take() {
             panel.dict_info = self.geo_dict_info();
             self.panels.insert(0, panel);
@@ -26525,7 +26536,7 @@ impl<'a> SmartCtx<'a> {
             // the region-code summary choropleth(s) replace the (absent) lat/lon choropleth
             // companion. No coordinate column drives them, so anchor --dict-info on the region key
             // column instead of geo_dict_info() (which is None here). Insert in reverse so the
-            // leading dashboard order is [count, median, …].
+            // leading Data Schematic order is [count, median, …].
             let info = dict_info_for_field(self.dict_icons(), &self.stats[region_idx].field);
             for mut panel in sc_panels.into_iter().rev() {
                 panel.dict_info = info.clone();
@@ -26652,7 +26663,7 @@ impl<'a> SmartCtx<'a> {
         }
         if self.panels.is_empty() {
             // The diagnostics above ran FIRST on purpose. When every column is skipped there is
-            // no dashboard, and a bare "no chartable columns" told the user nothing about the
+            // no Data Schematic, and a bare "no chartable columns" told the user nothing about the
             // most likely cause - a null sentinel holding every numeric column back.
             let denull_hint = if self.sentinel_suspects.is_empty() && self.sentinel_hints.is_empty()
             {
@@ -26694,7 +26705,7 @@ impl<'a> SmartCtx<'a> {
     }
 
     /// Gather the per-panel data the renderers need: frequency counts, raw/outlier values, the
-    /// dashboard title, and the optional dictionary page + metadata table.
+    /// Data Schematic title, and the optional dictionary page + metadata table.
     fn gather_panel_data(&mut self) -> CliResult<SmartPanelData> {
         // gather frequency counts for the bar panels in a single pass
         let bar_indices: Vec<usize> = self
@@ -26825,7 +26836,7 @@ impl<'a> SmartCtx<'a> {
             collect_smart_values(self.args, &raw_indices, &raw_strides, &fence_bounds)?
         };
 
-        // dashboard title: the user's --title, else the dataset's file name
+        // Data Schematic title: the user's --title, else the dataset's file name
         let title_text = self.args.flag_title.clone().unwrap_or_else(|| {
             let dataset = std::path::Path::new(self.args.arg_input.as_deref().unwrap_or("data"))
                 .file_name()
@@ -26865,10 +26876,10 @@ impl<'a> SmartCtx<'a> {
                     };
                     // downloads for the generated sidecars this run actually consumed, offered
                     // beside the "Export JSONSchema" link so a reader of the standalone HTML can
-                    // pull down the inputs the dashboard was built from.
+                    // pull down the inputs the Data Schematic was built from.
                     // `stats_input` is the exact string handed to `get_stats_records`, resolved
                     // once in `smart_prepare`. Anchoring on it means the offered stats sidecars
-                    // are the ones the dashboard's statistics were actually read from — not a
+                    // are the ones the Data Schematic's statistics were actually read from — not a
                     // second `dc:` resolution that could have refreshed a stale entry in between.
                     let sidecars = collect_sidecar_downloads(
                         self.args.arg_input.as_deref(),
@@ -26894,12 +26905,12 @@ impl<'a> SmartCtx<'a> {
         } else {
             viz_note(
                 "viz smart --dict-info: no usable data dictionary (see --dictionary); showing the \
-                 dashboard without dictionary info.",
+                 Data Schematic without dictionary info.",
             );
             None
         };
 
-        // top-of-dashboard metadata table (HTML output only, mirroring --dict-info's HTML-only
+        // top-of-Data Schematic metadata table (HTML output only, mirroring --dict-info's HTML-only
         // scope). Rows/Columns/Compiled always render, so the table always has >=3 rows;
         // Description and PID are conditional. Image-export paths carry no table (would require
         // Plotly-layout annotations).
@@ -26960,8 +26971,8 @@ impl<'a> SmartCtx<'a> {
                     completeness * 100.0
                 ));
             }
-            // Compiled: dashboard build timestamp (makes smart HTML output non-deterministic by
-            // design).
+            // Compiled: Data Schematic build timestamp (makes smart HTML output non-deterministic
+            // by design).
             rows.push_str(&format!(
                 "<tr><td class=\"qsv-viz-meta-k\">{}</td><td>{}</td></tr>\n",
                 t!("viz.meta.compiled"),
@@ -27036,7 +27047,7 @@ impl<'a> SmartCtx<'a> {
         // Leading KPI overview row, prepended LAST (after every panel-count-dependent decision —
         // the `--max-charts` ranking, the "charting N columns" note, the box-overlay demotion, and
         // the render-path choice) so it stays invisible to them and simply lands at index 0, on top
-        // of the dashboard. HTML only: Indicator tiles are domain-positioned and never enter a
+        // of the Data Schematic. HTML only: Indicator tiles are domain-positioned and never enter a
         // static image.
         if !self.out_format.is_image()
             && let Some(panel) = build_kpi_row(&self.stats, &self.panels, self.dict_data.as_ref())
@@ -27044,7 +27055,7 @@ impl<'a> SmartCtx<'a> {
             self.panels.insert(0, panel);
         }
 
-        self.progress.set_message("Rendering dashboard…");
+        self.progress.set_message("Rendering Data Schematic…");
         if self.inline {
             Ok(SmartRender::Inline(render_smart_inline(
                 self.args,
@@ -27138,7 +27149,7 @@ fn lorenz_diagonal_trace(axes: Option<(String, String)>) -> Box<dyn Trace> {
     d
 }
 
-/// Build the plotly trace for one smart-dashboard panel. `axes` carries the subplot axis refs
+/// Build the plotly trace for one smart-Data Schematic panel. `axes` carries the subplot axis refs
 /// when rendering into the typed grid; pass `None` for a standalone inline-div plot (which uses
 /// the default x/y axes). Returns the trace plus, for bar panels, the tallest bar value (used
 /// to add vertical headroom for the outside value labels) and whether that panel's y-axis
@@ -28136,8 +28147,8 @@ fn panel_trace_measure_by_dim(
     (trace, bar_max, log_y)
 }
 
-/// The reusable building blocks of a smart-dashboard subplot grid, shared by the typed-`Layout`
-/// renderer (`render_smart_grid`, ≤ `MAX_SUBPLOTS` panels) and the raw-JSON renderer
+/// The reusable building blocks of a smart-Data Schematic subplot grid, shared by the
+/// typed-`Layout` renderer (`render_smart_grid`, ≤ `MAX_SUBPLOTS` panels) and the raw-JSON renderer
 /// (`render_smart_grid_json`, used for static image export of more panels). Each axis pair in
 /// `axes` already has its paper-domain and cross-anchor applied; `base_layout` carries the
 /// page chrome (size/margins/fonts/background) but neither the per-subplot axes nor the
@@ -28155,12 +28166,12 @@ struct SmartGridParts {
     dims:        (usize, usize),
 }
 
-/// Build the shared pieces of a smart-dashboard subplot grid: one trace per panel (each
+/// Build the shared pieces of a smart-Data Schematic subplot grid: one trace per panel (each
 /// referencing its own `x{n}`/`y{n}` axes), the domain-positioned + cross-anchored axis pairs,
-/// the dashboard + per-panel title annotations, and the base page layout. We lay out each cell's
-/// axes with explicit paper-domains (rather than a plotly `grid`) so we can (a) scale the plot
-/// height with the row count, (b) reserve a band at the top for the dashboard title, and (c)
-/// place each column's name as a title *above* its panel.
+/// the Data Schematic + per-panel title annotations, and the base page layout. We lay out each
+/// cell's axes with explicit paper-domains (rather than a plotly `grid`) so we can (a) scale the
+/// plot height with the row count, (b) reserve a band at the top for the Data Schematic title, and
+/// (c) place each column's name as a title *above* its panel.
 fn smart_grid_parts(
     args: &Args,
     panels: &[Panel],
@@ -28253,9 +28264,10 @@ fn smart_grid_parts(
     // otherwise apply qsv's built-in look. `themed` gates the explicit overrides below.
     let theme = args.theme();
     let themed = theme.is_some();
-    // a dashboard text font: set the family but never an explicit color, so the text inherits the
-    // layout font color (qsv's ink unthemed, the template's font when themed). Inheriting -- rather
-    // than baking in ink -- lets the dark/light toggle's `font.color` relayout flip these labels.
+    // a Data Schematic text font: set the family but never an explicit color, so the text inherits
+    // the layout font color (qsv's ink unthemed, the template's font when themed). Inheriting
+    // -- rather than baking in ink -- lets the dark/light toggle's `font.color` relayout flip
+    // these labels.
     let ann_font = |size: usize| {
         let f = Font::new().size(size);
         if themed { f } else { f.family(FONT_FAMILY) }
@@ -28264,7 +28276,7 @@ fn smart_grid_parts(
     let mut base_layout = Layout::new()
         .show_legend(false)
         .height(fig_height)
-        // vertical modebar, clear of the dashboard title and the top-right cell's panel title
+        // vertical modebar, clear of the Data Schematic title and the top-right cell's panel title
         // (matching the inline panels — see `inline_panel_title`)
         .mode_bar(ModeBar::new().orientation(Orientation::Vertical))
         .margin(
@@ -28282,7 +28294,7 @@ fn smart_grid_parts(
             .plot_background_color(PAPER_BG);
     }
 
-    // annotations: the dashboard title (in the reserved top strip) plus one title per panel
+    // annotations: the Data Schematic title (in the reserved top strip) plus one title per panel
     let mut annotations: Vec<Annotation> = Vec::with_capacity(panels.len() + 1);
     annotations.push(
         Annotation::new()
@@ -28674,7 +28686,7 @@ fn smart_grid_parts(
         ));
 
         // in-cell `r` value labels for the correlation panel, drawn only when the matrix is
-        // small enough to stay legible in one dashboard cell. Category axes index annotations
+        // small enough to stay legible in one Data Schematic cell. Category axes index annotations
         // by serial number (0-based), and the text flips to white on the dark high-|r| cells
         // for contrast against the RdBu scale.
         if let PanelKind::CorrHeatmap { matrix, .. } | PanelKind::AssocHeatmap { matrix, .. } =
@@ -28765,7 +28777,8 @@ fn render_smart_grid_page(
       </div>
 </div>"#
     );
-    // the typed plot already carries the dashboard title in its layout, so suppress the page <h1>.
+    // the typed plot already carries the Data Schematic title in its layout, so suppress the page
+    // <h1>.
     smart_html_page(
         title_text,
         theme,
@@ -28787,9 +28800,9 @@ fn render_smart_grid_page(
     )
 }
 
-/// Render the dashboard as a raw Plotly JSON value with domain-positioned axes, for static image
-/// export of > `MAX_SUBPLOTS` panels. plotly's typed `Layout` only has `x_axis1..x_axis8`, but
-/// plotly.js itself supports any number of axes — so we serialize the plot, then inject each
+/// Render the Data Schematic as a raw Plotly JSON value with domain-positioned axes, for static
+/// image export of > `MAX_SUBPLOTS` panels. plotly's typed `Layout` only has `x_axis1..x_axis8`,
+/// but plotly.js itself supports any number of axes — so we serialize the plot, then inject each
 /// cell's `xaxis{n}`/`yaxis{n}` (the traces already reference them by name). The result is fed to
 /// `StaticExporter::write_fig`, which renders an arbitrary JSON value through the same
 /// headless-browser backend as `Plot::write_image`.
@@ -28819,13 +28832,15 @@ fn render_smart_grid_json(
     plot.set_layout(apply_theme(base_layout.annotations(annotations), theme));
 
     let mut value: serde_json::Value = serde_json::from_str(&plot.to_json()).map_err(|e| {
-        crate::CliError::Other(format!("viz smart: could not assemble dashboard JSON: {e}"))
+        crate::CliError::Other(format!(
+            "viz smart: could not assemble Data Schematic JSON: {e}"
+        ))
     })?;
     let Some(layout_obj) = value
         .get_mut("layout")
         .and_then(serde_json::Value::as_object_mut)
     else {
-        return fail_clierror!("viz smart: assembled dashboard JSON has no layout object");
+        return fail_clierror!("viz smart: assembled Data Schematic JSON has no layout object");
     };
     for (pos, x_axis, y_axis) in &axes {
         layout_obj.insert(
@@ -28934,7 +28949,7 @@ fn inline_panel_title_shifted(
     }
 }
 
-/// Build a standalone themed `Plot` for one panel, used as a cell in the inline-div dashboard.
+/// Build a standalone themed `Plot` for one panel, used as a cell in the inline-div Data Schematic.
 ///
 /// One function per panel kind rather than one big body: at `opt-level=0` every
 /// `Plot`/`Layout` local gets its own stack slot with no reuse across branches, and a
@@ -29935,7 +29950,7 @@ fn inline_panel_plot_animated_bubble(panel: &Panel, theme: Option<BuiltinTheme>)
 
 // Animated scatter pair: the strongest numeric pair revealed cumulatively over time, colored by
 // time bucket (early → late), rendered as its own inline Plot (scrub slider + Play/Pause).
-// Forces the inline dashboard path (see has_noncartesian) and is HTML-only. Reuses the
+// Forces the inline Data Schematic path (see has_noncartesian) and is HTML-only. Reuses the
 // standalone animation core (slider_control/play_pause_menu).
 #[inline(never)]
 fn inline_panel_plot_animated_scatter_pair(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
@@ -30386,7 +30401,7 @@ fn render_smart_inline(
     );
     // Inject the lightbox chrome only when a map panel actually embedded per-point image URLs —
     // not merely because `--photos` was passed. A dataset with no image column (or no lat/lon)
-    // then still produces a dashboard with no off-origin reference anywhere in it.
+    // then still produces a Data Schematic with no off-origin reference anywhere in it.
     let has_photos = panels.iter().any(|p| {
         matches!(&p.kind, PanelKind::Map { photos, outlier_photos, .. }
             if !photos.is_empty() || !outlier_photos.is_empty())
@@ -30424,7 +30439,7 @@ fn render_smart_inline(
         } => Some((*c, m)),
         _ => None,
     });
-    // panels carry no overall title, so the dashboard title is shown as the page <h1>.
+    // panels carry no overall title, so the Data Schematic title is shown as the page <h1>.
     smart_html_page(
         title_text,
         theme,
@@ -30441,7 +30456,7 @@ fn render_smart_inline(
     )
 }
 
-/// Minimal HTML-escaping for text interpolated into the inline dashboard page.
+/// Minimal HTML-escaping for text interpolated into the inline Data Schematic page.
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -30476,7 +30491,7 @@ fn html_in_js_text(s: &str) -> String {
 }
 
 /// Extract the first meaningful paragraph from a Markdown dataset description for
-/// the top-of-dashboard metadata cell.
+/// the top-of-Data Schematic metadata cell.
 ///
 /// LLM-generated data dictionaries often prepend a Markdown heading (e.g. an
 /// ATX `# Description` or a bold-only `**Description**` line) before the actual
@@ -31414,8 +31429,8 @@ struct OutlierStats {
 ///   at `SMART_BOX_OUTLIERS_CAP`; never uniform-downsampled, which would drop the extremes) and
 ///   track the in-fence min/max for honest whisker ends.
 ///
-/// Empty and non-numeric cells are skipped. Folding both into one reader loop means a dashboard
-/// mixing histograms and outlier boxes still scans the data only once.
+/// Empty and non-numeric cells are skipped. Folding both into one reader loop means a Data
+/// Schematic mixing histograms and outlier boxes still scans the data only once.
 fn collect_smart_values(
     args: &Args,
     full_indices: &[usize],
@@ -31663,7 +31678,7 @@ fn inline_json_script(id: &str, json: &str) -> String {
     format!("<script id=\"{id}\" type=\"application/json\">{safe}</script>")
 }
 
-/// Build the data viewer chrome for a smart HTML dashboard: the DataTables library block, the
+/// Build the data viewer chrome for a smart HTML Data Schematic: the DataTables library block, the
 /// row + column payload tags, and the drawer CSS/script — plus the "(Explore)"/"(Preview)" label
 /// for the metadata Rows link. `None` when the viewer is disabled (`--preview-threshold 0`) or
 /// there is nothing to show. Callers gate on HTML output; image exports never pay the data pass.
@@ -31781,15 +31796,15 @@ fn axis_ref(prefix: char, pos: usize) -> String {
     }
 }
 
-/// Plot-area height (pixels) of a `rows`-row dashboard: total height minus the top/bottom
+/// Plot-area height (pixels) of a `rows`-row Data Schematic: total height minus the top/bottom
 /// margins. Floored at 1 to avoid division by zero.
 fn smart_plot_area_h(row_units: f64) -> f64 {
     (row_units * ROW_HEIGHT_PX as f64 - (TOP_MARGIN_PX + BOTTOM_MARGIN_PX) as f64).max(1.0)
 }
 
-/// Top of the subplot band (paper coords) for a `rows`-row dashboard. The strip above it
+/// Top of the subplot band (paper coords) for a `rows`-row Data Schematic. The strip above it
 /// reserves a fixed `TITLE_BAND_PX` pixels (converted to a paper fraction via the plot-area
-/// height) for the top row's panel titles, so they always clear the dashboard title — for
+/// height) for the top row's panel titles, so they always clear the Data Schematic title — for
 /// both short (one-row) and tall (eight-row) dashboards. When any panel carries a subtitle
 /// (a dictionary label under the title), the band grows by one extra text line so the
 /// two-line title has room. Capped at half the area.
@@ -31804,12 +31819,12 @@ fn smart_grid_top(row_units: f64, has_subtitles: bool) -> f64 {
 }
 
 /// Paper-fraction gap between a cell's top and its title, fixed at `TITLE_OFFSET_PX` pixels
-/// so it doesn't scale with dashboard height (which would consume the reserved band).
+/// so it doesn't scale with Data Schematic height (which would consume the reserved band).
 fn smart_title_offset(row_units: f64) -> f64 {
     (TITLE_OFFSET_PX as f64 / smart_plot_area_h(row_units)).min(0.05)
 }
 
-/// Geometry (in paper coordinates, 0..1) for one subplot cell in the dashboard grid.
+/// Geometry (in paper coordinates, 0..1) for one subplot cell in the Data Schematic grid.
 #[derive(Clone)]
 struct SubplotGeometry {
     x_domain: Vec<f64>,
@@ -31819,9 +31834,9 @@ struct SubplotGeometry {
 }
 
 /// Whether a panel is a leading "overview" summary — map/geo, correlation heatmap and its
-/// scatter/contour/3D drill-downs, or the time-series trend — that should span the full dashboard
-/// width, as opposed to a per-column distribution panel (box/bar/histogram) that flows in the
-/// multi-column grid below.
+/// scatter/contour/3D drill-downs, or the time-series trend — that should span the full Data
+/// Schematic width, as opposed to a per-column distribution panel (box/bar/histogram) that flows in
+/// the multi-column grid below.
 fn is_overview_panel(kind: &PanelKind) -> bool {
     match kind {
         PanelKind::KpiRow { .. }
@@ -31958,7 +31973,7 @@ fn scatter_fill_stats(xs: &[f64], ys: &[f64]) -> ScatterFill {
     ScatterFill { degenerate, sparse }
 }
 
-/// Inline-dashboard render height (px) for a panel, CONTEXT-SENSITIVE to the panel's data:
+/// Inline-Data Schematic render height (px) for a panel, CONTEXT-SENSITIVE to the panel's data:
 /// geographic panels get a taller `MAP_ROW_HEIGHT_PX` (an animated map adds a
 /// `SLIDER_CONTROL_ALLOWANCE_PX` band for its controls); parcats/sankey scale with their
 /// category/node count (clamped); a sparse scatter gets a compact height; hierarchy gets the tall
@@ -32026,7 +32041,7 @@ fn kpi_row_height(tiles: &[KpiTile]) -> usize {
 
 /// Fractional row height (in units of `ROW_HEIGHT_PX`) for a panel in the STATIC-export grid,
 /// mirroring the inline path's `panel_render_height` so PNG/SVG/PDF exports match the interactive
-/// HTML dashboard. One row unit is `ROW_HEIGHT_PX`; a taller overview/map/parcats panel scales
+/// HTML Data Schematic. One row unit is `ROW_HEIGHT_PX`; a taller overview/map/parcats panel scales
 /// above 1.0, a short KPI row below it, a sparse scatter below it. At `1.0` for every row the
 /// weighted grid geometry reduces to the original uniform layout.
 fn panel_row_scale(kind: &PanelKind, axis_log: (bool, bool)) -> f64 {
@@ -32035,19 +32050,19 @@ fn panel_row_scale(kind: &PanelKind, axis_log: (bool, bool)) -> f64 {
 
 /// Compute the paper-space domains for a cell at grid position (`row`, `col`) in a `rows`×`cols`
 /// grid that occupies the vertical band `0.0..=top` (the strip above `top` is left for the
-/// dashboard title), plus the (x, y) anchor for the panel's own title, placed `title_offset` (a
-/// paper fraction) above the cell. When `full_width` is set the cell spans the entire page width
+/// Data Schematic title), plus the (x, y) anchor for the panel's own title, placed `title_offset`
+/// (a paper fraction) above the cell. When `full_width` is set the cell spans the entire page width
 /// (`x_domain == [0.0, 1.0]`, used for the leading overview panels) rather than a single column.
 ///
 /// The inter-cell gaps are fixed paper fractions for typical dashboards, but the *total* gap is
 /// capped (`MAX_TOTAL_HGAP`/`MAX_TOTAL_VGAP`) so cells never collapse to a negative size: a fixed
 /// per-gap fraction overflows the `0..=top` band once there are enough rows (e.g. a 42-panel,
-/// 21-row dashboard would need 1.8 of vertical gap alone).
+/// 21-row Data Schematic would need 1.8 of vertical gap alone).
 ///
 /// `row_scales[r]` is row `r`'s height as a fraction of a full `ROW_HEIGHT_PX` row (its tallest
 /// panel's `panel_row_scale`), so a row can be taller (map/parcats overview) or shorter (KPI,
 /// sparse scatter) than the rest. With every entry `1.0` the per-row weighting collapses back to a
-/// uniform grid, so a dashboard of only same-height rows is byte-identical to the old layout.
+/// uniform grid, so a Data Schematic of only same-height rows is byte-identical to the old layout.
 /// `row_scales.len()` must equal `rows`.
 fn cell_geometry(
     row: usize,
@@ -32107,8 +32122,8 @@ fn cell_geometry(
     }
 }
 
-/// Lay out the dashboard panels: each leading overview panel (see `is_overview_panel`) takes its
-/// own full-width row, while the remaining per-column distribution panels pack into `cols`-wide
+/// Lay out the Data Schematic panels: each leading overview panel (see `is_overview_panel`) takes
+/// its own full-width row, while the remaining per-column distribution panels pack into `cols`-wide
 /// rows below. Returns the per-panel geometry (indexed like `panels`), the total row count, and
 /// the figure height in pixels (shorter than `rows * ROW_HEIGHT_PX` when a leading KPI row shrinks
 /// its own row).
@@ -32198,7 +32213,7 @@ fn freq_bar_tick_text(panel: &Panel, freq: &FreqMap) -> Option<Vec<String>> {
     }
 }
 
-/// A styled x-axis for a dashboard panel: no vertical gridlines, a light baseline, and
+/// A styled x-axis for a Data Schematic panel: no vertical gridlines, a light baseline, and
 /// small tick labels. For single-box panels (`is_box`), the lone "0" category tick is
 /// meaningless, so its labels and baseline are hidden. For time-series panels (`is_date`),
 /// the axis is typed as a date axis so plotly spaces ticks chronologically. For relationship
@@ -32257,7 +32272,7 @@ fn styled_x_axis(
     a
 }
 
-/// A styled y-axis for a dashboard panel: light horizontal gridlines only, small ticks.
+/// A styled y-axis for a Data Schematic panel: light horizontal gridlines only, small ticks.
 /// When `headroom_max` is given (bar panels), the range is fixed so the tallest bar's outside
 /// value label has room and isn't clipped at the cell top: `0..=max*1.15` on a linear axis, or
 /// (when `log`) a log10 range from just under 1 up to `log10(max)` plus a margin. A `log` axis
@@ -32410,7 +32425,8 @@ fn funnel_value_axis(max: f64, theme: Option<BuiltinTheme>) -> Axis {
         .zero_line(false)
         .show_line(false)
         .show_tick_labels(false)
-        // SI prefixes, matching the rest of the dashboard's value formatting (see `styled_y_axis`)
+        // SI prefixes, matching the rest of the Data Schematic's value formatting (see
+        // `styled_y_axis`)
         .exponent_format(ExponentFormat::SI)
         .range(vec![-half, half]);
     if theme.is_none() {
@@ -34518,7 +34534,7 @@ mod tests {
         );
 
         assert!(
-            html.contains(r#"title="Download a&amp;b &quot;q&quot;.stats.csv, a sidecar this dashboard was built from""#),
+            html.contains(r#"title="Download a&amp;b &quot;q&quot;.stats.csv, a sidecar this Data Schematic was built from""#),
             "the tooltip should escape the file name exactly once; all title= values were: {:?}",
             // report EVERY tooltip: the page also carries the JSONSchema export tooltip, and
             // naively taking the first match reports that one and misleads the reader.
@@ -34625,8 +34641,8 @@ mod tests {
 
     #[test]
     fn redact_sidecar_paths_strips_absolute_paths_from_metadata() {
-        // A dashboard is made to be SHARED, so the metadata sidecars must not carry the author's
-        // directory layout — but they must still say WHICH file they describe.
+        // A Data Schematic is made to be SHARED, so the metadata sidecars must not carry the
+        // author's directory layout — but they must still say WHICH file they describe.
         let obj = br#"{"arg_input":"/Users/jane/clients/acme/data.csv",
             "canonical_input_path":"/Users/jane/clients/acme/data.csv",
             "canonical_stats_path":"/Users/jane/clients/acme/data.stats.csv.json",
@@ -34803,7 +34819,7 @@ mod tests {
         );
 
         // `.stats.csv` is NEVER offered, however fresh. viz doesn't read it, so it can't be shown
-        // to be the stats behind this dashboard — an explicit `qsv stats --select … -o
+        // to be the stats behind this Data Schematic — an explicit `qsv stats --select … -o
         // <stem>.stats.csv` leaves a file newer than the source that describes a different
         // computation than the cache viz used, and no mtime test separates the two.
         let stats_csv = dir.join("accounts.stats.csv");
@@ -35210,9 +35226,9 @@ mod tests {
     }
 
     /// The five warnings are matched by EXACT equality, so a reword in describegpt would silently
-    /// drop this footer's last line back to English on every localized dashboard. Pin the consts
-    /// to describegpt's own source, and to the English catalog values, so such a reword fails
-    /// here instead of shipping.
+    /// drop this footer's last line back to English on every localized Data Schematic. Pin the
+    /// consts to describegpt's own source, and to the English catalog values, so such a reword
+    /// fails here instead of shipping.
     #[test]
     fn dict_provenance_warnings_match_describegpt() {
         let _locale = english_locale();
@@ -36467,7 +36483,8 @@ mod tests {
     #[test]
     fn route_from_concept_treats_duration_as_a_measure() {
         // a duration is a span, not a point in time: routing it Temporal dropped it from the
-        // dashboard entirely (no distribution panel, and canonical_date_col won't take it either)
+        // Data Schematic entirely (no distribution panel, and canonical_date_col won't take it
+        // either)
         assert_eq!(
             route_from_concept("time.duration"),
             Some((Route::Measure, Some(Agg::Mean)))
@@ -36942,7 +36959,7 @@ mod tests {
     #[test]
     fn generator_scripts_pin_the_same_plotly_version() {
         // `examples/viz/gen_gallery.py` and `scripts/gen_benchmark_viz.py` build their own pages
-        // (the gallery frame and the benchmark dashboard shell) rather than going through
+        // (the gallery frame and the benchmark Data Schematic shell) rather than going through
         // `smart_html_page`, so they carry a HAND-COPIED third-party notice naming the plotly
         // version. Nothing else ties those strings to `PLOTLY_CDN_VERSION`: bumping the constant
         // here would leave both scripts silently claiming the old version in every page they emit.
@@ -37050,9 +37067,9 @@ mod tests {
     /// them and silently left the third describing the old combo (roborev 3916):
     ///
     /// 1. `THIRD_PARTY_NOTICES.md` — the repo-root notice, and the one that matters most: it is
-    ///    what `THIRD_PARTY_NOTICES_URL` points at, which every generated dashboard carries in its
-    ///    footer and HTML comment. Stale here means the notice readers are *sent to* under-reports
-    ///    what the page actually ships.
+    ///    what `THIRD_PARTY_NOTICES_URL` points at, which every generated Data Schematic carries in
+    ///    its footer and HTML comment. Stale here means the notice readers are *sent to*
+    ///    under-reports what the page actually ships.
     /// 2. `src/cmd/assets/LICENSE-DataTables.txt` — the vendored license + inventory.
     /// 3. `third_party_comment` — the short in-page attribution line.
     ///
@@ -37129,9 +37146,9 @@ mod tests {
             };
             assert!(
                 in_page.contains(&expected),
-                "third_party_comment's DataTables credit is missing \"{expected}\" — a dashboard \
-                 would attribute a different component set (or DataTables version) than it \
-                 actually embeds. Line was: {in_page}"
+                "third_party_comment's DataTables credit is missing \"{expected}\" — a Data \
+                 Schematic would attribute a different component set (or DataTables version) than \
+                 it actually embeds. Line was: {in_page}"
             );
         }
     }
@@ -37250,8 +37267,8 @@ mod tests {
     /// Pins the rust-i18n interpolation semantics that localizing a hover template depends on.
     /// `t!` substitutes its arguments via `rust_i18n::replace_patterns`, which uses the SAME
     /// `%{...}` token syntax plotly does -- so a localized hover template is parsed twice: once by
-    /// rust-i18n when the dashboard is rendered, once by plotly in the browser. Three properties
-    /// make that cohabitation safe. The fourth is a trap, and it fails silently.
+    /// rust-i18n when the Data Schematic is rendered, once by plotly in the browser. Three
+    /// properties make that cohabitation safe. The fourth is a trap, and it fails silently.
     #[test]
     fn rust_i18n_interpolation_cohabits_with_plotly_tokens() {
         use rust_i18n::replace_patterns;
@@ -38034,7 +38051,7 @@ mod tests {
 
     #[test]
     fn cell_geometry_cells_are_within_bounds_and_titled_above() {
-        // a 4-panel, 2-column dashboard -> 2 rows, occupying the full band (top = 1.0)
+        // a 4-panel, 2-column Data Schematic -> 2 rows, occupying the full band (top = 1.0)
         let (rows, cols, top, offset) = (2, 2, 1.0, 0.01);
         for n in 0..4 {
             let g = cell_geometry(
@@ -38070,9 +38087,9 @@ mod tests {
 
     #[test]
     fn smart_title_band_fits_every_row_count() {
-        // For every dashboard size up to the 8-panel max (including a tall single-column
+        // For every Data Schematic size up to the 8-panel max (including a tall single-column
         // 8-row layout), the top-row panel title — offset above the cell plus its rendered
-        // glyph height — must stay at/below y=1 so it never overlaps the dashboard title.
+        // glyph height — must stay at/below y=1 so it never overlaps the Data Schematic title.
         const GLYPH_PX: f64 = 20.0; // generous estimate of the 13px title's rendered height
         for rows in 1..=MAX_SUBPLOTS {
             let area = smart_plot_area_h(rows as f64);
@@ -38089,13 +38106,14 @@ mod tests {
             let title_top = g.title_y + GLYPH_PX / area;
             assert!(
                 title_top <= 1.0 + 1e-9,
-                "rows={rows}: title_top={title_top} crosses y=1 (would overlap dashboard title)"
+                "rows={rows}: title_top={title_top} crosses y=1 (would overlap Data Schematic \
+                 title)"
             );
             // the title still sits above its own cell
             assert!(g.title_y >= g.y_domain[1] - 1e-9);
         }
 
-        // the reserved band is a real pixel size even for a short one-row dashboard
+        // the reserved band is a real pixel size even for a short one-row Data Schematic
         let band_px = (1.0 - smart_grid_top(1.0, false)) * smart_plot_area_h(1.0);
         assert!(band_px >= 30.0, "one-row title band too thin: {band_px}px");
     }
@@ -38103,9 +38121,10 @@ mod tests {
     #[test]
     fn cell_geometry_stays_positive_for_many_rows() {
         // Regression: a fixed per-gap paper fraction (VGAP=0.09) overflowed the 0..=top band once
-        // there were ~6+ rows, yielding negative cell heights and a garbled dashboard. Now that
-        // static image export draws >MAX_SUBPLOTS panels, verify every cell stays positive and
-        // in-bounds for tall grids (e.g. a 42-panel, 21-row dashboard), with rows not overlapping.
+        // there were ~6+ rows, yielding negative cell heights and a garbled Data Schematic. Now
+        // that static image export draws >MAX_SUBPLOTS panels, verify every cell stays
+        // positive and in-bounds for tall grids (e.g. a 42-panel, 21-row Data Schematic),
+        // with rows not overlapping.
         for panels in [9usize, 16, 30, 42, 64] {
             let cols = 2;
             let rows = panels.div_ceil(cols);
@@ -38179,7 +38198,7 @@ mod tests {
         let (geoms, rows, _height) = smart_grid_layout(&panels, 2);
         // 1 full-width overview row + ceil(3/2) = 2 grid rows
         assert_eq!(rows, 3);
-        // the overview panel spans the full page width and leads the dashboard (top band)
+        // the overview panel spans the full page width and leads the Data Schematic (top band)
         assert_eq!(geoms[0].x_domain, vec![0.0, 1.0]);
         // the distribution bars are NOT full width (two columns)
         assert!(geoms[1].x_domain[1] < 1.0 - 1e-9);
@@ -39474,8 +39493,8 @@ mod tests {
     // the `viz smart` GeoJSON choropleth panel honors the snap-distance cap: a point in the gap
     // between two regions (far from both) is dropped under the default cap — surfaced in the panel
     // title — but snapped when the cap is unbounded. Exercised at the unit level because the
-    // dashboard's upstream geographic-column detection / outlier removal make an end-to-end fixture
-    // brittle; this calls the panel builder directly with explicit coordinates.
+    // Data Schematic's upstream geographic-column detection / outlier removal make an end-to-end
+    // fixture brittle; this calls the panel builder directly with explicit coordinates.
     #[test]
     fn smart_pip_panel_caps_snap() {
         // the "Regions (...)" panel title is localized -- pin English. `--no-snap`
@@ -41155,7 +41174,7 @@ mod tests {
     ///
     /// A vendored plotly locale registers itself under the id baked into the FILE, while
     /// `plotly_setlocale_js` selects by the `LOCALES` TAG. When those disagree the locale is
-    /// registered and then never selected, so a fully translated dashboard keeps an English
+    /// registered and then never selected, so a fully translated Data Schematic keeps an English
     /// modebar -- no panic, no console error, and a test that only checks "a block was emitted"
     /// sails straight past it. plotly publishes no generic `pt` locale (only `pt-br`, id "pt-BR"),
     /// which is exactly how this bites in practice.

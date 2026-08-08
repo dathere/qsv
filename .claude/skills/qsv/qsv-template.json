@@ -1,6 +1,6 @@
 {
   "name": "qsv-template",
-  "version": "22.0.0",
+  "version": "22.0.1",
   "description": "Renders a template using CSV data with the MiniJinja template engine (Example).",
   "category": "utility",
   "command": {

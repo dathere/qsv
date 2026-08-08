@@ -85,7 +85,7 @@ export const NON_TABULAR_COMMANDS = new Set([
   "schema",              // JSON Schema output
   "validate",            // Validation messages, not CSV data
   "describegpt",         // Markdown output (data dictionaries, descriptions, tags)
-  "viz",                 // Interactive HTML chart/dashboard artifact
+  "viz",                 // Interactive HTML chart/Data Schematic artifact
 ]);
 
 /** Binary output formats from sqlp that should never get a .tsv extension */

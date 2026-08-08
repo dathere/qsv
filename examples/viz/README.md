@@ -32,7 +32,7 @@ To refresh those four, run the generator with a local LLM up (LM Studio / Ollama
 
 - `QSV_VIZ_REGEN_LLM=1` rebuilds the four dashboards, but **reuses their existing dictionaries** —
   `--dictionary infer` reuses the `<stem>.schema.json` sidecar beside each input, and describegpt
-  replays its own disk-cached completion. Use this when only the dashboard *rendering* changed.
+  replays its own disk-cached completion. Use this when only the Data Schematic *rendering* changed.
 - `QSV_VIZ_REGEN_LLM=2` additionally **re-infers the dictionaries from scratch**: it deletes those
   four sidecars and sets `QSV_VIZ_DICT_FRESH=1`, which makes viz skip sidecar reuse and pass
   `--fresh` to describegpt. Use this after a model or prompt-file change. It makes real LLM calls,
@@ -44,7 +44,7 @@ The gallery closes with five clickable **screenshot link-outs** — `smart_nyc31
 `smart-colombia-calidad-aire.html` — full `--dict-info` **visual data dictionaries**: three over
 real municipal 311 data, plus two **localized** dashboards rendered entirely in Portuguese
 (`--language pt`) and Spanish (`--language es`). They are shown as scaled preview images that open
-the dashboard in its own popup window, rather than embedded, so the gallery page stays light
+the Data Schematic in its own popup window, rather than embedded, so the gallery page stays light
 (those pages run 3.9&ndash;20.6&nbsp;MB each). `gen_gallery.py` still regenerates the NYC one from
 the committed `nyc_311.csv`; the other four are committed artifacts whose source data is not in
 the repo, so they are reused as-is.
@@ -82,19 +82,19 @@ as `text/plain`, so a browser won't render it):
 | `world_cities.csv` | **1,179 cities** with population **over 500,000** across **six inhabited continents** (GeoNames-derived): `country`, `continent`, `lat`/`lon`, `metro_population_m`, `elevation_m` (real), `avg_annual_temp_c` (synthesized from latitude + elevation). `continent` uses the [plotly.js geo `scope`](https://plotly.com/javascript/reference/layout/geo/#layout-geo-scope) vocabulary (`Oceania`, `North America`, …) | `smart --dictionary infer` (dense global geo map + per-COUNTRY choropleth via `fitbounds` with `geocode` + a six-continent bar + box panels) |
 | `us_cities.csv` | 54 US cities across ~35 states: `lat`/`lon`, `census_region`, `population_m`, `median_age` | `smart` (US point map + per-US-STATE choropleth with `geocode` + box/bar/correlation panels) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
-| `seismic_events.csv` + `japan_prefectures.geojson` | 417 synthetic Japanese earthquakes (`timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID), plus a GeoJSON of the 47 prefectures keyed by `properties.id` (ISO&nbsp;3166-2), with a top-level `id` too so no `--feature-id-key` is needed | `smart --smarter --geojson japan_prefectures.geojson` (the full geospatial dashboard: map + **prefecture choropleth via point-in-polygon binning** + time-series + correlation + scatter + histogram + boxes + bars) |
+| `seismic_events.csv` + `japan_prefectures.geojson` | 417 synthetic Japanese earthquakes (`timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID), plus a GeoJSON of the 47 prefectures keyed by `properties.id` (ISO&nbsp;3166-2), with a top-level `id` too so no `--feature-id-key` is needed | `smart --smarter --geojson japan_prefectures.geojson` (the full geospatial Data Schematic: map + **prefecture choropleth via point-in-polygon binning** + time-series + correlation + scatter + histogram + boxes + bars) |
 | `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with `zone`/`vehicle` categoricals, `packages`, and correlated `weight_kg`/`distance_km`/`delivery_minutes` numerics over a `delivered_date` | `smart` (geographic outlier markers + core/full extent boxes, Core/Full zoom buttons & spatial-extent call-out with `geocode`; plus boxes, bars, correlation heatmap, strongest-pair scatter & a time-series — no `--smarter` needed) |
 | `cms_medicare_providers.csv` | **30,007** Medicare practitioners (CMS sample): `provider_type` (87 values), `state` (58), and the additive `total_patients` / `medical_payment` measures | `smart --smarter` (**Lorenz curve + Gini** per inequality measure, plus **log-axis** boxes for the right-skewed money columns) |
 | `regions_growth.csv` | **844** monthly observations for **6 synthetic regions** over **24 months**: `region`, `month_date`, `gdp_index`, `wellbeing_index`, `population_m` | `scatter` (**Gapminder bubble animation** — `--slider` for time, `--series` for the entity, `--size` for the third data variable), `smart` (auto-selects the same chart — one bubble per region tracing a curved path through the measure space, Play/Pause + scrub slider) |
 | `world_events_dated.csv` | **264** dated events across **110 places** on six continents (2024-01-07 → 2024-12-30): `place`, `lat`/`lon`, `event_date`, `magnitude` | `smart` (**animated geographic reveal** on a ScatterGeo projection basemap — points accumulate over monthly buckets; the animation only fires for continental/global extents) |
-| `nyc_311.csv` + `nyc_neighborhoods.geojson` + `nyc311_dict.schema.json` | **10,000-row** sample of NYC 311 service requests (2010–2020): 41 columns incl. `Latitude`/`Longitude`, `Borough`, `Agency`, `Complaint Type`, `Status`, several date columns, and `X`/`Y Coordinate (State Plane)`, plus a custom GeoJSON of **188 NYC neighborhoods** keyed by top-level `id` and a committed **41-field dictionary** | `smart --smarter --bivariate --dict-info --dictionary nyc311_dict.schema.json --geojson nyc_neighborhoods.geojson` (full municipal dashboard: dense point map + **neighborhood choropleth on a MapLibre tile basemap via point-in-polygon binning** + correlation + time-series + boxes + bars + an NMI association heatmap, with the committed dictionary's field labels — **no LLM needed**) |
+| `nyc_311.csv` + `nyc_neighborhoods.geojson` + `nyc311_dict.schema.json` | **10,000-row** sample of NYC 311 service requests (2010–2020): 41 columns incl. `Latitude`/`Longitude`, `Borough`, `Agency`, `Complaint Type`, `Status`, several date columns, and `X`/`Y Coordinate (State Plane)`, plus a custom GeoJSON of **188 NYC neighborhoods** keyed by top-level `id` and a committed **41-field dictionary** | `smart --smarter --bivariate --dict-info --dictionary nyc311_dict.schema.json --geojson nyc_neighborhoods.geojson` (full municipal Data Schematic: dense point map + **neighborhood choropleth on a MapLibre tile basemap via point-in-polygon binning** + correlation + time-series + boxes + bars + an NMI association heatmap, with the committed dictionary's field labels — **no LLM needed**) |
 | `allegheny_dog_licenses.csv` + `allegheny_zip_boundaries.geojson` + `allegheny_dogs_dict.schema.json` | All **50,013** Allegheny County lifetime dog licenses (`LicenseType`, `Breed`, `Color`, `DogName`, `OwnerZip`, `ExpYear`, `ValidDate`) — **no lat/lon**, only the `OwnerZip` region code — plus a GeoJSON of **125 county zip boundaries** keyed by `properties.ZIP` and a curated dictionary tagging `OwnerZip` as `geo.zip_code` | `smart --smarter --bivariate --dict-info --dictionary allegheny_dogs_dict.schema.json --geojson allegheny_zip_boundaries.geojson --feature-id-key properties.ZIP` (**summary choropleth keyed off a region-code COLUMN**, not coordinates: licenses-per-zip filling the boundary polygons on a MapLibre tile basemap, + Breed/Color/LicenseType bars + NMI association heatmap) |
 
 ### Committed data dictionaries
 
 `--dictionary <file>` takes a JSON Schema Data Dictionary — either hand-authored or generated by
 [`describegpt`](https://github.com/dathere/qsv/blob/master/docs/help/describegpt.md) and then
-reviewed — so the dashboard's field labels and semantic routing are **deterministic and offline**
+reviewed — so the Data Schematic's field labels and semantic routing are **deterministic and offline**
 (unlike `--dictionary infer`, which calls a local LLM on every run). Pair it with `--dict-info` to
 render the dictionary as an in-page **Data Dictionary** tab. The committed ones here:
 
@@ -103,12 +103,12 @@ render the dictionary as an in-page **Data Dictionary** tab. The committed ones 
 | `sales_kpi_dict.schema.json` | 5 | `sales_sample.csv` — hand-authored, and the only one carrying the optional `x-qsv` KPI hints: `gauge_range` draws a measure as a **gauge** on its canonical scale, `target` adds a **"vs target" delta**. `target` is a business goal you choose; `describegpt` never emits it |
 | `nyc311_dict.schema.json` | 41 | `nyc_311.csv` — tags identifier columns (`Unique Key`, `BBL`) so they're skipped, labels the State-Plane coordinates, and supplies friendly names |
 | `allegheny_dogs_dict.schema.json` | 8 | `allegheny_dog_licenses.csv` — tags `OwnerZip` as `geo.zip_code`, the signal that turns a numeric zip into a choropleth key |
-| `boston311.schema.json` | 31 | `boston311-2025.tsv` (not committed — 153&nbsp;MB) for the Boston 311 link-out dashboard |
-| `pitt311data.schema.json` | 26 | `pittsburgh_311.tsv` (not committed) for the Pittsburgh 311 link-out dashboard |
+| `boston311.schema.json` | 31 | `boston311-2025.tsv` (not committed — 153&nbsp;MB) for the Boston 311 link-out Data Schematic |
+| `pitt311data.schema.json` | 26 | `pittsburgh_311.tsv` (not committed) for the Pittsburgh 311 link-out Data Schematic |
 | `nyc_capital_projects_dict.schema.json` | 7 | `nyc_capital_projects.csv` — declares the three budget columns as an `x-qsv.relationships` pipeline. Their totals grow, so the panel is drawn as a **bridge** rather than a funnel |
 | `onboarding_funnel_dict.schema.json` | 6 | `onboarding_funnel.csv` — declares the four stage columns as a pipeline. Their totals nest, so the same declaration earns a **funnel** |
-| `ultimas-4-semanas-glp.schema.json` | 16 | `ultimas-4-semanas-glp.ssv` (not committed) for the Portuguese LPG-prices link-out dashboard |
-| `calidad-aire-pm-colombia.schema.json` | 25 | `calidad-aire-pm-colombia.csv` (not committed) for the Spanish air-quality link-out dashboard — **hand-tuned twice**: `Latitud`/`Longitud` carry explicit `geo.latitude`/`geo.longitude` concepts (viz's header-name fallback only matches the English `lat`/`lon`, so without them there is no map at all), and only the additive columns keep `role=measure`, since viz detects non-additive measures from an English token list and would otherwise SUM Spanish `Promedio`/`Mediana`/`Porcentaje` into meaningless KPI totals |
+| `ultimas-4-semanas-glp.schema.json` | 16 | `ultimas-4-semanas-glp.ssv` (not committed) for the Portuguese LPG-prices link-out Data Schematic |
+| `calidad-aire-pm-colombia.schema.json` | 25 | `calidad-aire-pm-colombia.csv` (not committed) for the Spanish air-quality link-out Data Schematic — **hand-tuned twice**: `Latitud`/`Longitud` carry explicit `geo.latitude`/`geo.longitude` concepts (viz's header-name fallback only matches the English `lat`/`lon`, so without them there is no map at all), and only the additive columns keep `role=measure`, since viz detects non-additive measures from an English token list and would otherwise SUM Spanish `Promedio`/`Mediana`/`Porcentaje` into meaningless KPI totals |
 
 ## The Data Schematic
 
@@ -118,7 +118,7 @@ lower triangle only — the mirror half and the trivial 1.0 diagonal are dropped
 **box plots** for continuous numerics, and **frequency bars** for low-cardinality
 categoricals, booleans, and ratings. The box plots overlay sample points based on
 the column's non-null value count — every point for a small column (≤ 1,000
-values, demoted to outliers-only once the dashboard runs past 8 panels, where a
+values, demoted to outliers-only once the Data Schematic runs past 8 panels, where a
 thousand jittered points per cell turns to noise), and just the Tukey outliers
 for a medium one (≤ 10,000). Above that the box is a fast cache-only quartile
 summary — but a column that actually *has* outliers still gets them overlaid as
@@ -136,7 +136,7 @@ which case the 3D would collapse to a plane and is skipped. When the data has a 
 column (auto-detected via stats date inference) plus a continuous numeric column,
 a **time-series trend** panel of that column over time is added too. When a
 latitude/longitude column pair is detected, a **geographic map** panel leads the
-dashboard — drawn on MapLibre tiles for local extents, or as an offline
+Data Schematic — drawn on MapLibre tiles for local extents, or as an offline
 **projection world-overview** (ScatterGeo, no tiles or token) when the
 coordinates span a continental/global area. Points far from the cluster centroid
 (beyond the Tukey far-out fence of their distances) are flagged as **geographic
@@ -165,14 +165,14 @@ opens as semi-transparent markers with an in-map **Clusters/Points** toggle that
 collapses them into interactive count bubbles on demand (`--cluster`, offered
 automatically from 1,000 points). Static **density heatmap** rendering is off by
 default; opt back into it with `--heatmap-density <n>` to aggregate the core at
-or above *n* mappable points. (These caps apply only to the `smart` dashboard;
+or above *n* mappable points. (These caps apply only to the `smart` Data Schematic;
 the standalone chart commands below plot every row and frame the full extent.)
 
 ### moarstats-informed dashboards
 
 Pass **`--smarter`** to have `viz smart` run
 [`qsv moarstats --advanced`](https://github.com/dathere/qsv/blob/master/docs/help/moarstats.md)
-itself before building the dashboard (or run `qsv moarstats` first by hand) — either way
+itself before building the Data Schematic (or run `qsv moarstats` first by hand) — either way
 `viz smart` reads the extended statistics from the stats cache and makes better chart choices
 (with neither, the behavior is unchanged):
 
@@ -185,7 +185,7 @@ itself before building the dashboard (or run `qsv moarstats` first by hand) — 
   ID-like noise is kept as a top-N bar (when its normalized entropy is low).
 
 ```bash
-# one step: --smarter runs `qsv moarstats --advanced` itself, then builds the dashboard
+# one step: --smarter runs `qsv moarstats --advanced` itself, then builds the Data Schematic
 qsv viz smart customer_spend.csv --smarter -o spend_dashboard.html
 # monthly_spend (bimodal) -> histogram; account_age_days (skewed) -> annotated box
 
@@ -197,7 +197,7 @@ qsv viz smart customer_spend.csv -o spend_dashboard.html
 > `moarstats --advanced` (which `--smarter` runs for you) reads the whole file and auto-creates
 > an `.idx` index; the bimodality test needs the advanced stats, while the skew/outlier box hints
 > work from a plain `qsv moarstats` run. `--smarter` applies only with default parsing — inputs
-> using `--no-headers` or a custom `--delimiter` fall back to the standard dashboard.
+> using `--no-headers` or a custom `--delimiter` fall back to the standard Data Schematic.
 
 ```bash
 # 12 panels from sales_sample.csv (>8, so it renders as an inline-div grid)
@@ -206,10 +206,10 @@ qsv viz smart sales_sample.csv -o dashboard.html
 # cap the panel count, lay out 3 columns, top-5 categories per bar
 qsv viz smart sales_sample.csv --max-charts 6 --grid-cols 3 --limit 5 -o dashboard.html
 
-# stock_prices has a date column, so the dashboard leads with a time-series trend
+# stock_prices has a date column, so the Data Schematic leads with a time-series trend
 qsv viz smart stock_prices.csv -o stocks_dashboard.html
 
-# quakes has lat/lon, so the dashboard leads with a geographic map panel
+# quakes has lat/lon, so the Data Schematic leads with a geographic map panel
 qsv viz smart quakes.csv -o quakes_dashboard.html
 
 # delivery_stops clusters in metro Denver with a few bad-geocode strays: the map flags them as
@@ -219,7 +219,7 @@ qsv viz smart quakes.csv -o quakes_dashboard.html
 # them out in the spatial-extent label, e.g. "... — 4 outliers (Wyoming, Kansas & Nebraska)"
 qsv viz smart delivery_stops.csv -o delivery_dashboard.html
 
-# the full geospatial dashboard: a map, a prefecture choropleth, a time-series, a correlation
+# the full geospatial Data Schematic: a map, a prefecture choropleth, a time-series, a correlation
 # heatmap + drill-down scatter, a bimodal-depth histogram, annotated boxes and frequency bars —
 # all auto-chosen. --geojson adds a point-in-polygon prefecture choropleth (the feature id key
 # defaults to id): each quake is binned into the GeoJSON region that contains it (no geocoding).

@@ -2,7 +2,7 @@
 
 Third-party i18n files embedded into the `qsv` binary via `include_str!` and emitted inline in
 generated dashboards. Both are MIT licensed. Nothing here is fetched at runtime — a generated
-dashboard stays fully self-contained and offline-capable, which is why these are vendored rather
+Data Schematic stays fully self-contained and offline-capable, which is why these are vendored rather
 than referenced from a CDN.
 
 Retrieved **2026-07-30**.
@@ -87,7 +87,7 @@ CDN name often is not** — DataTables region-qualifies most European languages:
 `https://cdn.plot.ly/plotly-locale-pt-3.7.0.js` returns 403; only `pt-br` exists, and its internal
 id is `pt-BR`. Since `plotly_setlocale_js` passes the `LOCALES` tag straight to
 `Plotly.setPlotConfig`, a `pt` row would register a locale that is then never selected — an English
-modebar inside a translated dashboard, with no error anywhere. `--language pt` still resolves, via
+modebar inside a translated Data Schematic, with no error anywhere. `--language pt` still resolves, via
 the `pt` alias on the row. **Verify registered-vs-selected after adding any language**: the id in
 the vendored file (`name:"…"`) must equal the tag, e.g.
 

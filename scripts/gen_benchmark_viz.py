@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate benchmarks/index.html — an interactive `qsv viz` benchmark dashboard.
+"""Regenerate benchmarks/index.html — an interactive `qsv viz` benchmark Data Schematic.
 
 This dogfoods qsv itself: it reads the CSVs that `scripts/benchmarks.sh` produces
 in `scripts/results/`, shapes them with qsv (`search`/`sort`/`slice`/`sqlp`/`luau`),
@@ -7,7 +7,7 @@ renders each chart with `qsv viz`, and assembles them into one page under
 `benchmarks/` that is deployed to GitHub Pages by `viz-gallery-pages.yml`
 (https://dathere.github.io/qsv/benchmarks/).
 
-The dashboard doubles as a `viz` showcase: it spans bar, grouped-bar, line, heatmap,
+The Data Schematic doubles as a `viz` showcase: it spans bar, grouped-bar, line, heatmap,
 treemap, box and scatter-bubble traces, each chosen to fit its story. Every `qsv viz`
 run sets QSV_VIZ_CDN=1 (plotly loaded from CDN, so the committed HTML stays small) and
 QSV_VIZ_NO_COMPRESS=1 (plain-text output).
@@ -34,7 +34,7 @@ repo and interactive Plotly can't render in wiki markdown, which strips <script>
 
 NOTE on the historical trend/heatmap: cross-version numbers are NOT strictly
 apples-to-apples — commands gain features over time (see scripts/results/README.md),
-so the dashboard carries that caveat prominently. The trend line spans the FULL release
+so the Data Schematic carries that caveat prominently. The trend line spans the FULL release
 history and, for each command, follows the fastest variant available at the time (base
 scan early on, indexed variant once it exists — for search/searchset that step lands at
 10.0.0). The heatmap keeps a recent window for legibility. `count` is excluded from the
@@ -188,7 +188,7 @@ RESIZE_LISTENER_JS = (
     "if(Math.abs(f[i].clientHeight-h)>1)f[i].style.height=h+\"px\";break;}});</script>")
 
 
-# Attribution for the third-party software this dashboard loads. The benchmark charts are
+# Attribution for the third-party software this Data Schematic loads. The benchmark charts are
 # `qsv viz` output rendered with QSV_VIZ_CDN=1, so plotly.js is referenced from the version-pinned
 # CDN rather than embedded; no DataTables drawer and no MapLibre basemap appear on these pages.
 # Kept in step with `third_party_comment`/`third_party_footer` in src/cmd/viz.rs.
@@ -461,10 +461,10 @@ def build_index(figs, info):
     parts = ["<!doctype html>", THIRD_PARTY_COMMENT,
              "<html lang=en><head><meta charset=utf-8>",
              "<meta name=viewport content='width=device-width,initial-scale=1'>",
-             "<title>qsv benchmark dashboard</title>",
+             "<title>qsv benchmark Data Schematic</title>",
              f"<style>{PAGE_CSS}</style>{THIRD_PARTY_STYLE}</head><body>"]
     parts.append("<header>")
-    parts.append("<h1>qsv benchmark dashboard</h1>")
+    parts.append("<h1>qsv benchmark Data Schematic</h1>")
     parts.append(f"<p class=sub>Interactive charts of the qsv benchmark suite, rendered with "
                  f"<code>qsv viz</code> — a live showcase of the command charting its own performance.</p>")
     meta = [f"<span><b>qsv</b> {html_escape(ver)}</span>",
@@ -527,23 +527,23 @@ for the methodology and the raw CSVs.
 > [tabular benchmarks at qsv.dathere.com](https://qsv.dathere.com/benchmarks). This page is the
 > interactive, visual companion to it.
 
-## 📊 Interactive dashboard
+## 📊 Interactive Data Schematic
 
-**➡️ [Open the interactive benchmark dashboard]({url})**
+**➡️ [Open the interactive benchmark Data Schematic]({url})**
 
-The dashboard is rendered by qsv's own `viz` command and is fully interactive (hover for
+The Data Schematic is rendered by qsv's own `viz` command and is fully interactive (hover for
 values, zoom, download PNGs). It covers the with/without-index advantage, the `sqlp`
 schema-cache knob, throughput across every release, deep-dives into four flagship
 commands (`stats`, `frequency`, `validate` and `moarstats`) showing they grew features
 without losing speed, and this release's biggest speedups.
 
-[![qsv benchmark dashboard]({url}hero.png)]({url})
+[![qsv benchmark Data Schematic]({url}hero.png)]({url})
 
 > **Note:** cross-version numbers are not strictly apples-to-apples — commands gain features
 > over time. Treat the historical trend as a broad trajectory, not an exact speedup.
 
 _Last generated for qsv {version} ({platform}). Regenerate with
-`python3 scripts/gen_benchmark_viz.py` and copy this page's link — the dashboard itself
+`python3 scripts/gen_benchmark_viz.py` and copy this page's link — the Data Schematic itself
 redeploys to GitHub Pages automatically on push to `master`._
 """
 
@@ -558,7 +558,7 @@ def write_wiki_stub(info, total):
 def render_hero(index_src):
     """Best-effort static PNG (benchmarks/hero.png) for the Wiki thumbnail — the index-advantage
     chart. Needs the `viz_static` feature + a local Chrome/Firefox (webdriver auto-downloads), so
-    it is skipped gracefully if unavailable (the interactive dashboard never needs it)."""
+    it is skipped gracefully if unavailable (the interactive Data Schematic never needs it)."""
     out = os.path.join(OUT, "hero.png")
     env = {**os.environ, "QSV_PROGRESSBAR": "0"}
     try:

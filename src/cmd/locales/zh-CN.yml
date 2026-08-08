@@ -1,6 +1,6 @@
 _version: 1
 
-# Simplified Chinese (zh-CN) -- viz dashboard UI.
+# Simplified Chinese (zh-CN) -- viz Data Schematic UI.
 # TODO: native-speaker review before release. The pending review is about wording
 # and register, not encoding (this file is UTF-8).
 # Keys missing here fall back to en (see `fallback = "en"` in src/main.rs).
@@ -94,8 +94,8 @@ viz:
     export_label: "导出 JSONSchema"
     export_short: "schema"
     view_chart: "查看图表 "
-    back_to_dashboard: "返回仪表板"
-    sidecar_download_tooltip: "下载 %{q_file},即构建该仪表板所依据的附属文件"
+    back_to_dashboard: "返回 Data Schematic"
+    sidecar_download_tooltip: "下载 %{q_file},即构建该 Data Schematic 所依据的附属文件"
     prov_generated_by: "由 %{q_tool} describegpt 生成"
     prov_command_line: "命令行:"
     prov_prompt_file: "提示词文件:"

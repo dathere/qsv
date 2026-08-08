@@ -66,7 +66,7 @@ narratives may vary between runs.
 | Output Type | Recommended Level |
 |-------------|-------------------|
 | Quick Slack message or internal chat | Short |
-| Internal report or dashboard annotation | Medium |
+| Internal report or Data Schematic annotation | Medium |
 | Stakeholder presentation | Medium or Full |
 | Regulatory or compliance deliverable | Full |
 | Published research or external report | Full |

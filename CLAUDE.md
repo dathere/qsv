@@ -66,7 +66,7 @@ When editing docopt USAGE strings, never let a wrapped help line begin with a fl
 
 ## Visualization Workflow
 
-After implementing or fixing a viz/dashboard feature, always verify the result visually in-browser and regenerate the gallery before opening a PR.
+After implementing or fixing a viz/Data Schematic feature, always verify the result visually in-browser and regenerate the gallery before opening a PR.
 
 ## Testing / Plotly JSON
 

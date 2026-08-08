@@ -1,6 +1,6 @@
 _version: 1
 
-# Japanese (ja) -- viz dashboard UI.
+# Japanese (ja) -- viz Data Schematic UI.
 # TODO: native-speaker review before release. The pending review is about wording
 # and register, not encoding (this file is UTF-8).
 # Keys missing here fall back to en (see `fallback = "en"` in src/main.rs).
@@ -87,8 +87,8 @@ viz:
     export_label: "JSONSchema をエクスポート"
     export_short: "スキーマ"
     view_chart: "グラフを表示 "
-    back_to_dashboard: "ダッシュボードに戻る"
-    sidecar_download_tooltip: "このダッシュボードの生成に使われた付随ファイル %{q_file} をダウンロード"
+    back_to_dashboard: "Data Schematic に戻る"
+    sidecar_download_tooltip: "この Data Schematic の生成に使われた付随ファイル %{q_file} をダウンロード"
     prov_generated_by: "%{q_tool} describegpt により生成"
     prov_command_line: "コマンドライン:"
     prov_prompt_file: "プロンプトファイル:"

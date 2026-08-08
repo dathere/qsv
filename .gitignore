@@ -26,7 +26,7 @@ perf.data*
 !src/cmd/assets/LICENSE-*.txt
 !resources/**/LICENSE*.txt
 
-# Exception: vendored DataTables i18n catalogs for `viz` dashboard localization. These are SOURCE,
+# Exception: vendored DataTables i18n catalogs for `viz` Data Schematic localization. These are SOURCE,
 # not test fixtures — `src/cmd/viz.rs` pulls them in with `include_str!`, so the blanket *.json
 # above would leave the tree compiling locally while failing for everyone else with a
 # "couldn't read ... es.json" the moment it is checked out fresh. Provenance and the matching

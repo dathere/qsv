@@ -20,7 +20,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-// `viz` localizes its dashboard UI with rust-i18n. This init MUST live at a crate
+// `viz` localizes its Data Schematic UI with rust-i18n. This init MUST live at a crate
 // root: the `t!` macro expands to `crate::_rust_i18n_t!`, and `i18n!` emits that
 // macro as a module-scoped `pub(crate) use` -- invoking it from a submodule (e.g.
 // cmd/viz_i18n.rs) compiles the init but leaves every `t!` call site unresolved.

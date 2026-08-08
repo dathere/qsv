@@ -50,8 +50,8 @@
 //! ships where a JSON-shape grep never looks: plotly `ticktext` arrays, `colorbar.title.text`,
 //! `updatemenus` labels, and raw HTML nodes. Prefer a noisy candidate list discharged one entry at
 //! a time by provenance — is this a fixture column header, a dictionary label, or a defect? — over
-//! a short list you trust. And open a dashboard in the target language IN A BROWSER and read it;
-//! that found six clusters in minutes which four rounds of grepping had missed.
+//! a short list you trust. And open a Data Schematic in the target language IN A BROWSER and read
+//! it; that found six clusters in minutes which four rounds of grepping had missed.
 //!
 //! ## 4. New non-English content must be whitelisted in `_typos.toml` in the SAME commit
 //!
@@ -84,7 +84,7 @@ pub struct LocaleRow {
 
 /// Curated languages. English is first and is the fallback for every other locale.
 ///
-/// RTL languages (ar, he) are deliberately absent: the dashboard layout has never
+/// RTL languages (ar, he) are deliberately absent: the Data Schematic layout has never
 /// been audited under `dir="rtl"` and plotly's RTL support is poor. Adding them is
 /// a layout project, not a translation one.
 pub static LOCALES: &[LocaleRow] = &[
@@ -213,7 +213,7 @@ pub fn curated_list() -> String {
 static ACTIVE: std::sync::atomic::AtomicPtr<LocaleRow> =
     std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
 
-/// The locale the current dashboard is being rendered in. English until [`set_active`].
+/// The locale the current Data Schematic is being rendered in. English until [`set_active`].
 pub fn active_locale() -> &'static LocaleRow {
     let ptr = ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
     if ptr.is_null() {
@@ -280,7 +280,7 @@ pub enum Resolution {
     UncuratedDetected(String),
 }
 
-/// Resolve the dashboard locale.
+/// Resolve the Data Schematic locale.
 ///
 /// `flag` is the raw `--language` value (`"auto"`, or empty, means "not specified");
 /// `detected` is `x-qsv.detected_language_code` from a data dictionary, if one was
@@ -447,7 +447,7 @@ mod tests {
     /// Every locale catalog must carry EXACTLY the key set `en.yml` has.
     ///
     /// rust-i18n silently falls back to English for a key a locale omits, so a missing key ships
-    /// an English string inside an otherwise-translated dashboard; a key present only in a
+    /// an English string inside an otherwise-translated Data Schematic; a key present only in a
     /// translation is dead weight that can never render. Nothing else catches either: the strand
     /// guard inspects VALUES rather than key sets, and the English golden fixtures never load a
     /// translation at all.

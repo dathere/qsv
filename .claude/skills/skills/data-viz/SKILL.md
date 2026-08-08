@@ -19,7 +19,7 @@ Create publication-quality data visualizations from tabular data files. Uses qsv
 Determine:
 - **Data source**: CSV/TSV/Excel file, or query results from a prior analysis
 - **Chart type**: Explicitly requested or needs to be recommended
-- **Purpose**: Exploration, presentation, report, dashboard component
+- **Purpose**: Exploration, presentation, report, Data Schematic component
 - **Audience**: Technical team, executives, external stakeholders
 
 ### 2. Profile the Data with qsv

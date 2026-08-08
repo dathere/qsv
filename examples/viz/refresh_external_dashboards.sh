@@ -180,7 +180,7 @@ step "Brazil LPG (GLP) -> smart-brazil-lpg-4-semanas.html"
 # --- 4. Colombia air quality (Spanish) ----------------------------------------
 # The department boundaries are the COMMITTED colombia_departments.geojson (the
 # hand-tuned schema's geo.latitude/geo.longitude concepts are load-bearing --
-# without them the dashboard has no map at all; see the gallery caption).
+# without them the Data Schematic has no map at all; see the gallery caption).
 
 step "Colombia air quality (PM) -> smart-colombia-calidad-aire.html"
 ( cd "$DATA_DIR" && "$QSV" viz smart calidad-aire-pm-colombia.csv \

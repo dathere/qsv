@@ -1,13 +1,13 @@
-# Publish the benchmark dashboard's Wiki page — the manual "release" step.
+# Publish the benchmark Data Schematic's Wiki page — the manual "release" step.
 #
 # What is and isn't automatic:
-#   - The INTERACTIVE dashboard (benchmarks/index.html + charts) redeploys to
+#   - The INTERACTIVE Data Schematic (benchmarks/index.html + charts) redeploys to
 #     GitHub Pages automatically on any push to `master` that touches
 #     benchmarks/** — see viz-gallery-pages.yml. Nothing to do here for that.
 #   - The Wiki "Benchmarks" page is the ONE piece that can't be automatic on push:
 #     GitHub wiki markdown strips <script>/iframes, so it can't render interactive
 #     Plotly. The wiki page is therefore a static starter (benchmarks/Benchmarks.wiki.md)
-#     that links to the Pages dashboard and shows the hero.png. This workflow copies
+#     that links to the Pages Data Schematic and shows the hero.png. This workflow copies
 #     that committed page into the <repo>.wiki repository.
 #
 # This workflow ASSUMES you already regenerated AND committed benchmarks/ (i.e. ran
@@ -55,7 +55,7 @@ jobs:
           set -euo pipefail
 
           if [ ! -f benchmarks/Benchmarks.wiki.md ]; then
-            echo "::error::benchmarks/Benchmarks.wiki.md not found. Regenerate and commit the dashboard first: python3 scripts/gen_benchmark_viz.py"
+            echo "::error::benchmarks/Benchmarks.wiki.md not found. Regenerate and commit the Data Schematic first: python3 scripts/gen_benchmark_viz.py"
             exit 1
           fi
 
@@ -83,7 +83,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Update Benchmarks dashboard page${version:+ (qsv $version)}"
+          git commit -m "Update Benchmarks Data Schematic page${version:+ (qsv $version)}"
           git push
           echo "Published Benchmarks page to the wiki."
 
@@ -94,7 +94,7 @@ jobs:
             echo "### Benchmarks — Wiki publish"
             echo ""
             echo "- Wiki page: https://github.com/${{ github.repository }}/wiki/Benchmarks"
-            echo "- Interactive dashboard (auto-deploys to Pages on push to \`master\`): https://dathere.github.io/qsv/benchmarks/"
+            echo "- Interactive Data Schematic (auto-deploys to Pages on push to \`master\`): https://dathere.github.io/qsv/benchmarks/"
             echo ""
             echo "This workflow only (re)publishes the committed \`benchmarks/Benchmarks.wiki.md\` to the Wiki. It does not run the generator or redeploy Pages."
           } >> "$GITHUB_STEP_SUMMARY"

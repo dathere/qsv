@@ -1,6 +1,6 @@
 ---
 name: visual-data-dictionary
-description: Build a Visual Data Dictionary — an interactive qsv viz smart dashboard driven by an LLM-inferred JSON Schema data dictionary, with the dictionary browsable beside the charts. Use when the user asks for a visual data dictionary, a documented dashboard, a dictionary-driven dashboard, or wants to explore and document a CSV at the same time. Optionally bins rows into GeoJSON regions.
+description: Build a Visual Data Dictionary — an interactive qsv viz smart dashboard (a Data Schematic) driven by an LLM-inferred JSON Schema data dictionary, with the dictionary browsable beside the charts. Use when the user asks for a visual data dictionary, a documented dashboard, a dictionary-driven dashboard or Data Schematic, or wants to explore and document a CSV at the same time. Optionally bins rows into GeoJSON regions.
 argument-hint: "<input.csv> [geojson]"
 ---
 
@@ -18,7 +18,7 @@ argument-hint: "<input.csv> [geojson]"
 >
 > **Requires:** `qsv` on `PATH`, `python3`, and an LLM endpoint for `describegpt`.
 
-Turn a CSV into a self-contained HTML dashboard whose panels are chosen from an
+Turn a CSV into a self-contained HTML Data Schematic whose panels are chosen from an
 LLM-inferred data dictionary, with that dictionary embedded beside the charts.
 
 Four stages, plus one optional fine-tune, in this order and no other:
@@ -26,9 +26,9 @@ Four stages, plus one optional fine-tune, in this order and no other:
 1. **denull** — blank null sentinels so numeric columns are actually numeric
 2. **describegpt** — infer a JSON Schema data dictionary from the *cleaned* data
    - **2.5 fine-tune** (optional) — hand-correct the dictionary in a terminal UI
-     before it drives the dashboard
+     before it drives the Data Schematic
 3. **geojson** (optional) — pick a feature id key by inspecting the file
-4. **viz smart** — render the dashboard, dictionary-driven, dictionary-embedded
+4. **viz smart** — render the Data Schematic, dictionary-driven, dictionary-embedded
 
 The order is load-bearing. Clean first, then describe, then draw. A dictionary
 built from dirty data documents a `String` column that is really a number, and
@@ -178,7 +178,7 @@ qsv describegpt "$WORK" \
   source of the pipeline funnel/bridge panel.
 - Pass `--context-file <file>` when the user has a glossary, README or codebook.
   Better context yields better roles, concepts and labels, hence a better
-  dashboard. (`viz --dictionary-context` is the same thing for the `infer` path,
+  Data Schematic. (`viz --dictionary-context` is the same thing for the `infer` path,
   which this skill does not take.)
 - `--two-pass` roughly doubles cost and latency. It is what lets the model relate
   fields to one another (`street_no` + `street` + `city` + `zip` = one address),
@@ -276,7 +276,7 @@ Scope note: the TUI deliberately does **not** edit null sentinels
 (`--infer-null-values` output). Those are reported-never-applied and have no
 `viz smart` effect, so editing them here would change nothing downstream.
 
-Three keys that *do* affect the dashboard are also outside the TUI, and are
+Three keys that *do* affect the Data Schematic are also outside the TUI, and are
 **hand-edited in the JSON** — this is the supported path for them, not a
 violation of the "never hand-write the schema" rule:
 
@@ -444,7 +444,7 @@ qsv viz smart "$WORK" \
   the last unlocks Lorenz curves for the most unequal additive measures). Costs
   one extra pass and writes `<stem>.stats.csv` + sidecars + `.idx`. It applies
   only under default parsing: `--no-headers` or a custom `--delimiter` silently
-  falls back to the standard dashboard.
+  falls back to the standard Data Schematic.
 - `--bivariate` adds a normalized-mutual-information heatmap plus — only when
   there are more than 8 chartable columns — a ranked "top relationships" bar.
   **It implicitly turns on `--dictionary infer` when `--dictionary` is not set**
@@ -457,7 +457,7 @@ qsv viz smart "$WORK" \
   the schema, the charted frequency counts, the stats cache + metadata, and the
   bivariate CSV — all bundled *into* the HTML, so a recipient needs no access to
   your machine. Absolute local paths are stripped from the embedded metadata
-  (sharing a dashboard does not disclose your directory layout); sidecars over
+  (sharing a Data Schematic does not disclose your directory layout); sidecars over
   4 MB are skipped with a note. **HTML only** — ignored with a note when
   exporting an image.
 - `-o` must end in `.html`. An image extension (`.png`, `.svg`, …) silently
@@ -475,14 +475,14 @@ This is the one flag here with a real cost: **embedded rows grow the HTML — an
 the reader's browser memory — in proportion to rows × columns.** Tell the user
 the size (Stage 5 prints it) rather than letting them discover it. Lower the
 threshold, or pass `--preview-threshold 0` to drop the viewer entirely, when the
-dashboard is meant to be emailed around.
+Data Schematic is meant to be emailed around.
 
 ### `--photos` — ask first, never enable silently
 
 If a column holds image URLs, `--photos` makes dwelling on a map point reveal
 that row's photo. It is **off by default and deliberately so**: images load from
 whatever third-party host *the data* names, so every person who opens the
-dashboard requests those URLs directly and reveals their IP to that host. Only
+Data Schematic requests those URLs directly and reveals their IP to that host. Only
 pass it if the user asks for it after being told that. HTML tile-map panel only.
 
 ## Stage 5 — Verify, then report
@@ -492,7 +492,7 @@ Never claim success without checking. `viz smart` prints what it skipped to
 emits.
 
 ```bash
-test -s "$OUT" || { echo "no dashboard written"; exit 1; }
+test -s "$OUT" || { echo "no Data Schematic written"; exit 1; }
 python3 - "$OUT" <<'PY'
 import re, sys
 h = open(sys.argv[1], encoding="utf-8", errors="replace").read()
@@ -521,7 +521,7 @@ Then tell the user:
 - the GeoJSON coverage note, if any (points that fell outside every region)
 - the path to `$OUT`
 
-If the user can open a browser, offer to render it. Do not assert the dashboard
+If the user can open a browser, offer to render it. Do not assert the Data Schematic
 "looks right" — you cannot see it.
 
 ## Guardrails

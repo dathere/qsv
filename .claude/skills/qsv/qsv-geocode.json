@@ -1,6 +1,6 @@
 {
   "name": "qsv-geocode",
-  "version": "22.0.0",
+  "version": "22.0.1",
   "description": "Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases — with caching and multi-threading, this offline path geocodes up to 360,000 records/sec! Can also geocode online (forward & reverse) via the OpenCage geocoder.",
   "category": "utility",
   "command": {

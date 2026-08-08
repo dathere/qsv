@@ -13,7 +13,7 @@ verbatim from the existing gallery, so re-running this only changes figure conte
 and order.
 
 Every `qsv viz` run here sets QSV_VIZ_CDN=1, so viz itself emits the CDN
-`<script src>` tag and the smart-dashboard iframes are committable as-is.
+`<script src>` tag and the smart-Data Schematic iframes are committable as-is.
 
 Usage (from the repo root), after changing viz output or the datasets:
 
@@ -46,23 +46,23 @@ MARKER = "Plotly.newPlot(graph_div, "
 # full-width overview panels, themes and map buttons render exactly as the CLI produces them),
 # rather than reconstructed as a lossy uniform sub-grid. Keyed by figure title -> iframe filename.
 SMART_IFRAME = {
-    "smart dashboard":                          "smart_sales.html",
-    "smart dashboard (KPI gauges & target delta)": "smart_sales_kpi.html",
-    "smart dashboard (--smarter)":              "smart_smarter.html",
-    "smart dashboard (--smarter, geospatial)":  "smart_geospatial.html",
-    "smart dashboard (geographic outliers)":    "smart_geo_outliers.html",
-    "smart dashboard (time-series)":            "smart_timeseries.html",
-    "smart dashboard (quarterly cadence)":      "smart_quarterly_cadence.html",
-    "smart dashboard (per-US-state choropleth)":      "smart_us_choropleth.html",
-    "smart dashboard (--dictionary infer, treemap)":  "smart_dict_treemap.html",
-    "smart dashboard (--dictionary infer, sunburst)": "smart_dict_sunburst.html",
-    "smart dashboard (--dictionary infer, world choropleth)": "smart_world_choropleth.html",
-    "smart dashboard (--smarter, curated --dictionary, region-code zip choropleth)": "smart_allegheny_dogs.html",
-    "smart dashboard (animated geo, world events)":   "smart_world_events.html",
-    "smart dashboard (Gapminder bubble, regions growth)": "smart_regions_growth.html",
-    "smart dashboard (--smarter, Gini/Lorenz inequality + log-skew boxes)": "smart_cms_medicare.html",
-    "smart dashboard (dictionary-declared pipeline funnel)": "smart_onboarding_funnel.html",
-    "smart dashboard (--smarter, zero-inflated capital pipeline)": "smart_cpdb.html",
+    "smart Data Schematic":                          "smart_sales.html",
+    "smart Data Schematic (KPI gauges & target delta)": "smart_sales_kpi.html",
+    "smart Data Schematic (--smarter)":              "smart_smarter.html",
+    "smart Data Schematic (--smarter, geospatial)":  "smart_geospatial.html",
+    "smart Data Schematic (geographic outliers)":    "smart_geo_outliers.html",
+    "smart Data Schematic (time-series)":            "smart_timeseries.html",
+    "smart Data Schematic (quarterly cadence)":      "smart_quarterly_cadence.html",
+    "smart Data Schematic (per-US-state choropleth)":      "smart_us_choropleth.html",
+    "smart Data Schematic (--dictionary infer, treemap)":  "smart_dict_treemap.html",
+    "smart Data Schematic (--dictionary infer, sunburst)": "smart_dict_sunburst.html",
+    "smart Data Schematic (--dictionary infer, world choropleth)": "smart_world_choropleth.html",
+    "smart Data Schematic (--smarter, curated --dictionary, region-code zip choropleth)": "smart_allegheny_dogs.html",
+    "smart Data Schematic (animated geo, world events)":   "smart_world_events.html",
+    "smart Data Schematic (Gapminder bubble, regions growth)": "smart_regions_growth.html",
+    "smart Data Schematic (--smarter, Gini/Lorenz inequality + log-skew boxes)": "smart_cms_medicare.html",
+    "smart Data Schematic (dictionary-declared pipeline funnel)": "smart_onboarding_funnel.html",
+    "smart Data Schematic (--smarter, zero-inflated capital pipeline)": "smart_cpdb.html",
 }
 
 # Iframe artifacts that depend on a live LLM (`--dictionary infer` calls describegpt against a
@@ -79,7 +79,7 @@ SMART_IFRAME = {
 # QSV_VIZ_REGEN_LLM=2 defeats both: it deletes these four dashboards' inferred sidecars (see
 # `llm_dictionary_sidecars`) and exports QSV_VIZ_DICT_FRESH=1, which makes viz skip sidecar reuse
 # AND pass `--fresh` to describegpt. Use =2 when the dictionaries themselves must be re-inferred
-# (a model/prompt change); =1 remains right when only the dashboard rendering changed.
+# (a model/prompt change); =1 remains right when only the Data Schematic rendering changed.
 # NOTE: =2 makes real LLM calls, so these four figures are NOT byte-stable across runs — review the
 # diff by hand before committing, and never wire =2 into an automated/CI regen.
 PREGENERATED = {
@@ -91,14 +91,14 @@ PREGENERATED = {
     "smart_geospatial.html",
 }
 
-# CSS for the smart-dashboard iframes. `scrolling="no"` + `overflow:hidden` plus the postMessage
-# auto-sizing below mean each iframe ends up exactly as tall as its dashboard — no inner scrollbar,
+# CSS for the smart-Data Schematic iframes. `scrolling="no"` + `overflow:hidden` plus the postMessage
+# auto-sizing below mean each iframe ends up exactly as tall as its Data Schematic — no inner scrollbar,
 # no trailing whitespace. The height here is just an initial value before the first height message.
 DASH_CSS = ("figure.full iframe.dash{width:100%;border:0;height:600px;display:block;"
             "border-radius:6px;overflow:hidden}")
 
 # The gallery's closing entries are clickable SCREENSHOTS (not plotly figures): scaled preview
-# images that open a full, standalone `qsv viz smart` dashboard in a new popup window (see
+# images that open a full, standalone `qsv viz smart` Data Schematic in a new popup window (see
 # SCREENSHOTS below — those pages are far heavier than the embedded smart_*.html iframes). Portrait
 # images, so cap their rendered height and center them; the border + hover lift mirror the
 # surrounding figure chrome.
@@ -184,10 +184,10 @@ TOC_JS = (
     "var d=a.closest(\"details.toc\");if(d)d.open=false;});</script>")
 
 # Injected once into the gallery: keeps a jumped-to figure in view while the page height is still
-# settling. The dashboard iframes are lazy-loaded and grow from 600px to their real height on load,
+# settling. The Data Schematic iframes are lazy-loaded and grow from 600px to their real height on load,
 # so iframes ABOVE a jump target load mid-scroll and push the target out of view — the reason
 # "Jump to a chart" felt unreliable. On a TOC click / hashchange we arm the target for a short window
-# and re-align it (instantly, respecting figure{scroll-margin-top}) on every dashboard resize report
+# and re-align it (instantly, respecting figure{scroll-margin-top}) on every Data Schematic resize report
 # and on a coarse timer, so drift from iframes growing above it is corrected. Any manual scroll input
 # ends the window immediately so this never fights the reader.
 JUMP_JS = (
@@ -206,7 +206,7 @@ JUMP_JS = (
     "arm(document.getElementById(href.slice(1)));});"
     "addEventListener(\"hashchange\",function(){"
     "if(location.hash.length>1)arm(document.getElementById(location.hash.slice(1)));});"
-    # dashboard iframes report their height (qsvVizHeight -> re-snap) and forward the reader's own
+    # Data Schematic iframes report their height (qsvVizHeight -> re-snap) and forward the reader's own
     # scroll input (qsvUserScroll -> the reader took over, cancel and stop re-aligning).
     # a data viewer reveal request is also reader takeover: without this the stabilizer would
     # snap the jumped-to figure right back and undo the drawer reveal scroll.
@@ -242,7 +242,7 @@ COPY_JS = (
     "try{if(document.execCommand(\"copy\"))ok();}catch(err){}document.body.removeChild(t);}"
     "});</script>")
 
-# Injected into each smart_*.html so the dashboard reports its real rendered height to the parent
+# Injected into each smart_*.html so the Data Schematic reports its real rendered height to the parent
 # gallery. postMessage works cross-origin (e.g. when the gallery is opened over file://), unlike
 # reading iframe.contentWindow.document; the ResizeObserver re-reports after plotly's async relayout.
 #
@@ -259,32 +259,32 @@ RESIZE_REPORTER_JS = (
     "addEventListener(\"load\",r);addEventListener(\"resize\",r);"
     "if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);"
     "setTimeout(r,200);setTimeout(r,800);"
-    # a deep-linked dashboard fills the viewport, so the reader's scroll input lands INSIDE this
+    # a deep-linked Data Schematic fills the viewport, so the reader's scroll input lands INSIDE this
     # iframe, not the parent gallery window. Forward it so the parent's jump stabilizer can tell the
     # reader has taken over and stop re-aligning / cancel its pending on-load re-arm (see JUMP_JS).
     # capture phase: the gl3d scroll-fix installs a capture-phase wheel handler on the plot div that
     # stopPropagation()s (so a 3D panel scrolls the page instead of being eaten); a bubble-phase
     # listener here would never see that wheel. Capturing at the window fires before the plot div, so
     # the reader's scroll over a 3D panel still cancels the parent's jump stabilizer.
-    # pointerdown too: a CLICK inside the dashboard (e.g. the data viewer's Explore link) is
+    # pointerdown too: a CLICK inside the Data Schematic (e.g. the data viewer's Explore link) is
     # just as much reader takeover as a scroll, and the jump stabilizer must not fight the
     # drawer's reveal scroll after a TOC jump.
     "var us=function(){parent.postMessage({qsvUserScroll:1},\"*\");};"
     "[\"wheel\",\"touchstart\",\"keydown\",\"pointerdown\"].forEach(function(t){"
     "addEventListener(t,us,{capture:true,passive:true});});})();</script>")
 
-# Added to the gallery once: sizes each iframe to the height its dashboard reports (matched by
+# Added to the gallery once: sizes each iframe to the height its Data Schematic reports (matched by
 # comparing window references, which is allowed cross-origin). The reported height is
 # content-derived (see RESIZE_REPORTER_JS) and therefore viewport-independent, so applying it can
 # never echo back into the next report; the >1px guard just suppresses no-op churn. Both
 # directions apply: the iframe SHRINKS back when the data viewer drawer closes and its reserved
 # body margin is released.
-# It also honors qsvVizReveal messages from a dashboard's data viewer drawer (issue #4283): the
+# It also honors qsvVizReveal messages from a Data Schematic's data viewer drawer (issue #4283): the
 # drawer is position:fixed, which inside a full-height, never-scrolling iframe pins it to the
 # iframe's BOTTOM edge — often far outside the parent viewport — and neither focus() nor
 # scrollIntoView can reveal it (both are no-ops on fixed elements; direct parent-window access
 # throws when the gallery is opened over file://). "bottom" aligns the iframe's bottom edge with
-# the viewport (open); "top" scrolls back to the dashboard's metadata link (close).
+# the viewport (open); "top" scrolls back to the Data Schematic's metadata link (close).
 RESIZE_LISTENER_JS = (
     "<script>addEventListener(\"message\",function(e){"
     "var d=e.data;if(!d)return;"
@@ -300,8 +300,8 @@ RESIZE_LISTENER_JS = (
     "if(r.bottom>innerHeight)scrollTo({top:scrollY+r.bottom-innerHeight,behavior:\"instant\"});}"
     "else if(d.qsvVizReveal===\"top\"){var t=src.getBoundingClientRect();"
     "scrollTo({top:Math.max(0,scrollY+t.top+(d.qsvVizOffset||0)-80),behavior:\"instant\"});}"
-    # A dashboard sizes its data viewer drawer in vh, but inside an auto-sized iframe vh
-    # resolves against the iframe — which this listener has just grown to the dashboard's FULL
+    # A Data Schematic sizes its data viewer drawer in vh, but inside an auto-sized iframe vh
+    # resolves against the iframe — which this listener has just grown to the Data Schematic's FULL
     # content height — so the drawer opened far taller than the window. The iframe cannot
     # measure the real viewport itself, so answer the child's request with ours; it converts to
     # px-per-vh. Older pregenerated dashboards simply never ask.
@@ -316,7 +316,7 @@ RESIZE_LISTENER_JS = (
     "});</script>")
 
 # The standalone (non-smart) figures are reconstructed in this page's own <script> via
-# Plotly.newPlot, so — unlike the genuine `qsv viz` HTML output and the smart-dashboard iframes —
+# Plotly.newPlot, so — unlike the genuine `qsv viz` HTML output and the smart-Data Schematic iframes —
 # they don't carry qsv's injected fullscreen modebar button. Define the same button here and add it
 # to each figure's config (`modeBarButtonsToAdd`) so the gallery's standalone charts match the CLI.
 # Plain JS (no <script> wrapper): emitted inside the page script, before the newPlot calls. The
@@ -484,10 +484,10 @@ THIRD_PARTY_FOOTER = (
 # (title, description, full_width, [viz args]). Order matters: the full-width smart dashboards
 # lead and close the contiguous run of individual chart types.
 FIGURES = [
-    ("smart dashboard (--smarter, geospatial)",
+    ("smart Data Schematic (--smarter, geospatial)",
      "One command, 13 auto-chosen panels — nearly every "
      "panel type at once on a synthetic catalog of Japanese earthquakes. Things the raw table hides "
-     "but the dashboard makes obvious: depth_km is <b>bimodal</b> (two populations — shallow "
+     "but the Data Schematic makes obvious: depth_km is <b>bimodal</b> (two populations — shallow "
      "interplate quakes ~20&nbsp;km and the deep Wadati-Benioff slab ~450&nbsp;km — so --smarter "
      "draws a histogram, not a box that would average the peaks away); the points trace Japan's "
      "subduction arcs on the map; and a <b>prefecture choropleth</b> bins each quake into the "
@@ -508,7 +508,7 @@ FIGURES = [
      "<code>plotly_dark</code> theme.",
      True, ["smart", "seismic_events.csv", "--smarter", "--bivariate", "--theme", "plotly_dark",
             "--grid-cols", "3", "--geojson", "japan_prefectures.geojson"]),
-    ("smart dashboard (geographic outliers)",
+    ("smart Data Schematic (geographic outliers)",
      "Delivery stops clustered in metro Denver with four "
      "bad-geocode strays. Points far from the cluster centroid (beyond the Tukey far-out fence of "
      "their distances) are flagged as geographic <b>outliers</b>: drawn as distinct amber markers, "
@@ -522,18 +522,18 @@ FIGURES = [
      "strays within the core's own jurisdiction are folded back in silently instead. "
      "Each stop also carries delivery attributes (<code>packages</code>, <code>weight_kg</code>, "
      "<code>distance_km</code>, <code>delivery_minutes</code>, a <code>vehicle</code> class and a "
-     "<code>delivered_date</code>), so beyond the map the auto-profiler fills the dashboard out with "
+     "<code>delivered_date</code>), so beyond the map the auto-profiler fills the Data Schematic out with "
      "box plots, frequency bars, a correlation heatmap, the strongest-pair scatter "
      "(packages vs weight_kg) and a delivered-over-time trend — all without <code>--smarter</code>.",
      True, ["smart", "delivery_stops.csv"]),
-    ("smart dashboard",
+    ("smart Data Schematic",
      "Auto-profiled overview: correlation heatmap + box plots + frequency bars, led by a "
      "drill-down sunburst. `viz smart` now SKIPS an auto hierarchy when the candidate dimensions "
      "are statistically independent (nesting them would just replicate each level's marginal); "
      "sales_sample's region/payment_method/product_category are independent, so "
      "`--hierarchy-style sunburst` is passed to deliberately showcase the interactive sunburst.",
      True, ["smart", "sales_sample.csv", "--hierarchy-style", "sunburst", "--max-charts", "8"]),
-    ("smart dashboard (KPI gauges & target delta)",
+    ("smart Data Schematic (KPI gauges & target delta)",
      "The KPI overview row driven by a hand-authored `--dictionary` "
      "(sales_kpi_dict.schema.json). Two optional `x-qsv` hints turn plain measure tiles into "
      "richer KPIs: a `gauge_range` of [0,1] draws Discount % and Profit Margin % as GAUGES on "
@@ -544,13 +544,13 @@ FIGURES = [
      "hand-author (never LLM-inferred). Overall dataset completeness rides quietly in the header "
      "table, not as a tile.",
      True, ["smart", "sales_sample.csv", "--dictionary", "sales_kpi_dict.schema.json"]),
-    ("smart dashboard (--smarter)",
+    ("smart Data Schematic (--smarter)",
      "Same auto-profiler with `--smarter`, which runs `qsv moarstats --advanced` itself to enrich "
      "the stats cache in one step: the bimodal monthly_spend column renders as a histogram (a box "
      "plot would hide its two peaks), and the skewed account_age_days box is annotated with its "
      "skew direction and outlier share.",
      True, ["smart", "customer_spend.csv", "--smarter", "--max-charts", "8"]),
-    ("smart dashboard (--smarter, Gini/Lorenz inequality + log-skew boxes)",
+    ("smart Data Schematic (--smarter, Gini/Lorenz inequality + log-skew boxes)",
      "<b>Medicare payments to individual practitioners</b> (CMS &mdash; a 30k sample), with "
      "<code>medical_payment</code> and <code>total_patients</code> per provider. These are additive "
      "amounts across <i>comparable</i> units, so <code>--smarter</code> recognizes them as inequality "
@@ -560,7 +560,7 @@ FIGURES = [
      "against its largest values, so <code>viz smart</code> draws it on a <b>log axis</b> instead, "
      "keeping the median and quartiles legible.",
      True, ["smart", "cms_medicare_providers.csv", "--smarter"]),
-    ("smart dashboard (dictionary-declared pipeline funnel)",
+    ("smart Data Schematic (dictionary-declared pipeline funnel)",
      "A synthetic <b>product-onboarding funnel</b> &mdash; visits &rarr; signups &rarr; activated "
      "&rarr; subscribed, one row per channel per week. The four stage columns are declared as a "
      "pipeline in <code>onboarding_funnel_dict.schema.json</code> "
@@ -575,9 +575,9 @@ FIGURES = [
      "over non-nesting totals is drawn as a bridge instead.",
      True, ["smart", "onboarding_funnel.csv",
             "--dictionary", "onboarding_funnel_dict.schema.json"]),
-    ("smart dashboard (--smarter, zero-inflated capital pipeline)",
+    ("smart Data Schematic (--smarter, zero-inflated capital pipeline)",
      "<b>NYC Capital Projects Database</b> (12,587 projects, sourced from Checkbook NYC), the "
-     "dataset this dashboard's inequality work was designed against. Its money columns are both "
+     "dataset this Data Schematic's inequality work was designed against. Its money columns are both "
      "extremely concentrated (Gini 0.93&ndash;0.96) <i>and</i> heavily zero-inflated, which the "
      "Lorenz panels state outright: <code>flat run = 60% zeros, not small values</code>. That long "
      "flat opening run is not a mass of small projects &mdash; it is the projects with nothing "
@@ -696,7 +696,7 @@ FIGURES = [
     ("splom", "Scatter-plot matrix of four numeric columns (units_sold, revenue, discount_pct, "
      "profit_margin_pct): every pairwise scatter in an N x N grid with shared axes, so correlation "
      "structure is legible at a glance. This is a <b>standalone</b> chart command &mdash; the "
-     "<code>viz smart</code> dashboard has no SPLOM panel; it covers the same ground with its "
+     "<code>viz smart</code> Data Schematic has no SPLOM panel; it covers the same ground with its "
      "correlation heatmap plus the strongest-pair scatter and 3D scatter drill-downs.",
      True, ["splom", "sales_sample.csv", "--cols", "units_sold,revenue,discount_pct,profit_margin_pct"]),
     ("parcats", "Parallel-categories flow over three categorical columns (region -> product_category "
@@ -751,15 +751,15 @@ FIGURES = [
      True, ["choropleth", "western_states.csv", "--locations", "state", "--value",
              "wind_capacity_gw", "--geojson", "western_states.geojson", "--feature-id-key", "id",
              "--map", "--style", "carto-positron"]),
-    ("smart dashboard (time-series)",
-     "Auto dashboard for stock_prices: a time-series trend panel (the first numeric column over the "
+    ("smart Data Schematic (time-series)",
+     "Auto Data Schematic for stock_prices: a time-series trend panel (the first numeric column over the "
      "date) leads; the strongest-correlated pair drill-down (open vs close) is shown as a <b>static "
      "scatter</b> — that relationship is a near-perfect line whose 2-D shape doesn't evolve, so "
      "the judicious animation gate withholds the (uninformative) animated version — alongside "
      "box-plot summaries of the OHLC columns.",
      True, ["smart", "stock_prices.csv", "--max-charts", "8"]),
-    ("smart dashboard (quarterly cadence)",
-     "Auto dashboard for quarterly_filings: 3 years of <b>quarterly</b> data spans ~1,000 days, "
+    ("smart Data Schematic (quarterly cadence)",
+     "Auto Data Schematic for quarterly_filings: 3 years of <b>quarterly</b> data spans ~1,000 days, "
      "which the span-based rule alone would bucket by <i>week</i> — ~150 buckets of which only 12 "
      "are non-empty, a comb of spikes. The cadence-aware floor detects the data's native quarterly "
      "spacing (most weekly/monthly periods are empty) and buckets the trend by <b>quarter</b> "
@@ -767,7 +767,7 @@ FIGURES = [
      "inter-quarter gaps. A curated dictionary can also pin the floor explicitly via "
      "<code>x-qsv.cadence</code> (a describegpt-inferred token).",
      True, ["smart", "quarterly_filings.csv"]),
-    ("smart dashboard (per-US-state choropleth)",
+    ("smart Data Schematic (per-US-state choropleth)",
      "`viz smart` reverse-geocodes each point; because every city "
      "resolves to a US state, it adds a per-US-<b>state</b> choropleth (cities-per-state, albers-usa) "
      "beside the point map, alongside the usual box plots, frequency bars and the strongest-pair "
@@ -775,20 +775,20 @@ FIGURES = [
      "which spill into neighboring countries and ocean — the choropleth instead resolves each city to "
      "its own state.) No flags, no LLM — the state fill is derived purely from the lat/lon columns.",
      True, ["smart", "us_cities.csv"]),
-    ("smart dashboard (--dictionary infer, treemap)",
-     "Auto dashboard for customer_spend with a describegpt-inferred Data Dictionary "
+    ("smart Data Schematic (--dictionary infer, treemap)",
+     "Auto Data Schematic for customer_spend with a describegpt-inferred Data Dictionary "
      "(--dictionary infer) guiding panel selection & field labels. Two categorical dimensions "
      "(plan, region) form a shallow part-to-whole hierarchy, auto-rendered as a TREEMAP "
      "(area = size). Requires a local LLM; the committed HTML is reused on regen.",
      True, ["smart", "customer_spend.csv", "--dictionary", "infer"]),
-    ("smart dashboard (--dictionary infer, sunburst)",
-     "Auto dashboard for sales_sample with a describegpt-inferred Data Dictionary. Its three "
+    ("smart Data Schematic (--dictionary infer, sunburst)",
+     "Auto Data Schematic for sales_sample with a describegpt-inferred Data Dictionary. Its three "
      "categorical dimensions are statistically independent, so the auto-profiler skips the "
      "hierarchy by default; `--hierarchy-style sunburst` forces a SUNBURST here (concentric rings "
      "emphasize parent-child structure) to showcase the chart. Requires a local LLM; the committed "
      "HTML is reused on regen.",
      True, ["smart", "sales_sample.csv", "--dictionary", "infer", "--hierarchy-style", "sunburst"]),
-    ("smart dashboard (--dictionary infer, world choropleth)",
+    ("smart Data Schematic (--dictionary infer, world choropleth)",
      "<b>1,179 cities</b> with population "
      "over 500,000 across <b>six inhabited continents</b> (GeoNames-derived): `viz smart` "
      "reverse-geocodes every point and adds a per-<b>country</b> choropleth (cities-per-country, "
@@ -803,7 +803,7 @@ FIGURES = [
      "is a rough synthetic proxy (latitude + elevation-lapse model), so treat it as illustrative. "
      "Requires a local LLM; the committed HTML is reused on regen.",
      True, ["smart", "world_cities.csv", "--dictionary", "infer"]),
-    ("smart dashboard (--smarter, curated --dictionary, region-code zip choropleth)",
+    ("smart Data Schematic (--smarter, curated --dictionary, region-code zip choropleth)",
      "All <b>50,013</b> Allegheny County lifetime dog licenses, profiled into auto-chosen panels. "
      "The headline panel is a <b>summary choropleth keyed off a region-code COLUMN</b>, not "
      "coordinates: this dataset has <i>no</i> lat/lon, only an <code>OwnerZip</code> column, so "
@@ -823,7 +823,7 @@ FIGURES = [
      "<code>DogName</code> as identifiers so they're skipped. This dataset carries no numeric "
      "<b>measure</b>, so only the per-zip <b>count</b> map is drawn; a dataset that also tags a "
      "measure column (e.g. a sale price) additionally gets a per-zip <b>median-of-measure</b> "
-     "choropleth beside it. Alongside the map the profiler fills the dashboard with "
+     "choropleth beside it. Alongside the map the profiler fills the Data Schematic with "
      "<code>LicenseType</code>/<code>Breed</code>/<code>Color</code> frequency bars and, via "
      "<code>--bivariate</code>, an <b>NMI association heatmap</b> (Breed ↔ Color) plus a ranked "
      "Top&nbsp;Relationships panel. <code>--dict-info</code> adds a per-panel info icon and a "
@@ -836,16 +836,16 @@ FIGURES = [
             "--dictionary", "allegheny_dogs_dict.schema.json",
             "--geojson", "allegheny_zip_boundaries.geojson",
             "--feature-id-key", "properties.ZIP"]),
-    ("smart dashboard (animated geo, world events)",
-     "Auto dashboard for world_events_dated: global-extent dated points across six continents "
+    ("smart Data Schematic (animated geo, world events)",
+     "Auto Data Schematic for world_events_dated: global-extent dated points across six continents "
      "(lon span ~300&deg;, lat span ~99&deg;). Because the extent is continental/global, "
      "<code>viz smart</code> draws a <b>ScatterGeo projection basemap</b> (which animates natively, "
      "unlike a MapLibre tile map) and adds an <b>animated geographic reveal</b>: the points "
      "accumulate <b>cumulatively over monthly time buckets</b> (Play/Pause + scrub slider). A "
      "city-scale point cloud would stay a static map — the animation only fires for large extents.",
      True, ["smart", "world_events_dated.csv"]),
-    ("smart dashboard (Gapminder bubble, regions growth)",
-     "Auto dashboard for regions_growth: a low-cardinality categorical entity "
+    ("smart Data Schematic (Gapminder bubble, regions growth)",
+     "Auto Data Schematic for regions_growth: a low-cardinality categorical entity "
      "(<code>region</code>) + a measure pair (<code>gdp_index</code> vs "
      "<code>wellbeing_index</code>) + a monthly date drive a <b>Gapminder-style animated bubble "
      "chart</b> &mdash; one bubble per region, each tracing a <b>distinct curved path</b> through "
@@ -856,16 +856,16 @@ FIGURES = [
 ]
 
 # The gallery closes with clickable SCREENSHOTS (not plotly figures): scaled preview images that
-# open a full, standalone `qsv viz smart` "visual data dictionary" dashboard in a new popup window.
+# open a full, standalone `qsv viz smart` "visual data dictionary" Data Schematic in a new popup window.
 # These pages are far too heavy to embed as iframes like the smart_*.html figures (6.9MB for
-# Boston, 6.8MB for Pittsburgh; NYC's 3.6MB dashboard is shown this way too so the gallery page
+# Boston, 6.8MB for Pittsburgh; NYC's 3.6MB Data Schematic is shown this way too so the gallery page
 # stays light), and Pittsburgh's and Boston's source data is too large to commit at all. Kept OUT
 # of FIGURES so they never run through `qsv viz` as a chart command.
 #
-# Each entry carries the verbatim command that produced its dashboard (rendered as a
+# Each entry carries the verbatim command that produced its Data Schematic (rendered as a
 # copy-pasteable block), a `win` popup-window name (distinct per entry, so opening one doesn't
 # replace another), and optionally `args` — the `qsv viz` args to REGENERATE the linked page on
-# every run. Only NYC 311 has `args`: its dataset (nyc_311.csv) is committed, so its dashboard
+# every run. Only NYC 311 has `args`: its dataset (nyc_311.csv) is committed, so its Data Schematic
 # stays deterministic and plaintext-validated like the iframe figures. Entries without `args` are
 # committed artifacts reused as-is, and supply their own `cmd`.
 SCREENSHOTS = [
@@ -876,7 +876,7 @@ SCREENSHOTS = [
             "A full <code>qsv viz smart</code> <b>visual data dictionary</b> over real "
             "<b>Pittsburgh 311</b> service requests from the "
             '<a href="https://data.wprdc.org/dataset/pittsburgh-311-data">Western Pennsylvania '
-            "Regional Data Center (WPRDC)</a>. The dashboard bins each request's lat/lon by "
+            "Regional Data Center (WPRDC)</a>. The Data Schematic bins each request's lat/lon by "
             "point-in-polygon into Pittsburgh's neighborhood polygons "
             "(<code>--geojson pittsburgh-neighborhoods</code>, no geocoding); a curated "
             "<code>--dictionary</code> (<code>pitt311data.schema.json</code>) tags identifier/code "
@@ -886,9 +886,9 @@ SCREENSHOTS = [
             "(<code>moarstats --advanced</code>) and <code>--bivariate</code> adds the NMI "
             "association heatmap plus the ranked top-relationships panel, while "
             "<code>--dataset-pid</code> adds a clickable citation link back to the source dataset. "
-            "The standalone page is a ~10.4&nbsp;MB self-contained dashboard &mdash; too large to embed "
+            "The standalone page is a ~10.4&nbsp;MB self-contained Data Schematic &mdash; too large to embed "
             "inline &mdash; so this is a screenshot: <b>click it to open the fully interactive "
-            "dashboard in a new window</b>."),
+            "Data Schematic in a new window</b>."),
         "image": "pitt311data-visual-datadic.webp",
         "href":  "pitt311data.html",
         # `--geojson pittsburgh-neighborhoods` is a QSV_GEOJSON_SHORTCUTS alias, not a file: the
@@ -928,7 +928,7 @@ SCREENSHOTS = [
             "coordinates as coordinate dimensions, and supplies friendly names (e.g. "
             "<i>Complaint Creation Date</i>, <i>Resolution Deadline</i>), so the "
             "profiler treats a service-request log as volume-and-category data. Alongside the maps the "
-            "auto-profiler fills the dashboard with frequency bars, an <b>hour-of-day</b> seasonality "
+            "auto-profiler fills the Data Schematic with frequency bars, an <b>hour-of-day</b> seasonality "
             "profile, a time trend, a <b>parallel-categories (parcats) flow</b> over 3-4 associated "
             "categorical columns (co-occurrence ribbons, auto-chosen over a nested treemap/sunburst for "
             "this many-to-many set) and a mean-by-borough panel. New here is an "
@@ -957,11 +957,11 @@ SCREENSHOTS = [
             "drawer sourced from the same committed schema, topped by a <b>download row</b> that bundles "
             "the dictionary as JSON Schema, the frequency counts the panels actually charted, and the "
             "stats &amp; bivariate sidecars this run was built from &mdash; every file carried inside the "
-            "HTML, so anyone you send the dashboard to can save them. The run stays fully "
+            "HTML, so anyone you send the Data Schematic to can save them. The run stays fully "
             "<b>deterministic</b> and offline: because the dictionary is committed, <code>--bivariate</code> "
             "never triggers a live <code>--dictionary infer</code> pass. "
-            "The standalone page is a ~3.6&nbsp;MB dashboard, shown here as a screenshot so the "
-            "gallery page stays light: <b>click it to open the fully interactive dashboard in a "
+            "The standalone page is a ~3.6&nbsp;MB Data Schematic, shown here as a screenshot so the "
+            "gallery page stays light: <b>click it to open the fully interactive Data Schematic in a "
             "new window</b>."),
         "image": "nyc311data-visual-datadic.webp",
         "href":  "smart_nyc311.html",
@@ -1006,9 +1006,9 @@ SCREENSHOTS = [
             "records, via <code>QSV_VIZ_MAX_POINTS=300000</code>), plus the first 50,000 rows for "
             "the <b>data viewer</b> drawer that the row count's <b>(Preview)</b> link opens, makes "
             "this a ~21.5&nbsp;MB "
-            "self-contained dashboard "
+            "self-contained Data Schematic "
             "&mdash; too large to embed inline &mdash; so this is a screenshot: <b>click it to open "
-            "the fully interactive dashboard in a new window</b>."),
+            "the fully interactive Data Schematic in a new window</b>."),
         "image": "boston311data-visual-datadic.webp",
         "href":  "smart_boston_311_2025.html",
         "cmd":   ("QSV_VIZ_MAX_POINTS=300000 qsv viz smart boston311-2025.tsv --smarter "
@@ -1029,7 +1029,7 @@ SCREENSHOTS = [
             'portal, <a href="https://dados.gov.br/dados/conjuntos-dados/serie-historica-de-'
             'precos-de-combustiveis-e-de-glp">dados.gov.br</a>. This is the <b>localization</b> '
             "showcase: <code>--language pt</code> resolves through the curated <code>pt-BR</code> "
-            "locale (the bare tag is a registered alias), so every piece of dashboard chrome — "
+            "locale (the bare tag is a registered alias), so every piece of Data Schematic chrome — "
             "<i>Descrição</i>, <i>Linhas</i>, <i>Colunas</i>, <i>Completude</i>, <i>Dicionário de "
             "dados</i>, <i>Ver o gráfico</i> — plus the vendored plotly and DataTables locale "
             "bundles all render in Portuguese. The input is a <b>semicolon-separated "
@@ -1045,9 +1045,9 @@ SCREENSHOTS = [
             "supplies the friendly Portuguese field labels that <code>--dict-info</code> renders "
             "as the in-page <b>Dicionário de dados</b> tab. Neither the <code>.ssv</code> export "
             "nor <code>brazil_geo.json</code> is committed here, so this page is reused as-is. "
-            "The standalone dashboard is a ~17&nbsp;MB self-contained page &mdash; too large to "
+            "The standalone Data Schematic is a ~17&nbsp;MB self-contained page &mdash; too large to "
             "embed inline &mdash; so this is a screenshot: <b>click it to open the fully "
-            "interactive dashboard in a new window</b>."),
+            "interactive Data Schematic in a new window</b>."),
         "image": "brazil-lpg-visual-datadic.webp",
         "href":  "smart-brazil-lpg-4-semanas.html",
         "cmd":   ("QSV_PREFER_DMY=1 qsv viz smart ultimas-4-semanas-glp.ssv --smarter "
@@ -1075,7 +1075,7 @@ SCREENSHOTS = [
             "both edits are load-bearing: <code>Latitud</code>/<code>Longitud</code> carry "
             "explicit <code>geo.latitude</code>/<code>geo.longitude</code> concepts because "
             "<code>viz</code>'s header-name fallback matches only the English "
-            "<i>lat</i>/<i>latitude</i>/<i>lon</i>/<i>longitude</i> (without them the dashboard "
+            "<i>lat</i>/<i>latitude</i>/<i>lon</i>/<i>longitude</i> (without them the Data Schematic "
             "has no map at all), and only the genuinely additive columns keep "
             "<code>role=measure</code> — <code>viz</code> recognises non-additive measures from an "
             "English token list, so Spanish <i>Promedio</i>/<i>Mediana</i>/<i>Porcentaje</i> would "
@@ -1083,9 +1083,9 @@ SCREENSHOTS = [
             "NMI association panels (and implicitly forces <code>--smarter</code>), and "
             "<code>--dict-info</code> renders the dictionary as the in-page <b>Diccionario de "
             "datos</b> tab. Regenerate with the committed dictionary, <b>not</b> "
-            "<code>--dictionary infer</code>. The standalone dashboard is a ~5.1&nbsp;MB "
+            "<code>--dictionary infer</code>. The standalone Data Schematic is a ~5.1&nbsp;MB "
             "self-contained page, shown here as a screenshot so the gallery page stays light: "
-            "<b>click it to open the fully interactive dashboard in a new window</b>."),
+            "<b>click it to open the fully interactive Data Schematic in a new window</b>."),
         "image": "colombia-calidad-aire-visual-datadic.webp",
         "href":  "smart-colombia-calidad-aire.html",
         "cmd":   ("qsv viz smart calidad-aire-pm-colombia.csv --language es "
@@ -1135,15 +1135,15 @@ def anchor_id(title):
 
 
 def toc_label(title):
-    """Display text for a figure's Table-of-Contents link. The many `smart dashboard (...)` figures
-    share a long `smart dashboard ` prefix that buries the distinguishing parenthetical and gets
-    ellipsis-truncated in the TOC grid, so move the common `dashboard` word to the end (e.g.
-    `smart dashboard (--smarter, geospatial)` -> `smart (--smarter, geospatial) dashboard`). The
+    """Display text for a figure's Table-of-Contents link. The many `smart Data Schematic (...)` figures
+    share a long `smart Data Schematic ` prefix that buries the distinguishing parenthetical and gets
+    ellipsis-truncated in the TOC grid, so move the common `Data Schematic` word to the end (e.g.
+    `smart Data Schematic (--smarter, geospatial)` -> `smart (--smarter, geospatial) Data Schematic`). The
     figure title itself, its anchor id and the iframe lookup keys are unchanged — this only affects
-    the TOC link text. Bare `smart dashboard` (no parenthetical) round-trips unchanged."""
-    prefix = "smart dashboard"
+    the TOC link text. Bare `smart Data Schematic` (no parenthetical) round-trips unchanged."""
+    prefix = "smart Data Schematic"
     if title.startswith(prefix):
-        return "smart" + title[len(prefix):] + " dashboard"
+        return "smart" + title[len(prefix):] + " Data Schematic"
     return title
 
 
@@ -1246,7 +1246,7 @@ def extract_parcats_script(html):
 
 
 def extract_inline_panels(html):
-    """The inline-div smart dashboard form (used when a map panel forces it, or for >8 panels):
+    """The inline-div smart Data Schematic form (used when a map panel forces it, or for >8 panels):
     a series of `Plotly.newPlot("qsv-viz-panel-N", {...})` calls, each a self-contained figure.
     Returns the list of panel objects, or None when the output isn't the inline form."""
     needle = 'Plotly.newPlot("qsv-viz-panel-'
@@ -1301,7 +1301,7 @@ def run_html(qsv, args):
     """Run `qsv viz <args>` and return its HTML output as a string.
 
     QSV_VIZ_CDN makes viz emit a plotly CDN `<script src>` instead of the ~4.6MB inline bundle,
-    so the smart-dashboard iframes are small enough to commit. QSV_VIZ_NO_COMPRESS keeps figure
+    so the smart-Data Schematic iframes are small enough to commit. QSV_VIZ_NO_COMPRESS keeps figure
     payloads in the fully readable plain form (no gzip+DecompressionStream, no base64 float32
     typed arrays), which this script needs to scrape figure JSON out of the HTML.
 
@@ -1336,21 +1336,21 @@ def run_fig(qsv, args):
     html = run_html(qsv, args)
     panels = extract_inline_panels(html)
     if panels is not None:
-        return {"panels": panels}          # inline multi-panel dashboard
+        return {"panels": panels}          # inline multi-panel Data Schematic
     return {"fig": extract_fig_json(html)}  # single grid-form figure
 
 
 def inject_resize_reporter(html):
     """Add the postMessage height/user-scroll reporter just before the page's real </body> so the
-    iframe can be auto-sized to the dashboard with no inner scrollbar and no trailing whitespace.
+    iframe can be auto-sized to the Data Schematic with no inner scrollbar and no trailing whitespace.
     Anchor on the LAST </body>, not the first: `--dict-info` dashboards embed a complete standalone
     HTML document (with its own </body></html>) as a string inside the qsvOpenDictTab script, so a
     first-match replace would inject the reporter inside that script string, where it never runs —
-    leaving the iframe stuck at its initial height (the Allegheny dog-licenses dashboard clipping).
+    leaving the iframe stuck at its initial height (the Allegheny dog-licenses Data Schematic clipping).
 
     Idempotent: strip any previously-injected reporter (a <script> containing qsvVizHeight; it has no
     literal `<` in its body) before re-adding the current one, so re-running against an already-built
-    dashboard (e.g. the reused pre-generated ones) refreshes the reporter instead of duplicating it."""
+    Data Schematic (e.g. the reused pre-generated ones) refreshes the reporter instead of duplicating it."""
     html = re.sub(r"<script>[^<]*qsvVizHeight[^<]*</script>\n?", "", html)
     idx = html.rfind("</body>")
     if idx == -1:
@@ -1359,7 +1359,7 @@ def inject_resize_reporter(html):
 
 
 def grid_cols(args):
-    """The --grid-cols value from a smart dashboard's args (default 2)."""
+    """The --grid-cols value from a smart Data Schematic's args (default 2)."""
     if "--grid-cols" in args:
         return int(args[args.index("--grid-cols") + 1])
     return 2
@@ -1377,7 +1377,7 @@ def cleanup_sidecars():
     # rather than recomputing it. A cache left behind by unrelated manual work -- notably a
     # `--smarter` run, whose moarstats enrichment adds outlier annotations to panel titles -- is
     # otherwise silently inherited by a figure whose own command never asked for it. That
-    # produced a committed dashboard whose caption did not match the command printed beside it.
+    # produced a committed Data Schematic whose caption did not match the command printed beside it.
     removed = 0
     for f in os.listdir(VIZ_DIR):
         if (".stats.csv" in f or ".stats.jsonl" in f or ".stats.bivariate.csv" in f
@@ -1417,7 +1417,7 @@ def data_viewer_markers(html):
 
 
 def warn_stale_data_viewers(linked_pages):
-    """Warn when a committed dashboard's data viewer lags the one the current qsv binary emits.
+    """Warn when a committed Data Schematic's data viewer lags the one the current qsv binary emits.
 
     Every figure this script regenerates picks up the current viewer for free. Two linked pages
     cannot be: `pitt311data.html` and `smart_boston_311_2025.html` are built from datasets that are
@@ -1468,7 +1468,7 @@ def warn_stale_data_viewers(linked_pages):
 
 
 def warn_stale_parcats_pages(linked_pages):
-    """Warn when a committed dashboard carries a parcats panel but not the animation script.
+    """Warn when a committed Data Schematic carries a parcats panel but not the animation script.
 
     The same two pages `warn_stale_data_viewers` exists for -- `pitt311data.html` and
     `smart_boston_311_2025.html`, built from datasets that are not in the repo -- also carry parcats
@@ -1507,7 +1507,7 @@ def llm_dictionary_sidecars():
     Derived from PREGENERATED -> SMART_IFRAME (reversed to iframe->title) -> FIGURES -> input CSV.
     NOT from scanning argv for `--dictionary infer`: seismic_events.csv reaches inference via
     `--bivariate` implying it, with no `--dictionary` in its args, so an argv scan finds only 3 of
-    the 4 and would silently leave the geospatial dashboard's sidecar in place.
+    the 4 and would silently leave the geospatial Data Schematic's sidecar in place.
 
     A blanket `*.schema.json` sweep is FORBIDDEN: the curated dictionaries beside these
     (allegheny_dogs_dict, nyc311_dict, sales_kpi_dict, onboarding_funnel_dict,
@@ -1544,7 +1544,7 @@ def check_readme_claims():
     """Fail closed on the README drift this script can actually prove.
 
     Adding a figure silently invalidates prose counts and leaves its input undocumented; that
-    has happened repeatedly, most recently a dashboard count that was corrected to the number of
+    has happened repeatedly, most recently a Data Schematic count that was corrected to the number of
     `smart_*.html` files on disk when the sentence is about EMBEDDED iframes -- two of those files
     are screenshot link-outs, so the "fix" was wrong in the other direction.
 
@@ -1572,7 +1572,7 @@ def check_readme_claims():
     expect_phrase(
         len(SMART_IFRAME),
         "The {n} **smart dashboards** are embedded",
-        "embedded-dashboard count",
+        "embedded-Data Schematic count",
     )
     expect_phrase(
         len(SCREENSHOTS),
@@ -1646,7 +1646,7 @@ def main():
     # this the block would stack up one extra copy per regen.
     head = re.sub(r"<!-- Third-party software used by this page:.*?-->\n?", "", head, flags=re.S)
     head = head.replace("<!doctype html>\n", "<!doctype html>\n" + BANNER + "\n" + THIRD_PARTY_COMMENT + "\n", 1)
-    # iframe styling for the embedded smart-dashboard pages. Drop any prior rule first (the head is
+    # iframe styling for the embedded smart-Data Schematic pages. Drop any prior rule first (the head is
     # reused verbatim across runs) so the current DASH_CSS always wins.
     head = re.sub(r"\s*figure\.full iframe\.dash\{[^}]*\}", "", head)
     head = head.replace("</style>", " " + DASH_CSS + "\n</style>", 1)
@@ -1698,7 +1698,7 @@ def main():
                 with open(pre_path, encoding="utf-8") as fh:
                     existing = fh.read()
                 # reused verbatim, so it never passed through run_html's check — validate it here,
-                # else a dashboard refreshed without QSV_VIZ_NO_COMPRESS gets silently re-committed
+                # else a Data Schematic refreshed without QSV_VIZ_NO_COMPRESS gets silently re-committed
                 assert_plaintext(existing, f"pre-generated {iframe_name}")
                 refreshed = inject_resize_reporter(existing)
                 if refreshed != existing:
@@ -1712,7 +1712,7 @@ def main():
             figs.append(None)  # keep FIGS index aligned with idx for the non-iframe figures
             fig_divs.append(
                 f'<figure class="cell full" id="{anchor}">{figcaption_html(title, desc, args)}'
-                # allow fullscreen so each dashboard's in-iframe Plotly "Fullscreen" modebar
+                # allow fullscreen so each Data Schematic's in-iframe Plotly "Fullscreen" modebar
                 # button (gd.requestFullscreen()) isn't blocked by the iframe permissions policy.
                 f'<iframe src="{iframe_name}" class="dash" scrolling="no" loading="lazy" '
                 f'allowfullscreen allow="fullscreen" '
@@ -1722,7 +1722,7 @@ def main():
         sys.stderr.write(f"[{idx}] {title}: qsv viz {' '.join(args)}\n")
         result = run_fig(qsv, args)
         if "panels" in result:
-            # inline multi-panel dashboard: store the panel list and render a nested sub-grid of
+            # inline multi-panel Data Schematic: store the panel list and render a nested sub-grid of
             # independent plots (one <div> + newPlot per panel) inside a single full-width cell
             panels = result["panels"]
             figs.append(panels)
@@ -1759,9 +1759,9 @@ def main():
             )
 
     # Final, clickable-screenshot entries (full-width cells, no plotly figure): each opens its
-    # standalone dashboard in its own popup window on click; target=_blank is the no-JS fallback and
+    # standalone Data Schematic in its own popup window on click; target=_blank is the no-JS fallback and
     # the onclick's window.open gives the popup its own sized window, named per entry so opening one
-    # dashboard never replaces another. NOT added to `figs`/`plots` — they carry no Plotly data or
+    # Data Schematic never replaces another. NOT added to `figs`/`plots` — they carry no Plotly data or
     # newPlot call, so the FIGS array stays aligned with the charts.
     for shot in SCREENSHOTS:
         # entries with `args` are regenerated from a committed dataset (same helpers as the iframe
@@ -1792,7 +1792,7 @@ def main():
             f'<a class="shot" href="{shot["href"]}" target="_blank" rel="noopener" '
             f'''onclick="window.open(this.href,'{shot["win"]}','popup,width=1280,height=900');'''
             f'''return false;" '''
-            f'title="Open the full interactive dashboard in a new window">'
+            f'title="Open the full interactive Data Schematic in a new window">'
             f'<img src="{shot["image"]}" loading="lazy" '
             f'alt="{html_escape(shot["title"])} screenshot"/></a></figure>'
         )
@@ -1846,7 +1846,7 @@ def main():
     linked_pages = sorted(set(SMART_IFRAME.values()) | {s["href"] for s in SCREENSHOTS})
 
     def _emitted_cdn_tag():
-        # from a REGENERATED dashboard: those came from the qsv binary in this very run, so they
+        # from a REGENERATED Data Schematic: those came from the qsv binary in this very run, so they
         # are the authority. The pre-generated ones are precisely what may be stale.
         for name in SMART_IFRAME.values():
             if name in pregenerated:
@@ -1866,7 +1866,7 @@ def main():
         body, n = re.subn(CDN_TAG_RE, emitted_tag, body, count=1)
         if n:
             sys.stderr.write(f"scaffold plotly tag synced to viz output: {emitted_tag}\n")
-        # every embedded dashboard (including the reused LLM-backed ones) and every screenshot
+        # every embedded Data Schematic (including the reused LLM-backed ones) and every screenshot
         # link-out target. Only the <script> tag is touched — figure content, themes and layout are
         # left exactly as generated.
         for name in linked_pages:
@@ -1882,7 +1882,7 @@ def main():
                 sys.stderr.write(f"synced plotly CDN tag in {name}\n")
 
     # Fail closed: never commit a page that pulls plotly from a CDN without integrity. This catches
-    # a dashboard added to SMART_IFRAME (or linked from SCREENSHOTS) but never regenerated, and any
+    # a Data Schematic added to SMART_IFRAME (or linked from SCREENSHOTS) but never regenerated, and any
     # future path that bypasses the sync above.
     unprotected = []
     for label, html in [("gallery.html", body)] + [

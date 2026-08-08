@@ -1,6 +1,6 @@
 _version: 1
 
-# German (de) -- viz dashboard UI.
+# German (de) -- viz Data Schematic UI.
 # TODO: native-speaker review before release. Umlauts and ß ARE included (this
 # file is UTF-8); the pending review is about wording and register, not encoding.
 # Keys missing here fall back to en (see `fallback = "en"` in src/main.rs).
@@ -87,8 +87,8 @@ viz:
     export_label: "JSONSchema exportieren"
     export_short: "Schema"
     view_chart: "Diagramm ansehen "
-    back_to_dashboard: "Zurück zum Dashboard"
-    sidecar_download_tooltip: "%{q_file} herunterladen, eine Begleitdatei, aus der dieses Dashboard erstellt wurde"
+    back_to_dashboard: "Zurück zum Data Schematic"
+    sidecar_download_tooltip: "%{q_file} herunterladen, eine Begleitdatei, aus der dieses Data Schematic erstellt wurde"
     prov_generated_by: "Erstellt von %{q_tool} describegpt"
     prov_command_line: "Befehlszeile:"
     prov_prompt_file: "Prompt-Datei:"

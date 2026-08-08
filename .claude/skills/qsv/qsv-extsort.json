@@ -1,6 +1,6 @@
 {
   "name": "qsv-extsort",
-  "version": "22.0.0",
+  "version": "22.0.1",
   "description": "Sort an arbitrarily large CSV/text file using a multithreaded external merge sort algorithm.",
   "category": "utility",
   "command": {

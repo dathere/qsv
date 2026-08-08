@@ -1,7 +1,7 @@
 _version: 1
 
 # ---------------------------------------------------------------------------
-# English source strings for the `viz` dashboard UI.
+# English source strings for the `viz` Data Schematic UI.
 #
 # CONTRACT: every value here MUST be byte-identical to the literal it replaced
 # in src/cmd/viz.rs. English output is covered by golden fixtures
@@ -124,8 +124,8 @@ viz:
     export_label: "Export JSONSchema"
     export_short: "schema"
     view_chart: "View chart "
-    back_to_dashboard: "Back to dashboard"
-    sidecar_download_tooltip: "Download %{q_file}, a sidecar this dashboard was built from"
+    back_to_dashboard: "Back to Data Schematic"
+    sidecar_download_tooltip: "Download %{q_file}, a sidecar this Data Schematic was built from"
     # The describegpt attribution block at the foot of the drawer. describegpt bakes it
     # into the schema as `x-qsv.generated_by` in English; `localize_dict_provenance` swaps
     # these LABELS in at render time and leaves every value (command line, model, URL,
@@ -158,7 +158,7 @@ viz:
     # POLAR AXIS TICK LABELS for the cyclic-seasonality panel. These are plotly
     # `ticktext` values, NOT a `"text"`/`"name"` field, which is why four rounds
     # of JSON-shape sweeps never saw them -- they were found by loading a Spanish
-    # dashboard in a browser and reading the chart.
+    # Data Schematic in a browser and reading the chart.
     #
     # plotly's registered locale cannot supply these: we hand it an explicit
     # `ticktext` array, so its own month/day names are never consulted.
@@ -296,7 +296,7 @@ viz:
     pair_log_y: "%{q_name} · log y"
     pair_log_xy: "%{q_name} · log x/y"
     # The other two animated panels. Independent whole titles -- they share no key
-    # with the pair titles above, but a Spanish dashboard showing these in English
+    # with the pair titles above, but a Spanish Data Schematic showing these in English
     # beside a translated animated pair reads as a bug, so they travel together.
     bubble_over_time: "%{q_y} vs %{q_x} by %{q_entity} over time"
     locations_over_time: "locations over time"

@@ -53,7 +53,7 @@ Always apply fixes in this order to avoid cascading issues:
 6. validate       (validation — check against schema last)
 ```
 
-## Stats Cache as Quality Dashboard
+## Stats Cache as Quality Data Schematic
 
 After running `stats --cardinality --stats-jsonl` (basic moarstats auto-runs), read the `.stats.csv` cache to assess quality in one pass:
 

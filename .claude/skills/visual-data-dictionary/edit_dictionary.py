@@ -2,7 +2,7 @@
 """Fine-tune a describegpt JSON Schema data dictionary for `qsv viz smart`.
 
 A small terminal UI (curses) to review every column and adjust the four fields
-that steer the dashboard:
+that steer the Data Schematic:
 
     role         x-qsv.role      (dimension | measure | identifier | timestamp)
     concept      x-qsv.concept   (namespaced token, e.g. geo.state, id.natural_key)

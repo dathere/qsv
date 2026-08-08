@@ -1,6 +1,6 @@
 _version: 1
 
-# Italian (it) -- viz dashboard UI.
+# Italian (it) -- viz Data Schematic UI.
 # TODO: native-speaker review before release. Accents ARE included (this file is
 # UTF-8); the pending review is about wording and register, not encoding.
 # Keys missing here fall back to en (see `fallback = "en"` in src/main.rs).
@@ -87,8 +87,8 @@ viz:
     export_label: "Esporta JSONSchema"
     export_short: "schema"
     view_chart: "Vedi il grafico "
-    back_to_dashboard: "Torna alla dashboard"
-    sidecar_download_tooltip: "Scarica %{q_file}, un file di supporto da cui è stata costruita questa dashboard"
+    back_to_dashboard: "Torna al Data Schematic"
+    sidecar_download_tooltip: "Scarica %{q_file}, un file di supporto da cui è stato costruito questo Data Schematic"
     prov_generated_by: "Generato da %{q_tool} describegpt"
     prov_command_line: "Riga di comando:"
     prov_prompt_file: "File di prompt:"

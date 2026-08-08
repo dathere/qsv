@@ -195,7 +195,7 @@ describegpt options:
                            0-1 ratio/probability, a bounded index), the LLM also proposes an
                            "x-qsv.gauge_range" [min, max]; qsv keeps it only when the field is a
                            numeric measure AND the observed data lies within it, so that a
-                           "viz smart" dictionary-driven dashboard draws that KPI tile as a GAUGE.
+                           "viz smart" dictionary-driven Data Schematic draws that KPI tile as a GAUGE.
                            (A KPI "vs target" delta uses "x-qsv.target", which is a GOAL you
                            hand-author - never inferred.)
                            The LLM also infers dataset-level INTER-COLUMN RELATIONSHIPS, emitted

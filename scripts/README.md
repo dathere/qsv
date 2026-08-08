@@ -37,12 +37,12 @@ See [benchmarks.sh](benchmarks.sh) for more details.
 > the interpreter-overhead gap it was designed to show, as PGO has little effect on the
 > interpreter hot loops.
 
-## gen_benchmark_viz.py - interactive benchmark dashboard generator
+## gen_benchmark_viz.py - interactive benchmark Data Schematic generator
 
 Regenerates `benchmarks/index.html`, an interactive [`qsv viz`](../docs/help/viz.md)
-dashboard of the benchmark results in `results/*.csv` (produced by `benchmarks.sh`). It
+Data Schematic of the benchmark results in `results/*.csv` (produced by `benchmarks.sh`). It
 dogfoods qsv end-to-end — shaping the data with `qsv` and charting it with `qsv viz` — so
-the dashboard doubles as a `viz` showcase spanning bar, grouped-bar, line, heatmap, treemap
+the Data Schematic doubles as a `viz` showcase spanning bar, grouped-bar, line, heatmap, treemap
 and box traces.
 
 ```bash
@@ -51,7 +51,7 @@ python3 scripts/gen_benchmark_viz.py
 git add benchmarks && git commit        # Pages redeploys on push to master
 ```
 
-The interactive dashboard is deployed to GitHub Pages by
+The interactive Data Schematic is deployed to GitHub Pages by
 [`viz-gallery-pages.yml`](../.github/workflows/viz-gallery-pages.yml) →
 <https://dathere.github.io/qsv/benchmarks/>. A static `hero.png` is also rendered
 (best-effort, needs the `viz_static` feature + a local browser).

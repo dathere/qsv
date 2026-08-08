@@ -10,21 +10,21 @@ for the methodology and the raw CSVs.
 > [tabular benchmarks at qsv.dathere.com](https://qsv.dathere.com/benchmarks). This page is the
 > interactive, visual companion to it.
 
-## 📊 Interactive dashboard
+## 📊 Interactive Data Schematic
 
-**➡️ [Open the interactive benchmark dashboard](https://dathere.github.io/qsv/benchmarks/)**
+**➡️ [Open the interactive benchmark Data Schematic](https://dathere.github.io/qsv/benchmarks/)**
 
-The dashboard is rendered by qsv's own `viz` command and is fully interactive (hover for
+The Data Schematic is rendered by qsv's own `viz` command and is fully interactive (hover for
 values, zoom, download PNGs). It covers the with/without-index advantage, the `sqlp`
 schema-cache knob, throughput across every release, deep-dives into four flagship
 commands (`stats`, `frequency`, `validate` and `moarstats`) showing they grew features
 without losing speed, and this release's biggest speedups.
 
-[![qsv benchmark dashboard](https://dathere.github.io/qsv/benchmarks/hero.png)](https://dathere.github.io/qsv/benchmarks/)
+[![qsv benchmark Data Schematic](https://dathere.github.io/qsv/benchmarks/hero.png)](https://dathere.github.io/qsv/benchmarks/)
 
 > **Note:** cross-version numbers are not strictly apples-to-apples — commands gain features
 > over time. Treat the historical trend as a broad trajectory, not an exact speedup.
 
 _Last generated for qsv 21.1.0 (aarch64-apple-darwin). Regenerate with
-`python3 scripts/gen_benchmark_viz.py` and copy this page's link — the dashboard itself
+`python3 scripts/gen_benchmark_viz.py` and copy this page's link — the Data Schematic itself
 redeploys to GitHub Pages automatically on push to `master`._

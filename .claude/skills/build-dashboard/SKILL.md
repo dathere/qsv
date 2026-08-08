@@ -1,27 +1,27 @@
 ---
 name: build-dashboard
-description: Build an interactive HTML dashboard with charts, filters, and tables. Use when creating an executive overview with KPI cards, turning query results into a shareable self-contained report, building a team monitoring snapshot, or needing multiple charts with filters in one browser-openable file.
+description: Build an interactive HTML dashboard — a Data Schematic — with charts, filters, and tables. Use when creating a dashboard, an executive overview with KPI cards, turning query results into a shareable self-contained report, building a team monitoring snapshot, or needing multiple charts with filters in one browser-openable file.
 argument-hint: "<description> [data source]"
 ---
 
 # /build-dashboard - Build Interactive Dashboards
 
-Build a self-contained interactive HTML dashboard with charts, filters, tables, and professional styling. Opens directly in a browser -- no server or dependencies required.
+Build a self-contained interactive HTML Data Schematic with charts, filters, tables, and professional styling. Opens directly in a browser -- no server or dependencies required.
 
 ## Usage
 
 ```
-/build-dashboard <description of dashboard> [data source]
+/build-dashboard <description of Data Schematic> [data source]
 ```
 
 ## Workflow
 
-### 1. Understand the Dashboard Requirements
+### 1. Understand the Data Schematic Requirements
 
 Determine:
 
 - **Purpose**: Executive overview, operational monitoring, deep-dive analysis, team reporting
-- **Audience**: Who will use this dashboard?
+- **Audience**: Who will use this Data Schematic?
 - **Key metrics**: What numbers matter most?
 - **Dimensions**: What should users be able to filter or slice by?
 - **Data source**: CSV/TSV file, query results, pasted data, or sample data
@@ -38,20 +38,20 @@ Determine:
 
 **If data is pasted or uploaded:**
 1. Parse and clean the data
-2. Embed as JSON in the dashboard
+2. Embed as JSON in the Data Schematic
 
 **If working from a description without data:**
 1. Create a realistic sample dataset matching the described schema
-2. Note in the dashboard that it uses sample data
+2. Note in the Data Schematic that it uses sample data
 3. Provide instructions for swapping in real data
 
-### 3. Design the Dashboard Layout
+### 3. Design the Data Schematic Layout
 
-Follow a standard dashboard layout pattern:
+Follow a standard Data Schematic layout pattern:
 
 ```
 +--------------------------------------------------+
-|  Dashboard Title                    [Filters v]  |
+|  Data Schematic Title                    [Filters v]  |
 +------------+------------+------------+-----------+
 |  KPI Card  |  KPI Card  |  KPI Card  | KPI Card  |
 +------------+------------+------------+-----------+
@@ -72,7 +72,7 @@ Follow a standard dashboard layout pattern:
 - Optional detail table at the bottom for drill-down data
 - Filters in the header or sidebar depending on complexity
 
-### 4. Build the HTML Dashboard
+### 4. Build the HTML Data Schematic
 
 Generate a single self-contained HTML file using the base template below. The file includes:
 
@@ -101,11 +101,11 @@ Generate a single self-contained HTML file using the base template below. The fi
 **Data (embedded JSON):**
 - All data embedded directly in the HTML as JavaScript variables
 - No external data fetches required
-- Dashboard works completely offline
+- Data Schematic works completely offline
 
 ### 5. Implement Chart Types
 
-Use Chart.js for all charts. Common dashboard chart patterns:
+Use Chart.js for all charts. Common Data Schematic chart patterns:
 
 - **Line chart**: Time series trends
 - **Bar chart**: Category comparisons
@@ -121,7 +121,7 @@ Use the filter and interactivity implementation patterns below for dropdown filt
 
 ### 7. Save and Open
 
-1. Save the dashboard as an HTML file with a descriptive name (e.g., `sales_dashboard.html`)
+1. Save the Data Schematic as an HTML file with a descriptive name (e.g., `sales_dashboard.html`)
 2. Open it in the user's default browser
 3. Confirm it renders correctly
 4. Provide instructions for updating data or customizing
@@ -152,7 +152,7 @@ For datasets over 100K rows, always pre-aggregate with `qsv sqlp` rather than em
 
 ## Base Template
 
-Every dashboard follows this structure:
+Every Data Schematic follows this structure:
 
 ```html
 <!DOCTYPE html>
@@ -160,17 +160,17 @@ Every dashboard follows this structure:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Title</title>
+    <title>Data Schematic Title</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0" integrity="sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws" crossorigin="anonymous"></script>
     <style>
-        /* Dashboard styles go here */
+        /* Data Schematic styles go here */
     </style>
 </head>
 <body>
-    <div class="dashboard-container">
-        <header class="dashboard-header">
-            <h1>Dashboard Title</h1>
+    <div class="Data Schematic-container">
+        <header class="Data Schematic-header">
+            <h1>Data Schematic Title</h1>
             <div class="filters">
                 <!-- Filter controls -->
             </div>
@@ -188,7 +188,7 @@ Every dashboard follows this structure:
             <!-- Data table -->
         </section>
 
-        <footer class="dashboard-footer">
+        <footer class="Data Schematic-footer">
             <span>Data as of: <span id="data-date"></span></span>
         </footer>
     </div>
@@ -197,8 +197,8 @@ Every dashboard follows this structure:
         // Embedded data
         const DATA = [];
 
-        // Dashboard logic
-        class Dashboard {
+        // Data Schematic logic
+        class Data Schematic {
             constructor(data) {
                 this.rawData = data;
                 this.filteredData = data;
@@ -227,7 +227,7 @@ Every dashboard follows this structure:
             // ... methods for each section
         }
 
-        const dashboard = new Dashboard(DATA);
+        const Data Schematic = new Data Schematic(DATA);
     </script>
 </body>
 </html>
@@ -473,7 +473,7 @@ function updateChart(chart, newLabels, newData) {
 ```html
 <div class="filter-group">
     <label for="filter-region">Region</label>
-    <select id="filter-region" onchange="dashboard.applyFilters()">
+    <select id="filter-region" onchange="Data Schematic.applyFilters()">
         <option value="all">All Regions</option>
     </select>
 </div>
@@ -504,9 +504,9 @@ function getFilterValue(selectId) {
 ```html
 <div class="filter-group">
     <label>Date Range</label>
-    <input type="date" id="filter-date-start" onchange="dashboard.applyFilters()">
+    <input type="date" id="filter-date-start" onchange="Data Schematic.applyFilters()">
     <span>to</span>
-    <input type="date" id="filter-date-end" onchange="dashboard.applyFilters()">
+    <input type="date" id="filter-date-end" onchange="Data Schematic.applyFilters()">
 </div>
 ```
 
@@ -650,13 +650,13 @@ body {
     line-height: 1.5;
 }
 
-.dashboard-container {
+.Data Schematic-container {
     max-width: 1400px;
     margin: 0 auto;
     padding: var(--gap);
 }
 
-.dashboard-header {
+.Data Schematic-header {
     background: var(--bg-header);
     color: var(--text-on-dark);
     padding: 20px 24px;
@@ -669,7 +669,7 @@ body {
     gap: 12px;
 }
 
-.dashboard-header h1 {
+.Data Schematic-header h1 {
     font-size: 20px;
     font-weight: 600;
 }
@@ -835,7 +835,7 @@ body {
 
 ```css
 @media (max-width: 768px) {
-    .dashboard-header {
+    .Data Schematic-header {
         flex-direction: column;
         align-items: flex-start;
     }
@@ -856,7 +856,7 @@ body {
 
 @media print {
     body { background: white; }
-    .dashboard-container { max-width: none; }
+    .Data Schematic-container { max-width: none; }
     .filters { display: none; }
     .chart-container { break-inside: avoid; }
     .kpi-card { border: 1px solid #dee2e6; box-shadow: none; }
@@ -929,21 +929,21 @@ function renderTablePage(data, page, pageSize = 50) {
 ## Examples
 
 ```
-/build-dashboard Monthly sales dashboard with revenue trend, top products, and regional breakdown from sales.csv
+/build-dashboard Monthly sales Data Schematic with revenue trend, top products, and regional breakdown from sales.csv
 ```
 
 ```
-/build-dashboard Here's our support ticket data [pastes CSV]. Build a dashboard showing volume by priority, response time trends, and resolution rates.
+/build-dashboard Here's our support ticket data [pastes CSV]. Build a Data Schematic showing volume by priority, response time trends, and resolution rates.
 ```
 
 ```
-/build-dashboard Create a template executive dashboard for a SaaS company showing MRR, churn, new customers, and NPS. Use sample data.
+/build-dashboard Create a template executive Data Schematic for a SaaS company showing MRR, churn, new customers, and NPS. Use sample data.
 ```
 
 ## Tips
 
 - Dashboards are fully self-contained HTML files -- share them with anyone by sending the file
-- Use `qsv stats` and `qsv frequency` to understand your data before designing the dashboard layout
+- Use `qsv stats` and `qsv frequency` to understand your data before designing the Data Schematic layout
 - Use `qsv sqlp` for complex aggregations (GROUP BY, window functions, pivots) before embedding
 - For real-time dashboards, consider a BI tool instead. These dashboards are point-in-time snapshots
 - Request "dark mode" or "presentation mode" for different styling

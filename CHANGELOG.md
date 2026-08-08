@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Prebuilt binaries now ship the `synthesize` command, and `profile` where polars is enabled.** Both features were in `distrib_features` but had never been added to the publish workflows' hand-rolled per-target feature lists, so no released `qsv` binary has ever contained them — which also made `scripts/pgo-train.sh`'s `profile` and `synthesize` training steps silently no-op on every PGO target (they were 2 of 67 invocations, and the `t` helper tolerates a missing subcommand by design). `profile` requires `polars`, so it is added only to targets that already enable it (`x86_64-unknown-linux-gnu` and the x86_64 Windows targets); `synthesize` (`fake` + `time`) is added everywhere. Deliberately NOT added to `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `s390x` or `powerpc64le`, where pulling in polars would be required — the hosted ARM runner already OOMs on Polars fat-LTO, which is why `qsvdp`/`qsvmcp` are excluded there.
+
 ## [22.0.1] - 2026-08-08 📐 The "Data Schematic" Release 📊
 
 qsv's biggest release ever with 560+ commits since v21.1.0. The headliner is **`viz`** — an entirely new command that turns a CSV into interactive [plotly](https://plotly.com/javascript/) charts and maps, with `viz smart` auto-designing a **Data Schematic**. Schematics are **self-contained, offline-capable HTML** with static PNG/SVG/PDF export via `viz_static`. See the [gallery](https://dathere.github.io/qsv/gallery.html).

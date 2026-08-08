@@ -36,7 +36,7 @@ jobs:
             os-name: linux
             target: x86_64-unknown-linux-gnu
             architecture: x86_64
-            addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,to,python,lens,prompt,magika,color,viz_static,viz
+            addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,to,python,lens,prompt,magika,color,viz_static,viz,profile,synthesize
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:

@@ -33,7 +33,7 @@ jobs:
             os-name: linux
             target: x86_64-unknown-linux-gnu
             architecture: x86_64
-            addl-build-args: --features=apply,luau,fetch,foreach,nightly,self_update,geocode,polars,to,lens,prompt,nightly-polars
+            addl-build-args: --features=apply,luau,fetch,foreach,nightly,self_update,geocode,polars,to,lens,prompt,nightly-polars,profile,synthesize
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:

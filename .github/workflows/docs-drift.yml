@@ -66,6 +66,11 @@ jobs:
       - name: Run docs-drift-check
         run: python3 scripts/docs-drift-check.py
 
+      # docs-drift-check.py is stdlib-only; check-publish-matrix-sync.py parses workflow
+      # YAML, so it needs PyYAML. Installed here rather than hand-rolling a YAML parser.
+      - name: Install PyYAML
+        run: pip install pyyaml
+
       # publish-windows.yml duplicates publish.yml's Windows matrix entries so a
       # Windows-only failure can be retried without rebuilding the other targets. If they
       # drift, the retry ships binaries built with different features than the full run.

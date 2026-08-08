@@ -17333,7 +17333,7 @@ fn localize_dict_heading(heading: &str) -> String {
 /// the dictionary is written once, the dashboard locale is chosen later and may differ.
 /// Translating it HERE, at render time, localizes the drawer without touching the schema: the
 /// stored provenance stays a stable machine-readable record, `parse_dict_model` still reads its
-/// `Model:` line out of the raw JSON, and the "Export JSONSchema" button still serves the
+/// `Model:` line out of the raw JSON, and the "Export `JSONSchema`" button still serves the
 /// original bytes.
 ///
 /// Only the LABELS move. Every value -- the command line, the prompt-file kind, the model, the
@@ -25834,7 +25834,7 @@ impl<'a> SmartCtx<'a> {
     ///
     /// `total_rows` is the table's row count, used only to disclose how much of it the funnel
     /// actually covers.
-    fn build_funnel_panel(&mut self, total_rows: usize) -> CliResult<Option<Panel>> {
+    fn build_funnel_panel(&self, total_rows: usize) -> CliResult<Option<Panel>> {
         let specs = match self.dict_data.as_ref() {
             Some(d) if !d.pipelines.is_empty() => d.pipelines.clone(),
             _ => return Ok(None),

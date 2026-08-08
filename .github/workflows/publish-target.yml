@@ -91,6 +91,26 @@ jobs:
     name: ${{ inputs.target }}
     runs-on: ${{ inputs.os }}
     timeout-minutes: ${{ inputs.job_timeout }}
+    env:
+      # ALL binaries build under ONE profile so they share compiled dependencies.
+      #
+      # Cargo caches per profile DIRECTORY (target/<triple>/<profile>/). qsv builds as
+      # release-luau whenever its feature list contains luau (mlua needs panic=unwind, qsv
+      # #3937), while qsvlite/qsvdp/qsvmcp used to hardcode --release - so they landed in a
+      # different directory and shared nothing with qsv. 679 of qsvmcp's 689 crates are also
+      # in qsv's graph, including the whole polars stack (identical 53 polars features in
+      # both), and every one of them was compiled twice per job. On Windows that made
+      # qsvmcp ~3x slower than qsv despite qsvmcp having FEWER dependencies (689 vs 758) -
+      # it was not doing more work, it was redoing qsv's work from a cold cache.
+      #
+      # Keying on inputs.addl_build_args (the qsv feature list) is deliberate: it makes the
+      # other binaries follow whatever profile qsv picked. scripts/build-pgo.sh derives the
+      # same value independently for the PGO path - keep the two rules in agreement.
+      #
+      # Trade-off: qsvlite/qsvdp/qsvmcp now inherit release-luau's panic="unwind" instead of
+      # release's panic="abort" on luau targets. Slightly larger binaries; for a long-lived
+      # qsvmcp server, unwinding is arguably the better behaviour anyway.
+      BIN_PROFILE: ${{ contains(inputs.addl_build_args, 'luau') && 'release-luau' || 'release' }}
     steps:
     - name: Installing Rust toolchain
       uses: dtolnay/rust-toolchain@master
@@ -150,7 +170,7 @@ jobs:
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
-      run: cargo +${{ inputs.rust }} build --profile ${{ contains(inputs.addl_build_args, 'luau') && 'release-luau' || 'release' }} --locked --bin qsv --target ${{ inputs.target }} ${{ inputs.addl_build_args }},feature_capable ${{ inputs.default_features }}
+      run: cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" --locked --bin qsv --target ${{ inputs.target }} ${{ inputs.addl_build_args }},feature_capable ${{ inputs.default_features }}
     # NOTE: qsvlite/qsvdp/qsvmcp used to build with RUSTFLAGS=--emit=asm, added in 2022
     # (f9bc937c4) and later commented out for the qsv step but left on these three.
     # Nothing consumes the .s files, and with codegen-units=1 + fat LTO it makes rustc
@@ -162,7 +182,7 @@ jobs:
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
-      run: cargo +${{ inputs.rust }} build --release --locked --bin qsvlite --features=lite,self_update,${{ inputs.addl_qsvlite_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+      run: cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" --locked --bin qsvlite --features=lite,self_update,${{ inputs.addl_qsvlite_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
     - name: Build qsvdp
       # qsvdp (datapusher_plus) is a Linux deployment helper, so only build it for x86_64
       # Linux. Skip aarch64-unknown-linux-gnu (its Polars fat-LTO link OOM-kills the hosted
@@ -171,13 +191,13 @@ jobs:
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
-      run: cargo +${{ inputs.rust }} build --release --locked --bin qsvdp --features=datapusher_plus,${{ inputs.addl_qsvdp_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+      run: cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" --locked --bin qsvdp --features=datapusher_plus,${{ inputs.addl_qsvdp_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
     - name: Build qsvmcp
       if: ${{ inputs.target != 'x86_64-unknown-linux-musl' && inputs.target != 'aarch64-unknown-linux-gnu' }}
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
-      run: cargo +${{ inputs.rust }} build --release --locked --bin qsvmcp ${{ inputs.addl_qsvlite_features != '' && format('--features=qsvmcp,{0}', inputs.addl_qsvlite_features) || '--features=qsvmcp' }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+      run: cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" --locked --bin qsvmcp ${{ inputs.addl_qsvlite_features != '' && format('--features=qsvmcp,{0}', inputs.addl_qsvlite_features) || '--features=qsvmcp' }} --target ${{ inputs.target }} ${{ inputs.default_features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |

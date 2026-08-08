@@ -25,6 +25,9 @@ jobs:
     name: Publish for ${{ matrix.job.target }}
     needs: analyze-tags
     runs-on: ${{ matrix.job.os }}
+    # see publish.yml - cap below GitHub's hard 6h limit so a stalled build fails as an
+    # explicit timeout rather than burning the full 6h.
+    timeout-minutes: ${{ matrix.job.job-timeout || 240 }}
     strategy:
       matrix:
         rust: [stable]
@@ -49,11 +52,14 @@ jobs:
             os-name: windows
             target: x86_64-pc-windows-msvc
             architecture: x86_64
-            addl-build-args: --features=apply,luau,fetch,self_update,polars,geocode,to,python,lens,foreach,prompt,magika,color,viz_static,viz
+            # viz_static deliberately absent on Windows - it does not finish a release
+            # build inside the 6h job cap. See Cargo.toml's viz_static note.
+            addl-build-args: --features=apply,luau,fetch,self_update,polars,geocode,to,python,lens,foreach,prompt,magika,color,viz
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
+            job-timeout: 270
           # - os: windows-latest
           #   os-name: windows
           #   target: x86_64-pc-windows-gnu

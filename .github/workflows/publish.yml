@@ -30,6 +30,12 @@ jobs:
     name: Publish for ${{ matrix.job.target }}
     needs: analyze-tags
     runs-on: ${{ matrix.job.os }}
+    # Cap each target below GitHub's hard 6h job limit so a stalled build fails as an
+    # explicit timeout instead of an opaque "exceeded the maximum execution time" after
+    # burning the full 6h (run 31243109948 did that twice on Windows). Windows gets 270
+    # (its best-known green run is 3h28m); everything else inherits 240 (Linux gnu's
+    # worst observed run is 3h01m).
+    timeout-minutes: ${{ matrix.job.job-timeout || 240 }}
     strategy:
       # don't cancel the other target builds if one fails; each platform publishes independently
       fail-fast: false
@@ -80,7 +86,10 @@ jobs:
             target: x86_64-pc-windows-msvc
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,magika,color,viz_static,viz
+            # viz_static is deliberately absent: it does not finish a Windows release
+            # build inside the 6h job cap (run 31243109948). See Cargo.toml's viz_static
+            # note. Windows ships interactive HTML dashboards, no static image export.
+            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,magika,color,viz
             # Windows: jemallocator is not supported on Windows, so we use the system allocator.
             default-features: --no-default-features
             addl-qsvlite-features:
@@ -91,6 +100,9 @@ jobs:
             pgo: true
             pgo-train-flags: --minimal
             pgo-lto:
+            # Windows is the slowest target: best-known green run is 3h28m. If this cap
+            # is hit, drop `pgo` here before dropping `viz` - it removes a full qsv build.
+            job-timeout: 270
           # - os: windows-latest
           #   os-name: windows
           #   target: i686-pc-windows-msvc
@@ -106,7 +118,8 @@ jobs:
             target: x86_64-pc-windows-gnu
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,color,viz_static,viz
+            # viz_static deliberately absent - see the msvc entry above.
+            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,color,viz
             # Windows: jemallocator is not supported on Windows, so we use the system allocator.
             default-features: --no-default-features
             addl-qsvlite-features:
@@ -121,6 +134,8 @@ jobs:
             pgo: false
             pgo-train-flags: --minimal
             pgo-lto:
+            # see the msvc entry - Windows is the slowest target.
+            job-timeout: 270
           # - os: macos-12
           #   os-name: macos
           #   target: x86_64-apple-darwin

@@ -2,13 +2,8 @@
 
 ## Tools & commands
 
-- Build: `npm run build`
-- Test: `npm test` (builds with test config automatically)
-- Run specific test file: `node --test dist/tests/<module>.test.js`
+- Run specific test file (after `npm test` populates `dist/`): `node --test dist/tests/<module>.test.js`
 - Filter tests: `node --test --test-name-pattern="pattern" dist/tests/`
-- Watch mode: `npm run test:watch`
-- Coverage: `npm run test:coverage`
-- Example scripts: `npm run test:examples`
 - Regenerate skill JSONs after qsv update: `qsv --update-mcp-skills` from repo root, then `npm run build` here
 
 ## Workflow requirements
@@ -41,19 +36,9 @@ Stats-aware guidance — run `qsv stats --cardinality --stats-jsonl` first, then
 
 Prefer reading `.stats.csv` and `.freq.csv` directly over their `.data.jsonl` counterparts — standard CSV is far more token-efficient. The `.data.jsonl` files exist for programmatic use by qsv's "smart" commands internally.
 
-## Operational limits (quick reference)
+## Operational limits
 
-> Values verified 2026-05-23. If in doubt, grep the source files below for current values.
-
-| Constant | Value | Location |
-|----------|-------|----------|
-| `MAX_MCP_RESPONSE_SIZE` | 850 KB | `tool-constants.ts` — safe for Claude Desktop (< 1MB) |
-| `LARGE_FILE_THRESHOLD_BYTES` | 10 MB | `tool-constants.ts` — triggers large-file handling |
-| `MAX_LOG_MESSAGE_LEN` | 4096 chars | `tool-constants.ts` — messages beyond this are truncated and suffixed with "…" |
-| `DEFAULT_MAX_OUTPUT_SIZE` | 50 MB | `tool-constants.ts` — stdout/stderr cap per execution (consumed by `executor.ts` and `spawn-utils.ts`) |
-| Default timeout | 10 min | `executor.ts` — inline fallback (`10 * 60 * 1000`), configurable via params or config |
-
-See `config.ts` for the full configuration system (`QSV_MCP_*` env vars).
+Response/file-size and timeout limits live in `tool-constants.ts` and `executor.ts`; see `config.ts` for the full configuration system (`QSV_MCP_*` env vars).
 
 ## Project-specific context
 

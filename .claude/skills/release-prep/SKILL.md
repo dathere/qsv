@@ -73,16 +73,21 @@ After version bumps, remind the user to:
 The Windows MSI "Easy installer" is a separate repo that consumes qsv releases directly.
 Two of its assumptions are things **this** repo controls, so they are release-time checks:
 
-- **The GitHub release TITLE must stay the bare version, identical to the tag.** The installer
-  reads `.name` from `api.github.com/repos/dathere/qsv/releases/latest` and interpolates it
-  into the download URL *as if it were the tag*:
-  `.../releases/download/{name}/qsv-{name}-x86_64-pc-windows-msvc.zip`.
-  Titling a release `v22.0.1` or `22.0.1 — codename` 404s every Easy-installer user. All
-  releases through 22.0.1 satisfy this (title == tag); keep it that way, or tell that repo
-  first so it can switch to `tag_name`.
+**Installer v1.1.2 (2026-08-09) fixed both of its fragile assumptions** — it now reads
+`tag_name` instead of the release title, and extracts `qsv.exe` instead of `qsvp.exe`.
+Verified against the live API: `releases/latest` → the tag, the constructed
+`.../releases/download/{tag}/qsv-{tag}-x86_64-pc-windows-msvc.zip` returns 200, and
+`qsv.exe` is present, for both 21.1.0 and 22.0.1.
 
-- **Before promoting a release from prerelease to stable, confirm the installer no longer
-  needs `qsvp.exe`.** The installer calls `releases/latest`, which EXCLUDES prereleases — so
-  while 22.0.1 is marked prerelease it still resolves to 21.1.0, which does ship `qsvp.exe`.
-  Portable binaries are being discontinued, so the first *stable* release without `qsvp.exe`
-  breaks the installer unless it has shipped its `qsvp` → `qsv` change first.
+What remains:
+
+- **Users on Easy installer ≤ v1.1.1 break when the first stable release without `qsvp.exe`
+  ships.** Those versions extract `qsvp.exe` by hardcoded name. They keep working today only
+  because `releases/latest` EXCLUDES prereleases, so they still resolve to 21.1.0, which
+  ships `qsvp.exe`. The moment 22.0.1 (or any later release) is promoted to stable, they get
+  a zip with no `qsvp.exe` and fail. **Worth a line in the release notes telling Windows
+  Easy-installer users to upgrade to ≥ v1.1.2.**
+
+- **Release TITLE == tag is no longer load-bearing for v1.1.2+**, but ≤ v1.1.1 still
+  interpolates `.name` into the download URL as if it were the tag. Keeping titles as the
+  bare version costs nothing and avoids 404ing those users on top of the `qsvp` failure.

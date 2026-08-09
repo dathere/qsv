@@ -81,12 +81,26 @@ Verified against the live API: `releases/latest` → the tag, the constructed
 
 What remains:
 
-- **Users on Easy installer ≤ v1.1.1 break when the first stable release without `qsvp.exe`
-  ships.** Those versions extract `qsvp.exe` by hardcoded name. They keep working today only
-  because `releases/latest` EXCLUDES prereleases, so they still resolve to 21.1.0, which
-  ships `qsvp.exe`. The moment 22.0.1 (or any later release) is promoted to stable, they get
-  a zip with no `qsvp.exe` and fail. **Worth a line in the release notes telling Windows
-  Easy-installer users to upgrade to ≥ v1.1.2.**
+- **Users on Easy installer ≤ v1.1.1 break SILENTLY when the first stable release without
+  `qsvp.exe` ships — and a release note is the ONLY available remedy.** Those versions
+  extract `qsvp.exe` by hardcoded name. They keep working today only because
+  `releases/latest` EXCLUDES prereleases, so they still resolve to 21.1.0, which ships
+  `qsvp.exe`. Promoting 22.0.1 (or any later release) to stable gives them an archive with
+  no `qsvp.exe`.
+
+  The failure is **not** a visible error. `run_path_update` returns `()` rather than
+  `Result`, and the frontend calls `invoke("run_path_update").finally(...)` with no
+  `.catch()` — so the "Successfully installed qsv" alert fires regardless. Affected users
+  are told it worked while nothing was installed; they will report "qsv is not on my PATH"
+  or "qsv didn't update", never a crash.
+
+  There is no self-update or version-check path in that installer, so it cannot notify
+  already-installed users. **The release note is the entire remedy.** Word it for the
+  symptom, not an error message they will never see:
+
+  > Windows users who installed via the Easy installer: upgrade to v1.1.2 or later before
+  > updating qsv, then confirm with `qsv --version`. Older versions of the installer report
+  > success even when the install did not happen.
 
 - **Release TITLE == tag is no longer load-bearing for v1.1.2+**, but ≤ v1.1.1 still
   interpolates `.name` into the download URL as if it were the tag. Keeping titles as the

@@ -20,7 +20,9 @@
     "mcp:install": "node scripts/install-mcp.js",
     "mcpb:package": "node scripts/package-mcpb.js && npm run clean:bundles",
     "plugin:package": "node scripts/package-plugin.js && npm run clean:bundles",
-    "clean:bundles": "node scripts/clean-bundles.js"
+    "clean:bundles": "node scripts/clean-bundles.js",
+    "verify:bundles": "node scripts/verify-bundles.js",
+    "package:all": "npm run mcpb:package && npm run plugin:package && npm run verify:bundles"
   },
   "keywords": [
     "qsv",

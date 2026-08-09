@@ -1,9 +1,9 @@
 name: Linux ARM64
 
 # aarch64-unknown-linux-gnu is a published target (publish.yml builds it natively on
-# ubuntu-24.04-arm, publish-portable.yml cross-builds it) but had NO test workflow of any
-# kind — every other published platform has one. That gap is why `viz` could not be
-# enabled for the ARM Linux prebuilts on evidence.
+# ubuntu-24.04-arm) but had NO test workflow of any kind — every other published platform
+# has one. That gap is why `viz` could not be enabled for the ARM Linux prebuilts on
+# evidence.
 #
 # The feature set below mirrors publish.yml's aarch64-unknown-linux-gnu entry plus `viz`,
 # so a green run here is the evidence gate for adding `viz` to that target.

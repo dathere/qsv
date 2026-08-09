@@ -164,9 +164,12 @@ Full-featured prebuilt [binary variants](#variants) of the latest qsv version fo
 
 Prebuilt binaries for Apple Silicon, Windows for ARM, [IBM Power Servers (PowerPC64 LE Linux)](https://www.ibm.com/products/power) and [IBM Z mainframes (s390x)](https://www.ibm.com/products/z) have CPU optimizations enabled ([`target-cpu=native`](https://rust-lang.github.io/packed_simd/perf-guide/target-feature/rustflags.html#target-cpu)). The macOS Apple Silicon, Linux x86_64 (GNU), Linux ARM64 (GNU) and Windows x86_64 (MSVC) prebuilts are also compiled with [Profile Guided Optimization (PGO)](https://doc.rust-lang.org/rustc/profile-guided-optimization.html#what-is-profile-guided-optimization) for even more performance gains.
 
-We do not enable CPU optimizations on prebuilt binaries on x86_64 platforms as there are too many CPU variants which often lead to Illegal Instruction (SIGILL) faults. If you still get SIGILL faults, "portable" binaries (all CPU optimizations disabled) are also included in the release zip archives (qsv with a "p for portable" suffix - e.g. `qsvp`, `qsvplite` `qsvpdp`).
+We do not enable CPU optimizations on prebuilt binaries on x86_64 platforms as there are too many CPU variants which often lead to Illegal Instruction (SIGILL) faults. The x86_64 prebuilts are therefore already portable, and no separate "portable" build is required.
 
-For Windows, an MSI "Easy installer" for the x86_64 MSVC `qsvp` binary is also available. After downloading and installing the Easy installer, launch the Easy installer and click "Install qsv" to download the latest `qsvp` pre-built binary to a folder that is added to your `PATH`. Afterwards qsv should be installed and you may launch a new terminal to use qsv.
+For Windows, an MSI "Easy installer" is also available. After downloading and installing the Easy installer, launch the Easy installer and click "Install qsv" to download the latest pre-built binary to a folder that is added to your `PATH`. Afterwards qsv should be installed and you may launch a new terminal to use qsv.
+
+> [!IMPORTANT]
+> The Easy installer currently fetches the `qsvp` ("portable") binary, which is no longer published — see the note about portable subvariants [below](#variants). It is being updated to fetch the regular `qsv` binary instead. Until that update ships, download the [Windows MSVC zip](#installation-options) directly.
 
 <a download href="https://github.com/dathere/qsv-easy-windows-installer/releases/download/v1.1.1/qsv-easy-installer_1.1.1_x64_en-US.msi"><img alt="qsv Windows Easy Installer download badge" src="https://github.com/user-attachments/assets/ca24398b-0aaf-40be-abe0-c79a2b2da520" width="200" /></a>
 
@@ -302,7 +305,7 @@ There are five binary variants of qsv:
 * `qsvdp` - optimized for use with [DataPusher+](https://github.com/dathere/datapusher-plus) with only DataPusher+ relevant commands; [`applydp`](#applydp_deeplink), a slimmed-down version of the `apply` feature; the `--progressbar` option disabled; and the self-update only checking for new releases, requiring an explicit `--update` (~16% of the size of `qsv`).
 
 > [!NOTE]
-> There are "portable" subvariants of qsv available with the "p" suffix - `qsvp`, `qsvplite` and `qsvpdp`. These subvariants are compiled without any CPU features enabled. Use these subvariants if you have an old CPU architecture or getting "Illegal instruction (SIGILL)" errors when running the regular qsv binaries.
+> Earlier releases also shipped "portable" subvariants with a "p" suffix (`qsvp`, `qsvplite`, `qsvpdp`), compiled without CPU features for users hitting "Illegal instruction (SIGILL)" errors. These are no longer published: the x86_64 prebuilts stopped enabling `target-cpu=native` (it was the cause of those SIGILL faults), so the regular binaries are already built without CPU features and the subvariants no longer differed from them.
 
 [^3]: The `luau`feature is NOT enabled by default on the prebuilt binaries for musl platforms. This is because we cross-compile using GitHub Action Runners using Ubuntu 20.04 LTS with the [musl libc](https://musl.libc.org/) toolchain. However, Ubuntu is a glibc-based, not a musl-based distro. We get around this by [cross-compiling](https://blog.logrocket.com/guide-cross-compilation-rust/).   
 Unfortunately, this prevents us from cross-compiling binaries with the `luau` feature enabled as doing so requires statically linking the host OS libc library. If you need the `luau` feature on `musl`, you will need to compile from source on your own musl-based Linux Distro (e.g. Alpine, Void, [etc.](https://wiki.musl-libc.org/projects-using-musl)).  

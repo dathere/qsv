@@ -10,7 +10,8 @@ name: Publish target (reusable)
 # Keep the build logic HERE, not in the callers. Before this file existed, publish.yml,
 # publish-portable.yml and publish-qsvpy.yml each carried their own copy of these steps,
 # and they drifted - the viz_static that blew the 6h job cap on Windows (run 31243109948)
-# had to be fixed in three places.
+# had to be fixed in three places. publish-portable.yml has since been deleted (its
+# binaries were duplicates); publish-qsvpy.yml still carries its own copy.
 #
 # STRUCTURE: `build` (matrixed) -> `package`. The build job uploads its binaries as an
 # artifact; the package job downloads them, zips, signs and uploads to the release. That

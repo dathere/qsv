@@ -67,3 +67,22 @@ After version bumps, remind the user to:
 - The MCP server version in `manifest.json`/`package.json` can advance independently of the qsv binary version
 - The `minimum_qsv_version` field in `manifest.json` tracks the minimum *qsv binary* needed, NOT the MCP server version
 - After bumping `Cargo.toml` version, omit `--locked` from cargo commands until `Cargo.lock` is regenerated
+
+## Cross-repo constraints — `dathere/qsv-easy-windows-installer`
+
+The Windows MSI "Easy installer" is a separate repo that consumes qsv releases directly.
+Two of its assumptions are things **this** repo controls, so they are release-time checks:
+
+- **The GitHub release TITLE must stay the bare version, identical to the tag.** The installer
+  reads `.name` from `api.github.com/repos/dathere/qsv/releases/latest` and interpolates it
+  into the download URL *as if it were the tag*:
+  `.../releases/download/{name}/qsv-{name}-x86_64-pc-windows-msvc.zip`.
+  Titling a release `v22.0.1` or `22.0.1 — codename` 404s every Easy-installer user. All
+  releases through 22.0.1 satisfy this (title == tag); keep it that way, or tell that repo
+  first so it can switch to `tag_name`.
+
+- **Before promoting a release from prerelease to stable, confirm the installer no longer
+  needs `qsvp.exe`.** The installer calls `releases/latest`, which EXCLUDES prereleases — so
+  while 22.0.1 is marked prerelease it still resolves to 21.1.0, which does ship `qsvp.exe`.
+  Portable binaries are being discontinued, so the first *stable* release without `qsvp.exe`
+  breaks the installer unless it has shipped its `qsvp` → `qsv` change first.

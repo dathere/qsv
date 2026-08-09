@@ -168,9 +168,6 @@ We do not enable CPU optimizations on prebuilt binaries on x86_64 platforms as t
 
 For Windows, an MSI "Easy installer" is also available. After downloading and installing the Easy installer, launch the Easy installer and click "Install qsv" to download the latest pre-built binary to a folder that is added to your `PATH`. Afterwards qsv should be installed and you may launch a new terminal to use qsv.
 
-> [!IMPORTANT]
-> The Easy installer currently fetches the `qsvp` ("portable") binary, which is no longer published — see the note about portable subvariants [below](#variants). It is being updated to fetch the regular `qsv` binary instead. Until that update ships, download the [Windows MSVC zip](#installation-options) directly.
-
 <a download href="https://github.com/dathere/qsv-easy-windows-installer/releases/download/v1.1.1/qsv-easy-installer_1.1.1_x64_en-US.msi"><img alt="qsv Windows Easy Installer download badge" src="https://github.com/user-attachments/assets/ca24398b-0aaf-40be-abe0-c79a2b2da520" width="200" /></a>
 
 For macOS, ["ad-hoc" signatures](https://users.rust-lang.org/t/distributing-cli-apps-on-macos/70223) are used to sign our binaries, so you will need to [set appropriate Gatekeeper security settings](https://support.apple.com/en-us/HT202491) or run the following command to remove the quarantine attribute from qsv before you run it for the first time:
@@ -305,7 +302,7 @@ There are five binary variants of qsv:
 * `qsvdp` - optimized for use with [DataPusher+](https://github.com/dathere/datapusher-plus) with only DataPusher+ relevant commands; [`applydp`](#applydp_deeplink), a slimmed-down version of the `apply` feature; the `--progressbar` option disabled; and the self-update only checking for new releases, requiring an explicit `--update` (~16% of the size of `qsv`).
 
 > [!NOTE]
-> Earlier releases also shipped "portable" subvariants with a "p" suffix (`qsvp`, `qsvplite`, `qsvpdp`), compiled without CPU features for users hitting "Illegal instruction (SIGILL)" errors. These are no longer published: the x86_64 prebuilts stopped enabling `target-cpu=native` (it was the cause of those SIGILL faults), so the regular binaries are already built without CPU features and the subvariants no longer differed from them.
+> Releases up to and including 21.1.0 also shipped "portable" subvariants with a "p" suffix (`qsvp`, `qsvplite`, `qsvpdp`), compiled without CPU features for users hitting "Illegal instruction (SIGILL)" errors. They are being discontinued: the x86_64 prebuilts stopped enabling `target-cpu=native` (it was the cause of those SIGILL faults), so the regular binaries are already built without CPU features and the subvariants no longer differed from them.
 
 [^3]: The `luau`feature is NOT enabled by default on the prebuilt binaries for musl platforms. This is because we cross-compile using GitHub Action Runners using Ubuntu 20.04 LTS with the [musl libc](https://musl.libc.org/) toolchain. However, Ubuntu is a glibc-based, not a musl-based distro. We get around this by [cross-compiling](https://blog.logrocket.com/guide-cross-compilation-rust/).   
 Unfortunately, this prevents us from cross-compiling binaries with the `luau` feature enabled as doing so requires statically linking the host OS libc library. If you need the `luau` feature on `musl`, you will need to compile from source on your own musl-based Linux Distro (e.g. Alpine, Void, [etc.](https://wiki.musl-libc.org/projects-using-musl)).  

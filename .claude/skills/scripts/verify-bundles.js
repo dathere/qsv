@@ -20,7 +20,7 @@
  */
 
 import { execFileSync, spawn } from 'child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -49,6 +49,13 @@ const check = (label, ok, detail = '') => {
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 const unzipTo = (archive, dest) =>
   execFileSync('unzip', ['-qo', archive, '-d', dest], { stdio: 'pipe' });
+
+// Counted with fs rather than `sh -c "ls ... | wc -l"`: the latter interpolates a
+// path into a shell command, so a checkout directory containing spaces or shell
+// metacharacters would break the check -- a silent wrong answer in the one script
+// whose job is to be trustworthy.
+const countSkillJsons = (dir) =>
+  readdirSync(dir).filter((f) => f.startsWith('qsv-') && f.endsWith('.json')).length;
 
 /**
  * Start the server from the extracted bundle and wait for its readiness line.
@@ -144,10 +151,8 @@ async function main() {
 
     // Skill count is compared against the source tree rather than a hardcoded
     // number, so adding a skill never requires editing this script.
-    const srcSkills = execFileSync('sh', ['-c', `ls ${join(rootDir, 'qsv')}/qsv-*.json | wc -l`])
-      .toString().trim();
-    const bundledSkills = execFileSync('sh', ['-c', `ls ${join(mcpbDir, 'qsv')}/qsv-*.json | wc -l`])
-      .toString().trim();
+    const srcSkills = countSkillJsons(join(rootDir, 'qsv'));
+    const bundledSkills = countSkillJsons(join(mcpbDir, 'qsv'));
     check(`bundled skill JSON count matches source (${srcSkills})`, srcSkills === bundledSkills,
       `bundle has ${bundledSkills}`);
 

@@ -168,7 +168,7 @@ We do not enable CPU optimizations on prebuilt binaries on x86_64 platforms as t
 
 For Windows, an MSI "Easy installer" is also available. After downloading and installing the Easy installer, launch the Easy installer and click "Install qsv" to download the latest pre-built binary to a folder that is added to your `PATH`. Afterwards qsv should be installed and you may launch a new terminal to use qsv.
 
-<a download href="https://github.com/dathere/qsv-easy-windows-installer/releases/download/v1.1.1/qsv-easy-installer_1.1.1_x64_en-US.msi"><img alt="qsv Windows Easy Installer download badge" src="https://github.com/user-attachments/assets/ca24398b-0aaf-40be-abe0-c79a2b2da520" width="200" /></a>
+<a download href="https://github.com/dathere/qsv-easy-windows-installer/releases/download/v1.1.2/qsv-easy-installer_1.1.2_x64_en-US.msi"><img alt="qsv Windows Easy Installer download badge" src="https://github.com/user-attachments/assets/ca24398b-0aaf-40be-abe0-c79a2b2da520" width="200" /></a>
 
 For macOS, ["ad-hoc" signatures](https://users.rust-lang.org/t/distributing-cli-apps-on-macos/70223) are used to sign our binaries, so you will need to [set appropriate Gatekeeper security settings](https://support.apple.com/en-us/HT202491) or run the following command to remove the quarantine attribute from qsv before you run it for the first time:
 

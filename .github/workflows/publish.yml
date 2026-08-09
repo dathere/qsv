@@ -116,11 +116,11 @@ jobs:
             # so keep the matrix value a string rather than a YAML integer.
             codegen-units: '16'
             # Windows is the slowest target. 330 (not 270) because `qsvmcp` - not `qsv` -
-            # is the most expensive step here: it is a second full PGO build over
-            # essentially the same polars+viz feature set this entry builds for `qsv`.
-            # (The qsvmcp feature delta is just `mcp`; get/get_cloud were dropped from
-            # qsvmcp in #4368, and profile/synthesize are already in the `qsv` list
-            # above.) In run 31261021249 the msvc qsv PGO build took 139m and qsvmcp ran
+            # is the most expensive step here: it is a second full PGO build sharing the
+            # same expensive polars+viz core. Its feature set overlaps this entry's `qsv`
+            # features but is neither a subset nor a superset, so don't hand-maintain a
+            # delta here - see the `qsvmcp` feature in Cargo.toml for the authoritative
+            # list. In run 31261021249 the msvc qsv PGO build took 139m and qsvmcp ran
             # longer still. The old 270 was calibrated on a 3h28m pre-viz baseline that
             # predates viz being in BOTH builds. If this cap is ever hit, drop `pgo` here
             # before dropping `viz` - it removes a full qsv build.

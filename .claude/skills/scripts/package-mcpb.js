@@ -95,6 +95,34 @@ function validateFiles() {
 }
 
 /**
+ * node_modules paths excluded from the bundle: whole directories that only ever
+ * carry development material.
+ *
+ * Matched as complete path SEGMENTS, never as substrings. The previous predicate
+ * used `name.includes('test')`, which would also have matched `latest`, `contest`
+ * and `testable` -- and over-exclusion here is silent, producing a bundle that
+ * builds and installs fine but dies at runtime on a user's machine.
+ */
+const EXCLUDED_DIR_SEGMENTS = new Set([
+  'test', 'tests', '__tests__', 'example', 'examples', '.github', 'coverage', '.nyc_output',
+]);
+
+/**
+ * Source maps and TypeScript declaration files have no runtime value.
+ *
+ * Plain `.ts` is deliberately NOT excluded: it is only ~0.6 MB compressed and a
+ * package may legitimately resolve TypeScript sources at runtime.
+ */
+const EXCLUDED_FILE_RE = /\.(?:map|d\.ts|d\.mts|d\.cts)$/i;
+
+function isExcludedFromNodeModules(entryName) {
+  if (EXCLUDED_FILE_RE.test(entryName)) return true;
+  return entryName
+    .split(/[\\/]/)
+    .some((segment) => EXCLUDED_DIR_SEGMENTS.has(segment.toLowerCase()));
+}
+
+/**
  * Create .mcpb archive
  */
 async function createArchive() {
@@ -155,19 +183,13 @@ async function createArchive() {
 
     // Add node_modules
     console.log('   Adding dependencies (node_modules/)...');
-    archive.directory(join(rootDir, 'node_modules'), 'node_modules', {
-      // Exclude development dependencies and large files
-      filter: (file) => {
-        const name = file.name || '';
-        const lowerName = name.toLowerCase();
-        // Exclude source maps, TypeScript definitions, and dev files (case-insensitive)
-        return !name.endsWith('.map') &&
-               !name.endsWith('.ts') &&
-               !lowerName.includes('.github') &&
-               !lowerName.includes('test') &&
-               !lowerName.includes('example');
-      }
-    });
+    // archiver's 3rd arg is entry `data`: an OBJECT is merged into each entry's
+    // metadata, a FUNCTION is the filter hook (return false to skip). This was
+    // previously `{ filter: fn }`, which took the object branch -- so the callback
+    // never ran and every source map and .d.ts shipped (issue #4379).
+    archive.directory(join(rootDir, 'node_modules'), 'node_modules', (entry) =>
+      isExcludedFromNodeModules(entry.name) ? false : entry
+    );
 
     // Add skill definitions
     console.log('   Adding skill definitions (qsv/)...');

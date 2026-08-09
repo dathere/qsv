@@ -39,7 +39,7 @@ jobs:
             # as this target) on every PR. `viz_static` adds the headless-browser export
             # tier; no workflow runs it on macOS, so its runtime path (Chrome +
             # matching-major chromedriver on the self-hosted runner) is unverified by CI.
-            addl-build-args: --features=apply,fetch,foreach,self_update,luau,polars,to,geocode,lens,magika,color,viz,viz_static
+            addl-build-args: --features=apply,fetch,foreach,self_update,luau,polars,to,geocode,lens,magika,color,viz,viz_static,profile,synthesize
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:

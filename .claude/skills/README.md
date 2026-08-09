@@ -49,7 +49,7 @@ Each skill file provides:
 
 **Installation**:
 1. Install qsv: `brew install qsv` (macOS) or see [qsv installation](https://github.com/dathere/qsv#installation)
-2. Download `qsv-mcp-server.mcpb` from releases
+2. Download `qsv-mcp-server-<version>.mcpb` (e.g. `qsv-mcp-server-22.0.1.mcpb`) from releases
 3. Double-click the `.mcpb` file (opens with Claude Desktop)
 4. **That's it!** qsv binary path is auto-detected, no manual configuration needed
 5. Restart Claude Desktop

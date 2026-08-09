@@ -14,15 +14,17 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 
 ## Recommended Binary: qsvmcp
 
-The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 69 commands needed by the MCP server (vs 78 in the full qsv binary), resulting in a smaller, faster binary.
+The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 68 commands needed by the MCP server (vs 78 in the full qsv binary), resulting in a smaller, faster binary.
 
-**Features included in qsvmcp**: Polars, geocoding, disk-cache `get` (incl. cloud sources), self-update, MCP skill generation (`--update-mcp-skills`), and the `log` command for MCP audit logging.
+**Features included in qsvmcp**: Polars, geocoding, profiling, data synthesis, `to` conversions, `viz` charting, self-update, MCP skill generation (`--update-mcp-skills`), and the `log` command for MCP audit logging.
 
-**Commands excluded from qsvmcp** (not needed for MCP): `apply`, `clipboard`, `color`, `fetch`, `fetchpost`, `foreach`, `lens`, `luau`, and `prompt` — 9 commands total (10 if counting the python-only `py` command, which is absent from the distributed `qsv` build too).
+**Commands excluded from qsvmcp** (not needed for MCP): `apply`, `clipboard`, `color`, `fetch`, `fetchpost`, `foreach`, `get`, `lens`, `luau`, and `prompt` — 10 commands total (11 if counting the python-only `py` command, which is absent from the distributed `qsv` build too).
+
+**Source limitations**: because `get`/`get_cloud` are not compiled into `qsvmcp`, the `get` command, `dc:` cache-prefix inputs, and `s3://`, `gs://` and `az://` cloud sources are unavailable. HTTP/HTTPS, `dathere://` and `ckan://` sources still work, as does transparent auto-decompression of compressed inputs (those codecs come from `feature_capable`). Use the full `qsv` binary if you need cloud object-store sources.
 
 | Binary | Commands | MCP Server Support | Notes |
 |--------|----------|-------------------|-------|
-| **qsvmcp** | 69 | Preferred | Optimized for MCP, smaller binary |
+| **qsvmcp** | 68 | Preferred | Optimized for MCP, smaller binary |
 | **qsv** | 78 | Supported | Full-featured, includes extra commands not used by MCP |
 | qsvlite | — | Not supported | Missing Polars and other required features |
 | qsvdp | — | Not supported | DataPusher+ variant, missing required features |

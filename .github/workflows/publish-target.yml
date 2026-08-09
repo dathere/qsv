@@ -76,6 +76,18 @@ on:
       pgo_lto:
         type: string
         default: ''
+      lto:
+        description: >-
+          Override [profile.release*] lto for the non-PGO cargo invocations, e.g. "thin".
+          Empty keeps Cargo.toml's fat LTO. For the PGO path use pgo_lto instead.
+        type: string
+        default: ''
+      codegen_units:
+        description: >-
+          Override [profile.release*] codegen-units for the non-PGO cargo invocations,
+          e.g. "16". Empty keeps Cargo.toml's 1.
+        type: string
+        default: ''
       job_timeout:
         description: >-
           Job cap in minutes. Below GitHub's hard 6h limit so a stalled build fails as an
@@ -111,7 +123,40 @@ jobs:
       # release's panic="abort" on luau targets. Slightly larger binaries; for a long-lived
       # qsvmcp server, unwinding is arguably the better behaviour anyway.
       BIN_PROFILE: ${{ contains(inputs.addl_build_args, 'luau') && 'release-luau' || 'release' }}
+      # Optional link-time tuning, passed as `--config` flags rather than
+      # CARGO_PROFILE_*_{LTO,CODEGEN_UNITS} env vars on purpose: an EMPTY env var is a hard
+      # error ("incorrect value `` for codegen option `lto`" / "cannot parse integer from
+      # empty string"), so there would be no way to express "no override". An empty
+      # expression contributes no CLI argument at all.
+      #
+      # Both profile names are set because BIN_PROFILE picks one at runtime and defining an
+      # unused profile is harmless - the same belt-and-braces build-pgo.sh uses when it
+      # forces CARGO_PROFILE_RELEASE_LTO and CARGO_PROFILE_RELEASE_LUAU_LTO together.
+      #
+      # This covers the NON-PGO cargo invocations only. The PGO path has its own knob
+      # (pgo_lto -> build-pgo.sh); codegen-units is not yet plumbed through there.
+      PROFILE_TUNING: >-
+        ${{ inputs.lto != '' && format('--config profile.release.lto="{0}" --config profile.release-luau.lto="{0}"', inputs.lto) || '' }}
+        ${{ inputs.codegen_units != '' && format('--config profile.release.codegen-units={0} --config profile.release-luau.codegen-units={0}', inputs.codegen_units) || '' }}
     steps:
+    # Windows Defender real-time scanning of the build tree is a well-known Windows-CI tax:
+    # a fat-LTO polars build writes thousands of object files and multi-GB temporaries, and
+    # every one gets scanned. Best-effort - Defender may be policy-managed on the runner, so
+    # a failure here must not fail the publish.
+    - name: Exclude the build tree from Windows Defender
+      if: ${{ inputs.os_name == 'windows' }}
+      continue-on-error: true
+      shell: pwsh
+      run: |
+        foreach ($p in @("${{ github.workspace }}", "$env:USERPROFILE\.cargo", "$env:USERPROFILE\.rustup", "$env:RUNNER_TEMP")) {
+          try {
+            Add-MpPreference -ExclusionPath $p -ErrorAction Stop
+            Write-Host "excluded: $p"
+          } catch {
+            Write-Host "could not exclude ${p}: $($_.Exception.Message)"
+          }
+        }
+        try { Add-MpPreference -ExclusionProcess "rustc.exe","cargo.exe","link.exe","lld-link.exe" -ErrorAction Stop } catch { Write-Host "process exclusions unavailable" }
     - name: Installing Rust toolchain
       uses: dtolnay/rust-toolchain@master
       with:
@@ -170,7 +215,12 @@ jobs:
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
-      run: cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" --locked --bin qsv --target ${{ inputs.target }} ${{ inputs.addl_build_args }},feature_capable ${{ inputs.default_features }}
+      run: |
+        # $PROFILE_TUNING is intentionally unquoted: it must word-split into separate
+        # --config flags, and expand to NOTHING when empty (an empty CARGO_PROFILE_*
+        # env var is a hard error, which is why this is a CLI flag and not an env var).
+        # shellcheck disable=SC2086
+        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --locked --bin qsv --target ${{ inputs.target }} ${{ inputs.addl_build_args }},feature_capable ${{ inputs.default_features }}
     # NOTE: qsvlite/qsvdp/qsvmcp used to build with RUSTFLAGS=--emit=asm, added in 2022
     # (f9bc937c4) and later commented out for the qsv step but left on these three.
     # Nothing consumes the .s files, and with codegen-units=1 + fat LTO it makes rustc
@@ -182,7 +232,12 @@ jobs:
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
-      run: cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" --locked --bin qsvlite --features=lite,self_update,${{ inputs.addl_qsvlite_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+      run: |
+        # $PROFILE_TUNING is intentionally unquoted: it must word-split into separate
+        # --config flags, and expand to NOTHING when empty (an empty CARGO_PROFILE_*
+        # env var is a hard error, which is why this is a CLI flag and not an env var).
+        # shellcheck disable=SC2086
+        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --locked --bin qsvlite --features=lite,self_update,${{ inputs.addl_qsvlite_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
     - name: Build qsvdp
       # qsvdp (datapusher_plus) is a Linux deployment helper, so only build it for x86_64
       # Linux. Skip aarch64-unknown-linux-gnu (its Polars fat-LTO link OOM-kills the hosted
@@ -191,13 +246,23 @@ jobs:
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
-      run: cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" --locked --bin qsvdp --features=datapusher_plus,${{ inputs.addl_qsvdp_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+      run: |
+        # $PROFILE_TUNING is intentionally unquoted: it must word-split into separate
+        # --config flags, and expand to NOTHING when empty (an empty CARGO_PROFILE_*
+        # env var is a hard error, which is why this is a CLI flag and not an env var).
+        # shellcheck disable=SC2086
+        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --locked --bin qsvdp --features=datapusher_plus,${{ inputs.addl_qsvdp_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
     - name: Build qsvmcp
       if: ${{ inputs.target != 'x86_64-unknown-linux-musl' && inputs.target != 'aarch64-unknown-linux-gnu' }}
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
-      run: cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" --locked --bin qsvmcp ${{ inputs.addl_qsvlite_features != '' && format('--features=qsvmcp,{0}', inputs.addl_qsvlite_features) || '--features=qsvmcp' }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+      run: |
+        # $PROFILE_TUNING is intentionally unquoted: it must word-split into separate
+        # --config flags, and expand to NOTHING when empty (an empty CARGO_PROFILE_*
+        # env var is a hard error, which is why this is a CLI flag and not an env var).
+        # shellcheck disable=SC2086
+        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --locked --bin qsvmcp ${{ inputs.addl_qsvlite_features != '' && format('--features=qsvmcp,{0}', inputs.addl_qsvlite_features) || '--features=qsvmcp' }} --target ${{ inputs.target }} ${{ inputs.default_features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |

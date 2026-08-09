@@ -12,6 +12,13 @@ name: Publish target (reusable)
 # and they drifted - the viz_static that blew the 6h job cap on Windows (run 31243109948)
 # had to be fixed in three places.
 #
+# STRUCTURE: `build` (matrixed) -> `package`. The build job uploads its binaries as an
+# artifact; the package job downloads them, zips, signs and uploads to the release. That
+# split exists so `split_mcp` can put qsvmcp on its OWN runner: jobs run in parallel, so a
+# qsvmcp build that will not fit alongside qsv inside one job cap gets a full cap to itself.
+# Using a matrix (rather than a second hand-written job) is deliberate - it keeps exactly
+# one copy of every cargo invocation.
+#
 # NOTE: `timeout-minutes` cannot be set on a job that calls a reusable workflow (the
 # caller may only use name/uses/with/secrets/strategy/needs/if/concurrency/permissions),
 # so the cap lives here and comes in via the `job_timeout` input.
@@ -88,6 +95,15 @@ on:
           e.g. "16". Empty keeps Cargo.toml's 1.
         type: string
         default: ''
+      split_mcp:
+        description: >-
+          Build qsvmcp on its own runner, in parallel with the other binaries, so it gets a
+          full job budget to itself. Costs the dependency sharing added for #4372 (a separate
+          runner starts with a cold target/), so only enable it where qsvmcp does not fit
+          alongside qsv - currently Windows. Linux keeps the sequential path, where the
+          sharing is worth more than the parallelism.
+        type: boolean
+        default: false
       job_timeout:
         description: >-
           Job cap in minutes. Below GitHub's hard 6h limit so a stalled build fails as an
@@ -100,9 +116,14 @@ on:
 
 jobs:
   build:
-    name: ${{ inputs.target }}
+    # one job when split_mcp is false ("all"); two in parallel when true ("main" + "mcp")
+    name: ${{ inputs.target }}${{ inputs.split_mcp && format(' [{0}]', matrix.part) || '' }}
     runs-on: ${{ inputs.os }}
     timeout-minutes: ${{ inputs.job_timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ inputs.split_mcp && fromJSON('["main","mcp"]') || fromJSON('["all"]') }}
     env:
       # ALL binaries build under ONE profile so they share compiled dependencies.
       #
@@ -111,17 +132,14 @@ jobs:
       # #3937), while qsvlite/qsvdp/qsvmcp used to hardcode --release - so they landed in a
       # different directory and shared nothing with qsv. 679 of qsvmcp's 689 crates are also
       # in qsv's graph, including the whole polars stack (identical 53 polars features in
-      # both), and every one of them was compiled twice per job. On Windows that made
-      # qsvmcp ~3x slower than qsv despite qsvmcp having FEWER dependencies (689 vs 758) -
-      # it was not doing more work, it was redoing qsv's work from a cold cache.
+      # both), and every one of them was compiled twice per job.
       #
       # Keying on inputs.addl_build_args (the qsv feature list) is deliberate: it makes the
       # other binaries follow whatever profile qsv picked. scripts/build-pgo.sh derives the
       # same value independently for the PGO path - keep the two rules in agreement.
       #
-      # Trade-off: qsvlite/qsvdp/qsvmcp now inherit release-luau's panic="unwind" instead of
-      # release's panic="abort" on luau targets. Slightly larger binaries; for a long-lived
-      # qsvmcp server, unwinding is arguably the better behaviour anyway.
+      # NOTE: when split_mcp is true the "mcp" job has its own cold target/, so it gets the
+      # parallelism but none of the sharing.
       BIN_PROFILE: ${{ contains(inputs.addl_build_args, 'luau') && 'release-luau' || 'release' }}
       # Optional link-time tuning, passed as `--config` flags rather than
       # CARGO_PROFILE_*_{LTO,CODEGEN_UNITS} env vars on purpose: an EMPTY env var is a hard
@@ -183,11 +201,11 @@ jobs:
         sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
     # PGO-optimized qsv build for native-runner targets (issue #1448). build-pgo.sh
     # runs the instrument -> train -> optimize cycle and leaves the binary in the same
-    # target/<target>/<profile>/ path the "Copy binaries" step globs. QSV_KIND is set to
+    # target/<target>/<profile>/ path the "Collect binaries" step globs. QSV_KIND is set to
     # prebuilt-pgo so `qsv --version` reflects the PGO build (util.rs starts_with("prebuilt")
     # still treats it as a prebuilt for self-update).
     - name: Build qsv (PGO)
-      if: ${{ inputs.pgo }}
+      if: ${{ inputs.pgo && matrix.part != 'mcp' }}
       shell: bash
       env:
         QSV_KIND: prebuilt-pgo
@@ -209,9 +227,13 @@ jobs:
     # actions-rs/cargo is archived/Node20-deprecated (qsv #4002), so invoke cargo directly.
     # All active targets in this workflow build with plain cargo (no use-cross: true), so the
     # cross/cargo conditional is unneeded here. `+${{ inputs.rust }}` pins the toolchain to
-    # guard against a stale per-directory rustup override on self-hosted runners (see note above).
+    # guard against a stale per-directory rustup override on self-hosted runners (see above).
+    #
+    # --timings writes target/cargo-timings/, uploaded below. CAVEAT: cargo only writes the
+    # report when the build FINISHES, so a build killed by the job cap produces nothing -
+    # which is exactly the case we most want data for. It pays off once a build completes.
     - name: Build qsv (normal)
-      if: ${{ !inputs.pgo }}
+      if: ${{ !inputs.pgo && matrix.part != 'mcp' }}
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
@@ -220,65 +242,101 @@ jobs:
         # --config flags, and expand to NOTHING when empty (an empty CARGO_PROFILE_*
         # env var is a hard error, which is why this is a CLI flag and not an env var).
         # shellcheck disable=SC2086
-        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --locked --bin qsv --target ${{ inputs.target }} ${{ inputs.addl_build_args }},feature_capable ${{ inputs.default_features }}
+        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --timings --locked --bin qsv --target ${{ inputs.target }} ${{ inputs.addl_build_args }},feature_capable ${{ inputs.default_features }}
     # NOTE: qsvlite/qsvdp/qsvmcp used to build with RUSTFLAGS=--emit=asm, added in 2022
     # (f9bc937c4) and later commented out for the qsv step but left on these three.
-    # Nothing consumes the .s files, and with codegen-units=1 + fat LTO it makes rustc
-    # write assembly for the whole crate. On Windows that turned the viz-enabled qsvmcp
-    # build from ~57min (pre-viz baseline) into >190min without finishing, blowing the
-    # job cap in run 31261021249. Do not reintroduce it here; use a local build if you
-    # need the asm.
+    # Nothing consumes the .s files, and with codegen-units=1 + fat LTO it makes rustc write
+    # assembly for the whole crate. Do not reintroduce it; use a local build if you need asm.
     - name: Build qsvlite
+      if: ${{ matrix.part != 'mcp' }}
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
       run: |
-        # $PROFILE_TUNING is intentionally unquoted: it must word-split into separate
-        # --config flags, and expand to NOTHING when empty (an empty CARGO_PROFILE_*
-        # env var is a hard error, which is why this is a CLI flag and not an env var).
         # shellcheck disable=SC2086
-        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --locked --bin qsvlite --features=lite,self_update,${{ inputs.addl_qsvlite_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --timings --locked --bin qsvlite --features=lite,self_update,${{ inputs.addl_qsvlite_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
     - name: Build qsvdp
       # qsvdp (datapusher_plus) is a Linux deployment helper, so only build it for x86_64
       # Linux. Skip aarch64-unknown-linux-gnu (its Polars fat-LTO link OOM-kills the hosted
       # ARM runner — qsvmcp is already excluded there too) and all non-Linux targets.
-      if: ${{ inputs.target != 'aarch64-unknown-linux-gnu' && inputs.os_name == 'linux' }}
+      if: ${{ matrix.part != 'mcp' && inputs.target != 'aarch64-unknown-linux-gnu' && inputs.os_name == 'linux' }}
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
       run: |
-        # $PROFILE_TUNING is intentionally unquoted: it must word-split into separate
-        # --config flags, and expand to NOTHING when empty (an empty CARGO_PROFILE_*
-        # env var is a hard error, which is why this is a CLI flag and not an env var).
         # shellcheck disable=SC2086
-        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --locked --bin qsvdp --features=datapusher_plus,${{ inputs.addl_qsvdp_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --timings --locked --bin qsvdp --features=datapusher_plus,${{ inputs.addl_qsvdp_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
     - name: Build qsvmcp
-      if: ${{ inputs.target != 'x86_64-unknown-linux-musl' && inputs.target != 'aarch64-unknown-linux-gnu' }}
+      if: ${{ matrix.part != 'main' && inputs.target != 'x86_64-unknown-linux-musl' && inputs.target != 'aarch64-unknown-linux-gnu' }}
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash
       run: |
-        # $PROFILE_TUNING is intentionally unquoted: it must word-split into separate
-        # --config flags, and expand to NOTHING when empty (an empty CARGO_PROFILE_*
-        # env var is a hard error, which is why this is a CLI flag and not an env var).
         # shellcheck disable=SC2086
-        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --locked --bin qsvmcp ${{ inputs.addl_qsvlite_features != '' && format('--features=qsvmcp,{0}', inputs.addl_qsvlite_features) || '--features=qsvmcp' }} --target ${{ inputs.target }} ${{ inputs.default_features }}
-    - name: Copy binaries to working dir
+        cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --timings --locked --bin qsvmcp ${{ inputs.addl_qsvlite_features != '' && format('--features=qsvmcp,{0}', inputs.addl_qsvlite_features) || '--features=qsvmcp' }} --target ${{ inputs.target }} ${{ inputs.default_features }}
+    # always(): a job killed by the cap still runs this, so whatever cargo managed to write
+    # is preserved. cargo only writes on a completed build, so this is often empty - hence
+    # if-no-files-found: ignore and continue-on-error.
+    - name: Upload cargo --timings report
+      if: ${{ always() }}
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: cargo-timings-${{ inputs.target }}-${{ matrix.part }}
+        path: target/cargo-timings/
+        if-no-files-found: ignore
+        retention-days: 14
+    - name: Collect binaries
       shell: bash
       run: |
-        mkdir qsv-${{ inputs.previous_tag }}
+        mkdir -p staged
+        # qsv uses release-luau (panic=unwind, qsv #3937) when built with luau, else release.
+        # Since #4372 the other bins use the same profile, but glob both so an older layout
+        # (or a caller pinning a different profile) still resolves.
+        for d in release-luau release; do
+          rm -f target/${{ inputs.target }}/$d/*.d 2>/dev/null || true
+          cp -v target/${{ inputs.target }}/$d/qsv* staged/ 2>/dev/null || true
+        done
+        ls -l staged/
+    - name: Upload binaries
+      uses: actions/upload-artifact@v7
+      with:
+        name: bins-${{ inputs.target }}-${{ matrix.part }}
+        path: staged/
+        if-no-files-found: error
+        retention-days: 1
+
+  package:
+    name: ${{ inputs.target }} [package]
+    needs: build
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 60
+    steps:
+    - name: Installing Rust toolchain
+      # needed for `cargo install zipsign` below
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ inputs.rust }}
+    - name: Checkout repository
+      # for LICENSE-MIT / COPYING / THIRD_PARTY_NOTICES.md and docs/publishing_assets/
+      uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.previous_tag }}
+    - name: Download binaries
+      uses: actions/download-artifact@v8
+      with:
+        # one artifact when split_mcp is false, two when true - merged into one directory
+        pattern: bins-${{ inputs.target }}-*
+        merge-multiple: true
+        path: qsv-${{ inputs.previous_tag }}
+    - name: Assemble archive
+      shell: bash
+      run: |
         # Ship qsv's license and the third-party notices with every archive:
         # the vendored MIT/BSD components require their notices to travel with copies.
         cp LICENSE-MIT COPYING THIRD_PARTY_NOTICES.md qsv-${{ inputs.previous_tag }}/
-        # qsv uses release-luau (panic=unwind, qsv #3937) when built with luau, else release; the other bins use release
-        for d in release-luau release; do
-          rm -f target/${{ inputs.target }}/$d/*.d 2>/dev/null || true
-          cp -v target/${{ inputs.target }}/$d/qsv* qsv-${{ inputs.previous_tag }} 2>/dev/null || true
-        done
-    - name: Create README
-      shell: bash
-      run: |
         cat docs/publishing_assets/README.txt docs/publishing_assets/qsv-${{ inputs.target }}.txt > qsv-${{ inputs.previous_tag }}/README
+        ls -l qsv-${{ inputs.previous_tag }}/
     - name: zip up binaries
       run: 7z a -tzip qsv-${{ inputs.previous_tag }}-${{ inputs.target }}.zip ./qsv-${{ inputs.previous_tag }}/* -mx=9 -mmt=on
     - name: install zipsign

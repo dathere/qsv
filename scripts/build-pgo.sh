@@ -97,7 +97,9 @@ echo "  PGO_LTO override: ${PGO_LTO:-(none - keep Cargo.toml fat-LTO)}"
 echo "  train flags     : ${TRAIN_FLAGS:-(none)}"
 echo "==============================================="
 
-cargo_args=(--bin "$BIN" --target "$TARGET" --profile "$PROFILE" --locked)
+# --timings writes target/cargo-timings/ (uploaded by the publish workflow). cargo only
+# emits the report on a COMPLETED build, so a run killed by a job cap produces nothing.
+cargo_args=(--bin "$BIN" --target "$TARGET" --profile "$PROFILE" --locked --timings)
 [[ -n "$features_arg" ]] && cargo_args+=("$features_arg")
 # DEFAULT_FEATURES is a single token (e.g. --no-default-features); intentional split
 # shellcheck disable=SC2206

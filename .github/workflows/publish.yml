@@ -54,6 +54,8 @@ jobs:
             # no link-time tuning - keep Cargo.toml's fat LTO + codegen-units=1
             lto:
             codegen-units:
+            # sequential build keeps the #4372 dependency sharing, worth more here than parallelism
+            split-mcp: false
           - os: ubuntu-24.04
             os-name: linux
             target: x86_64-unknown-linux-musl
@@ -72,6 +74,8 @@ jobs:
             # no link-time tuning - keep Cargo.toml's fat LTO + codegen-units=1
             lto:
             codegen-units:
+            # sequential build keeps the #4372 dependency sharing, worth more here than parallelism
+            split-mcp: false
           # - os: ubuntu-24.04
           #   os-name: linux
           #   target: i686-unknown-linux-gnu
@@ -119,6 +123,9 @@ jobs:
             # predates viz being in BOTH builds. If this cap is ever hit, drop `pgo` here
             # before dropping `viz` - it removes a full qsv build.
             job-timeout: 330
+            # qsvmcp gets its own runner: it has never finished alongside qsv inside
+            # one cap (>=268m on gnu in run 31287336214).
+            split-mcp: true
           # - os: windows-latest
           #   os-name: windows
           #   target: i686-pc-windows-msvc
@@ -160,6 +167,7 @@ jobs:
             codegen-units: '16'
             # see the msvc entry - Windows is the slowest target.
             job-timeout: 330
+            split-mcp: true
           # - os: macos-12
           #   os-name: macos
           #   target: x86_64-apple-darwin
@@ -204,6 +212,8 @@ jobs:
             # no link-time tuning - keep Cargo.toml's fat LTO + codegen-units=1
             lto:
             codegen-units:
+            # sequential build keeps the #4372 dependency sharing, worth more here than parallelism
+            split-mcp: false
           # - os: ubuntu-20.04
           #   os-name: linux
           #   target: arm-unknown-linux-gnueabihf
@@ -252,6 +262,7 @@ jobs:
       pgo_lto: ${{ matrix.job.pgo-lto }}
       lto: ${{ matrix.job.lto }}
       codegen_units: ${{ matrix.job.codegen-units }}
+      split_mcp: ${{ matrix.job.split-mcp || false }}
       job_timeout: ${{ matrix.job.job-timeout || 240 }}
     secrets:
       QSV_ZIPSIGN_PRIV_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}

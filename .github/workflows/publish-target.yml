@@ -50,6 +50,31 @@ on:
         description: release tag to build and upload to
         type: string
         required: true
+      source_ref:
+        # Normally the source IS the tag, and that is what a real release must do.
+        #
+        # The escape hatch exists because the workflow YAML and the source come from
+        # DIFFERENT refs: GitHub reads the workflow from the ref that triggered the run,
+        # but these jobs check out `previous_tag`. So a CI fix expressed in the matrix
+        # (e.g. dropping viz_static from addl-build-args) takes effect on a retry, while
+        # an identical fix expressed in Cargo.toml does NOT - the tag checkout reverts it.
+        #
+        # That asymmetry is exactly why Windows could not publish 22.0.0/22.0.1: qsv's
+        # viz_static removal lived in the matrix and worked, while qsvmcp's lived in the
+        # `qsvmcp` feature in Cargo.toml and was silently undone on every run. `qsvmcp`
+        # gained viz_static in 2f83bcd8e (viz, #4019) between 21.1.0 and 22.0.0, and
+        # Windows shipped binaries for 21.1.0 and nothing for either release after it.
+        #
+        # Setting this builds from a ref that HAS the Cargo.toml fix while still naming
+        # and uploading assets under `previous_tag`. The binaries then differ from that
+        # tag's source - only use it for a retry where the tag itself cannot build, and
+        # never for the initial publish of a release.
+        description: >-
+          ref to BUILD from when it must differ from previous_tag (retry escape hatch).
+          Empty (default) builds previous_tag, which is what a real release does.
+        type: string
+        required: false
+        default: ''
       rust:
         type: string
         default: stable
@@ -186,9 +211,11 @@ jobs:
         toolchain: ${{ inputs.rust }}
         target: ${{ inputs.target }}
     - name: Checkout repository
+      # keep this ref IDENTICAL to the package job's - package ships THIRD_PARTY_NOTICES.md
+      # and docs/publishing_assets/qsv-<target>.txt, which describe these binaries.
       uses: actions/checkout@v7
       with:
-        ref: ${{ inputs.previous_tag }}
+        ref: ${{ inputs.source_ref != '' && inputs.source_ref || inputs.previous_tag }}
     - name: apt-get update Ubuntu, libwayland-dev
       if: ${{ inputs.os_name == 'linux' }}
       run: |
@@ -319,9 +346,10 @@ jobs:
         toolchain: ${{ inputs.rust }}
     - name: Checkout repository
       # for LICENSE-MIT / COPYING / THIRD_PARTY_NOTICES.md and docs/publishing_assets/
+      # same ref as the build job - see the note there
       uses: actions/checkout@v7
       with:
-        ref: ${{ inputs.previous_tag }}
+        ref: ${{ inputs.source_ref != '' && inputs.source_ref || inputs.previous_tag }}
     - name: Download binaries
       uses: actions/download-artifact@v8
       with:

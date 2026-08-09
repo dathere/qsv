@@ -20,19 +20,61 @@ name: Publish (Windows only)
 
 on:
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: >-
+          Ref to BUILD from. Default (empty) = the dispatched commit, NOT the release tag -
+          see the source_ref note below. Assets are always named with the release tag.
+        type: string
+        required: false
+        default: ''
+      release_tag:
+        description: >-
+          Release tag to upload to. Empty = auto-detect (see the analyze-tags guard).
+        type: string
+        required: false
+        default: ''
 
 jobs:
   analyze-tags:
     runs-on: ubuntu-22.04
     outputs:
-      previous-tag: ${{ steps.previoustag.outputs.tag }}
+      previous-tag: ${{ steps.resolve.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Get previous tag
         id: previoustag
+        if: ${{ inputs.release_tag == '' }}
         uses: "WyriHaximus/github-action-get-previous-tag@v2"
+      # This workflow is dispatched from an UNTAGGED master, whereas publish.yml runs with
+      # HEAD at the tag - so tag auto-detection is not exercised the same way here, and it
+      # has never actually reached the upload step. The repo also carries non-version tags
+      # (`git tag --sort=-version:refname | head -1` returns `rkyv`), so a wrong resolution
+      # is plausible, and svenstaro/upload-release-action runs with overwrite: true. Assert
+      # the shape before anything spends hours building.
+      - name: Resolve and validate release tag
+        id: resolve
+        shell: bash
+        env:
+          OVERRIDE: ${{ inputs.release_tag }}
+          DETECTED: ${{ steps.previoustag.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${OVERRIDE:-$DETECTED}"
+          echo "override='$OVERRIDE' detected='$DETECTED' -> resolved='$TAG'"
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::resolved release tag '$TAG' is not MAJOR.MINOR.PATCH." \
+                 "Re-dispatch with release_tag set explicitly."
+            exit 1
+          fi
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::release '$TAG' does not exist - refusing to create one from a" \
+                 "Windows-only retry."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   publish:
     name: Publish for ${{ matrix.job.target }}
@@ -123,6 +165,19 @@ jobs:
       os_name: ${{ matrix.job.os-name }}
       target: ${{ matrix.job.target }}
       previous_tag: ${{ needs.analyze-tags.outputs.previous-tag }}
+      # Build the DISPATCHED COMMIT by default, not the release tag - the opposite of
+      # publish.yml, and deliberate. This workflow only runs when a Windows publish has
+      # already failed, and the fixes for such a failure routinely live in Cargo.toml
+      # (feature tables), which a tag checkout would revert while the matrix-level fixes
+      # in this same file silently took effect. That split is what kept 22.0.0 and 22.0.1
+      # from ever shipping Windows binaries. Pinned to the SHA, not a branch name, so a
+      # push mid-run cannot change what is being built.
+      #
+      # The tradeoff is real: the uploaded zip is named for the release tag but built from
+      # a later commit, so it can differ from that tag's other platforms. For 22.0.1 that
+      # is unavoidable - its qsvmcp pulls viz_static, which does not finish on Windows.
+      # If you want every platform on one source, cut a new release instead.
+      source_ref: ${{ inputs.source_ref != '' && inputs.source_ref || github.sha }}
       rust: ${{ matrix.rust }}
       addl_build_args: ${{ matrix.job.addl-build-args }}
       default_features: ${{ matrix.job.default-features }}

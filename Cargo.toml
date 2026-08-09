@@ -592,7 +592,13 @@ distrib_features = [
     "viz_static",
 ]
 all_features = ["distrib_features", "magika", "self_update", "ui"]
-qsvmcp = ["feature_capable", "geocode", "get", "get_cloud", "mcp", "polars", "profile", "self_update", "synthesize", "to", "viz"]
+# NOTE: `get` AND `get_cloud` are both deliberately absent - removing only `get` would be a
+# no-op, since `get_cloud = ["get", ...]` re-enables it. `get_cloud` turns on object_store's
+# aws/azure/gcp backends, which is the largest feature delta between this build and the
+# prebuilt `qsv` (object_store is in BOTH dependency graphs, so it never shows up in a crate
+# count - only in a resolved-feature comparison). Dropping it costs qsvmcp the `get` command,
+# `dc:` cache-prefix inputs, and s3:///gs://az:// sources.
+qsvmcp = ["feature_capable", "geocode", "mcp", "polars", "profile", "self_update", "synthesize", "to", "viz"]
 apply = [
     "base62",
     "base64-simd",

@@ -127,6 +127,8 @@ pub struct CkanResource {
     /// (true only when the resource is same-origin as the CKAN API).
     pub send_auth:     bool,
     /// The CKAN-reported resource hash, if present (used for staleness checks).
+    /// Only read by the `get`-gated `rich` cache tier below.
+    #[cfg_attr(not(feature = "get"), allow(dead_code))]
     pub resource_hash: Option<String>,
 }
 
@@ -257,6 +259,9 @@ pub fn http_get_conditional(
 /// The lowercased outer extension of `source` (query/fragment stripped) when it
 /// is a compression extension this module knows (`zip`/`sz`/`gz`/`zlib`/`zst`),
 /// else `None`. The set must match [`decompress_source`]'s arms.
+///
+/// Only called from the `get`-gated `rich` cache tier below.
+#[cfg_attr(not(feature = "get"), allow(dead_code))]
 fn compression_ext(source: &str) -> Option<String> {
     let path_part = source.split(['?', '#']).next().unwrap_or(source);
     Path::new(path_part)
@@ -2145,7 +2150,7 @@ mod rich {
                 {
                     return Err(CliError::Other(format!(
                         "get: cloud source '{}' requires cloud support. Rebuild qsv with \
-                         `--features get_cloud` (already included in the distrib, qsvmcp and \
+                         `--features get_cloud` (already included in the distrib and \
                          datapusher_plus builds).",
                         opts.source
                     )));

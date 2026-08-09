@@ -62,7 +62,15 @@ jobs:
             # does not run natively on Windows; train via git-bash on a synthesized CSV)
             pgo: true
             pgo-train-flags: --minimal
-            pgo-lto:
+            # the non-PGO builds get thin LTO via `lto:` below; this is the same override
+            # for the PGO optimize build, which build-pgo.sh applies separately.
+            pgo-lto: thin
+            # Windows link-time tuning. fat LTO + codegen-units=1 on a polars-sized binary is
+            # the most expensive possible setting and the link phase is largely serial;
+            # Windows is the only target where that cost has blown the job cap. Trades some
+            # runtime performance for build time on this platform only.
+            lto: thin
+            codegen-units: 16
             # Windows is the slowest target. 330 (not 270) because `qsvmcp` - not `qsv` -
             # is the most expensive step here: the qsvmcp feature adds get, get_cloud, mcp,
             # profile and synthesize on top of the polars+viz set this entry builds for
@@ -92,6 +100,12 @@ jobs:
             pgo: false
             pgo-train-flags: --minimal
             pgo-lto:
+            # Windows link-time tuning. fat LTO + codegen-units=1 on a polars-sized binary is
+            # the most expensive possible setting and the link phase is largely serial;
+            # Windows is the only target where that cost has blown the job cap. Trades some
+            # runtime performance for build time on this platform only.
+            lto: thin
+            codegen-units: 16
             # see the msvc entry - Windows is the slowest target.
             job-timeout: 330
           #### END KEEP IN SYNC ####
@@ -112,6 +126,8 @@ jobs:
       pgo: ${{ matrix.job.pgo || false }}
       pgo_train_flags: ${{ matrix.job.pgo-train-flags }}
       pgo_lto: ${{ matrix.job.pgo-lto }}
+      lto: ${{ matrix.job.lto }}
+      codegen_units: ${{ matrix.job.codegen-units }}
       job_timeout: ${{ matrix.job.job-timeout || 240 }}
     secrets:
       QSV_ZIPSIGN_PRIV_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}

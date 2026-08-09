@@ -234,7 +234,7 @@ The `.mcpb` file is a Model Context Protocol Bundle - a standardized format for 
 
 **Bundle structure:**
 ```
-qsv-mcp-server.mcpb
+qsv-mcp-server-<version>.mcpb
 ├── manifest.json          # Extension metadata (MCP Bundle spec v0.3)
 ├── dist/
 │   └── mcp-server.js     # Main MCP server (Node.js)
@@ -457,7 +457,7 @@ npm run build
 npm run mcpb:package
 ```
 
-This creates `qsv-mcp-server.mcpb` in the current directory.
+This creates `qsv-mcp-server-<version>.mcpb` (the version comes from `package.json`) in the current directory.
 
 **Packaging process:**
 1. Validates manifest.json against MCP Bundle spec v0.3
@@ -576,7 +576,7 @@ Same license as qsv: MIT OR Apache-2.0
 
 ---
 
-**Updated**: 2026-06-14
-**Version**: 21.1.0
+**Updated**: 2026-08-08
+**Version**: 22.0.1
 **Format**: MCP Bundle (MCPB) v0.3
 **Compatibility**: Claude Desktop 1.0+

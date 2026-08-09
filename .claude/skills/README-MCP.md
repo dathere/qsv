@@ -58,7 +58,7 @@ Excel and JSONL files are automatically converted to CSV before processing - no 
 
 The **MCP Desktop Extension** (MCPB) provides the easiest installation experience:
 
-1. Download `qsv-mcp-server.mcpb` from [releases](https://github.com/dathere/qsv/releases/latest)
+1. Download `qsv-mcp-server-<version>.mcpb` (e.g. `qsv-mcp-server-22.0.1.mcpb`) from [releases](https://github.com/dathere/qsv/releases/latest)
 2. Open Claude Desktop Settings → Extensions
 3. Click "Install from file" and select the `.mcpb` file
 4. Configure your allowed directories when prompted
@@ -619,8 +619,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-06-14
-**Version**: 21.1.0
+**Updated**: 2026-08-08
+**Version**: 22.0.1
 **Tools**: 23 tools at startup (10 core + 13 commonly-used; +1 app-only when MCP Apps enabled), all 55 discoverable via `qsv_search_tools`
 **Skills**: 55 qsv commands
 **Status**: Production Ready

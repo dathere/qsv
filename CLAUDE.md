@@ -23,7 +23,7 @@ Help files (e.g., command help docs, ToC entries) are auto-generated. Do NOT man
 - Test qsvdp: `cargo test -F datapusher_plus`
 - Test single command: `cargo t stats -F all_features`
 - Test specific function: `cargo t test_stats::stats_cache -F all_features`
-- Regenerate MCP skill JSONs: `qsv --update-mcp-skills`
+- Regenerate MCP skill JSONs: `cargo run --bin qsv -F qsvmcp -- --update-mcp-skills` (the flag is gated on the `mcp` feature, which is in `qsvmcp` but **not** in `all_features` — a plain `qsv` build rejects it as an unknown flag)
 - Regenerate Help and ToC entries: `qsv --generate-help-md`
 
 ## Workflow requirements

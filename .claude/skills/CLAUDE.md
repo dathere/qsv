@@ -4,7 +4,7 @@
 
 - Run specific test file (after `npm test` populates `dist/`): `node --test dist/tests/<module>.test.js`
 - Filter tests: `node --test --test-name-pattern="pattern" dist/tests/`
-- Regenerate skill JSONs after qsv update: `qsv --update-mcp-skills` from repo root, then `npm run build` here
+- Regenerate skill JSONs after qsv update: `cargo run --bin qsv -F qsvmcp -- --update-mcp-skills` from repo root, then `npm run build` here. The flag is gated on the `mcp` feature — present in `qsvmcp` but **not** in `all_features`, so a stock `qsv` binary (including the prebuilt release ones) rejects it as an unknown flag.
 
 ## Workflow requirements
 
@@ -56,7 +56,7 @@ The repo-root `.claude-plugin/marketplace.json` (at `qsv/.claude-plugin/marketpl
 
 ### Skills auto-generation
 
-Skill JSON files in `qsv/` are auto-generated from qsv USAGE text via `qsv --update-mcp-skills`. The Rust generator (`../../src/mcp_skills_gen.rs`) parses docopt usage, extracts descriptions and performance hints from README. The `mcp-tools.ts` layer adds guidance hints on top.
+Skill JSON files in `qsv/` are auto-generated from qsv USAGE text via `--update-mcp-skills` (needs an `mcp`-featured build — see Tools & commands above). The Rust generator (`../../src/mcp_skills_gen.rs`) parses docopt usage, extracts descriptions and performance hints from README. The `mcp-tools.ts` layer adds guidance hints on top.
 
 ### Spreadsheet format handling
 

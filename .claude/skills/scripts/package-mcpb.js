@@ -18,7 +18,7 @@
 import { createWriteStream, existsSync, mkdirSync, rmSync, readFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -102,7 +102,7 @@ async function createArchive() {
 
   return new Promise((resolve, reject) => {
     const output = createWriteStream(OUTPUT_PATH);
-    const archive = archiver('zip', {
+    const archive = new ZipArchive({
       zlib: { level: 9 } // Maximum compression
     });
 

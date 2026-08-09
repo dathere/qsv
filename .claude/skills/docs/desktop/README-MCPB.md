@@ -18,7 +18,7 @@ Under the hood, it's powered by **qsv**: a purpose-built CLI tool written in hig
 
 Claude handles the rest automatically — no commands to remember, no syntax to learn.
 
-The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with 69 commands (vs 78 in the full qsv binary), plus built-in session logging for increased reproducibility.
+The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with 68 commands (vs 78 in the full qsv binary), plus built-in session logging for increased reproducibility.
 
 ## Installation (Simple)
 
@@ -139,7 +139,7 @@ Claude: [Performs all three operations in sequence]
    - **Linux**: Place in `/usr/local/bin/` or specify the full path in settings
 4. Restart Claude Desktop
 
-> **Note**: qsvmcp is the recommended binary — it includes the 69 commands needed by the MCP server and is purpose-built for MCP server use.
+> **Note**: qsvmcp is the recommended binary — it includes the 68 commands needed by the MCP server and is purpose-built for MCP server use.
 
 ### "Permission denied" or "Access denied" errors
 
@@ -234,7 +234,7 @@ The `.mcpb` file is a Model Context Protocol Bundle - a standardized format for 
 
 **Bundle structure:**
 ```
-qsv-mcp-server.mcpb
+qsv-mcp-server-<version>.mcpb
 ├── manifest.json          # Extension metadata (MCP Bundle spec v0.3)
 ├── dist/
 │   └── mcp-server.js     # Main MCP server (Node.js)
@@ -265,7 +265,7 @@ qsv-mcp-server.mcpb
 ┌──────────────▼──────────────────────┐
 │   qsvmcp binary (preferred) / qsv   │
 │  • Tabular data processing         │
-│  • 69 commands (qsvmcp) / 78 (qsv)  │
+│  • 68 commands (qsvmcp) / 78 (qsv)  │
 │  • High-performance operations      │
 │  • Multi-format support             │
 └─────────────────────────────────────┘
@@ -362,7 +362,7 @@ The MCP server enforces limits to prevent DoS attacks and resource exhaustion:
 **CRITICAL**: The `QSV_MCP_BIN_PATH` must point to a trusted qsvmcp or qsv binary:
 
 - Only use official releases from https://github.com/dathere/qsv/releases
-- The **qsvmcp** binary is recommended — it's optimized for MCP server use with 69 commands
+- The **qsvmcp** binary is recommended — it's optimized for MCP server use with 68 commands
 - Verify binary integrity (checksums provided in releases)
 - Ensure binary path is not writable by untrusted users
 - Do not use binaries from unknown sources
@@ -457,7 +457,7 @@ npm run build
 npm run mcpb:package
 ```
 
-This creates `qsv-mcp-server.mcpb` in the current directory.
+This creates `qsv-mcp-server-<version>.mcpb` (the version comes from `package.json`) in the current directory.
 
 **Packaging process:**
 1. Validates manifest.json against MCP Bundle spec v0.3
@@ -576,7 +576,7 @@ Same license as qsv: MIT OR Apache-2.0
 
 ---
 
-**Updated**: 2026-06-14
-**Version**: 21.1.0
+**Updated**: 2026-08-08
+**Version**: 22.0.1
 **Format**: MCP Bundle (MCPB) v0.3
 **Compatibility**: Claude Desktop 1.0+

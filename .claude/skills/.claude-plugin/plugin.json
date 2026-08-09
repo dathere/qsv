@@ -1,6 +1,6 @@
 {
   "name": "qsv-data-wrangling",
-  "version": "22.0.0",
+  "version": "22.0.1",
   "description": "Blazingly fast tabular data wrangling with 55 qsv skill-based commands for CSV, TSV, Excel, JSONL, and Parquet files",
   "author": {
     "name": "datHere, Inc.",

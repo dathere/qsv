@@ -24,7 +24,7 @@
 import { createWriteStream, existsSync, readFileSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -74,7 +74,7 @@ if (existsSync(OUTPUT_PATH)) {
 console.log('\nCreating .plugin archive...');
 
 const output = createWriteStream(OUTPUT_PATH);
-const archive = archiver('zip', { zlib: { level: 9 } });
+const archive = new ZipArchive({ zlib: { level: 9 } });
 
 output.on('close', () => {
   const sizeKB = (archive.pointer() / 1024).toFixed(1);

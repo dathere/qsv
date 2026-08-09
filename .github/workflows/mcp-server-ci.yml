@@ -104,6 +104,76 @@ jobs:
           node dist/mcp-server.js --version || echo "Version check complete"
         shell: bash
 
+  package:
+    # Guards the release artifacts. Nothing else exercises this path: archiver was
+    # bumped ^7 -> ^8 in #4241 and BOTH packagers were hard-broken for weeks with
+    # every check green, so no 22.0.0 .mcpb/.plugin was ever produced (issue #4378).
+    #
+    # Deliberately a single cell rather than the test matrix -- this asks "does a
+    # well-formed bundle come out", which is not OS- or Node-version-dependent, and
+    # the .mcpb is ~15 MB so fanning it out would mostly buy CPU time.
+    name: Package and verify bundles
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: .claude/skills
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: .claude/skills/package-lock.json
+
+      # verify-bundles.js starts the server out of the extracted bundle, and
+      # startup validates the qsv binary, so one must be on PATH.
+      - name: Install qsv
+        run: |
+          QSV_VERSION=$(gh release view --repo dathere/qsv --json tagName --jq .tagName)
+          echo "Installing qsv $QSV_VERSION"
+          ASSET_NAME="qsv-${QSV_VERSION}-x86_64-unknown-linux-gnu.zip"
+          curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
+          mkdir -p bin
+          unzip -qo "${ASSET_NAME}" -d bin
+          chmod +x bin/qsv*
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+          bin/qsv --version
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Both packagers, back to back: clean:bundles is chained onto each and keeps
+      # only current-version bundles, so running one alone deletes the other's output.
+      - name: Build .mcpb and .plugin
+        run: |
+          npm run mcpb:package
+          npm run plugin:package
+
+      # Version agreement, payload completeness, and -- the load-bearing one --
+      # that the server actually starts from the unpacked .mcpb. A bundle missing a
+      # runtime dependency still builds and still installs; it only fails on a
+      # user's machine. See issue #4379.
+      - name: Verify bundles
+        run: npm run verify:bundles
+
+      - name: Upload bundles for inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-bundles
+          path: |
+            .claude/skills/*.mcpb
+            .claude/skills/*.plugin
+          retention-days: 7
+          if-no-files-found: warn
+
   lint:
     name: TypeScript Type Check
     runs-on: ubuntu-latest

@@ -108,7 +108,9 @@ jobs:
             # Windows is the only target where that cost has blown the job cap. Trades some
             # runtime performance for build time on this platform only.
             lto: thin
-            codegen-units: 16
+            # quoted: publish-target.yml declares codegen_units as `type: string`,
+            # so keep the matrix value a string rather than a YAML integer.
+            codegen-units: '16'
             # Windows is the slowest target. 330 (not 270) because `qsvmcp` - not `qsv` -
             # is the most expensive step here: the qsvmcp feature adds get, get_cloud, mcp,
             # profile and synthesize on top of the polars+viz set this entry builds for
@@ -153,7 +155,9 @@ jobs:
             # Windows is the only target where that cost has blown the job cap. Trades some
             # runtime performance for build time on this platform only.
             lto: thin
-            codegen-units: 16
+            # quoted: publish-target.yml declares codegen_units as `type: string`,
+            # so keep the matrix value a string rather than a YAML integer.
+            codegen-units: '16'
             # see the msvc entry - Windows is the slowest target.
             job-timeout: 330
           # - os: macos-12

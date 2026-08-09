@@ -81,6 +81,9 @@ jobs:
             # predates viz being in BOTH builds. If this cap is ever hit, drop `pgo` here
             # before dropping `viz` - it removes a full qsv build.
             job-timeout: 330
+            # qsvmcp gets its own runner: it has never finished alongside qsv inside
+            # one cap (>=268m on gnu in run 31287336214).
+            split-mcp: true
           - os: windows-latest
             os-name: windows
             target: x86_64-pc-windows-gnu
@@ -112,6 +115,7 @@ jobs:
             codegen-units: '16'
             # see the msvc entry - Windows is the slowest target.
             job-timeout: 330
+            split-mcp: true
           #### END KEEP IN SYNC ####
     uses: ./.github/workflows/publish-target.yml
     with:
@@ -132,6 +136,7 @@ jobs:
       pgo_lto: ${{ matrix.job.pgo-lto }}
       lto: ${{ matrix.job.lto }}
       codegen_units: ${{ matrix.job.codegen-units }}
+      split_mcp: ${{ matrix.job.split-mcp || false }}
       job_timeout: ${{ matrix.job.job-timeout || 240 }}
     secrets:
       QSV_ZIPSIGN_PRIV_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}

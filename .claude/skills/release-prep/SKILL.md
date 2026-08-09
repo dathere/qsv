@@ -67,3 +67,53 @@ After version bumps, remind the user to:
 - The MCP server version in `manifest.json`/`package.json` can advance independently of the qsv binary version
 - The `minimum_qsv_version` field in `manifest.json` tracks the minimum *qsv binary* needed, NOT the MCP server version
 - After bumping `Cargo.toml` version, omit `--locked` from cargo commands until `Cargo.lock` is regenerated
+
+## Cross-repo constraints — `dathere/qsv-easy-windows-installer`
+
+The Windows MSI "Easy installer" is a separate repo that consumes qsv releases directly.
+Two of its assumptions are things **this** repo controls, so they are release-time checks:
+
+**Installer v1.1.2 (2026-08-09) fixed both of its fragile assumptions** — it now reads
+`tag_name` instead of the release title, and extracts `qsv.exe` instead of `qsvp.exe`.
+
+Verified two different ways, which is worth keeping straight:
+
+- **21.1.0 — the live path.** `releases/latest` returns `tag_name: 21.1.0` today, the
+  installer's constructed `.../releases/download/21.1.0/qsv-21.1.0-x86_64-pc-windows-msvc.zip`
+  returns 200, and `qsv.exe` is in the archive. This is what a v1.1.2 user gets right now.
+- **22.0.1 — the post-promotion target.** `releases/latest` does NOT return it (it is a
+  prerelease), so this was checked by building the same URL from the tag directly: also 200,
+  also contains `qsv.exe`. It is what `releases/latest` will return once 22.0.1 is promoted.
+
+What remains:
+
+- **Users on Easy installer ≤ v1.1.1 break SILENTLY when the first stable release without
+  `qsvp.exe` ships — and a release note is the ONLY available remedy.** Those versions
+  extract `qsvp.exe` by hardcoded name. They keep working today only because
+  `releases/latest` EXCLUDES prereleases, so they still resolve to 21.1.0, which ships
+  `qsvp.exe`. Promoting 22.0.1 (or any later release) to stable gives them an archive with
+  no `qsvp.exe`.
+
+  The failure is **not** a visible error. `run_path_update` returns `()` rather than
+  `Result`, and the frontend calls `invoke("run_path_update").finally(...)` with no
+  `.catch()` — so the "Successfully installed qsv" alert fires regardless. Affected users
+  are told it worked while nothing was installed; they will report "qsv is not on my PATH"
+  or "qsv didn't update", never a crash.
+
+  There is no self-update or version-check path in that installer, so it cannot notify
+  already-installed users. **The release note is the entire remedy.** Word it for the
+  symptom, not an error message they will never see:
+
+  > Windows users who installed via the Easy installer: upgrade to v1.1.2 or later before
+  > updating qsv, then confirm with `qsv --version`. Older versions of the installer report
+  > success even when the install did not happen.
+
+- **Release TITLE == tag is no longer load-bearing for v1.1.2+**, but ≤ v1.1.1 still
+  interpolates `.name` into the download URL as if it were the tag. Keeping titles as the
+  bare version costs nothing and avoids 404ing those users on top of the `qsvp` failure.
+
+- **Check that README's Easy-installer download badge points at the current installer
+  release.** The badge is a hardcoded versioned MSI URL (`README.md`, search
+  `qsv-easy-installer_`), so it does not follow that repo's releases and goes stale silently.
+  Pointing it at a version the guidance above tells users to upgrade *away* from is the
+  failure worth avoiding. Current: `v1.1.2`.

@@ -519,6 +519,13 @@ inventory.
   Government works in the public domain (17 U.S.C. §105), so attribution is not
   required; the sources are recorded here for auditability.
   `people_per_sq_mi` is derived (population ÷ TIGER `AREALAND`).
+* **`colombia_departments.geojson`** — Colombia's 33 ADM1 departments from
+  [geoBoundaries](https://www.geoboundaries.org/) (William & Mary geoLab),
+  licensed under
+  [Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/).
+  Attribution is REQUIRED, so this credit must travel with the file. Identified
+  from the file's own `shapeGroup`/`shapeISO`/`shapeID`/`shapeType: ADM1`
+  property schema, which is geoBoundaries' distinctive layout.
 * **Boundary GeoJSON** (`allegheny_zip_boundaries.geojson`,
   `nyc_neighborhoods.geojson`, `japan_prefectures.geojson`) — provenance under
   review; these are third-party-derived and their upstream source and license

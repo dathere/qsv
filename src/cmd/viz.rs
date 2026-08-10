@@ -337,6 +337,11 @@ viz options:
                            repeats. One of: sum, mean, count, min, max.
                            For treemap/sunburst/icicle, only additive aggregations
                            apply: count (default) or sum (requires --value).
+                           For choropleth, how rows sharing a region are combined:
+                           sum when --value is given, else count. Pass mean for an
+                           intensive measure (a density, rate, index or per-capita
+                           figure) — summing those is meaningless, and the count/sum
+                           hover adds a "share of total" line that would be too.
                            For a bubble animation (see --slider), collapses each
                            entity x frame cell to a single bubble; defaults to mean
                            (the cell centroid). count is rejected there, since a row

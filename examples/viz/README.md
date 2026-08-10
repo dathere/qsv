@@ -452,6 +452,7 @@ third-party inventory.
 | `nyc_311.csv`, `nyc_capital_projects.csv` | Samples of [NYC Open Data](https://opendata.cityofnewyork.us/) | See the NYC Open Data terms of use |
 | `cms_medicare_providers.csv` | Sample of [CMS](https://data.cms.gov/) provider data | US Government work |
 | `northeast_states.csv`, `northeast_states.geojson` | Built by `gen_northeast_states.py` from [US Census Bureau TIGERweb](https://tigerweb.geo.census.gov/) state boundaries (server-simplified, `maxAllowableOffset=0.002`) and the Census [Vintage 2024 state population estimates](https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/state/totals/). `people_per_sq_mi` is derived (population ÷ TIGER `AREALAND`). | **US Government work — public domain** (17 U.S.C. §105); attribution not required, credited for auditability |
+| `colombia_departments.geojson` | Colombia's 33 ADM1 departments from [geoBoundaries](https://www.geoboundaries.org/) (William & Mary geoLab) — identified from the file's own `shapeGroup`/`shapeISO`/`shapeID`/`shapeType: ADM1` property schema | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — **attribution required** |
 | Synthetic samples (`sales_sample.csv`, `seismic_events.csv`, `web_flows.csv`, …) | Generated for these examples | MIT, with qsv |
 
 ### Boundary GeoJSON — provenance under review

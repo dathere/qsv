@@ -597,6 +597,23 @@ def count_rows(path):
         return sum(1 for _ in fh) - 1
 
 
+def col_range(csv_path, column):
+    """Observed (min, max) of a numeric column, ignoring non-numeric cells.
+
+    Lets an axis window follow the data. A hardcoded window fitted to one run silently clips the
+    next one's real results — the 22.0.1 run put 9 points outside the old [-10, 55], including the
+    two biggest gainers of the release.
+    """
+    vals = []
+    with open(csv_path, encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            try:
+                vals.append(float(row[column]))
+            except (TypeError, ValueError):
+                pass
+    return (min(vals), max(vals)) if vals else (None, None)
+
+
 def last_rel(csv_path, name):
     """Final (latest-release) `rel` value for a series in a prep_growth output — i.e. its total
     growth multiple vs its first benchmarked release. Lets the prose cite exact, never-stale
@@ -764,21 +781,23 @@ def main():
                     "The 15 benchmarks that improved most over the previous release. Bigger, brighter "
                     "bubbles are larger wins — the percentage cut in mean run time from one version "
                     "to the next."))
-    figs.append(viz("box", prep_delta_box(),
+    delta_box_src = prep_delta_box()
+    # Fit the axis to the charted data rather than a fixed window. DELTA_CLAMP has already dropped
+    # the measurement artifacts, so everything left is a real result and none of it should be
+    # clipped — a window hardcoded to one release's spread goes stale the moment the numbers move.
+    d_lo, d_hi = col_range(delta_box_src, "delta (%)")
+    d_pad = max(2.0, (d_hi - d_lo) * 0.08)
+    figs.append(viz("box", delta_box_src,
                     ["--y", "delta (%)", "--x", "family",
                      "--title", "Release-over-release change by command family",
                      "--y-title", "% faster vs previous version",
-                     # the real per-family boxes all sit within [-6, +51]; fix the axis to that
-                     # window (with light padding) so a lone bad-CI-run outlier can't squash them
-                     "--y-range=-10:55",
-                     "--annotation",
-                     "1 point clipped: frequency_ignorecase -79% (a bad CI run)"],
+                     f"--y-range={d_lo - d_pad:.0f}:{d_hi + d_pad:.0f}"],
                     "change_by_family", "Change distribution by family",
                     "The wider view behind the speedups: the spread of per-release change within each "
                     "family (above zero = faster). Most families cluster just north of zero — steady, "
                     f"unglamorous progress. Extreme outliers (|Δ| > {int(DELTA_CLAMP)}%, usually "
-                    "measurement noise) are omitted; the y-axis is fixed to [-10, 55] so the boxes "
-                    "stay readable, clipping one bad-CI-run point (frequency_ignorecase, -79%)."))
+                    "measurement noise) are omitted; the y-axis follows the remaining data, so every "
+                    "point charted here is visible."))
 
     build_index(figs, info)
     render_hero(index_src)

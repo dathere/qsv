@@ -42,6 +42,7 @@ shared-scale throughput charts (it just reads the row count from the .idx — te
 millions of "records/sec") but appears in the per-row-normalized heatmap.
 """
 import csv
+import json
 import os
 import re
 import shutil
@@ -155,7 +156,23 @@ def qsv(args, out, stdin=None):
     return out
 
 
-def viz(subcmd, src, flags, slug, title, desc):
+def set_log_y(html, y_title):
+    """Switch a rendered chart's y-axis to a log scale.
+
+    `qsv viz`'s explicit subcommands take no log-axis flag (`--log-scale` is `smart`-only), so the
+    plotly layout is patched after rendering. The match is anchored on the `--y-title` we passed, so
+    it cannot hit another axis, and is asserted to fire exactly once — silently not matching would
+    ship a linear chart that the prose describes as logarithmic.
+    """
+    title_json = json.dumps(y_title)
+    old = f'"yaxis":{{"title":{{"text":{title_json}}}}}'
+    if html.count(old) != 1:
+        sys.exit(f"set_log_y: expected exactly 1 yaxis match for {y_title!r}, found "
+                 f"{html.count(old)} — qsv viz's layout JSON changed; update this patch")
+    return html.replace(old, f'"yaxis":{{"type":"log","title":{{"text":{title_json}}}}}')
+
+
+def viz(subcmd, src, flags, slug, title, desc, log_y=False):
     """Render one chart to benchmarks/<slug>.html and return its figure descriptor."""
     out = os.path.join(OUT, f"{slug}.html")
     env = {**os.environ, "QSV_VIZ_CDN": "1", "QSV_VIZ_NO_COMPRESS": "1", "QSV_PROGRESSBAR": "0"}
@@ -166,6 +183,8 @@ def viz(subcmd, src, flags, slug, title, desc):
         sys.exit(f"qsv viz {subcmd} ({slug}) failed:\n{e.stderr}")
     with open(out, encoding="utf-8") as fh:
         html = fh.read()
+    if log_y:
+        html = set_log_y(html, flags[flags.index("--y-title") + 1])
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(inject_resize_reporter(html))
     return {"slug": slug, "title": title, "desc": desc}
@@ -689,8 +708,9 @@ def main():
                     f"pace: validate_index now runs {v_idx:.1f}x its first-release speed. The no-schema "
                     "structural path — the most parse-bound variant — dipped ~40% below launch from "
                     "17.0.0 through 21.0.0, when qsv's CSV parser (the csv-nose fork) moved to its 1.0.x "
-                    f"line, then recovered sharply in 21.1.0 to {v_ns_idx:.1f}x (back above launch) once "
-                    "csv-nose 1.1.0 landed SIMD UTF-8 validation and memchr-based scanning. Full-schema "
+                    "line, then recovered sharply in 21.1.0 once csv-nose 1.1.0 landed SIMD UTF-8 "
+                    f"validation and memchr-based scanning, and holds at {v_ns_idx:.1f}x (above launch) "
+                    f"in {latest_release}. Full-schema "
                     "and no-schema paths are shown base vs index, each normalized to its own debut. (The "
                     "sharp single-release spikes down — e.g. at 1.0.0 and 2.2.1 — are failed benchmark "
                     "runs, not regressions.)"))
@@ -713,11 +733,15 @@ def main():
                     "pairwise work — the default bivariate pass runs at hundreds of thousands of "
                     "records/sec and the full --bivariate-stats all battery at a few thousand — so unlike "
                     f"stats or frequency there is genuine per-row cost to hold down. It held: the default "
-                    f"bivariate pass now runs {m_biv:.1f}x its first-release speed, stepping up at 17.0.0 "
-                    "and again at 20.0.0. The full all battery is heavier and choppier — it climbed to a "
-                    f"~6k-recs/sec peak around 19.x-20.x, dipped at 21.0.0, and recovered partway in 21.1.0 "
-                    f"to {m_all:.1f}x launch. All four lines are base vs --advanced, each normalized to its "
-                    "own debut."))
+                    f"bivariate pass now runs {m_biv:.1f}x its first-release speed, stepping up at 17.0.0, "
+                    f"again at 20.0.0, and sharply in {latest_release}. The full all battery is heavier and "
+                    "choppier — it climbed to a ~6k-recs/sec peak around 19.x-20.x, then dipped through "
+                    f"21.0.0-21.1.0, before leaping to {m_all:.1f}x launch in {latest_release}: "
+                    "dictionary-encoding the joint keys cut the per-pair cost of the --bivariate-stats all "
+                    "battery by well over an order of magnitude. All four lines are base vs --advanced, "
+                    "each normalized to its own debut. Note the LOG y-axis: that last jump is large enough "
+                    "that a linear scale would flatten every earlier step into the baseline.",
+                    log_y=True))
     figs.append(viz("heatmap", prep_heatmap(hm_versions),
                     ["--x", "version", "--y", "name", "--z", "rel",
                      "--title", "Relative throughput vs each command's recent peak"],

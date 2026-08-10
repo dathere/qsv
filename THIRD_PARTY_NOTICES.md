@@ -506,10 +506,13 @@ inventory.
   [Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/).
   Built by `examples/viz/gen_world_cities.py`; the `avg_annual_temp_c` column is
   synthesized by qsv, the rest is GeoNames-derived.
-* **`allegheny_dog_licenses.csv`** — Allegheny County dog licenses, via the
+* **`allegheny_dog_licenses.csv`**, **`allegheny_zip_boundaries.geojson`** —
+  Allegheny County dog licenses and the county's 125 zip-code boundaries, via the
   [Western Pennsylvania Regional Data Center](https://data.wprdc.org/).
-* **`nyc_311.csv`**, **`nyc_capital_projects.csv`** — samples of
-  [NYC Open Data](https://opendata.cityofnewyork.us/).
+* **`nyc_311.csv`**, **`nyc_capital_projects.csv`**,
+  **`nyc_neighborhoods.geojson`** — samples of
+  [NYC Open Data](https://opendata.cityofnewyork.us/); the GeoJSON is its 188
+  neighborhood tabulation areas.
 * **`cms_medicare_providers.csv`** — sample of
   [CMS](https://data.cms.gov/) provider data.
 * **`northeast_states.csv`**, **`northeast_states.geojson`** — built by
@@ -526,10 +529,13 @@ inventory.
   Attribution is REQUIRED, so this credit must travel with the file. Identified
   from the file's own `shapeGroup`/`shapeISO`/`shapeID`/`shapeType: ADM1`
   property schema, which is geoBoundaries' distinctive layout.
-* **Boundary GeoJSON** (`allegheny_zip_boundaries.geojson`,
-  `nyc_neighborhoods.geojson`, `japan_prefectures.geojson`) — provenance under
-  review; these are third-party-derived and their upstream source and license
-  have not yet been confirmed.
+* **`japan_prefectures.geojson`** — Japan's 47 first-level administrative regions
+  (prefectures) from [simplemaps' free GIS maps](https://simplemaps.com/gis/country/jp),
+  licensed under
+  [Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/).
+  Attribution is REQUIRED, so this credit must travel with the file. The file's
+  `id`/`name` properties carry simplemaps' own `JP01`…`JP47` scheme, and each
+  feature self-declares `source: https://simplemaps.com`.
 
 ## Basemap tiles
 

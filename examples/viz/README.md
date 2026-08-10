@@ -448,16 +448,10 @@ third-party inventory.
 | File | Source | License |
 |---|---|---|
 | `world_cities.csv` | Derived from [GeoNames](https://www.geonames.org/) (`cities15000` + `countryInfo`) by `gen_world_cities.py`. `elevation_m` is GeoNames data; `avg_annual_temp_c` is synthesized by qsv. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — **attribution required** |
-| `allegheny_dog_licenses.csv` | Allegheny County dog licenses, via the [Western Pennsylvania Regional Data Center](https://data.wprdc.org/) | See the WPRDC dataset page |
-| `nyc_311.csv`, `nyc_capital_projects.csv` | Samples of [NYC Open Data](https://opendata.cityofnewyork.us/) | See the NYC Open Data terms of use |
+| `allegheny_dog_licenses.csv`, `allegheny_zip_boundaries.geojson` | Allegheny County dog licenses and the county's 125 zip-code boundaries, via the [Western Pennsylvania Regional Data Center](https://data.wprdc.org/) | See the WPRDC dataset page |
+| `nyc_311.csv`, `nyc_capital_projects.csv`, `nyc_neighborhoods.geojson` | Samples of [NYC Open Data](https://opendata.cityofnewyork.us/); the GeoJSON is its 188 neighborhood tabulation areas | See the NYC Open Data terms of use |
 | `cms_medicare_providers.csv` | Sample of [CMS](https://data.cms.gov/) provider data | US Government work |
 | `northeast_states.csv`, `northeast_states.geojson` | Built by `gen_northeast_states.py` from [US Census Bureau TIGERweb](https://tigerweb.geo.census.gov/) state boundaries (server-simplified, `maxAllowableOffset=0.002`) and the Census [Vintage 2024 state population estimates](https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/state/totals/). `people_per_sq_mi` is derived (population ÷ TIGER `AREALAND`). | **US Government work — public domain** (17 U.S.C. §105); attribution not required, credited for auditability |
 | `colombia_departments.geojson` | Colombia's 33 ADM1 departments from [geoBoundaries](https://www.geoboundaries.org/) (William & Mary geoLab) — identified from the file's own `shapeGroup`/`shapeISO`/`shapeID`/`shapeType: ADM1` property schema | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — **attribution required** |
+| `japan_prefectures.geojson` | Japan's 47 first-level administrative regions (prefectures) from [simplemaps' free GIS maps](https://simplemaps.com/gis/country/jp) — the file's `id`/`name` properties carry simplemaps' own `JP01`…`JP47` scheme, and each feature self-declares `source: https://simplemaps.com` | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — **attribution required** |
 | Synthetic samples (`sales_sample.csv`, `seismic_events.csv`, `web_flows.csv`, …) | Generated for these examples | MIT, with qsv |
-
-### Boundary GeoJSON — provenance under review
-
-`allegheny_zip_boundaries.geojson`, `nyc_neighborhoods.geojson` and `japan_prefectures.geojson` are
-third-party-derived geographic boundary data whose upstream source and license have **not yet been
-confirmed**. They are deliberately left uncredited rather than credited incorrectly — an unverified
-attribution is worse than an acknowledged gap. If you know their provenance, please open an issue.

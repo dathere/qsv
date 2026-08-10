@@ -33,6 +33,8 @@ anual         = "anual"
 # Unaccented "português", an accepted `--language` alias in viz_i18n::LOCALES. Mirrors the
 # "espanol"/"español" pair already there: a user who cannot type the diacritic still gets a hit.
 portugues     = "portugues"
+lits          = "lits"
+"SME"         = "SME"
 
 [files]
 extend-exclude = [

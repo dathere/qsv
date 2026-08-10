@@ -52,7 +52,6 @@ SMART_IFRAME = {
     "smart Data Schematic (--smarter, geospatial)":  "smart_geospatial.html",
     "smart Data Schematic (geographic outliers)":    "smart_geo_outliers.html",
     "smart Data Schematic (time-series)":            "smart_timeseries.html",
-    "smart Data Schematic (quarterly cadence)":      "smart_quarterly_cadence.html",
     "smart Data Schematic (per-US-state choropleth)":      "smart_us_choropleth.html",
     "smart Data Schematic (--dictionary infer, treemap)":  "smart_dict_treemap.html",
     "smart Data Schematic (--dictionary infer, sunburst)": "smart_dict_sunburst.html",
@@ -744,13 +743,18 @@ FIGURES = [
     ("choropleth (MapLibre + GeoJSON)", "<code>--map</code> draws the filled regions on an "
      "interactive MapLibre <b>tile</b> basemap (token-free carto-positron) instead of a projection. "
      "The regions come from a custom GeoJSON (<code>--geojson</code> local file or URL) matched to "
-     "the data by <code>--feature-id-key</code> — here the near-rectangular western states, colored "
-     "by installed wind capacity. The view auto-centers and zooms to the GeoJSON extent (shown "
-     "full-width so the computed zoom frames the regions as the CLI does — a tile map's zoom is "
-     "fixed, so a narrow grid cell would crop it).",
-     True, ["choropleth", "western_states.csv", "--locations", "state", "--value",
-             "wind_capacity_gw", "--geojson", "western_states.geojson", "--feature-id-key", "id",
-             "--map", "--style", "carto-positron"]),
+     "the data by <code>--feature-id-key</code> — here the <b>11 Northeast states</b> with real "
+     "Census TIGER boundaries, colored by <b>population density</b>. The id lives in the feature's "
+     "<code>properties</code> (<code>--feature-id-key properties.STUSAB</code>), which is the common "
+     "real-world case — most published GeoJSON keys its regions there rather than on a top-level "
+     "<code>id</code>. Density is an <i>intensive</i> quantity, so <code>--agg mean</code> is passed: "
+     "with one row per region it leaves the values untouched, but it keeps hover from offering a "
+     "share-of-total percentage — the sum of eleven densities is not a total of anything. The view "
+     "auto-centers and zooms to the GeoJSON extent (shown full-width so the computed zoom frames the "
+     "regions as the CLI does — a tile map's zoom is fixed, so a narrow grid cell would crop it).",
+     True, ["choropleth", "northeast_states.csv", "--locations", "state", "--value",
+             "people_per_sq_mi", "--agg", "mean", "--geojson", "northeast_states.geojson",
+             "--feature-id-key", "properties.STUSAB", "--map", "--style", "carto-positron"]),
     ("smart Data Schematic (time-series)",
      "Auto Data Schematic for stock_prices: a time-series trend panel (the first numeric column over the "
      "date) leads; the strongest-correlated pair drill-down (open vs close) is shown as a <b>static "
@@ -758,15 +762,6 @@ FIGURES = [
      "the judicious animation gate withholds the (uninformative) animated version — alongside "
      "box-plot summaries of the OHLC columns.",
      True, ["smart", "stock_prices.csv", "--max-charts", "8"]),
-    ("smart Data Schematic (quarterly cadence)",
-     "Auto Data Schematic for quarterly_filings: 3 years of <b>quarterly</b> data spans ~1,000 days, "
-     "which the span-based rule alone would bucket by <i>week</i> — ~150 buckets of which only 12 "
-     "are non-empty, a comb of spikes. The cadence-aware floor detects the data's native quarterly "
-     "spacing (most weekly/monthly periods are empty) and buckets the trend by <b>quarter</b> "
-     "instead, rendered as evenly-spaced <code>YYYY-Qn</code> labels on a category axis with no "
-     "inter-quarter gaps. A curated dictionary can also pin the floor explicitly via "
-     "<code>x-qsv.cadence</code> (a describegpt-inferred token).",
-     True, ["smart", "quarterly_filings.csv"]),
     ("smart Data Schematic (per-US-state choropleth)",
      "`viz smart` reverse-geocodes each point; because every city "
      "resolves to a US state, it adds a per-US-<b>state</b> choropleth (cities-per-state, albers-usa) "

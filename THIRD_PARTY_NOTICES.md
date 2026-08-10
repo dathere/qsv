@@ -512,11 +512,17 @@ inventory.
   [NYC Open Data](https://opendata.cityofnewyork.us/).
 * **`cms_medicare_providers.csv`** — sample of
   [CMS](https://data.cms.gov/) provider data.
+* **`northeast_states.csv`**, **`northeast_states.geojson`** — built by
+  `examples/viz/gen_northeast_states.py` from US Census Bureau
+  [TIGERweb](https://tigerweb.geo.census.gov/) state boundaries and the Vintage
+  2024 state population estimates. Works of the US Census Bureau are US
+  Government works in the public domain (17 U.S.C. §105), so attribution is not
+  required; the sources are recorded here for auditability.
+  `people_per_sq_mi` is derived (population ÷ TIGER `AREALAND`).
 * **Boundary GeoJSON** (`allegheny_zip_boundaries.geojson`,
   `nyc_neighborhoods.geojson`, `japan_prefectures.geojson`) — provenance under
   review; these are third-party-derived and their upstream source and license
-  have not yet been confirmed. `western_states.geojson` is hand-authored by the
-  qsv project.
+  have not yet been confirmed.
 
 ## Basemap tiles
 

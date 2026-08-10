@@ -186,7 +186,7 @@ qsv get --help
 |--------|------|-------------|--------|
 | &nbsp;`‑‑name`&nbsp; | string | Logical cache name (the `dc:` handle) for the fetched entry. Defaults to the source's terminal path segment. Ignored when multiple sources are given. |  |
 | &nbsp;`‑‑ttl`&nbsp; | integer | Per-entry time-to-live in seconds. -1 = never expire. Also the value applied by cache-set-ttl. | `2419200` |
-| &nbsp;`‑‑refresh`&nbsp; | string | Staleness policy for `dc:` use: on-stale, always or never. Also the value applied by cache-set-policy. | `on-stale` |
+| &nbsp;`‑‑refresh`&nbsp; | string | Revalidation policy for `dc:` use: on-stale, always or never. A `dc:` input re-fetches only past TTL; `always` does not change that - it only makes that fetch unconditional, skipping If-None-Match/If-Modified-Since revalidation. Also the value applied by cache-set-policy. | `on-stale` |
 | &nbsp;`‑‑compress`&nbsp; | string | Transparent blob compression: zstd or none. | `zstd` |
 | &nbsp;`‑‑force`&nbsp; | flag | Re-fetch even if a fresh cached copy exists. |  |
 | &nbsp;`‑‑sample`&nbsp; | integer | PREVIEW: stream the first N data records of <source> to stdout (or the --output file) WITHOUT caching. No `dc:` entry is created. The sniffed header row is re-attached. Single <source> only. |  |

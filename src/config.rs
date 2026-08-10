@@ -189,24 +189,48 @@ impl Config {
     /// - `QSV_RDR_BUFFER_CAPACITY`: Sets read buffer capacity.
     /// - `QSV_WTR_BUFFER_CAPACITY`: Sets write buffer capacity.
     /// - `QSV_SKIP_FORMAT_CHECK`: Set to skip file extension checking.
+    ///
+    /// # This constructor may perform network I/O
+    ///
+    /// A `dc:<name>` input is a handle into the `get` command's disk cache, and it is resolved
+    /// to a concrete path HERE. If the cached entry has reached its TTL (and its refresh policy
+    /// is not `never`), that resolution revalidates the entry against its original source — a
+    /// network round-trip, from inside a constructor that returns `Config` rather than
+    /// `Result`. Surprising, and deliberate; see the bounds below.
+    ///
+    /// - **At most once per run.** `diskcache::DC_RESOLVED` memoizes a resolved handle for the life
+    ///   of the process, so a command that builds many `Config`s cannot multiply that into many
+    ///   fetches, and every consumer in a run sees the SAME materialized CSV. Before that memo,
+    ///   `qsv frequency dc:x` resolved the handle 4 times in one run (issue #4257).
+    /// - **Never fails the constructor.** A failed refresh falls back to the stale cached copy. A
+    ///   handle that cannot be resolved at all is stashed in `format_error` and surfaced at reader
+    ///   construction (`reader`, `reader_file`, `reader_file_stdin`).
+    ///
+    /// Why it stays here (issue #4274): the fetch cannot simply be hoisted to command entry.
+    /// There is no uniform input-token position across commands, `qsv get`'s own subcommands
+    /// take `dc:` names and are contractually offline, several `Args` structs are built without
+    /// argv at all, and 39 commands reach the cache ONLY through this constructor — so hoisting
+    /// would silently stop refreshing for them. The coherent fix is to defer resolution to the
+    /// lazy read path (the `read_input` `OnceLock` / `prepared_for_read` machinery that
+    /// auto-decompression already uses), which is a wider change than the problem warrants.
     pub fn new(path: Option<&String>) -> Config {
-        // Resolve a `dc:<name>` cache reference (the `get` command's disk cache)
-        // to a concrete file path up front, so the rest of Config::new treats it
-        // like an ordinary local file (delimiter detection, indexing, etc.).
-        // Config::new is infallible, so a resolution failure is surfaced later
-        // via `format_error` rather than panicking.
+        // Resolve a `dc:<name>` cache reference (the `get` command's disk cache) to a concrete
+        // file path up front, so the rest of Config::new treats it like an ordinary local file
+        // (delimiter detection, indexing, etc.).
+        //
+        // NOTE: this MAY FETCH. Past TTL, `resolve_dc_path` revalidates against the origin.
+        // It is memoized per run, and Config::new is infallible, so a resolution failure is
+        // surfaced later via `format_error` rather than panicking. See the doc comment above.
         #[cfg(feature = "get")]
         let mut dc_format_error: Option<String> = None;
         #[cfg(feature = "get")]
-        let dc_resolved: Option<String> = match path {
-            Some(s) if s.starts_with("dc:") => {
-                match crate::diskcache::resolve_dc_path(&s["dc:".len()..]) {
-                    Ok(p) => Some(p.to_string_lossy().to_string()),
-                    Err(e) => {
-                        dc_format_error = Some(e.to_string());
-                        None
-                    },
-                }
+        let dc_resolved: Option<String> = match path.and_then(|s| s.strip_prefix("dc:")) {
+            Some(dc_name) => match crate::diskcache::resolve_dc_path(dc_name) {
+                Ok(p) => Some(p.to_string_lossy().to_string()),
+                Err(e) => {
+                    dc_format_error = Some(e.to_string());
+                    None
+                },
             },
             _ => None,
         };

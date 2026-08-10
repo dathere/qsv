@@ -105,7 +105,10 @@ get options:
                            Ignored when multiple sources are given.
     --ttl <secs>           Per-entry time-to-live in seconds. -1 = never expire.
                            Also the value applied by cache-set-ttl. [default: 2419200]
-    --refresh <policy>     Staleness policy for `dc:` use: on-stale, always or never.
+    --refresh <policy>     Revalidation policy for `dc:` use: on-stale, always or never.
+                           A `dc:` input re-fetches only past TTL; `always` does not
+                           change that - it only makes that fetch unconditional,
+                           skipping If-None-Match/If-Modified-Since revalidation.
                            Also the value applied by cache-set-policy. [default: on-stale]
     --compress <algo>      Transparent blob compression: zstd or none.
                            [default: zstd]

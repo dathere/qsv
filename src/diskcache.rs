@@ -431,7 +431,12 @@ mod rich {
         /// Revalidate only when the entry is older than its TTL (the default).
         #[default]
         OnStale,
-        /// Always re-fetch.
+        /// Fetch unconditionally: skip the conditional `If-None-Match` /
+        /// `If-Modified-Since` revalidation and always re-download the body.
+        ///
+        /// This governs HOW a fetch is made, not WHETHER one happens. A `dc:`
+        /// resolution still fetches only past TTL (see `resolve_dc_uncached`), so
+        /// `always` with an unelapsed TTL never touches the network.
         Always,
         /// Never revalidate; serve the cached copy regardless of age.
         Never,
@@ -2864,9 +2869,17 @@ mod rich {
     ///
     /// Memoized per run (see `DC_RESOLVED`): the first resolution of a handle does the
     /// possibly-refreshing, possibly-networked work and every later one reuses it, so all
-    /// consumers in the run see the SAME materialized CSV. This applies to
-    /// `RefreshPolicy::Always` too — it re-fetches once per run rather than once per
-    /// resolution, since one snapshot per run is the point.
+    /// consumers in the run see the SAME materialized CSV.
+    ///
+    /// The refresh gate is TTL-driven, NOT policy-driven: `resolve_dc_uncached` fetches only
+    /// when the policy is not `Never` AND `ttl_secs >= 0` AND the entry's age has reached its
+    /// TTL. `RefreshPolicy::Always` does not widen that gate — it only makes the fetch, once
+    /// triggered, unconditional. So `--refresh always` on an entry inside its TTL never
+    /// touches the network here.
+    ///
+    /// There is no offline/no-network switch. The only ways to suppress a refresh are
+    /// per-entry persisted state: `qsv get cache-set-policy <name> --refresh=never`,
+    /// `qsv get cache-set-ttl <name> --ttl=-1`, or simply an unelapsed TTL.
     ///
     /// The stats-sidecar sync deliberately runs on EVERY call. It is purely local and is not
     /// idempotent by design: it captures the `.stats.csv.data.jsonl` sidecar into a durable

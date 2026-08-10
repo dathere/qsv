@@ -17,7 +17,7 @@ qsv and running [`gen_gallery.py`](gen_gallery.py) from the repo root —
 `python3 examples/viz/gen_gallery.py`. Individual `qsv viz` outputs are instead
 fully self-contained (plotly embedded), so they work offline.
 
-The seventeen **smart dashboards** are embedded as `<iframe>`s of their genuine
+The sixteen **smart dashboards** are embedded as `<iframe>`s of their genuine
 `qsv viz smart` HTML output (`smart_*.html`) rather than reconstructed inline, so
 the full-width overview panels (map, choropleth, correlation heatmap, time-series,
 treemap/sunburst hierarchy), themes and map zoom buttons render exactly as the CLI produces
@@ -69,7 +69,6 @@ as `text/plain`, so a browser won't render it):
 |------|-------|---------|
 | `sales_sample.csv` | 500 e-commerce orders: categoricals, a boolean, a rating, several correlated numerics, an ID and a high-cardinality text column | `smart`, `bar`, `line`, `scatter` (incl. bubble & 3D), `histogram`, `box`, `pie`, `heatmap`, `contour` |
 | `stock_prices.csv` | 90 trading days of `date,open,high,low,close,volume` | `smart` (time-series), `candlestick`, `ohlc`, `line` |
-| `quarterly_filings.csv` | 102 filings on 12 quarter-start dates (2021–2023): `filing_date,form_type,status` | `smart` (quarterly cadence — the trend detects the native quarterly spacing and buckets by `YYYY-Qn` on a category axis) |
 | `web_flows.csv` | `source,target,sessions` funnel edges | `sankey` |
 | `signup_funnel.csv` | 15 rows of `stage,channel,users` — 5 signup stages x 3 channels, the stages already in process order | `funnel` (stages as ROWS, summed per stage; no dictionary needed) |
 | `nyc_capital_projects.csv` | 12,587 NYC capital projects (CPDB): managing agency, project type, and three budget aggregates that do NOT nest | `smart` (pipeline **bridge**, Lorenz/Gini) |
@@ -78,7 +77,7 @@ as `text/plain`, so a browser won't render it):
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto geo panel — global extent), `map` (points & density), `geo` (projection) |
 | `country_stats.csv` | 20 countries with `iso3,country,gdp_usd_tn` | `choropleth` (fill countries by GDP, matched by ISO-3 code) |
 | `us_state_stats.csv` | 20 US states with `state,renewable_electricity_pct` | `choropleth --location-mode usa-states` (built-in state geometry, albers-usa) |
-| `western_states.csv` + `western_states.geojson` | 7 near-rectangular western states with `state,wind_capacity_gw`, plus a tiny custom GeoJSON keyed by 2-letter `id` | `choropleth --map --geojson … --feature-id-key id` (filled regions on a MapLibre tile basemap) |
+| `northeast_states.csv` + `northeast_states.geojson` | 11 Northeast states (MD → ME) with `state,people_per_sq_mi`, plus real Census TIGER boundaries keyed by `properties.STUSAB` (with `properties.NAME` auto-detected for hover) | `choropleth --map --geojson … --feature-id-key properties.STUSAB --agg mean` (filled regions on a MapLibre tile basemap; `--agg mean` because density is not additive) |
 | `world_cities.csv` | **1,179 cities** with population **over 500,000** across **six inhabited continents** (GeoNames-derived): `country`, `continent`, `lat`/`lon`, `metro_population_m`, `elevation_m` (real), `avg_annual_temp_c` (synthesized from latitude + elevation). `continent` uses the [plotly.js geo `scope`](https://plotly.com/javascript/reference/layout/geo/#layout-geo-scope) vocabulary (`Oceania`, `North America`, …) | `smart --dictionary infer` (dense global geo map + per-COUNTRY choropleth via `fitbounds` with `geocode` + a six-continent bar + box panels) |
 | `us_cities.csv` | 54 US cities across ~35 states: `lat`/`lon`, `census_region`, `population_m`, `median_age` | `smart` (US point map + per-US-STATE choropleth with `geocode` + box/bar/correlation panels) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
@@ -402,10 +401,12 @@ qsv viz choropleth us_state_stats.csv --locations state --value renewable_electr
     --location-mode usa-states -o choropleth_states.html
 
 # choropleth (--map) — filled regions on a MapLibre tile basemap from a custom GeoJSON, matched by
-# --feature-id-key; the view auto-centers/zooms to the GeoJSON extent
-qsv viz choropleth western_states.csv --locations state --value wind_capacity_gw \
-    --geojson western_states.geojson --feature-id-key id --map --style carto-positron \
-    -o choropleth_map.html
+# --feature-id-key; the view auto-centers/zooms to the GeoJSON extent. The id is under the feature's
+# properties here, which is the usual real-world shape. --agg mean because density is intensive:
+# the default sum would offer a meaningless share-of-total on hover.
+qsv viz choropleth northeast_states.csv --locations state --value people_per_sq_mi --agg mean \
+    --geojson northeast_states.geojson --feature-id-key properties.STUSAB \
+    --map --style carto-positron -o choropleth_map.html
 ```
 
 `viz smart` also adds a choropleth panel on its own whenever it detects lat/lon columns that
@@ -450,7 +451,7 @@ third-party inventory.
 | `allegheny_dog_licenses.csv` | Allegheny County dog licenses, via the [Western Pennsylvania Regional Data Center](https://data.wprdc.org/) | See the WPRDC dataset page |
 | `nyc_311.csv`, `nyc_capital_projects.csv` | Samples of [NYC Open Data](https://opendata.cityofnewyork.us/) | See the NYC Open Data terms of use |
 | `cms_medicare_providers.csv` | Sample of [CMS](https://data.cms.gov/) provider data | US Government work |
-| `western_states.geojson` | Hand-authored by the qsv project (7 near-rectangular polygons) | MIT, with qsv |
+| `northeast_states.csv`, `northeast_states.geojson` | Built by `gen_northeast_states.py` from [US Census Bureau TIGERweb](https://tigerweb.geo.census.gov/) state boundaries (server-simplified, `maxAllowableOffset=0.002`) and the Census [Vintage 2024 state population estimates](https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/state/totals/). `people_per_sq_mi` is derived (population ÷ TIGER `AREALAND`). | **US Government work — public domain** (17 U.S.C. §105); attribution not required, credited for auditability |
 | Synthetic samples (`sales_sample.csv`, `seismic_events.csv`, `web_flows.csv`, …) | Generated for these examples | MIT, with qsv |
 
 ### Boundary GeoJSON — provenance under review

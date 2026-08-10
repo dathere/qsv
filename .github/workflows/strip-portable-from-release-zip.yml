@@ -1,0 +1,323 @@
+name: Strip portable binaries from a published zip
+
+# Remove the "portable" binaries (qsvp, qsvplite, qsvpdp, qsvpmcp) from an already-published
+# release zip, re-sign it, and re-upload in place.
+#
+# Why this exists: #4380 stopped PUBLISHING the portable binaries, but assets uploaded before
+# that commit landed still contain them. Rebuilding such a target just to drop four files is
+# disproportionate - the x86_64-unknown-linux-gnu 22.0.1 zip was uploaded after #4371/#4372/
+# #4373, so the portable binaries are its ONLY discrepancy, and a rebuild would also produce
+# non-deterministic PGO output that differs from what users already downloaded.
+#
+# The unsign -> modify -> re-sign flow mirrors macOS-arm64-selfhosted-publish-qsvpy.yml, which
+# already does the same thing to add qsvpy binaries to a published pre-release zip.
+#
+# ⚠️ This REPLACES a published asset. The replacement has a different sha256, so anything that
+# pinned the old one (package manager formulae, lockfiles, mirrors) will break. Intended for
+# pre-release assets that nothing has pinned yet.
+#
+# ⚠️ Existing qsvp users: `qsvp --update` resolves its archive member from current_exe()
+# (src/util.rs:1571-1574), so once qsvp is gone from the archive their self-update fails.
+# That is inherent to #4380's decision, not to this workflow.
+#
+# DELIBERATELY x86_64-unknown-linux-gnu ONLY - the target is not an input.
+# KEEPER_NAMES below asserts qsv + qsvlite + qsvdp + qsvmcp all survive, which is true only
+# for this target. publish-target.yml builds a different binary set elsewhere: qsvdp is
+# skipped for aarch64-unknown-linux-gnu and every non-Linux target (:290), and qsvmcp is
+# skipped for x86_64-unknown-linux-musl and aarch64-unknown-linux-gnu (:298). Accepting a
+# target input would fail those archives on a keeper that was never built - after the local
+# delete, so the log would read like corruption rather than a bad assumption.
+# To extend this to another target, derive the keeper set from the archive BEFORE the delete
+# (keepers = pre-delete entries minus VICTIMS) instead of hardcoding it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: >-
+          Release tag whose asset to rewrite. Empty = auto-detect (validated below).
+        type: string
+        required: false
+        default: ''
+      dry_run:
+        description: >-
+          Do everything except the upload. Leave TRUE first - the log shows the exact
+          before/after member list and the signature verification.
+        type: boolean
+        required: false
+        default: true
+
+# Never let two dispatches run concurrently - they would race on download -> modify -> upload
+# and the loser would re-upload a stale archive. The group is a CONSTANT, deliberately not
+# keyed on release_tag: concurrency is evaluated from the RAW input, before the tag is
+# resolved, so an auto-detect dispatch (empty input -> "strip-portable-") and an explicit one
+# for the very same tag ("strip-portable-22.0.1") would land in different groups and race
+# anyway. Since the target is fixed and dispatches are manual and rare, serializing every run
+# of this workflow costs nothing. cancel-in-progress stays false so a second dispatch queues
+# behind the first rather than killing a run that may be mid-upload.
+concurrency:
+  group: strip-portable-from-release-zip
+  cancel-in-progress: false
+
+jobs:
+  strip:
+    # MUST match the runner that BUILT this artifact - publish.yml builds
+    # x86_64-unknown-linux-gnu on ubuntu-24.04. glibc is forward-incompatible: a binary linked
+    # against 24.04's glibc will not start on 22.04, so the smoke test below would fail on a
+    # perfectly good archive, after the delete and re-sign. Do not "modernize" or downgrade
+    # this independently of publish.yml. (`7z`, used below, is available here - publish-target.yml
+    # runs `7z a -tzip` on this same runner.)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # fetch-depth: 0 so the release tag is available - the public key is read FROM THE TAG
+          # (see the verify step), not from this branch.
+          fetch-depth: 0
+          # This job executes a binary out of a downloaded archive. Do not leave a usable git
+          # credential in .git/config while that happens.
+          persist-credentials: false
+
+      - name: Get previous tag
+        id: previoustag
+        if: ${{ inputs.release_tag == '' }}
+        uses: "WyriHaximus/github-action-get-previous-tag@v2"
+
+      # Same guard as publish-windows.yml: the repo carries non-version tags (`rkyv`), and the
+      # upload below runs with overwrite: true, so assert the shape before touching anything.
+      - name: Resolve and validate release tag
+        id: resolve
+        shell: bash
+        env:
+          OVERRIDE: ${{ inputs.release_tag }}
+          DETECTED: ${{ steps.previoustag.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${OVERRIDE:-$DETECTED}"
+          echo "override='$OVERRIDE' detected='$DETECTED' -> resolved='$TAG'"
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::resolved release tag '$TAG' is not MAJOR.MINOR.PATCH." \
+                 "Re-dispatch with release_tag set explicitly."
+            exit 1
+          fi
+          if ! PRERELEASE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+                              --json isPrerelease --jq .isPrerelease 2>/dev/null); then
+            echo "::error::release '$TAG' does not exist - refusing to create one."
+            exit 1
+          fi
+          # Enforce, don't just document, the "pre-release assets only" precondition in the
+          # header. Replacing an asset changes its sha256, and a STABLE release is far likelier
+          # to have been pinned by a formula, lockfile or mirror. Fails closed: an empty or
+          # unexpected value from gh is treated as "not a prerelease".
+          if [ "$PRERELEASE" != "true" ]; then
+            echo "::error::release '$TAG' is not a prerelease (isPrerelease='$PRERELEASE')." \
+                 "Refusing to rewrite a stable release's asset - downstream consumers may have" \
+                 "pinned its sha256."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Install zipsign
+        run: cargo install zipsign
+
+      - name: Download the published zip
+        uses: robinraju/release-downloader@v1.13
+        with:
+          repository: "dathere/qsv"
+          tag: ${{ steps.resolve.outputs.tag }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fileName: qsv-${{ steps.resolve.outputs.tag }}-x86_64-unknown-linux-gnu.zip
+
+      # The public key is read FROM THE RELEASE TAG, not from this branch. qsv embeds the key
+      # that existed at ITS build (src/util.rs:1632, include_bytes!), so the tag's copy is what
+      # `qsv --update` clients of that release actually carry. Were the key ever rotated,
+      # verifying against the branch copy would pass while every existing client rejected the
+      # asset - false confidence exactly when it matters. Mismatch here is the alarm.
+      - name: Extract the release tag's public key
+        shell: bash
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git show "$TAG:src/qsv-zipsign-public.key" > /tmp/tag-zipsign-public.key
+          if ! cmp -s /tmp/tag-zipsign-public.key src/qsv-zipsign-public.key; then
+            echo "::warning::the signing key differs between $TAG and this branch - the key was" \
+                 "rotated. Verifying against the TAG's key, which is what clients of that" \
+                 "release embed."
+          fi
+
+      # THE TRUST ANCHOR. Everything after this point assumes the downloaded bytes are the ones
+      # the release was published with. Without this check the workflow would strip whatever
+      # signature the asset carried (or none) and apply a fresh VALID one - laundering a
+      # tampered or corrupted artifact into a properly signed release asset, since every later
+      # check only ever attests to the signature this workflow itself just created.
+      - name: Verify the DOWNLOADED asset before touching it
+        shell: bash
+        env:
+          ZIP: qsv-${{ steps.resolve.outputs.tag }}-x86_64-unknown-linux-gnu.zip
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! zipsign verify zip "$ZIP" /tmp/tag-zipsign-public.key; then
+            echo "::error::the published asset does NOT verify against the $TAG tag's" \
+                 "public key. Refusing to re-sign it - this workflow repairs assets, it does not" \
+                 "bless unverified ones."
+            exit 1
+          fi
+          echo "downloaded asset is authentic - safe to rewrite"
+
+      - name: Rewrite the archive
+        shell: bash
+        env:
+          ZIP: qsv-${{ steps.resolve.outputs.tag }}-x86_64-unknown-linux-gnu.zip
+        run: |
+          set -euo pipefail
+
+          # Portable binaries to drop, and the ones that MUST survive. Matched on the entry's
+          # basename, never a prefix - a `qsvp*` glob would also match nothing useful, but a
+          # sloppy `qsv*` would delete the entire archive contents.
+          VICTIM_NAMES="qsvp qsvplite qsvpdp qsvpmcp"
+          # Valid for x86_64-unknown-linux-gnu ONLY - see the target note in the header before
+          # reusing this workflow for another triple.
+          KEEPER_NAMES="qsv qsvlite qsvdp qsvmcp"
+
+          echo "::group::BEFORE ($(du -h "$ZIP" | cut -f1))"
+          unzip -l "$ZIP"
+          echo "::endgroup::"
+
+          zipsign unsign zip "$ZIP"
+
+          # Resolve victims from the actual central directory rather than assuming a layout -
+          # entries may or may not sit under a qsv-<tag>/ prefix depending on how they were added.
+          # while-read + process substitution rather than `mapfile`: works on bash 3.2 as well
+          # as the runner's bash 5, so this block can be exercised locally before dispatch.
+          VICTIMS=()
+          while IFS= read -r entry; do
+            VICTIMS+=("$entry")
+          done < <(
+            zipinfo -1 "$ZIP" | awk -v names="$VICTIM_NAMES" '
+              BEGIN { split(names, a, " "); for (i in a) want[a[i]] = 1 }
+              { n = split($0, p, "/"); if (p[n] in want) print }
+            '
+          )
+
+          if [ "${#VICTIMS[@]}" -eq 0 ]; then
+            echo "::error::no portable binaries found in $ZIP - already stripped, or the" \
+                 "archive layout is not what this workflow expects. Refusing to re-sign and" \
+                 "re-upload an archive it did not change."
+            exit 1
+          fi
+
+          printf 'removing: %s\n' "${VICTIMS[@]}"
+          # 7z, NOT Info-ZIP `zip -d`: publish-target.yml:370 creates these archives with
+          # `7z a -tzip ... -mx=9 -mmt=on`, so deleting with the same implementation avoids
+          # any central-directory dialect mismatch. `7z` is preinstalled on ubuntu runners.
+          7z d -tzip "$ZIP" "${VICTIMS[@]}"
+
+          # Post-conditions: every keeper still present, every victim gone.
+          REMAINING=$(zipinfo -1 "$ZIP")
+          for k in $KEEPER_NAMES; do
+            if ! grep -qE "(^|/)${k}$" <<<"$REMAINING"; then
+              echo "::error::keeper '$k' is missing after the delete - NOT uploading."
+              exit 1
+            fi
+          done
+          for v in $VICTIM_NAMES; do
+            if grep -qE "(^|/)${v}$" <<<"$REMAINING"; then
+              echo "::error::victim '$v' survived the delete - NOT uploading."
+              exit 1
+            fi
+          done
+
+          echo "::group::AFTER ($(du -h "$ZIP" | cut -f1))"
+          unzip -l "$ZIP"
+          echo "::endgroup::"
+
+      # Materialized as LATE as possible - after checkout, after the third-party downloader
+      # action, and after every archive manipulation. Nothing but zipsign runs while it exists.
+      - name: Fetch zipsign private key
+        # same approach as the publish workflows: decode the base64 secret via env, never inlined
+        shell: bash
+        env:
+          ZIPSIGN_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}
+        run: printf '%s' "$ZIPSIGN_KEY" | base64 -d > qsvpriv.key
+
+      - name: Sign the rewritten archive
+        shell: bash
+        env:
+          ZIP: qsv-${{ steps.resolve.outputs.tag }}-x86_64-unknown-linux-gnu.zip
+        run: |
+          set -euo pipefail
+          zipsign sign zip "$ZIP" qsvpriv.key
+
+      # Destroyed immediately after its last use (the sign above) and BEFORE anything from the
+      # archive executes. Ordering is the point: the smoke test runs a binary out of a
+      # downloaded zip, and that must never happen while a usable signing key is on disk.
+      # if: always() so a failed rewrite still removes it. A failure BEFORE this step leaves the
+      # key until the hosted runner is destroyed - another reason not to repoint runs-on at a
+      # self-hosted runner.
+      - name: Shred the private key
+        if: always()
+        run: shred -u qsvpriv.key || rm -f qsvpriv.key
+
+      - name: Verify the new signature before executing anything
+        shell: bash
+        env:
+          ZIP: qsv-${{ steps.resolve.outputs.tag }}-x86_64-unknown-linux-gnu.zip
+        run: |
+          set -euo pipefail
+          # NOTE zipsign salts the signature with --context, which DEFAULTS TO THE FILE NAME.
+          # That is why the asset name must stay byte-identical through this whole workflow -
+          # rename it and both this check and `qsv --update` would reject a perfectly good zip.
+          zipsign verify zip "$ZIP" /tmp/tag-zipsign-public.key
+          echo "signature verifies against the ${{ steps.resolve.outputs.tag }} public key"
+
+      # zipsign signs BYTES, not zip structure - a delete that corrupted the central directory
+      # can still verify. Actually extracting and running the binary is the check that catches it.
+      - name: Smoke-test the rewritten archive
+        shell: bash
+        env:
+          ZIP: qsv-${{ steps.resolve.outputs.tag }}-x86_64-unknown-linux-gnu.zip
+        run: |
+          set -euo pipefail
+          ENTRY=$(zipinfo -1 "$ZIP" | awk -F/ '$NF == "qsv" { print; exit }')
+          if [ -z "$ENTRY" ]; then
+            echo "::error::no 'qsv' entry found to smoke-test."
+            exit 1
+          fi
+          unzip -p "$ZIP" "$ENTRY" > /tmp/qsv-smoke
+          chmod +x /tmp/qsv-smoke
+          /tmp/qsv-smoke --version
+          echo "extracted qsv runs - archive is structurally sound"
+
+      # Re-verify AFTER running archive content, immediately before publishing. The earlier
+      # check attested to a zip that has since been read by a binary out of that same zip; this
+      # one attests to the exact bytes being uploaded. Cheap, and it closes the gap between
+      # "verified" and "published".
+      - name: Re-verify the signature immediately before upload
+        shell: bash
+        env:
+          ZIP: qsv-${{ steps.resolve.outputs.tag }}-x86_64-unknown-linux-gnu.zip
+        run: |
+          set -euo pipefail
+          zipsign verify zip "$ZIP" /tmp/tag-zipsign-public.key
+          echo "post-smoke-test signature still verifies - safe to upload"
+
+      - name: Upload the rewritten zip
+        if: ${{ !inputs.dry_run }}
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: qsv-${{ steps.resolve.outputs.tag }}-x86_64-unknown-linux-gnu.zip
+          asset_name: qsv-${{ steps.resolve.outputs.tag }}-x86_64-unknown-linux-gnu.zip
+          overwrite: true
+          prerelease: true
+          make_latest: false
+          tag: ${{ steps.resolve.outputs.tag }}
+
+      - name: Dry run notice
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "::notice::DRY RUN - archive was rewritten and verified but NOT uploaded." \
+               "Re-dispatch with dry_run=false to publish it."

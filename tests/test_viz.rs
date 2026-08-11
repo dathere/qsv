@@ -16019,3 +16019,307 @@ fn viz_smart_trend_multidecade_coarsens_to_year() {
         "year buckets should render bare years on a category axis; html: {html}"
     );
 }
+
+// ---- --dict-info: "not charted" notes for the columns `viz smart` skipped ----
+//
+// `viz smart` has always explained its omissions on stderr; these pin that the same explanation
+// reaches the ARTIFACT, in the Data Dictionary drawer, beside the column it is about. All of them
+// pass `--dict-info` as well as `--dictionary`: `--dictionary` alone renders no drawer content at
+// all, so the assertions would be vacuous.
+
+/// Four columns skipped for four DIFFERENT recorded reasons, plus charted columns so the
+/// Data Schematic is never empty:
+///   `cust_ref`     dictionary role=identifier          -> DictionaryExcluded
+///   `borough_code` redundant twin of `borough`         -> TwinOf("borough")
+///   `notes`        high-cardinality free text, and DELIBERATELY absent from the dictionary
+///   `when`         dictionary role=timestamp           -> RoutedTemporal
+fn skip_notes_fixture(wrk: &Workdir) {
+    let boroughs = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"];
+    let mut rows = String::from("cust_ref,borough,borough_code,notes,amount,status,when\n");
+    for i in 0..300 {
+        let j = i % 5;
+        let amount = (i * 7 % 900) + 1;
+        let status = if i % 3 == 0 { "Closed" } else { "Open" };
+        rows.push_str(&format!(
+            "REF{i:06},{},{j},free text {i},{amount},{status},2024-0{}-15\n",
+            boroughs[j],
+            i % 9 + 1
+        ));
+    }
+    wrk.create_from_string("d.csv", &rows);
+    // `notes` is intentionally NOT described here - a skipped column with no dictionary entry
+    // must still reach the drawer.
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"properties":{
+            "cust_ref":     {"type":["string"],"description":"Customer reference.","x-qsv":{"role":"identifier","content_type":"identifier"}},
+            "borough":      {"type":["string"],"description":"Borough of the request.","x-qsv":{"role":"dimension","content_type":"category"}},
+            "borough_code": {"type":["integer"],"description":"Numeric borough code.","x-qsv":{"role":"dimension","content_type":"category"}},
+            "amount":       {"type":["number"],"description":"Amount billed.","x-qsv":{"role":"measure"}},
+            "status":       {"type":["string"],"description":"Open or closed.","x-qsv":{"role":"dimension","content_type":"category"}},
+            "when":         {"type":["string"],"description":"Date of the request.","x-qsv":{"role":"timestamp","content_type":"date"}}
+        }}"#,
+    );
+}
+
+/// Return the `<section>` body for `col` in the embedded dictionary document.
+fn dict_section<'h>(html: &'h str, col: &str) -> &'h str {
+    let head = format!("<h2>{col}</h2>");
+    let at = html
+        .find(&head)
+        .unwrap_or_else(|| panic!("no dictionary section for `{col}`"));
+    // back up to this column's <section ...> and forward to its </section>
+    let start = html[..at].rfind("<section class=\"qsv-dict-col\"").unwrap();
+    let end = html[at..].find("</section>").unwrap() + at;
+    &html[start..end]
+}
+
+#[test]
+fn viz_smart_dict_info_explains_each_skipped_column() {
+    let wrk = Workdir::new("viz_smart_dict_info_explains_each_skipped_column");
+    skip_notes_fixture(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "--dict-info", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // each skipped column carries ITS OWN reason, not a generic "skipped"
+    assert!(
+        dict_section(&html, "cust_ref").contains("identifier, PII or free text"),
+        "cust_ref should report the dictionary exclusion"
+    );
+    assert!(
+        dict_section(&html, "notes").contains("high-cardinality text"),
+        "notes should report high-cardinality text"
+    );
+    // the twin note NAMES THE SURVIVOR - that is the whole value of threading the kept index
+    // out of the twin detectors rather than keeping a bare set.
+    let twin = dict_section(&html, "borough_code");
+    assert!(
+        twin.contains("duplicates borough"),
+        "borough_code should name `borough` as the column charted instead, got: {twin}"
+    );
+    // `when` is this dataset's ONLY date column, so it is the canonical time axis and is named
+    // as such. The converse case - a date column that drives nothing - is pinned separately by
+    // `viz_smart_dict_info_tells_the_time_axis_from_an_unused_date`, because the two must not
+    // render the same sentence.
+    let when = dict_section(&html, "when");
+    assert!(
+        when.contains("x-axis of the time-based panels"),
+        "the canonical date column should be named as the time axis, got: {when}"
+    );
+
+    // a column with no dictionary entry still gets a section, flagged as undescribed
+    assert!(
+        dict_section(&html, "notes").contains("qsv-dict-noentry"),
+        "an undescribed skipped column should say it has no dictionary entry"
+    );
+
+    // ... and a CHARTED column gets no note at all. `borough` HAS a description, so this also
+    // guards against regressing to inferring skipped-ness from `view_chart_anchors`.
+    assert!(
+        !dict_section(&html, "borough").contains("qsv-dict-notcharted"),
+        "a charted column must carry no not-charted note"
+    );
+
+    // the stderr roll-up is unchanged - the drawer is an addition, not a replacement
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("viz smart: charting ") && stderr.contains("skipped 4:"),
+        "the aggregate stderr note should be unchanged, got: {stderr}"
+    );
+}
+
+// A panel dropped by `--max-charts` LOST A RANKING CONTEST; it was never "unchartable". The two
+// claims must read differently.
+//
+// This also pins the `stat_idx` rejoin: every dropped panel's title here is DECORATED with a
+// shape hint ("m01 (right-skewed)"), so a drawer keyed on the display title would find no
+// matching dictionary entry and silently render no note at all.
+#[test]
+fn viz_smart_dict_info_capped_panel_says_capped_not_unchartable() {
+    let wrk = Workdir::new("viz_smart_dict_info_capped_panel_says_capped_not_unchartable");
+    let mut rows = String::from("m01,m02,m03,m04,keep\n");
+    for r in 0..400 {
+        for i in 0..4 {
+            if r % 4 == 0 {
+                rows.push(',');
+            } else {
+                // right-skewed, so the box panel title picks up a "(right-skewed)" hint
+                rows.push_str(&format!("{}.5,", (r * (i + 3)) % 97 * (r % 11 + 1)));
+            }
+        }
+        rows.push_str(match r % 3 {
+            0 => "a\n",
+            1 => "b\n",
+            _ => "c\n",
+        });
+    }
+    wrk.create_from_string("cap.csv", &rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"properties":{
+            "m01":  {"type":["number"],"description":"Measure one.","x-qsv":{"role":"measure"}},
+            "m02":  {"type":["number"],"description":"Measure two.","x-qsv":{"role":"measure"}},
+            "m03":  {"type":["number"],"description":"Measure three.","x-qsv":{"role":"measure"}},
+            "m04":  {"type":["number"],"description":"Measure four.","x-qsv":{"role":"measure"}},
+            "keep": {"type":["string"],"description":"A category.","x-qsv":{"role":"dimension","content_type":"category"}}
+        }}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "cap.csv",
+        "--dict-info",
+        "--max-charts",
+        "2",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // the stderr roll-up names the DECORATED title ...
+    assert!(
+        stderr.contains("(right-skewed)"),
+        "expected a decorated panel title in the roll-up, got: {stderr}"
+    );
+    // ... while the drawer rejoins by HEADER NAME and still finds the column.
+    let m01 = dict_section(&html, "m01");
+    assert!(
+        m01.contains("--max-charts"),
+        "a capped column should say the panel limit dropped it, got: {m01}"
+    );
+    assert!(
+        !m01.contains("Not charted -"),
+        "a capped column was chartable; it must not read as unchartable, got: {m01}"
+    );
+}
+
+// Panel refusals are about a COMBINATION of columns, so they get their own dataset-level section
+// rather than being hung off any single column's entry.
+#[test]
+fn viz_smart_dict_info_lists_panels_not_drawn() {
+    let wrk = Workdir::new("viz_smart_dict_info_lists_panels_not_drawn");
+    // two STATISTICALLY INDEPENDENT dimensions: the hierarchy panel is refused on Cramer's V,
+    // and its notice embeds a literal `<` - which must survive as `&lt;`, since an unescaped one
+    // could terminate the `<script type="text/html">` template the document is embedded in.
+    let regions = ["North", "South", "East", "West", "Central"];
+    let cats = ["Alpha", "Beta", "Gamma", "Delta"];
+    let mut rows = String::from("region,category,amount\n");
+    for i in 0..600 {
+        rows.push_str(&format!(
+            "{},{},{}\n",
+            regions[i * 7 % 5],
+            cats[i * 13 % 4],
+            i % 500 + 1
+        ));
+    }
+    wrk.create_from_string("ind.csv", &rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"properties":{
+            "region":   {"type":["string"],"description":"Region.","x-qsv":{"role":"dimension","content_type":"category"}},
+            "category": {"type":["string"],"description":"Category.","x-qsv":{"role":"dimension","content_type":"category"}},
+            "amount":   {"type":["number"],"description":"Amount.","x-qsv":{"role":"measure"}}
+        }}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "ind.csv", "--dict-info", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        stderr.contains("hierarchy panel"),
+        "fixture should refuse the hierarchy panel, got: {stderr}"
+    );
+    assert!(
+        html.contains("qsv-dict-omissions"),
+        "the drawer should carry a `Panels not drawn` section"
+    );
+    let start = html.find("<section class=\"qsv-dict-omissions\">").unwrap();
+    let end = html[start..].find("</section>").unwrap() + start;
+    let omissions = &html[start..end];
+    assert!(
+        omissions.contains("hierarchy panel") && omissions.contains("statistically independent"),
+        "the refusal reason should appear verbatim, got: {omissions}"
+    );
+    // escaped exactly once: the `<` of "Cramer's V=0.06 < 0.10" rides as `&lt;`, never raw.
+    assert!(
+        omissions.contains("&lt;"),
+        "the `<` in the notice must be escaped, got: {omissions}"
+    );
+    assert!(
+        !omissions.contains("V=0.06 < "),
+        "no raw `<` may reach the embedded template, got: {omissions}"
+    );
+    // The markup must CLOSE cleanly. rustfmt's `format_strings` once split this block's format
+    // literal across a `\`+newline continuation, which rewrote the trailing `\n` into a bare
+    // literal `n` and shipped a stray character into the rendered drawer. Every earlier assertion
+    // here still passed, because they all read the <li> text. Pin the tail explicitly.
+    assert!(
+        omissions.ends_with("</ul>\n"),
+        "the omissions list must close cleanly - a stray character here means a mangled format \
+         string literal, got tail: {:?}",
+        &omissions[omissions.len().saturating_sub(40)..]
+    );
+}
+
+// `RoutedTemporal` fires for EVERY date column, but only ONE becomes the x-axis of the
+// time-based panels. Without distinguishing them, the dataset's canonical timestamp and a date
+// column used nowhere render the IDENTICAL sentence, and a reader cannot tell "this drives the
+// trend panel" from "this was dropped entirely".
+#[test]
+fn viz_smart_dict_info_tells_the_time_axis_from_an_unused_date() {
+    let wrk = Workdir::new("viz_smart_dict_info_tells_the_time_axis_from_an_unused_date");
+    let boroughs = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"];
+    let mut rows = String::from("borough,amount,when,closed_on\n");
+    for i in 0..300 {
+        rows.push_str(&format!(
+            "{},{},2024-0{}-15,2024-0{}-28\n",
+            boroughs[i % 5],
+            i * 7 % 900 + 1,
+            i % 9 + 1,
+            i % 9 + 1
+        ));
+    }
+    wrk.create_from_string("two.csv", &rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"properties":{
+            "borough":   {"type":["string"],"description":"Borough.","x-qsv":{"role":"dimension","content_type":"category"}},
+            "amount":    {"type":["number"],"description":"Amount billed.","x-qsv":{"role":"measure"}},
+            "when":      {"type":["string"],"description":"Date opened.","x-qsv":{"role":"timestamp","content_type":"date"}},
+            "closed_on": {"type":["string"],"description":"Date closed.","x-qsv":{"role":"timestamp","content_type":"date"}}
+        }}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "two.csv", "--dict-info", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    let axis = dict_section(&html, "when");
+    let unused = dict_section(&html, "closed_on");
+    assert!(
+        axis.contains("x-axis of the time-based panels"),
+        "the canonical date column should be named as the time axis, got: {axis}"
+    );
+    assert!(
+        unused.contains("routes this as a timestamp")
+            && !unused.contains("x-axis of the time-based panels"),
+        "an unused date column must NOT be described as the time axis, got: {unused}"
+    );
+}

@@ -125,6 +125,29 @@ viz:
     export_short: "schema"
     view_chart: "View chart "
     back_to_dashboard: "Back to Data Schematic"
+    # "Not charted" notes. `viz smart` explains its omissions on stderr; these put the same
+    # explanation in the artifact, beside the column it is about. Each is recorded at the
+    # decision (see `SkipReason`), never re-derived at render time.
+    # skip_capped is a DIFFERENT CLAIM from the rest: that column WAS chartable and lost the
+    # panel_interest ranking -- keep the two wordings distinct in every catalog.
+    skip_no_entry: "No dictionary entry for this column."
+    skip_all_empty: "Not charted - every value is empty."
+    skip_near_unique_identifier: "Not charted - near-unique values, so this reads as an identifier rather than a distribution."
+    skip_high_cardinality_text: "Not charted - high-cardinality text with no dominant categories."
+    skip_measure_without_quartiles: "Not charted - no quartiles in the stats cache, so there is no distribution to draw."
+    skip_constant_column: "Not charted - every row holds the same value."
+    skip_dictionary_excluded: "Not charted - the data dictionary marks this an identifier, PII or free text."
+    # Deliberately NOT "shown in the time-series panel": the temporal route fires for EVERY date
+    # column while only one is chosen as the time-series x-axis, so that phrasing would be false
+    # on any dataset with more than one date column.
+    skip_routed_temporal: "Not charted as a distribution - the data dictionary routes this as a timestamp."
+    skip_time_axis: "Not charted as a distribution - it is the x-axis of the time-based panels."
+    skip_projected_coord_on_map: "Not charted - these projected coordinates are already shown on the map."
+    skip_empty_dimension: "Not charted - the data dictionary calls this a dimension, but it has no values to count."
+    skip_twin_of: "Not charted - duplicates %{q_kept}, which is charted instead."
+    skip_capped: "Not shown - the panel limit (--max-charts) kept higher-interest panels."
+    omissions_heading: "Panels not drawn"
+    omissions_intro: "qsv declined to draw these panels. Each note is the reason it reported while compiling this Data Schematic."
     sidecar_download_tooltip: "Download %{q_file}, a sidecar this Data Schematic was built from"
     # The describegpt attribution block at the foot of the drawer. describegpt bakes it
     # into the schema as `x-qsv.generated_by` in English; `localize_dict_provenance` swaps

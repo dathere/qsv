@@ -651,6 +651,17 @@ smart options:
                            absolute local paths are stripped from the embedded metadata so
                            sharing a Data Schematic doesn't disclose your directory layout.
                            Sidecars over 4 MB are skipped with a note.
+                           The drawer also explains what the Data Schematic LEFT OUT, so the
+                           omissions travel with the file instead of scrolling past in the
+                           terminal: a column `viz smart` did not chart carries a "not charted"
+                           note giving the reason it reported (an identifier, all-empty,
+                           high-cardinality text, a duplicate of a sibling column that IS
+                           charted, or simply capped by --max-charts), and is dimmed in the
+                           table of contents. A skipped column the dictionary never described
+                           still gets an entry, so nothing disappears silently. Panels qsv
+                           declined to draw - a hierarchy panel whose dimensions are
+                           statistically independent, a refused funnel, an association panel -
+                           are listed together under "Panels not drawn".
                            The drawer's popout button opens the same
                            document in its own browser tab instead (needs a browser that
                            allows user-initiated pop-ups). HTML output only; ignored with a
@@ -13455,6 +13466,47 @@ fn viz_note(msg: &str) {
     }
 }
 
+/// Panel-refusal notices recorded for the Data Dictionary drawer's "Panels not drawn" section,
+/// in emission order.
+///
+/// A collector rather than a `&mut Vec` threaded through the call tree: roughly half the refusal
+/// sites are free functions (`sankey_panel`, `parcats_panel`, `bivariate_panels`, the funnel
+/// builders, the map/choropleth helpers) with no `SmartCtx` in scope, so plumbing would churn ~10
+/// signatures for no behavioral gain. `viz` runs once per process, exactly like `VIZ_PROGRESS`
+/// above.
+///
+/// The drawer shows the SAME STRING the pipeline printed, so the explanation cannot drift from the
+/// decision — which is the whole point of the surface.
+static SKIP_NOTES: std::sync::LazyLock<std::sync::Mutex<Vec<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
+
+/// `viz_note`, but the message is ALSO recorded for the Data Dictionary drawer.
+///
+/// Use ONLY for notices that explain a panel qsv declined to draw. In particular do NOT use it for
+/// the warn-only funnel notices — those panels ARE drawn, and recording them would make the drawer
+/// claim a panel was dropped when it wasn't — nor for dictionary load/infer soft-fails, sidecar
+/// size notes, or `--dict-info` no-ops, none of which are panel refusals.
+fn viz_skip_note(msg: &str) {
+    viz_note(msg);
+    // poison-tolerant: these sites have already printed to stderr, so a panicking sibling must not
+    // escalate a cosmetic drawer section into a failed run.
+    match SKIP_NOTES.lock() {
+        Ok(mut v) => v.push(msg.to_string()),
+        Err(poisoned) => poisoned.into_inner().push(msg.to_string()),
+    }
+}
+
+/// Take the recorded panel-refusal notices, leaving the buffer empty.
+///
+/// Drained UNCONDITIONALLY (not only on the `--dict-info` branch) so the buffer cannot grow across
+/// an image-export run that will never render a drawer.
+fn take_skip_notes() -> Vec<String> {
+    match SKIP_NOTES.lock() {
+        Ok(mut v) => std::mem::take(&mut *v),
+        Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
+    }
+}
+
 /// Extract the model name from a describegpt JSON Schema dictionary. The model is baked into
 /// the `x-qsv.generated_by` provenance string as a `Model: <model>` line. Returns `None` when
 /// the text isn't parseable JSON or carries no such line (e.g. a hand-written dictionary).
@@ -13625,7 +13677,7 @@ fn bivariate_panels(
     let rows = match parse_bivariate_csv(&path) {
         Ok(rows) => rows,
         Err(e) => {
-            viz_note(&format!(
+            viz_skip_note(&format!(
                 "viz smart --bivariate: could not read moarstats bivariate output ({e}); skipping \
                  the association panels."
             ));
@@ -13633,7 +13685,7 @@ fn bivariate_panels(
         },
     };
     if rows.is_empty() {
-        viz_note(
+        viz_skip_note(
             "viz smart --bivariate: moarstats produced no bivariate pairs; skipping the \
              association panels.",
         );
@@ -14140,7 +14192,7 @@ fn sankey_panel(
         return Ok(None);
     };
     if other_src_frac > SANKEY_MAX_OTHER_FRACTION || other_tgt_frac > SANKEY_MAX_OTHER_FRACTION {
-        viz_note(&format!(
+        viz_skip_note(&format!(
             "viz smart: skipping the '{} → {}' Sankey panel — after keeping the top \
              {SANKEY_TOP_N_PER_SIDE} categories per side, the collapsed 'Other' bucket dominates \
              a side (>{:.0}% of its flow), which would misrepresent the distribution.",
@@ -14395,6 +14447,62 @@ struct KpiTile {
     format: String,
     gauge:  Option<[f64; 2]>,
     target: Option<f64>,
+}
+
+/// Why a column got no per-column panel in `viz smart`.
+///
+/// Recorded AT THE DECISION (the `Err` arm of `classify`/`classify_measure`/
+/// `classify_with_semantics`, or the push site that drops the column), never re-derived later from
+/// the stats row. A re-derived predicate drifts from the real one silently, and this type feeds a
+/// provenance surface — the Data Dictionary drawer's "not charted" note — where a plausible-but-
+/// wrong reason is worse than no reason at all.
+///
+/// `CappedByMaxCharts` is a DIFFERENT CLASS from the rest: that column WAS chartable and lost the
+/// `panel_interest` ranking contest. Keep its wording distinct from "not chartable" everywhere.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum SkipReason {
+    /// stats typed the column `NULL` — every cell is empty.
+    AllEmpty,
+    /// near-unique Integer: almost certainly an ID/key, not a distribution worth charting.
+    NearUniqueIdentifier,
+    /// high-cardinality text that `normalized_entropy` did not rescue as "concentrated".
+    HighCardinalityText,
+    /// routed to the continuous-measure arm, but the stats row carries no quartiles.
+    MeasureWithoutQuartiles,
+    /// cardinality <= 1 — a constant column has no distribution to draw.
+    ConstantColumn,
+    /// the dictionary's `Route::Skip`: identifier / PII / free-text.
+    DictionaryExcluded,
+    /// the dictionary's `Route::Temporal`.
+    ///
+    /// ⚠️ This does NOT mean "shown in the time-series panel". `classify_with_semantics` returns
+    /// the temporal route unconditionally, while `canonical_date_col` picks exactly ONE date
+    /// column — so on a dataset with several date columns every one of them lands here and only
+    /// one is on screen. Worded for what the code does, never as a claim about the time-series
+    /// panel.
+    RoutedTemporal,
+    /// a state-plane easting/northing whose spatial spread is already on screen in 2-D.
+    ProjectedCoordOnMap,
+    /// the dictionary called it a dimension, but there are no values to count.
+    EmptyDimension,
+    /// suppressed as redundant with the named sibling it is 1:1 with (or whose code twin it is).
+    TwinOf(String),
+    /// chartable, but trimmed by the `--max-charts` / `MAX_PANELS_INLINE` interest ranking.
+    CappedByMaxCharts,
+}
+
+/// One skipped column, as reported by `viz smart`.
+///
+/// `column` is the DISPLAY name used in the stderr roll-up (a decorated panel title for a
+/// cap-trimmed panel, a positional `col N` for headerless input) and exists so that line stays
+/// byte-identical. `field` is the resolved header name and is the ONLY key safe to match the Data
+/// Dictionary drawer on — panels must rejoin their stats row by index, never by display title,
+/// because classification decorates titles afterwards ("(right-skewed)", "(sampled)").
+#[derive(Clone, Debug)]
+struct SkipRecord {
+    column: String,
+    field:  Option<String>,
+    reason: SkipReason,
 }
 
 enum PanelKind {
@@ -15563,13 +15671,13 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
 /// The continuous-measure arm of `classify`: a box plot from precomputed quartiles, or a histogram
 /// when moarstats flagged the column bimodal/multimodal. Shared by `classify` (stats path) and
 /// `classify_with_semantics` (a dictionary `measure` verdict) so a measure is charted the same way
-/// however it was identified. Returns `None` when the column lacks quartiles.
-fn classify_measure(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
+/// however it was identified. Returns `Err` with the reason when the column cannot be charted.
+fn classify_measure(idx: usize, s: &crate::cmd::stats::StatsData) -> Result<PanelKind, SkipReason> {
     let (Some(q1), Some(median), Some(q3)) = (s.q1, s.q2_median, s.q3) else {
-        return None;
+        return Err(SkipReason::MeasureWithoutQuartiles);
     };
     if s.cardinality <= 1 {
-        return None;
+        return Err(SkipReason::ConstantColumn);
     }
     // a box plot hides multiple peaks; a histogram tells the truth — but only flag bimodal when
     // Sarle's BC clears the threshold AND the distribution is PLATYKURTIC (negative excess
@@ -15583,13 +15691,13 @@ fn classify_measure(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<Pane
         .is_some_and(|bc| bc >= BIMODALITY_COEFFICIENT_THRESHOLD)
         && s.kurtosis.is_some_and(|k| k < 0.0)
     {
-        return Some(PanelKind::Histogram { idx });
+        return Ok(PanelKind::Histogram { idx });
     }
     // Observed min/max as whisker endpoints (NOT Tukey fences, which are computed thresholds that
     // need not be observed values) — honest for a precomputed, no-rescan box.
     let lower = s.min.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
     let upper = s.max.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
-    Some(PanelKind::BoxStats {
+    Ok(PanelKind::BoxStats {
         q1,
         median,
         q3,
@@ -15720,25 +15828,38 @@ fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) ->
 /// i.e. a lat/lon pair was resolved). With a map, the column's spatial spread is already on screen
 /// in two dimensions and a 1-D box of it is redundant; without one, fall back to `classify_measure`
 /// rather than let the only spatial column in the dataset vanish.
+///
+/// ⚠️ `Route::Temporal` returns `Err` UNCONDITIONALLY — it does not consult whether a time-series
+/// panel was built, and `canonical_date_col` selects only ONE date column. `SkipReason::
+/// RoutedTemporal` is therefore worded for the routing decision, never as a claim that the column
+/// is shown elsewhere.
 fn classify_with_semantics(
     idx: usize,
     s: &crate::cmd::stats::StatsData,
     sem: &ColSemantics,
     map_rendered: bool,
-) -> Option<PanelKind> {
+) -> Result<PanelKind, SkipReason> {
     match sem.route {
         Route::Defer | Route::MapCoord => classify(idx, s),
         // a categorical/code with no observed values is still nothing to chart
         Route::Dimension => (s.r#type.as_str() != "NULL" && s.cardinality >= 1)
-            .then_some(PanelKind::FreqBar { idx }),
+            .then_some(PanelKind::FreqBar { idx })
+            .ok_or(SkipReason::EmptyDimension),
         Route::Measure => classify_measure(idx, s),
         // `classify_measure`, NOT `classify`: the latter drops near-unique INTEGER columns as
         // ID-like, and a state-plane easting/northing is integer feet — near-unique on any finely
         // spread dataset. Routing through `classify` would silently re-drop exactly the columns
         // this route exists to rescue. The dictionary already told us this is a coordinate, not a
         // key, so go straight to the continuous-distribution arm.
-        Route::ProjectedCoord => (!map_rendered).then(|| classify_measure(idx, s)).flatten(),
-        Route::Temporal | Route::Skip => None,
+        Route::ProjectedCoord => {
+            if map_rendered {
+                Err(SkipReason::ProjectedCoordOnMap)
+            } else {
+                classify_measure(idx, s)
+            }
+        },
+        Route::Temporal => Err(SkipReason::RoutedTemporal),
+        Route::Skip => Err(SkipReason::DictionaryExcluded),
     }
 }
 
@@ -17318,6 +17439,31 @@ fn is_bullet_line(line: &str) -> bool {
     (t.starts_with("- ") || t.starts_with("* ") || t.starts_with("+ ")) && t.len() > 2
 }
 
+/// Render a `SkipReason` as the localized, PLAIN-TEXT sentence shown beside the column in the Data
+/// Dictionary drawer.
+///
+/// Called at the drawer's call site rather than inside `render_dict_page_html`, which takes
+/// already-rendered strings for everything else — so the drawer renderer never has to know about
+/// classification types. The result is plain text; it is `html_escape`d exactly ONCE at the sink,
+/// matching the escaping convention for every other dynamic string in that document.
+fn localize_skip_reason(reason: &SkipReason) -> String {
+    match reason {
+        SkipReason::AllEmpty => t!("viz.dict.skip_all_empty").into_owned(),
+        SkipReason::NearUniqueIdentifier => t!("viz.dict.skip_near_unique_identifier").into_owned(),
+        SkipReason::HighCardinalityText => t!("viz.dict.skip_high_cardinality_text").into_owned(),
+        SkipReason::MeasureWithoutQuartiles => {
+            t!("viz.dict.skip_measure_without_quartiles").into_owned()
+        },
+        SkipReason::ConstantColumn => t!("viz.dict.skip_constant_column").into_owned(),
+        SkipReason::DictionaryExcluded => t!("viz.dict.skip_dictionary_excluded").into_owned(),
+        SkipReason::RoutedTemporal => t!("viz.dict.skip_routed_temporal").into_owned(),
+        SkipReason::ProjectedCoordOnMap => t!("viz.dict.skip_projected_coord_on_map").into_owned(),
+        SkipReason::EmptyDimension => t!("viz.dict.skip_empty_dimension").into_owned(),
+        SkipReason::TwinOf(kept) => t!("viz.dict.skip_twin_of", q_kept = kept).into_owned(),
+        SkipReason::CappedByMaxCharts => t!("viz.dict.skip_capped").into_owned(),
+    }
+}
+
 /// Localize the one describegpt section heading that is deliberately emitted in English.
 ///
 /// `describegpt`'s Description response is lead prose followed by a "Notable Characteristics"
@@ -17716,6 +17862,15 @@ fn dict_role_slug(role: Option<&str>) -> &'static str {
 /// `rows` `HashMap` order; dictionary-only columns are appended sorted. Every dynamic string is
 /// `html_escape`d (this is LLM text!), which also guarantees the document can never contain a
 /// literal `</script>` that would terminate the embedding template.
+///
+/// `skipped` maps a HEADER NAME to the localized reason `viz smart` did not chart it, and
+/// `panel_omissions` carries the panel-refusal notices verbatim (see `SKIP_NOTES`). A skipped
+/// column is rendered even when the dictionary does not describe it — otherwise the columns most
+/// likely to prompt "where did my column go?" would be exactly the ones missing from the document.
+///
+/// ⚠️ `view_chart_anchors` is NOT the charted/skipped discriminator and must never be used as one:
+/// it is empty on the typed-grid render path, and `dict_info_for_field` drops columns whose
+/// description is absent or a placeholder. Skip state arrives only via `skipped`.
 fn render_dict_page_html(
     dict_json: &serde_json::Value,
     dict_json_text: &str,
@@ -17724,6 +17879,8 @@ fn render_dict_page_html(
     column_order: &[String],
     view_chart_anchors: &std::collections::HashSet<String>,
     sidecars: &[SidecarDownload],
+    skipped: &std::collections::HashMap<String, String>,
+    panel_omissions: &[String],
 ) -> String {
     use serde_json::Value;
 
@@ -17831,9 +17988,11 @@ fn render_dict_page_html(
     };
 
     // display order: the dataset's header order first, then dictionary-only columns (sorted).
+    // A SKIPPED column is admitted even without a dictionary entry — it gets a minimal section
+    // carrying just the "not charted" note, so no column can silently vanish from the document.
     let mut order: Vec<String> = column_order
         .iter()
-        .filter(|c| !c.is_empty() && entry_for(c).is_some())
+        .filter(|c| !c.is_empty() && (entry_for(c).is_some() || skipped.contains_key(c.as_str())))
         .cloned()
         .collect();
     let mut extras: Vec<String> = dict
@@ -17872,8 +18031,35 @@ fn render_dict_page_html(
         t!("viz.dict.field_examples"),
     );
     let role_unknown = t!("viz.dict.role_unknown");
+    let lbl_no_entry = t!("viz.dict.skip_no_entry");
+    // "not charted" note for `col`, pre-escaped, or empty when the column WAS charted.
+    let skip_note = |col: &str| {
+        skipped.get(col).map_or_else(String::new, |reason| {
+            format!(
+                "<p class=\"qsv-dict-notcharted\">{}</p>\n",
+                html_escape(reason)
+            )
+        })
+    };
     for col in &order {
         let Some(entry) = entry_for(col) else {
+            // A skipped column the dictionary never described (the `order` filter admits only
+            // those). Emit a minimal section so the note still has somewhere to live — an
+            // undescribed identifier is precisely the column a reader goes looking for.
+            let anchor = dict_anchor_id(col);
+            toc.push_str(&format!(
+                "<a class=\"qsv-dict-chip qsv-dict-role-other qsv-dict-chip-skipped\" \
+                 href=\"#{anchor}\" title=\"{}\">{}</a>\n",
+                html_escape(&role_unknown),
+                html_escape(col)
+            ));
+            sections.push_str(&format!(
+                "<section class=\"qsv-dict-col\" id=\"{anchor}\">\n<h2>{}</h2>\n{}<p \
+                 class=\"qsv-dict-noentry\">{}</p>\n</section>\n",
+                html_escape(col),
+                skip_note(col),
+                html_escape(&lbl_no_entry)
+            ));
             continue;
         };
         let xq = entry.get("x-qsv");
@@ -17951,8 +18137,16 @@ fn render_dict_page_html(
         let anchor = dict_anchor_id(col);
         // ToC chip: jump target + a role-tinted left border, so the dataset's semantic shape
         // (identifiers / dimensions / measures / timestamps) is scannable at a glance.
+        // A not-charted column is dimmed in the ToC: someone hunting "where is my column?"
+        // scans this list first, and the answer should be visible before they click through.
+        let skipped_chip = if skipped.contains_key(col.as_str()) {
+            " qsv-dict-chip-skipped"
+        } else {
+            ""
+        };
         toc.push_str(&format!(
-            "<a class=\"qsv-dict-chip qsv-dict-role-{}\" href=\"#{anchor}\" title=\"{}\">{}</a>\n",
+            "<a class=\"qsv-dict-chip qsv-dict-role-{}{skipped_chip}\" href=\"#{anchor}\" \
+             title=\"{}\">{}</a>\n",
             dict_role_slug(role.as_deref()),
             html_escape(role.as_deref().unwrap_or(&role_unknown)),
             html_escape(col)
@@ -17976,9 +18170,13 @@ fn render_dict_page_html(
         } else {
             String::new()
         };
+        // The "View chart" link and the "not charted" note are mutually exclusive by
+        // construction — a skipped column has no panel — so they share the slot above the
+        // heading.
         sections.push_str(&format!(
-            "<section class=\"qsv-dict-col\" id=\"{anchor}\">\n{viewchart}<h2>{}</h2>\n",
-            html_escape(col)
+            "<section class=\"qsv-dict-col\" id=\"{anchor}\">\n{viewchart}<h2>{}</h2>\n{}",
+            html_escape(col),
+            skip_note(col)
         ));
         if !label.is_empty() && !label.eq_ignore_ascii_case(col) {
             sections.push_str(&format!(
@@ -18037,6 +18235,39 @@ fn render_dict_page_html(
         String::new()
     } else {
         format!("<nav class=\"qsv-dict-toc\">\n{toc}</nav>\n")
+    };
+
+    // "Panels not drawn": the dataset-level counterpart of the per-column notes. Kept SEPARATE
+    // from them on purpose — a refused Sankey or hierarchy panel is about a COMBINATION of
+    // columns, each of which is usually charted on its own, so hanging these off a single column's
+    // entry would be a false claim about that column.
+    //
+    // The notices are the verbatim stderr sentences (see `SKIP_NOTES`), so the drawer cannot drift
+    // from what the pipeline reported. They are the one part of this document that is not
+    // localized: they are long and parameterized, and duplicating them across the catalogs would
+    // desynchronize from the stderr wording immediately.
+    let omissions = if panel_omissions.is_empty() {
+        String::new()
+    } else {
+        // Assembled with `push_str` rather than one long `format!` literal ON PURPOSE: rustfmt's
+        // `format_strings` wraps long string literals with a `\`+newline continuation, and when
+        // the split lands on an escape it silently rewrites `\n` into a literal `n`. That shipped
+        // a stray "n" into the rendered drawer once already. Short pieces cannot be split.
+        let mut s = String::from("<section class=\"qsv-dict-omissions\">\n");
+        s.push_str(&format!(
+            "<h2>{}</h2>\n",
+            html_escape(&t!("viz.dict.omissions_heading"))
+        ));
+        s.push_str(&format!(
+            "<p>{}</p>\n",
+            html_escape(&t!("viz.dict.omissions_intro"))
+        ));
+        s.push_str("<ul>\n");
+        for n in panel_omissions {
+            s.push_str(&format!("<li>{}</li>\n", html_escape(n)));
+        }
+        s.push_str("</ul>\n</section>\n");
+        s
     };
 
     // The download row: "Export JSONSchema" plus one link per generated sidecar this run consumed.
@@ -18175,6 +18406,15 @@ fn render_dict_page_html(
   @keyframes qsv-dict-flash {{ 0% {{ background: rgba(37, 99, 235, 0.22); }} 100% {{ background: transparent; }} }}
   .qsv-dict-viewchart {{ float: right; font-size: 12px; margin: 6px 0 0 12px; color: #2563eb; text-decoration: none; }}
   .qsv-dark .qsv-dict-viewchart {{ color: #6ea8ff; }}
+  .qsv-dict-notcharted {{ font-size: 12.5px; line-height: 1.45; margin: 2px 0 8px; padding: 5px 9px; border-left: 3px solid #d97706; border-radius: 0 4px 4px 0; background: rgba(217, 119, 6, 0.10); color: #92400e; }}
+  .qsv-dark .qsv-dict-notcharted {{ border-left-color: #f59e0b; background: rgba(245, 158, 11, 0.13); color: #fcd9a0; }}
+  .qsv-dict-noentry {{ font-size: 12px; color: #888888; font-style: italic; margin: 2px 0 6px; }}
+  .qsv-dict-chip-skipped {{ opacity: 0.55; text-decoration: line-through; }}
+  .qsv-dict-omissions {{ margin: 10px 0 14px; padding: 8px 12px; border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 6px; background: rgba(128, 128, 128, 0.07); }}
+  .qsv-dict-omissions h2 {{ font-size: 14px; margin: 0 0 4px; }}
+  .qsv-dict-omissions p {{ font-size: 12px; color: #888888; margin: 0 0 6px; }}
+  .qsv-dict-omissions ul {{ margin: 0; padding-left: 18px; }}
+  .qsv-dict-omissions li {{ font-size: 12.5px; line-height: 1.45; margin: 3px 0; }}
   .qsv-dict-label {{ font-size: 13px; color: #888888; margin: 2px 0 6px; }}
   .qsv-dict-desc {{ font-size: 13px; line-height: 1.5; margin: 4px 0 8px; }}
   .qsv-dict-desc h4.qsv-dict-mdh, .qsv-dict-dataset-desc h4.qsv-dict-mdh {{ font-size: 13.5px; font-weight: 600; margin: 10px 0 4px; }}
@@ -18213,7 +18453,7 @@ fn render_dict_page_html(
 <a class="qsv-dict-back" href="#" onclick="var o=window.opener;if(o&&!o.closed){{try{{o.focus();}}catch(e){{}}}}window.close();return false">&#8592; {back_to_dashboard}</a>
 <h1>{dict_page_title} — {title}</h1>
 </header>
-{downloads}{intro}{toc_nav}{sections}{provenance}</div>
+{downloads}{intro}{toc_nav}{omissions}{sections}{provenance}</div>
 </body>
 </html>"##
     )
@@ -18449,31 +18689,34 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
 }
 
 /// Decide which chart (if any) suits a column, from its computed statistics.
-fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
+///
+/// `Err` carries WHY the column is unchartable, so the reason can be surfaced verbatim instead of
+/// re-derived downstream (see `SkipReason`).
+fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Result<PanelKind, SkipReason> {
     let ty = s.r#type.as_str();
     if ty == "NULL" {
-        return None; // all-empty column
+        return Err(SkipReason::AllEmpty); // all-empty column
     }
     let near_unique = s.uniqueness_ratio.is_some_and(|r| r > 0.95);
     let low_cardinality =
         s.cardinality >= 1 && s.cardinality <= CATEGORICAL_MAX_CARDINALITY && !near_unique;
 
     if ty == "Boolean" {
-        return Some(PanelKind::FreqBar { idx });
+        return Ok(PanelKind::FreqBar { idx });
     }
 
     if matches!(ty, "Integer" | "Float") {
         // near-unique integers are almost certainly IDs/keys - not meaningful to chart
         if ty == "Integer" && near_unique {
-            return None;
+            return Err(SkipReason::NearUniqueIdentifier);
         }
         // low-cardinality numeric (codes/ratings) -> frequency bar, NOT a box plot
         if low_cardinality {
-            return Some(PanelKind::FreqBar { idx });
+            return Ok(PanelKind::FreqBar { idx });
         }
         // continuous numeric -> box plot / histogram from precomputed quartiles. Shared with the
         // dictionary `measure` verdict (see `classify_measure`) so a measure is charted the same
-        // way however it was identified; returns None when the column lacks quartiles.
+        // way however it was identified; returns `Err` when the column lacks quartiles.
         // (Zero-padded numeric CODES need no exclusion here: stats only emits
         // `zero_padded_numeric` for String-typed columns — see `is_zpn` in stats.rs — so a
         // flagged column never reaches this numeric arm; it takes the categorical path below.
@@ -18483,7 +18726,7 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
 
     // String / Date / DateTime -> frequency bar when low-cardinality
     if low_cardinality {
-        return Some(PanelKind::FreqBar { idx });
+        return Ok(PanelKind::FreqBar { idx });
     }
     // moarstats refinement: a high-cardinality categorical is normally skipped as ID-like noise.
     // But normalized_entropy distinguishes "near-uniform (truly noise)" from "concentrated (a few
@@ -18494,9 +18737,10 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
         && s.normalized_entropy
             .is_some_and(|e| e < HIGH_CARD_ENTROPY_NOISE_THRESHOLD)
     {
-        return Some(PanelKind::FreqBar { idx });
+        return Ok(PanelKind::FreqBar { idx });
     }
-    None // high-cardinality / ID-like text
+    // high-cardinality / ID-like text
+    Err(SkipReason::HighCardinalityText)
 }
 
 /// Max number of fields (identifier + extras) shown in a `viz smart --smarter` map-point hover.
@@ -19394,8 +19638,8 @@ fn code_twin_base(name: &str) -> Option<&str> {
 fn dimension_code_twins(
     stats: &[crate::cmd::stats::StatsData],
     sems: &[ColSemantics],
-) -> std::collections::HashSet<usize> {
-    use std::collections::{HashMap, HashSet};
+) -> std::collections::HashMap<usize, usize> {
+    use std::collections::HashMap;
 
     let dim_names: HashMap<String, usize> = stats
         .iter()
@@ -19404,12 +19648,12 @@ fn dimension_code_twins(
         .map(|(i, s)| (s.field.to_lowercase(), i))
         .collect();
 
-    let mut suppress = HashSet::new();
+    let mut suppress = HashMap::new();
     for (lname, &i) in &dim_names {
         if let Some(base) = code_twin_base(lname)
-            && dim_names.contains_key(base)
+            && let Some(&kept) = dim_names.get(base)
         {
-            suppress.insert(i);
+            suppress.insert(i, kept);
         }
     }
     suppress
@@ -19478,8 +19722,8 @@ fn one_to_one_categorical_twins(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     sems: &[ColSemantics],
-) -> CliResult<std::collections::HashSet<usize>> {
-    use std::collections::{HashMap, HashSet};
+) -> CliResult<std::collections::HashMap<usize, usize>> {
+    use std::collections::HashMap;
 
     /// Populated rows a category must average before a group counts as a functional dependency
     /// rather than a small-sample coincidence. A 4-row agreement tells you nothing.
@@ -19487,7 +19731,8 @@ fn one_to_one_categorical_twins(
     /// Canonical id for an empty cell, distinct from every real value's id.
     const EMPTY_ID: u32 = u32::MAX;
 
-    let mut suppress = HashSet::new();
+    // dropped index -> the KEPT representative of its 1:1 group
+    let mut suppress = HashMap::new();
 
     let eligible: Vec<usize> = stats
         .iter()
@@ -19603,7 +19848,7 @@ fn one_to_one_categorical_twins(
         let dropped: Vec<String> = g.iter().filter(|&&i| i != keep).map(|&i| name(i)).collect();
         for &i in &g {
             if i != keep {
-                suppress.insert(i);
+                suppress.insert(i, keep);
             }
         }
         viz_note(&format!(
@@ -20746,7 +20991,7 @@ fn read_geo_anim(
         // its own cap — the caller
         // falls back to a static map, which shows the same points without the frame repetition.
         if cumulative_embedded_points(&bucket_lats) > *MAX_SMART_POINTS {
-            viz_note(&format!(
+            viz_skip_note(&format!(
                 "viz smart: skipped the animated map — {} time buckets would embed more than the \
                  {} point budget even fully downsampled. Use a coarser date column to animate it.",
                 nb, *MAX_SMART_POINTS
@@ -21803,7 +22048,7 @@ fn build_smart_pip_choropleth_panel(
         // ocean). Without this the run is completely silent — the boundary overlay still draws,
         // so the Data Schematic shows outlined regions with no fill and no explanation.
         if total > 0 && dropped == total {
-            viz_note(&format!(
+            viz_skip_note(&format!(
                 "viz smart: none of the {total} points fell inside any --geojson region, so no \
                  region panel was built. Check that the boundary file covers this data and that \
                  --lat/--lon are not swapped."
@@ -22194,7 +22439,7 @@ fn build_smart_summary_choropleth_panels(
         return Ok(None);
     };
     if ratio < BIVARIATE_MIN_SUPPORT_RATIO {
-        viz_note(&format!(
+        viz_skip_note(&format!(
             "viz smart: --geojson supplied but no region-code column overlapped the boundary ids \
              (best {:.0}%); skipping the summary choropleth.",
             ratio * 100.0
@@ -24326,7 +24571,7 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
         if args.flag_bivariate && !(args.flag_no_headers || args.flag_delimiter.is_some()) {
             let ncols = reader_and_headers(&args)?.1.len();
             if ncols > BIVARIATE_MAX_COLUMNS {
-                viz_note(&format!(
+                viz_skip_note(&format!(
                     "viz smart --bivariate: {ncols} columns exceeds the \
                      {BIVARIATE_MAX_COLUMNS}-column cap (~{} pairs at the cap); skipping the \
                      bivariate association panels. Run `qsv moarstats --bivariate` directly for \
@@ -24472,7 +24717,7 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
                 // warn so the missing panels aren't a mystery (an absent sidecar just means no
                 // pairs — stay silent there).
                 if !bivariate_sidecar_fresh && sidecar_after.is_some() {
-                    viz_note(
+                    viz_skip_note(
                         "viz smart --bivariate: a stale bivariate sidecar could not be removed \
                          and was not refreshed by moarstats; skipping the association panels.",
                     );
@@ -24545,7 +24790,9 @@ struct SmartCtx<'a> {
     dmy_prefs:      Vec<bool>,
     dict_data:      Option<DictData>,
     dict_json_text: Option<String>,
-    twin_suppress:  std::collections::HashSet<usize>,
+    /// dropped column index -> the KEPT sibling's index it is redundant with. A map rather than a
+    /// set so the drawer's "not charted" note can name the survivor.
+    twin_suppress:  std::collections::HashMap<usize, usize>,
 
     /// the geographic overview panels, built up front and prepended last so they lead the
     /// Data Schematic and survive the panel cap.
@@ -24579,7 +24826,7 @@ struct SmartCtx<'a> {
     violin_mode:         ViolinMode,
 
     panels:  Vec<Panel>,
-    skipped: Vec<String>,
+    skipped: Vec<SkipRecord>,
 
     sentinel_suspects:   Vec<String>,
     sentinel_hints:      Vec<String>,
@@ -24716,7 +24963,7 @@ impl<'a> SmartCtx<'a> {
         let mut twin_suppress = if dict_data.is_some() {
             dimension_code_twins(&stats, &col_sems)
         } else {
-            std::collections::HashSet::new()
+            std::collections::HashMap::new()
         };
         // ... and the same redundancy detected from the DATA rather than the names: two
         // categorical columns in a 1:1 correspondence chart as identical bars and waste a parcats
@@ -25019,16 +25266,33 @@ impl<'a> SmartCtx<'a> {
             // --dict-info: the column's dictionary description + pre-computed anchor.
             let dict_info = dict_info_for_field(dict_icons, &s.field);
             // a code/key twin (e.g. subject_code beside subject) is redundant with its label
-            // sibling
-            if twin_suppress.contains(&idx) {
-                skipped.push(name);
+            // sibling. `field` (not `name`) keys the Data Dictionary drawer; an empty header can
+            // only happen under --no-headers, which refuses --dictionary outright, so the drawer
+            // that would consume it cannot exist.
+            let field = (!s.field.is_empty()).then(|| s.field.clone());
+            if let Some(&kept) = twin_suppress.get(&idx) {
+                let kept_name = stats.get(kept).map_or_else(
+                    || format!("col {}", kept + 1),
+                    |k| {
+                        if k.field.is_empty() {
+                            format!("col {}", kept + 1)
+                        } else {
+                            k.field.clone()
+                        }
+                    },
+                );
+                skipped.push(SkipRecord {
+                    column: name,
+                    field,
+                    reason: SkipReason::TwinOf(kept_name),
+                });
                 continue;
             }
             // `map_cols` (the resolved lat/lon pair), NOT `is_map_col` — a summary choropleth keyed
             // off a region CODE puts no coordinates on screen, so a projected coord is
             // still worth charting.
             match classify_with_semantics(idx, s, sem, map_cols.is_some()) {
-                Some(mut kind) => {
+                Ok(mut kind) => {
                     // a cache-only quartile box becomes a raw box (with an overlay mode) when the
                     // explicit flag or the size heuristic calls for points (<=
                     // SMART_BOX_OUTLIERS_MAX rows). Above that, a column that
@@ -25174,7 +25438,7 @@ impl<'a> SmartCtx<'a> {
                             .with_stat_idx(idx),
                     );
                 },
-                None => {
+                Err(reason) => {
                     if s.r#type == "String" {
                         // exactly one parsing endpoint => a numeric range interrupted by a token
                         let one_endpoint_parses = parse_stat_f64(s.min.as_deref()).is_some()
@@ -25186,7 +25450,11 @@ impl<'a> SmartCtx<'a> {
                             _ => {},
                         }
                     }
-                    skipped.push(name);
+                    skipped.push(SkipRecord {
+                        column: name,
+                        field,
+                        reason,
+                    });
                 },
             }
         }
@@ -25259,7 +25527,7 @@ impl<'a> SmartCtx<'a> {
                         self.panels.insert(0, panel);
                     },
                     Ok(None) => {},
-                    Err(e) => viz_note(&format!(
+                    Err(e) => viz_skip_note(&format!(
                         "viz smart: directed-flow (Sankey) panel skipped ({e})"
                     )),
                 }
@@ -25621,7 +25889,7 @@ impl<'a> SmartCtx<'a> {
                                 (&labels[i], &labels[j]),
                             );
                             if panel.is_none() {
-                                viz_note(&format!(
+                                viz_skip_note(&format!(
                                     "viz smart: density panel for {} vs {} skipped (its \
                                      distribution collapses into a single bin)",
                                     labels[i], labels[j]
@@ -25750,7 +26018,7 @@ impl<'a> SmartCtx<'a> {
                                 || scatter_fill_stats(&xs, &zs).degenerate
                                 || scatter_fill_stats(&ys, &zs).degenerate
                             {
-                                viz_note(&format!(
+                                viz_skip_note(&format!(
                                     "viz smart: 3D panel for {} / {} / {} skipped (its points \
                                      collapse onto the origin in at least one plane)",
                                     labels[i], labels[j], labels[k]
@@ -25906,7 +26174,7 @@ impl<'a> SmartCtx<'a> {
         let mut indices: Vec<usize> = Vec::with_capacity(members.len());
         for name in members {
             let Some(idx) = self.stage_index(name) else {
-                viz_note(&format!(
+                viz_skip_note(&format!(
                     "viz smart: pipeline funnel — declared stage '{name}' is not a column in this \
                      file"
                 ));
@@ -25915,14 +26183,14 @@ impl<'a> SmartCtx<'a> {
             let s = &self.stats[idx];
             let sem = &self.col_sems[idx];
             if !matches!(s.r#type.as_str(), "Integer" | "Float") || self.is_map_col(idx) {
-                viz_note(&format!(
+                viz_skip_note(&format!(
                     "viz smart: pipeline funnel skipped — declared stage '{name}' is not a \
                      numeric amount"
                 ));
                 return Ok(None);
             }
             if matches!(sem.agg, Some(Agg::Mean)) || is_intensive_measure(&sem.label, &s.field) {
-                viz_note(&format!(
+                viz_skip_note(&format!(
                     "viz smart: pipeline funnel skipped — declared stage '{name}' is an average \
                      or rate, which cannot be summed into a funnel"
                 ));
@@ -25957,7 +26225,7 @@ impl<'a> SmartCtx<'a> {
         let (labels, columns, kept) =
             read_numeric_columns(&mut rdr, &headers, nh, &indices, false)?;
         if kept.len() != indices.len() || columns.first().is_none_or(Vec::is_empty) {
-            viz_note(
+            viz_skip_note(
                 "viz smart: pipeline funnel skipped — a declared stage held no usable numeric data",
             );
             return Ok(None);
@@ -25971,7 +26239,7 @@ impl<'a> SmartCtx<'a> {
             n_complete as f64 / total_rows as f64
         };
         if complete_frac < FUNNEL_MIN_COMPLETE_FRAC {
-            viz_note(&format!(
+            viz_skip_note(&format!(
                 "viz smart: pipeline funnel skipped — only {:.0}% of rows are complete across \
                  every stage",
                 complete_frac * 100.0
@@ -26017,7 +26285,7 @@ impl<'a> SmartCtx<'a> {
         total_rows: usize,
     ) -> CliResult<Option<Panel>> {
         let Some(stage_idx) = self.stage_index(stage_column) else {
-            viz_note(&format!(
+            viz_skip_note(&format!(
                 "viz smart: pipeline funnel — declared stage column '{stage_column}' is not a \
                  column in this file"
             ));
@@ -26026,14 +26294,14 @@ impl<'a> SmartCtx<'a> {
         let value_idx = match value_column {
             Some(vc) => {
                 let Some(vi) = self.stage_index(vc) else {
-                    viz_note(&format!(
+                    viz_skip_note(&format!(
                         "viz smart: pipeline funnel — declared value column '{vc}' is not a \
                          column in this file"
                     ));
                     return Ok(None);
                 };
                 if !matches!(self.stats[vi].r#type.as_str(), "Integer" | "Float") {
-                    viz_note(&format!(
+                    viz_skip_note(&format!(
                         "viz smart: pipeline funnel skipped — value column '{vc}' is not numeric"
                     ));
                     return Ok(None);
@@ -26065,7 +26333,7 @@ impl<'a> SmartCtx<'a> {
         let (totals, counts, matched) =
             read_stage_totals(self.args, stage_idx, value_idx, &wanted)?;
         if counts.iter().filter(|c| **c > 0).count() < 2 {
-            viz_note(&format!(
+            viz_skip_note(&format!(
                 "viz smart: pipeline funnel skipped — fewer than two of the declared stages of \
                  '{stage_column}' appear in the data"
             ));
@@ -26117,7 +26385,7 @@ impl<'a> SmartCtx<'a> {
         shape: FunnelShape,
     ) -> Option<Panel> {
         if totals.iter().any(|t| *t < 0.0) {
-            viz_note(
+            viz_skip_note(
                 "viz smart: pipeline panel skipped \u{2014} a stage total is negative, which \
                  neither a funnel nor a bridge can represent",
             );
@@ -26127,7 +26395,7 @@ impl<'a> SmartCtx<'a> {
             let [a, b] = w else { return true };
             (a - b).abs() < f64::EPSILON
         }) {
-            viz_note(
+            viz_skip_note(
                 "viz smart: pipeline funnel skipped \u{2014} every stage total is identical (the \
                  columns are copies, not stages)",
             );
@@ -26219,7 +26487,7 @@ impl<'a> SmartCtx<'a> {
             .enumerate()
             .filter(|(i, s)| {
                 !self.is_map_col(*i)
-                    && !self.twin_suppress.contains(i)
+                    && !self.twin_suppress.contains_key(i)
                     && matches!(self.col_sems[*i].route, Route::Defer | Route::Dimension)
                     && s.r#type.as_str() == "String"
                     && s.cardinality >= 2
@@ -26243,7 +26511,7 @@ impl<'a> SmartCtx<'a> {
                 Ok(Some(panel)) => self.panels.insert(0, panel),
                 Ok(None) => {},
                 Err(e) => {
-                    viz_note(&format!(
+                    viz_skip_note(&format!(
                         "viz smart: measure-by-dimension panel skipped ({e})"
                     ));
                 },
@@ -26282,7 +26550,7 @@ impl<'a> SmartCtx<'a> {
                 Ok(Some(panel)) => self.panels.insert(0, panel),
                 Ok(None) => {},
                 Err(e) => {
-                    viz_note(&format!("viz smart: grouped-violin panel skipped ({e})"));
+                    viz_skip_note(&format!("viz smart: grouped-violin panel skipped ({e})"));
                 },
             }
         }
@@ -26316,7 +26584,7 @@ impl<'a> SmartCtx<'a> {
             let dropped = lorenz_candidates.len().saturating_sub(LORENZ_MAX_PANELS);
             lorenz_candidates.truncate(LORENZ_MAX_PANELS);
             if dropped > 0 {
-                viz_note(&format!(
+                viz_skip_note(&format!(
                     "viz smart: {dropped} additional high-inequality measure(s) not shown as \
                      Lorenz curves (cap {LORENZ_MAX_PANELS})"
                 ));
@@ -26328,7 +26596,7 @@ impl<'a> SmartCtx<'a> {
                 match built {
                     Ok(Some(panel)) => self.panels.insert(0, panel),
                     Ok(None) => {},
-                    Err(e) => viz_note(&format!("viz smart: Lorenz panel skipped ({e})")),
+                    Err(e) => viz_skip_note(&format!("viz smart: Lorenz panel skipped ({e})")),
                 }
             }
         }
@@ -26364,7 +26632,7 @@ impl<'a> SmartCtx<'a> {
                     self.panels.insert(0, panel);
                 },
                 Ok(None) => {},
-                Err(e) => viz_note(&format!(
+                Err(e) => viz_skip_note(&format!(
                     "viz smart: parallel-categories (parcats) panel skipped ({e})"
                 )),
             }
@@ -26420,12 +26688,12 @@ impl<'a> SmartCtx<'a> {
                         .as_ref()
                         .is_some_and(|pd| dim_idxs.iter().all(|i| pd.contains(i)));
                 if parcats_owns {
-                    viz_note(&format!(
+                    viz_skip_note(&format!(
                         "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
                          already shown as a parallel-categories (parcats) panel."
                     ));
                 } else if sankey_owns_pair {
-                    viz_note(&format!(
+                    viz_skip_note(&format!(
                         "viz smart: skipping the '{title}' hierarchy panel — its two dimensions \
                          are already shown as a directed-flow (Sankey) panel, which conveys their \
                          many-to-many relationship better."
@@ -26439,7 +26707,7 @@ impl<'a> SmartCtx<'a> {
                     let leaves = collect_hierarchy_counts(self.args, &dim_idxs, None)?;
                     let assoc = max_pairwise_cramers_v(&leaves, depth);
                     if !explicit_style && assoc < HIER_MIN_ASSOCIATION_CRAMERS_V {
-                        viz_note(&format!(
+                        viz_skip_note(&format!(
                             "viz smart: skipping the '{title}' hierarchy panel — its dimensions \
                              are statistically independent (max Cramér's V={assoc:.2} < \
                              {HIER_MIN_ASSOCIATION_CRAMERS_V:.2}); the per-column frequency bars \
@@ -26631,7 +26899,20 @@ impl<'a> SmartCtx<'a> {
                 if keep.contains(&i) {
                     kept.push(p);
                 } else {
-                    self.skipped.push(p.name);
+                    // `p.name` is the DECORATED panel title ("(right-skewed)", "(sampled)"), so it
+                    // is kept only for the stderr roll-up. The Data Dictionary drawer must rejoin
+                    // by `stat_idx` — matching on the decorated title silently fails. An overview
+                    // panel has no `stat_idx`, but also infinite interest, so it never lands here.
+                    let field = p
+                        .stat_idx
+                        .and_then(|si| self.stats.get(si))
+                        .map(|s| s.field.clone())
+                        .filter(|f| !f.is_empty());
+                    self.skipped.push(SkipRecord {
+                        column: p.name,
+                        field,
+                        reason: SkipReason::CappedByMaxCharts,
+                    });
                 }
             }
             self.panels = kept;
@@ -26685,10 +26966,16 @@ impl<'a> SmartCtx<'a> {
         }
         if !self.skipped.is_empty() {
             viz_note(&format!(
+                // BYTE-IDENTICAL to the pre-`SkipRecord` wording — `column` is the display name
+                // this line has always used. Tests pin the "skipped N:" prefix.
                 "viz smart: charting {} column(s); skipped {}: {}",
                 self.panels.len(),
                 self.skipped.len(),
-                self.skipped.join(", ")
+                self.skipped
+                    .iter()
+                    .map(|r| r.column.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
         }
 
@@ -26850,6 +27137,50 @@ impl<'a> SmartCtx<'a> {
             t!("viz.title.data_overview", q_dataset = dataset).into_owned()
         });
 
+        // Drained UNCONDITIONALLY — outside every `--dict-info` branch below — so the collector
+        // cannot accumulate across an image-export run that will never render a drawer.
+        let panel_omissions = take_skip_notes();
+        // Columns `viz smart` did not chart, keyed by HEADER NAME (never the decorated panel
+        // title) so the drawer's sections rejoin them correctly. Localized here rather than in the
+        // renderer, which deals only in already-rendered strings.
+        //
+        // One refinement the recorded reason cannot carry on its own: `RoutedTemporal` fires for
+        // EVERY date column, but only ONE becomes the x-axis of a time-based panel. Left alone,
+        // the dataset's canonical timestamp and a date column used nowhere render the identical
+        // sentence, and a reader cannot tell "this drives the trend panel" from "this was dropped
+        // entirely". So the canonical column is named as such when a time panel actually exists —
+        // read from `canonical_date_col`, the SAME function the panel builders call, with the same
+        // inputs, rather than re-deriving the choice by other means.
+        let time_axis_field: Option<&str> = self
+            .panels
+            .iter()
+            .any(|p| {
+                matches!(
+                    p.kind,
+                    PanelKind::TimeSeries { .. } | PanelKind::CyclicProfile { .. }
+                )
+            })
+            .then(|| canonical_date_col(&self.stats, &self.col_sems))
+            .flatten()
+            .and_then(|(idx, _)| self.stats.get(idx))
+            .map(|s| s.field.as_str())
+            .filter(|f| !f.is_empty());
+        let skipped_notes: std::collections::HashMap<String, String> = self
+            .skipped
+            .iter()
+            .filter_map(|r| {
+                let field = r.field.as_ref()?;
+                let note = if matches!(r.reason, SkipReason::RoutedTemporal)
+                    && time_axis_field == Some(field.as_str())
+                {
+                    t!("viz.dict.skip_time_axis").into_owned()
+                } else {
+                    localize_skip_reason(&r.reason)
+                };
+                Some((field.clone(), note))
+            })
+            .collect();
+
         // --dict-info: render the embedded Data Dictionary page when a usable dictionary is present
         // and the output is HTML; soft no-op (with a note) otherwise, matching the dictionary
         // loader's fail-to-stats philosophy.
@@ -26902,6 +27233,8 @@ impl<'a> SmartCtx<'a> {
                         &column_order,
                         &view_chart_anchors,
                         &sidecars,
+                        &skipped_notes,
+                        &panel_omissions,
                     ))
                 },
                 // unreachable in practice: dict_data only parses from valid JSON
@@ -32513,6 +32846,25 @@ fn geo_ref(pos: usize) -> String {
 mod tests {
     use super::*;
 
+    // `classify*` return `Result<PanelKind, SkipReason>` so the skip REASON survives to the Data
+    // Dictionary drawer. These tests predate that and assert on chart SELECTION, which the reason
+    // does not change — so they keep reading the verdict as an `Option`. Tests that care about a
+    // specific reason match on the `Err` directly.
+    fn classify_opt(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
+        classify(idx, s).ok()
+    }
+    fn classify_measure_opt(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
+        classify_measure(idx, s).ok()
+    }
+    fn classify_with_semantics_opt(
+        idx: usize,
+        s: &crate::cmd::stats::StatsData,
+        sem: &ColSemantics,
+        map_rendered: bool,
+    ) -> Option<PanelKind> {
+        classify_with_semantics(idx, s, sem, map_rendered).ok()
+    }
+
     /// Pin the process-global locale to English for a test that ASSERTS on localized output.
     ///
     /// Observers need this as much as mutators do. The locale is process-global, cargo runs unit
@@ -33207,13 +33559,13 @@ mod tests {
 
     #[test]
     fn classify_null_skipped() {
-        assert!(classify(0, &stat("NULL", 0, None)).is_none());
+        assert!(classify_opt(0, &stat("NULL", 0, None)).is_none());
     }
 
     #[test]
     fn classify_boolean_is_bar() {
         assert!(matches!(
-            classify(0, &stat("Boolean", 2, Some(0.001))),
+            classify_opt(0, &stat("Boolean", 2, Some(0.001))),
             Some(PanelKind::FreqBar { idx: 0 })
         ));
     }
@@ -33221,7 +33573,7 @@ mod tests {
     #[test]
     fn classify_near_unique_integer_id_skipped() {
         // a sequential id column (Integer, ~100% unique) is not meaningful to chart
-        assert!(classify(0, &stat("Integer", 1000, Some(1.0))).is_none());
+        assert!(classify_opt(0, &stat("Integer", 1000, Some(1.0))).is_none());
     }
 
     #[test]
@@ -33232,7 +33584,7 @@ mod tests {
         s.q2_median = Some(3.0);
         s.q3 = Some(4.0);
         assert!(matches!(
-            classify(2, &s),
+            classify_opt(2, &s),
             Some(PanelKind::FreqBar { idx: 2 })
         ));
     }
@@ -33246,7 +33598,10 @@ mod tests {
         s.q3 = Some(3.0);
         s.min = Some("0.5".to_string());
         s.max = Some("3.5".to_string());
-        assert!(matches!(classify(1, &s), Some(PanelKind::BoxStats { .. })));
+        assert!(matches!(
+            classify_opt(1, &s),
+            Some(PanelKind::BoxStats { .. })
+        ));
     }
 
     fn dict_row(content_type: &str, role: &str, concept: &str, label: &str) -> DictRow {
@@ -34141,7 +34496,7 @@ mod tests {
         // Defer falls back to classify (low-card string -> frequency bar)
         let sem_defer = ColSemantics::default();
         assert!(matches!(
-            classify_with_semantics(0, &stat("String", 5, Some(0.001)), &sem_defer, false),
+            classify_with_semantics_opt(0, &stat("String", 5, Some(0.001)), &sem_defer, false),
             Some(PanelKind::FreqBar { idx: 0 })
         ));
         // Dimension -> frequency bar even for a many-distinct integer code
@@ -34150,7 +34505,7 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            classify_with_semantics(2, &stat("Integer", 500, Some(0.4)), &sem_dim, false),
+            classify_with_semantics_opt(2, &stat("Integer", 500, Some(0.4)), &sem_dim, false),
             Some(PanelKind::FreqBar { idx: 2 })
         ));
         // Measure -> box plot from quartiles (via classify_measure)
@@ -34163,7 +34518,7 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            classify_with_semantics(3, &m, &sem_meas, false),
+            classify_with_semantics_opt(3, &m, &sem_meas, false),
             Some(PanelKind::BoxStats { .. })
         ));
         // Temporal / Skip draw no per-column panel
@@ -34173,7 +34528,8 @@ mod tests {
                 ..Default::default()
             };
             assert!(
-                classify_with_semantics(0, &stat("DateTime", 9, Some(0.6)), &sem, false).is_none()
+                classify_with_semantics_opt(0, &stat("DateTime", 9, Some(0.6)), &sem, false)
+                    .is_none()
             );
         }
         // MapCoord falls back to classify: a coordinate the map did NOT consume (the caller already
@@ -34188,7 +34544,7 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            classify_with_semantics(7, &coord, &sem_coord, false),
+            classify_with_semantics_opt(7, &coord, &sem_coord, false),
             Some(PanelKind::BoxStats { .. })
         ));
         // ProjectedCoord (state-plane easting/northing) is gated on whether a point map rendered:
@@ -34202,9 +34558,9 @@ mod tests {
         planar.q1 = Some(993_041.5);
         planar.q2_median = Some(1_005_000.0);
         planar.q3 = Some(1_018_194.0);
-        assert!(classify_with_semantics(8, &planar, &sem_planar, true).is_none());
+        assert!(classify_with_semantics_opt(8, &planar, &sem_planar, true).is_none());
         assert!(matches!(
-            classify_with_semantics(8, &planar, &sem_planar, false),
+            classify_with_semantics_opt(8, &planar, &sem_planar, false),
             Some(PanelKind::BoxStats { .. })
         ));
         // ... and it must go through `classify_measure`, NOT `classify`, which would drop a
@@ -34216,18 +34572,18 @@ mod tests {
         planar_uniq.q2_median = Some(982_500.0);
         planar_uniq.q3 = Some(1_017_175.0);
         assert!(
-            classify(9, &planar_uniq).is_none(),
+            classify_opt(9, &planar_uniq).is_none(),
             "classify drops it as ID-like"
         );
         assert!(
             matches!(
-                classify_with_semantics(9, &planar_uniq, &sem_planar, false),
+                classify_with_semantics_opt(9, &planar_uniq, &sem_planar, false),
                 Some(PanelKind::BoxStats { .. })
             ),
             "ProjectedCoord must bypass the near-unique-integer ID guard"
         );
         // still suppressed when a map rendered, regardless of uniqueness
-        assert!(classify_with_semantics(9, &planar_uniq, &sem_planar, true).is_none());
+        assert!(classify_with_semantics_opt(9, &planar_uniq, &sem_planar, true).is_none());
     }
 
     #[test]
@@ -34238,24 +34594,24 @@ mod tests {
         s.q2_median = Some(2.0);
         s.q3 = Some(3.0);
         assert!(matches!(
-            classify_measure(1, &s),
+            classify_measure_opt(1, &s),
             Some(PanelKind::BoxStats { .. })
         ));
         // flagged bimodal AND platykurtic (negative excess kurtosis) -> histogram
         s.bimodality_coefficient = Some(BIMODALITY_COEFFICIENT_THRESHOLD + 0.01);
         s.kurtosis = Some(-1.0);
         assert!(matches!(
-            classify_measure(1, &s),
+            classify_measure_opt(1, &s),
             Some(PanelKind::Histogram { .. })
         ));
         // high BC but LEPTOKURTIC (skewed unimodal, e.g. a long-tailed/outlier column) stays a box
         s.kurtosis = Some(5.0);
         assert!(matches!(
-            classify_measure(1, &s),
+            classify_measure_opt(1, &s),
             Some(PanelKind::BoxStats { .. })
         ));
         // no quartiles -> nothing to chart
-        assert!(classify_measure(1, &stat("Integer", 500, Some(0.9))).is_none());
+        assert!(classify_measure_opt(1, &stat("Integer", 500, Some(0.9))).is_none());
     }
 
     #[test]
@@ -34409,6 +34765,8 @@ mod tests {
             &order,
             &std::collections::HashSet::new(),
             &[],
+            &std::collections::HashMap::new(),
+            &[],
         );
 
         // a JSON Schema dictionary (top-level `properties`) offers a script-free "Export
@@ -34491,6 +34849,8 @@ mod tests {
             &order,
             &std::collections::HashSet::new(),
             &[],
+            &std::collections::HashMap::new(),
+            &[],
         );
         // the stylesheet always carries `.qsv-dict-export` rules; assert on the ANCHOR markup
         // (and the data: URI) so we're checking the control, not the CSS.
@@ -34536,6 +34896,8 @@ mod tests {
             &order,
             &std::collections::HashSet::new(),
             &sidecars,
+            &std::collections::HashMap::new(),
+            &[],
         );
 
         assert!(
@@ -34598,6 +34960,8 @@ mod tests {
             &order,
             &std::collections::HashSet::new(),
             &sidecars,
+            &std::collections::HashMap::new(),
+            &[],
         );
 
         assert!(
@@ -35734,12 +36098,17 @@ mod tests {
         };
         let sems = [dim.clone(), dim.clone(), dim.clone(), dim.clone()];
         let suppress = dimension_code_twins(&stats, &sems);
-        // subject_code is suppressed (its label sibling `subject` is charted) ...
-        assert!(suppress.contains(&1));
+        // subject_code is suppressed, and maps to the SIBLING THAT SURVIVED — the drawer's
+        // "not charted" note names it, so the value matters as much as the key.
+        assert_eq!(
+            suppress.get(&1),
+            Some(&0),
+            "subject_code should map to subject"
+        );
         // ... but subject, street, and lonely_id (no `lonely` sibling) are kept
-        assert!(!suppress.contains(&0));
-        assert!(!suppress.contains(&2));
-        assert!(!suppress.contains(&3));
+        assert!(!suppress.contains_key(&0));
+        assert!(!suppress.contains_key(&2));
+        assert!(!suppress.contains_key(&3));
 
         // a *_code with no charted label sibling is NOT suppressed
         let orphan_stats = [{
@@ -35812,14 +36181,14 @@ mod tests {
     #[test]
     fn classify_low_card_string_is_bar() {
         assert!(matches!(
-            classify(0, &stat("String", 3, Some(0.1))),
+            classify_opt(0, &stat("String", 3, Some(0.1))),
             Some(PanelKind::FreqBar { idx: 0 })
         ));
     }
 
     #[test]
     fn classify_high_card_string_skipped() {
-        assert!(classify(0, &stat("String", 9999, Some(0.99))).is_none());
+        assert!(classify_opt(0, &stat("String", 9999, Some(0.99))).is_none());
     }
 
     #[test]
@@ -35834,7 +36203,7 @@ mod tests {
         s.upper_inner_fence = Some(22.0); // inside [8, 25] - must be ignored
         s.min = Some("8.0".to_string());
         s.max = Some("25.0".to_string());
-        match classify(0, &s) {
+        match classify_opt(0, &s) {
             Some(PanelKind::BoxStats { lower, upper, .. }) => {
                 assert_eq!(lower, Some(8.0)); // observed minimum
                 assert_eq!(upper, Some(25.0)); // observed maximum
@@ -35856,7 +36225,7 @@ mod tests {
         s.bimodality_coefficient = Some(0.7); // >= 0.555 threshold
         s.kurtosis = Some(-1.5); // platykurtic (two-peaked / flat-topped)
         assert!(matches!(
-            classify(4, &s),
+            classify_opt(4, &s),
             Some(PanelKind::Histogram { idx: 4 })
         ));
     }
@@ -35874,7 +36243,10 @@ mod tests {
         s.max = Some("9999.0".to_string());
         s.bimodality_coefficient = Some(0.98); // high, but driven by skew
         s.kurtosis = Some(10.0); // leptokurtic (heavy tail)
-        assert!(matches!(classify(0, &s), Some(PanelKind::BoxStats { .. })));
+        assert!(matches!(
+            classify_opt(0, &s),
+            Some(PanelKind::BoxStats { .. })
+        ));
     }
 
     #[test]
@@ -35887,7 +36259,10 @@ mod tests {
         s.min = Some("0.0".to_string());
         s.max = Some("4.0".to_string());
         s.bimodality_coefficient = Some(0.40); // unimodal
-        assert!(matches!(classify(0, &s), Some(PanelKind::BoxStats { .. })));
+        assert!(matches!(
+            classify_opt(0, &s),
+            Some(PanelKind::BoxStats { .. })
+        ));
     }
 
     #[test]
@@ -35968,7 +36343,7 @@ mod tests {
         let mut s = stat("String", 9999, Some(0.6));
         s.normalized_entropy = Some(0.4); // concentrated, below the 0.95 noise cutoff
         assert!(matches!(
-            classify(7, &s),
+            classify_opt(7, &s),
             Some(PanelKind::FreqBar { idx: 7 })
         ));
     }
@@ -35978,7 +36353,7 @@ mod tests {
         // high cardinality AND near-uniform entropy => genuinely noise, still skipped.
         let mut s = stat("String", 9999, Some(0.6));
         s.normalized_entropy = Some(0.99); // near-uniform
-        assert!(classify(0, &s).is_none());
+        assert!(classify_opt(0, &s).is_none());
     }
 
     #[test]

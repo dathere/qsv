@@ -1615,9 +1615,9 @@ _TITLE_WHY_RE = re.compile(r"dropped,\s*(?:>|&gt;|\\u0026gt;)\s*([\d.]+) km")
 # A caption's "X of Y" claim, tolerating the article the prose sometimes carries
 # ("10 of the 7,464 located points fall too far from any polygon to snap").
 _CAPTION_PAIR_RE = re.compile(r"(\d[\d,]*)\s+of\s+(?:the\s+)?(\d[\d,]*)")
-# Caption distances are written with a non-breaking space ("18&nbsp;km"), sometimes approximated
-# ("~450&nbsp;km"). Only tokens written NEAR the word "snap" are treated as a cap claim.
-_CAPTION_KM_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)(?:&nbsp;|\s|~)*km")
+# Caption distances are written with a non-breaking space ("18&nbsp;km"). Only tokens written NEAR
+# the word "snap" are treated as a cap claim.
+_CAPTION_KM_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)(?:&nbsp;|\s)*km")
 _CAPTION_SNAP_RE = re.compile(r"snap", re.I)
 _SNAP_CTX_CHARS = 120
 
@@ -1629,24 +1629,38 @@ def regions_panel_claim(html):
     ValueError when a `Regions (...)` title IS present but neither clause parses -- a retitled or
     non-English panel would otherwise turn this whole check into a silent no-op, which is the way
     a consistency check rots (same fail-closed reasoning as `llm_dictionary_sidecars`).
+
+    Every occurrence is read, not just the first: all four pages carry exactly one today, but a
+    Data Schematic with two PIP choropleths would otherwise have its caption silently validated
+    against whichever title happened to come first. Disagreeing titles raise instead of picking
+    one. An occurrence that parses as neither clause is skipped when another one does parse (it is
+    hover or annotation text, not a panel title).
     """
-    m = _REGIONS_TITLE_RE.search(html)
-    if not m:
+    claims = []
+    titles = _REGIONS_TITLE_RE.findall(html)
+    for title in titles:
+        snap = _TITLE_SNAPPED_RE.search(title)
+        drop = _TITLE_DROPPED_RE.search(title)
+        if not snap and not drop:
+            continue
+        why = _TITLE_WHY_RE.search(title)
+        claims.append((
+            float(snap.group(2)) if snap else float(why.group(1)) if why else None,
+            int(snap.group(1).replace(",", "")) if snap else None,
+            int(drop.group(1).replace(",", "")) if drop else None,
+            int(drop.group(2).replace(",", "")) if drop else None,
+            f"Regions ({title})",
+        ))
+    if not titles:
         return None  # no PIP choropleth on this page, or no snap/drop happened: nothing to check
-    title = m.group(1)
-    snap = _TITLE_SNAPPED_RE.search(title)
-    drop = _TITLE_DROPPED_RE.search(title)
-    if not snap and not drop:
-        raise ValueError(f"unparseable Regions panel title: Regions ({title})")
-    why = _TITLE_WHY_RE.search(title)
-    cap = float(snap.group(2)) if snap else float(why.group(1)) if why else None
-    return (
-        cap,
-        int(snap.group(1).replace(",", "")) if snap else None,
-        int(drop.group(1).replace(",", "")) if drop else None,
-        int(drop.group(2).replace(",", "")) if drop else None,
-        f"Regions ({title})",
-    )
+    if not claims:
+        raise ValueError(f"unparseable Regions panel title: Regions ({titles[0]})")
+    if len({c[:4] for c in claims}) > 1:
+        raise ValueError(
+            "disagreeing Regions panel titles on one page: "
+            + "; ".join(sorted(c[4] for c in claims))
+        )
+    return claims[0]
 
 
 def check_caption_map_counts():
@@ -1701,7 +1715,7 @@ def check_caption_map_counts():
             continue
         cap, _snapped, dropped, total, title = claim
 
-        if total is not None:
+        if total is not None and dropped is not None:
             for stated, of_total in _CAPTION_PAIR_RE.findall(desc):
                 if int(of_total.replace(",", "")) != total:
                     continue

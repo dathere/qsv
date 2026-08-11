@@ -491,9 +491,11 @@ FIGURES = [
      "draws a histogram, not a box that would average the peaks away); the points trace Japan's "
      "subduction arcs on the map; and a <b>prefecture choropleth</b> bins each quake into the "
      "GeoJSON region that contains it (point-in-polygon, no geocoding). Most of this catalog is "
-     "offshore Pacific seismicity, so under the default 10&nbsp;km snap cap the far-offshore quakes "
-     "are dropped (287 of 417 here — the panel title reports it) and the on-land/near-coast "
-     "prefectures are colored; raise <code>--snap-max-dist</code> to snap distant quakes to the "
+     "offshore Pacific seismicity, so under the auto-derived snap cap (18&nbsp;km here, derived from "
+     "the boundary file's median region size and the coordinates' precision) near-coast quakes snap "
+     "to their nearest prefecture (44 of them) while far-offshore quakes are dropped (269 of 417 — "
+     "the panel title reports both) and the on-land/near-coast prefectures are colored; raise "
+     "<code>--snap-max-dist</code> to snap distant quakes to the "
      "nearest prefecture instead, or <code>--no-snap</code> to drop every offshore point. "
      "magnitude vs felt_reports is almost perfectly correlated "
      "(r=0.95); magnitude and felt_reports are right-skewed with flagged outliers; and the "
@@ -905,8 +907,10 @@ SCREENSHOTS = [
             "A <b>10,000-row</b> sample of NYC 311 service requests (2010–2020) profiled into auto-chosen "
             "panels on a real, wide municipal dataset. The "
             "headline panel is the <b>metro choropleth</b>: each request's lat/lon is binned into NYC's "
-            "<b>188 neighborhood</b> polygons (no geocoding — 110 of them receive requests, and 10 of the "
-            "7,464 located points fall too far from any polygon to snap), and because the matched regions "
+            "<b>188 neighborhood</b> polygons (no geocoding — every one of them draws requests, 110 "
+            "near-boundary points snap to their nearest neighborhood under the auto-derived "
+            "0.36&nbsp;km cap, and 10 of the 7,464 located points fall too far to snap), and because "
+            "the matched regions "
             "span a city-scale extent, <code>viz smart</code> draws the filled "
             "regions on an interactive <b>MapLibre tile basemap</b> (token-free carto tiles, fine "
             "street/coastline detail) instead of the coarse projection basemap it uses for "
@@ -1598,6 +1602,222 @@ def check_readme_claims():
         )
 
 
+# The `Regions (...)` panel title viz emits for a point-in-polygon choropleth. Both clauses are
+# OPTIONAL and either can appear alone -- viz joins whichever of them applies (src/cmd/viz.rs) --
+# so they are parsed independently rather than as one pattern.
+#
+# That title is TRANSLATED (`viz.title.*` in src/cmd/locales/<lang>.yml): the gallery already ships
+# a Spanish Data Schematic whose panel reads `Regiones (14 ajustados ≤35 km)`, and hard-coding the
+# English wording would silently skip it -- precisely the rot this check exists to prevent. So the
+# patterns are DERIVED from viz's own catalogs instead of transcribed here (a retranslation updates
+# the check for free), and placeholders are bound by NAME, not position, because ja and zh-CN order
+# them differently ("%{q_total} 件中 %{q_n} 件を除外" states the total first).
+#
+# The CAPTIONS stay English-only on purpose: gen_gallery.py's prose describes every figure in
+# English, including the localized ones.
+_LOCALES_DIR = os.path.join(REPO, "src", "cmd", "locales")
+_LOCALE_ENTRY_RE = re.compile(
+    r'^\s*(regions_with|snap_snapped|snap_dropped|snap_why_over):\s*"(.+)"\s*$', re.M
+)
+_PLACEHOLDER_RE = re.compile(r"%\{(q_\w+)\}")
+_PLACEHOLDER_GROUPS = {
+    "q_parts": r'(?P<parts>[^"]{1,200}?)',
+    "q_n": r"(?P<n>[\d,]+)",
+    "q_total": r"(?P<total>[\d,]+)",
+    "q_km": r"(?P<km>[\d.]+)",
+    "q_why": r"(?P<why>[^;]*)",
+}
+# Inside the committed pages plotly JSON-escapes the `>` that opens the dropped clause's reason
+# (`&gt;` -- an escaped `&` plus `gt;`), so every form is accepted. That reason is the ONLY
+# place the cap survives when nothing snapped. `--no-snap` puts the literal flag there instead of
+# a distance, and correctly yields no cap.
+_ESCAPED_GT = r"(?:>|&gt;|\\u0026gt;)"
+_LOCALE_PATTERNS = None
+
+
+def _template_regex(template, escape_gt=False):
+    """Compile one i18n template ("%{q_n} snapped ≤%{q_km} km") into a named-group regex."""
+    def literal(text):
+        # only the template's own text may be rewritten -- a blanket replace would also mangle the
+        # `>` that closes the (?P<km>...) group names substituted in below
+        pattern = re.escape(text)
+        return pattern.replace(r"\>", ">").replace(">", _ESCAPED_GT) if escape_gt else pattern
+
+    out, pos = [], 0
+    for m in _PLACEHOLDER_RE.finditer(template):
+        out.append(literal(template[pos : m.start()]))
+        out.append(_PLACEHOLDER_GROUPS[m.group(1)])
+        pos = m.end()
+    out.append(literal(template[pos:]))
+    return re.compile("".join(out))
+
+
+def _locale_title_patterns():
+    """Per-locale `(regions_with, snapped, dropped, why)` regexes, built from viz's own catalogs."""
+    global _LOCALE_PATTERNS
+    if _LOCALE_PATTERNS is not None:
+        return _LOCALE_PATTERNS
+    pats = []
+    for name in sorted(os.listdir(_LOCALES_DIR)):
+        if not name.endswith(".yml"):
+            continue
+        with open(os.path.join(_LOCALES_DIR, name), encoding="utf-8") as fh:
+            entries = dict(_LOCALE_ENTRY_RE.findall(fh.read()))
+        if "regions_with" not in entries:
+            continue
+        pats.append((
+            _template_regex(entries["regions_with"]),
+            _template_regex(entries["snap_snapped"]) if "snap_snapped" in entries else None,
+            _template_regex(entries["snap_dropped"]) if "snap_dropped" in entries else None,
+            _template_regex(entries["snap_why_over"], escape_gt=True)
+            if "snap_why_over" in entries
+            else None,
+        ))
+    # Fail closed rather than quietly checking nothing: every page would parse as "no choropleth".
+    if not pats:
+        raise SystemExit(
+            f"gen_gallery.py: no viz.title.regions_with templates found under {_LOCALES_DIR} -- "
+            "cannot verify caption numbers against the charts"
+        )
+    _LOCALE_PATTERNS = pats
+    return pats
+# A caption's "X of Y" claim, tolerating the article the prose sometimes carries
+# ("10 of the 7,464 located points fall too far from any polygon to snap").
+_CAPTION_PAIR_RE = re.compile(r"(\d[\d,]*)\s+of\s+(?:the\s+)?(\d[\d,]*)")
+# Caption distances are written with a non-breaking space ("18&nbsp;km"). Only tokens written NEAR
+# the word "snap" are treated as a cap claim.
+_CAPTION_KM_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)(?:&nbsp;|\s)*km")
+_CAPTION_SNAP_RE = re.compile(r"snap", re.I)
+_SNAP_CTX_CHARS = 120
+
+
+def regions_panel_claim(html):
+    """The snap/drop numbers a committed Data Schematic's choropleth panel title states, or None.
+
+    Returns `(cap_km, snapped, dropped, total, title)` with any un-emitted field as None. Raises
+    ValueError when a `Regions (...)` title IS present but neither clause parses -- a retitled or
+    non-English panel would otherwise turn this whole check into a silent no-op, which is the way
+    a consistency check rots (same fail-closed reasoning as `llm_dictionary_sidecars`).
+
+    Every occurrence is read, not just the first, and in every language viz translates the title
+    into: a page carries one such title today, but a Data Schematic with two PIP choropleths would
+    otherwise have its caption silently validated against whichever came first. Disagreeing titles
+    raise instead of one being picked. An occurrence that parses as neither clause is skipped when
+    another one does parse (it is hover or annotation text, not a panel title).
+    """
+    claims, titles = [], []
+    for regions_rx, snapped_rx, dropped_rx, why_rx in _locale_title_patterns():
+        for m in regions_rx.finditer(html):
+            parts = m.group("parts")
+            titles.append(m.group(0))
+            snap = snapped_rx.search(parts) if snapped_rx else None
+            drop = dropped_rx.search(parts) if dropped_rx else None
+            if not snap and not drop:
+                continue
+            why = why_rx.search(parts) if why_rx else None
+            claims.append((
+                float(snap.group("km")) if snap else float(why.group("km")) if why else None,
+                int(snap.group("n").replace(",", "")) if snap else None,
+                int(drop.group("n").replace(",", "")) if drop else None,
+                int(drop.group("total").replace(",", "")) if drop else None,
+                m.group(0),
+            ))
+    if not titles:
+        return None  # no PIP choropleth on this page, or no snap/drop happened: nothing to check
+    if not claims:
+        raise ValueError(f"unparseable regions panel title: {titles[0]}")
+    if len({c[:4] for c in claims}) > 1:
+        raise ValueError(
+            "disagreeing regions panel titles on one page: "
+            + "; ".join(sorted(c[4] for c in claims))
+        )
+    return claims[0]
+
+
+def check_caption_map_counts():
+    """Fail closed when a caption's snap/drop numbers contradict the chart it describes.
+
+    These captions deliberately quote numbers out of a GENERATED artifact ("269 of 417 -- the panel
+    title reports both"), so they go stale whenever the snap heuristics change and nobody thinks to
+    reread the prose. That is not hypothetical: issue #4392 was a caption still claiming the old
+    fixed "default 10 km snap cap" and "287 of 417" after `--snap-max-dist` became auto-derived
+    (18 km for japan_prefectures.geojson) and 44 near-coast points started snapping instead of
+    being dropped -- published as the gallery's LEAD figure, pointing readers at a panel title that
+    disagreed with it.
+
+    Two independent claims are checked, each gated so unrelated numbers can't trip it:
+
+    1. `X of Y` where Y is the panel's TOTAL point count => X must be the dropped count. The pair
+       is self-keying, which is the whole trick: the NMI support "n=10,000 of 10,000" and the
+       choropleth rank "1 of 25" in neighboring captions are ignored for free, because their
+       denominators are not that page's total.
+    2. Distances written near the word "snap" (_SNAP_CTX_CHARS) must include the cap the panel
+       applied. PRESENCE, not exclusivity -- the geospatial caption also cites ~20 km and ~450 km
+       for the depth_km bimodality, and those are 350+ characters from any "snap".
+
+    The bare snapped count is deliberately NOT checked: a lone integer cannot validate itself, and
+    the NYC caption's "110 of them receive requests" already coincides with its panel's 110-snapped
+    count while measuring something else entirely.
+
+    FAILS rather than warns, unlike `warn_stale_data_viewers`/`warn_stale_parcats_pages` which
+    cover two of the same pages: those warn because the ARTIFACT is stale and cannot be rebuilt
+    without datasets that are not in the repo. Here the caption lives in this file and is always
+    fixable, so an exit code is actionable. Runs after the gallery is written, so the artifacts it
+    reads are the ones just regenerated.
+    """
+    captioned = [(SMART_IFRAME.get(t), t, d) for (t, d, _f, _a) in FIGURES]
+    captioned += [(s.get("href"), s["title"], s["desc"]) for s in SCREENSHOTS]
+
+    problems = []
+    for page, fig_title, desc in captioned:
+        if not page:
+            continue  # a reconstructed figure, not a committed page: nothing to read numbers from
+        path = os.path.join(VIZ_DIR, page)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            html = fh.read()
+        try:
+            claim = regions_panel_claim(html)
+        except ValueError as exc:
+            problems.append(f"{fig_title} ({page}): {exc}")
+            continue
+        if not claim:
+            continue
+        cap, _snapped, dropped, total, title = claim
+
+        if total is not None and dropped is not None:
+            for stated, of_total in _CAPTION_PAIR_RE.findall(desc):
+                if int(of_total.replace(",", "")) != total:
+                    continue
+                if int(stated.replace(",", "")) != dropped:
+                    problems.append(
+                        f"{fig_title} ({page}): caption says {stated} of {of_total}, but the "
+                        f"panel title says {dropped:,} of {total:,} dropped -- {title!r}"
+                    )
+
+        if cap is not None:
+            snap_at = [m.start() for m in _CAPTION_SNAP_RE.finditer(desc)]
+            near_snap = [
+                m.group(1)
+                for m in _CAPTION_KM_RE.finditer(desc)
+                if any(abs(m.start() - s) <= _SNAP_CTX_CHARS for s in snap_at)
+            ]
+            if near_snap and not any(float(km.replace(",", "")) == cap for km in near_snap):
+                problems.append(
+                    f"{fig_title} ({page}): caption cites {', '.join(near_snap)} km beside its "
+                    f"snap wording, but the panel applied a {cap:g} km cap -- {title!r}"
+                )
+
+    if problems:
+        raise SystemExit(
+            "gallery written, but these captions contradict the chart they describe:\n  "
+            + "\n  ".join(problems)
+            + "\n  Reread the panel title (grep 'Regions (' in the page) and update the caption "
+            "in gen_gallery.py."
+        )
+
+
 def main():
     qsv = find_qsv()
     # before anything runs qsv: a stale cache from unrelated work would otherwise be reused and
@@ -1901,6 +2121,10 @@ def main():
     cleanup_sidecars()
     sys.stderr.write(f"wrote {GALLERY} ({len(body)} bytes, {len(figs)} figures)\n")
 
+    # Both fail closed AFTER the gallery is written, so a figure change still produces an artifact
+    # and the exit code is what tells you the prose needs a follow-up. Captions first: they are
+    # published to the gallery page itself, so a wrong number there misleads readers directly.
+    check_caption_map_counts()
     check_readme_claims()
 
 

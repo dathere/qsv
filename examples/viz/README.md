@@ -222,11 +222,12 @@ qsv viz smart delivery_stops.csv -o delivery_dashboard.html
 # heatmap + drill-down scatter, a bimodal-depth histogram, annotated boxes and frequency bars —
 # all auto-chosen. --geojson adds a point-in-polygon prefecture choropleth (the feature id key
 # defaults to id): each quake is binned into the GeoJSON region that contains it (no geocoding).
-# This catalog is mostly
-# offshore, so under the default 10 km snap cap the far-offshore quakes are dropped (the panel title
-# reports the count) and on-land/near-coast prefectures are colored; raise --snap-max-dist to snap
-# distant quakes to the nearest prefecture, or --no-snap to drop every offshore point. A stderr note
-# reports coverage either way.
+# This catalog is mostly offshore, so under the auto-derived snap cap (18 km here, derived from the
+# boundary file's median region size and the coordinates' precision) near-coast quakes snap to their
+# nearest prefecture (44 of them) while far-offshore quakes are dropped (269 of 417; the panel title
+# reports both), and on-land/near-coast prefectures are colored; raise --snap-max-dist to snap distant
+# quakes to the nearest prefecture, or --no-snap to drop every offshore point. A stderr note reports
+# coverage either way.
 # Recognized lat/lon columns are charted on the map only, not as redundant distribution panels.
 # Rendered with the built-in plotly_dark theme (--theme works on every chart type, incl. smart).
 qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3 \

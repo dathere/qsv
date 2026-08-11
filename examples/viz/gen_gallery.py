@@ -1603,17 +1603,84 @@ def check_readme_claims():
 
 
 # The `Regions (...)` panel title viz emits for a point-in-polygon choropleth. Both clauses are
-# OPTIONAL and either can appear alone -- viz joins whichever of them applies (src/cmd/viz.rs,
-# i18n keys viz.title.snap_snapped / snap_dropped / snap_why_over / regions_with) -- so they are
-# parsed independently rather than as one pattern.
-_REGIONS_TITLE_RE = re.compile(r"Regions \(([^\"]{1,200}?)\)")
-_TITLE_SNAPPED_RE = re.compile(r"([\d,]+) snapped ≤([\d.]+) km")
-_TITLE_DROPPED_RE = re.compile(r"([\d,]+) of ([\d,]+) dropped")
-# The cap also appears as the dropped clause's reason (", >18 km"), which is the ONLY place it
-# survives when nothing snapped. Inside the committed pages that `>` is JSON-escaped by plotly
-# (`&gt;` -- an escaped `&` plus `gt;`), so accept every form. `--no-snap` puts the literal
-# flag there instead of a distance, and correctly yields no cap.
-_TITLE_WHY_RE = re.compile(r"dropped,\s*(?:>|&gt;|\\u0026gt;)\s*([\d.]+) km")
+# OPTIONAL and either can appear alone -- viz joins whichever of them applies (src/cmd/viz.rs) --
+# so they are parsed independently rather than as one pattern.
+#
+# That title is TRANSLATED (`viz.title.*` in src/cmd/locales/<lang>.yml): the gallery already ships
+# a Spanish Data Schematic whose panel reads `Regiones (14 ajustados ≤35 km)`, and hard-coding the
+# English wording would silently skip it -- precisely the rot this check exists to prevent. So the
+# patterns are DERIVED from viz's own catalogs instead of transcribed here (a retranslation updates
+# the check for free), and placeholders are bound by NAME, not position, because ja and zh-CN order
+# them differently ("%{q_total} 件中 %{q_n} 件を除外" states the total first).
+#
+# The CAPTIONS stay English-only on purpose: gen_gallery.py's prose describes every figure in
+# English, including the localized ones.
+_LOCALES_DIR = os.path.join(REPO, "src", "cmd", "locales")
+_LOCALE_ENTRY_RE = re.compile(
+    r'^\s*(regions_with|snap_snapped|snap_dropped|snap_why_over):\s*"(.+)"\s*$', re.M
+)
+_PLACEHOLDER_RE = re.compile(r"%\{(q_\w+)\}")
+_PLACEHOLDER_GROUPS = {
+    "q_parts": r'(?P<parts>[^"]{1,200}?)',
+    "q_n": r"(?P<n>[\d,]+)",
+    "q_total": r"(?P<total>[\d,]+)",
+    "q_km": r"(?P<km>[\d.]+)",
+    "q_why": r"(?P<why>[^;]*)",
+}
+# Inside the committed pages plotly JSON-escapes the `>` that opens the dropped clause's reason
+# (`&gt;` -- an escaped `&` plus `gt;`), so every form is accepted. That reason is the ONLY
+# place the cap survives when nothing snapped. `--no-snap` puts the literal flag there instead of
+# a distance, and correctly yields no cap.
+_ESCAPED_GT = r"(?:>|&gt;|\\u0026gt;)"
+_LOCALE_PATTERNS = None
+
+
+def _template_regex(template, escape_gt=False):
+    """Compile one i18n template ("%{q_n} snapped ≤%{q_km} km") into a named-group regex."""
+    def literal(text):
+        # only the template's own text may be rewritten -- a blanket replace would also mangle the
+        # `>` that closes the (?P<km>...) group names substituted in below
+        pattern = re.escape(text)
+        return pattern.replace(r"\>", ">").replace(">", _ESCAPED_GT) if escape_gt else pattern
+
+    out, pos = [], 0
+    for m in _PLACEHOLDER_RE.finditer(template):
+        out.append(literal(template[pos : m.start()]))
+        out.append(_PLACEHOLDER_GROUPS[m.group(1)])
+        pos = m.end()
+    out.append(literal(template[pos:]))
+    return re.compile("".join(out))
+
+
+def _locale_title_patterns():
+    """Per-locale `(regions_with, snapped, dropped, why)` regexes, built from viz's own catalogs."""
+    global _LOCALE_PATTERNS
+    if _LOCALE_PATTERNS is not None:
+        return _LOCALE_PATTERNS
+    pats = []
+    for name in sorted(os.listdir(_LOCALES_DIR)):
+        if not name.endswith(".yml"):
+            continue
+        with open(os.path.join(_LOCALES_DIR, name), encoding="utf-8") as fh:
+            entries = dict(_LOCALE_ENTRY_RE.findall(fh.read()))
+        if "regions_with" not in entries:
+            continue
+        pats.append((
+            _template_regex(entries["regions_with"]),
+            _template_regex(entries["snap_snapped"]) if "snap_snapped" in entries else None,
+            _template_regex(entries["snap_dropped"]) if "snap_dropped" in entries else None,
+            _template_regex(entries["snap_why_over"], escape_gt=True)
+            if "snap_why_over" in entries
+            else None,
+        ))
+    # Fail closed rather than quietly checking nothing: every page would parse as "no choropleth".
+    if not pats:
+        raise SystemExit(
+            f"gen_gallery.py: no viz.title.regions_with templates found under {_LOCALES_DIR} -- "
+            "cannot verify caption numbers against the charts"
+        )
+    _LOCALE_PATTERNS = pats
+    return pats
 # A caption's "X of Y" claim, tolerating the article the prose sometimes carries
 # ("10 of the 7,464 located points fall too far from any polygon to snap").
 _CAPTION_PAIR_RE = re.compile(r"(\d[\d,]*)\s+of\s+(?:the\s+)?(\d[\d,]*)")
@@ -1632,34 +1699,36 @@ def regions_panel_claim(html):
     non-English panel would otherwise turn this whole check into a silent no-op, which is the way
     a consistency check rots (same fail-closed reasoning as `llm_dictionary_sidecars`).
 
-    Every occurrence is read, not just the first: all four pages carry exactly one today, but a
-    Data Schematic with two PIP choropleths would otherwise have its caption silently validated
-    against whichever title happened to come first. Disagreeing titles raise instead of picking
-    one. An occurrence that parses as neither clause is skipped when another one does parse (it is
-    hover or annotation text, not a panel title).
+    Every occurrence is read, not just the first, and in every language viz translates the title
+    into: a page carries one such title today, but a Data Schematic with two PIP choropleths would
+    otherwise have its caption silently validated against whichever came first. Disagreeing titles
+    raise instead of one being picked. An occurrence that parses as neither clause is skipped when
+    another one does parse (it is hover or annotation text, not a panel title).
     """
-    claims = []
-    titles = _REGIONS_TITLE_RE.findall(html)
-    for title in titles:
-        snap = _TITLE_SNAPPED_RE.search(title)
-        drop = _TITLE_DROPPED_RE.search(title)
-        if not snap and not drop:
-            continue
-        why = _TITLE_WHY_RE.search(title)
-        claims.append((
-            float(snap.group(2)) if snap else float(why.group(1)) if why else None,
-            int(snap.group(1).replace(",", "")) if snap else None,
-            int(drop.group(1).replace(",", "")) if drop else None,
-            int(drop.group(2).replace(",", "")) if drop else None,
-            f"Regions ({title})",
-        ))
+    claims, titles = [], []
+    for regions_rx, snapped_rx, dropped_rx, why_rx in _locale_title_patterns():
+        for m in regions_rx.finditer(html):
+            parts = m.group("parts")
+            titles.append(m.group(0))
+            snap = snapped_rx.search(parts) if snapped_rx else None
+            drop = dropped_rx.search(parts) if dropped_rx else None
+            if not snap and not drop:
+                continue
+            why = why_rx.search(parts) if why_rx else None
+            claims.append((
+                float(snap.group("km")) if snap else float(why.group("km")) if why else None,
+                int(snap.group("n").replace(",", "")) if snap else None,
+                int(drop.group("n").replace(",", "")) if drop else None,
+                int(drop.group("total").replace(",", "")) if drop else None,
+                m.group(0),
+            ))
     if not titles:
         return None  # no PIP choropleth on this page, or no snap/drop happened: nothing to check
     if not claims:
-        raise ValueError(f"unparseable Regions panel title: Regions ({titles[0]})")
+        raise ValueError(f"unparseable regions panel title: {titles[0]}")
     if len({c[:4] for c in claims}) > 1:
         raise ValueError(
-            "disagreeing Regions panel titles on one page: "
+            "disagreeing regions panel titles on one page: "
             + "; ".join(sorted(c[4] for c in claims))
         )
     return claims[0]

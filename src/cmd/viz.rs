@@ -5058,13 +5058,55 @@ fn magnitude_scale(v: f64) -> (f64, &'static str) {
 /// value label that must read "B" cannot be produced by a format string at all.
 ///
 /// Trailing zeros are trimmed (matching d3's `~`). Below 1e3 this delegates to `fmt_measure`, so
-/// small values keep the exact grouped form they have always had.
+/// small values keep the exact grouped form they have always had — EXCEPT for sub-hundredth
+/// magnitudes, which get significant digits instead. `fmt_measure` rounds to 3 decimal places, so
+/// it renders a mean of 0.0004 as a flat "0", losing the value entirely; the SI formatting these
+/// labels used before would have said "400µ". `kpi_number_format` already carries the same
+/// exception (and the same reasoning) for KPI tiles, so this keeps a bar label and the tile
+/// summarizing it in agreement.
 fn fmt_magnitude(v: f64) -> String {
     let (div, sfx) = magnitude_scale(v);
     if sfx.is_empty() {
-        return fmt_measure(v);
+        let a = v.abs();
+        return if a > 0.0 && a < 0.01 && a.is_finite() {
+            fmt_small_sig(v)
+        } else {
+            fmt_measure(v)
+        };
     }
     format!("{}{sfx}", fmt_three_sig(v / div))
+}
+
+/// Render a sub-hundredth magnitude to 3 significant digits (d3's `.3~g`): `0.0004`, not `0`.
+/// Only called for `0 < |v| < 0.01`, where fixed-decimal rounding would erase the value.
+fn fmt_small_sig(v: f64) -> String {
+    // decimals needed to keep 3 significant digits: 0.0004 -> log10 ~ -3.4 -> floor -4 -> 6dp.
+    // Clamped so a denormal-ish value can't ask for a 300-character string.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "log10 of a value in (0, 0.01) is a small negative; the result is clamped to \
+                  0..=12 immediately"
+    )]
+    let decimals = (2 - v.abs().log10().floor() as i32).clamp(0, 12) as usize;
+    let s = format!("{v:.decimals$}");
+    let s = if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        s
+    };
+    // a value smaller than the clamp can represent would trim to "0"/"-0"; show it as a bound
+    // rather than claiming it is zero
+    if s.trim_start_matches('-')
+        .chars()
+        .all(|c| c == '0' || c == '.')
+    {
+        return if v < 0.0 {
+            "> -1e-12".to_string()
+        } else {
+            "< 1e-12".to_string()
+        };
+    }
+    s
 }
 
 /// Render an already-scaled magnitude to 3 significant digits with trailing zeros trimmed —
@@ -15796,9 +15838,11 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     };
     let label = row.label.trim().to_string();
     let concept = row.concept.trim();
-    // Carried through unconditionally: `verify_currency` already established that the column is
-    // a monetary measure before the annotation was emitted, and a hand-edited sidecar that put
-    // one on a dimension is simply never read (only measure panels and KPI tiles consult it).
+    // Carried through unconditionally, because it is already gated at the SOURCE: describegpt's
+    // `verify_currency` on emit, and `parse_dictionary_semantics` on read for hand-edited
+    // sidecars. Both require a numeric measure that reads as money, so anything reaching here is
+    // legitimately monetary. Do NOT re-gate on route: the panel subtitle consults this for every
+    // charted column, not just the ones that end up as measures.
     let currency = row.currency.clone();
     let make = |route: Route, agg: Option<Agg>| {
         // An intensive measure (temperature, rate, index, pre-averaged value) tagged additive by
@@ -16155,16 +16199,41 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     _ => None,
                 }
             };
-            // `x-qsv.currency`: an ISO-4217 alpha-3 code. Normalized HERE as well as in
-            // describegpt, because a hand-edited sidecar never passed through that validator.
-            // Deliberately only a SHAPE check (3 ASCII letters) and not a register lookup:
-            // `currency_prefix` falls back to the bare code, so an unrecognized-but-well-formed
-            // code renders as "XYZ 1.2B" rather than silently disappearing.
+            // `x-qsv.currency`: an ISO-4217 alpha-3 code. A hand-edited sidecar never passed
+            // through describegpt's validator, so viz re-applies BOTH halves of it here:
+            //
+            //   * shape — trimmed, uppercased, exactly 3 ASCII letters. Deliberately not a register
+            //     lookup: `currency_prefix` falls back to the bare code, so an
+            //     unrecognized-but-well-formed code renders as "XYZ 1.2B" rather than vanishing.
+            //   * semantics — the same gate as `describegpt`'s `verify_currency`: a numeric MEASURE
+            //     that reads as money. Without it a dictionary could hang "USD" on a count, a ratio
+            //     or a plain dimension and viz would dutifully print a currency symbol on its KPI
+            //     tile and "(USD)" under its bar — labelling a quantity with a unit it does not
+            //     have, which is worse than no annotation at all.
             let xq_currency = || -> Option<String> {
-                xq.and_then(|x| x.get("currency"))
+                let code = xq
+                    .and_then(|x| x.get("currency"))
                     .and_then(serde_json::Value::as_str)
                     .map(|s| s.trim().to_ascii_uppercase())
-                    .filter(|c| c.len() == 3 && c.bytes().all(|b| b.is_ascii_uppercase()))
+                    .filter(|c| c.len() == 3 && c.bytes().all(|b| b.is_ascii_uppercase()))?;
+                let concept = from_xq("concept");
+                let money_ish = concept == "measure.money"
+                    || concept == "measure.amount"
+                    || crate::cmd::describegpt::dictionary::content_type_base(&from_xq(
+                        "content_type",
+                    )) == "money";
+                // `qsv_type` is absent on hand-written dictionaries; only reject when it is
+                // present AND says the column is non-numeric.
+                let numeric = match from_xq("qsv_type").as_str() {
+                    "" => true,
+                    t => matches!(t, "Integer" | "Float"),
+                };
+                let role = from_xq("role");
+                // an empty role is admissible: `concept` alone can establish the measure (that is
+                // the precedence `derive_semantics` uses), so requiring a role would drop a
+                // perfectly good `{"concept": "measure.money", "currency": "USD"}`.
+                let measure = role.is_empty() || role == "measure";
+                (numeric && measure && money_ish).then_some(code)
             };
             let label = prop
                 .get("title")
@@ -34982,6 +35051,12 @@ mod tests {
             "fee": { "type": "number", "title": "Fee",
               "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.money",
                          "currency": "US" } },
+            "widgets": { "type": "integer", "title": "Widgets",
+              "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.count",
+                         "currency": "USD" } },
+            "ccy": { "type": "string", "title": "Currency",
+              "x-qsv": { "qsv_type": "String", "role": "dimension",
+                         "content_type": "currency_code", "currency": "USD" } },
             "notes": { "type": "string", "x-qsv": { "qsv_type": "String" } }
           },
           "x-qsv": { "grain": "one row = one 311 service request",
@@ -35006,6 +35081,16 @@ mod tests {
         assert_eq!(
             fee.currency, None,
             "a 2-letter country code is not a currency"
+        );
+        // a well-formed code on a column that is NOT a monetary measure is dropped too — viz
+        // re-applies describegpt's `verify_currency` gate, because a hand-edited sidecar never
+        // passed through it (roborev 4202)
+        let widgets = data.rows.get("widgets").expect("widgets row");
+        assert_eq!(widgets.currency, None, "a count is not money");
+        let ccy = data.rows.get("ccy").expect("ccy row");
+        assert_eq!(
+            ccy.currency, None,
+            "a String column of ISO codes NAMES a currency; it is not an amount in one"
         );
         // a property with a bare x-qsv (no role/concept) still parses with empty signals
         let notes = data.rows.get("notes").expect("notes row");
@@ -40968,6 +41053,21 @@ mod tests {
         // below 1e3 it delegates to `fmt_measure`, so small values keep their exact grouped form
         assert_eq!(fmt_magnitude(999.0), fmt_measure(999.0));
         assert_eq!(fmt_magnitude(3.27), "3.27");
+
+        // ...except sub-hundredth magnitudes, where `fmt_measure`'s 3-decimal rounding would
+        // erase the value entirely (roborev 4202). The SI formatting these labels used before
+        // said "400µ"; a flat "0" is strictly worse than either.
+        assert_eq!(fmt_magnitude(0.0004), "0.0004");
+        assert_ne!(fmt_magnitude(0.0004), "0");
+        assert_eq!(fmt_magnitude(-0.0004), "-0.0004");
+        assert_eq!(fmt_magnitude(0.00123456), "0.00123");
+        assert_eq!(fmt_magnitude(0.009), "0.009");
+        // the 0.01 boundary belongs to the plain path
+        assert_eq!(fmt_magnitude(0.01), fmt_measure(0.01));
+        // zero is not "small", it is zero
+        assert_eq!(fmt_magnitude(0.0), fmt_measure(0.0));
+        // and a value below the decimal clamp reports a bound instead of claiming zero
+        assert_eq!(fmt_magnitude(1e-15), "< 1e-12");
 
         viz_i18n::set_active(viz_i18n::parse_lang("es").unwrap());
         assert_eq!(fmt_magnitude(2_400_000_000.0), "2.4G");

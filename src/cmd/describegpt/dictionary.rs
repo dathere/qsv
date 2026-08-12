@@ -449,7 +449,7 @@ pub(super) fn normalize_datetime_token(raw: &str) -> Option<String> {
 /// Returns the bare-token prefix of a `content_type`, i.e. the part before the
 /// first `:` (`"datetime:%F"` → `"datetime"`, `"duration:3600"` → `"duration"`).
 /// Non-suffixed tokens are returned unchanged.
-pub(super) fn content_type_base(token: &str) -> &str {
+pub(crate) fn content_type_base(token: &str) -> &str {
     token.split(':').next().unwrap_or(token)
 }
 

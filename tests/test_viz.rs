@@ -16323,3 +16323,70 @@ fn viz_smart_dict_info_tells_the_time_axis_from_an_unused_date() {
         "an unused date column must NOT be described as the time axis, got: {unused}"
     );
 }
+
+// Two twin detectors, one redundancy group, and they used to elect OPPOSITE survivors:
+// `dimension_code_twins` keeps the human-readable `subject` (its whole purpose), while
+// `one_to_one_categorical_twins` ranks by shortest values and so keeps the CODE. Merged blindly,
+// BOTH columns were suppressed - and once the drawer gained "not charted" notes, each one claimed
+// the other was "charted instead", which was false in both directions. (roborev 4193)
+#[test]
+fn viz_smart_reciprocal_twins_keep_exactly_one_survivor() {
+    let wrk = Workdir::new("viz_smart_reciprocal_twins_keep_exactly_one_survivor");
+    // `subject_code` must be STRING-typed to reach the 1:1 detector (it skips numerics), and its
+    // values must be shorter than `subject`'s for the two detectors to disagree.
+    let subjects = [
+        "Mathematics",
+        "Literature and Composition",
+        "Physical Sciences",
+        "Social Studies",
+        "Fine Arts",
+    ];
+    let mut rows = String::from("subject,subject_code,amount,status\n");
+    for i in 0..400 {
+        let j = i % 5;
+        rows.push_str(&format!(
+            "{},S{j},{},{}\n",
+            subjects[j],
+            i * 7 % 900 + 1,
+            if i % 3 == 0 { "Closed" } else { "Open" }
+        ));
+    }
+    wrk.create_from_string("t.csv", &rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"properties":{
+            "subject":      {"type":["string"],"description":"Subject name.","x-qsv":{"role":"dimension","content_type":"category"}},
+            "subject_code": {"type":["string"],"description":"Subject code.","x-qsv":{"role":"dimension","content_type":"category"}},
+            "amount":       {"type":["number"],"description":"Amount.","x-qsv":{"role":"measure"}},
+            "status":       {"type":["string"],"description":"Status.","x-qsv":{"role":"dimension","content_type":"category"}}
+        }}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "t.csv", "--dict-info", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // EXACTLY ONE of the pair is suppressed, and it is the code - the name rule's survivor wins
+    assert!(
+        stderr.contains("skipped 1: subject_code"),
+        "only the code twin should be suppressed, got: {stderr}"
+    );
+    // the stderr 1:1 note must agree with that verdict rather than contradict it
+    assert!(
+        stderr.contains("charting only subject for subject_code"),
+        "the 1:1 note should keep the human-readable sibling, got: {stderr}"
+    );
+    // the drawer names a survivor that IS actually charted
+    assert!(
+        dict_section(&html, "subject_code").contains("duplicates subject, which is charted"),
+        "the code twin should point at `subject`"
+    );
+    assert!(
+        !dict_section(&html, "subject").contains("qsv-dict-notcharted"),
+        "`subject` is charted, so it must carry no not-charted note"
+    );
+}

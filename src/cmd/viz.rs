@@ -19722,6 +19722,7 @@ fn one_to_one_categorical_twins(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     sems: &[ColSemantics],
+    name_twins: &std::collections::HashMap<usize, usize>,
 ) -> CliResult<std::collections::HashMap<usize, usize>> {
     use std::collections::HashMap;
 
@@ -19834,7 +19835,17 @@ fn one_to_one_categorical_twins(
                 }
             })
         };
-        let Some(&keep) = g.iter().min_by_key(|i| (mean_len(i), **i)) else {
+        // The two detectors must not elect OPPOSITE survivors. `dimension_code_twins` exists to
+        // keep the HUMAN-READABLE sibling of a code/label pair, while `mean_len` below picks the
+        // SHORTEST values - i.e. the code. Merged blindly, `subject_code -> subject` and
+        // `subject -> subject_code` suppress BOTH columns, and each drawer note then claims the
+        // other one is charted. So a column the name rule elected to keep wins here too.
+        let name_protected =
+            |i: usize| name_twins.values().any(|&v| v == i) && !name_twins.contains_key(&i);
+        let Some(&keep) = g
+            .iter()
+            .min_by_key(|&&i| (!name_protected(i), mean_len(&i), i))
+        else {
             continue;
         };
         let name = |i: usize| {
@@ -19860,6 +19871,39 @@ fn one_to_one_categorical_twins(
     }
 
     Ok(suppress)
+}
+
+/// Enforce the invariant every consumer of `twin_suppress` depends on: **the column a suppressed
+/// twin points at is itself charted.**
+///
+/// The map is merged from two independent detectors, so a "kept" column can still be one that the
+/// other detector suppressed. Two shapes are possible:
+///
+/// * a CHAIN — `x_code_code -> x_code` and `x_code -> x`, both from the name rule, since
+///   `code_twin_base` only strips a suffix. Collapsed by following to the terminal survivor.
+/// * a CYCLE — the two detectors electing opposite survivors. `one_to_one_categorical_twins` now
+///   defers to the name rule's survivor so this should be unreachable, but a cycle would suppress
+///   EVERY member of the group, and the Data Dictionary drawer would then tell the reader that each
+///   one duplicates another column that is also missing. Broken by dropping the entry: a duplicate
+///   panel is a far better failure than a silently vanished column plus a false note.
+fn collapse_twin_chains(twins: &mut std::collections::HashMap<usize, usize>) {
+    let snapshot = twins.clone();
+    twins.retain(|&dropped, kept| {
+        let mut seen = std::collections::HashSet::from([dropped]);
+        let mut cursor = *kept;
+        // walk until the survivor is a column nobody suppresses
+        while let Some(&next) = snapshot.get(&cursor) {
+            if !seen.insert(cursor) {
+                return false; // cycle: suppress nothing, chart the duplicate instead
+            }
+            cursor = next;
+        }
+        if cursor == dropped {
+            return false;
+        }
+        *kept = cursor;
+        true
+    });
 }
 
 /// Canonical-timestamp priority for a date column's dictionary concept: a smaller rank wins as the
@@ -24960,24 +25004,26 @@ impl<'a> SmartCtx<'a> {
         // De-duplicate code/label twins (subject + subject_code -> chart only "subject"). Gated on
         // a dictionary being present so a stats-only Data Schematic is byte-identical; timezone
         // twins and IDs are already de-duplicated by the Temporal/Skip routing above.
-        let mut twin_suppress = if dict_data.is_some() {
+        let name_twins = if dict_data.is_some() {
             dimension_code_twins(&stats, &col_sems)
         } else {
             std::collections::HashMap::new()
         };
+        let mut twin_suppress = name_twins.clone();
         // ... and the same redundancy detected from the DATA rather than the names: two
         // categorical columns in a 1:1 correspondence chart as identical bars and waste a parcats
         // axis on the same variable (issue #4221). Deliberately NOT dictionary-gated — the name
         // rule above can only fire on a `<base>_code` spelling, and the reporting Data Schematic
         // has neither that spelling nor a dictionary. Soft-fail: a Data Schematic with a
         // duplicate panel beats no Data Schematic.
-        match one_to_one_categorical_twins(args, &stats, &col_sems) {
+        match one_to_one_categorical_twins(args, &stats, &col_sems, &name_twins) {
             Ok(dupes) => twin_suppress.extend(dupes),
             Err(e) => viz_note(&format!(
                 "viz smart: 1:1 dimension detection failed ({e}); redundant categorical panels \
                  may appear."
             )),
         }
+        collapse_twin_chains(&mut twin_suppress);
 
         // Build the geographic map panel up front (one data pass) so we can learn which lat/lon
         // columns it ACTUALLY consumed. Those columns are charted on the map only —

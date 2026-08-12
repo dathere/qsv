@@ -280,10 +280,10 @@ viz:
     snap_basis_precision: "abgeleitet aus der Koordinatengenauigkeit"
     snap_basis_default: "Standardwert"
   hover:
-    # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` are PLOTLY tokens -- leave them exactly
+    # `%{x:,.3~f}` / `%{z:,}` / `%{x:.0%}` are PLOTLY tokens -- leave them exactly
     # as they are. In `lorenz`, `%{q_label}` and `%{q_gini}` MUST stay ahead of
     # `%{x:.0%}` (see the ORDERING RULE in this file's header).
-    contour: "%{q_x}: %{x:.3s}<br>%{q_y}: %{y:.3s}<br>%{z:,} Zeilen<extra></extra>"
+    contour: "%{q_x}: %{x:,.3~f}<br>%{q_y}: %{y:,.3~f}<br>%{z:,} Zeilen<extra></extra>"
     lorenz: "%{q_label} (Gini %{q_gini})<br>die unteren %{x:.0%} der Datensätze halten %{y:.0%}<extra></extra>"
     ohlc: "Eröffnung: %{open}<br>Hoch: %{high}<br>Tief: %{low}<br>Schluss: %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>Anzahl: %{y:,}<extra></extra>"

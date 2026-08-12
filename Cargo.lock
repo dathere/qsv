@@ -6979,6 +6979,7 @@ dependencies = [
  "iana-time-zone",
  "indexmap 2.14.0",
  "indicatif",
+ "iso_currency",
  "itertools 0.15.0",
  "itoa",
  "jaq-core",

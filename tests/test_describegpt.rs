@@ -3985,3 +3985,134 @@ fn describegpt_infer_null_values_confirms_strings_and_demotes_numerics() {
         "-999 must be reported as requiring human confirmation"
     );
 }
+
+/// End-to-end proof of the money/currency chain WITHOUT an LLM: a canned response claims
+/// `content_type: money` but contradicts itself with `role: dimension`, and proposes a lowercase
+/// currency code. The emitted JSON Schema must show the role COERCED to `measure` (the
+/// `role_from_content_type` arm) and the currency NORMALIZED and kept.
+///
+/// The `role: dimension` contradiction is the load-bearing part: it is exactly what silently
+/// disqualified the column from `verify_currency` before `money` got its own role arm, and the
+/// failure is invisible — the currency simply never appears.
+#[test]
+fn describegpt_money_content_type_coerces_role_and_keeps_currency() {
+    use std::{io::Write, process::Stdio};
+
+    let wrk = Workdir::new("describegpt_money_currency");
+    let mut rows = vec![svec!["spent", "fee", "widgets", "ccy"]];
+    // Values must REPEAT: a column whose cardinality equals the row count is stamped
+    // `content_type: unique_id` deterministically, and that stamp is authoritative — it
+    // outranks anything the model says, so a money claim on it would never be reached.
+    for i in 0..30 {
+        rows.push(vec![
+            format!("{}", 1000 + (i % 10) * 37),
+            format!("{}.50", 20 + (i % 6)),
+            format!("{}", i % 7),
+            "USD".to_string(),
+        ]);
+    }
+    wrk.create_indexed("data.csv", rows);
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context")
+        .arg("--dictionary")
+        .arg("--infer-content-type")
+        .arg("--no-cache")
+        .arg("data.csv");
+    let prep: serde_json::Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+
+    let llm_response = serde_json::json!({
+        // contradicts itself: `money` content_type but `dimension` role, and a lowercase code
+        "spent":   {"label": "Total Spent", "description": "Dollars disbursed.",
+                    "content_type": "money", "role": "dimension",
+                    "concept": "measure.money", "currency": "usd"},
+        // a money column still tagged with the OLDER generic concept, as every dictionary
+        // authored before `measure.money` existed would be
+        "fee":     {"label": "Fee", "description": "Service fee.",
+                    "content_type": "unknown", "role": "measure",
+                    "concept": "measure.amount", "currency": "EUR"},
+        // NOT money: a currency on a plain count must be dropped
+        "widgets": {"label": "Widgets", "description": "Units shipped.",
+                    "content_type": "unknown", "role": "measure",
+                    "concept": "measure.count", "currency": "USD"},
+        // the column that NAMES the currency is a dimension, never an amount
+        "ccy":     {"label": "Currency", "description": "ISO code.",
+                    "content_type": "currency_code", "role": "dimension",
+                    "concept": "unknown", "currency": "USD"},
+    })
+    .to_string();
+
+    let phases: Vec<serde_json::Value> = prep["phases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "kind": p["kind"],
+                "response": llm_response,
+                "reasoning": "",
+                "token_usage": {"prompt": 1, "completion": 1, "total": 2, "elapsed": 1}
+            })
+        })
+        .collect();
+    let process_input = serde_json::json!({
+        "phases": phases,
+        "analysis_results": prep["analysis_results"],
+        "model": prep["model"],
+    });
+
+    let mut cmd_2 = wrk.command("describegpt");
+    cmd_2
+        .arg("--process-response")
+        .arg("--dictionary")
+        .arg("--infer-content-type")
+        .arg("--no-cache")
+        .arg("--format")
+        .arg("JSONSchema")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd_2.spawn().unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(process_input.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "process-response failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let schema: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).unwrap();
+
+    let spent = &schema["properties"]["spent"]["x-qsv"];
+    assert_eq!(
+        spent["role"], "measure",
+        "content_type `money` must force role measure, else verify_currency drops the code"
+    );
+    assert_eq!(spent["concept"], "measure.money");
+    assert_eq!(
+        spent["currency"], "USD",
+        "the code is uppercased on the way in"
+    );
+
+    // the generic concept qualifies too, so pre-`measure.money` dictionaries keep working
+    assert_eq!(schema["properties"]["fee"]["x-qsv"]["currency"], "EUR");
+
+    // ...but a non-money measure and a categorical code column both lose it
+    assert!(
+        schema["properties"]["widgets"]["x-qsv"]
+            .get("currency")
+            .is_none(),
+        "a count is not money"
+    );
+    assert!(
+        schema["properties"]["ccy"]["x-qsv"]
+            .get("currency")
+            .is_none(),
+        "the column naming the currency is a dimension, not an amount"
+    );
+}

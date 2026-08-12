@@ -292,10 +292,10 @@ viz:
     snap_basis_precision: "derivado de la precisión de las coordenadas"
     snap_basis_default: "predeterminado"
   hover:
-    # `%{x:.3s}` / `%{z:,}` / `%{x:.0%}` son tokens de PLOTLY: no los traduzcas.
+    # `%{x:,.3~f}` / `%{z:,}` / `%{x:.0%}` son tokens de PLOTLY: no los traduzcas.
     # `%{q_label}` y `%{q_gini}` deben ir ANTES de `%{x:.0%}` (ver la ORDERING
     # RULE en en.yml); si se mueven detras, no se sustituyen.
-    contour: "%{q_x}: %{x:.3s}<br>%{q_y}: %{y:.3s}<br>%{z:,} filas<extra></extra>"
+    contour: "%{q_x}: %{x:,.3~f}<br>%{q_y}: %{y:,.3~f}<br>%{z:,} filas<extra></extra>"
     lorenz: "%{q_label} (Gini %{q_gini})<br>el %{x:.0%} inferior de los registros posee el %{y:.0%}<extra></extra>"
     ohlc: "Apertura: %{open}<br>Máximo: %{high}<br>Mínimo: %{low}<br>Cierre: %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>recuento: %{y:,}<extra></extra>"

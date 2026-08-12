@@ -198,6 +198,15 @@ describegpt options:
                            "viz smart" dictionary-driven Data Schematic draws that KPI tile as a GAUGE.
                            (A KPI "vs target" delta uses "x-qsv.target", which is a GOAL you
                            hand-author - never inferred.)
+                           For a MONETARY measure the LLM also proposes an "x-qsv.currency": the
+                           ISO-4217 alpha-3 code (e.g. "USD") the amounts are denominated in.
+                           Codes are validated against the ISO register, and qsv keeps one only
+                           when the field is a numeric measure that reads as money, so a currency
+                           on a count or on the column that NAMES the currency (that column is a
+                           "currency_code" dimension) is dropped. Money columns are also tagged
+                           with the "money" content type and the "measure.money" concept.
+                           "qsv viz smart --dictionary" reads the code to prefix that column's
+                           KPI tile with the currency's symbol.
                            The LLM also infers dataset-level INTER-COLUMN RELATIONSHIPS, emitted
                            as a "relationships" array (top-level in the JSON dictionary, and in
                            the dataset-level "x-qsv" object of the JSON Schema one). Each entry
@@ -7962,6 +7971,7 @@ p_fewshot_examples = ""
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
             gauge_range:     None,
+            currency:        None,
         }];
         let first = build_first_pass_dictionary_json_string(&args, &entries);
         sleep(Duration::from_millis(10));
@@ -8165,6 +8175,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
             dictionary::DictionaryEntry {
                 name:          "category|raw".to_string(),
@@ -8188,6 +8199,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
         ];
 
@@ -8273,6 +8285,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
             dictionary::DictionaryEntry {
                 name:          "Status".to_string(),
@@ -8309,6 +8322,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
         ];
 
@@ -8410,6 +8424,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
             dictionary::DictionaryEntry {
                 name:          "Status".to_string(),
@@ -8433,6 +8448,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
         ];
 
@@ -8509,6 +8525,7 @@ p_fewshot_examples = ""
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
             gauge_range:     None,
+            currency:        None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -8599,6 +8616,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
             // Text column with only `min_length` retained.
             dictionary::DictionaryEntry {
@@ -8623,6 +8641,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
             // Text column with only `max_length` retained.
             dictionary::DictionaryEntry {
@@ -8647,6 +8666,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
         ];
 
@@ -8722,6 +8742,7 @@ p_fewshot_examples = ""
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
             gauge_range:     None,
+            currency:        None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -8884,6 +8905,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
             dictionary::DictionaryEntry {
                 name:          "category".to_string(),
@@ -8907,6 +8929,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
         ];
 
@@ -8974,6 +8997,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
             // datetime with an inferred format (contains colons) over an RFC3339 min/max.
             dictionary::DictionaryEntry {
@@ -8998,6 +9022,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
             // bare `date` token (no inferred fmt) — Min/Max stay as-is.
             dictionary::DictionaryEntry {
@@ -9022,6 +9047,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
             // non-date content type — Min/Max untouched even though numeric.
             dictionary::DictionaryEntry {
@@ -9046,6 +9072,7 @@ p_fewshot_examples = ""
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
                 gauge_range:     None,
+                currency:        None,
             },
         ];
 
@@ -9215,10 +9242,24 @@ p_fewshot_examples = ""
         assert!(
             on.contains(
                 "\"content_type\", \"role\", \"concept\" and (for canonical-scale numeric \
-                 measures only) an optional \"gauge_range\" properties"
+                 measures only) an optional \"gauge_range\", plus (for monetary measures only) an \
+                 optional \"currency\" properties"
             ),
-            "flag-on prompt must list content_type/role/concept/gauge_range in the properties \
-             sentence:\n{on}"
+            "flag-on prompt must list content_type/role/concept/gauge_range/currency in the \
+             properties sentence:\n{on}"
+        );
+        // The Currency instruction and its worked example are injected when the flag is on.
+        assert!(
+            on.contains("- Currency (OPTIONAL, monetary MEASURE fields only)"),
+            "flag-on prompt must include the Currency instruction:\n{on}"
+        );
+        assert!(
+            on.contains("\"currency\": \"USD\"") && on.contains("\"concept\": \"measure.money\""),
+            "flag-on prompt must include the money worked example:\n{on}"
+        );
+        assert!(
+            !off.contains("Currency (OPTIONAL"),
+            "flag-off prompt must NOT mention currency:\n{off}"
         );
         // The Gauge Range instruction is injected when the flag is on.
         assert!(

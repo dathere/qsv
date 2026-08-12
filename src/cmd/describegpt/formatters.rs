@@ -497,6 +497,13 @@ fn build_x_qsv(
         if let Some([lo, hi]) = entry.gauge_range {
             x_qsv.insert("gauge_range".to_string(), json!([lo, hi]));
         }
+        // ISO-4217 code for a monetary measure, already verified in `verify_currency` (so it
+        // is `Some` only when the column is a numeric measure that reads as money). Read back
+        // by `viz smart --dictionary` as `x-qsv.currency` to prefix the column's KPI tile with
+        // the currency symbol. Absent otherwise, keeping no-flag runs byte-identical.
+        if let Some(code) = &entry.currency {
+            x_qsv.insert("currency".to_string(), json!(code));
+        }
     }
     // Null sentinels. Deliberately NOT gated on the flag: emission keys off the lists being
     // non-empty, and they are only populated when a response actually supplied `null_values`.
@@ -1246,6 +1253,7 @@ mod tests {
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
             gauge_range:     None,
+            currency:        None,
         }
     }
 
@@ -1704,6 +1712,79 @@ mod tests {
     }
 
     #[test]
+    fn jsonschema_x_qsv_carries_currency_for_money_measure() {
+        // A verified currency emits as the bare ISO-4217 string `viz smart --dictionary`
+        // reads back from `x-qsv.currency`.
+        let mut spent = sample_entry("spent_total", "money");
+        spent.r#type = "Float".to_string();
+        spent.role = "measure".to_string();
+        spent.concept = "measure.money".to_string();
+        spent.currency = Some("USD".to_string());
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&spent),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert_eq!(
+            schema["properties"]["spent_total"]["x-qsv"]["currency"],
+            json!("USD")
+        );
+
+        // flag off: currency absent (legacy schema stays byte-identical).
+        let off = format_dictionary_jsonschema(
+            std::slice::from_ref(&spent),
+            "test.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert!(
+            off["properties"]["spent_total"]["x-qsv"]
+                .get("currency")
+                .is_none(),
+            "currency leaked when flag off"
+        );
+
+        // None currency is omitted even with the flag on.
+        let mut plain = sample_entry("plain_measure", "");
+        plain.r#type = "Float".to_string();
+        plain.role = "measure".to_string();
+        let schema3 = format_dictionary_jsonschema(
+            std::slice::from_ref(&plain),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert!(
+            schema3["properties"]["plain_measure"]["x-qsv"]
+                .get("currency")
+                .is_none(),
+            "currency emitted when None"
+        );
+    }
+
+    #[test]
     fn tsv_header_unchanged_when_flag_off() {
         let entries = vec![sample_entry("col", "email")];
         let tsv = format_dictionary_tsv(&entries, false);
@@ -1798,6 +1879,7 @@ mod tests {
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
             gauge_range:     None,
+            currency:        None,
         };
         let schema = format_dictionary_jsonschema(
             std::slice::from_ref(&entry),

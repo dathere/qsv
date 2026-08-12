@@ -22054,7 +22054,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
     let hover_text = choropleth_hover_text(&order, &z, None, &t!("viz.chart.count"), true);
     Some(Panel::new(
-        name.to_string(),
+        name,
         PanelKind::Choropleth {
             locations: order,
             z,

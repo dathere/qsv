@@ -277,14 +277,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             ));
         }
         let preview = diskcache::PreviewOptions {
-            source:       args.arg_source[0].clone(),
-            sample:       args.flag_sample.unwrap_or(DEFAULT_PREVIEW_SAMPLE),
-            offset_mb:    args.flag_offset,
-            random:       args.flag_random,
-            ckan_api_url: ckan_api_url.clone(),
-            ckan_token:   ckan_token.clone(),
+            source: args.arg_source[0].clone(),
+            sample: args.flag_sample.unwrap_or(DEFAULT_PREVIEW_SAMPLE),
+            offset_mb: args.flag_offset,
+            random: args.flag_random,
+            ckan_api_url,
+            ckan_token,
             timeout_secs: args.flag_timeout,
-            cloud_opts:   args.flag_cloud_opt.clone(),
+            cloud_opts: args.flag_cloud_opt.clone(),
         };
         return diskcache::preview_resource(&preview, args.flag_output.as_deref());
     }

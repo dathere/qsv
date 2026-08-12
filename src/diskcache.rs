@@ -1711,7 +1711,7 @@ mod rich {
                 let entry = StoredEntry {
                     meta: CacheEntry {
                         logical_name: name.clone(),
-                        cache_key: cache_key.clone(),
+                        cache_key,
                         source_uri: source.to_string(),
                         resolved_uri: source.to_string(),
                         blake3: b3,
@@ -1726,7 +1726,7 @@ mod rich {
                         ttl_secs: opts.ttl_secs,
                         refresh_policy: opts.refresh_policy,
                         compression: opts.compression,
-                        cloud_identity: identity.clone(),
+                        cloud_identity: identity,
                         ckan_api_url: None,
                         inner_ext,
                         sniffed: None,
@@ -2087,13 +2087,13 @@ mod rich {
                 let entry = StoredEntry {
                     meta: CacheEntry {
                         logical_name: name.clone(),
-                        cache_key: cache_key.clone(),
+                        cache_key,
                         source_uri: opts.source.clone(),
                         resolved_uri: final_url.to_string(),
                         blake3: b3,
                         etag,
                         last_modified,
-                        ckan_resource_hash: ckan_resource_hash.clone(),
+                        ckan_resource_hash,
                         size_compressed,
                         size_uncompressed,
                         record_count: None,
@@ -2404,7 +2404,7 @@ mod rich {
             };
             (ckan.data_url, auth)
         } else {
-            (resolved.url.clone(), None)
+            (resolved.url, None)
         };
         preview_http(&client, &final_url, auth.as_deref(), opts, output)
     }

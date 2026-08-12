@@ -3603,7 +3603,7 @@ pub fn reverse_geocode_points(
                 city: nameslang.cityname.clone(),
                 admin1: nameslang.admin1name.clone(),
                 country,
-                admin2: nameslang.admin2name.clone(),
+                admin2: nameslang.admin2name,
                 country_iso2: cityrecord
                     .country
                     .as_ref()
@@ -3701,7 +3701,7 @@ fn cityrecord_to_region(
         iso2,
         iso3,
         country_name,
-        admin1_name: nameslang.admin1name.clone(),
+        admin1_name: nameslang.admin1name,
         admin1_code,
         us_state_code,
     })

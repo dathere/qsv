@@ -1928,7 +1928,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // cache is removed.
             if currstats_filename == stats_pathbuf.to_str().unwrap() {
                 fs::copy(&currstats_filename, &stats_csv_tempfile_fname)?;
-                currstats_filename = stats_csv_tempfile_fname.clone();
+                currstats_filename = stats_csv_tempfile_fname;
             }
 
             // remove the stats cache file

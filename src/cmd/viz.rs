@@ -16216,19 +16216,29 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     .and_then(serde_json::Value::as_str)
                     .map(|s| s.trim().to_ascii_uppercase())
                     .filter(|c| c.len() == 3 && c.bytes().all(|b| b.is_ascii_uppercase()))?;
-                let concept = from_xq("concept");
+                // TRIM every token before comparing. `from_xq` stores values verbatim and each
+                // consumer trims at its point of use (`derive_semantics` does
+                // `row.concept.trim()`, `row.role.trim()`, `row.content_type.trim()`), so a
+                // sidecar carrying `"role": "measure "` still routes as a measure. An untrimmed
+                // gate here would let that column chart as money while silently dropping its
+                // currency — the exact silent-drop failure this gate exists to prevent, merely
+                // relocated.
+                let concept_raw = from_xq("concept");
+                let concept = concept_raw.trim();
+                let ct_raw = from_xq("content_type");
                 let money_ish = concept == "measure.money"
                     || concept == "measure.amount"
-                    || crate::cmd::describegpt::dictionary::content_type_base(&from_xq(
-                        "content_type",
-                    )) == "money";
+                    || crate::cmd::describegpt::dictionary::content_type_base(ct_raw.trim())
+                        == "money";
                 // `qsv_type` is absent on hand-written dictionaries; only reject when it is
                 // present AND says the column is non-numeric.
-                let numeric = match from_xq("qsv_type").as_str() {
+                let type_raw = from_xq("qsv_type");
+                let numeric = match type_raw.trim() {
                     "" => true,
                     t => matches!(t, "Integer" | "Float"),
                 };
-                let role = from_xq("role");
+                let role_raw = from_xq("role");
+                let role = role_raw.trim();
                 // an empty role is admissible: `concept` alone can establish the measure (that is
                 // the precedence `derive_semantics` uses), so requiring a role would drop a
                 // perfectly good `{"concept": "measure.money", "currency": "USD"}`.
@@ -35057,6 +35067,9 @@ mod tests {
             "ccy": { "type": "string", "title": "Currency",
               "x-qsv": { "qsv_type": "String", "role": "dimension",
                          "content_type": "currency_code", "currency": "USD" } },
+            "padded": { "type": "number", "title": "Padded",
+              "x-qsv": { "qsv_type": " Float ", "role": "measure ",
+                         "concept": " measure.money ", "currency": "EUR" } },
             "notes": { "type": "string", "x-qsv": { "qsv_type": "String" } }
           },
           "x-qsv": { "grain": "one row = one 311 service request",
@@ -35092,6 +35105,12 @@ mod tests {
             ccy.currency, None,
             "a String column of ISO codes NAMES a currency; it is not an amount in one"
         );
+        // the gate must be no stricter about whitespace than the routing path is: every other
+        // consumer trims these tokens at point of use, so a padded-but-valid sidecar routes as a
+        // monetary measure and must keep its currency rather than silently losing it
+        // (roborev 4203)
+        let padded = data.rows.get("padded").expect("padded row");
+        assert_eq!(padded.currency.as_deref(), Some("EUR"));
         // a property with a bare x-qsv (no role/concept) still parses with empty signals
         let notes = data.rows.get("notes").expect("notes row");
         assert!(notes.role.is_empty() && notes.concept.is_empty());

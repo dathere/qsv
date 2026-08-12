@@ -22,8 +22,10 @@ fn viz_bar_html_to_stdout() {
     assert!(html.contains("Plotly.newPlot"));
     assert!(html.contains(r#""type":"bar""#));
     assert!(html.contains("apple"));
-    // single-series bar charts get SI-formatted value labels above each bar
-    assert!(html.contains(r#""texttemplate":"%{y:.3s}""#));
+    // single-series bar charts get magnitude-formatted value labels above each bar. These are
+    // rendered by qsv (a per-bar literal array), not by a d3 SI template, because d3
+    // cannot emit the "B" English pages need for 1e9 (issue #4393).
+    assert!(html.contains(r#""texttemplate":["#));
     assert!(html.contains(r#""textposition":"outside""#));
 }
 
@@ -7896,8 +7898,8 @@ fn viz_contour_hover_names_both_measures_and_the_row_count() {
     // form it is actually emitted in
     let html = String::from_utf8_lossy(&out.stdout);
     let want = concat!(
-        r"lon: %{x:.3s}\u003cbr\u003e",
-        r"lat: %{y:.3s}\u003cbr\u003e",
+        r"lon: %{x:,.3~f}\u003cbr\u003e",
+        r"lat: %{y:,.3~f}\u003cbr\u003e",
         r"%{z:,} rows\u003cextra\u003e\u003c/extra\u003e"
     );
     assert!(
@@ -13291,7 +13293,7 @@ fn viz_smart_density_panel_hover_names_both_measures_and_the_row_count() {
     );
     assert!(
         html.contains(
-            r"widgetcount: %{x:.3s}\u003cbr\u003ezonescore: %{y:.3s}\u003cbr\u003e%{z:,} rows\u003cextra\u003e\u003c/extra\u003e"
+            r"widgetcount: %{x:,.3~f}\u003cbr\u003ezonescore: %{y:,.3~f}\u003cbr\u003e%{z:,} rows\u003cextra\u003e\u003c/extra\u003e"
         ),
         "the density cell hover must name both measures and the row count; html: {html}"
     );
@@ -16556,5 +16558,116 @@ fn viz_smart_dict_info_localizes_an_early_refusal_from_the_dictionary_language()
     assert!(
         stderr.contains("viz smart --bivariate:"),
         "stderr must stay English and prefixed, got: {stderr}"
+    );
+}
+
+// A dictionary `x-qsv.currency` on a monetary measure prefixes its KPI tile with the currency
+// symbol, and large values carry the "B" suffix English readers expect rather than d3's SI "G"
+// (issue #4393). The whole page must agree — tiles, bar labels and axes — so this also pins that
+// no `%{y:.3s}` template and no `exponentformat: "SI"` survive on an English page.
+#[test]
+fn viz_smart_money_currency_prefix_and_b_suffix() {
+    let wrk = Workdir::new("viz_smart_money_currency_prefix_and_b_suffix");
+    // values in the billions, repeating so the column is not stamped all-unique
+    let mut csv = String::from("agency,spent\n");
+    for i in 0..40 {
+        csv.push_str(&format!(
+            "A{},{}\n",
+            i % 5,
+            4_000_000_000_u64 + (i % 8) * 5e8 as u64
+        ));
+    }
+    wrk.create_from_string("money.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"type":"object","properties":{"spent":{"title":"Total Spent","type":"number","x-qsv":{"role":"measure","concept":"measure.money","currency":"usd"}}}}"#,
+    );
+
+    let out_html = wrk.path("m.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "money.csv",
+        "--dictionary",
+        "dict.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("m.html").unwrap();
+
+    // the KPI headline reads "$...B": symbol from the prefix, magnitude from the suffix. The
+    // lowercase "usd" in the dictionary proves viz normalizes hand-edited sidecars itself.
+    assert!(
+        html.contains(r#""prefix":"$""#),
+        "KPI tile must carry the currency symbol; html: {html}"
+    );
+    assert!(
+        html.contains(r#""suffix":"B""#),
+        "a billions-scale KPI must read B, not G; html: {html}"
+    );
+    // the currency is named once per panel, in the subtitle
+    assert!(
+        html.contains("(USD)"),
+        "the panel subtitle must name the currency"
+    );
+    // axes agree with the labels...
+    assert!(html.contains(r#""exponentformat":"B""#));
+    // ...and nothing on the page still speaks SI
+    assert!(
+        !html.contains(r#""exponentformat":"SI""#),
+        "an English page must not mix B tiles with SI axes"
+    );
+    assert!(
+        !html.contains(r"%{y:.3s}"),
+        "bar value labels must be qsv-rendered, not d3 SI templates"
+    );
+}
+
+// The twin of the test above: every suffix decision is locale-gated off ONE helper, so a non-en
+// page must flip ALL of them back to SI together. A half-converted page (B tiles, G axes) is the
+// exact defect issue #4393 reports.
+#[test]
+fn viz_smart_money_non_english_keeps_si_suffix() {
+    let wrk = Workdir::new("viz_smart_money_non_english_keeps_si_suffix");
+    let mut csv = String::from("agency,spent\n");
+    for i in 0..40 {
+        csv.push_str(&format!(
+            "A{},{}\n",
+            i % 5,
+            4_000_000_000_u64 + (i % 8) * 5e8 as u64
+        ));
+    }
+    wrk.create_from_string("money.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"type":"object","properties":{"spent":{"title":"Total Spent","type":"number","x-qsv":{"role":"measure","concept":"measure.money","currency":"USD"}}}}"#,
+    );
+
+    let out_html = wrk.path("m.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "money.csv",
+        "--dictionary",
+        "dict.json",
+        "--language",
+        "Spanish",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("m.html").unwrap();
+
+    // the currency symbol is not locale-gated -- only the magnitude suffix is
+    assert!(html.contains(r#""prefix":"$""#));
+    assert!(
+        html.contains(r#""suffix":"G""#),
+        "a non-English page keeps the SI prefix; html: {html}"
+    );
+    assert!(html.contains(r#""exponentformat":"SI""#));
+    assert!(
+        !html.contains(r#""exponentformat":"B""#),
+        "no B may leak onto a non-English page"
     );
 }

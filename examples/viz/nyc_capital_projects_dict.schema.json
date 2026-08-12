@@ -32,19 +32,19 @@
       "type": "integer",
       "title": "Planned",
       "description": "Total planned commitments for the project allocated in the Capital Commitment Plan.",
-      "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" }
+      "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.money", "currency": "USD" }
     },
     "commit_total": {
       "type": "number",
       "title": "Committed",
       "description": "Total committed funding associated with the project within the City's budget.",
-      "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount" }
+      "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount", "currency": "USD" }
     },
     "spent_total": {
       "type": "number",
       "title": "Spent",
       "description": "Total funding spent associated with the project within the City's budget.",
-      "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount" }
+      "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount", "currency": "USD" }
     }
   },
   "x-qsv": {

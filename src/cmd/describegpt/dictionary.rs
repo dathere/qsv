@@ -99,6 +99,10 @@ pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     "uuid",
     "credit_card",
     "currency_code",
+    // the AMOUNT, as distinct from `currency_code` (the ISO code that names the currency the
+    // amount is denominated in). The vocabulary's only NUMERIC token: it implies `role: measure`
+    // (see `role_from_content_type`) and seeds `concept: measure.money`.
+    "money",
     "isbn",
     "ip_address",
     "ipv6_address",
@@ -202,6 +206,11 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     // quantities / categoricals
     "measure.count",
     "measure.amount",
+    // a currency-denominated amount. More specific than `measure.amount` (which covers any
+    // additive quantity); pairs with the per-field `currency` annotation carrying the ISO-4217
+    // code. Aggregates like `measure.amount` - the `is_intensive_measure` label guard still
+    // applies, so a `unit_price` or `cost_per_capita` is still averaged rather than summed.
+    "measure.money",
     "measure.ratio",
     "category.status",
     "category.type",
@@ -268,6 +277,7 @@ pub(super) fn concept_from_content_type(content_type_base: &str) -> Option<&'sta
         "email" => "pii.email",
         "phone" => "pii.phone",
         "first_name" | "last_name" | "full_name" => "pii.full_name",
+        "money" => "measure.money",
         "company_name" => "org.company",
         "industry" => "org.industry",
         "date" => "time.date",
@@ -306,11 +316,20 @@ fn is_identifier_content_type(base: &str) -> bool {
 /// return `None` — numeric measures legitimately carry `content_type: unknown` and
 /// `duration:N` is a magnitude you aggregate, so role/concept are left as inferred.
 /// Anchors both the `role` coercion (#4177) and the `concept` reconciliation (#4176).
+///
+/// `money` is the one token that implies `measure` rather than `dimension`, and the arm is
+/// LOAD-BEARING rather than cosmetic: the `dimension` catch-all below matches every in-vocab
+/// token, so without this branch a correctly-typed money column would be DEMOTED to `dimension`
+/// by `coerce_role_concept`. That demotion is silent — routing survives via the concept
+/// backfill — but `verify_gauge_range` and `verify_currency` both gate on `role == "measure"`,
+/// so both annotations would vanish with no error anywhere.
 fn role_from_content_type(base: &str) -> Option<&'static str> {
     if is_temporal_content_type(base) {
         Some("timestamp")
     } else if is_identifier_content_type(base) {
         Some("identifier")
+    } else if base == "money" {
+        Some("measure")
     } else if base != "unknown" && base != "duration" && CONTENT_TYPE_VOCAB.contains(&base) {
         Some("dimension")
     } else {
@@ -430,7 +449,7 @@ pub(super) fn normalize_datetime_token(raw: &str) -> Option<String> {
 /// Returns the bare-token prefix of a `content_type`, i.e. the part before the
 /// first `:` (`"datetime:%F"` → `"datetime"`, `"duration:3600"` → `"duration"`).
 /// Non-suffixed tokens are returned unchanged.
-pub(super) fn content_type_base(token: &str) -> &str {
+pub(crate) fn content_type_base(token: &str) -> &str {
     token.split(':').next().unwrap_or(token)
 }
 
@@ -579,6 +598,13 @@ pub(super) struct LlmDictField {
     /// role/stats VERIFICATION happens later in `combine_dictionary_entries`, not
     /// here — this struct only carries the model's raw proposal.
     pub(super) gauge_range:  Option<[f64; 2]>,
+    /// RAW ISO-4217 alpha-3 currency code proposed by the LLM for a monetary measure,
+    /// already trimmed, uppercased and checked against the ISO register in
+    /// `parse_llm_dictionary_response`. `None` unless the dictionary prompt asked for it
+    /// (under `--infer-content-type`). Whether the FIELD is really money (numeric + role
+    /// measure + money-ish concept) is decided later by `verify_currency`, which alone sees
+    /// the finalized role.
+    pub(super) currency:     Option<String>,
 }
 
 pub(crate) struct StatsRecord {
@@ -697,6 +723,15 @@ pub(super) struct DictionaryEntry {
     /// (`x-qsv.gauge_range`). `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
     pub(super) gauge_range:     Option<[f64; 2]>,
+    /// Optional ISO-4217 alpha-3 code (e.g. `USD`) naming the currency a monetary MEASURE is
+    /// denominated in. The LLM proposes it only under `--infer-content-type`;
+    /// `verify_currency` then keeps it ONLY when the column is a numeric measure that reads as
+    /// money — the same propose-then-verify discipline as `gauge_range`. Consumed by
+    /// `viz smart --dictionary` (`x-qsv.currency`) to prefix the column's KPI tile with the
+    /// currency symbol and name the currency in its panel subtitle.
+    /// `#[serde(default)]` for cache backward-compatibility.
+    #[serde(default)]
+    pub(super) currency:        Option<String>,
 }
 
 /// Parse the `stats` CSV into structured records, returning the records plus
@@ -1113,6 +1148,9 @@ pub(super) fn generate_code_based_dictionary(
             // Proposed by the LLM pass (measure gauges) and verified against the
             // observed min/max in `combine_dictionary_entries`; no deterministic seed.
             gauge_range: None,
+            // Likewise proposed by the LLM pass and verified in `verify_currency`. Nothing in
+            // the stats can reveal the currency of a bare number, so there is no seed.
+            currency: None,
         });
     }
 
@@ -1334,6 +1372,7 @@ pub(super) fn combine_dictionary_entries(
             entry.concept = merge_concept(&entry.concept, &llm.concept, false);
             entry.role = merge_role(&entry.role, &llm.role, false);
             entry.gauge_range = llm.gauge_range;
+            entry.currency = llm.currency.clone();
         }
         if infer_content_type {
             if entry.content_type.is_empty() {
@@ -1343,6 +1382,9 @@ pub(super) fn combine_dictionary_entries(
             // AFTER role is finalized: keep the proposed gauge scale only if the
             // column is a measure and its observed range fits inside it.
             verify_gauge_range(entry);
+            // AFTER role AND concept are finalized: keep the proposed currency only if the
+            // column is a numeric measure that reads as money.
+            verify_currency(entry);
         }
     }
     code_entries
@@ -1377,12 +1419,17 @@ fn coerce_role_concept(entry: &mut DictionaryEntry) {
     // on `role`, so the contradiction becomes a visible defect. Reconcile here — the
     // single coercion choke point shared by both merge paths:
     //   - a temporal content_type is always a `timestamp` (overrides any role);
+    //   - `money` is always a `measure` (overrides any role) - it is the vocabulary's only numeric
+    //     token, and a model that emits `content_type: money` with `role: dimension` would
+    //     otherwise keep `dimension`, silently disqualifying the column from the `verify_currency`
+    //     / `verify_gauge_range` gates (both require `role == "measure"`);
     //   - any other recognized (non-numeric) content_type must not be a `measure`, so a stray
     //     `measure` becomes `identifier` (id-family) or `dimension`.
     // `unknown`/`duration` yield no constraint (measure-admissible), so a numeric
     // measure is left untouched.
     match role_from_content_type(base) {
         Some("timestamp") => entry.role = "timestamp".to_string(),
+        Some("measure") => entry.role = "measure".to_string(),
         Some(required) if entry.role == "measure" => entry.role = required.to_string(),
         _ => {},
     }
@@ -1428,6 +1475,12 @@ fn coerce_role_concept(entry: &mut DictionaryEntry) {
             // a uuid is a key; it may be a surrogate/natural/foreign key (id.surrogate_key is
             // reserved+deterministic and handled upstream, so it is not offered here).
             "uuid" => &["id.uuid", "id.natural_key", "id.foreign_key"],
+            // a money amount is a quantity: the generic `measure.amount` is as defensible as the
+            // specific `measure.money`, and every money column in a dictionary authored before
+            // `measure.money` existed carries the former. Admitting it avoids churning those.
+            // `measure.count` and `measure.ratio` are NOT admitted - a currency-denominated
+            // column is neither a tally nor a rate.
+            "money" => &["measure.money", "measure.amount"],
             // an org-name column may be a company or a (government) agency, never an industry.
             "company_name" => &["org.company", "org.agency"],
             _ => &[],
@@ -1489,6 +1542,40 @@ fn verify_gauge_range(entry: &mut DictionaryEntry) {
     }
 }
 
+/// Verify (and otherwise drop) a proposed `currency`. An ISO-4217 code is only meaningful on a
+/// column that actually holds monetary amounts:
+///
+///   1. the column's qsv `type` is numeric (`Integer`/`Float`) — a currency code on a String column
+///      is describing the wrong thing entirely; that column is a `currency_code` DIMENSION (it
+///      names a currency), not an amount denominated in one;
+///   2. the column's FINALIZED `role` is `measure`; and
+///   3. the column reads as money — `concept` is `measure.money` or `measure.amount`, or the
+///      `content_type` base is `money`.
+///
+/// Requirement 3 deliberately admits the generic `measure.amount`, not just the specific
+/// `measure.money`. Every money column in a dictionary authored before `measure.money` existed
+/// carries `measure.amount`, and hand-adding a `currency` to one of those must work without also
+/// re-tagging the concept. The code's SHAPE and register membership were already validated in
+/// `parse_llm_dictionary_response`; this is the SEMANTIC check, because only here are the merged
+/// role, concept and column type all known. Anything that fails is reset to `None` — an
+/// unverifiable currency is simply not emitted.
+///
+/// Must be called AFTER `coerce_role_concept`, so `role` and `concept` are final.
+fn verify_currency(entry: &mut DictionaryEntry) {
+    if entry.currency.is_none() {
+        return;
+    }
+    let money_ish = entry.concept == "measure.money"
+        || entry.concept == "measure.amount"
+        || content_type_base(&entry.content_type) == "money";
+    if !(matches!(entry.r#type.as_str(), "Integer" | "Float")
+        && entry.role == "measure"
+        && money_ish)
+    {
+        entry.currency = None;
+    }
+}
+
 /// Two-pass-aware merge: seed `code_entries` with the BASELINE LLM Label / Description /
 /// Content Type (from the first pass) and then overlay the REFINE pass's LLM fields on top.
 /// If the refine pass omits a field, the baseline Label / Description / Content Type are
@@ -1520,6 +1607,7 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             entry.concept = merge_concept(&entry.concept, &baseline.concept, false);
             entry.role = merge_role(&entry.role, &baseline.role, false);
             entry.gauge_range = baseline.gauge_range;
+            entry.currency = baseline.currency.clone();
         }
         // Stage 2: overlay refine-pass LLM values where present. Omitted fields keep their
         // baseline values from stage 1 — this is the whole point of the baseline merge.
@@ -1539,6 +1627,13 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             if refine.gauge_range.is_some() {
                 entry.gauge_range = refine.gauge_range;
             }
+            // Same rule for the currency. The refine prompt never ASKS for one (currency is a
+            // first-pass concern), so in practice this only ever carries the baseline forward
+            // — but a custom --prompt-file can supply one, and an unconditional assignment
+            // here would silently wipe a verified baseline currency on every --two-pass run.
+            if refine.currency.is_some() {
+                entry.currency = refine.currency.clone();
+            }
         }
         // Stage 3: same final "unknown"/fallback coercion as `combine_dictionary_entries` so
         // the two-pass output matches single-pass invariants.
@@ -1548,6 +1643,7 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             }
             coerce_role_concept(entry);
             verify_gauge_range(entry);
+            verify_currency(entry);
         }
     }
     code_entries
@@ -1966,6 +2062,24 @@ pub(super) fn parse_llm_dictionary_response(
                     None
                 };
 
+                // `currency` rides the same `infer_content_type` gate. SHAPE + REGISTER
+                // validation only: trim, uppercase, require exactly three ASCII letters, and
+                // require the code to name a real ISO-4217 currency. The cheap length/case
+                // pre-filter keeps the failure mode legible — a symbol ("$"), a name
+                // ("dollars") or a two-letter country code never reaches the register lookup.
+                // Whether the FIELD is money is decided later by `verify_currency`, the only
+                // place that sees the finalized role and concept.
+                let currency = if infer_content_type {
+                    field_map
+                        .get("currency")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.trim().to_ascii_uppercase())
+                        .filter(|c| c.len() == 3 && c.bytes().all(|b| b.is_ascii_uppercase()))
+                        .filter(|c| iso_currency::Currency::from_code(c).is_some())
+                } else {
+                    None
+                };
+
                 result.insert(
                     field_name.clone(),
                     LlmDictField {
@@ -1976,6 +2090,7 @@ pub(super) fn parse_llm_dictionary_response(
                         role,
                         null_values,
                         gauge_range,
+                        currency,
                     },
                 );
             }
@@ -2216,6 +2331,7 @@ mod tests {
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
             gauge_range:     None,
+            currency:        None,
         }
     }
 
@@ -2307,6 +2423,53 @@ mod tests {
         assert_eq!(
             coerced_role("duration:3600", "measure", "Integer"),
             "measure"
+        );
+    }
+
+    #[test]
+    fn money_content_type_seeds_measure_money_concept() {
+        assert_eq!(
+            concept_from_content_type("money"),
+            Some("measure.money"),
+            "`money` must seed the specific money concept, not fall through to `unknown`"
+        );
+        // the sibling token names the CURRENCY, not an amount; it stays a plain dimension with
+        // no concept of its own.
+        assert_eq!(concept_from_content_type("currency_code"), None);
+    }
+
+    #[test]
+    fn money_content_type_forces_measure_role() {
+        // `money` is the vocabulary's only numeric token. Every other in-vocab token implies
+        // `dimension`, so without an explicit arm in `role_from_content_type` this coercion
+        // would DEMOTE a money column to `dimension` - silently disqualifying it from the
+        // `verify_currency` and `verify_gauge_range` gates, both of which require `measure`.
+        assert_eq!(coerced_role("money", "dimension", "Float"), "measure");
+        assert_eq!(coerced_role("money", "", "Integer"), "measure");
+        assert_eq!(coerced_role("money", "measure", "Float"), "measure");
+    }
+
+    #[test]
+    fn coerce_role_concept_admits_measure_amount_on_money() {
+        // the generic quantity concept is an admissible refinement of `money`: dictionaries
+        // authored before `measure.money` existed carry it on every money column.
+        assert_eq!(
+            coerced_role_concept("money", "measure", "measure.amount", "Float"),
+            ("measure".to_string(), "measure.amount".to_string())
+        );
+        assert_eq!(
+            coerced_role_concept("money", "measure", "measure.money", "Float"),
+            ("measure".to_string(), "measure.money".to_string())
+        );
+        // a currency-denominated column is neither a tally nor a rate, so these are reset to
+        // the deterministic seed.
+        assert_eq!(
+            coerced_role_concept("money", "measure", "measure.count", "Integer"),
+            ("measure".to_string(), "measure.money".to_string())
+        );
+        assert_eq!(
+            coerced_role_concept("money", "measure", "measure.ratio", "Float"),
+            ("measure".to_string(), "measure.money".to_string())
         );
     }
 
@@ -2665,6 +2828,7 @@ mod tests {
         LlmDictField {
             null_values: tokens.iter().map(ToString::to_string).collect(),
             gauge_range: None,
+            currency: None,
             ..Default::default()
         }
     }
@@ -3047,6 +3211,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -3090,6 +3255,152 @@ mod tests {
     }
 
     /// A numeric MEASURE whose observed [min, max] fits inside the proposed scale keeps it.
+    #[test]
+    fn parse_llm_dictionary_response_normalizes_currency() {
+        // Trimmed, uppercased, and checked against the ISO-4217 register. Anything that is not
+        // a real 3-letter code — a symbol, a name, a country code, a non-string — is dropped
+        // rather than passed downstream for `verify_currency` to puzzle over.
+        let names: Vec<String> = ["a", "b", "c", "d", "e", "f", "g", "h"]
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        let resp = r#"{
+            "a": {"label":"A","description":"d","currency":"  usd "},
+            "b": {"label":"B","description":"d","currency":"EUR"},
+            "c": {"label":"C","description":"d","currency":"US"},
+            "d": {"label":"D","description":"d","currency":"usdd"},
+            "e": {"label":"E","description":"d","currency":"ZZZ"},
+            "f": {"label":"F","description":"d","currency":"$"},
+            "g": {"label":"G","description":"d","currency":840},
+            "h": {"label":"H","description":"d"}
+        }"#;
+        let got = parse_llm_dictionary_response(resp, &names, true).unwrap();
+        assert_eq!(
+            got["a"].currency.as_deref(),
+            Some("USD"),
+            "trimmed+uppercased"
+        );
+        assert_eq!(got["b"].currency.as_deref(), Some("EUR"));
+        assert_eq!(got["c"].currency, None, "two letters rejected");
+        assert_eq!(got["d"].currency, None, "four letters rejected");
+        assert_eq!(got["e"].currency, None, "not an ISO-4217 code");
+        assert_eq!(got["f"].currency, None, "a symbol is not a code");
+        assert_eq!(got["g"].currency, None, "non-string rejected");
+        assert_eq!(got["h"].currency, None, "missing key -> None");
+    }
+
+    #[test]
+    fn parse_currency_gated_off_without_infer_content_type() {
+        let names = vec!["a".to_string()];
+        let resp = r#"{"a":{"label":"A","description":"d","currency":"USD"}}"#;
+        let got = parse_llm_dictionary_response(resp, &names, false).unwrap();
+        assert_eq!(got["a"].currency, None);
+    }
+
+    /// Build an entry with the given signals, run the merge-path verification, and report
+    /// whether the proposed currency survived.
+    fn currency_survives(qsv_type: &str, role: &str, concept: &str, content_type: &str) -> bool {
+        let mut e = blank_entry("amt");
+        e.r#type = qsv_type.to_string();
+        let mut llm = HashMap::new();
+        llm.insert(
+            "amt".to_string(),
+            LlmDictField {
+                role: role.to_string(),
+                concept: concept.to_string(),
+                content_type: content_type.to_string(),
+                currency: Some("USD".to_string()),
+                ..Default::default()
+            },
+        );
+        combine_dictionary_entries(vec![e], &llm, true)[0]
+            .currency
+            .is_some()
+    }
+
+    #[test]
+    fn verify_currency_requires_numeric_measure_money() {
+        // the specific concept, the generic one, and the money content_type all qualify.
+        assert!(currency_survives(
+            "Float",
+            "measure",
+            "measure.money",
+            "unknown"
+        ));
+        assert!(
+            currency_survives("Float", "measure", "measure.amount", "unknown"),
+            "dictionaries authored before `measure.money` existed carry `measure.amount` on every \
+             money column; hand-adding a currency to one of those must work"
+        );
+        assert!(currency_survives("Integer", "measure", "", "money"));
+        // ...but a non-numeric column, a non-measure, or a non-money quantity does not.
+        assert!(
+            !currency_survives("String", "measure", "measure.money", "unknown"),
+            "a currency CODE column is a dimension (`content_type: currency_code`), not an amount \
+             denominated in one"
+        );
+        assert!(!currency_survives(
+            "Float",
+            "dimension",
+            "measure.money",
+            "category"
+        ));
+        assert!(!currency_survives(
+            "Float",
+            "measure",
+            "measure.ratio",
+            "unknown"
+        ));
+        assert!(!currency_survives(
+            "Float",
+            "measure",
+            "measure.count",
+            "unknown"
+        ));
+    }
+
+    #[test]
+    fn two_pass_preserves_baseline_currency() {
+        // The refine prompt never asks for a currency, so its `None` means "not re-stated",
+        // NOT "retracted". Taking it unconditionally would wipe the first pass's verified
+        // currency on every --two-pass run.
+        let mut e = blank_entry("spent");
+        e.r#type = "Float".to_string();
+        let mut baseline = HashMap::new();
+        baseline.insert(
+            "spent".to_string(),
+            LlmDictField {
+                role: "measure".to_string(),
+                concept: "measure.money".to_string(),
+                currency: Some("USD".to_string()),
+                ..Default::default()
+            },
+        );
+        let mut refine = HashMap::new();
+        refine.insert(
+            "spent".to_string(),
+            LlmDictField {
+                label: "Total Spent".to_string(),
+                ..Default::default()
+            },
+        );
+        let out =
+            combine_dictionary_entries_with_baseline(vec![e.clone()], &baseline, &refine, true);
+        assert_eq!(out[0].currency.as_deref(), Some("USD"));
+
+        // ...but a refine pass that DOES restate one overrides the baseline.
+        let mut refine2 = HashMap::new();
+        refine2.insert(
+            "spent".to_string(),
+            LlmDictField {
+                currency: Some("EUR".to_string()),
+                ..Default::default()
+            },
+        );
+        let out2 = combine_dictionary_entries_with_baseline(vec![e], &baseline, &refine2, true);
+        assert_eq!(out2[0].currency.as_deref(), Some("EUR"));
+    }
+
     #[test]
     fn combine_keeps_gauge_range_for_measure_when_observed_fits() {
         let mut e = blank_entry("score");
@@ -3280,6 +3591,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         // infer_content_type = false: pure copy, no "unknown" coercion.
@@ -3312,6 +3624,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         llm.insert(
@@ -3324,6 +3637,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         // "omitted" is intentionally absent from the LLM map.
@@ -3352,6 +3666,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         llm.insert(
@@ -3364,6 +3679,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -3636,6 +3952,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         baseline.insert(
@@ -3648,6 +3965,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
 
@@ -3663,6 +3981,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
 
@@ -3716,6 +4035,7 @@ mod tests {
                 description: "Refined description.".to_string(),
                 role: "measure".to_string(),
                 gauge_range: None,
+                currency: None,
                 ..Default::default()
             },
         );
@@ -3790,6 +4110,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         refine.insert(
@@ -3803,6 +4124,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
 
@@ -3838,6 +4160,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
 
@@ -3852,6 +4175,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
 
@@ -3881,6 +4205,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
 
@@ -4261,6 +4586,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -4283,6 +4609,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -4305,6 +4632,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -4327,6 +4655,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         let mut refine = HashMap::new();
@@ -4340,6 +4669,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         let combined = combine_dictionary_entries_with_baseline(code, &baseline, &refine, true);
@@ -4903,6 +5233,7 @@ mod tests {
                 role:         "dimension".to_string(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -4926,6 +5257,7 @@ mod tests {
                 role:         "dimension".to_string(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -4947,6 +5279,7 @@ mod tests {
                 role:         String::new(),
                 null_values:  Vec::new(),
                 gauge_range:  None,
+                currency:     None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);

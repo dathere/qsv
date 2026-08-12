@@ -237,6 +237,9 @@ human-panic = "2"
 iana-time-zone = "0.1"
 indexmap = { version = "2.14", features = ["serde"] }
 indicatif = "0.18"
+# already in the tree as a transitive dependency of qsv_currency; taken directly so describegpt
+# can validate an ISO-4217 alpha-3 code (`Currency::from_code`) and viz can render its symbol.
+iso_currency = "0.5"
 itertools = "0.15"
 itoa = "1"
 jaq-core = "3"

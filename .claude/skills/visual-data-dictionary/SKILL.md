@@ -284,6 +284,7 @@ violation of the "never hand-write the schema" rule:
 |---|---|---|
 | `x-qsv.gauge_range` | per property, `[min, max]` | KPI tile becomes a **gauge**. `describegpt` proposes it for canonical-scale measures; qsv drops it if the data falls outside the range |
 | `x-qsv.target` | per property, a number | KPI tile gains a **"vs target" delta**. Never inferred — it is a goal only the user knows |
+| `x-qsv.currency` | per property, an ISO-4217 code (`"USD"`) | KPI tile is prefixed with the currency **symbol** (`$192B`) and the panel subtitle names the currency. `describegpt` proposes it for money columns; qsv drops it unless the column is a numeric measure that reads as money (concept `measure.money` or `measure.amount`, or content type `money`) |
 | `x-qsv.relationships` | dataset level, `{"kind":"pipeline", …}` | draws the **pipeline** panel |
 
 For a pipeline, both encodings are hand-editable — stages as columns

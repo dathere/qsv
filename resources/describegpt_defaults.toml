@@ -157,6 +157,20 @@ For each field, provide:
   not contain the observed data, and a missing gauge_range simply renders as a plain number instead
   of a dial. Never emit a "target", baseline, or goal value - you cannot know a business goal from
   the data.
+- Currency (OPTIONAL, monetary MEASURE fields only): if - and ONLY if - this field's values are
+  amounts of MONEY, add a "currency" giving the ISO-4217 alpha-3 code of the currency they are
+  denominated in, e.g. "USD", "EUR", "GBP", "JPY", "PHP". Use ONLY the 3-letter code - never a
+  symbol ("$"), a name ("dollars"), or a country code ("US"). Base it on evidence: the field name
+  (`amount_eur`), the Description, a sibling currency-code column, or the dataset's own context - a
+  US city budget or a Medicare payment is "USD". A field that carries a "currency" should also use
+  the "money" Content Type and the "measure.money" Concept.
+  Do NOT add a "currency" to:
+    - a field that is not money - a count, a ratio, a rating, a distance, a temperature; or
+    - the column that NAMES the currency (a column of "USD"/"EUR" codes). That column is a
+      dimension: give it Content Type "currency_code" instead.
+  If you cannot determine the currency from the data, OMIT "currency" entirely - do NOT guess, and
+  do NOT default to "USD". qsv drops any currency on a field that is not a numeric measure, so a
+  wrong guess is silently discarded rather than corrected.
 {%- endif %}
 
 {%- if infer_content_type %}
@@ -253,7 +267,7 @@ automatically, so propose a numeric placeholder whenever the field's meaning gen
 one. Do not invent one to be thorough.
 {%- endif %}
 
-Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role", "concept" and (for canonical-scale numeric measures only) an optional "gauge_range"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string, a top-level "grain_unit" string and an optional "relationships" array{% endif %}:
+Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role", "concept" and (for canonical-scale numeric measures only) an optional "gauge_range", plus (for monetary measures only) an optional "currency"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string, a top-level "grain_unit" string and an optional "relationships" array{% endif %}:
 {% raw %}{
   "field_name_1": {
     "label": "Human-friendly label",
@@ -270,6 +284,14 @@ Return the results in JSON format where each field name is a key, and the value 
     "role": "dimension",
     "concept": "geo.city"{% endif %}{% if infer_null_values %},
     "null_values": ["N/A", "UNKNOWN"]{% endif %}{% raw %}
+  },
+  "field_name_3": {
+    "label": "Total Amount Spent",
+    "description": "Dollars disbursed against the project to date"{% endraw %}{% if infer_content_type %},
+    "content_type": "money",
+    "role": "measure",
+    "concept": "measure.money",
+    "currency": "USD"{% endif %}{% raw %}
   }{% endraw %}{% if infer_content_type %},
   "grain": "one row = one record",
   "grain_unit": "record",

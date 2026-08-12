@@ -585,7 +585,7 @@ smart options:
                            describegpt's completion cache, forcing a genuinely fresh inference
                            that overwrites the sidecar on success.
                            Generation/read failures soft-fall back to the stats-only Data Schematic.
-                           The dictionary also drives the KPI overview row via two optional
+                           The dictionary also drives the KPI overview row via three optional
                            per-field hints in a property's "x-qsv" object (edit them in the saved
                            schema to fine-tune). A "gauge_range" of [min, max] on a continuous
                            numeric measure renders its KPI tile as a GAUGE on that canonical scale
@@ -595,6 +595,14 @@ smart options:
                            A "target" number on a measure renders a "vs target" DELTA against that
                            goal (value minus target) - a GOAL you supply, never a fabricated
                            prior-period baseline, so "infer" never emits it; hand-author it.
+                           A "currency" ISO-4217 alpha-3 code (e.g. "USD", "EUR") on a monetary
+                           measure prefixes its KPI tile with that currency's symbol ($192B) and
+                           names the currency in the panel subtitle; an unrecognized code renders
+                           verbatim ("XOF 1.2B"). "infer" emits it for money columns, which it
+                           also tags with the "measure.money" concept.
+                           Note that on ENGLISH pages large numbers use the financial convention
+                           (1e9 reads "1B", not the SI "1G") consistently across KPI tiles, bar
+                           value labels and axis ticks. Other languages keep the SI prefixes.
                            The dictionary is also the ONLY source of the pipeline panel (drawn as
                            a funnel while the stage TOTALS never increase, otherwise as a bridge;
                            row-wise containment is measured & disclosed in the subtitle, but does
@@ -2562,6 +2570,11 @@ fn xy_groups_to_traces(
                 // in place (its category-axis slot is pinned), which is the actual fix for the
                 // "bars moving between columns" illusion (color alone only made them identifiable).
                 let bar_ids = bar_marker.is_some().then(|| xs.clone());
+                // Value labels are computed in Rust, not by a d3 texttemplate: d3 cannot emit
+                // the "B" that English pages need for 1e9 (issue #4393). Built BEFORE `ys` is
+                // moved into the trace.
+                let bar_labels =
+                    show_labels.then(|| ys.iter().map(|v| fmt_magnitude(*v)).collect::<Vec<_>>());
                 let mut t = Bar::new(xs, ys);
                 if !name.is_empty() {
                     t = t.name(escape_hover(&name));
@@ -2572,11 +2585,14 @@ fn xy_groups_to_traces(
                 if let Some(ids) = bar_ids {
                     t = t.ids(ids);
                 }
-                if show_labels {
-                    // SI-formatted value labels above each bar ("258k", "1.05M");
-                    // clip_on_axis(false) keeps the tallest bar's label from being clipped
+                if let Some(labels) = bar_labels {
+                    // Magnitude-suffixed value labels above each bar ("258k", "1.05M", "2.4B"),
+                    // matching the axis (see `magnitude_scale`); clip_on_axis(false) keeps the
+                    // tallest bar's label from being clipped. Passed as a per-bar TEMPLATE array
+                    // rather than `text`: a template with no `%{}` token renders verbatim and
+                    // takes precedence, and leaving `text` unset keeps it out of the hover.
                     t = t
-                        .text_template("%{y:.3s}")
+                        .text_template_array(labels)
                         .text_position(TextPosition::Outside)
                         .text_font(Font::new().size(10))
                         .clip_on_axis(false);
@@ -5000,6 +5016,142 @@ fn fmt_measure(v: f64) -> String {
         s.trim_end_matches('0').trim_end_matches('.').to_string()
     };
     group_thousands(&s)
+}
+
+/// The scale factor and magnitude suffix for `v`, honoring the ACTIVE LOCALE's convention
+/// (issue #4393). English-speaking audiences read 1e9 as "B" (billion); every other locale qsv
+/// ships reads the SI prefix "G" (giga), so "192G" for a dollar figure reads as engineering
+/// notation, or worse, as a mystery unit. `T`/`M`/`k` are the same either way.
+///
+/// This is the SINGLE OWNER of qsv's large-number suffix convention. Every Data Schematic value
+/// label and KPI number derives from it, and the two plotly-native axes derive from its sibling
+/// `axis_exponent_format`. That single-reader property is what makes "no chart ever mixes
+/// suffixes" a structural guarantee rather than a review obligation — the hazard that made
+/// `styled_y_axis` pin `ExponentFormat::SI` in the first place.
+///
+/// Returns `(1.0, "")` below 1e3 so callers can branch on an empty suffix.
+fn magnitude_scale(v: f64) -> (f64, &'static str) {
+    let a = v.abs();
+    if a >= 1e12 {
+        (1e12, "T")
+    } else if a >= 1e9 {
+        (
+            1e9,
+            if viz_i18n::active_locale().bcp47.starts_with("en") {
+                "B"
+            } else {
+                "G"
+            },
+        )
+    } else if a >= 1e6 {
+        (1e6, "M")
+    } else if a >= 1e3 {
+        (1e3, "k")
+    } else {
+        (1.0, "")
+    }
+}
+
+/// Render `v` as a 3-significant-digit suffixed label ("258k", "1.05M", "2.4B") — the Rust-side
+/// equivalent of d3's `.3~s`, but using `magnitude_scale`'s locale-aware suffix table. Needed
+/// because d3-format has no locale hook for SI prefixes: `~s` ALWAYS emits "G" for 1e9, so a
+/// value label that must read "B" cannot be produced by a format string at all.
+///
+/// Trailing zeros are trimmed (matching d3's `~`). Below 1e3 this delegates to `fmt_measure`, so
+/// small values keep the exact grouped form they have always had — EXCEPT for sub-hundredth
+/// magnitudes, which get significant digits instead. `fmt_measure` rounds to 3 decimal places, so
+/// it renders a mean of 0.0004 as a flat "0", losing the value entirely; the SI formatting these
+/// labels used before would have said "400µ". `kpi_number_format` already carries the same
+/// exception (and the same reasoning) for KPI tiles, so this keeps a bar label and the tile
+/// summarizing it in agreement.
+fn fmt_magnitude(v: f64) -> String {
+    let (div, sfx) = magnitude_scale(v);
+    if sfx.is_empty() {
+        let a = v.abs();
+        return if a > 0.0 && a < 0.01 && a.is_finite() {
+            fmt_small_sig(v)
+        } else {
+            fmt_measure(v)
+        };
+    }
+    format!("{}{sfx}", fmt_three_sig(v / div))
+}
+
+/// Render a sub-hundredth magnitude to 3 significant digits (d3's `.3~g`): `0.0004`, not `0`.
+/// Only called for `0 < |v| < 0.01`, where fixed-decimal rounding would erase the value.
+fn fmt_small_sig(v: f64) -> String {
+    // decimals needed to keep 3 significant digits: 0.0004 -> log10 ~ -3.4 -> floor -4 -> 6dp.
+    // Clamped so a denormal-ish value can't ask for a 300-character string.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "log10 of a value in (0, 0.01) is a small negative; the result is clamped to \
+                  0..=12 immediately"
+    )]
+    let decimals = (2 - v.abs().log10().floor() as i32).clamp(0, 12) as usize;
+    let s = format!("{v:.decimals$}");
+    let s = if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        s
+    };
+    // a value smaller than the clamp can represent would trim to "0"/"-0"; show it as a bound
+    // rather than claiming it is zero
+    if s.trim_start_matches('-')
+        .chars()
+        .all(|c| c == '0' || c == '.')
+    {
+        return if v < 0.0 {
+            "> -1e-12".to_string()
+        } else {
+            "< 1e-12".to_string()
+        };
+    }
+    s
+}
+
+/// Render an already-scaled magnitude to 3 significant digits with trailing zeros trimmed —
+/// d3's `.3~g` semantics, in Rust.
+///
+/// Two callers must agree byte-for-byte: `fmt_magnitude` (bar and waterfall value labels, which
+/// qsv renders itself) and the KPI tile, which hands plotly the SCALED value plus the d3 format
+/// `.3~g`. If these two rounding rules diverged, a bar could read "192B" while the tile
+/// summarizing it read "191B". The Rust side is pinned by
+/// `kpi_and_bar_label_agree_for_the_same_value`; that it matches d3's own `.3~g` is verified in
+/// the browser (the same class of assumption as plotly's `exponentformat: "B"`).
+fn fmt_three_sig(scaled: f64) -> String {
+    let a = scaled.abs();
+    let s = if a >= 100.0 {
+        format!("{scaled:.0}")
+    } else if a >= 10.0 {
+        format!("{scaled:.1}")
+    } else {
+        format!("{scaled:.2}")
+    };
+    if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        s
+    }
+}
+
+/// The axis `exponentformat` that matches `magnitude_scale`. Plotly's "B" mode renders 1e9 as
+/// "B" (and 1e6/1e3 as "M"/"k", same as SI); "SI" renders "G". The axis and the value labels
+/// drawn against it MUST agree, or a bar labelled "192B" sits on a gridline labelled "192G" —
+/// one chart, two suffixes for the same magnitude.
+fn axis_exponent_format() -> ExponentFormat {
+    if viz_i18n::active_locale().bcp47.starts_with("en") {
+        ExponentFormat::B
+    } else {
+        ExponentFormat::SI
+    }
+}
+
+/// Display prefix for an ISO-4217 code: the conventional symbol ("$", "€", "¥") when the register
+/// knows one, else the bare code and a space ("XOF 1.2B"). Several currencies share "$"; that
+/// ambiguity is accepted because the panel subtitle names the currency explicitly.
+fn currency_prefix(code: &str) -> String {
+    iso_currency::Currency::from_code(code)
+        .map_or_else(|| format!("{code} "), |c| c.symbol().to_string())
 }
 
 /// Insert `,` thousands separators into the integer part of a formatted number string, preserving
@@ -14496,6 +14648,13 @@ struct KpiTile {
     format: String,
     gauge:  Option<[f64; 2]>,
     target: Option<f64>,
+    /// Currency symbol for a monetary measure (`x-qsv.currency` → `currency_prefix`), rendered
+    /// as the indicator `Number`'s prefix: `$192B`.
+    prefix: Option<String>,
+    /// Magnitude suffix ("k"/"M"/"B"/"T") when `value` was SCALED down by `magnitude_scale`.
+    /// Set only on plain-number tiles — see `build_kpi_row` for why gauge/delta tiles keep
+    /// their unscaled value instead.
+    suffix: Option<String>,
 }
 
 /// Why a column got no per-column panel in `viz smart`.
@@ -15212,10 +15371,14 @@ enum Route {
 /// `derive_semantics`; `Agg` is the existing chart-aggregation enum, reused here.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 struct ColSemantics {
-    route:   Route,
-    agg:     Option<Agg>,
-    concept: String,
-    label:   String,
+    route:    Route,
+    agg:      Option<Agg>,
+    concept:  String,
+    label:    String,
+    /// ISO-4217 code from the dictionary (`x-qsv.currency`), carried here so the panel-building
+    /// pass — which sees `ColSemantics`, not the `DictData` — can name the currency in the
+    /// column's subtitle.
+    currency: Option<String>,
 }
 
 /// One column's semantic signals parsed from a describegpt Data Dictionary.
@@ -15235,6 +15398,11 @@ struct DictRow {
     /// 100% completeness, 0 error-rate), never a fabricated prior-period baseline. Rendered as a
     /// "vs target" delta.
     target:       Option<f64>,
+    /// Optional ISO-4217 alpha-3 code (`x-qsv.currency`) naming the currency a monetary measure
+    /// is denominated in. Prefixes the column's KPI tile with the currency symbol and names the
+    /// currency in its panel subtitle. Normalized (trimmed/uppercased/shape-checked) on read,
+    /// because a hand-edited sidecar never passed through describegpt's validator.
+    currency:     Option<String>,
 }
 
 /// Which form a declared pipeline is drawn as (issue #4222).
@@ -15411,18 +15579,22 @@ fn route_from_content_type(content_type: &str) -> (Route, Option<Agg>) {
         .split_once(':')
         .map_or(content_type, |(b, _)| b)
         .trim();
-    let route = match base {
+    match base {
         "category" | "state" | "state_abbr" | "country" | "country_code" | "currency_code"
         | "mime_type" | "color_hex" | "industry" | "job_title" | "profession" | "time_zone" => {
-            Route::Dimension
+            (Route::Dimension, None)
         },
-        "latitude" | "longitude" => Route::MapCoord,
-        "date" | "datetime" | "time" | "duration" => Route::Temporal,
-        "unknown" | "" => Route::Defer,
+        "latitude" | "longitude" => (Route::MapCoord, None),
+        "date" | "datetime" | "time" | "duration" => (Route::Temporal, None),
+        // the only NUMERIC token in the vocabulary, and the only arm here that carries an
+        // aggregation: a money amount is an additive quantity. `currency_code` (above) names
+        // the currency; `money` IS the amount. Without this arm the catch-all would `Skip` the
+        // column outright, so a dictionary carrying only `content_type: money` would drop it.
+        "money" => (Route::Measure, Some(Agg::Sum)),
+        "unknown" | "" => (Route::Defer, None),
         // identifier / PII / address / technical / free-text -> not a meaningful distribution
-        _ => Route::Skip,
-    };
-    (route, None)
+        _ => (Route::Skip, None),
+    }
 }
 
 /// The DMY-vs-MDY parsing preference a dictionary column declares, if any (issue #4303).
@@ -15666,6 +15838,12 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     };
     let label = row.label.trim().to_string();
     let concept = row.concept.trim();
+    // Carried through unconditionally, because it is already gated at the SOURCE: describegpt's
+    // `verify_currency` on emit, and `parse_dictionary_semantics` on read for hand-edited
+    // sidecars. Both require a numeric measure that reads as money, so anything reaching here is
+    // legitimately monetary. Do NOT re-gate on route: the panel subtitle consults this for every
+    // charted column, not just the ones that end up as measures.
+    let currency = row.currency.clone();
     let make = |route: Route, agg: Option<Agg>| {
         // An intensive measure (temperature, rate, index, pre-averaged value) tagged additive by
         // the coarse measure.* concept vocab must be averaged, not summed, across a group. An
@@ -15686,6 +15864,7 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
                 agg,
                 concept: concept.to_string(),
                 label: label.clone(),
+                currency: currency.clone(),
             },
             s,
         )
@@ -15708,12 +15887,13 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
         let (route, agg) = route_from_content_type(ct);
         return make(route, agg);
     }
-    // 4. statistics floor — carry the label so panel titles still benefit
+    // 4. statistics floor — carry the label (and any currency) so panel titles still benefit
     ColSemantics {
         route: Route::Defer,
         agg: None,
         concept: String::new(),
         label,
+        currency,
     }
 }
 
@@ -16019,6 +16199,52 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     _ => None,
                 }
             };
+            // `x-qsv.currency`: an ISO-4217 alpha-3 code. A hand-edited sidecar never passed
+            // through describegpt's validator, so viz re-applies BOTH halves of it here:
+            //
+            //   * shape — trimmed, uppercased, exactly 3 ASCII letters. Deliberately not a register
+            //     lookup: `currency_prefix` falls back to the bare code, so an
+            //     unrecognized-but-well-formed code renders as "XYZ 1.2B" rather than vanishing.
+            //   * semantics — the same gate as `describegpt`'s `verify_currency`: a numeric MEASURE
+            //     that reads as money. Without it a dictionary could hang "USD" on a count, a ratio
+            //     or a plain dimension and viz would dutifully print a currency symbol on its KPI
+            //     tile and "(USD)" under its bar — labelling a quantity with a unit it does not
+            //     have, which is worse than no annotation at all.
+            let xq_currency = || -> Option<String> {
+                let code = xq
+                    .and_then(|x| x.get("currency"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(|s| s.trim().to_ascii_uppercase())
+                    .filter(|c| c.len() == 3 && c.bytes().all(|b| b.is_ascii_uppercase()))?;
+                // TRIM every token before comparing. `from_xq` stores values verbatim and each
+                // consumer trims at its point of use (`derive_semantics` does
+                // `row.concept.trim()`, `row.role.trim()`, `row.content_type.trim()`), so a
+                // sidecar carrying `"role": "measure "` still routes as a measure. An untrimmed
+                // gate here would let that column chart as money while silently dropping its
+                // currency — the exact silent-drop failure this gate exists to prevent, merely
+                // relocated.
+                let concept_raw = from_xq("concept");
+                let concept = concept_raw.trim();
+                let ct_raw = from_xq("content_type");
+                let money_ish = concept == "measure.money"
+                    || concept == "measure.amount"
+                    || crate::cmd::describegpt::dictionary::content_type_base(ct_raw.trim())
+                        == "money";
+                // `qsv_type` is absent on hand-written dictionaries; only reject when it is
+                // present AND says the column is non-numeric.
+                let type_raw = from_xq("qsv_type");
+                let numeric = match type_raw.trim() {
+                    "" => true,
+                    t => matches!(t, "Integer" | "Float"),
+                };
+                let role_raw = from_xq("role");
+                let role = role_raw.trim();
+                // an empty role is admissible: `concept` alone can establish the measure (that is
+                // the precedence `derive_semantics` uses), so requiring a role would drop a
+                // perfectly good `{"concept": "measure.money", "currency": "USD"}`.
+                let measure = role.is_empty() || role == "measure";
+                (numeric && measure && money_ish).then_some(code)
+            };
             let label = prop
                 .get("title")
                 .and_then(serde_json::Value::as_str)
@@ -16039,6 +16265,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     description,
                     gauge_range: xq_range("gauge_range"),
                     target: xq_num("target"),
+                    currency: xq_currency(),
                 },
             );
         }
@@ -16106,9 +16333,10 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 concept:      from_field("concept"),
                 label:        from_field("label"),
                 description:  from_field("description"),
-                // legacy plain-json dictionaries don't carry KPI gauge/target hints
+                // legacy plain-json dictionaries don't carry KPI gauge/target/currency hints
                 gauge_range:  None,
                 target:       None,
+                currency:     None,
             },
         );
     }
@@ -18812,7 +19040,12 @@ const MAP_NAME_CONCEPTS: &[&str] = &[
     "geo.city",
     "geo.street_address",
 ];
-const MAP_MEASURE_CONCEPTS: &[&str] = &["measure.amount", "measure.count", "measure.ratio"];
+const MAP_MEASURE_CONCEPTS: &[&str] = &[
+    "measure.amount",
+    "measure.count",
+    "measure.money",
+    "measure.ratio",
+];
 const MAP_CATEGORY_CONCEPTS: &[&str] = &["category.status", "category.type", "category.channel"];
 const MAP_GEO_CONTEXT_CONCEPTS: &[&str] = &["geo.country", "geo.state", "geo.city"];
 
@@ -24438,10 +24671,20 @@ fn kpi_indicator(tile: &KpiTile, x_domain: [f64; 2], y_domain: [f64; 2]) -> Box<
         (false, true) => IndicatorMode::NumberAndDelta,
         (false, false) => IndicatorMode::Number,
     };
+    // the currency symbol and the magnitude suffix ride the Number itself rather than the
+    // d3 value-format, which can express neither ("$" would need escaping, and d3 has no
+    // spec that emits "B" for 1e9 — issue #4393)
+    let mut number = Number::new().value_format(tile.format.clone());
+    if let Some(prefix) = &tile.prefix {
+        number = number.prefix(prefix.clone());
+    }
+    if let Some(suffix) = &tile.suffix {
+        number = number.suffix(suffix.clone());
+    }
     let mut ind = Indicator::new(tile.value)
         .mode(mode)
         .domain(Domain::new().x(&x_domain).y(&y_domain))
-        .number(Number::new().value_format(tile.format.clone()));
+        .number(number);
     if let Some([g_lo, g_hi]) = tile.gauge {
         ind = ind.gauge(Gauge::new().axis(GaugeAxis::new().range([g_lo, g_hi])));
     }
@@ -24584,6 +24827,30 @@ fn build_kpi_row(
             .and_then(|r| r.gauge_range)
             .filter(|[lo, hi]| lo < hi && value >= *lo && value <= *hi);
         let target = row.and_then(|r| r.target).filter(|t| t.is_finite());
+        // A monetary measure headlines with its currency's symbol: "$192B", not "192B".
+        let prefix = row.and_then(|r| r.currency.as_deref()).map(currency_prefix);
+        // Scale the headline into a magnitude suffix ("$192B" rather than d3's "$192G") ONLY on
+        // a plain-number tile. A gauge draws its needle against the UNSCALED `[lo, hi]` axis and
+        // a delta carries its own independent format, so scaling the number without also scaling
+        // those would render a subtly wrong tile — a needle at 2.4 on a 0..5e9 dial. In practice
+        // the exception costs nothing: `gauge_range` is only kept when the observed data fits
+        // inside a declared canonical scale, and those are never in the billions.
+        // The `>= 10_000` floor is `kpi_number_format`'s own SI threshold, kept verbatim: below
+        // it a KPI has always rendered as a grouped number ("5,000", not "5k"), and this change
+        // is about WHICH suffix large numbers get, not about suffixing more of them.
+        let (value, suffix) = if gauge.is_none() && target.is_none() && value.abs() >= 10_000.0 {
+            let (div, sfx) = magnitude_scale(value);
+            (value / div, (!sfx.is_empty()).then(|| sfx.to_string()))
+        } else {
+            (value, None)
+        };
+        // a scaled value is already 3 significant digits by construction, so `.3~g` renders it
+        // ("192", "2.4", "1.05"); the unscaled path keeps the existing small-magnitude rules.
+        let format = if suffix.is_some() {
+            ".3~g".to_string()
+        } else {
+            kpi_number_format(value)
+        };
         tiles.push(KpiTile {
             label: if intensive {
                 t!("viz.title.kpi_mean", q_label = label)
@@ -24592,9 +24859,11 @@ fn build_kpi_row(
             }
             .into_owned(),
             value,
-            format: kpi_number_format(value),
+            format,
             gauge,
             target,
+            prefix,
+            suffix,
         });
     }
 
@@ -25359,6 +25628,14 @@ impl<'a> SmartCtx<'a> {
             };
             let subtitle = (!sem.label.is_empty() && !sem.label.eq_ignore_ascii_case(&name))
                 .then(|| sem.label.clone());
+            // Name the currency ONCE per panel rather than repeating a glyph on every mark: the
+            // KPI tile carries the symbol, the panel says which currency it is. Appended to the
+            // dictionary label when there is one, else it stands alone as the subtitle.
+            let subtitle = match (&sem.currency, subtitle) {
+                (Some(code), Some(label)) => Some(format!("{label} ({code})")),
+                (Some(code), None) => Some(format!("({code})")),
+                (None, sub) => sub,
+            };
             // --dict-info: the column's dictionary description + pre-computed anchor.
             let dict_info = dict_info_for_field(dict_icons, &s.field);
             // a code/key twin (e.g. subject_code beside subject) is redundant with its label
@@ -27967,14 +28244,16 @@ fn panel_trace_freq_bar(
         // that same tick text — so the hover carries each bar's FULL label explicitly.
         // `label` (not `x_key`): the aggregate buckets' axis keys are sentinel-padded.
         let hover_labels: Vec<String> = bars.iter().map(|b| escape_hover(&b.label)).collect();
+        // computed in Rust before `ys` moves into the trace — d3 cannot emit the "B" that
+        // English pages need for 1e9 (issue #4393)
+        let bar_labels: Vec<String> = ys.iter().map(|v| fmt_magnitude(*v)).collect();
         let mut bar = Bar::new(xs, ys)
             .name(escape_hover(&panel.name))
             .marker(marker)
             .hover_text_array(hover_labels)
             .hover_template(&t!("viz.hover.count_by_label"))
-            // value labels above each bar, SI-formatted ("258k", "1.05M") to match
-            // the axis ticks
-            .text_template("%{y:.3s}")
+            // value labels above each bar ("258k", "1.05M", "2.4B") matching the axis ticks
+            .text_template_array(bar_labels)
             .text_position(TextPosition::Outside)
             // don't clip the outside label of the tallest bar at the cell's top edge. On a
             // log axis the fixed top headroom shrinks to a few pixels when counts span many
@@ -28252,21 +28531,14 @@ fn panel_trace_funnel_bridge(
                 Some(acc.map_or(v, |a| f64::max(a, v)))
             });
 
-        // Per-bar templates, because no single one is right for every bar: a step bar's
-        // number is its DELTA, a stage bar's is the running TOTAL. plotly stays the
-        // formatter (so the labels cannot drift from the values it draws), and `.3s` matches
-        // the SI precision the KPI row and the axes already use — its own `textinfo` renders
-        // seven significant figures.
-        let templates: Vec<String> = measures
-            .iter()
-            .map(|m| {
-                if matches!(m, Measure::Relative) {
-                    "%{delta:.3s}".to_string()
-                } else {
-                    "%{final:.3s}".to_string()
-                }
-            })
-            .collect();
+        // Per-bar labels, because no single one is right for every bar: a step bar's number is
+        // its DELTA, a stage bar's is the running TOTAL. Formerly `%{delta:.3s}`/`%{final:.3s}`,
+        // which let plotly do the formatting; qsv now formats them, because d3 cannot emit the
+        // "B" that English pages need for 1e9 (issue #4393). The labels still cannot drift from
+        // the bars: `vals[k]` IS the array plotly draws from, and it already holds the delta for
+        // a `Relative` bar and the running total for a `Total` one (see the loop above) — the
+        // same two numbers `%{delta}` and `%{final}` resolved to.
+        let templates: Vec<String> = vals.iter().map(|v| fmt_magnitude(*v)).collect();
         let mut w = Waterfall::new(cats, vals)
             .name(escape_hover(&panel.name))
             .measure(measures)
@@ -28588,8 +28860,9 @@ fn panel_trace_measure_by_dim(
             .marker(Marker::new().color(color))
             .hover_text_array(hover_labels)
             .hover_template("%{hovertext}<br>%{y:,}<extra></extra>")
-            // value labels above each bar, SI-formatted ("258k", "1.05M") to match the ticks
-            .text_template("%{y:.3s}")
+            // value labels above each bar ("258k", "1.05M", "2.4B") matching the ticks. Computed
+            // in Rust: d3 cannot emit the "B" English pages need for 1e9 (issue #4393).
+            .text_template_array(values.iter().map(|v| fmt_magnitude(*v)).collect::<Vec<_>>())
             .text_position(TextPosition::Outside)
             .clip_on_axis(false)
             .text_font(label_font);
@@ -32738,11 +33011,12 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
         .grid_width(1)
         .zero_line(false)
         .show_line(false)
-        // match the SI prefixes qsv's own value labels use (`%{y:.3s}` on bars, `.3~s` on
-        // indicators). Plotly's untouched default is `exponentformat: "B"`, which renders 10^9 as
-        // "B" while the bar sitting against that gridline is labelled "G" — one chart, two
-        // suffixes for the same magnitude.
-        .exponent_format(ExponentFormat::SI);
+        // match the magnitude suffix qsv's own value labels use (`fmt_magnitude` on bars and
+        // waterfalls, the scaled `Number.suffix()` on indicators). Both sides are locale-aware:
+        // "B" for 1e9 on English pages, SI "G" everywhere else (issue #4393). They MUST be
+        // derived from the same decision, or a bar labelled "192B" sits on a gridline labelled
+        // "192G" — one chart, two suffixes for the same magnitude.
+        .exponent_format(axis_exponent_format());
     // when themed, let the template style the gridlines/ticks/fonts
     if theme.is_none() {
         a = a
@@ -32879,9 +33153,10 @@ fn funnel_value_axis(max: f64, theme: Option<BuiltinTheme>) -> Axis {
         .zero_line(false)
         .show_line(false)
         .show_tick_labels(false)
-        // SI prefixes, matching the rest of the Data Schematic's value formatting (see
-        // `styled_y_axis`)
-        .exponent_format(ExponentFormat::SI)
+        // matching the rest of the Data Schematic's value formatting (see `styled_y_axis`).
+        // Tick labels are hidden here, so this is cosmetic — set anyway so the two axis
+        // builders can never drift apart.
+        .exponent_format(axis_exponent_format())
         .range(vec![-half, half]);
     if theme.is_none() {
         a = a.tick_color(AXIS_LINE);
@@ -33771,13 +34046,19 @@ mod tests {
             Some((Route::Skip, None))
         );
         assert_eq!(route_from_concept("pii.email"), Some((Route::Skip, None)));
-        // measures: amount/count additive (Sum), ratio averaged (Mean)
+        // measures: amount/count/money additive (Sum), ratio averaged (Mean)
         assert_eq!(
             route_from_concept("measure.amount"),
             Some((Route::Measure, Some(Agg::Sum)))
         );
         assert_eq!(
             route_from_concept("measure.count"),
+            Some((Route::Measure, Some(Agg::Sum)))
+        );
+        // money is covered by the namespace's catch-all arm, deliberately: a currency-denominated
+        // amount aggregates exactly like any other additive quantity.
+        assert_eq!(
+            route_from_concept("measure.money"),
             Some((Route::Measure, Some(Agg::Sum)))
         );
         assert_eq!(
@@ -33889,6 +34170,22 @@ mod tests {
         // explicit / empty -> defer to stats
         assert_eq!(route_from_content_type("unknown").0, Route::Defer);
         assert_eq!(route_from_content_type("").0, Route::Defer);
+    }
+
+    #[test]
+    fn route_from_content_type_maps_money_to_measure() {
+        // `money` is the vocabulary's only numeric token and the only content_type that carries
+        // an aggregation. Without its own arm the catch-all would Skip the column, so a
+        // dictionary carrying content_type but no concept would drop every money column.
+        assert_eq!(
+            route_from_content_type("money"),
+            (Route::Measure, Some(Agg::Sum))
+        );
+        // the sibling token names the currency rather than holding an amount: still a dimension.
+        assert_eq!(
+            route_from_content_type("currency_code"),
+            (Route::Dimension, None)
+        );
     }
 
     #[test]
@@ -34327,6 +34624,21 @@ mod tests {
             select_map_hover_fields(&stats, &sems, Some(&dict), 1, 2, true),
             vec![0, 3, 4]
         );
+
+        // `MAP_MEASURE_CONCEPTS` is a CLOSED enumeration, not a `measure.*` prefix test, so a
+        // money column is only eligible as a hover measure because the token was added to it.
+        let money_sems = vec![
+            csem("id.natural_key"),
+            csem("geo.latitude"),
+            csem("geo.longitude"),
+            csem("measure.money"),
+            csem("category.status"),
+        ];
+        assert_eq!(
+            select_map_hover_fields(&stats, &money_sems, Some(&dict), 1, 2, true),
+            vec![0, 3, 4],
+            "a measure.money column must be hover-eligible like any other measure"
+        );
     }
 
     #[test]
@@ -34743,6 +35055,21 @@ mod tests {
                          "role": "dimension", "concept": "geo.census_tract" } },
             "amount": { "type": "number", "title": "Amount",
               "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount" } },
+            "spent": { "type": "number", "title": "Spent",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.money",
+                         "currency": " usd " } },
+            "fee": { "type": "number", "title": "Fee",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.money",
+                         "currency": "US" } },
+            "widgets": { "type": "integer", "title": "Widgets",
+              "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.count",
+                         "currency": "USD" } },
+            "ccy": { "type": "string", "title": "Currency",
+              "x-qsv": { "qsv_type": "String", "role": "dimension",
+                         "content_type": "currency_code", "currency": "USD" } },
+            "padded": { "type": "number", "title": "Padded",
+              "x-qsv": { "qsv_type": " Float ", "role": "measure ",
+                         "concept": " measure.money ", "currency": "EUR" } },
             "notes": { "type": "string", "x-qsv": { "qsv_type": "String" } }
           },
           "x-qsv": { "grain": "one row = one 311 service request",
@@ -34756,6 +35083,34 @@ mod tests {
         assert_eq!(tract.label, "Census Tract");
         let amount = data.rows.get("amount").expect("amount row");
         assert_eq!(amount.concept, "measure.amount");
+        assert_eq!(amount.currency, None, "no currency key -> None");
+        // a hand-edited sidecar never passed through describegpt's validator, so viz normalizes
+        // the code itself: trimmed and uppercased...
+        let spent = data.rows.get("spent").expect("spent row");
+        assert_eq!(spent.concept, "measure.money");
+        assert_eq!(spent.currency.as_deref(), Some("USD"));
+        // ...and anything that isn't a 3-letter code is dropped rather than rendered verbatim.
+        let fee = data.rows.get("fee").expect("fee row");
+        assert_eq!(
+            fee.currency, None,
+            "a 2-letter country code is not a currency"
+        );
+        // a well-formed code on a column that is NOT a monetary measure is dropped too — viz
+        // re-applies describegpt's `verify_currency` gate, because a hand-edited sidecar never
+        // passed through it (roborev 4202)
+        let widgets = data.rows.get("widgets").expect("widgets row");
+        assert_eq!(widgets.currency, None, "a count is not money");
+        let ccy = data.rows.get("ccy").expect("ccy row");
+        assert_eq!(
+            ccy.currency, None,
+            "a String column of ISO codes NAMES a currency; it is not an amount in one"
+        );
+        // the gate must be no stricter about whitespace than the routing path is: every other
+        // consumer trims these tokens at point of use, so a padded-but-valid sidecar routes as a
+        // monetary measure and must keep its currency rather than silently losing it
+        // (roborev 4203)
+        let padded = data.rows.get("padded").expect("padded row");
+        assert_eq!(padded.currency.as_deref(), Some("EUR"));
         // a property with a bare x-qsv (no role/concept) still parses with empty signals
         let notes = data.rows.get("notes").expect("notes row");
         assert!(notes.role.is_empty() && notes.concept.is_empty());
@@ -37713,11 +38068,11 @@ mod tests {
         // rather than honored, and markup must be escaped before the `%`-doubling
         let t = contour_hover_template("% of total", "%{x}");
         assert!(
-            t.starts_with("%% of total: %{x:.3s}"),
+            t.starts_with("%% of total: %{x:,.3~f}"),
             "a literal `%` in a header must be doubled, got: {t}"
         );
         assert!(
-            t.contains("%%{x}: %{y:.3s}"),
+            t.contains("%%{x}: %{y:,.3~f}"),
             "a token-shaped header must be neutralized, got: {t}"
         );
         // the template's OWN tokens survive intact, and the trace-name box stays suppressed
@@ -38099,6 +38454,158 @@ mod tests {
         // negative control: an overview panel carries no stats row, so it contributes no tile
         let overview = vec![Panel::new("amount".to_string(), kind())];
         assert!(build_kpi_row(&stats, &overview, None).is_none());
+    }
+
+    /// A single Float measure summing to `sum`, its `BoxStats` panel, and an optional dictionary
+    /// row — the minimum a KPI tile needs.
+    fn kpi_fixture(
+        sum: f64,
+        row: Option<DictRow>,
+    ) -> (
+        Vec<crate::cmd::stats::StatsData>,
+        Vec<Panel>,
+        Option<DictData>,
+    ) {
+        let stats = vec![crate::cmd::stats::StatsData {
+            field: "spent".to_string(),
+            r#type: "Float".to_string(),
+            sum: Some(sum),
+            mean: Some(sum / 100.0),
+            ..Default::default()
+        }];
+        let panels = vec![
+            Panel::new(
+                "spent".to_string(),
+                PanelKind::BoxStats {
+                    q1:     1.0,
+                    median: 2.0,
+                    q3:     3.0,
+                    lower:  Some(0.0),
+                    upper:  Some(9.0),
+                    mean:   Some(2.0),
+                },
+            )
+            .with_stat_idx(0),
+        ];
+        let dict = row.map(|r| {
+            let mut rows = HashMap::new();
+            rows.insert("spent".to_string(), r);
+            DictData {
+                rows,
+                ..Default::default()
+            }
+        });
+        (stats, panels, dict)
+    }
+
+    fn only_tile(row: &Panel) -> &KpiTile {
+        let PanelKind::KpiRow { tiles } = &row.kind else {
+            panic!("expected a KpiRow");
+        };
+        &tiles[0]
+    }
+
+    #[test]
+    fn build_kpi_row_scales_large_values_and_suffixes() {
+        let _locale = english_locale();
+        // 192e9 is the NYC Capital Projects headline from issue #4393: it used to render as
+        // "192G" via d3's `.3~s`.
+        let (stats, panels, _) = kpi_fixture(192e9, None);
+        let row = build_kpi_row(&stats, &panels, None).expect("KPI row");
+        let tile = only_tile(&row);
+        assert!((tile.value - 192.0).abs() < 1e-9, "value is scaled down");
+        assert_eq!(tile.suffix.as_deref(), Some("B"));
+        assert_eq!(tile.format, ".3~g");
+
+        // ...and the small-magnitude path is untouched: below `kpi_number_format`'s own 10k SI
+        // threshold a KPI still renders as a grouped whole number, not "5k".
+        let (small_stats, small_panels, _) = kpi_fixture(5000.0, None);
+        let small = build_kpi_row(&small_stats, &small_panels, None).expect("KPI row");
+        let small_tile = only_tile(&small);
+        assert!((small_tile.value - 5000.0).abs() < f64::EPSILON);
+        assert_eq!(small_tile.suffix, None);
+        assert_eq!(small_tile.format, ",.0f");
+    }
+
+    #[test]
+    fn build_kpi_row_does_not_scale_gauge_or_target_tiles() {
+        // A gauge draws its needle against the UNSCALED [lo, hi] axis and a delta carries its own
+        // format, so scaling the number without them would render a needle at 2.4 on a 0..5e9
+        // dial. Documented exception: such a tile keeps `.3~s`, which says "G" even on English.
+        let _locale = english_locale();
+        let gauged = DictRow {
+            role: "measure".to_string(),
+            concept: "measure.amount".to_string(),
+            gauge_range: Some([0.0, 5e9]),
+            ..DictRow::default()
+        };
+        let (stats, panels, dict) = kpi_fixture(2.4e9, Some(gauged));
+        let row = build_kpi_row(&stats, &panels, dict.as_ref()).expect("KPI row");
+        let tile = only_tile(&row);
+        assert!(tile.gauge.is_some());
+        assert_eq!(tile.suffix, None, "a gauge tile keeps its unscaled value");
+
+        let targeted = DictRow {
+            role: "measure".to_string(),
+            concept: "measure.money".to_string(),
+            target: Some(1e9),
+            ..DictRow::default()
+        };
+        let (stats2, panels2, dict2) = kpi_fixture(2.4e9, Some(targeted));
+        let row2 = build_kpi_row(&stats2, &panels2, dict2.as_ref()).expect("KPI row");
+        let tile2 = only_tile(&row2);
+        assert!(tile2.target.is_some());
+        assert_eq!(tile2.suffix, None, "a delta tile keeps its unscaled value");
+    }
+
+    #[test]
+    fn build_kpi_row_prefixes_currency_symbol() {
+        let _locale = english_locale();
+        let money = |code: Option<&str>| DictRow {
+            role: "measure".to_string(),
+            concept: "measure.money".to_string(),
+            currency: code.map(ToString::to_string),
+            ..DictRow::default()
+        };
+        let (stats, panels, dict) = kpi_fixture(192e9, Some(money(Some("USD"))));
+        let row = build_kpi_row(&stats, &panels, dict.as_ref()).expect("KPI row");
+        let tile = only_tile(&row);
+        // the headline reads "$192B": symbol from the prefix, magnitude from the suffix
+        assert_eq!(tile.prefix.as_deref(), Some("$"));
+        assert_eq!(tile.suffix.as_deref(), Some("B"));
+
+        // an ISO code the register doesn't know still labels the number, using the bare code
+        let (s2, p2, d2) = kpi_fixture(192e9, Some(money(Some("ZZZ"))));
+        let row2 = build_kpi_row(&s2, &p2, d2.as_ref()).expect("KPI row");
+        assert_eq!(only_tile(&row2).prefix.as_deref(), Some("ZZZ "));
+
+        // no currency -> no prefix (a non-money measure is unmarked, as before)
+        let (s3, p3, d3) = kpi_fixture(192e9, Some(money(None)));
+        let row3 = build_kpi_row(&s3, &p3, d3.as_ref()).expect("KPI row");
+        assert_eq!(only_tile(&row3).prefix, None);
+    }
+
+    #[test]
+    fn kpi_and_bar_label_agree_for_the_same_value() {
+        // The KPI path scales in Rust then hands d3 `.3~g`, while bar labels are rendered wholly
+        // in Rust by `fmt_magnitude`. Two different rounding rules for the same number would put
+        // "192B" above a bar and "191B" in the tile summarizing it.
+        let _locale = english_locale();
+        for v in [192e9, 2.4e9, 1.05e6, 258_000.0, 1.0e12, 999_999.0] {
+            let (stats, panels, _) = kpi_fixture(v, None);
+            let row = build_kpi_row(&stats, &panels, None).expect("KPI row");
+            let tile = only_tile(&row);
+            let kpi_rendered = format!(
+                "{}{}",
+                fmt_three_sig(tile.value),
+                tile.suffix.as_deref().unwrap_or_default()
+            );
+            assert_eq!(
+                kpi_rendered,
+                fmt_magnitude(v),
+                "KPI tile and bar label disagree for {v}"
+            );
+        }
     }
 
     #[test]
@@ -38716,6 +39223,8 @@ mod tests {
             format: ",".to_string(),
             gauge,
             target: None,
+            prefix: None,
+            suffix: None,
         };
         let plain = Panel::new(
             "kpi".to_string(),
@@ -40520,6 +41029,92 @@ mod tests {
         assert_eq!(fmt_measure(-1_234_567.0), "-1,234,567");
         assert_eq!(fmt_measure(-12_345.678), "-12,345.678");
         assert_eq!(fmt_measure(999.0), "999");
+    }
+
+    #[test]
+    fn magnitude_scale_uses_b_on_english_g_elsewhere() {
+        // `set_active` is called EXPLICITLY for the English case too: cargo runs unit tests on
+        // parallel threads and a test that panicked mid-way can leave a non-en locale in the
+        // process-global, so asserting "the default" without pinning it flakes in CI.
+        let _guard = english_locale();
+        assert_eq!(magnitude_scale(2.4e9), (1e9, "B"));
+        // every other magnitude is locale-independent
+        assert_eq!(magnitude_scale(2.4e12), (1e12, "T"));
+        assert_eq!(magnitude_scale(1.05e6), (1e6, "M"));
+        assert_eq!(magnitude_scale(258_000.0), (1e3, "k"));
+        assert_eq!(magnitude_scale(999.0), (1.0, ""));
+        assert_eq!(magnitude_scale(0.0), (1.0, ""));
+        // the sign does not change the bucket
+        assert_eq!(magnitude_scale(-2.4e9), (1e9, "B"));
+
+        viz_i18n::set_active(viz_i18n::parse_lang("es").unwrap());
+        assert_eq!(
+            magnitude_scale(2.4e9),
+            (1e9, "G"),
+            "non-English pages keep the SI prefix"
+        );
+        assert_eq!(
+            magnitude_scale(1.05e6),
+            (1e6, "M"),
+            "M is not locale-specific"
+        );
+        viz_i18n::reset_active();
+    }
+
+    #[test]
+    fn fmt_magnitude_matches_d3_three_sig_digits() {
+        let _guard = english_locale();
+        assert_eq!(fmt_magnitude(1_050_000.0), "1.05M");
+        assert_eq!(fmt_magnitude(258_000.0), "258k");
+        assert_eq!(fmt_magnitude(2_400_000_000.0), "2.4B");
+        assert_eq!(fmt_magnitude(192_000_000_000.0), "192B");
+        assert_eq!(fmt_magnitude(-2_400_000_000.0), "-2.4B");
+        // below 1e3 it delegates to `fmt_measure`, so small values keep their exact grouped form
+        assert_eq!(fmt_magnitude(999.0), fmt_measure(999.0));
+        assert_eq!(fmt_magnitude(3.27), "3.27");
+
+        // ...except sub-hundredth magnitudes, where `fmt_measure`'s 3-decimal rounding would
+        // erase the value entirely (roborev 4202). The SI formatting these labels used before
+        // said "400µ"; a flat "0" is strictly worse than either.
+        assert_eq!(fmt_magnitude(0.0004), "0.0004");
+        assert_ne!(fmt_magnitude(0.0004), "0");
+        assert_eq!(fmt_magnitude(-0.0004), "-0.0004");
+        assert_eq!(fmt_magnitude(0.00123456), "0.00123");
+        assert_eq!(fmt_magnitude(0.009), "0.009");
+        // the 0.01 boundary belongs to the plain path
+        assert_eq!(fmt_magnitude(0.01), fmt_measure(0.01));
+        // zero is not "small", it is zero
+        assert_eq!(fmt_magnitude(0.0), fmt_measure(0.0));
+        // and a value below the decimal clamp reports a bound instead of claiming zero
+        assert_eq!(fmt_magnitude(1e-15), "< 1e-12");
+
+        viz_i18n::set_active(viz_i18n::parse_lang("es").unwrap());
+        assert_eq!(fmt_magnitude(2_400_000_000.0), "2.4G");
+        viz_i18n::reset_active();
+    }
+
+    #[test]
+    fn axis_exponent_format_tracks_locale() {
+        // `ExponentFormat` is not `PartialEq`, so assert on the SERIALIZED value — which is the
+        // thing that actually has to reach plotly's `exponentformat` anyway.
+        let fmt = || serde_json::to_string(&axis_exponent_format()).unwrap();
+        let _guard = english_locale();
+        assert_eq!(fmt(), "\"B\"");
+        viz_i18n::set_active(viz_i18n::parse_lang("es").unwrap());
+        assert_eq!(fmt(), "\"SI\"");
+        viz_i18n::set_active(viz_i18n::parse_lang("ja").unwrap());
+        assert_eq!(fmt(), "\"SI\"");
+        viz_i18n::reset_active();
+    }
+
+    #[test]
+    fn currency_prefix_falls_back_to_code() {
+        // the register knows the conventional symbol...
+        assert_eq!(currency_prefix("USD"), "$");
+        assert_eq!(currency_prefix("EUR"), "\u{20ac}");
+        // ...and anything it doesn't renders as the bare code plus a separating space, so the
+        // number is still labelled rather than silently unmarked
+        assert_eq!(currency_prefix("ZZZ"), "ZZZ ");
     }
 
     #[test]

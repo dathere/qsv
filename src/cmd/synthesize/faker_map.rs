@@ -294,7 +294,20 @@ define_locales! {
 /// stats `Type` + min/max bounds via `build_date`, not a faker. Their optional
 /// `:<fmt>` strftime suffix only sets `build_date`'s output format (see
 /// `parse_date_format`); `is_faker_token` rejects the suffixed forms too.
-const NON_FAKER_TOKENS: &[&str] = &["category", "date", "datetime", "unique_id", "unknown"];
+///
+/// `money` is here because it is a NUMERIC token: fake-rs has no distribution-faithful amount
+/// generator, so a faker arm would emit random values that destroy the column's real
+/// min/max/mean. Falling through to the type/stats-based generator reproduces them — the same
+/// reasoning that puts `unique_id` on this list. (`currency_code`, the sibling token naming the
+/// currency, IS a faker token — `fake::faker::currency`.)
+const NON_FAKER_TOKENS: &[&str] = &[
+    "category",
+    "date",
+    "datetime",
+    "money",
+    "unique_id",
+    "unknown",
+];
 
 /// Parse the duration cap (in seconds) from a `content_type` token.
 ///

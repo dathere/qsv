@@ -248,7 +248,7 @@ keyword in the JSON Schema carrier. This appendix is a **manual transcription** 
 constants, verified against them when written; nothing currently enforces that it stays in
 step, so treat the source as authoritative if the two disagree.
 
-### `concept` — 43 tokens
+### `concept` — 44 tokens
 
 The column's real-world semantic identity, and the format's join-discovery mechanism: the same
 concept in two different datasets denotes the same thing. Namespaced and hierarchical. Many
@@ -262,7 +262,7 @@ token and never inventing them.
 | `id.*` — entity keys | 4 | `surrogate_key`, `natural_key`, `foreign_key`, `uuid` |
 | `org.*` — organizations | 3 | `agency`, `company`, `industry` |
 | `pii.*` — sensitive personal data | 4 | `email`, `phone`, `full_name`, `address` |
-| `measure.*` — quantities | 3 | `count`, `amount`, `ratio` |
+| `measure.*` — quantities | 4 | `count`, `amount`, `money`, `ratio` |
 | `category.*` — categoricals | 3 | `status`, `type`, `channel` |
 | `nyc.*` — a domain extension, illustrative | 4 | `bbl`, `borough`, `community_board`, `complaint_type` |
 | fallback | 1 | `unknown` |
@@ -321,6 +321,34 @@ schematic itself has no panel for it.
 `daily`, `weekly`, `monthly`, `quarterly`, `annual`. Unlike the others this is never sent to a
 model: it is computed deterministically from cached statistics. It is listed here because
 consumers read it.
+
+### `currency` — an ISO-4217 alpha-3 code
+
+A per-field annotation on a **monetary measure**, naming the currency its amounts are
+denominated in (`"USD"`, `"EUR"`, `"PHP"`). It is not a vocabulary of qsv's own — the ISO
+register is authoritative, and a code outside it is rejected on the way in.
+
+It pairs with the `measure.money` concept and the `money` content type, but does not require
+them: the generic `measure.amount` also qualifies, so a dictionary written before
+`measure.money` existed can be annotated by adding the code alone.
+
+Like `gauge_range`, it is **proposed then verified** — a model may suggest one, but qsv keeps
+it only when the column is a numeric measure that reads as money. A currency on a count, on a
+String column, or on the column that *names* the currency (that column is a `currency_code`
+dimension, not an amount) is dropped rather than corrected. It is never inferred from the
+data alone: nothing in a bare number reveals its currency.
+
+Consumers render it as the currency's symbol — `$192B` on the KPI tile — falling back to the
+bare code (`XOF 1.2B`) when no conventional symbol is known. The panel subtitle names the
+currency once rather than repeating a glyph on every mark.
+
+### Large-number suffixes are locale-dependent
+
+Not a vocabulary entry, but a rendering rule consumers must know: on **English** pages qsv
+writes 10⁹ as `B` (the financial convention); every other locale keeps the SI prefix `G`. The
+decision is made once and applied to KPI tiles, bar and waterfall value labels, and axis tick
+formats together, so a single page can never mix the two conventions — a bar labelled `192B`
+resting on a gridline labelled `192G` is precisely the defect this rule exists to prevent.
 
 ---
 

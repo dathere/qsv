@@ -35,8 +35,8 @@ Non-interactive helper (safe to run anywhere, no TTY needed):
     final `viz smart` route.
 
 The routing preview mirrors `route_from_concept` / `route_from_role` in
-src/cmd/viz.rs (~lines 9313-9355); the vocab lists mirror
-src/cmd/describegpt/dictionary.rs:142 (ROLE_VOCAB) and :164 (CONCEPT_VOCAB).
+src/cmd/viz.rs (~line 15480); the vocab lists mirror
+src/cmd/describegpt/dictionary.rs:146 (ROLE_VOCAB) and :168 (CONCEPT_VOCAB).
 Off-vocab values are allowed (a new concept may exist in newer qsv) but flagged
 with a warning rather than blocked.
 """
@@ -47,8 +47,8 @@ import sys
 import tempfile
 
 # ── controlled vocabulary — mirror of qsv source (free text allowed, warned) ──
-# ROLE_VOCAB    -> src/cmd/describegpt/dictionary.rs:142
-# CONCEPT_VOCAB -> src/cmd/describegpt/dictionary.rs:164
+# ROLE_VOCAB    -> src/cmd/describegpt/dictionary.rs:146
+# CONCEPT_VOCAB -> src/cmd/describegpt/dictionary.rs:168
 ROLE_VOCAB = ["dimension", "measure", "identifier", "timestamp"]
 
 CONCEPT_VOCAB = [
@@ -67,7 +67,7 @@ CONCEPT_VOCAB = [
     # sensitive personal data
     "pii.email", "pii.phone", "pii.full_name", "pii.address",
     # quantities / categoricals
-    "measure.count", "measure.amount", "measure.ratio",
+    "measure.count", "measure.amount", "measure.money", "measure.ratio",
     "category.status", "category.type", "category.channel",
     # NYC-domain extension
     "nyc.bbl", "nyc.borough", "nyc.community_board", "nyc.complaint_type",
@@ -81,7 +81,7 @@ FIELDS = ["role", "concept", "label", "description"]
 
 # ─────────────────────────── pure routing preview ───────────────────────────
 # Mirror of src/cmd/viz.rs `route_from_concept` / `route_from_role`
-# (~lines 13187-13240). Precedence is concept → role → (defer to stats). We do NOT
+# (~line 15480). Precedence is concept → role → (defer to stats). We do NOT
 # reimplement the content_type/stats fallback: those fields are not edited here,
 # so anything unresolved by role/concept is shown as "Defer".
 

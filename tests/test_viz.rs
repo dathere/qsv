@@ -16463,3 +16463,98 @@ fn viz_smart_dict_info_localizes_panels_not_drawn() {
         "stderr must stay English and prefixed, got: {stderr}"
     );
 }
+
+// The UI language is resolved in TWO stages -- `--language` in run(), then the dictionary's
+// detected language in SmartCtx::new -- and the bivariate refusals fire in smart_prepare, which
+// runs BEFORE the second stage. Rendering a refusal at emission time froze exactly those two in
+// the pre-dictionary language while the rest of the page rendered in the detected one, which per
+// the ordering invariant at the resolution site is an INVISIBLE failure: English inside a Spanish
+// page reads as a missing translation, not a bug. (roborev 4195)
+//
+// No `--language` here on purpose -- the locale must come from the dictionary alone.
+#[test]
+fn viz_smart_dict_info_localizes_an_early_refusal_from_the_dictionary_language() {
+    let wrk =
+        Workdir::new("viz_smart_dict_info_localizes_an_early_refusal_from_the_dictionary_language");
+    // > BIVARIATE_MAX_COLUMNS (50) so the cap refusal fires inside smart_prepare
+    const NCOLS: usize = 55;
+    let header: Vec<String> = (0..NCOLS).map(|c| format!("c{c:02}")).collect();
+    let mut rows = header.join(",");
+    rows.push('\n');
+    for r in 0..200 {
+        let cells: Vec<String> = (0..NCOLS)
+            .map(|c| format!("v{}", (r + c) % (c % 5 + 2)))
+            .collect();
+        rows.push_str(&cells.join(","));
+        rows.push('\n');
+    }
+    wrk.create_from_string("wide.csv", &rows);
+    // a dictionary whose DETECTED language is Spanish, with no --language flag anywhere
+    let props: Vec<String> = header
+        .iter()
+        .map(|h| format!(r#""{h}":{{"type":["string"],"description":"Columna {h}.","x-qsv":{{"role":"dimension","content_type":"category"}}}}"#))
+        .collect();
+    wrk.create_from_string(
+        "dict.json",
+        &format!(
+            r#"{{"x-qsv":{{"detected_language_code":"spa"}},"properties":{{{}}}}}"#,
+            props.join(",")
+        ),
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "wide.csv",
+        "--dict-info",
+        "--bivariate",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // the fixture must actually trip the early refusal, or this test proves nothing
+    assert!(
+        stderr.contains("columns exceeds the") && stderr.contains("-column cap"),
+        "fixture should trip the bivariate column cap in smart_prepare, got: {stderr}"
+    );
+    // the page is Spanish (proving the dictionary language won) ...
+    assert!(
+        html.contains("Diccionario de datos"),
+        "the dictionary language should drive the UI"
+    );
+    // ... and so is the refusal that fired BEFORE that language was known
+    let start = html
+        .find("<section class=\"qsv-dict-omissions\">")
+        .expect("omissions section missing");
+    let end = html[start..].find("</section>").unwrap() + start;
+    let omissions = &html[start..end];
+    assert!(
+        omissions.contains("columnas superan el l\u{ed}mite"),
+        "an early refusal must render in the dictionary-detected language, got: {omissions}"
+    );
+    assert!(
+        !omissions.contains("columns exceeds the"),
+        "no pre-dictionary English should survive into the drawer, got: {omissions}"
+    );
+    // Deferring the render moved argument substitution too, so pin that the ARGUMENTS actually
+    // landed -- a template rendered with no arguments still contains all the Spanish prose above
+    // and would sail past those assertions.
+    assert!(
+        omissions.contains(&NCOLS.to_string()),
+        "the refusal should carry its interpolated column count, got: {omissions}"
+    );
+    assert!(
+        !omissions.contains("%{"),
+        "no unsubstituted argument token may reach the drawer, got: {omissions}"
+    );
+
+    // stderr is still English regardless of the page language
+    assert!(
+        stderr.contains("viz smart --bivariate:"),
+        "stderr must stay English and prefixed, got: {stderr}"
+    );
+}

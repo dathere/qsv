@@ -13477,15 +13477,27 @@ fn viz_note(msg: &str) {
 ///
 /// The drawer shows the SAME STRING the pipeline printed, so the explanation cannot drift from the
 /// decision — which is the whole point of the surface.
-static SKIP_NOTES: std::sync::LazyLock<std::sync::Mutex<Vec<String>>> =
+/// A recorded refusal: the catalog key plus its already-stringified arguments.
+///
+/// Deliberately NOT the rendered sentence. The UI locale is resolved in two stages -- `--language`
+/// in `run()`, then the dictionary's detected language in `SmartCtx::new` -- and two refusal sites
+/// (`bivariate_column_cap`, `bivariate_stale_sidecar`) fire in `smart_prepare`, which runs BEFORE
+/// the second stage. Rendering at emission time would freeze those two in the pre-dictionary
+/// language while the rest of the page renders in the detected one, and per the ordering invariant
+/// documented at the resolution site, that failure is INVISIBLE: English inside a Spanish page
+/// reads as a missing translation, not a bug. Holding the key defers rendering to `take_skip_notes`
+/// and makes the drawer independent of call order rather than merely correct today. (roborev 4195)
+type SkipNote = (&'static str, Vec<(&'static str, String)>);
+
+static SKIP_NOTES: std::sync::LazyLock<std::sync::Mutex<Vec<SkipNote>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
 
-fn record_skip_note(msg: String) {
+fn record_skip_note(key: &'static str, args: Vec<(&'static str, String)>) {
     // poison-tolerant: the caller has already printed to stderr, so a panicking sibling must not
     // escalate a cosmetic drawer section into a failed run.
     match SKIP_NOTES.lock() {
-        Ok(mut v) => v.push(msg),
-        Err(poisoned) => poisoned.into_inner().push(msg),
+        Ok(mut v) => v.push((key, args)),
+        Err(poisoned) => poisoned.into_inner().push((key, args)),
     }
 }
 
@@ -13499,8 +13511,10 @@ const VIZ_BIVARIATE_PREFIX: &str = "viz smart --bivariate: ";
 /// * **stderr** — rendered with `locale = "en"` and the CLI prefix reattached. Terminal output is
 ///   English on every run, byte-identical to what it was before the messages moved into the
 ///   catalog; scripts parse it and integration tests pin it.
-/// * **the Data Dictionary drawer** — rendered in the ACTIVE locale, prefix-free, via
-///   `record_skip_note`.
+/// * **the Data Dictionary drawer** — RECORDED as key + args via `record_skip_note`, and rendered
+///   prefix-free in `take_skip_notes` once both halves of the language resolution have run. Two
+///   refusal sites fire in `smart_prepare`, upstream of the dictionary-language stage, so rendering
+///   here would silently freeze them in the pre-dictionary language (see `SkipNote`).
 ///
 /// Reading both from one `viz.omit.*` entry is the point: the drawer text cannot drift from the
 /// reason the pipeline reported, which is what a provenance surface has to guarantee.
@@ -13518,7 +13532,7 @@ macro_rules! viz_skip_note {
             $prefix,
             t!($key, locale = "en" $(, $name = $name)*)
         ));
-        record_skip_note(t!($key $(, $name = $name)*).into_owned());
+        record_skip_note($key, vec![$((stringify!($name), $name.to_string())),*]);
     }};
 }
 
@@ -13527,10 +13541,21 @@ macro_rules! viz_skip_note {
 /// Drained UNCONDITIONALLY (not only on the `--dict-info` branch) so the buffer cannot grow across
 /// an image-export run that will never render a drawer.
 fn take_skip_notes() -> Vec<String> {
-    match SKIP_NOTES.lock() {
+    let recorded: Vec<SkipNote> = match SKIP_NOTES.lock() {
         Ok(mut v) => std::mem::take(&mut *v),
         Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
-    }
+    };
+    // Rendered HERE, not at emission: by the time the drawer is assembled both halves of the
+    // language resolution have run, so every notice speaks the page's language. `t!` takes the
+    // runtime key; `replace_patterns` is rust-i18n's own substituter, so a dynamic argument list
+    // behaves exactly like the macro-expanded form used everywhere else.
+    recorded
+        .into_iter()
+        .map(|(key, args)| {
+            let (names, values): (Vec<&str>, Vec<String>) = args.into_iter().unzip();
+            rust_i18n::replace_patterns(&rust_i18n::t!(key), &names, &values)
+        })
+        .collect()
 }
 
 /// Extract the model name from a describegpt JSON Schema dictionary. The model is baked into
@@ -41471,6 +41496,7 @@ mod tests {
         let mut missing: Vec<&str> = Vec::new();
         let mut non_literal: Vec<usize> = Vec::new();
         let mut macro_forwarded = 0usize;
+        let mut deferred_render = 0usize;
 
         for (idx, _) in src.match_indices("t!(") {
             // skip `assert!(`, `debug_assert!(` and friends, which contain `t!(` as a substring
@@ -41480,13 +41506,17 @@ mod tests {
             sites += 1;
             let rest = src[idx + 3..].trim_start();
             let Some(after_quote) = rest.strip_prefix('"') else {
-                // `viz_skip_note!` forwards a `$key` metavariable to `t!` twice (once pinned to
-                // English for stderr, once in the active locale for the drawer). Those two sites
-                // are unverifiable HERE, but no coverage is lost: the literal keys live at the
-                // macro's CALL sites and are checked in the second scan below. Any OTHER
-                // non-literal key still fails the assertion.
+                // Two sanctioned runtime keys, both on the panel-refusal path, and NEITHER
+                // costs coverage: the literal keys live at `viz_skip_note!`'s call sites and are
+                // resolved in the second scan below.
+                //   * `t!($key, locale = "en", ..)` -- the macro's stderr render.
+                //   * `rust_i18n::t!(key)` in `take_skip_notes` -- the drawer render, deliberately
+                //     deferred until after the dictionary language is resolved.
+                // Any OTHER non-literal key still fails the assertion.
                 if rest.starts_with("$key") {
                     macro_forwarded += 1;
+                } else if rest.starts_with("key)") {
+                    deferred_render += 1;
                 } else {
                     non_literal.push(idx);
                 }
@@ -41501,11 +41531,16 @@ mod tests {
             }
         }
 
-        // `viz_skip_note!`'s two `t!($key, ..)` forwards are the ONLY sanctioned exemption, and
-        // the exact count is pinned so a third one cannot appear unnoticed.
+        // The refusal path's two runtime keys are the ONLY sanctioned exemptions, and each count
+        // is pinned so a third cannot appear unnoticed.
         assert_eq!(
-            macro_forwarded, 2,
-            "expected exactly the two `t!($key, ..)` forwards inside `viz_skip_note!`"
+            macro_forwarded, 1,
+            "expected exactly one `t!($key, ..)` forward -- the stderr render in `viz_skip_note!`"
+        );
+        assert_eq!(
+            deferred_render, 1,
+            "expected exactly one deferred `rust_i18n::t!(key)` -- the drawer render in \
+             `take_skip_notes`"
         );
         assert!(
             non_literal.is_empty(),
@@ -41537,10 +41572,10 @@ mod tests {
             "expected the panel-refusal call sites to be found, got {omit_sites}"
         );
         assert_eq!(
-            checked + macro_forwarded,
+            checked + macro_forwarded + deferred_render,
             sites,
             "every `t!` site should have yielded a literal key to check, or be one of the two \
-             sanctioned `viz_skip_note!` forwards"
+             sanctioned runtime keys on the panel-refusal path"
         );
         assert!(
             sites > 60,

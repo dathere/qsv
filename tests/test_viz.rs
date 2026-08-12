@@ -16390,3 +16390,76 @@ fn viz_smart_reciprocal_twins_keep_exactly_one_survivor() {
         "`subject` is charted, so it must carry no not-charted note"
     );
 }
+
+// The refusal notices now come from the catalog rather than a `format!` literal, so the drawer can
+// render them in the dashboard's language while stderr stays English. Both halves matter: a
+// Spanish dashboard should not carry an English paragraph, and stderr must keep the wording that
+// scripts and the other tests in this file pin.
+#[test]
+fn viz_smart_dict_info_localizes_panels_not_drawn() {
+    let wrk = Workdir::new("viz_smart_dict_info_localizes_panels_not_drawn");
+    // two statistically independent dimensions -> the hierarchy panel is refused
+    let regions = ["North", "South", "East", "West", "Central"];
+    let cats = ["Alpha", "Beta", "Gamma", "Delta"];
+    let mut rows = String::from("region,category,amount\n");
+    for i in 0..600 {
+        rows.push_str(&format!(
+            "{},{},{}\n",
+            regions[i * 7 % 5],
+            cats[i * 13 % 4],
+            i % 500 + 1
+        ));
+    }
+    wrk.create_from_string("ind.csv", &rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"properties":{
+            "region":   {"type":["string"],"description":"Region.","x-qsv":{"role":"dimension","content_type":"category"}},
+            "category": {"type":["string"],"description":"Category.","x-qsv":{"role":"dimension","content_type":"category"}},
+            "amount":   {"type":["number"],"description":"Amount.","x-qsv":{"role":"measure"}}
+        }}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "ind.csv",
+        "--dict-info",
+        "--language",
+        "es",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    let start = html
+        .find("<section class=\"qsv-dict-omissions\">")
+        .expect("omissions section missing");
+    let end = html[start..].find("</section>").unwrap() + start;
+    let omissions = &html[start..end];
+
+    // the refusal itself is Spanish ...
+    assert!(
+        omissions.contains("estad\u{ed}sticamente independientes"),
+        "the refusal should be localized, got: {omissions}"
+    );
+    assert!(
+        !omissions.contains("statistically independent"),
+        "no English refusal text should remain in a Spanish drawer, got: {omissions}"
+    );
+    // ... and carries no CLI prefix, which is terminal furniture
+    assert!(
+        !omissions.contains("viz smart:"),
+        "the drawer must not repeat the stderr CLI prefix, got: {omissions}"
+    );
+
+    // stderr is unchanged: English, prefixed, and word-for-word what it always was
+    assert!(
+        stderr.contains("viz smart: skipping the")
+            && stderr.contains("its dimensions are statistically independent"),
+        "stderr must stay English and prefixed, got: {stderr}"
+    );
+}

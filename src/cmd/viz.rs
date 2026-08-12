@@ -13480,20 +13480,46 @@ fn viz_note(msg: &str) {
 static SKIP_NOTES: std::sync::LazyLock<std::sync::Mutex<Vec<String>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
 
-/// `viz_note`, but the message is ALSO recorded for the Data Dictionary drawer.
-///
-/// Use ONLY for notices that explain a panel qsv declined to draw. In particular do NOT use it for
-/// the warn-only funnel notices — those panels ARE drawn, and recording them would make the drawer
-/// claim a panel was dropped when it wasn't — nor for dictionary load/infer soft-fails, sidecar
-/// size notes, or `--dict-info` no-ops, none of which are panel refusals.
-fn viz_skip_note(msg: &str) {
-    viz_note(msg);
-    // poison-tolerant: these sites have already printed to stderr, so a panicking sibling must not
+fn record_skip_note(msg: String) {
+    // poison-tolerant: the caller has already printed to stderr, so a panicking sibling must not
     // escalate a cosmetic drawer section into a failed run.
     match SKIP_NOTES.lock() {
-        Ok(mut v) => v.push(msg.to_string()),
-        Err(poisoned) => poisoned.into_inner().push(msg.to_string()),
+        Ok(mut v) => v.push(msg),
+        Err(poisoned) => poisoned.into_inner().push(msg),
     }
+}
+
+/// stderr prefixes for a refusal notice. The catalog holds the message ALONE, so the drawer can
+/// render it as prose; the terminal keeps the CLI prefix it has always had.
+const VIZ_SMART_PREFIX: &str = "viz smart: ";
+const VIZ_BIVARIATE_PREFIX: &str = "viz smart --bivariate: ";
+
+/// Report a panel qsv declined to draw, to BOTH sinks, from ONE catalog entry.
+///
+/// * **stderr** — rendered with `locale = "en"` and the CLI prefix reattached. Terminal output is
+///   English on every run, byte-identical to what it was before the messages moved into the
+///   catalog; scripts parse it and integration tests pin it.
+/// * **the Data Dictionary drawer** — rendered in the ACTIVE locale, prefix-free, via
+///   `record_skip_note`.
+///
+/// Reading both from one `viz.omit.*` entry is the point: the drawer text cannot drift from the
+/// reason the pipeline reported, which is what a provenance surface has to guarantee.
+///
+/// Use ONLY where a panel was not drawn. In particular do NOT use it for the warn-only funnel
+/// notices — those panels ARE drawn, and recording them would make the drawer claim a panel was
+/// dropped when it wasn't — nor for dictionary load/infer soft-fails or sidecar size notes.
+macro_rules! viz_skip_note {
+    ($prefix:expr, $key:expr $(, $name:ident = $value:expr)* $(,)?) => {{
+        // evaluate each argument exactly once: several call sites pass `format!(..)` or an
+        // indexed lookup, and the two `t!` renders below would otherwise run them twice.
+        $(let $name = $value;)*
+        viz_note(&format!(
+            "{}{}",
+            $prefix,
+            t!($key, locale = "en" $(, $name = $name)*)
+        ));
+        record_skip_note(t!($key $(, $name = $name)*).into_owned());
+    }};
 }
 
 /// Take the recorded panel-refusal notices, leaving the buffer empty.
@@ -13677,18 +13703,16 @@ fn bivariate_panels(
     let rows = match parse_bivariate_csv(&path) {
         Ok(rows) => rows,
         Err(e) => {
-            viz_skip_note(&format!(
-                "viz smart --bivariate: could not read moarstats bivariate output ({e}); skipping \
-                 the association panels."
-            ));
+            viz_skip_note!(
+                VIZ_BIVARIATE_PREFIX,
+                "viz.omit.bivariate_unreadable",
+                q_err = e.to_string()
+            );
             return (None, None);
         },
     };
     if rows.is_empty() {
-        viz_skip_note(
-            "viz smart --bivariate: moarstats produced no bivariate pairs; skipping the \
-             association panels.",
-        );
+        viz_skip_note!(VIZ_BIVARIATE_PREFIX, "viz.omit.bivariate_no_pairs");
         return (None, None);
     }
 
@@ -14192,14 +14216,14 @@ fn sankey_panel(
         return Ok(None);
     };
     if other_src_frac > SANKEY_MAX_OTHER_FRACTION || other_tgt_frac > SANKEY_MAX_OTHER_FRACTION {
-        viz_skip_note(&format!(
-            "viz smart: skipping the '{} → {}' Sankey panel — after keeping the top \
-             {SANKEY_TOP_N_PER_SIDE} categories per side, the collapsed 'Other' bucket dominates \
-             a side (>{:.0}% of its flow), which would misrepresent the distribution.",
-            label_of(s_idx),
-            label_of(t_idx),
-            SANKEY_MAX_OTHER_FRACTION * 100.0
-        ));
+        viz_skip_note!(
+            VIZ_SMART_PREFIX,
+            "viz.omit.sankey_other_dominates",
+            q_source = label_of(s_idx),
+            q_target = label_of(t_idx),
+            q_top_n = SANKEY_TOP_N_PER_SIDE,
+            q_pct = format!("{:.0}", SANKEY_MAX_OTHER_FRACTION * 100.0)
+        );
         return Ok(None);
     }
 
@@ -18415,6 +18439,9 @@ fn render_dict_page_html(
   .qsv-dict-omissions p {{ font-size: 12px; color: #888888; margin: 0 0 6px; }}
   .qsv-dict-omissions ul {{ margin: 0; padding-left: 18px; }}
   .qsv-dict-omissions li {{ font-size: 12.5px; line-height: 1.45; margin: 3px 0; }}
+  /* the catalog values start lower-case so stderr stays byte-identical; lift the first letter
+     here instead of diverging the two sinks. A no-op for scripts without case (ja, zh). */
+  .qsv-dict-omissions li::first-letter {{ text-transform: capitalize; }}
   .qsv-dict-label {{ font-size: 13px; color: #888888; margin: 2px 0 6px; }}
   .qsv-dict-desc {{ font-size: 13px; line-height: 1.5; margin: 4px 0 8px; }}
   .qsv-dict-desc h4.qsv-dict-mdh, .qsv-dict-dataset-desc h4.qsv-dict-mdh {{ font-size: 13.5px; font-weight: 600; margin: 10px 0 4px; }}
@@ -21035,11 +21062,12 @@ fn read_geo_anim(
         // its own cap — the caller
         // falls back to a static map, which shows the same points without the frame repetition.
         if cumulative_embedded_points(&bucket_lats) > *MAX_SMART_POINTS {
-            viz_skip_note(&format!(
-                "viz smart: skipped the animated map — {} time buckets would embed more than the \
-                 {} point budget even fully downsampled. Use a coarser date column to animate it.",
-                nb, *MAX_SMART_POINTS
-            ));
+            viz_skip_note!(
+                VIZ_SMART_PREFIX,
+                "viz.omit.map_animation_over_budget",
+                q_buckets = nb,
+                q_budget = *MAX_SMART_POINTS
+            );
             return Ok(None);
         }
     }
@@ -22092,11 +22120,11 @@ fn build_smart_pip_choropleth_panel(
         // ocean). Without this the run is completely silent — the boundary overlay still draws,
         // so the Data Schematic shows outlined regions with no fill and no explanation.
         if total > 0 && dropped == total {
-            viz_skip_note(&format!(
-                "viz smart: none of the {total} points fell inside any --geojson region, so no \
-                 region panel was built. Check that the boundary file covers this data and that \
-                 --lat/--lon are not swapped."
-            ));
+            viz_skip_note!(
+                VIZ_SMART_PREFIX,
+                "viz.omit.region_no_points_inside",
+                q_total = total
+            );
         }
         return Ok(None);
     }
@@ -22483,11 +22511,11 @@ fn build_smart_summary_choropleth_panels(
         return Ok(None);
     };
     if ratio < BIVARIATE_MIN_SUPPORT_RATIO {
-        viz_skip_note(&format!(
-            "viz smart: --geojson supplied but no region-code column overlapped the boundary ids \
-             (best {:.0}%); skipping the summary choropleth.",
-            ratio * 100.0
-        ));
+        viz_skip_note!(
+            VIZ_SMART_PREFIX,
+            "viz.omit.choropleth_no_id_overlap",
+            q_pct = format!("{:.0}", ratio * 100.0)
+        );
         return Ok(None);
     }
     let region_idx = candidates[ci];
@@ -24615,13 +24643,13 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
         if args.flag_bivariate && !(args.flag_no_headers || args.flag_delimiter.is_some()) {
             let ncols = reader_and_headers(&args)?.1.len();
             if ncols > BIVARIATE_MAX_COLUMNS {
-                viz_skip_note(&format!(
-                    "viz smart --bivariate: {ncols} columns exceeds the \
-                     {BIVARIATE_MAX_COLUMNS}-column cap (~{} pairs at the cap); skipping the \
-                     bivariate association panels. Run `qsv moarstats --bivariate` directly for \
-                     the full pairwise output.",
-                    BIVARIATE_MAX_COLUMNS * (BIVARIATE_MAX_COLUMNS - 1) / 2
-                ));
+                viz_skip_note!(
+                    VIZ_BIVARIATE_PREFIX,
+                    "viz.omit.bivariate_column_cap",
+                    q_ncols = ncols,
+                    q_cap = BIVARIATE_MAX_COLUMNS,
+                    q_pairs = BIVARIATE_MAX_COLUMNS * (BIVARIATE_MAX_COLUMNS - 1) / 2
+                );
                 false
             } else {
                 true
@@ -24761,10 +24789,7 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
                 // warn so the missing panels aren't a mystery (an absent sidecar just means no
                 // pairs — stay silent there).
                 if !bivariate_sidecar_fresh && sidecar_after.is_some() {
-                    viz_skip_note(
-                        "viz smart --bivariate: a stale bivariate sidecar could not be removed \
-                         and was not refreshed by moarstats; skipping the association panels.",
-                    );
+                    viz_skip_note!(VIZ_BIVARIATE_PREFIX, "viz.omit.bivariate_stale_sidecar");
                 }
             }
         }
@@ -25573,9 +25598,11 @@ impl<'a> SmartCtx<'a> {
                         self.panels.insert(0, panel);
                     },
                     Ok(None) => {},
-                    Err(e) => viz_skip_note(&format!(
-                        "viz smart: directed-flow (Sankey) panel skipped ({e})"
-                    )),
+                    Err(e) => viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.sankey_failed",
+                        q_err = e.to_string()
+                    ),
                 }
             }
         }
@@ -25935,11 +25962,12 @@ impl<'a> SmartCtx<'a> {
                                 (&labels[i], &labels[j]),
                             );
                             if panel.is_none() {
-                                viz_skip_note(&format!(
-                                    "viz smart: density panel for {} vs {} skipped (its \
-                                     distribution collapses into a single bin)",
-                                    labels[i], labels[j]
-                                ));
+                                viz_skip_note!(
+                                    VIZ_SMART_PREFIX,
+                                    "viz.omit.density_single_bin",
+                                    q_x = &labels[i],
+                                    q_y = &labels[j]
+                                );
                             }
                             panel
                         } else {
@@ -26064,11 +26092,13 @@ impl<'a> SmartCtx<'a> {
                                 || scatter_fill_stats(&xs, &zs).degenerate
                                 || scatter_fill_stats(&ys, &zs).degenerate
                             {
-                                viz_skip_note(&format!(
-                                    "viz smart: 3D panel for {} / {} / {} skipped (its points \
-                                     collapse onto the origin in at least one plane)",
-                                    labels[i], labels[j], labels[k]
-                                ));
+                                viz_skip_note!(
+                                    VIZ_SMART_PREFIX,
+                                    "viz.omit.scatter3d_degenerate",
+                                    q_x = &labels[i],
+                                    q_y = &labels[j],
+                                    q_z = &labels[k]
+                                );
                                 return None;
                             }
                             Some(Panel::new(
@@ -26220,26 +26250,29 @@ impl<'a> SmartCtx<'a> {
         let mut indices: Vec<usize> = Vec::with_capacity(members.len());
         for name in members {
             let Some(idx) = self.stage_index(name) else {
-                viz_skip_note(&format!(
-                    "viz smart: pipeline funnel — declared stage '{name}' is not a column in this \
-                     file"
-                ));
+                viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.funnel_stage_not_a_column",
+                    q_stage = name
+                );
                 return Ok(None);
             };
             let s = &self.stats[idx];
             let sem = &self.col_sems[idx];
             if !matches!(s.r#type.as_str(), "Integer" | "Float") || self.is_map_col(idx) {
-                viz_skip_note(&format!(
-                    "viz smart: pipeline funnel skipped — declared stage '{name}' is not a \
-                     numeric amount"
-                ));
+                viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.funnel_stage_not_numeric",
+                    q_stage = name
+                );
                 return Ok(None);
             }
             if matches!(sem.agg, Some(Agg::Mean)) || is_intensive_measure(&sem.label, &s.field) {
-                viz_skip_note(&format!(
-                    "viz smart: pipeline funnel skipped — declared stage '{name}' is an average \
-                     or rate, which cannot be summed into a funnel"
-                ));
+                viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.funnel_stage_is_rate",
+                    q_stage = name
+                );
                 return Ok(None);
             }
             if is_complement_name(&sem.label, &s.field) {
@@ -26271,9 +26304,7 @@ impl<'a> SmartCtx<'a> {
         let (labels, columns, kept) =
             read_numeric_columns(&mut rdr, &headers, nh, &indices, false)?;
         if kept.len() != indices.len() || columns.first().is_none_or(Vec::is_empty) {
-            viz_skip_note(
-                "viz smart: pipeline funnel skipped — a declared stage held no usable numeric data",
-            );
+            viz_skip_note!(VIZ_SMART_PREFIX, "viz.omit.funnel_stage_no_data");
             return Ok(None);
         }
 
@@ -26285,11 +26316,11 @@ impl<'a> SmartCtx<'a> {
             n_complete as f64 / total_rows as f64
         };
         if complete_frac < FUNNEL_MIN_COMPLETE_FRAC {
-            viz_skip_note(&format!(
-                "viz smart: pipeline funnel skipped — only {:.0}% of rows are complete across \
-                 every stage",
-                complete_frac * 100.0
-            ));
+            viz_skip_note!(
+                VIZ_SMART_PREFIX,
+                "viz.omit.funnel_low_completeness",
+                q_pct = format!("{:.0}", complete_frac * 100.0)
+            );
             return Ok(None);
         }
 
@@ -26331,25 +26362,29 @@ impl<'a> SmartCtx<'a> {
         total_rows: usize,
     ) -> CliResult<Option<Panel>> {
         let Some(stage_idx) = self.stage_index(stage_column) else {
-            viz_skip_note(&format!(
-                "viz smart: pipeline funnel — declared stage column '{stage_column}' is not a \
-                 column in this file"
-            ));
+            viz_skip_note!(
+                VIZ_SMART_PREFIX,
+                "viz.omit.funnel_stage_column_missing",
+                q_stage_column = stage_column
+            );
             return Ok(None);
         };
         let value_idx = match value_column {
             Some(vc) => {
                 let Some(vi) = self.stage_index(vc) else {
-                    viz_skip_note(&format!(
-                        "viz smart: pipeline funnel — declared value column '{vc}' is not a \
-                         column in this file"
-                    ));
+                    viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.funnel_value_column_missing",
+                        q_value_column = vc
+                    );
                     return Ok(None);
                 };
                 if !matches!(self.stats[vi].r#type.as_str(), "Integer" | "Float") {
-                    viz_skip_note(&format!(
-                        "viz smart: pipeline funnel skipped — value column '{vc}' is not numeric"
-                    ));
+                    viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.funnel_value_column_not_numeric",
+                        q_value_column = vc
+                    );
                     return Ok(None);
                 }
                 Some(vi)
@@ -26379,10 +26414,11 @@ impl<'a> SmartCtx<'a> {
         let (totals, counts, matched) =
             read_stage_totals(self.args, stage_idx, value_idx, &wanted)?;
         if counts.iter().filter(|c| **c > 0).count() < 2 {
-            viz_skip_note(&format!(
-                "viz smart: pipeline funnel skipped — fewer than two of the declared stages of \
-                 '{stage_column}' appear in the data"
-            ));
+            viz_skip_note!(
+                VIZ_SMART_PREFIX,
+                "viz.omit.funnel_too_few_stages",
+                q_stage_column = stage_column
+            );
             return Ok(None);
         }
 
@@ -26431,20 +26467,14 @@ impl<'a> SmartCtx<'a> {
         shape: FunnelShape,
     ) -> Option<Panel> {
         if totals.iter().any(|t| *t < 0.0) {
-            viz_skip_note(
-                "viz smart: pipeline panel skipped \u{2014} a stage total is negative, which \
-                 neither a funnel nor a bridge can represent",
-            );
+            viz_skip_note!(VIZ_SMART_PREFIX, "viz.omit.pipeline_negative_total");
             return None;
         }
         if totals.windows(2).all(|w| {
             let [a, b] = w else { return true };
             (a - b).abs() < f64::EPSILON
         }) {
-            viz_skip_note(
-                "viz smart: pipeline funnel skipped \u{2014} every stage total is identical (the \
-                 columns are copies, not stages)",
-            );
+            viz_skip_note!(VIZ_SMART_PREFIX, "viz.omit.funnel_identical_totals");
             return None;
         }
         // The declaration says these columns are one pipeline; the NUMBERS decide whether a
@@ -26557,9 +26587,11 @@ impl<'a> SmartCtx<'a> {
                 Ok(Some(panel)) => self.panels.insert(0, panel),
                 Ok(None) => {},
                 Err(e) => {
-                    viz_skip_note(&format!(
-                        "viz smart: measure-by-dimension panel skipped ({e})"
-                    ));
+                    viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.measure_by_dimension_failed",
+                        q_err = e.to_string()
+                    );
                 },
             }
         }
@@ -26596,7 +26628,11 @@ impl<'a> SmartCtx<'a> {
                 Ok(Some(panel)) => self.panels.insert(0, panel),
                 Ok(None) => {},
                 Err(e) => {
-                    viz_skip_note(&format!("viz smart: grouped-violin panel skipped ({e})"));
+                    viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.grouped_violin_failed",
+                        q_err = e.to_string()
+                    );
                 },
             }
         }
@@ -26630,10 +26666,12 @@ impl<'a> SmartCtx<'a> {
             let dropped = lorenz_candidates.len().saturating_sub(LORENZ_MAX_PANELS);
             lorenz_candidates.truncate(LORENZ_MAX_PANELS);
             if dropped > 0 {
-                viz_skip_note(&format!(
-                    "viz smart: {dropped} additional high-inequality measure(s) not shown as \
-                     Lorenz curves (cap {LORENZ_MAX_PANELS})"
-                ));
+                viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.lorenz_capped",
+                    q_dropped = dropped,
+                    q_cap = LORENZ_MAX_PANELS
+                );
             }
             // insert weakest-first so the strongest inequality ends up topmost among them
             for (idx, gini) in lorenz_candidates.into_iter().rev() {
@@ -26642,7 +26680,11 @@ impl<'a> SmartCtx<'a> {
                 match built {
                     Ok(Some(panel)) => self.panels.insert(0, panel),
                     Ok(None) => {},
-                    Err(e) => viz_skip_note(&format!("viz smart: Lorenz panel skipped ({e})")),
+                    Err(e) => viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.lorenz_failed",
+                        q_err = e.to_string()
+                    ),
                 }
             }
         }
@@ -26678,9 +26720,11 @@ impl<'a> SmartCtx<'a> {
                     self.panels.insert(0, panel);
                 },
                 Ok(None) => {},
-                Err(e) => viz_skip_note(&format!(
-                    "viz smart: parallel-categories (parcats) panel skipped ({e})"
-                )),
+                Err(e) => viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.parcats_failed",
+                    q_err = e.to_string()
+                ),
             }
         }
 
@@ -26734,16 +26778,17 @@ impl<'a> SmartCtx<'a> {
                         .as_ref()
                         .is_some_and(|pd| dim_idxs.iter().all(|i| pd.contains(i)));
                 if parcats_owns {
-                    viz_skip_note(&format!(
-                        "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
-                         already shown as a parallel-categories (parcats) panel."
-                    ));
+                    viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.hierarchy_shown_as_parcats",
+                        q_title = title
+                    );
                 } else if sankey_owns_pair {
-                    viz_skip_note(&format!(
-                        "viz smart: skipping the '{title}' hierarchy panel — its two dimensions \
-                         are already shown as a directed-flow (Sankey) panel, which conveys their \
-                         many-to-many relationship better."
-                    ));
+                    viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.hierarchy_shown_as_sankey",
+                        q_title = title
+                    );
                 } else {
                     // Don't AUTO-nest statistically independent dimensions: a treemap/sunburst of
                     // independent categoricals just replicates each level's marginal at every
@@ -26753,13 +26798,13 @@ impl<'a> SmartCtx<'a> {
                     let leaves = collect_hierarchy_counts(self.args, &dim_idxs, None)?;
                     let assoc = max_pairwise_cramers_v(&leaves, depth);
                     if !explicit_style && assoc < HIER_MIN_ASSOCIATION_CRAMERS_V {
-                        viz_skip_note(&format!(
-                            "viz smart: skipping the '{title}' hierarchy panel — its dimensions \
-                             are statistically independent (max Cramér's V={assoc:.2} < \
-                             {HIER_MIN_ASSOCIATION_CRAMERS_V:.2}); the per-column frequency bars \
-                             convey the same information. Use --hierarchy-style \
-                             treemap|sunburst|icicle to force it."
-                        ));
+                        viz_skip_note!(
+                            VIZ_SMART_PREFIX,
+                            "viz.omit.hierarchy_independent",
+                            q_title = title,
+                            q_v = format!("{assoc:.2}"),
+                            q_threshold = format!("{HIER_MIN_ASSOCIATION_CRAMERS_V:.2}")
+                        );
                     } else if let Some((labels, parents, values, ids)) = hierarchy_arrays(
                         &leaves,
                         depth,
@@ -41425,6 +41470,7 @@ mod tests {
         let (mut checked, mut sites) = (0usize, 0usize);
         let mut missing: Vec<&str> = Vec::new();
         let mut non_literal: Vec<usize> = Vec::new();
+        let mut macro_forwarded = 0usize;
 
         for (idx, _) in src.match_indices("t!(") {
             // skip `assert!(`, `debug_assert!(` and friends, which contain `t!(` as a substring
@@ -41434,9 +41480,16 @@ mod tests {
             sites += 1;
             let rest = src[idx + 3..].trim_start();
             let Some(after_quote) = rest.strip_prefix('"') else {
-                // a non-literal first argument cannot be verified statically; there are none
-                // today, and the assertion below makes adding one a deliberate decision.
-                non_literal.push(idx);
+                // `viz_skip_note!` forwards a `$key` metavariable to `t!` twice (once pinned to
+                // English for stderr, once in the active locale for the drawer). Those two sites
+                // are unverifiable HERE, but no coverage is lost: the literal keys live at the
+                // macro's CALL sites and are checked in the second scan below. Any OTHER
+                // non-literal key still fails the assertion.
+                if rest.starts_with("$key") {
+                    macro_forwarded += 1;
+                } else {
+                    non_literal.push(idx);
+                }
                 continue;
             };
             let Some(key) = after_quote.split('"').next() else {
@@ -41448,15 +41501,46 @@ mod tests {
             }
         }
 
+        // `viz_skip_note!`'s two `t!($key, ..)` forwards are the ONLY sanctioned exemption, and
+        // the exact count is pinned so a third one cannot appear unnoticed.
+        assert_eq!(
+            macro_forwarded, 2,
+            "expected exactly the two `t!($key, ..)` forwards inside `viz_skip_note!`"
+        );
         assert!(
             non_literal.is_empty(),
             "{} `t!` call(s) use a non-literal key and are therefore unverifiable here; if that \
              is intentional, exempt them explicitly rather than letting coverage drop silently",
             non_literal.len()
         );
+
+        // Second scan: the refusal keys `viz_skip_note!` forwards. Same failure mode as above --
+        // a missing key renders as its own literal text, here into the Data Dictionary drawer.
+        let mut omit_sites = 0usize;
+        for (idx, _) in src.match_indices("viz_skip_note!(") {
+            let rest = &src[idx..];
+            let Some(q) = rest.find('"') else { continue };
+            let Some(key) = rest[q + 1..].split('"').next() else {
+                continue;
+            };
+            omit_sites += 1;
+            assert!(
+                key.starts_with("viz.omit."),
+                "`viz_skip_note!` should carry a `viz.omit.*` key, got `{key}`"
+            );
+            if rust_i18n::t!(key) == key {
+                missing.push(key);
+            }
+        }
+        assert!(
+            omit_sites >= 25,
+            "expected the panel-refusal call sites to be found, got {omit_sites}"
+        );
         assert_eq!(
-            checked, sites,
-            "every `t!` site should have yielded a literal key to check"
+            checked + macro_forwarded,
+            sites,
+            "every `t!` site should have yielded a literal key to check, or be one of the two \
+             sanctioned `viz_skip_note!` forwards"
         );
         assert!(
             sites > 60,

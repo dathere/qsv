@@ -512,6 +512,98 @@ mod tests {
         }
     }
 
+    /// Every translated value must carry the SAME `%{q_*}` argument tokens as its English
+    /// original.
+    ///
+    /// `every_locale_yaml_has_the_same_keys_as_english` compares key SETS and
+    /// `no_catalog_value_strands_an_argument_behind_a_percent_formatted_token` compares ordering
+    /// within one value -- neither looks at whether a translation kept the arguments it was given.
+    /// A translator who drops `%{q_rows}`, or spells it `%{q_row}`, produces a value rust-i18n
+    /// renders with the token left in place: the literal text `%{q_row}` ships into the dashboard,
+    /// with no error anywhere. That is the most likely way a large catalog addition breaks, and
+    /// nothing caught it before this test.
+    ///
+    /// MEMBERSHIP, not order: a translation may legitimately reorder its arguments (`ja.yml`'s
+    /// `trend_raw` renders "%{q_date} ごとの %{q_y}" against English's "%{q_y} over %{q_date}"),
+    /// so only the multiset is compared. Repetition counts, so dropping one of two identical
+    /// tokens is still caught.
+    #[test]
+    fn every_translated_value_keeps_the_arguments_of_its_english_original() {
+        /// key -> value, for the leaf entries of one catalog. Mirrors the line scanner in
+        /// `every_locale_yaml_has_the_same_keys_as_english`; that test guarantees the key sets
+        /// agree, so this one only has to compare the values they share.
+        fn entries(path: &std::path::Path) -> std::collections::HashMap<String, String> {
+            let text = std::fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("{} must be readable: {e}", path.display()));
+            let mut section = String::new();
+            let mut out = std::collections::HashMap::new();
+            for line in text.lines() {
+                let trimmed = line.trim_start();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                let indent = line.len() - trimmed.len();
+                if indent == 2 && trimmed.ends_with(':') {
+                    section = trimmed.trim_end_matches(':').to_string();
+                } else if indent == 4
+                    && let Some((k, v)) = trimmed.split_once(": ")
+                {
+                    out.insert(format!("{section}.{k}"), v.trim().to_string());
+                }
+            }
+            out
+        }
+
+        /// The `%{name}` argument tokens of a value, as a sorted multiset.
+        fn arg_tokens(value: &str) -> Vec<&str> {
+            let mut out = Vec::new();
+            let bytes = value.as_bytes();
+            let mut i = 0;
+            while i + 1 < bytes.len() {
+                if bytes[i] == b'%' && bytes[i + 1] == b'{' {
+                    if let Some(end) = value[i + 2..].find('}') {
+                        out.push(&value[i + 2..i + 2 + end]);
+                        i += 2 + end + 1;
+                        continue;
+                    }
+                }
+                i += 1;
+            }
+            out.sort_unstable();
+            out
+        }
+
+        let dir = std::path::Path::new("src/cmd/locales");
+        let en = entries(&dir.join("en.yml"));
+        assert!(
+            en.len() > 150,
+            "en.yml should be fully parsed, got {}",
+            en.len()
+        );
+
+        let mut compared = 0_usize;
+        for row in LOCALES.iter().filter(|r| r.bcp47 != "en") {
+            let other = entries(&dir.join(format!("{}.yml", row.bcp47)));
+            for (key, en_value) in &en {
+                let Some(value) = other.get(key) else {
+                    continue; // key parity is the other test's job
+                };
+                let (want, got) = (arg_tokens(en_value), arg_tokens(value));
+                assert_eq!(
+                    want, got,
+                    "{}.yml `{key}` does not carry English's arguments -- rust-i18n would render \
+                     the mismatched token as literal text.\n  en: {en_value}\n  {}: {value}",
+                    row.bcp47, row.bcp47
+                );
+                compared += 1;
+            }
+        }
+        assert!(
+            compared > 1000,
+            "expected to compare every locale's values, only did {compared}"
+        );
+    }
+
     /// Byte offsets of the `{` in every `%{...}` token that `rust_i18n::replace_patterns` would
     /// actually offer for substitution. This deliberately REPLICATES that function's scanner rather
     /// than approximating it: the whole point is to model the quirk, not a tidied-up version of it.

@@ -180,8 +180,7 @@ For each field, provide:
       it across rows produces a number that means nothing: a unit price, a price per kilogram, a
       temperature, a rating, a percentage, a density, an age, an elapsed duration, a score.
   The test is simple: would summing this column over every row produce a number a human would
-  actually quote? "Total revenue" yes; "total unit price" no. Use "min"/"max" only for a field
-  whose meaningful group value is an extreme (a low/high water mark, a recorded peak).
+  actually quote? "Total revenue" yes; "total unit price" no.
   Judge it from the field's MEANING - its Description and sample values - not from its name. Two
   columns named alike can differ: a "shipping_cost" billed once per order is "sum", while a
   "unit_price" is "mean". This is exactly where you can do better than a keyword rule, so it is

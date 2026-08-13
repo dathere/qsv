@@ -9275,7 +9275,7 @@ p_fewshot_examples = ""
             "flag-on prompt must include the Aggregation instruction:\n{on}"
         );
         assert!(
-            on.contains("sum, mean, min, max"),
+            on.contains("sum, mean"),
             "flag-on prompt must inject AGG_VOCAB:\n{on}"
         );
         assert!(

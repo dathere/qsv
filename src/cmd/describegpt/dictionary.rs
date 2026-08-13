@@ -250,7 +250,13 @@ pub(super) const CADENCE_VOCAB: &[&str] = &["daily", "weekly", "monthly", "quart
 /// Consumed by `viz smart --dictionary`, where an explicit token OVERRIDES `is_intensive_measure`
 /// in both directions — it can force `mean` on a name the heuristic reads as additive, and equally
 /// force `sum` on one the heuristic would wrongly average.
-pub(super) const AGG_VOCAB: &[&str] = &["sum", "mean", "min", "max"];
+///
+/// Deliberately only `sum`/`mean`, though viz's `Agg` also has `Min`/`Max`. Those two are wired for
+/// GROUPED panels but not for the KPI overview row, which has exactly two headline forms
+/// (`kpi_total`/`kpi_mean`) across all eight locale catalogs — an advertised `max` whose KPI tile
+/// silently rendered the MEAN would be worse than not offering it at all. The
+/// extensive-vs-intensive question this annotation exists to answer needs only these two.
+pub(super) const AGG_VOCAB: &[&str] = &["sum", "mean"];
 
 /// Render `CONCEPT_VOCAB` as a comma-separated string for prompt injection.
 pub(super) fn concept_vocab_list() -> String {
@@ -2169,6 +2175,9 @@ pub(super) fn parse_llm_dictionary_response(
                     field_map
                         .get("aggregation")
                         .and_then(|v| v.as_str())
+                        // ASCII-only fold is correct BY CONSTRUCTION here, unlike the column-name
+                        // tokenizer: `AGG_VOCAB` is a closed set of ASCII tokens, so there is no
+                        // accented form to preserve.
                         .map(|s| s.trim().to_ascii_lowercase())
                         .filter(|a| AGG_VOCAB.contains(&a.as_str()))
                 } else {

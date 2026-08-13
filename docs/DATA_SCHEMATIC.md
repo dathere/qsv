@@ -342,9 +342,9 @@ Consumers render it as the currency's symbol — `$192B` on the KPI tile — fal
 bare code (`XOF 1.2B`) when no conventional symbol is known. The panel subtitle names the
 currency once rather than repeating a glyph on every mark.
 
-### `aggregation` — 4 tokens
+### `aggregation` — 2 tokens
 
-`sum`, `mean`, `min`, `max`. A per-field annotation on a **numeric measure** declaring how it
+`sum`, `mean`. A per-field annotation on a **numeric measure** declaring how it
 combines across a group. The distinction it captures is EXTENSIVE vs INTENSIVE:
 
 * **extensive** (`sum`) — a quantity each row *contributes*, so adding rows adds values:

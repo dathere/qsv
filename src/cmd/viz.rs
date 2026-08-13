@@ -600,7 +600,7 @@ smart options:
                            names the currency in the panel subtitle; an unrecognized code renders
                            verbatim ("XOF 1.2B"). "infer" emits it for money columns, which it
                            also tags with the "measure.money" concept.
-                           An "aggregation" of "sum", "mean", "min" or "max" on a numeric measure
+                           An "aggregation" of "sum" or "mean" on a numeric measure
                            declares how it combines across a group. Use "mean" for anything
                            PER-UNIT or per-record (a unit price, a rating, a temperature, a
                            duration) - summing those yields a number that means nothing - and
@@ -15837,7 +15837,6 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "duraciones",
                 "duracion",
                 "latencia",
-                "velocidad",
             ],
             substrings:  &["por unidad", "por_unidad", "per cápita", "por habitante"],
             money_nouns: &["precio", "precios", "costo", "costos", "coste", "costes"],
@@ -15882,7 +15881,6 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "durées",
                 "duree",
                 "latence",
-                "vitesse",
             ],
             substrings:  &[
                 "par unité",
@@ -15919,36 +15917,40 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "laufzeit",
                 "latenz",
                 "punktzahl",
-                "geschwindigkeit",
             ],
             // German COMPOUNDS, so the money rule cannot be a token conjunction: "Stückpreis" and
-            // "Einzelpreis" are single tokens. These carry the per-unit money case for `de`.
+            // "Einzelpreis" are single tokens. These carry the per-unit money case for `de`, and
+            // every one of them names an EXPLICIT unit.
+            //
+            // "preis pro"/"kosten pro" are deliberately absent, and `money_nouns`/`per_unit` are
+            // deliberately empty: `pro` and `je` are bare prepositions, exactly as ambiguous as
+            // the English `per` this design already refuses to treat as a qualifier.
+            // "Preis pro Bestellung" on a one-row-per-order dataset sums perfectly
+            // well.
             substrings:  &[
                 "stückpreis",
                 "stueckpreis",
                 "einzelpreis",
                 "stückkosten",
                 "stueckkosten",
-                "preis pro",
-                "preis je",
-                "kosten pro",
-                "kosten je",
                 "pro einheit",
                 "je einheit",
                 "pro stück",
+                "pro stueck",
                 "pro kopf",
             ],
-            money_nouns: &["preis", "preise", "kosten"],
-            per_unit:    &["einheit", "stück", "stueck", "je", "pro"],
+            money_nouns: &[],
+            per_unit:    &[],
         },
     ),
     (
         "it",
         Lexicon {
             tokens:      &[
+                // "medio" only: "media" collides with English (see the exclusion list above), and
+                // "medi"/"medie" are two- and three-letter-stem plurals with no observed use in a
+                // column name — surface with no payoff.
                 "medio",
-                "medi",
-                "medie",
                 "mediana",
                 "percentuale",
                 "percentuali",
@@ -15967,7 +15969,6 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "durate",
                 "latenza",
                 "punteggio",
-                "velocità",
             ],
             substrings:  &["per unità", "per unita", "pro capite", "a testa"],
             money_nouns: &["prezzo", "prezzi", "costo", "costi"],
@@ -16004,7 +16005,6 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "duracao",
                 "latência",
                 "pontuação",
-                "velocidade",
             ],
             substrings:  &["por unidade", "por_unidade", "por cabeça", "por habitante"],
             money_nouns: &["preço", "preços", "preco", "precos", "custo", "custos"],
@@ -16651,7 +16651,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 let measure = role.is_empty() || role == "measure";
                 (numeric && measure && money_ish).then_some(code)
             };
-            // `x-qsv.aggregation`: an explicit `sum`/`mean`/`min`/`max`. Re-verified here for the
+            // `x-qsv.aggregation`: an explicit `sum`/`mean`. Re-verified here for the
             // same reason as `currency` — a hand-edited sidecar never passed through describegpt's
             // validator — and applying `describegpt`'s `verify_aggregation` rule: a numeric
             // MEASURE. Deliberately NOT gated on concept: non-additivity is not a property of one
@@ -16670,8 +16670,10 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 {
                     "sum" => Agg::Sum,
                     "mean" => Agg::Mean,
-                    "min" => Agg::Min,
-                    "max" => Agg::Max,
+                    // `Agg::Min`/`Max` are deliberately NOT accepted here even though the enum has
+                    // them: the KPI overview row has only `kpi_total`/`kpi_mean` headline forms, so
+                    // an explicit `max` would render the MEAN. Mirrors `AGG_VOCAB`; an unknown
+                    // token falls back to the label heuristic rather than being half-honored.
                     _ => return None,
                 };
                 // `qsv_type` is absent on hand-written dictionaries; only reject when it is
@@ -34675,7 +34677,9 @@ mod tests {
             "non_numeric": {"type":"string","title":"Name",
               "x-qsv":{"qsv_type":"String","role":"measure","aggregation":"sum"}},
             "off_vocab":   {"type":"number","title":"Bogus",
-              "x-qsv":{"qsv_type":"Float","role":"measure","aggregation":"average"}}
+              "x-qsv":{"qsv_type":"Float","role":"measure","aggregation":"average"}},
+            "min_token":   {"type":"number","title":"Peak",
+              "x-qsv":{"qsv_type":"Float","role":"measure","aggregation":"max"}}
           }
         }"#;
         let d = parse_dictionary_semantics(json).expect("dictionary parses");
@@ -34689,6 +34693,10 @@ mod tests {
         assert_eq!(d.rows["on_a_dim"].aggregation, None);
         assert_eq!(d.rows["non_numeric"].aggregation, None);
         assert_eq!(d.rows["off_vocab"].aggregation, None);
+        // `min`/`max` are NOT accepted, though `Agg` has them: the KPI row has only total/mean
+        // headline forms, so honoring `max` there would silently render the MEAN. Falls back to the
+        // label heuristic instead of being half-applied.
+        assert_eq!(d.rows["min_token"].aggregation, None);
     }
 
     #[test]
@@ -37995,8 +38003,23 @@ mod tests {
         // German COMPOUNDS, so its per-unit money case is substring-carried
         viz_i18n::set_data_locale(Some("deu"));
         assert!(is_intensive_measure("Stückpreis", "stueckpreis"));
+        assert!(is_intensive_measure(
+            "Kosten pro Einheit",
+            "kosten_pro_einheit"
+        ));
         assert!(is_intensive_measure("Durchschnittsalter", "alter"));
         assert!(!is_intensive_measure("Versandkosten", "versandkosten"));
+        // `pro`/`je` are bare prepositions, as ambiguous as the English `per` this design already
+        // refuses as a qualifier: "Preis pro Bestellung" on a one-row-per-order dataset sums.
+        // Only an EXPLICIT unit ("pro Einheit", "pro Stück") is conclusive.
+        assert!(!is_intensive_measure(
+            "Preis pro Bestellung",
+            "preis_pro_bestellung"
+        ));
+        assert!(!is_intensive_measure(
+            "Kosten je Abteilung",
+            "kosten_je_abteilung"
+        ));
 
         viz_i18n::reset_active();
     }

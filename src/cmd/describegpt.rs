@@ -2079,6 +2079,27 @@ fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
     )
 }
 
+fn provenance_command_line() -> String {
+    normalize_command_line(std::env::args())
+}
+
+/// The pure half of [`provenance_command_line`], split out so it is testable without mutating the
+/// process's own argv.
+fn normalize_command_line<I: Iterator<Item = String>>(mut args: I) -> String {
+    let Some(argv0) = args.next() else {
+        return String::new();
+    };
+    // `file_name` is None for an empty argv[0] (and for a path ending in `..`), so fall back to
+    // the original rather than dropping the program from the line entirely.
+    let program = std::path::Path::new(&argv0)
+        .file_name()
+        .map_or_else(|| argv0.clone(), |n| n.to_string_lossy().into_owned());
+    std::iter::once(program)
+        .chain(args)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Replace {`GENERATED_BY_SIGNATURE`} placeholder with actual attribution
 fn replace_attribution_placeholder(
     text: &str,
@@ -2223,7 +2244,7 @@ fn replace_attribution_placeholder(
         },
         qsv_variant = util::CARGO_BIN_NAME,
         qsv_version = util::CARGO_PKG_VERSION,
-        command_line = std::env::args().collect::<Vec<_>>().join(" "),
+        command_line = provenance_command_line(),
         ts = chrono::Utc::now().to_rfc3339(),
     );
 
@@ -7175,6 +7196,45 @@ fn get_cached_analysis(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Data Dictionary is a SHARED artifact, so its provenance command line must not disclose
+    /// the author's directory layout through `argv[0]`.
+    #[test]
+    fn normalize_command_line_strips_only_the_binary_directory() {
+        let line = |v: &[&str]| normalize_command_line(v.iter().map(ToString::to_string));
+
+        // the actual leak: an absolute path to the built binary
+        assert_eq!(
+            line(&[
+                "/Users/someone/GitHub/qsv/target/debug/qsv",
+                "describegpt",
+                "sales.csv"
+            ]),
+            "qsv describegpt sales.csv"
+        );
+        // relative invocations normalize to the same thing
+        assert_eq!(
+            line(&["../../target/debug/qsv", "describegpt"]),
+            "qsv describegpt"
+        );
+        // the variant name is preserved -- it is not always "qsv"
+        assert_eq!(line(&["/opt/bin/qsvlite", "stats"]), "qsvlite stats");
+        // a bare name is already normalized
+        assert_eq!(line(&["qsv", "describegpt"]), "qsv describegpt");
+
+        // USER arguments are left verbatim, including an absolute input path: which file was
+        // described is meaningful provenance, and a line labelled "Command line" must still
+        // reproduce the command that ran.
+        assert_eq!(
+            line(&["/x/y/qsv", "describegpt", "/Users/someone/Downloads/in.csv"]),
+            "qsv describegpt /Users/someone/Downloads/in.csv"
+        );
+
+        // degenerate argv: no panic, no dropped program
+        assert_eq!(line(&[]), "");
+        assert_eq!(line(&[""]), "");
+        assert_eq!(line(&["..", "x"]), ".. x");
+    }
 
     #[test]
     fn parse_language_option_classifies_thresholds_and_explicit_languages() {

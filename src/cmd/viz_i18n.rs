@@ -238,6 +238,57 @@ pub fn set_active(row: &'static LocaleRow) {
 #[cfg(test)]
 pub fn reset_active() {
     set_active(english());
+    reset_data_locale();
+}
+
+// The DATA language -- the language the dataset's own column headers and dictionary labels are
+// written in. Deliberately SEPARATE from `ACTIVE`, which is the PRESENTATION language.
+//
+// The two diverge whenever `--language` is used for the UI alone: `--language es` on an
+// English-headed dataset must render Spanish chrome while still matching column names against the
+// ENGLISH lexicon. Keying `viz`'s intensive-measure lexicon off `active_locale()` would union
+// Spanish tokens onto English headers -- matching on the wrong language by construction
+// (issue #4401).
+static DATA_LOCALE: std::sync::atomic::AtomicPtr<LocaleRow> =
+    std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+
+/// The language the DATA is written in, for column-name lexicon matching. English until
+/// [`set_data_locale`].
+pub fn data_locale() -> &'static LocaleRow {
+    let ptr = DATA_LOCALE.load(std::sync::atomic::Ordering::Relaxed);
+    if ptr.is_null() {
+        english()
+    } else {
+        // SAFETY: only ever set from `set_data_locale`, which stores the address of a `LOCALES`
+        // element -- a `'static` in immutable memory that is never freed.
+        unsafe { &*ptr }
+    }
+}
+
+/// Resolve and set the data language from a dictionary's `x-qsv.detected_language_code` (an ISO
+/// 639-3 code such as `"spa"`), falling back to the already-resolved PRESENTATION locale when the
+/// dictionary carries none — with no dictionary the two coincide, so `--language` still steers the
+/// lexicon in the stats-only case.
+///
+/// Reuses [`parse_lang`], which already maps ISO 639-3 -> bcp47 (its test pins `"spa"` -> `"es"`);
+/// an uncurated detected language simply leaves the fallback in place.
+pub fn set_data_locale(detected: Option<&str>) {
+    let row = detected
+        .and_then(parse_lang)
+        .unwrap_or_else(|| active_locale());
+    DATA_LOCALE.store(
+        std::ptr::from_ref(row).cast_mut(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+/// Reset the data language to English. Used by unit tests to isolate themselves from each other.
+#[cfg(test)]
+pub fn reset_data_locale() {
+    DATA_LOCALE.store(
+        std::ptr::from_ref(english()).cast_mut(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
 /// Serializes every unit test that mutates the active locale.

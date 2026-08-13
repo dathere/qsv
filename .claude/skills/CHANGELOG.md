@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`qsv-viz` skill regenerated for the new `x-qsv.aggregation` dictionary hint** ([#4401](https://github.com/dathere/qsv/issues/4401)). A fourth optional per-field KPI hint declares how a numeric measure combines across a group — `sum`, `mean`, `min` or `max`. Use `mean` for anything per-unit or per-record (a unit price, a rating, a temperature, a duration), `sum` only for a quantity each row contributes. Without it `viz smart` falls back to a heuristic over the column NAME, which is lexical and therefore language-bound; the hint is the language-neutral signal and overrides that heuristic in **both** directions. `--dictionary infer` emits it for numeric measures, and `describegpt` keeps a proposed value only when the column is a numeric measure (the same propose-then-verify discipline as `gauge_range` and `currency`). Skill count unchanged at 55; `qsv-describegpt` needed no regeneration (its USAGE text did not change — the new instruction lives in the prompt file).
+- **`visual-data-dictionary` skill documents `x-qsv.aggregation`** in its hand-editable hint table, alongside `gauge_range`, `target` and `currency`.
+
 ## [22.0.1] - 2026-08-08
 
 Companion release to qsv 22.0.1, "The Data Schematic Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0. The headline for MCP/Cowork users is **`qsv-viz` joining the skill set as skill #55**, making Plotly charting and `viz smart` Data Schematics reachable from agent workflows for the first time. The minimum qsv binary is raised to 22.0.1, so update your qsv binary first. Note that `qsvmcp` is now a leaner build: it drops the `get` command, cloud sources, and the webdriver-backed static-export path — none of which were reachable over MCP.

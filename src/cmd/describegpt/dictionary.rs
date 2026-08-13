@@ -208,8 +208,12 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     "measure.amount",
     // a currency-denominated amount. More specific than `measure.amount` (which covers any
     // additive quantity); pairs with the per-field `currency` annotation carrying the ISO-4217
-    // code. Aggregates like `measure.amount` - the `is_intensive_measure` label guard still
-    // applies, so a `unit_price` or `cost_per_capita` is still averaged rather than summed.
+    // code. Aggregates like `measure.amount`, and NOTHING about the concept says whether a given
+    // money column is additive: a `unit_price` is intensive, a `shipping_cost` is not. That
+    // question is answered by `x-qsv.aggregation` (authoritative, language-neutral) and, failing
+    // that, by viz's `is_intensive_measure` label heuristic. Issue #4401 -- this comment
+    // previously claimed the heuristic already averaged `unit_price`; it did not, which is the
+    // bug that issue fixed.
     "measure.money",
     "measure.ratio",
     "category.status",
@@ -234,6 +238,20 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
 /// vocabulary in `qsv profile` is dcat-us-v3.yaml's accrualPeriodicity slugs.
 pub(super) const CADENCE_VOCAB: &[&str] = &["daily", "weekly", "monthly", "quarterly", "annual"];
 
+/// Controlled vocabulary for `x-qsv.aggregation` — how a numeric MEASURE combines across a group
+/// (issue #4401).
+///
+/// This is the language-neutral, authoritative answer to a question `viz`'s label heuristic can
+/// only guess at: whether a measure is EXTENSIVE (adds up — revenue, units, shipping cost) or
+/// INTENSIVE (does not — a unit price, a temperature, a rating). The heuristic reads column NAMES,
+/// so it is lexical by construction and cannot work in every language; the LLM sees the column's
+/// description and sample values, so it can judge per-unit vs per-record directly.
+///
+/// Consumed by `viz smart --dictionary`, where an explicit token OVERRIDES `is_intensive_measure`
+/// in both directions — it can force `mean` on a name the heuristic reads as additive, and equally
+/// force `sum` on one the heuristic would wrongly average.
+pub(super) const AGG_VOCAB: &[&str] = &["sum", "mean", "min", "max"];
+
 /// Render `CONCEPT_VOCAB` as a comma-separated string for prompt injection.
 pub(super) fn concept_vocab_list() -> String {
     CONCEPT_VOCAB.join(", ")
@@ -242,6 +260,11 @@ pub(super) fn concept_vocab_list() -> String {
 /// Render `ROLE_VOCAB` as a comma-separated string for prompt injection.
 pub(super) fn role_vocab_list() -> String {
     ROLE_VOCAB.join(", ")
+}
+
+/// Render `AGG_VOCAB` as a comma-separated string for prompt injection.
+pub(super) fn agg_vocab_list() -> String {
+    AGG_VOCAB.join(", ")
 }
 
 /// Concept namespaces that denote a shared real-world entity an agent can join
@@ -605,6 +628,12 @@ pub(super) struct LlmDictField {
     /// measure + money-ish concept) is decided later by `verify_currency`, which alone sees
     /// the finalized role.
     pub(super) currency:     Option<String>,
+    /// RAW aggregation token proposed by the LLM for a numeric measure, already trimmed,
+    /// lower-cased and checked against `AGG_VOCAB` in `parse_llm_dictionary_response`. `None`
+    /// unless the dictionary prompt asked for it (under `--infer-content-type`). Whether the FIELD
+    /// is really an aggregatable measure is decided later by `verify_aggregation`, which alone
+    /// sees the finalized role.
+    pub(super) aggregation:  Option<String>,
 }
 
 pub(crate) struct StatsRecord {
@@ -732,6 +761,16 @@ pub(super) struct DictionaryEntry {
     /// `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
     pub(super) currency:        Option<String>,
+    /// Optional `AGG_VOCAB` token (`sum`/`mean`/`min`/`max`) declaring how this numeric MEASURE
+    /// combines across a group. The LLM proposes it only under `--infer-content-type`;
+    /// `verify_aggregation` then keeps it ONLY when the column is a numeric measure — the same
+    /// propose-then-verify discipline as `gauge_range` and `currency`. Consumed by
+    /// `viz smart --dictionary` (`x-qsv.aggregation`), where it OVERRIDES the
+    /// `is_intensive_measure` label heuristic — the language-neutral signal that a per-unit
+    /// price must not be summed (issue #4401). `#[serde(default)]` for cache
+    /// backward-compatibility.
+    #[serde(default)]
+    pub(super) aggregation:     Option<String>,
 }
 
 /// Parse the `stats` CSV into structured records, returning the records plus
@@ -1151,6 +1190,11 @@ pub(super) fn generate_code_based_dictionary(
             // Likewise proposed by the LLM pass and verified in `verify_currency`. Nothing in
             // the stats can reveal the currency of a bare number, so there is no seed.
             currency: None,
+            // Likewise proposed by the LLM pass and verified in `verify_aggregation`. Extensive
+            // vs intensive is a question about what the number MEANS, which the stats cannot
+            // answer -- `sum` is not a safe seed, since assuming additivity is the very bug
+            // this field exists to fix (issue #4401).
+            aggregation: None,
         });
     }
 
@@ -1373,6 +1417,7 @@ pub(super) fn combine_dictionary_entries(
             entry.role = merge_role(&entry.role, &llm.role, false);
             entry.gauge_range = llm.gauge_range;
             entry.currency = llm.currency.clone();
+            entry.aggregation = llm.aggregation.clone();
         }
         if infer_content_type {
             if entry.content_type.is_empty() {
@@ -1385,6 +1430,9 @@ pub(super) fn combine_dictionary_entries(
             // AFTER role AND concept are finalized: keep the proposed currency only if the
             // column is a numeric measure that reads as money.
             verify_currency(entry);
+            // AFTER role is finalized: keep the proposed aggregation only if the column is a
+            // numeric measure (the only thing an aggregation verb can describe).
+            verify_aggregation(entry);
         }
     }
     code_entries
@@ -1576,6 +1624,32 @@ fn verify_currency(entry: &mut DictionaryEntry) {
     }
 }
 
+/// Verify (and otherwise drop) a proposed `aggregation`. An aggregation verb only describes a
+/// column you would actually aggregate:
+///
+///   1. the column's qsv `type` is numeric (`Integer`/`Float`) — "sum the status codes" is not a
+///      statement about the data; and
+///   2. the column's FINALIZED `role` is `measure`.
+///
+/// Deliberately NOT gated on `concept`, unlike `verify_currency`. Non-additivity is not a property
+/// of any one concept namespace — a unit price (`measure.money`), a temperature
+/// (`measure.amount`), a rating and a duration are all intensive — so requiring a money-ish
+/// concept here would defeat the entire point of having a concept-independent signal.
+///
+/// The TOKEN was already validated against `AGG_VOCAB` in `parse_llm_dictionary_response`; this is
+/// the SEMANTIC check, because only here are the merged role and column type both known. Anything
+/// that fails is reset to `None` — an unverifiable aggregation is simply not emitted.
+///
+/// Must be called AFTER `coerce_role_concept`, so `role` is final.
+fn verify_aggregation(entry: &mut DictionaryEntry) {
+    if entry.aggregation.is_none() {
+        return;
+    }
+    if !(matches!(entry.r#type.as_str(), "Integer" | "Float") && entry.role == "measure") {
+        entry.aggregation = None;
+    }
+}
+
 /// Two-pass-aware merge: seed `code_entries` with the BASELINE LLM Label / Description /
 /// Content Type (from the first pass) and then overlay the REFINE pass's LLM fields on top.
 /// If the refine pass omits a field, the baseline Label / Description / Content Type are
@@ -1608,6 +1682,7 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             entry.role = merge_role(&entry.role, &baseline.role, false);
             entry.gauge_range = baseline.gauge_range;
             entry.currency = baseline.currency.clone();
+            entry.aggregation = baseline.aggregation.clone();
         }
         // Stage 2: overlay refine-pass LLM values where present. Omitted fields keep their
         // baseline values from stage 1 — this is the whole point of the baseline merge.
@@ -1634,6 +1709,11 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             if refine.currency.is_some() {
                 entry.currency = refine.currency.clone();
             }
+            // Same rule again for the aggregation: overlay only when the refine pass actually
+            // proposed one, so an omitted field never wipes a verified baseline value.
+            if refine.aggregation.is_some() {
+                entry.aggregation = refine.aggregation.clone();
+            }
         }
         // Stage 3: same final "unknown"/fallback coercion as `combine_dictionary_entries` so
         // the two-pass output matches single-pass invariants.
@@ -1644,6 +1724,7 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             coerce_role_concept(entry);
             verify_gauge_range(entry);
             verify_currency(entry);
+            verify_aggregation(entry);
         }
     }
     code_entries
@@ -2080,6 +2161,20 @@ pub(super) fn parse_llm_dictionary_response(
                     None
                 };
 
+                // `aggregation` rides the same `infer_content_type` gate. VOCAB validation only:
+                // trim, lower-case, require an `AGG_VOCAB` token. Whether the FIELD is an
+                // aggregatable numeric measure is decided later by `verify_aggregation`, the only
+                // place that sees the finalized role.
+                let aggregation = if infer_content_type {
+                    field_map
+                        .get("aggregation")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.trim().to_ascii_lowercase())
+                        .filter(|a| AGG_VOCAB.contains(&a.as_str()))
+                } else {
+                    None
+                };
+
                 result.insert(
                     field_name.clone(),
                     LlmDictField {
@@ -2091,6 +2186,7 @@ pub(super) fn parse_llm_dictionary_response(
                         null_values,
                         gauge_range,
                         currency,
+                        aggregation,
                     },
                 );
             }
@@ -2332,6 +2428,7 @@ mod tests {
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         }
     }
 
@@ -2829,6 +2926,7 @@ mod tests {
             null_values: tokens.iter().map(ToString::to_string).collect(),
             gauge_range: None,
             currency: None,
+            aggregation: None,
             ..Default::default()
         }
     }
@@ -3212,6 +3310,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -3357,6 +3456,98 @@ mod tests {
             "measure.count",
             "unknown"
         ));
+    }
+
+    /// Build an entry with the given signals, run the merge-path verification, and report
+    /// whether the proposed aggregation survived (issue #4401).
+    fn aggregation_survives(qsv_type: &str, role: &str, concept: &str) -> bool {
+        let mut e = blank_entry("val");
+        e.r#type = qsv_type.to_string();
+        let mut llm = HashMap::new();
+        llm.insert(
+            "val".to_string(),
+            LlmDictField {
+                role: role.to_string(),
+                concept: concept.to_string(),
+                aggregation: Some("mean".to_string()),
+                ..Default::default()
+            },
+        );
+        combine_dictionary_entries(vec![e], &llm, true)[0]
+            .aggregation
+            .is_some()
+    }
+
+    #[test]
+    fn verify_aggregation_requires_a_numeric_measure() {
+        assert!(aggregation_survives("Float", "measure", "measure.money"));
+        assert!(aggregation_survives("Integer", "measure", "measure.amount"));
+        // Deliberately concept-INDEPENDENT: non-additivity is not a property of one namespace.
+        // A temperature is `measure.amount`, a rating is a score, a unit price is `measure.money`
+        // -- all intensive. Gating on a money-ish concept the way `verify_currency` does would
+        // defeat the whole point of a concept-independent signal.
+        assert!(aggregation_survives("Float", "measure", "measure.ratio"));
+        assert!(aggregation_survives("Integer", "measure", ""));
+        // ...but an aggregation verb says nothing about a non-numeric column or a non-measure.
+        assert!(
+            !aggregation_survives("String", "measure", "measure.money"),
+            "summing a String column is not a statement about the data"
+        );
+        assert!(!aggregation_survives("Float", "dimension", "category.type"));
+        assert!(!aggregation_survives(
+            "Integer",
+            "identifier",
+            "id.natural_key"
+        ));
+        assert!(!aggregation_survives("DateTime", "timestamp", "time.date"));
+    }
+
+    #[test]
+    fn parse_rejects_an_off_vocab_aggregation() {
+        let resp = r#"{
+            "good": {"label":"G","description":"d","role":"measure","aggregation":"MEAN"},
+            "padded": {"label":"P","description":"d","role":"measure","aggregation":"  sum  "},
+            "bogus": {"label":"B","description":"d","role":"measure","aggregation":"average"},
+            "none": {"label":"N","description":"d","role":"measure"}
+        }"#;
+        let cols = ["good", "padded", "bogus", "none"].map(String::from);
+        let got = parse_llm_dictionary_response(resp, &cols, true).unwrap();
+        // trimmed + lower-cased into the vocabulary
+        assert_eq!(got["good"].aggregation.as_deref(), Some("mean"));
+        assert_eq!(got["padded"].aggregation.as_deref(), Some("sum"));
+        // "average" is not an AGG_VOCAB token -- dropped rather than guessed at
+        assert_eq!(got["bogus"].aggregation, None);
+        assert_eq!(got["none"].aggregation, None);
+    }
+
+    #[test]
+    fn two_pass_preserves_baseline_aggregation() {
+        // Same rule as the currency: the refine pass omitting an aggregation means "not
+        // re-stated", NOT "retracted". An unconditional overlay would wipe a verified baseline
+        // value on every --two-pass run.
+        let mut e = blank_entry("unit_price");
+        e.r#type = "Float".to_string();
+        let mut baseline = HashMap::new();
+        baseline.insert(
+            "unit_price".to_string(),
+            LlmDictField {
+                role: "measure".to_string(),
+                concept: "measure.money".to_string(),
+                aggregation: Some("mean".to_string()),
+                ..Default::default()
+            },
+        );
+        let mut refine = HashMap::new();
+        refine.insert(
+            "unit_price".to_string(),
+            LlmDictField {
+                label: "Unit Price".to_string(),
+                role: "measure".to_string(),
+                ..Default::default()
+            },
+        );
+        let out = combine_dictionary_entries_with_baseline(vec![e], &baseline, &refine, true);
+        assert_eq!(out[0].aggregation.as_deref(), Some("mean"));
     }
 
     #[test]
@@ -3592,6 +3783,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         // infer_content_type = false: pure copy, no "unknown" coercion.
@@ -3625,6 +3817,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         llm.insert(
@@ -3638,6 +3831,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         // "omitted" is intentionally absent from the LLM map.
@@ -3667,6 +3861,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         llm.insert(
@@ -3680,6 +3875,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -3953,6 +4149,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         baseline.insert(
@@ -3966,6 +4163,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
 
@@ -3982,6 +4180,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
 
@@ -4036,6 +4235,7 @@ mod tests {
                 role: "measure".to_string(),
                 gauge_range: None,
                 currency: None,
+                aggregation: None,
                 ..Default::default()
             },
         );
@@ -4111,6 +4311,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         refine.insert(
@@ -4125,6 +4326,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
 
@@ -4161,6 +4363,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
 
@@ -4176,6 +4379,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
 
@@ -4206,6 +4410,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
 
@@ -4587,6 +4792,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -4610,6 +4816,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -4633,6 +4840,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -4656,6 +4864,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         let mut refine = HashMap::new();
@@ -4670,6 +4879,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         let combined = combine_dictionary_entries_with_baseline(code, &baseline, &refine, true);
@@ -5234,6 +5444,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -5258,6 +5469,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -5280,6 +5492,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                aggregation:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);

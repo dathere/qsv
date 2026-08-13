@@ -171,6 +171,24 @@ For each field, provide:
   If you cannot determine the currency from the data, OMIT "currency" entirely - do NOT guess, and
   do NOT default to "USD". qsv drops any currency on a field that is not a numeric measure, so a
   wrong guess is silently discarded rather than corrected.
+- Aggregation (OPTIONAL, numeric MEASURE fields only): declare how this field combines across a
+  GROUP of rows, by choosing exactly ONE of: {{ agg_vocab }}. The distinction that matters is
+  EXTENSIVE vs INTENSIVE:
+    - EXTENSIVE ("sum") - the field is a quantity each row CONTRIBUTES, so adding rows adds
+      values: revenue, units sold, a shipping charge billed per order, a population count.
+    - INTENSIVE ("mean") - the field is a PER-UNIT or PER-RECORD rate, level or state, so adding
+      it across rows produces a number that means nothing: a unit price, a price per kilogram, a
+      temperature, a rating, a percentage, a density, an age, an elapsed duration, a score.
+  The test is simple: would summing this column over every row produce a number a human would
+  actually quote? "Total revenue" yes; "total unit price" no. Use "min"/"max" only for a field
+  whose meaningful group value is an extreme (a low/high water mark, a recorded peak).
+  Judge it from the field's MEANING - its Description and sample values - not from its name. Two
+  columns named alike can differ: a "shipping_cost" billed once per order is "sum", while a
+  "unit_price" is "mean". This is exactly where you can do better than a keyword rule, so it is
+  worth stating whenever the field is a numeric measure and you are confident.
+  Do NOT add an "aggregation" to a field that is not a numeric measure - an identifier, a
+  timestamp, or a categorical dimension. qsv drops it in those cases.
+  If you are unsure, OMIT "aggregation" entirely - qsv then falls back to its own heuristic.
 {%- endif %}
 
 {%- if infer_content_type %}
@@ -267,7 +285,7 @@ automatically, so propose a numeric placeholder whenever the field's meaning gen
 one. Do not invent one to be thorough.
 {%- endif %}
 
-Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role", "concept" and (for canonical-scale numeric measures only) an optional "gauge_range", plus (for monetary measures only) an optional "currency"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string, a top-level "grain_unit" string and an optional "relationships" array{% endif %}:
+Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role", "concept" and (for canonical-scale numeric measures only) an optional "gauge_range", plus (for monetary measures only) an optional "currency" and (for numeric measures only) an optional "aggregation"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string, a top-level "grain_unit" string and an optional "relationships" array{% endif %}:
 {% raw %}{
   "field_name_1": {
     "label": "Human-friendly label",
@@ -291,7 +309,8 @@ Return the results in JSON format where each field name is a key, and the value 
     "content_type": "money",
     "role": "measure",
     "concept": "measure.money",
-    "currency": "USD"{% endif %}{% raw %}
+    "currency": "USD",
+    "aggregation": "sum"{% endif %}{% raw %}
   }{% endraw %}{% if infer_content_type %},
   "grain": "one row = one record",
   "grain_unit": "record",

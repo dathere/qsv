@@ -536,12 +536,16 @@ FIGURES = [
      True, ["smart", "sales_sample.csv", "--hierarchy-style", "sunburst", "--max-charts", "8"]),
     ("smart Data Schematic (KPI gauges & target delta)",
      "The KPI overview row driven by a hand-authored `--dictionary` "
-     "(sales_kpi_dict.schema.json). Two optional `x-qsv` hints turn plain measure tiles into "
+     "(sales_kpi_dict.schema.json). Three optional `x-qsv` hints turn plain measure tiles into "
      "richer KPIs: a `gauge_range` of [0,1] draws Discount % and Profit Margin % as GAUGES on "
-     "their canonical ratio scale, and a `target` of 0.25 on Profit Margin adds a \"vs target\" "
-     "DELTA (the mean is 0.21, so a red -0.042 below the goal). qsv keeps a gauge only when the "
-     "data lies within its range, so a mis-scaled range can't mislead; `gauge_range` is what "
-     "`--dictionary infer` emits for canonical-scale ratios, while `target` is a business goal you "
+     "their canonical ratio scale, a `target` of 0.25 on Profit Margin adds a \"vs target\" "
+     "DELTA (the mean is 0.21, so a red -0.042 below the goal), and an `aggregation` of `mean` on "
+     "Unit Price declares that a PER-UNIT price is averaged across a group, never summed - the "
+     "language-neutral form of the rule that also turns \"Total Unit Price\" into \"Mean Unit "
+     "Price\" without any dictionary at all. Note Shipping Cost keeps its Total: it is billed per "
+     "order and genuinely does add up. qsv keeps a gauge only when the "
+     "data lies within its range, so a mis-scaled range can't mislead; `gauge_range` and "
+     "`aggregation` are what `--dictionary infer` emits, while `target` is a business goal you "
      "hand-author (never LLM-inferred). Overall dataset completeness rides quietly in the header "
      "table, not as a tile.",
      True, ["smart", "sales_sample.csv", "--dictionary", "sales_kpi_dict.schema.json"]),

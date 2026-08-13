@@ -1,32 +1,57 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "description": "Hand-authored KPI dictionary for the sales_sample gallery example. It labels the numeric measures and supplies the two optional x-qsv KPI hints so `viz smart --dictionary` renders GAUGE and DELTA tiles in the overview row: `gauge_range` [min,max] draws a measure on a canonical scale (here the 0-1 ratios), and `target` draws a \"vs target\" delta. NOT LLM-generated — `target` is a business GOAL you choose (describegpt never emits it); `gauge_range` is what `--dictionary infer` would emit for these ratios. Columns omitted here fall back to qsv's statistical heuristic.",
+  "description": "Hand-authored KPI dictionary for the sales_sample gallery example. It labels the numeric measures and supplies the three optional x-qsv KPI hints so `viz smart --dictionary` renders GAUGE and DELTA tiles in the overview row: `gauge_range` [min,max] draws a measure on a canonical scale (here the 0-1 ratios), and `target` draws a \"vs target\" delta. `aggregation` declares how a measure combines across a group - `unit_price` is per-unit, so it is AVERAGED, never summed. qsv's label heuristic reaches the same verdict for this particular name, but the hint is the authoritative, LANGUAGE-NEUTRAL signal: a heuristic over column names cannot work for every dataset in every language, and `precio_unitario` or `Stueckpreis` is the same measure (issue #4401). NOT LLM-generated - `target` is a business GOAL you choose (describegpt never emits it); `gauge_range` and `aggregation` are what `--dictionary infer` would emit. Columns omitted here fall back to qsv's statistical heuristic.",
   "properties": {
     "units_sold": {
       "type": "integer",
       "title": "Units Sold",
-      "x-qsv": { "role": "measure", "concept": "measure.count" }
+      "x-qsv": {
+        "role": "measure",
+        "concept": "measure.count"
+      }
     },
     "unit_price": {
       "type": "integer",
       "title": "Unit Price",
-      "x-qsv": { "role": "measure", "concept": "measure.amount" }
+      "x-qsv": {
+        "role": "measure",
+        "concept": "measure.amount",
+        "aggregation": "mean"
+      }
     },
     "shipping_cost": {
       "type": "integer",
       "title": "Shipping Cost",
-      "x-qsv": { "role": "measure", "concept": "measure.amount" }
+      "x-qsv": {
+        "role": "measure",
+        "concept": "measure.amount"
+      }
     },
     "discount_pct": {
       "type": "number",
       "title": "Discount Percentage",
-      "x-qsv": { "role": "measure", "concept": "measure.ratio", "gauge_range": [0, 1] }
+      "x-qsv": {
+        "role": "measure",
+        "concept": "measure.ratio",
+        "gauge_range": [
+          0,
+          1
+        ]
+      }
     },
     "profit_margin_pct": {
       "type": "number",
       "title": "Profit Margin Percentage",
-      "x-qsv": { "role": "measure", "concept": "measure.ratio", "gauge_range": [0, 1], "target": 0.25 }
+      "x-qsv": {
+        "role": "measure",
+        "concept": "measure.ratio",
+        "gauge_range": [
+          0,
+          1
+        ],
+        "target": 0.25
+      }
     }
   }
 }

@@ -2827,6 +2827,7 @@ fn get_prompt(
         content_type_vocab => dictionary::content_type_vocab_list(),
         concept_vocab => dictionary::concept_vocab_list(),
         role_vocab => dictionary::role_vocab_list(),
+        agg_vocab => dictionary::agg_vocab_list(),
         // Empty string unless we're rendering PromptType::DictionaryRefine during a
         // --two-pass run, where run_dictionary_phase seeds FIRST_PASS_DICT_JSON with the
         // first-pass dictionary JSON before calling get_prompt.
@@ -7972,6 +7973,7 @@ p_fewshot_examples = ""
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         }];
         let first = build_first_pass_dictionary_json_string(&args, &entries);
         sleep(Duration::from_millis(10));
@@ -8176,6 +8178,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "category|raw".to_string(),
@@ -8200,6 +8203,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -8286,6 +8290,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "Status".to_string(),
@@ -8323,6 +8328,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -8425,6 +8431,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "Status".to_string(),
@@ -8449,6 +8456,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -8526,6 +8534,7 @@ p_fewshot_examples = ""
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -8617,6 +8626,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             // Text column with only `min_length` retained.
             dictionary::DictionaryEntry {
@@ -8642,6 +8652,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             // Text column with only `max_length` retained.
             dictionary::DictionaryEntry {
@@ -8667,6 +8678,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -8743,6 +8755,7 @@ p_fewshot_examples = ""
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -8906,6 +8919,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "category".to_string(),
@@ -8930,6 +8944,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -8998,6 +9013,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             // datetime with an inferred format (contains colons) over an RFC3339 min/max.
             dictionary::DictionaryEntry {
@@ -9023,6 +9039,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             // bare `date` token (no inferred fmt) — Min/Max stay as-is.
             dictionary::DictionaryEntry {
@@ -9048,6 +9065,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             // non-date content type — Min/Max untouched even though numeric.
             dictionary::DictionaryEntry {
@@ -9073,6 +9091,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -9197,6 +9216,7 @@ p_fewshot_examples = ""
                     content_type_vocab => dictionary::content_type_vocab_list(),
                     concept_vocab => dictionary::concept_vocab_list(),
                     role_vocab => dictionary::role_vocab_list(),
+                    agg_vocab => dictionary::agg_vocab_list(),
                 },
             )
             .unwrap()
@@ -9243,10 +9263,28 @@ p_fewshot_examples = ""
             on.contains(
                 "\"content_type\", \"role\", \"concept\" and (for canonical-scale numeric \
                  measures only) an optional \"gauge_range\", plus (for monetary measures only) an \
-                 optional \"currency\" properties"
+                 optional \"currency\" and (for numeric measures only) an optional \
+                 \"aggregation\" properties"
             ),
-            "flag-on prompt must list content_type/role/concept/gauge_range/currency in the \
-             properties sentence:\n{on}"
+            "flag-on prompt must list content_type/role/concept/gauge_range/currency/aggregation \
+             in the properties sentence:\n{on}"
+        );
+        // The Aggregation instruction, its vocabulary and its worked example (issue #4401).
+        assert!(
+            on.contains("- Aggregation (OPTIONAL, numeric MEASURE fields only)"),
+            "flag-on prompt must include the Aggregation instruction:\n{on}"
+        );
+        assert!(
+            on.contains("sum, mean, min, max"),
+            "flag-on prompt must inject AGG_VOCAB:\n{on}"
+        );
+        assert!(
+            on.contains("\"aggregation\": \"sum\""),
+            "flag-on prompt must include the aggregation JSON example key:\n{on}"
+        );
+        assert!(
+            !off.contains("- Aggregation (OPTIONAL"),
+            "flag-off prompt must NOT include the Aggregation instruction:\n{off}"
         );
         // The Currency instruction and its worked example are injected when the flag is on.
         assert!(

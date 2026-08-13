@@ -342,6 +342,38 @@ Consumers render it as the currency's symbol — `$192B` on the KPI tile — fal
 bare code (`XOF 1.2B`) when no conventional symbol is known. The panel subtitle names the
 currency once rather than repeating a glyph on every mark.
 
+### `aggregation` — 4 tokens
+
+`sum`, `mean`, `min`, `max`. A per-field annotation on a **numeric measure** declaring how it
+combines across a group. The distinction it captures is EXTENSIVE vs INTENSIVE:
+
+* **extensive** (`sum`) — a quantity each row *contributes*, so adding rows adds values:
+  revenue, units sold, a shipping charge billed per order, a population count.
+* **intensive** (`mean`) — a per-unit or per-record rate, level or state, so adding it across
+  rows yields a number that means nothing: a unit price, a price per kilogram, a temperature,
+  a rating, a percentage, a density, an age, an elapsed duration.
+
+The test is whether summing the column over every row produces a number a human would quote.
+"Total revenue" yes; "total unit price" no.
+
+Without this annotation qsv falls back to a heuristic over the column's NAME and label — which
+is lexical by construction, and therefore English-first. It recognizes `unit_price`,
+`failure_rate` and `avg_income`, and (given a declared data language) their Spanish, French,
+German, Italian, Portuguese, Japanese and Chinese equivalents — but it can never cover every
+dataset in every language. `aggregation` is the language-neutral answer, and it is the reason
+the annotation exists: a model that has read the column's description and sample values knows
+whether the number is per-unit, whatever the column happens to be called.
+
+Like `gauge_range` and `currency`, it is **proposed then verified** — qsv keeps it only when
+the column is a numeric measure. Unlike `currency` it is deliberately *not* gated on concept:
+non-additivity is not a property of one namespace, since a unit price (`measure.money`), a
+temperature (`measure.amount`) and a rating are all intensive.
+
+When present it **overrides the name heuristic in both directions** — it can force `mean` on a
+name that reads as additive, and equally force `sum` on one the heuristic would wrongly
+average. Consumers apply it to the KPI tile's headline value and to every grouped aggregation
+of that column.
+
 ### Large-number suffixes are locale-dependent
 
 Not a vocabulary entry, but a rendering rule consumers must know: on **English** pages qsv

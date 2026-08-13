@@ -16671,3 +16671,154 @@ fn viz_smart_money_non_english_keeps_si_suffix() {
         "no B may leak onto a non-English page"
     );
 }
+
+// Issue #4401: a per-unit money measure ("unit price") is INTENSIVE — summing it produces a
+// number with no meaning — but a money noun alone never is. The two columns here are the
+// regression pair: they were `Total Unit Price` (wrong) and `Total Shipping Cost` (right) side by
+// side in the same committed gallery figure, both tagged `role: measure, concept: measure.amount`.
+#[test]
+fn viz_smart_per_unit_money_is_averaged_but_plain_money_still_sums() {
+    let wrk = Workdir::new("viz_smart_per_unit_money_is_averaged");
+    // Cardinalities are tuned deliberately: too LOW and a numeric column charts as a
+    // categorical frequency bar, too HIGH (near-unique) and it is skipped as ID-like. Either way
+    // it never reaches the KPI row, which is what this test reads.
+    let mut csv = String::from("region,unit_price,shipping_cost,units_sold,total_price\n");
+    for i in 0..200 {
+        csv.push_str(&format!(
+            "R{},{}.5,{}.25,{},{}.75\n",
+            i % 4,
+            5 + i % 89,
+            1 + i % 37,
+            1 + i * 7 % 97,
+            50 + i % 149
+        ));
+    }
+    wrk.create_from_string("sales.csv", &csv);
+
+    let out_html = wrk.path("s.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sales.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("s.html").unwrap();
+
+    assert!(
+        html.contains(r#""text":"Mean unit_price""#),
+        "a per-unit price must headline as a MEAN; html: {html}"
+    );
+    // the canaries: a naive `INTENSIVE_TOKENS += "price"|"cost"` would have flipped all three.
+    for additive in ["shipping_cost", "units_sold", "total_price"] {
+        assert!(
+            html.contains(&format!(r#""text":"Total {additive}""#)),
+            "{additive} is additive and must keep its Total tile; html: {html}"
+        );
+    }
+}
+
+// Issue #4401: the intensive-measure lexicon follows the DATA language, which a dictionary
+// declares via `x-qsv.detected_language_code`. This is also the end-to-end ORDERING pin: it can
+// only pass if `set_data_locale` runs before `derive_semantics` builds the column semantics — a
+// data locale still stuck on English there would silently defeat every non-English lexicon.
+#[test]
+fn viz_smart_intensive_measure_lexicon_follows_the_data_language() {
+    let wrk = Workdir::new("viz_smart_intensive_lexicon_data_language");
+    let mut csv = String::from("region,precio_unitario,costo_envio\n");
+    for i in 0..60 {
+        csv.push_str(&format!("R{},{},{}\n", i % 4, 10 + i % 9, 3 + i % 7));
+    }
+    wrk.create_from_string("ventas.csv", &csv);
+    let dict = r#"{"type":"object","x-qsv":{"detected_language_code":"spa"},"properties":{
+        "precio_unitario":{"title":"Precio Unitario","type":"number",
+          "x-qsv":{"role":"measure","concept":"measure.money"}},
+        "costo_envio":{"title":"Costo de Envio","type":"number",
+          "x-qsv":{"role":"measure","concept":"measure.money"}}}}"#;
+    wrk.create_from_string("dict_es.json", dict);
+
+    let out_html = wrk.path("v.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "ventas.csv",
+        "--dictionary",
+        "dict_es.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("v.html").unwrap();
+
+    // "Media de %{q_label}" is the Spanish kpi_mean key -- the detected language drives the UI too
+    assert!(
+        html.contains(r#""text":"Media de Precio Unitario""#),
+        "the Spanish lexicon must recognize `precio unitario` as per-unit; html: {html}"
+    );
+    // ...and Spanish additive money stays additive: `costo` carries no per-unit qualifier
+    assert!(
+        html.contains(r#""text":"Total de Costo de Envio""#),
+        "a Spanish shipping cost is additive and must keep its Total tile; html: {html}"
+    );
+
+    // WITHOUT the declared language the same columns fall back to the English lexicon, which
+    // cannot see them. This is the documented limitation, pinned so it cannot regress silently
+    // into something worse (e.g. every locale's tokens being unioned in at once).
+    let dict_en = dict.replace(r#""x-qsv":{"detected_language_code":"spa"},"#, "");
+    wrk.create_from_string("dict_none.json", &dict_en);
+    let out2 = wrk.path("v2.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "ventas.csv",
+        "--dictionary",
+        "dict_none.json",
+        "-o",
+        &out2,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html2 = wrk.read_to_string("v2.html").unwrap();
+    assert!(
+        html2.contains(r#""text":"Total Precio Unitario""#),
+        "with no declared data language the English lexicon applies; html: {html2}"
+    );
+}
+
+// Issue #4401: an explicit `x-qsv.aggregation` is the authoritative, language-neutral signal and
+// overrides the label heuristic in BOTH directions.
+#[test]
+fn viz_smart_explicit_aggregation_overrides_the_label_heuristic() {
+    let wrk = Workdir::new("viz_smart_explicit_aggregation_overrides");
+    let mut csv = String::from("region,unit_price,shipping_cost\n");
+    for i in 0..60 {
+        csv.push_str(&format!("R{},{},{}\n", i % 4, 10 + i % 9, 3 + i % 7));
+    }
+    wrk.create_from_string("sales.csv", &csv);
+    // deliberately INVERTED against what the heuristic would say for each column
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"type":"object","properties":{
+            "unit_price":{"title":"Unit Price","type":"number",
+              "x-qsv":{"role":"measure","concept":"measure.money","aggregation":"sum"}},
+            "shipping_cost":{"title":"Shipping Cost","type":"number",
+              "x-qsv":{"role":"measure","concept":"measure.money","aggregation":"mean"}}}}"#,
+    );
+
+    let out_html = wrk.path("s.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "sales.csv",
+        "--dictionary",
+        "dict.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("s.html").unwrap();
+
+    assert!(
+        html.contains(r#""text":"Total Unit Price""#),
+        "an explicit `sum` must override the intensive label heuristic; html: {html}"
+    );
+    assert!(
+        html.contains(r#""text":"Mean Shipping Cost""#),
+        "an explicit `mean` must override the additive default; html: {html}"
+    );
+}

@@ -501,6 +501,14 @@ fn build_x_qsv(
         // is `Some` only when the column is a numeric measure that reads as money). Read back
         // by `viz smart --dictionary` as `x-qsv.currency` to prefix the column's KPI tile with
         // the currency symbol. Absent otherwise, keeping no-flag runs byte-identical.
+        // How this numeric measure combines across a group, already verified in
+        // `verify_aggregation` (so it is only ever present on a numeric measure). Read by
+        // `viz smart --dictionary` as `x-qsv.aggregation`, where it OVERRIDES the language-bound
+        // `is_intensive_measure` label heuristic. Absent otherwise, keeping no-flag runs
+        // byte-identical.
+        if let Some(agg) = &entry.aggregation {
+            x_qsv.insert("aggregation".to_string(), json!(agg));
+        }
         if let Some(code) = &entry.currency {
             x_qsv.insert("currency".to_string(), json!(code));
         }
@@ -1254,6 +1262,7 @@ mod tests {
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         }
     }
 
@@ -1880,6 +1889,7 @@ mod tests {
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         };
         let schema = format_dictionary_jsonschema(
             std::slice::from_ref(&entry),

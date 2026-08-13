@@ -585,7 +585,7 @@ smart options:
                            describegpt's completion cache, forcing a genuinely fresh inference
                            that overwrites the sidecar on success.
                            Generation/read failures soft-fall back to the stats-only Data Schematic.
-                           The dictionary also drives the KPI overview row via three optional
+                           The dictionary also drives the KPI overview row via four optional
                            per-field hints in a property's "x-qsv" object (edit them in the saved
                            schema to fine-tune). A "gauge_range" of [min, max] on a continuous
                            numeric measure renders its KPI tile as a GAUGE on that canonical scale
@@ -600,6 +600,13 @@ smart options:
                            names the currency in the panel subtitle; an unrecognized code renders
                            verbatim ("XOF 1.2B"). "infer" emits it for money columns, which it
                            also tags with the "measure.money" concept.
+                           An "aggregation" of "sum" or "mean" on a numeric measure declares how
+                           that column combines across a group, and OVERRIDES qsv's own
+                           extensive-vs-intensive guess in both directions. Use it when a measure
+                           does not add up - a unit price, a temperature, a rating - or when a
+                           measure whose NAME reads non-additive genuinely does sum. qsv's guess
+                           reads column names and is English-first, so this hint is the reliable
+                           way to state it, in any language. "infer" emits it for numeric measures.
                            Note that on ENGLISH pages large numbers use the financial convention
                            (1e9 reads "1B", not the SI "1G") consistently across KPI tiles, bar
                            value labels and axis ticks. Other languages keep the SI prefixes.
@@ -15403,6 +15410,13 @@ struct DictRow {
     /// currency in its panel subtitle. Normalized (trimmed/uppercased/shape-checked) on read,
     /// because a hand-edited sidecar never passed through describegpt's validator.
     currency:     Option<String>,
+    /// Optional explicit aggregation (`x-qsv.aggregation`, `sum`|`mean`) declaring how this
+    /// numeric measure combines across a group. The language-neutral, authoritative answer to a
+    /// question `is_intensive_measure` can only guess at from the column NAME (issue #4401), so it
+    /// OVERRIDES that heuristic in BOTH directions — it can force Mean on a name that reads as
+    /// additive, and equally force Sum on one the heuristic would wrongly average. Re-verified on
+    /// read, because a hand-edited sidecar never passed through describegpt's validator.
+    aggregation:  Option<Agg>,
 }
 
 /// Which form a declared pipeline is drawn as (issue #4222).
@@ -15875,12 +15889,21 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     // legitimately monetary. Do NOT re-gate on route: the panel subtitle consults this for every
     // charted column, not just the ones that end up as measures.
     let currency = row.currency.clone();
+    // An explicit `x-qsv.aggregation` is the dictionary AUTHOR stating how the measure combines,
+    // already re-verified in `parse_dictionary_semantics`. It outranks every heuristic below —
+    // both the intensive downgrade and the `measure.count` exemption — because it is the one
+    // signal derived from what the column MEANS rather than from what it is NAMED (issue #4401).
+    let explicit_agg = row.aggregation;
     let make = |route: Route, agg: Option<Agg>| {
         // An intensive measure (temperature, rate, index, pre-averaged value) tagged additive by
         // the coarse measure.* concept vocab must be averaged, not summed, across a group. An
         // explicit `measure.count` is additive by definition (a count sums, never averages), so
         // it is never downgraded even if its label embeds an intensive token.
         let agg = if route == Route::Measure
+            && let Some(explicit) = explicit_agg
+        {
+            Some(explicit)
+        } else if route == Route::Measure
             && agg == Some(Agg::Sum)
             && concept != "measure.count"
             && is_intensive_measure(&label, &s.field)
@@ -16276,6 +16299,42 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 let measure = role.is_empty() || role == "measure";
                 (numeric && measure && money_ish).then_some(code)
             };
+            // `x-qsv.aggregation`: an explicit `sum`|`mean` for a numeric measure (issue #4401).
+            // describegpt's `verify_aggregation` already gated this on emit, but a hand-edited
+            // sidecar never passed through that validator, so viz re-applies the same check:
+            //
+            //   * token — trimmed, case-folded, and a member of the closed two-token vocabulary. An
+            //     unknown verb yields None so the column falls back to the label heuristic;
+            //     half-honoring an aggregation nobody can render is worse than ignoring it.
+            //   * semantics — a numeric MEASURE, the only thing an aggregation verb can describe.
+            //     Deliberately NOT concept-gated (unlike `currency`): non-additivity is not a
+            //     property of one namespace — a unit price, a temperature, a rating and a duration
+            //     are all intensive under different concepts.
+            let xq_aggregation = || -> Option<Agg> {
+                let agg = match xq
+                    .and_then(|x| x.get("aggregation"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(|s| s.trim().to_ascii_lowercase())?
+                    .as_str()
+                {
+                    "sum" => Agg::Sum,
+                    "mean" => Agg::Mean,
+                    _ => return None,
+                };
+                // `qsv_type` is absent on hand-written dictionaries; only reject when it is
+                // present AND says the column is non-numeric.
+                let type_raw = from_xq("qsv_type");
+                let numeric = match type_raw.trim() {
+                    "" => true,
+                    t => matches!(t, "Integer" | "Float"),
+                };
+                // an empty role is admissible: `concept` alone can establish the measure, which
+                // is the precedence `derive_semantics` uses.
+                let role_raw = from_xq("role");
+                let role = role_raw.trim();
+                let measure = role.is_empty() || role == "measure";
+                (numeric && measure).then_some(agg)
+            };
             let label = prop
                 .get("title")
                 .and_then(serde_json::Value::as_str)
@@ -16297,6 +16356,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     gauge_range: xq_range("gauge_range"),
                     target: xq_num("target"),
                     currency: xq_currency(),
+                    aggregation: xq_aggregation(),
                 },
             );
         }
@@ -16364,10 +16424,12 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 concept:      from_field("concept"),
                 label:        from_field("label"),
                 description:  from_field("description"),
-                // legacy plain-json dictionaries don't carry KPI gauge/target/currency hints
+                // legacy plain-json dictionaries don't carry KPI gauge/target/currency or
+                // aggregation hints
                 gauge_range:  None,
                 target:       None,
                 currency:     None,
+                aggregation:  None,
             },
         );
     }
@@ -24847,8 +24909,14 @@ fn build_kpi_row(
         // A `gauge_range` describes a bounded per-record quantity (a 0–5 rating, a 0–1 ratio), so
         // its headline value is the MEAN — summing it would blow past the gauge scale. Otherwise
         // fall back to the extensive/intensive keyword heuristic.
+        // An explicit `x-qsv.aggregation` wins outright — including over `gauge_range`, since a
+        // dictionary that states both has stated the aggregation deliberately (issue #4401).
         let has_range = row.and_then(|r| r.gauge_range).is_some();
-        let intensive = has_range || is_intensive_measure(&label, &s.field);
+        let intensive = match row.and_then(|r| r.aggregation) {
+            Some(Agg::Sum) => false,
+            Some(_) => true,
+            None => has_range || is_intensive_measure(&label, &s.field),
+        };
         let Some(value) = (if intensive { s.mean } else { s.sum }).filter(|v| v.is_finite()) else {
             continue;
         };
@@ -34180,6 +34248,86 @@ mod tests {
             )),
         );
         assert_eq!(score_count.agg, Some(Agg::Sum));
+    }
+
+    /// Issue #4401: an explicit `x-qsv.aggregation` is the authoritative, language-neutral signal
+    /// and outranks the lexical `is_intensive_measure` guard in BOTH directions.
+    #[test]
+    fn derive_semantics_explicit_aggregation_overrides_the_label_heuristic() {
+        let numeric = stat("Float", 300, Some(0.9));
+
+        // forcing Mean on a name the heuristic reads as additive
+        let mut row = dict_row("", "measure", "measure.money", "Metro Population");
+        row.aggregation = Some(Agg::Mean);
+        assert_eq!(derive_semantics(&numeric, Some(&row)).agg, Some(Agg::Mean));
+
+        // ...and forcing Sum on a name the heuristic would average. This direction is the reason
+        // the hint is not merely "a way to say intensive": the heuristic has false POSITIVES too.
+        let mut row = dict_row("", "measure", "measure.money", "Unit Price");
+        assert_eq!(
+            derive_semantics(&numeric, Some(&row)).agg,
+            Some(Agg::Mean),
+            "without the hint, the label heuristic averages a unit price"
+        );
+        row.aggregation = Some(Agg::Sum);
+        assert_eq!(derive_semantics(&numeric, Some(&row)).agg, Some(Agg::Sum));
+
+        // it also outranks the `measure.count` exemption -- explicit means explicit
+        let mut row = dict_row("", "measure", "measure.count", "Order Count");
+        row.aggregation = Some(Agg::Mean);
+        assert_eq!(derive_semantics(&numeric, Some(&row)).agg, Some(Agg::Mean));
+
+        // a hint on a NON-measure route is ignored: `make` only consults it for Route::Measure,
+        // so a stray aggregation cannot drag a dimension into being aggregated.
+        let mut row = dict_row("", "dimension", "geo.city", "City");
+        row.aggregation = Some(Agg::Sum);
+        let sem = derive_semantics(&numeric, Some(&row));
+        assert_eq!(sem.route, Route::Dimension);
+        assert_eq!(sem.agg, None);
+    }
+
+    /// Issue #4401: `x-qsv.aggregation` is re-verified on READ, because a hand-edited sidecar
+    /// never passed through describegpt's validator.
+    #[test]
+    fn parse_dictionary_semantics_gates_a_hand_authored_aggregation() {
+        let json = r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "unit_price":  {"type":"number","title":"Unit Price",
+              "x-qsv":{"qsv_type":"Float","role":"measure","concept":"measure.money",
+                       "aggregation":"mean"}},
+            "padded":      {"type":"number","title":"Padded",
+              "x-qsv":{"qsv_type":"Float","role":"measure ","concept":" measure.money ",
+                       "aggregation":"  MEAN  "}},
+            "concept_only":{"type":"number","title":"Concept Only",
+              "x-qsv":{"concept":"measure.amount","aggregation":"sum"}},
+            "on_a_dim":    {"type":"string","title":"Region",
+              "x-qsv":{"qsv_type":"String","role":"dimension","concept":"geo.state",
+                       "aggregation":"mean"}},
+            "non_numeric": {"type":"string","title":"Name",
+              "x-qsv":{"qsv_type":"String","role":"measure","aggregation":"sum"}},
+            "off_vocab":   {"type":"number","title":"Bogus",
+              "x-qsv":{"qsv_type":"Float","role":"measure","aggregation":"average"}},
+            "min_token":   {"type":"number","title":"Peak",
+              "x-qsv":{"qsv_type":"Float","role":"measure","aggregation":"max"}}
+          }
+        }"#;
+        let d = parse_dictionary_semantics(json).expect("dictionary parses");
+        assert_eq!(d.rows["unit_price"].aggregation, Some(Agg::Mean));
+        // trimmed and case-folded, exactly like `xq_currency` -- an untrimmed gate would silently
+        // discard the hint on a sidecar whose role reads `"measure "`.
+        assert_eq!(d.rows["padded"].aggregation, Some(Agg::Mean));
+        // an empty role is admissible: concept alone establishes the measure
+        assert_eq!(d.rows["concept_only"].aggregation, Some(Agg::Sum));
+        // ...but a dimension, a non-numeric column, and an off-vocab token are all dropped
+        assert_eq!(d.rows["on_a_dim"].aggregation, None);
+        assert_eq!(d.rows["non_numeric"].aggregation, None);
+        assert_eq!(d.rows["off_vocab"].aggregation, None);
+        // `min`/`max` are NOT accepted, though `Agg` has them: the KPI row has only total/mean
+        // headline forms, so honoring `max` there would silently render the MEAN. Falls back to the
+        // label heuristic instead of being half-applied.
+        assert_eq!(d.rows["min_token"].aggregation, None);
     }
 
     #[test]

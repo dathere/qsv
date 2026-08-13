@@ -504,6 +504,14 @@ fn build_x_qsv(
         if let Some(code) = &entry.currency {
             x_qsv.insert("currency".to_string(), json!(code));
         }
+        // How this numeric measure combines across a group, already verified in
+        // `verify_aggregation` (so it is only ever present on a numeric measure). Read by
+        // `viz smart --dictionary` as `x-qsv.aggregation`, where it OVERRIDES the language-bound
+        // `is_intensive_measure` label heuristic. Absent otherwise, keeping no-flag runs
+        // byte-identical.
+        if let Some(agg) = &entry.aggregation {
+            x_qsv.insert("aggregation".to_string(), json!(agg));
+        }
     }
     // Null sentinels. Deliberately NOT gated on the flag: emission keys off the lists being
     // non-empty, and they are only populated when a response actually supplied `null_values`.
@@ -1254,6 +1262,7 @@ mod tests {
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         }
     }
 
@@ -1880,6 +1889,7 @@ mod tests {
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         };
         let schema = format_dictionary_jsonschema(
             std::slice::from_ref(&entry),

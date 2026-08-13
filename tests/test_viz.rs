@@ -16713,3 +16713,46 @@ fn viz_smart_per_unit_money_is_averaged_but_plain_money_still_sums() {
         );
     }
 }
+
+// Issue #4401: an explicit `x-qsv.aggregation` is the authoritative, language-neutral signal and
+// overrides the label heuristic in BOTH directions.
+#[test]
+fn viz_smart_explicit_aggregation_overrides_the_label_heuristic() {
+    let wrk = Workdir::new("viz_smart_explicit_aggregation_overrides");
+    let mut csv = String::from("region,unit_price,shipping_cost\n");
+    for i in 0..60 {
+        csv.push_str(&format!("R{},{},{}\n", i % 4, 10 + i % 9, 3 + i % 7));
+    }
+    wrk.create_from_string("sales.csv", &csv);
+    // deliberately INVERTED against what the heuristic would say for each column
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"type":"object","properties":{
+            "unit_price":{"title":"Unit Price","type":"number",
+              "x-qsv":{"role":"measure","concept":"measure.money","aggregation":"sum"}},
+            "shipping_cost":{"title":"Shipping Cost","type":"number",
+              "x-qsv":{"role":"measure","concept":"measure.money","aggregation":"mean"}}}}"#,
+    );
+
+    let out_html = wrk.path("s.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "sales.csv",
+        "--dictionary",
+        "dict.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("s.html").unwrap();
+
+    assert!(
+        html.contains(r#""text":"Total Unit Price""#),
+        "an explicit `sum` must override the intensive label heuristic; html: {html}"
+    );
+    assert!(
+        html.contains(r#""text":"Mean Shipping Cost""#),
+        "an explicit `mean` must override the additive default; html: {html}"
+    );
+}

@@ -16671,3 +16671,45 @@ fn viz_smart_money_non_english_keeps_si_suffix() {
         "no B may leak onto a non-English page"
     );
 }
+
+// Issue #4401: a per-unit money measure ("unit price") is INTENSIVE — summing it produces a
+// number with no meaning — but a money noun alone never is. The two columns here are the
+// regression pair: they were `Total Unit Price` (wrong) and `Total Shipping Cost` (right) side by
+// side in the same committed gallery figure, both tagged `role: measure, concept: measure.amount`.
+#[test]
+fn viz_smart_per_unit_money_is_averaged_but_plain_money_still_sums() {
+    let wrk = Workdir::new("viz_smart_per_unit_money_is_averaged");
+    // Cardinalities are tuned deliberately: too LOW and a numeric column charts as a
+    // categorical frequency bar, too HIGH (near-unique) and it is skipped as ID-like. Either way
+    // it never reaches the KPI row, which is what this test reads.
+    let mut csv = String::from("region,unit_price,shipping_cost,units_sold,total_price\n");
+    for i in 0..200 {
+        csv.push_str(&format!(
+            "R{},{}.5,{}.25,{},{}.75\n",
+            i % 4,
+            5 + i % 89,
+            1 + i % 37,
+            1 + i * 7 % 97,
+            50 + i % 149
+        ));
+    }
+    wrk.create_from_string("sales.csv", &csv);
+
+    let out_html = wrk.path("s.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sales.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("s.html").unwrap();
+
+    assert!(
+        html.contains(r#""text":"Mean unit_price""#),
+        "a per-unit price must headline as a MEAN; html: {html}"
+    );
+    // the canaries: a naive `INTENSIVE_TOKENS += "price"|"cost"` would have flipped all three.
+    for additive in ["shipping_cost", "units_sold", "total_price"] {
+        assert!(
+            html.contains(&format!(r#""text":"Total {additive}""#)),
+            "{additive} is additive and must keep its Total tile; html: {html}"
+        );
+    }
+}

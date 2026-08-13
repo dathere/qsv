@@ -15738,6 +15738,25 @@ fn is_identifier_name(label: &str, field: &str) -> bool {
     })
 }
 
+/// Recognize a per-unit MONEY measure — `unit_price`, `unit_cost`, `cost_each`, `unitary_cost`.
+///
+/// Issue #4401: a price is not intensive because it is money, it is intensive because it is
+/// quoted PER SINGLE ITEM. So the rule is a conjunction — a money noun AND a per-single-item
+/// qualifier — never either half alone. Adding a bare `"price"`/`"cost"` to `INTENSIVE_TOKENS`
+/// instead would silently average `total_price`, `sale_price`, `order_price` and `shipping_cost`,
+/// all of which are genuinely additive (`shipping_cost` is per-order and renders as "Total
+/// Shipping Cost" in the committed gallery — a live canary for this rule).
+///
+/// Bare `per` is deliberately NOT a qualifier here: on a one-row-per-order dataset "price per
+/// order" sums perfectly well. The conclusive `per unit`/`per item` PHRASES are handled by
+/// `INTENSIVE_SUBSTRINGS` alongside `per capita`, since a phrase cannot survive tokenization.
+fn is_per_unit_money(tokens: &[String]) -> bool {
+    const MONEY_NOUNS: &[&str] = &["price", "prices", "cost", "costs"];
+    const PER_UNIT: &[&str] = &["unit", "units", "unitary", "each", "apiece"];
+    tokens.iter().any(|t| MONEY_NOUNS.contains(&t.as_str()))
+        && tokens.iter().any(|t| PER_UNIT.contains(&t.as_str()))
+}
+
 fn is_intensive_measure(label: &str, field: &str) -> bool {
     let hay = format!("{label} {field}").to_ascii_lowercase();
     let tokens = field_name_tokens(label, field);
@@ -15818,11 +15837,23 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     ];
     // phrases and symbols can't survive tokenization (which splits on non-alphanumerics), so
     // these stay substring tests — none of them is a substring of a common additive word.
-    const INTENSIVE_SUBSTRINGS: &[&str] = &["\u{b0}c", "\u{b0}f", "per capita", "per_capita"];
+    // `per unit`/`per item` join `per capita` here for the same reason: they are conclusive
+    // per-single-item phrases, and the `per` in them is only meaningful next to the unit noun.
+    const INTENSIVE_SUBSTRINGS: &[&str] = &[
+        "\u{b0}c",
+        "\u{b0}f",
+        "per capita",
+        "per_capita",
+        "per unit",
+        "per_unit",
+        "per item",
+        "per_item",
+    ];
     tokens
         .iter()
         .any(|t| INTENSIVE_TOKENS.contains(&t.as_str()))
         || INTENSIVE_SUBSTRINGS.iter().any(|kw| hay.contains(kw))
+        || is_per_unit_money(&tokens)
 }
 
 /// Distill a column's `StatsData` + optional dictionary `row` into one charting verdict.
@@ -37329,6 +37360,64 @@ mod tests {
             "review score count",
             "review_score_count"
         ));
+    }
+
+    /// Issue #4401: a per-unit price is intensive, but a money noun ALONE never is.
+    #[test]
+    fn is_intensive_measure_needs_a_qualifier_before_averaging_money() {
+        // the whole point of the qualified rule: these are genuinely additive and a bare
+        // `INTENSIVE_TOKENS += "price"|"cost"` would have broken every one of them. `shipping_cost`
+        // is the live canary -- it renders as "Total Shipping Cost" in the committed gallery.
+        for additive in [
+            "price",
+            "cost",
+            "total_price",
+            "sale_price",
+            "list_price",
+            "order_price",
+            "shipping_cost",
+            "total_cost",
+            "labor_cost",
+            "cost_of_goods",
+            // a qualifier with NO money noun: the conjunction is what keeps this additive
+            "units_sold",
+            "unit_count",
+        ] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} is additive money, must not be averaged"
+            );
+        }
+        // money noun + per-single-item qualifier => intensive
+        for intensive in [
+            "unit_price",
+            "unitPrice",
+            "Unit Price",
+            "unit_cost",
+            "cost_each",
+            "price_each",
+            "unitary_cost",
+        ] {
+            assert!(
+                is_intensive_measure(intensive, intensive),
+                "{intensive} is a per-unit money measure and must be averaged"
+            );
+        }
+        // the `per <unit>` PHRASE is intensive on its own merits, money noun or not
+        for intensive in [
+            "price_per_unit",
+            "cost per item",
+            "weight_per_unit",
+            "revenue_per_item",
+        ] {
+            assert!(
+                is_intensive_measure(intensive, intensive),
+                "{intensive} is a per-unit quantity and must be averaged"
+            );
+        }
+        // ...but a bare `per` is NOT a qualifier: on a one-row-per-order dataset "price per order"
+        // sums perfectly well, so only an explicit unit noun is conclusive.
+        assert!(!is_intensive_measure("price per order", "price_per_order"));
     }
 
     #[test]

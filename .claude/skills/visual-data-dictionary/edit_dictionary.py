@@ -27,10 +27,14 @@ not the definitive `viz smart` disposition. Every other key (examples,
 cardinality, null_count, qsv_type, min/max, …) is preserved byte-for-byte, and
 the file is only rewritten if you actually change something and save.
 
-`aggregation` is the one field qsv can also DROP on read: it keeps it only on a
-numeric measure. A column carrying an aggregation that this projection does not
-route to Measure is flagged "!" — approximate (the projection cannot see
-qsv_type), but it catches the common case of an aggregation hung on a dimension.
+`aggregation` is the one field qsv can also DROP on read: it keeps it only when
+the token is `sum` or `mean` (trimmed and case-folded) AND the column is a
+numeric measure. Anything else falls back to qsv's own name heuristic. A value
+this projection can see viz discarding — an off-vocab verb, or a verb on a
+column that does not route to Measure — is flagged "!" and left out of the
+ROUTE preview. The check is approximate (the projection cannot see qsv_type),
+but it catches the two common mistakes: `"average"` instead of `"mean"`, and an
+aggregation hung on a dimension.
 
     HOW TO RUN — this needs YOUR real terminal, not an agent's captured shell:
 
@@ -146,6 +150,20 @@ def route_from_role(role):
     }.get(role)
 
 
+def normalized_agg(value):
+    """viz's aggregation token, or "" if viz would not honor this value.
+
+    Mirrors `xq_aggregation` in src/cmd/viz.rs: trim, ASCII-case-fold, then accept
+    ONLY the closed two-token vocabulary — an unknown verb yields None there, so
+    the column silently falls back to the label heuristic. The fold is ASCII-only
+    on purpose: Python's Unicode `str.lower()` maps characters like "ſ" (U+017F)
+    and "K" (U+212A) onto ASCII, so it would accept tokens Rust's
+    `to_ascii_lowercase` rejects, and the preview would disagree with viz.
+    """
+    folded = "".join(c.lower() if c.isascii() else c for c in (value or "").strip())
+    return folded if folded in AGG_VOCAB else ""
+
+
 def effective_route(role, concept, aggregation=""):
     """Concept→role route projection (concept first, then role).
 
@@ -153,14 +171,17 @@ def effective_route(role, concept, aggregation=""):
     `viz smart`'s content_type or stats/label guardrails, so the final route can
     differ. Anything unresolved by concept/role is shown as "Defer→stats".
 
-    An explicit `x-qsv.aggregation` overrides the projected sum/mean, but ONLY on a
-    route that already resolves to Measure — mirroring `derive_semantics`, which
-    consults it under `route == Route::Measure`. On any other route viz ignores it,
-    so showing it here would overstate its reach.
+    An explicit `x-qsv.aggregation` overrides the projected sum/mean, but ONLY when
+    viz would honor it: an in-vocabulary token (see `normalized_agg`) on a route
+    that already resolves to Measure — mirroring `derive_semantics`, which consults
+    it under `route == Route::Measure`. An off-vocab verb, or any verb on another
+    route, is ignored here exactly as viz ignores it; showing it would promise a
+    route viz will never produce.
     """
     route = route_from_concept(concept) or route_from_role(role) or "Defer→stats"
-    if aggregation and route.startswith("Measure"):
-        return f"Measure({aggregation})"
+    agg = normalized_agg(aggregation)
+    if agg and route.startswith("Measure"):
+        return f"Measure({agg})"
     return route
 
 
@@ -232,10 +253,12 @@ def columns(schema):
             "route": route,
             "role_off_vocab": bool(role) and role not in ROLE_VOCAB,
             "concept_off_vocab": bool(concept) and concept not in CONCEPT_VOCAB,
-            # viz keeps an aggregation only on a NUMERIC measure. This projection
-            # cannot see qsv_type, so it flags the half it can see: an aggregation
-            # on a column that does not route to Measure at all.
-            "agg_ineffective": bool(agg) and not route.startswith("Measure"),
+            # viz keeps an aggregation only when the token is in-vocabulary AND the
+            # column is a NUMERIC measure. This projection cannot see qsv_type, so
+            # it flags the two halves it can see: an off-vocab verb, and a verb on
+            # a column that does not route to Measure at all.
+            "agg_ineffective": bool(agg)
+            and (not normalized_agg(agg) or not route.startswith("Measure")),
         })
     return out
 
@@ -283,8 +306,7 @@ def format_summary(schema):
             n=w_name, r=w_role, c=w_con, a=w_agg))
     if any(c["agg_ineffective"] for c in cols):
         rows.append("")
-        rows.append("! = aggregation set on a column that does not route to a measure;"
-                    " viz drops it on read")
+        rows.append("! = aggregation viz drops on read — not sum/mean, or not on a measure")
     return "\n".join(rows)
 
 
@@ -420,7 +442,7 @@ def _draw(stdscr, schema, cur, top, dirty, status):
         _safe_addstr(stdscr, body_top + row, 0, line, attr)
     msg = status or (
         "* = value not in the known vocab (allowed, just unusual) · "
-        "! = aggregation viz will drop (not a measure) · "
+        "! = aggregation viz will drop (not sum/mean, or not a measure) · "
         "ROUTE = concept/role preview, before viz smart's content_type & stats guardrails"
     )
     _safe_addstr(stdscr, h - 1, 0, msg[: w - 1], curses.A_DIM)

@@ -246,10 +246,12 @@ rendering. It touches only those five fields, preserves every other key, and
 rewrites the file only if you save.
 
 `aggregation` is the one field qsv can also **drop** on read — it keeps it only
-on a numeric measure. The TUI flags an aggregation on a column it does not route
-to a measure with `!`; that check is approximate (the preview cannot see
-`qsv_type`), but it catches an aggregation hung on a dimension, which is the
-common mistake.
+when the token is `sum` or `mean` (trimmed and case-folded) *and* the column is
+a numeric measure; anything else silently falls back to qsv's own name
+heuristic. The TUI flags a value it can see viz discarding with `!` and leaves
+it out of the ROUTE preview. That check is approximate (the preview cannot see
+`qsv_type`), but it catches the two common mistakes in a hand-edited sidecar:
+`"average"` instead of `"mean"`, and an aggregation hung on a dimension.
 
 **Offer it with AskUserQuestion:** *"Hand-tune the data dictionary in a TUI
 before rendering?"* If **no**, go straight to Stage 3 — but say plainly that the

@@ -644,6 +644,13 @@ impl StatsArgs {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Default, Debug)]
 pub struct StatsData {
+    // NOT dead code, even though the writer now always emits `field`: stats caches
+    // written by qsv 22.0.1 and earlier dropped the `field` key entirely for a column
+    // whose name is empty (issue #4410), and those caches stay on disk and still pass
+    // mtime validation after an upgrade. This default is their migration path - keep it
+    // until such caches can no longer plausibly be in circulation. The key was dropped
+    // precisely because the value was empty, so "" reconstructs the original name exactly.
+    #[serde(default)]
     pub field: String,
     // type is a reserved keyword in Rust
     // so we escape it as r#type

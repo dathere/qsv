@@ -637,6 +637,105 @@ fn tojsonl_number_nan_infinity_literal_is_null() {
 
 #[test]
 #[serial]
+fn tojsonl_4410() {
+    // issue #4410: a CSV with an empty column name failed with
+    // `error parsing stats: Serde("missing field `field`")`, because the stats cache
+    // JSONL dropped the `field` key for the empty-named column.
+    let wrk = Workdir::new("tojsonl_4410");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["a", "", "c"],
+            svec!["1", "2", "3"],
+            svec!["4", "5", "6"],
+        ],
+    );
+
+    let mut cmd = wrk.command("tojsonl");
+    cmd.arg("in.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"a":1,"":2,"c":3}
+{"a":4,"":5,"c":6}"#;
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
+fn tojsonl_4410_legacy_cache_missing_field_key() {
+    // issue #4410 migration path: stats caches written by qsv 22.0.1 and earlier dropped
+    // the `field` key entirely for an empty-named column. Such caches stay on disk and
+    // still pass mtime validation after an upgrade, which is why `StatsData.field` is
+    // `#[serde(default)]`. Without that default this fails with `missing field `field``.
+    use filetime::{FileTime, set_file_mtime};
+
+    let wrk = Workdir::new("tojsonl_4410_legacy_cache_missing_field_key");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["a", "", "c"],
+            svec!["1", "2", "3"],
+            svec!["4", "5", "6"],
+        ],
+    );
+
+    // Cache reuse requires `cache_mtime > input_mtime` (strict). On coarse (1s)
+    // filesystem timestamp resolution the input and the cache written moments later can
+    // land in the same tick, forcing a regeneration that would trip the reuse assertion
+    // below - the same hazard documented in test_profile.rs. Backdate the input so it is
+    // unambiguously older, which is deterministic and costs no wall-clock time.
+    let past = FileTime::from_unix_time(FileTime::now().unix_seconds() - 3600, 0);
+    set_file_mtime(wrk.path("in.csv"), past).unwrap();
+
+    // prime a valid stats cache, then rewrite it the way a pre-fix qsv would have
+    let mut prime = wrk.command("tojsonl");
+    prime.arg("in.csv");
+    wrk.assert_success(&mut prime);
+
+    let cache_path = wrk.path("in.stats.csv.data.jsonl");
+    let cache = std::fs::read_to_string(&cache_path).unwrap();
+    let downgraded: Vec<String> = cache
+        .lines()
+        .map(|line| {
+            let mut v: serde_json::Value = serde_json::from_str(line)
+                .unwrap_or_else(|_| panic!("cache line should be valid JSON: {line}"));
+            let obj = v.as_object_mut().expect("each cache line is a JSON object");
+            if obj.get("field").and_then(serde_json::Value::as_str) == Some("") {
+                obj.remove("field");
+            }
+            serde_json::to_string(&v).unwrap()
+        })
+        .collect();
+    assert!(
+        downgraded.iter().any(|l| !l.contains("\"field\"")),
+        "setup failed: no record ended up missing its `field` key"
+    );
+    std::fs::write(&cache_path, downgraded.join("\n") + "\n").unwrap();
+
+    // the consumer must load that cache and still map the empty header correctly
+    let mut cmd = wrk.command("tojsonl");
+    cmd.arg("in.csv");
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"a":1,"":2,"c":3}
+{"a":4,"":5,"c":6}"#;
+    assert_eq!(got, expected);
+
+    // the run must have REUSED the downgraded cache rather than regenerating it -
+    // otherwise this test would pass even with the serde default removed
+    let after = std::fs::read_to_string(&cache_path).unwrap();
+    assert!(
+        after.lines().any(|l| !l.contains("\"field\"")),
+        "cache was regenerated instead of reused, so this no longer guards the migration path: \
+         {after}"
+    );
+}
+
+#[test]
+#[serial]
 fn tojsonl_duplicate_headers_warns() {
     // Duplicate column names collapse into a single JSON key; warn the user.
     let wrk = Workdir::new("tojsonl_duplicate_headers_warns");

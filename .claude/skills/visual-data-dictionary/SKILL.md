@@ -224,20 +224,41 @@ both can be hand-added later (see Stage 2.5).
 
 ## Stage 2.5 — Fine-tune the dictionary (optional, TUI)
 
-`describegpt` is a good first draft, not gospel. The four fields that actually
-steer `viz smart` — `x-qsv.role`, `x-qsv.concept`, `title` (label) and
-`description` — are worth a human pass when the model mislabels a column: a code
-that should be an `identifier` charted as a `measure`, a `geo.*` key left
-`unknown`, a bland label. `edit_dictionary.py` (beside this `SKILL.md`) is a
-curses UI that walks every column and, as you edit, **previews how `viz smart`
-will route it** (Skip / Dimension / Temporal / MapCoord / ProjectedCoord /
-Measure — the last showing its aggregation, `Measure(sum)` for an additive
-amount, `Measure(mean)` for a ratio or a duration), so you see the effect before
-rendering. It touches only those
-four fields, preserves every other key, and rewrites the file only if you save.
+`describegpt` is a good first draft, not gospel — and the draft is not even
+stable: because the semantic half comes from an LLM, inferring twice over the
+same data can return different `role`/`concept` assignments, and `role` decides
+which panel a column gets (qsv issue #4407). **This stage is what makes a
+Data Schematic reproducible.** The corrected dictionary — reviewed, kept beside
+the data, committed if the data is versioned — is the artifact of record; every
+later run reuses it instead of re-rolling the model.
+
+The five fields that actually steer `viz smart` — `x-qsv.role`,
+`x-qsv.concept`, `title` (label), `description` and `x-qsv.aggregation` — are
+worth a human pass when the model mislabels a column: a code that should be an
+`identifier` charted as a `measure`, a `geo.*` key left `unknown`, a per-unit
+price summed into a meaningless total, a bland label. `edit_dictionary.py`
+(beside this `SKILL.md`) is a curses UI that walks every column and, as you
+edit, **previews how `viz smart` will route it** (Skip / Dimension / Temporal /
+MapCoord / ProjectedCoord / Measure — the last showing its aggregation,
+`Measure(sum)` for an additive amount, `Measure(mean)` for a ratio, a duration,
+or anything you tag `aggregation: mean`), so you see the effect before
+rendering. It touches only those five fields, preserves every other key, and
+rewrites the file only if you save.
+
+`aggregation` is the one field qsv can also **drop** on read, and the `!` flag
+mirrors exactly when that happens: the token must be `sum`/`mean`,
+`x-qsv.qsv_type` must be `Integer`/`Float` (or absent), `x-qsv.role` must be
+empty or exactly `measure`, *and* the column must route to a measure at all. A
+value failing any of those is flagged and left out of the ROUTE preview, because
+viz silently falls back to its own name heuristic there. It catches the three
+easy mistakes: `"average"` instead of `"mean"`, an aggregation left behind on a
+column you just re-roled to `dimension`, and one on a column nothing classifies
+(`Defer→stats`), where viz's stats floor discards it outright.
 
 **Offer it with AskUserQuestion:** *"Hand-tune the data dictionary in a TUI
-before rendering?"* If **no**, go straight to Stage 3.
+before rendering?"* If **no**, go straight to Stage 3 — but say plainly that the
+Data Schematic then rests on an unreviewed draft, and that the dictionary can be
+tuned and re-rendered at any time without paying for the LLM again.
 
 If **yes**, you cannot drive it yourself — a curses TUI needs the user's real
 terminal, and your Bash tool is a captured, non-interactive shell (the script
@@ -261,8 +282,11 @@ detects this and refuses). So run it **out-of-band**:
    ```
 
    Keys: `↑↓` move · `r` role · `c` concept · `l` label · `d` description ·
-   `s` save · `q` quit. `role`/`concept` open a filterable picker (type to
-   filter; off-vocab values are allowed but flagged with `*`).
+   `a` aggregation · `s` save · `q` quit. `role`/`concept` open a filterable
+   picker (type to filter; off-vocab values are allowed but flagged with `*`).
+   `aggregation` offers `sum` / `mean` / clear only — that is the whole
+   vocabulary qsv accepts — and clearing removes the key rather than blanking
+   it, restoring qsv's own guess.
 
 3. When the user says they're done, re-read the file: re-run the **Stage 2
    coverage check** and the `--summary` above, and show a short **before/after**
@@ -276,7 +300,7 @@ Scope note: the TUI deliberately does **not** edit null sentinels
 (`--infer-null-values` output). Those are reported-never-applied and have no
 `viz smart` effect, so editing them here would change nothing downstream.
 
-Three keys that *do* affect the Data Schematic are also outside the TUI, and are
+Four keys that *do* affect the Data Schematic are outside the TUI, and are
 **hand-edited in the JSON** — this is the supported path for them, not a
 violation of the "never hand-write the schema" rule:
 
@@ -285,8 +309,16 @@ violation of the "never hand-write the schema" rule:
 | `x-qsv.gauge_range` | per property, `[min, max]` | KPI tile becomes a **gauge**. `describegpt` proposes it for canonical-scale measures; qsv drops it if the data falls outside the range |
 | `x-qsv.target` | per property, a number | KPI tile gains a **"vs target" delta**. Never inferred — it is a goal only the user knows |
 | `x-qsv.currency` | per property, an ISO-4217 code (`"USD"`) | KPI tile is prefixed with the currency **symbol** (`$192B`) and the panel subtitle names the currency. `describegpt` proposes it for money columns; qsv drops it unless the column is a numeric measure that reads as money (concept `measure.money` or `measure.amount`, or content type `money`) |
-| `x-qsv.aggregation` | per property, `sum` or `mean` | declares how a numeric measure combines across a group, overriding qsv's column-NAME heuristic in both directions. Use `mean` for anything per-unit or per-record (a unit price, a rating, a temperature, a duration); `sum` only for a quantity each row contributes. This is the language-neutral signal — the name heuristic is English-first and cannot read non-English names (issue #4401). qsv drops it unless the column is a numeric measure |
 | `x-qsv.relationships` | dataset level, `{"kind":"pipeline", …}` | draws the **pipeline** panel |
+
+(`x-qsv.aggregation` used to be a fifth row here; it is now edited with `a` in
+the TUI above. Its meaning is unchanged: `sum` or `mean` on a numeric measure,
+declaring how the column combines across a group and overriding qsv's
+column-NAME heuristic in both directions. Use `mean` for anything per-unit or
+per-record — a unit price, a rating, a temperature, a duration — and `sum` only
+for a quantity each row contributes. It is the **language-neutral** signal: the
+name heuristic is English-first and cannot read non-English column names, issue
+#4401.)
 
 For a pipeline, both encodings are hand-editable — stages as columns
 (`"members"` in process order, **widest/upstream first**, the opposite direction
@@ -533,12 +565,13 @@ If the user can open a browser, offer to render it. Do not assert the Data Schem
 - If `denull` confirms nothing, do **not** create a `.denulled.csv`. An empty
   transform step is noise.
 - Never hand-write the JSON Schema. It comes from `describegpt`. `role`,
-  `concept`, `title` and `description` are adjusted only through the Stage 2.5
-  `edit_dictionary.py` TUI — never by editing the JSON by hand (an off-vocab
-  `role`/`concept` typed into the raw file silently routes a column to the wrong
-  panel; the TUI validates against the vocab and flags drift). The exceptions are
-  the three keys the TUI does not own — `x-qsv.gauge_range`, `x-qsv.target` and
-  the dataset-level `x-qsv.relationships` — which qsv documents as hand-edited.
+  `concept`, `title`, `description` and `x-qsv.aggregation` are adjusted only
+  through the Stage 2.5 `edit_dictionary.py` TUI — never by editing the JSON by
+  hand (an off-vocab `role`/`concept` typed into the raw file silently routes a
+  column to the wrong panel; the TUI validates against the vocab and flags
+  drift). The exceptions are the four keys the TUI does not own —
+  `x-qsv.gauge_range`, `x-qsv.target`, `x-qsv.currency` and the dataset-level
+  `x-qsv.relationships` — which qsv documents as hand-edited.
 - The Stage 2.5 TUI is **out-of-band**: it needs the user's real terminal. Never
   try to launch it through your Bash tool and "drive" it — that shell is not a
   TTY, and the script will refuse. Print the command, wait, then re-read.

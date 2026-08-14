@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
 """Fine-tune a describegpt JSON Schema data dictionary for `qsv viz smart`.
 
-A small terminal UI (curses) to review every column and adjust the four fields
+A small terminal UI (curses) to review every column and adjust the five fields
 that steer the Data Schematic:
 
-    role         x-qsv.role      (dimension | measure | identifier | timestamp)
-    concept      x-qsv.concept   (namespaced token, e.g. geo.state, id.natural_key)
-    label        title           (shown in the dictionary drawer + hovers)
-    description  description      (shown in the dictionary drawer)
+    role         x-qsv.role         (dimension | measure | identifier | timestamp)
+    concept      x-qsv.concept      (namespaced token, e.g. geo.state, id.natural_key)
+    label        title              (shown in the dictionary drawer + hovers)
+    description  description        (shown in the dictionary drawer)
+    aggregation  x-qsv.aggregation  (sum | mean — how a MEASURE combines in a group)
+
+An inferred dictionary is a DRAFT: the LLM half is not reproducible, so the same
+data can come back with different roles run to run, and role decides which panel
+a column gets. This tool is how you ratify or correct that draft; the corrected
+file — not the model — is what makes a later render reproducible (qsv issue
+#4407).
 
 As you edit, each column shows a ROUTE preview (Skip / Dimension / Temporal /
 MapCoord / ProjectedCoord / Measure, the last carrying its aggregation as
-Measure(sum) or Measure(mean)) derived from its concept and role only.
+Measure(sum) or Measure(mean)) derived from its concept, role and — when set —
+its explicit aggregation.
 This is the concept→role projection BEFORE `viz smart` applies its content_type
 and stats/label guardrails, so the final route can differ (unresolved columns
 show "Defer→stats"). Treat it as guidance on the effect of a concept/role edit,
@@ -19,10 +27,22 @@ not the definitive `viz smart` disposition. Every other key (examples,
 cardinality, null_count, qsv_type, min/max, …) is preserved byte-for-byte, and
 the file is only rewritten if you actually change something and save.
 
+`aggregation` is the one field qsv can also DROP on read, and the "!" flag is an
+exact mirror of when that happens. `honored_agg` reproduces viz's whole read gate
+— the token must be `sum`/`mean` (trimmed, ASCII-folded), `qsv_type` must be
+Integer/Float or absent, and `role` must be empty or exactly `measure` — and the
+value is additionally only applied on a route that resolves to Measure. A value
+failing either test is flagged and left out of the ROUTE preview, because viz
+falls back to its own name heuristic there. That includes "Defer→stats": viz's
+stats floor returns no aggregation at all, so an aggregation on a column nothing
+resolves is simply lost.
+
     HOW TO RUN — this needs YOUR real terminal, not an agent's captured shell:
 
         python3 edit_dictionary.py path/to/<stem>.schema.json
 
+    Keys: ↑↓ move · r role · c concept · l label · d desc · a aggregation ·
+          s save · q quit
     Edit, press `s` to save, `q` to quit, then tell the agent to continue.
     `viz smart` reuses the same file path, so no other wiring is needed.
 
@@ -30,12 +50,13 @@ Non-interactive helper (safe to run anywhere, no TTY needed):
 
         python3 edit_dictionary.py --summary path/to/<stem>.schema.json
 
-    prints a COLUMN / ROLE / CONCEPT / ROUTE table — handy for a before/after
-    diff. ROUTE is the same concept/role projection described above, not the
-    final `viz smart` route.
+    prints a COLUMN / ROLE / CONCEPT / AGG / ROUTE table — handy for a
+    before/after diff. ROUTE is the same concept/role projection described
+    above, not the final `viz smart` route.
 
 The routing preview mirrors `route_from_concept` / `route_from_role` in
-src/cmd/viz.rs (~line 15480); the vocab lists mirror
+src/cmd/viz.rs (~line 15480), and the explicit-aggregation override mirrors
+`derive_semantics` (~line 15898, qsv issue #4401); the vocab lists mirror
 src/cmd/describegpt/dictionary.rs:146 (ROLE_VOCAB) and :168 (CONCEPT_VOCAB).
 Off-vocab values are allowed (a new concept may exist in newer qsv) but flagged
 with a warning rather than blocked.
@@ -76,7 +97,17 @@ CONCEPT_VOCAB = [
 ]
 
 # The four editable fields, in display order.
-FIELDS = ["role", "concept", "label", "description"]
+FIELDS = ["role", "concept", "label", "description", "aggregation"]
+
+# `sum`/`mean` ONLY. viz's Agg enum also has Min/Max, but the KPI overview row has
+# exactly two headline forms across its locale catalogs, so those are deliberately
+# not part of the x-qsv.aggregation vocabulary (qsv issue #4401).
+AGG_VOCAB = ["sum", "mean"]
+
+# Sentinel offered in the aggregation picker to REMOVE the key (fall back to qsv's
+# own extensive-vs-intensive guess). Storing "" instead would leave a key viz has
+# to ignore, and would survive into the committed sidecar as noise.
+AGG_CLEAR = "(clear — let qsv guess)"
 
 
 # ─────────────────────────── pure routing preview ───────────────────────────
@@ -120,14 +151,94 @@ def route_from_role(role):
     }.get(role)
 
 
-def effective_route(role, concept):
+def normalized_agg(value):
+    """viz's aggregation token, or "" if viz would not honor this value.
+
+    Mirrors `xq_aggregation` in src/cmd/viz.rs: trim, ASCII-case-fold, then accept
+    ONLY the closed two-token vocabulary — an unknown verb yields None there, so
+    the column silently falls back to the label heuristic. The fold is ASCII-only
+    on purpose: Python's Unicode `str.lower()` maps characters like "ſ" (U+017F)
+    and "K" (U+212A) onto ASCII, so it would accept tokens Rust's
+    `to_ascii_lowercase` rejects, and the preview would disagree with viz.
+    """
+    folded = "".join(c.lower() if c.isascii() else c for c in (value or "").strip())
+    return folded if folded in AGG_VOCAB else ""
+
+
+def honored_agg(aggregation, role, qsv_type):
+    """The aggregation viz will KEEP for this column, or "" if it drops it.
+
+    A full mirror of `xq_aggregation`'s read gate in src/cmd/viz.rs — all three
+    conditions, not just the token:
+
+      * token — in the closed vocabulary (see `normalized_agg`)
+      * qsv_type — Integer/Float. ABSENT is admissible: viz only rejects when the
+        key is present AND says non-numeric, so a hand-written dictionary that
+        omits it still passes. describegpt emits it on every property.
+      * role — empty or exactly "measure", trimmed. Empty is admissible because
+        `concept` alone can establish the measure, which is the precedence
+        `derive_semantics` uses.
+
+    An aggregation failing any of these is dropped by viz and the column falls
+    back to the label heuristic — so it must not appear in the ROUTE preview.
+    """
+    if not normalized_agg(aggregation):
+        return ""
+    if (qsv_type or "").strip() not in ("", "Integer", "Float"):
+        return ""
+    if (role or "").strip() not in ("", "measure"):
+        return ""
+    return normalized_agg(aggregation)
+
+
+def content_type_is_measure(content_type):
+    """Whether `content_type` alone routes a column to Measure in `derive_semantics`.
+
+    `route_from_content_type` (src/cmd/viz.rs) has exactly ONE arm returning
+    Route::Measure — "money", the only numeric token in the vocabulary. Every other
+    token is Dimension/MapCoord/Temporal/Defer/Skip, and the stats floor below it
+    returns `agg: None`. So "money" is the single case where a column unresolved by
+    concept and role can still carry an explicit aggregation, which is why it is
+    special-cased here instead of mirroring the whole content_type vocabulary.
+
+    The base token is the part before ":" — the suffix carries an strftime format
+    (`"datetime:%Y-%m-%d"`), which routing throws away.
+    """
+    base = (content_type or "").split(":", 1)[0].strip()
+    return base == "money"
+
+
+def effective_route(role, concept, aggregation="", qsv_type="", content_type=""):
     """Concept→role route projection (concept first, then role).
 
     A preview of the concept/role contribution to routing only; it does NOT model
-    `viz smart`'s content_type or stats/label guardrails, so the final route can
-    differ. Anything unresolved by concept/role is shown as "Defer→stats".
+    `viz smart`'s stats/label guardrails, nor the content_type mapping beyond its
+    one numeric arm (see `content_type_is_measure`), so the final route can differ.
+    Anything still unresolved is shown as "Defer→stats".
+
+    An explicit `x-qsv.aggregation` overrides the projected sum/mean, but ONLY when
+    viz would honor it: it must survive the full read gate (`honored_agg`) AND land
+    on a route that resolves to Measure — mirroring `derive_semantics`, which
+    consults it under `route == Route::Measure`. Anything else is ignored here
+    exactly as viz ignores it; showing it would promise a route viz will never
+    produce.
     """
-    return route_from_concept(concept) or route_from_role(role) or "Defer→stats"
+    # Trimmed before routing, because `derive_semantics` does the same — it takes
+    # `row.concept.trim()` once at the top and `route_from_role(row.role.trim())` at
+    # the call. A hand-edited sidecar carrying "measure " must route exactly as
+    # "measure" does; `honored_agg` already trims, so not trimming here left the two
+    # halves disagreeing. The DISPLAYED values stay raw, so stray whitespace is
+    # still visible (and still earns a "*" against the vocab lists).
+    route = route_from_concept((concept or "").strip()) or route_from_role((role or "").strip())
+    if route is None:
+        # step 3 in derive_semantics: content_type, of which only "money" is a
+        # measure. Everything else either routes elsewhere or hits the stats floor,
+        # where viz returns agg: None and the explicit aggregation is lost.
+        route = "Measure(sum)" if content_type_is_measure(content_type) else "Defer→stats"
+    agg = honored_agg(aggregation, role, qsv_type)
+    if agg and route.startswith("Measure"):
+        return f"Measure({agg})"
+    return route
 
 
 # ──────────────────────────── pure schema model ─────────────────────────────
@@ -153,6 +264,8 @@ def get_field(schema, name, field):
         return prop.get("title", prop.get("label", xq.get("label", ""))) or ""
     if field == "description":
         return prop.get("description", "") or ""
+    if field == "aggregation":
+        return xq.get("aggregation", "") or ""
     raise ValueError(f"unknown field {field!r}")
 
 
@@ -161,7 +274,13 @@ def apply_edit(schema, name, field, value):
     if get_field(schema, name, field) == value:
         return False
     prop = _prop(schema, name)
-    if field in ("role", "concept"):
+    if field == "aggregation":
+        # empty means REMOVE, not store "" — see AGG_CLEAR
+        if value:
+            prop.setdefault("x-qsv", {})["aggregation"] = value
+        elif isinstance(prop.get("x-qsv"), dict):
+            prop["x-qsv"].pop("aggregation", None)
+    elif field in ("role", "concept"):
         prop.setdefault("x-qsv", {})[field] = value
     elif field == "label":
         prop["title"] = value
@@ -178,15 +297,29 @@ def columns(schema):
     for name in schema.get("properties", {}):
         role = get_field(schema, name, "role")
         concept = get_field(schema, name, "concept")
+        agg = get_field(schema, name, "aggregation")
+        xq = _prop(schema, name).get("x-qsv") or {}
+        qsv_type = xq.get("qsv_type", "") or ""
+        content_type = xq.get("content_type", "") or ""
+        route = effective_route(role, concept, agg, qsv_type, content_type)
         out.append({
             "name": name,
             "role": role,
             "concept": concept,
             "label": get_field(schema, name, "label"),
             "description": get_field(schema, name, "description"),
-            "route": effective_route(role, concept),
+            "aggregation": agg,
+            "route": route,
             "role_off_vocab": bool(role) and role not in ROLE_VOCAB,
             "concept_off_vocab": bool(concept) and concept not in CONCEPT_VOCAB,
+            # Flagged whenever viz ignores the aggregation: it fails the read gate
+            # (bad token / non-numeric qsv_type / non-measure role), or the column
+            # does not route to Measure — including "Defer→stats", where the stats
+            # floor in `derive_semantics` returns agg: None and the value is simply
+            # lost. That last case needs no exemption now that the one content_type
+            # arm which rescues it ("money") resolves to Measure above.
+            "agg_ineffective": bool(agg)
+            and (not honored_agg(agg, role, qsv_type) or not route.startswith("Measure")),
         })
     return out
 
@@ -213,18 +346,28 @@ def save_atomic(schema, path):
 
 
 def format_summary(schema):
-    """Plain COLUMN / ROLE / CONCEPT / ROUTE table (no curses)."""
+    """Plain COLUMN / ROLE / CONCEPT / AGG / ROUTE table (no curses)."""
     cols = columns(schema)
     w_name = max([len("COLUMN")] + [len(c["name"]) for c in cols])
     w_role = max([len("ROLE")] + [len(c["role"] or "-") for c in cols])
     w_con = max([len("CONCEPT")] + [len(c["concept"] or "-") for c in cols])
-    rows = ["  {:<{n}}  {:<{r}}  {:<{c}}  {}".format(
-        "COLUMN", "ROLE", "CONCEPT", "ROUTE", n=w_name, r=w_role, c=w_con)]
+    w_agg = max([len("AGG")] + [len(c["aggregation"] or "-") for c in cols])
+    rows = ["  {:<{n}}  {:<{r}}  {:<{c}}  {:<{a}}  {}".format(
+        "COLUMN", "ROLE", "CONCEPT", "AGG", "ROUTE",
+        n=w_name, r=w_role, c=w_con, a=w_agg)]
     for c in cols:
-        flag = "*" if (c["role_off_vocab"] or c["concept_off_vocab"]) else " "
-        rows.append("{} {:<{n}}  {:<{r}}  {:<{c}}  {}".format(
-            flag, c["name"], c["role"] or "-", c["concept"] or "-", c["route"],
-            n=w_name, r=w_role, c=w_con))
+        flag = " "
+        if c["role_off_vocab"] or c["concept_off_vocab"]:
+            flag = "*"
+        if c["agg_ineffective"]:
+            flag = "!"
+        rows.append("{} {:<{n}}  {:<{r}}  {:<{c}}  {:<{a}}  {}".format(
+            flag, c["name"], c["role"] or "-", c["concept"] or "-",
+            c["aggregation"] or "-", c["route"],
+            n=w_name, r=w_role, c=w_con, a=w_agg))
+    if any(c["agg_ineffective"] for c in cols):
+        rows.append("")
+        rows.append("! = aggregation viz drops on read — not sum/mean, or not on a measure")
     return "\n".join(rows)
 
 
@@ -337,10 +480,11 @@ def _draw(stdscr, schema, cur, top, dirty, status):
     title = "Fine-tune data dictionary"
     flag = "  ● unsaved" if dirty else ""
     _safe_addstr(stdscr, 0, 0, f" {title}{flag}", curses.A_BOLD)
-    _safe_addstr(stdscr, 1, 0, " ↑↓ move · r role · c concept · l label · d desc · s save · q quit")
+    _safe_addstr(stdscr, 1, 0, " ↑↓ move · r role · c concept · l label · d desc · a agg"
+                               " · s save · q quit")
     # column header
     nw = min(22, max(8, max((len(c["name"]) for c in cols), default=8)))
-    hdr = f" {'COLUMN':<{nw}} {'ROLE':<10} {'CONCEPT':<22} {'ROUTE':<14} LABEL"
+    hdr = f" {'COLUMN':<{nw}} {'ROLE':<10} {'CONCEPT':<22} {'AGG':<5} {'ROUTE':<14} LABEL"
     _safe_addstr(stdscr, 3, 0, hdr, curses.A_UNDERLINE)
     body_top = 4
     avail = h - body_top - 1
@@ -352,11 +496,14 @@ def _draw(stdscr, schema, cur, top, dirty, status):
         i = top + row
         role = (c["role"] or "-") + ("*" if c["role_off_vocab"] else "")
         con = (c["concept"] or "-") + ("*" if c["concept_off_vocab"] else "")
-        line = f" {c['name']:<{nw}} {role:<10} {con:<22} {c['route']:<14} {c['label']}"
+        agg = (c["aggregation"] or "-") + ("!" if c["agg_ineffective"] else "")
+        line = (f" {c['name']:<{nw}} {role:<10} {con:<22} {agg:<5} "
+                f"{c['route']:<14} {c['label']}")
         attr = curses.A_REVERSE if i == cur else 0
         _safe_addstr(stdscr, body_top + row, 0, line, attr)
     msg = status or (
         "* = value not in the known vocab (allowed, just unusual) · "
+        "! = aggregation viz will drop (not sum/mean, or not a measure) · "
         "ROUTE = concept/role preview, before viz smart's content_type & stats guardrails"
     )
     _safe_addstr(stdscr, h - 1, 0, msg[: w - 1], curses.A_DIM)
@@ -381,6 +528,11 @@ def _run(stdscr, path):
             val = _pick(stdscr, f"{name} — role", ROLE_VOCAB, old, allow_free=True)
         elif field == "concept":
             val = _pick(stdscr, f"{name} — concept", CONCEPT_VOCAB, old, allow_free=True)
+        elif field == "aggregation":
+            val = _pick(stdscr, f"{name} — aggregation", AGG_VOCAB + [AGG_CLEAR], old,
+                        allow_free=False)
+            if val == AGG_CLEAR:
+                val = ""
         else:
             val = _text_input(stdscr, f"{name} — {field}", old)
         if val is None:
@@ -419,6 +571,8 @@ def _run(stdscr, path):
             edit("label")
         elif ch == "d":
             edit("description")
+        elif ch == "a":
+            edit("aggregation")
         elif ch == "s":
             if dirty:
                 save_atomic(schema, path)

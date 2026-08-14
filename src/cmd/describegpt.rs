@@ -161,6 +161,14 @@ describegpt options:
                            the LLM is also asked to generate its output (Labels, Descriptions,
                            Tags and the dataset Description) in the detected language, unless
                            an explicit language is given with the --language option.
+                           The Dictionary is a DRAFT for a human to review. The deterministic half
+                           is reproducible, but the LLM half is not: inferring twice over the same
+                           data can return different Labels, and (under --infer-content-type)
+                           different roles and concepts. So save it, review it, correct it, and
+                           keep the corrected copy - that file, not the model, is what makes a
+                           later run reproducible. "qsv viz smart --dictionary infer" builds this
+                           same dictionary and does exactly that, saving it beside the input as
+                           <stem>.schema.json and reusing it on every later run.
     --description          Infer a general Description of the dataset based on detailed statistical context.
                            An Attribution signature is embedded in the Description.
     --tags                 Infer Tags that categorize the dataset based on detailed statistical context.

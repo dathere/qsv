@@ -638,6 +638,16 @@ smart options:
                            measure whose NAME reads non-additive genuinely does sum. qsv's guess
                            reads column names and is English-first, so this hint is the reliable
                            way to state it, in any language. "infer" emits it for numeric measures.
+                           A "denominator" of {"column": "<name>"} on a REGION-CODE column (a zip,
+                           county, state or fips column) names the column holding each region's
+                           population - or households, area, fleet size - and adds a RATE panel
+                           beside the region map's raw-count panel. Without one, a region map
+                           colored by row counts mostly redraws where the people are, so the
+                           busiest region wins on size rather than on intensity; the count panel
+                           says so in its subtitle. The named column must hold the same value on
+                           every row of a region (it describes the region, not the row); when it
+                           does not, qsv notes why and charts raw counts only. Prefer the
+                           denominator-key flag when the boundary file already carries the figure.
                            Note that on ENGLISH pages large numbers use the financial convention
                            (1e9 reads "1B", not the SI "1G") consistently across KPI tiles, bar
                            value labels and axis ticks. Other languages keep the SI prefixes.
@@ -15910,14 +15920,19 @@ enum DenominatorSource {
 /// `derive_semantics`; `Agg` is the existing chart-aggregation enum, reused here.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 struct ColSemantics {
-    route:    Route,
-    agg:      Option<Agg>,
-    concept:  String,
-    label:    String,
+    route:       Route,
+    agg:         Option<Agg>,
+    concept:     String,
+    label:       String,
     /// ISO-4217 code from the dictionary (`x-qsv.currency`), carried here so the panel-building
     /// pass — which sees `ColSemantics`, not the `DictData` — can name the currency in the
     /// column's subtitle.
-    currency: Option<String>,
+    currency:    Option<String>,
+    /// Denominator column NAME from the dictionary (`x-qsv.denominator.column`), carried here so
+    /// the region-choropleth builder — which sees `ColSemantics`, not the `DictData` — can turn a
+    /// raw-count region map into a rate map (issue #4394). Still just a name at this point: it is
+    /// resolved against the actual columns, and validated as region-constant, at that site.
+    denominator: Option<String>,
 }
 
 /// One column's semantic signals parsed from a describegpt Data Dictionary.
@@ -15949,6 +15964,11 @@ struct DictRow {
     /// additive, and equally force Sum on one the heuristic would wrongly average. Re-verified on
     /// read, because a hand-edited sidecar never passed through describegpt's validator.
     aggregation:  Option<Agg>,
+    /// Optional denominator column name (`x-qsv.denominator.column`) declared on a REGION-CODE
+    /// column, naming the column that holds each region's denominator (its population, households,
+    /// area) so a region map can chart a RATE beside the raw count (issue #4394). Shape-checked
+    /// only on read; resolved and validated where it is consumed.
+    denominator:  Option<String>,
 }
 
 /// Which form a declared pipeline is drawn as (issue #4222).
@@ -16430,6 +16450,9 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     // legitimately monetary. Do NOT re-gate on route: the panel subtitle consults this for every
     // charted column, not just the ones that end up as measures.
     let currency = row.currency.clone();
+    // Carried through unconditionally like `currency`: it is declared on the REGION column (a
+    // dimension), so gating it on a measure route would drop every legitimate use.
+    let denominator = row.denominator.clone();
     // An explicit `x-qsv.aggregation` is the dictionary AUTHOR stating how the measure combines,
     // already re-verified in `parse_dictionary_semantics`. It outranks every heuristic below —
     // both the intensive downgrade and the `measure.count` exemption — because it is the one
@@ -16460,6 +16483,7 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
                 concept: concept.to_string(),
                 label: label.clone(),
                 currency: currency.clone(),
+                denominator: denominator.clone(),
             },
             s,
         )
@@ -16482,13 +16506,15 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
         let (route, agg) = route_from_content_type(ct);
         return make(route, agg);
     }
-    // 4. statistics floor — carry the label (and any currency) so panel titles still benefit
+    // 4. statistics floor — carry the label (and any currency/denominator) so panel titles still
+    //    benefit
     ColSemantics {
         route: Route::Defer,
         agg: None,
         concept: String::new(),
         label,
         currency,
+        denominator,
     }
 }
 
@@ -16876,6 +16902,25 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 let measure = role.is_empty() || role == "measure";
                 (numeric && measure).then_some(agg)
             };
+            // `x-qsv.denominator`: `{"column": "<name>"}` on a REGION-CODE column, naming the
+            // column that holds that region's denominator so `viz smart` can chart a rate beside
+            // the raw count (issue #4394).
+            //
+            // Validated for SHAPE ONLY here — an object carrying a non-empty `column` string.
+            // Whether that column exists, is numeric, and is constant within a region cannot be
+            // known from the dictionary alone; those are checked at the consumption site, where a
+            // failure degrades to a skip note rather than a hard error ("shape at parse time,
+            // validity at the consumption site", as `xq_pipelines` documents). A dictionary is a
+            // hand-editable sidecar, so a bad hint must never take the whole Data Schematic down.
+            let xq_denominator = || -> Option<String> {
+                xq.and_then(|x| x.get("denominator"))
+                    .and_then(serde_json::Value::as_object)?
+                    .get("column")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string)
+            };
             let label = prop
                 .get("title")
                 .and_then(serde_json::Value::as_str)
@@ -16898,6 +16943,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     target: xq_num("target"),
                     currency: xq_currency(),
                     aggregation: xq_aggregation(),
+                    denominator: xq_denominator(),
                 },
             );
         }
@@ -16966,12 +17012,13 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 concept:      from_field("concept"),
                 label:        from_field("label"),
                 description:  from_field("description"),
-                // legacy plain-json dictionaries don't carry KPI gauge/target/currency or
-                // aggregation hints
+                // legacy plain-json dictionaries don't carry KPI gauge/target/currency,
+                // aggregation or denominator hints
                 gauge_range:  None,
                 target:       None,
                 currency:     None,
                 aggregation:  None,
+                denominator:  None,
             },
         );
     }
@@ -23202,10 +23249,18 @@ fn match_region_code(
 
 /// Build `viz smart` summary choropleth panel(s) keyed off a region-code DIMENSION column (e.g. a
 /// `zip_code` column) matched against a user `--geojson` boundary file via `--feature-id-key`,
-/// independent of any lat/lon columns. Emits up to two panels: one colored by the per-region row
-/// count (always), and — when the dictionary tags a measure column (a `MAP_MEASURE_CONCEPTS`
-/// concept, else any `role=measure` column) — one colored by the per-region MEDIAN of that measure
-/// (median, not mean, since real-world measures like sale price are heavily right-skewed).
+/// independent of any lat/lon columns. Emits up to three panels, in order:
+///
+/// 1. the per-region row COUNT (always);
+/// 2. a per-region RATE (issue #4394), when a denominator is available from `--denominator-key` or
+///    the dictionary's `x-qsv.denominator` hint — beside the count, never replacing it, since the
+///    two answer different questions ("how much came from here" vs "how intense is it here").
+///    Without a denominator the count panel instead carries the `raw_count_caveat` subtitle,
+///    because an unqualified count choropleth reads as a map of where the problem is when it is
+///    substantially a map of where the people are;
+/// 3. the per-region MEDIAN of a measure, when the dictionary tags one (a `MAP_MEASURE_CONCEPTS`
+///    concept, else any `role=measure` column) — median, not mean, since real-world measures like
+///    sale price are heavily right-skewed.
 ///
 /// The key column is auto-chosen: in one pass, every geo region-code candidate column's trimmed
 /// cell values are matched against the GeoJSON feature-id set; the column whose matched-row
@@ -23223,6 +23278,8 @@ fn build_smart_summary_choropleth_panels(
     stats: &[crate::cmd::stats::StatsData],
     col_sems: &[ColSemantics],
     loaded_geojson: Option<&serde_json::Value>,
+    grain_unit: Option<&str>,
+    grain: Option<&str>,
 ) -> CliResult<Option<(Vec<Panel>, usize)>> {
     // explicit intent: only build when the user supplied a --geojson boundary file.
     let Some(spec) = args.flag_geojson.as_deref() else {
@@ -23352,6 +23409,36 @@ fn build_smart_summary_choropleth_panels(
     // hold both spellings of the same region, so neither list alone is sufficient).
     let mut raws_by_cand: Vec<HashMap<String, Vec<String>>> = vec![HashMap::new(); n_c];
 
+    // Per-candidate dictionary denominator hint (issue #4394): `x-qsv.denominator.column` declared
+    // on the region column, resolved to a column index. Resolved for EVERY candidate because the
+    // winner is not known until the pass below has finished, but any problem is reported only for
+    // the winner — a hint on a column that never charts is not the user's problem.
+    //
+    // Skipped entirely when `--denominator-key` is set: that flag reads the denominator off the
+    // GeoJSON features, so it needs no per-row work at all and would only pay for empty maps.
+    let denom_flag = args.flag_denominator_key.as_deref();
+    let hints: Vec<Option<(String, Result<usize, &'static str>)>> = if denom_flag.is_some() {
+        vec![None; n_c]
+    } else {
+        candidates
+            .iter()
+            .map(|&di| {
+                let name = col_sems[di].denominator.as_deref()?;
+                let resolved = match stats.iter().position(|s| s.field == name) {
+                    None => Err("no such column in this dataset"),
+                    Some(idx) if idx == di => Err("it names the region column itself"),
+                    Some(idx) => Ok(idx),
+                };
+                Some((name.to_string(), resolved))
+            })
+            .collect()
+    };
+    // per candidate, the first denominator seen for each matched region, and whether any region
+    // later disagreed with it (which disqualifies the hint — see the conflict check below).
+    let mut denom_by_cand: Vec<HashMap<String, f64>> = vec![HashMap::new(); n_c];
+    let mut denom_conflict: Vec<Option<String>> = vec![None; n_c];
+    let track_denoms = hints.iter().any(|h| matches!(h, Some((_, Ok(_)))));
+
     let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
@@ -23382,6 +23469,25 @@ fn build_smart_summary_choropleth_panels(
                     counts[ci].insert(k.clone(), 1.0);
                     order[ci].push(k.clone());
                 },
+            }
+            if track_denoms
+                && let Some((_, Ok(dcol))) = &hints[ci]
+                && let Some(d) = parse_f64(record.get(*dcol))
+                && d.is_finite()
+                && d > 0.0
+            {
+                match denom_by_cand[ci].get(&k) {
+                    // A denominator that changes between rows of the same region is not a
+                    // region-level quantity — the dictionary points at a row-level column. Record
+                    // it and drop the hint later rather than charting a confident wrong rate.
+                    Some(&prev) if (prev - d).abs() > f64::EPSILON * prev.abs().max(1.0) => {
+                        denom_conflict[ci].get_or_insert_with(|| k.clone());
+                    },
+                    Some(_) => {},
+                    None => {
+                        denom_by_cand[ci].insert(k.clone(), d);
+                    },
+                }
             }
             if let Some(v) = measure {
                 values[ci].entry(k).or_default().push(v);
@@ -23431,14 +23537,15 @@ fn build_smart_summary_choropleth_panels(
     // shared assembly: frame to the matched-region bbox union, choose a MapLibre tile basemap for a
     // metro-scale extent (fine street/coastline detail) or the projection `geo` basemap otherwise —
     // mirroring `build_smart_pip_choropleth_panel`'s tail.
+    // `hover_text` is built by the CALLER (aligned 1:1 to `locs`): the count/median panels label
+    // each region with its value and share, while the rate panel labels it with the numerator, the
+    // named denominator and the rate — three different stories that no single flag could select
+    // between.
     let make_panel = |locs: Vec<String>,
                       z: Vec<f64>,
                       measure_label: String,
-                      include_pct: bool,
+                      hover_text: Vec<String>,
                       title: String| {
-        let names = aligned_region_names(&features, &locs);
-        let hover_text =
-            choropleth_hover_text(&locs, &z, names.as_deref(), &measure_label, include_pct);
         let matched: std::collections::HashSet<&str> = locs.iter().map(String::as_str).collect();
         let mut min_lon = f64::INFINITY;
         let mut min_lat = f64::INFINITY;
@@ -23499,13 +23606,141 @@ fn build_smart_summary_choropleth_panels(
         return Ok(None);
     }
     let count_z: Vec<f64> = count_locs.iter().map(|k| counts[ci][k]).collect();
-    let mut out = vec![make_panel(
-        count_locs,
-        count_z,
-        t!("viz.chart.count").into_owned(),
+    let count_names = aligned_region_names(&features, &count_locs);
+    let count_hover = choropleth_hover_text(
+        &count_locs,
+        &count_z,
+        count_names.as_deref(),
+        &t!("viz.chart.count"),
         true,
+    );
+    let mut out = vec![make_panel(
+        count_locs.clone(),
+        count_z.clone(),
+        t!("viz.chart.count").into_owned(),
+        count_hover,
         t!("viz.title.count_by_region", q_region = region_label).into_owned(),
     )];
+
+    // Rate panel (issue #4394), placed immediately AFTER the count panel and before the median
+    // one, so the Data Schematic reads [count, rate, median]. It is added BESIDE the count panel
+    // rather than replacing it: the raw count is a real quantity a reader still needs (how much
+    // work came from here), while the rate answers a different question (how intense is it here).
+    // Dropping either one loses half the story.
+    //
+    // Precedence: the --denominator-key FLAG outranks the dictionary hint. A flag is the user
+    // speaking now; the hint is the sidecar speaking from whenever it was written.
+    let denom_source: Option<DenominatorSource> = match (denom_flag, &hints[ci]) {
+        (Some(key), _) => Some(DenominatorSource::GeojsonProperty(key.to_string())),
+        // A bad HINT never fails the run — it only costs the rate panel, and the count panel then
+        // carries its raw-count caveat. (A bad FLAG is a hard error, raised back in `run`.)
+        (None, Some((name, Err(reason)))) => {
+            viz_skip_note!(
+                VIZ_SMART_PREFIX,
+                "viz.omit.denominator_invalid",
+                q_col = name,
+                q_reason = *reason
+            );
+            None
+        },
+        (None, Some((name, Ok(idx)))) => {
+            if let Some(region) = &denom_conflict[ci] {
+                viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.denominator_invalid",
+                    q_col = name,
+                    q_reason = format!("it is not constant within region '{region}'")
+                );
+                None
+            } else if denom_by_cand[ci].is_empty() {
+                viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.denominator_invalid",
+                    q_col = name,
+                    q_reason = "it holds no positive numbers for the matched regions"
+                );
+                None
+            } else {
+                Some(DenominatorSource::Column(*idx))
+            }
+        },
+        (None, None) => None,
+    };
+
+    let mut rate_charted = false;
+    if let Some(source) = denom_source {
+        let (denoms, denom_label) = match &source {
+            DenominatorSource::GeojsonProperty(key) => (
+                build_denominator_map(geojson, feature_id_key, key),
+                key.rsplit('.').next().unwrap_or(key).to_string(),
+            ),
+            DenominatorSource::Column(idx) => {
+                (std::mem::take(&mut denom_by_cand[ci]), label_of(*idx))
+            },
+        };
+        let series = build_rate_series(&count_locs, &count_z, &denoms);
+        // one rated region is a number, not a map: there is nothing to compare it against.
+        if series.locs.len() >= 2 {
+            let scale = rate_scale(&series.rates);
+            let noun = denominator_noun(&denom_label);
+            let per_phrase = rate_per_phrase(scale, &noun);
+            let scaled: Vec<f64> = series.rates.iter().map(|r| r * f64::from(scale)).collect();
+            let unit = count_unit_from_grain(grain_unit, grain);
+            let names = aligned_region_names(&features, &series.locs);
+            let hover = choropleth_rate_hover_text(
+                &series.locs,
+                names.as_deref(),
+                &series.numerators,
+                &series.denominators,
+                &scaled,
+                &unit,
+                &denom_label,
+                &per_phrase,
+            );
+            let mut title = t!(
+                "viz.title.rate_by_region",
+                q_what = unit,
+                q_per = per_phrase,
+                q_region = region_label
+            )
+            .into_owned();
+            if series.excluded > 0 {
+                // a sub-panel carries no below-map annotation, so the narrowed coverage is stated
+                // in the title — beside the map, never over it (matching the snap/drop accounting
+                // in `build_smart_pip_choropleth_panel`).
+                title.push_str(&format!(
+                    " ({})",
+                    t!(
+                        "viz.title.denom_excluded",
+                        q_n = series.excluded,
+                        q_total = count_locs.len()
+                    )
+                ));
+                viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.denominator_excluded",
+                    q_n = series.excluded,
+                    q_total = count_locs.len()
+                );
+            }
+            out.push(make_panel(
+                series.locs,
+                scaled,
+                t!("viz.chart.rate_label", q_what = unit, q_per = per_phrase).into_owned(),
+                hover,
+                title,
+            ));
+            rate_charted = true;
+        }
+    }
+    // No rate available: say so ON the count map. An unqualified count choropleth reads as a map
+    // of where the problem is, when it is substantially a map of where the people are.
+    if !rate_charted {
+        let caveated = out
+            .remove(0)
+            .with_subtitle(Some(t!("viz.notes.raw_count_caveat").into_owned()));
+        out.insert(0, caveated);
+    }
 
     // median-measure panel (when a measure column exists): per-region median of the buffered
     // values, skipping regions with no parsed measure.
@@ -23531,11 +23766,15 @@ fn build_smart_summary_choropleth_panels(
             med_z.push(median);
         }
         if med_locs.len() >= 2 {
+            let med_names = aligned_region_names(&features, &med_locs);
+            let med_label = format!("median {measure_name}");
+            let med_hover =
+                choropleth_hover_text(&med_locs, &med_z, med_names.as_deref(), &med_label, false);
             out.push(make_panel(
                 med_locs,
                 med_z,
-                format!("median {measure_name}"),
-                false,
+                med_label,
+                med_hover,
                 format!("median {measure_name} by {region_label}"),
             ));
         }
@@ -26110,7 +26349,14 @@ impl<'a> SmartCtx<'a> {
         // fills), and never for image output (choropleths are HTML-only, like the PIP
         // companion above).
         let summary_choros = if choropleth_panel.is_none() && !out_format.is_image() {
-            build_smart_summary_choropleth_panels(args, &stats, &col_sems, loaded_geojson)?
+            build_smart_summary_choropleth_panels(
+                args,
+                &stats,
+                &col_sems,
+                loaded_geojson,
+                dict_data.as_ref().and_then(|d| d.grain_unit.as_deref()),
+                dict_data.as_ref().and_then(|d| d.grain.as_deref()),
+            )?
         } else {
             None
         };

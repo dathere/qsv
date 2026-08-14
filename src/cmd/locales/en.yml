@@ -191,7 +191,7 @@ viz:
     denominator_invalid: "the dictionary's x-qsv.denominator column '%{q_col}' cannot be used (%{q_reason}); charting raw counts instead."
     # Some regions lacked a usable denominator, so the rate panel covers fewer
     # regions than the count panel beside it.
-    denominator_excluded: "%{q_n} of %{q_total} regions had no usable denominator and are omitted from the rate panel."
+    denominator_excluded: "no usable denominator for %{q_n} of %{q_total} regions; they are omitted from the rate panel."
     bivariate_column_cap: "%{q_ncols} columns exceeds the %{q_cap}-column cap (~%{q_pairs} pairs at the cap); skipping the bivariate association panels. Run `qsv moarstats --bivariate` directly for the full pairwise output."
     bivariate_stale_sidecar: "a stale bivariate sidecar could not be removed and was not refreshed by moarstats; skipping the association panels."
     sankey_failed: "directed-flow (Sankey) panel skipped (%{q_err})"
@@ -448,7 +448,10 @@ viz:
     # Suffix appended to a rate panel's title when some regions had no usable
     # denominator and were left off the map, so the narrowed extent is explained
     # in place rather than only on stderr.
-    denom_excluded: "%{q_n} regions without a denominator omitted"
+    # Phrased as a count-of-total rather than "%{q_n} regions", so it stays
+    # grammatical at n = 1 without needing a plural rule (same reason
+    # `snap_dropped` above reads "1 of 7,464 dropped").
+    denom_excluded: "%{q_n} of %{q_total} without a denominator"
     # The `--geojson` point-in-polygon panel (`build_smart_pip_choropleth_panel`).
     # Its title states the snap/drop accounting beside the map: e.g.
     # "Regions (110 snapped ≤0.36 km; 10 of 7,464 dropped, >0.36 km)", with the
@@ -500,7 +503,7 @@ viz:
     raw_count_caveat: "raw counts — bigger/busier regions tally more rows; add --denominator-key for a rate"
     # Below-map coverage note when some regions had no usable denominator (missing,
     # zero or negative) and were left out of the rate.
-    denominator_excluded: "%{q_n} of %{q_total} regions had no usable denominator and are not shown."
+    denominator_excluded: "no usable denominator for %{q_n} of %{q_total} regions; they are not shown."
     # Funnel caveat clauses, joined with " · ". Each is a whole clause: the
     # stage names are slots, so word order is the translator's to choose.
     funnel_complete: "n = %{q_n} complete cases (%{q_pct}% of rows)"

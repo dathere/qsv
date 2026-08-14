@@ -27,14 +27,14 @@ not the definitive `viz smart` disposition. Every other key (examples,
 cardinality, null_count, qsv_type, min/max, …) is preserved byte-for-byte, and
 the file is only rewritten if you actually change something and save.
 
-`aggregation` is the one field qsv can also DROP on read: it keeps it only when
-the token is `sum` or `mean` (trimmed and case-folded) AND the column is a
-numeric measure. Anything else falls back to qsv's own name heuristic. A value
-this projection can see viz discarding — an off-vocab verb, or a verb on a
-column that does not route to Measure — is flagged "!" and left out of the
-ROUTE preview. The check is approximate (the projection cannot see qsv_type),
-but it catches the two common mistakes: `"average"` instead of `"mean"`, and an
-aggregation hung on a dimension.
+`aggregation` is the one field qsv can also DROP on read. `honored_agg` mirrors
+viz's whole read gate — the token must be `sum`/`mean` (trimmed, ASCII-folded),
+`qsv_type` must be Integer/Float or absent, and `role` must be empty or exactly
+`measure` — and a value failing it is flagged "!" and left out of the ROUTE
+preview, because viz falls back to its own name heuristic there. A gate-passing
+value on a route this projection cannot resolve ("Defer→stats") is NOT flagged:
+viz's content_type/stats fallbacks may still make that column a measure, so a
+warning would be a false positive.
 
     HOW TO RUN — this needs YOUR real terminal, not an agent's captured shell:
 
@@ -164,7 +164,33 @@ def normalized_agg(value):
     return folded if folded in AGG_VOCAB else ""
 
 
-def effective_route(role, concept, aggregation=""):
+def honored_agg(aggregation, role, qsv_type):
+    """The aggregation viz will KEEP for this column, or "" if it drops it.
+
+    A full mirror of `xq_aggregation`'s read gate in src/cmd/viz.rs — all three
+    conditions, not just the token:
+
+      * token — in the closed vocabulary (see `normalized_agg`)
+      * qsv_type — Integer/Float. ABSENT is admissible: viz only rejects when the
+        key is present AND says non-numeric, so a hand-written dictionary that
+        omits it still passes. describegpt emits it on every property.
+      * role — empty or exactly "measure", trimmed. Empty is admissible because
+        `concept` alone can establish the measure, which is the precedence
+        `derive_semantics` uses.
+
+    An aggregation failing any of these is dropped by viz and the column falls
+    back to the label heuristic — so it must not appear in the ROUTE preview.
+    """
+    if not normalized_agg(aggregation):
+        return ""
+    if (qsv_type or "").strip() not in ("", "Integer", "Float"):
+        return ""
+    if (role or "").strip() not in ("", "measure"):
+        return ""
+    return normalized_agg(aggregation)
+
+
+def effective_route(role, concept, aggregation="", qsv_type=""):
     """Concept→role route projection (concept first, then role).
 
     A preview of the concept/role contribution to routing only; it does NOT model
@@ -172,14 +198,14 @@ def effective_route(role, concept, aggregation=""):
     differ. Anything unresolved by concept/role is shown as "Defer→stats".
 
     An explicit `x-qsv.aggregation` overrides the projected sum/mean, but ONLY when
-    viz would honor it: an in-vocabulary token (see `normalized_agg`) on a route
-    that already resolves to Measure — mirroring `derive_semantics`, which consults
-    it under `route == Route::Measure`. An off-vocab verb, or any verb on another
-    route, is ignored here exactly as viz ignores it; showing it would promise a
-    route viz will never produce.
+    viz would honor it: it must survive the full read gate (`honored_agg`) AND land
+    on a route that already resolves to Measure — mirroring `derive_semantics`,
+    which consults it under `route == Route::Measure`. Anything else is ignored
+    here exactly as viz ignores it; showing it would promise a route viz will
+    never produce.
     """
     route = route_from_concept(concept) or route_from_role(role) or "Defer→stats"
-    agg = normalized_agg(aggregation)
+    agg = honored_agg(aggregation, role, qsv_type)
     if agg and route.startswith("Measure"):
         return f"Measure({agg})"
     return route
@@ -242,7 +268,8 @@ def columns(schema):
         role = get_field(schema, name, "role")
         concept = get_field(schema, name, "concept")
         agg = get_field(schema, name, "aggregation")
-        route = effective_route(role, concept, agg)
+        qsv_type = (_prop(schema, name).get("x-qsv") or {}).get("qsv_type", "") or ""
+        route = effective_route(role, concept, agg, qsv_type)
         out.append({
             "name": name,
             "role": role,
@@ -253,12 +280,17 @@ def columns(schema):
             "route": route,
             "role_off_vocab": bool(role) and role not in ROLE_VOCAB,
             "concept_off_vocab": bool(concept) and concept not in CONCEPT_VOCAB,
-            # viz keeps an aggregation only when the token is in-vocabulary AND the
-            # column is a NUMERIC measure. This projection cannot see qsv_type, so
-            # it flags the two halves it can see: an off-vocab verb, and a verb on
-            # a column that does not route to Measure at all.
+            # Flagged when viz is CERTAIN to ignore the aggregation: it fails the
+            # read gate (bad token / non-numeric qsv_type / non-measure role), or
+            # concept/role already pin the column to a non-Measure route.
+            # Deliberately NOT flagged on "Defer→stats" with a gate-passing value:
+            # viz's content_type and stats fallbacks may still route that column to
+            # a measure and honor it, so a warning there would be a false positive.
             "agg_ineffective": bool(agg)
-            and (not normalized_agg(agg) or not route.startswith("Measure")),
+            and (
+                not honored_agg(agg, role, qsv_type)
+                or (route != "Defer→stats" and not route.startswith("Measure"))
+            ),
         })
     return out
 

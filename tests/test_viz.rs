@@ -15406,8 +15406,8 @@ fn viz_smart_data_viewer_has_no_select_extension() {
 // ---------------------------------------------------------------------------
 
 /// A dictionary carrying the top-level `x-qsv` language block describegpt emits when
-/// whatlang clears its 0.8 confidence threshold. Mirrors the producer-side shape
-/// pinned by tests/test_describegpt.rs.
+/// whatlang's verdict holds across the full detection sample AND all 3 of its sub-samples.
+/// Mirrors the producer-side shape pinned by tests/test_describegpt.rs.
 fn spanish_dictionary() -> &'static str {
     r#"{
       "$schema": "https://json-schema.org/draft/2020-12/schema",

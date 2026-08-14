@@ -155,12 +155,17 @@ describegpt options:
                            whatlang, not the LLM) from sampled values of its text columns,
                            and emitted as detected_language, detected_language_code (ISO 639-3) and
                            detected_language_confidence in the JSON dictionary (top-level) and JSON
-                           Schema ("x-qsv" object) outputs when detection confidence >= 80%
-                           (tunable with a float value in the --language option); the fields are
-                           omitted when detection is not confident. When detection is confident,
-                           the LLM is also asked to generate its output (Labels, Descriptions,
-                           Tags and the dataset Description) in the detected language, unless
-                           an explicit language is given with the --language option.
+                           Schema ("x-qsv" object) outputs. A language is only recorded when the
+                           full sample AND each of 3 disjoint sub-samples independently agree on
+                           it - text genuinely written in one language is stable across its own
+                           sub-samples, while a table of proper nouns (city, country and person
+                           names) is not. The confidence is reported but does not decide, as it
+                           measures the margin between the top two candidate languages rather
+                           than whether the text is in either of them. The fields are omitted
+                           when the sub-samples disagree, and also when an explicit language is
+                           given with the --language option. When a language IS recorded, the LLM
+                           is also asked to generate its output (Labels, Descriptions, Tags and
+                           the dataset Description) in it.
                            The Dictionary is a DRAFT for a human to review. The deterministic half
                            is reproducible, but the LLM half is not: inferring twice over the same
                            data can return different Labels, and (under --infer-content-type)
@@ -427,19 +432,25 @@ describegpt options:
                            "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin",
                            "Valley Girl", "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", etc.)
                            If set to a string, that language/dialect is ALWAYS used for the response,
-                           overriding auto-detection. If set to a float (0.0 to 1.0), it specifies the
-                           auto-detection confidence threshold. If not set, auto-detection runs with
-                           an 80% confidence threshold.
-    
+                           overriding auto-detection AND suppressing the recorded detection entirely,
+                           so the detected_language fields are omitted. If set to a float (0.0 to 1.0),
+                           it specifies a minimum confidence floor. If not set, inference mode applies
+                           no confidence floor (see below) and chat mode uses 80%.
+
                              INFERENCE MODE (--dictionary, --description & --tags) DETECTION:
                              The dataset's content language is auto-detected locally (using whatlang,
-                             not the LLM) from sampled values of its text columns. When the confidence
-                             threshold is met, the LLM is asked to respond in the detected language;
-                             otherwise the model's default language is used.
-    
+                             not the LLM) from sampled values of its text columns. A language is only
+                             adopted when the full sample AND each of 3 disjoint sub-samples agree on
+                             it; otherwise the model's default language is used. Confidence is NOT the
+                             gate - it measures the margin between the top two candidates, not whether
+                             the text is in either - so a float here is only an ADDITIONAL floor that
+                             can further reject, never accept.
+
                              CHAT MODE (--prompt) DETECTION:
-                             The language of the prompt itself is auto-detected. If the threshold is
-                             met, it will specify the detected language in its response.
+                             The language of the prompt itself is auto-detected, gated on an 80%
+                             confidence threshold (a prompt is free-flowing prose, whatlang's actual
+                             design domain, so the sub-sample agreement test does not apply). If the
+                             threshold is met, it will specify the detected language in its response.
                              Note that LLMs often detect the language independently, but will often respond
                              in the model's default language. This option is here to ensure responses are
                              in the detected language of the prompt.
@@ -855,7 +866,22 @@ Verify output results before using them."#;
 
 const INPUT_TABLE_NAME: &str = "{INPUT_TABLE_NAME}";
 
-const DEFAULT_LANGDETECTION_THRESHOLD: f64 = 0.8; // 80% default confidence threshold
+// 80% default confidence threshold for --prompt CHAT MODE language detection ONLY.
+// Dataset-content detection deliberately has NO default confidence floor - it is gated on
+// cross-chunk agreement instead (see `detect_language_in_text`).
+#[cfg(feature = "whatlang")]
+const DEFAULT_LANGDETECTION_THRESHOLD: f64 = 0.8;
+
+/// Minimum characters for any text to be worth language-detecting. Shared by the full-sample
+/// guard, the per-chunk agreement guard, and `build_language_detection_sample`.
+#[cfg(feature = "whatlang")]
+const MIN_SAMPLE_CHARS: usize = 10;
+
+/// Disjoint chunks the detection sample is split into for the agreement gate. 3 is the
+/// smallest ODD count that yields a majority; it is deliberately NOT tuned against any
+/// dataset corpus.
+#[cfg(feature = "whatlang")]
+const LANGDETECT_CHUNKS: usize = 3;
 static DETECTED_LANGUAGE: OnceLock<String> = OnceLock::new();
 static DETECTED_LANGUAGE_CONFIDENCE: OnceLock<f64> = OnceLock::new();
 
@@ -865,16 +891,17 @@ static SAMPLE_FILE: OnceLock<String> = OnceLock::new();
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
 
 /// Dataset-content language detection result for --dictionary output, as
-/// (English name, ISO 639-3 code, confidence). `Some(None)` = detection ran but was
-/// below threshold; unset = never ran (whatlang feature absent, or a non-dictionary
-/// invocation). Deliberately separate from `DETECTED_LANGUAGE`/`_CONFIDENCE` above, which
-/// are first-set-wins and feed the --prompt attribution display.
+/// (English name, ISO 639-3 code, confidence). `Some(None)` = detection ran but the sample's
+/// chunks did not agree on a language; unset = never ran (whatlang feature absent, a
+/// non-dictionary invocation, or an explicit `--language` suppressed it). Deliberately
+/// separate from `DETECTED_LANGUAGE`/`_CONFIDENCE` above, which are first-set-wins and feed
+/// the --prompt attribution display.
 static DATASET_LANGUAGE: OnceLock<Option<(String, String, f64)>> = OnceLock::new();
 
 /// True only when the output language was set FROM dataset-content detection, as opposed to
-/// an explicit `--language`. Detection runs even when an explicit language is given (its
-/// result is still reported in the dictionary output), so `DATASET_LANGUAGE` alone cannot
-/// tell the two apart when an explicit language happens to equal the detected one.
+/// an explicit `--language`. Detection is SKIPPED entirely under an explicit `--language`
+/// (see `detect_dataset_language`), so `DATASET_LANGUAGE` being set now implies detection;
+/// this flag is retained as a defensive discriminator for the attribution display.
 static LANGUAGE_FROM_DETECTION: AtomicBool = AtomicBool::new(false);
 
 /// Maximum `--context-file` size (bytes) accepted. Mirrors the OpenAI ~32 MB per-request
@@ -1220,8 +1247,11 @@ fn detect_language_from_prompt(prompt: &str, threshold: f64) -> Option<String> {
 #[cfg(feature = "whatlang")]
 fn build_language_detection_sample(analysis_results: &AnalysisResults) -> String {
     const MAX_SAMPLE_BYTES: usize = 8_192;
-    const MIN_SAMPLE_CHARS: usize = 10;
 
+    // Retained deliberately. Bare column names will essentially never survive the 3-chunk
+    // agreement gate in `detect_language_in_text`, so this fallback is now effectively dead
+    // AS A DETECTION SOURCE - which is correct: headers were never evidence of the CONTENT's
+    // language. It still gives the caller a non-empty string rather than "".
     let header_fallback = || {
         analysis_results
             .headers
@@ -1282,31 +1312,112 @@ fn build_language_detection_sample(analysis_results: &AnalysisResults) -> String
     sample
 }
 
-/// Detect the natural language of `text` using whatlang.
-/// Returns (English name, ISO 639-3 code, confidence) only when the text is
-/// non-trivial and the detection confidence clears `threshold`.
+/// Split `text` into `k` disjoint, contiguous chunks at whitespace-token boundaries.
+///
+/// Splitting on tokens rather than byte offsets keeps every chunk char-boundary-safe and
+/// avoids cutting a word mid-n-gram, which would corrupt exactly the signal whatlang reads.
+/// The remainder is spread across the leading chunks (11 tokens with k=3 gives 4/4/3, not
+/// 3/3/5) so no single chunk disproportionately resembles the full sample.
+///
+/// Returns `None` when the sample cannot yield `k` chunks that each clear `MIN_SAMPLE_CHARS`
+/// — fail-closed, because a sample too small to corroborate itself must not be detected.
 #[cfg(feature = "whatlang")]
-fn detect_language_in_text(text: &str, threshold: f64) -> Option<(String, String, f64)> {
-    if text.chars().count() < 10 {
+fn split_into_chunks(text: &str, k: usize) -> Option<Vec<String>> {
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    if k == 0 || tokens.len() < k {
+        return None;
+    }
+
+    let base = tokens.len() / k;
+    let remainder = tokens.len() % k;
+    let mut chunks = Vec::with_capacity(k);
+    let mut start = 0;
+    for i in 0..k {
+        let len = base + usize::from(i < remainder);
+        let chunk = tokens[start..start + len].join(" ");
+        if chunk.chars().count() < MIN_SAMPLE_CHARS {
+            return None;
+        }
+        chunks.push(chunk);
+        start += len;
+    }
+    Some(chunks)
+}
+
+/// Detect the natural language of `text`, gated on CHUNK AGREEMENT.
+///
+/// whatlang's `confidence` is the MARGIN between its top two candidates, not evidence that
+/// the text IS that language, so it cannot serve as a correctness gate. A table of city and
+/// country proper nouns scores Italian at 0.93 (issue #4406) because the margin happened to
+/// be wide, while genuinely Portuguese data scores 0.39 because Spanish is a close - and
+/// correct - runner-up. No threshold separates those two: raising it loses Portuguese,
+/// lowering it keeps Italian. `Info::is_reliable()` is literally `confidence > 0.9` and is
+/// useless for the same reason.
+///
+/// Instead, split the sample into `LANGDETECT_CHUNKS` disjoint chunks and require EVERY chunk
+/// to agree with the full-sample verdict on `Lang`. Text genuinely written in one language is
+/// stable across its own subsamples; incidental n-gram noise is not. Agreement is a NECESSARY
+/// condition, not a sufficient one - a long, homogeneous proper-noun table could in principle
+/// return the same wrong `Lang` in every chunk.
+///
+/// `min_confidence`, when `Some`, is an ADDITIONAL floor applied to the full-sample confidence
+/// after agreement (the `--language <float>` knob). It can only reject, never accept, so it
+/// cannot re-open the bug. Confidence is always computed and returned so it can be recorded.
+///
+/// Returns (English name, ISO 639-3 code, confidence).
+#[cfg(feature = "whatlang")]
+fn detect_language_in_text(
+    text: &str,
+    min_confidence: Option<f64>,
+) -> Option<(String, String, f64)> {
+    if text.chars().count() < MIN_SAMPLE_CHARS {
         return None;
     }
     let lang_info = detect(text)?;
+    let full_lang = lang_info.lang();
+
+    let chunks = split_into_chunks(text, LANGDETECT_CHUNKS)?;
+    // A chunk whose detect() returns None (all dates/numbers/punctuation) counts as
+    // DISAGREEMENT. Note `is_some_and` rather than `detect(c)?.lang() == full_lang`: inside a
+    // closure `?` returns from the CLOSURE, so a None chunk would silently read as agreement.
+    if !chunks
+        .iter()
+        .all(|chunk| detect(chunk).is_some_and(|info| info.lang() == full_lang))
+    {
+        return None;
+    }
+
     let confidence = lang_info.confidence();
-    (confidence >= threshold).then(|| {
-        (
-            lang_info.lang().eng_name().to_string(),
-            lang_info.lang().code().to_string(),
-            confidence,
-        )
-    })
+    if min_confidence.is_some_and(|floor| confidence < floor) {
+        return None;
+    }
+
+    Some((
+        full_lang.eng_name().to_string(),
+        full_lang.code().to_string(),
+        confidence,
+    ))
 }
 
 /// Detect the dataset's content language from the analysis results and record it in
 /// `DATASET_LANGUAGE` for structured dictionary output.
+///
+/// NO-OP when an explicit `--language` was given. The recorded `detected_language_code` is what
+/// `viz smart` localizes the Data Schematic from, so recording a detection under a pinned
+/// language would make viz render in the DETECTED language rather than the pinned one - the
+/// partial-workaround half of issue #4406. Returning early leaves `DATASET_LANGUAGE` unset, so
+/// `inject_detected_language` stays a no-op and the three fields are absent entirely.
+///
+/// Takes the raw `--language` flag rather than a pre-parsed threshold so that both callers
+/// (the live path and `--process-response`) route through one decision point and cannot drift.
 #[cfg(feature = "whatlang")]
-fn detect_dataset_language(analysis_results: &AnalysisResults, threshold: f64) {
+fn detect_dataset_language(analysis_results: &AnalysisResults, language_opt: Option<&String>) {
+    let (is_autodetect, min_confidence, _) = parse_language_option(language_opt);
+    if !is_autodetect {
+        return;
+    }
     let sample = build_language_detection_sample(analysis_results);
-    let _ = DATASET_LANGUAGE.set(detect_language_in_text(&sample, threshold));
+    let _ = DATASET_LANGUAGE.set(detect_language_in_text(&sample, min_confidence));
 }
 
 /// Resolve `flag_language` into the actual output language for the inference phases,
@@ -1335,27 +1446,30 @@ fn resolve_output_language(args: &mut Args) {
 }
 
 /// Parse the --language option: if it's autodetect, a threshold, or an explicit language
-/// Returns (`is_autodetect`, threshold, `explicit_language`)
+/// Returns (`is_autodetect`, `min_confidence`, `explicit_language`)
 /// - `is_autodetect`: true if language should be auto-detected
-/// - threshold: confidence threshold for autodetect (0.0-1.0)
+/// - `min_confidence`: `Some` ONLY when the user explicitly passed a float (0.0-1.0). There is no
+///   default floor - dataset-content detection is gated on cross-chunk agreement, not on
+///   confidence. Callers that still want the legacy 0.8 (i.e. `--prompt` chat mode) apply
+///   `.unwrap_or(DEFAULT_LANGDETECTION_THRESHOLD)` themselves.
 /// - `explicit_language`: Some(language) if an explicit language was specified, None otherwise
-fn parse_language_option(language: Option<&String>) -> (bool, f64, Option<String>) {
+fn parse_language_option(language: Option<&String>) -> (bool, Option<f64>, Option<String>) {
     if let Some(lang) = language {
         // Try to parse as a number (threshold)
         if let Ok(threshold_float) = lang.parse::<f64>() {
             // Float 0.0-1.0
             if (0.0..=1.0).contains(&threshold_float) {
-                (true, threshold_float, None)
+                (true, Some(threshold_float), None)
             } else {
                 // Invalid float, treat as explicit language
-                (false, DEFAULT_LANGDETECTION_THRESHOLD, Some(lang.clone()))
+                (false, None, Some(lang.clone()))
             }
         } else {
             // Not a number, treat as explicit language string
-            (false, DEFAULT_LANGDETECTION_THRESHOLD, Some(lang.clone()))
+            (false, None, Some(lang.clone()))
         }
     } else {
-        (true, DEFAULT_LANGDETECTION_THRESHOLD, None)
+        (true, None, None)
     }
 }
 
@@ -6315,6 +6429,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             #[cfg(feature = "whatlang")]
             {
                 if let Some(prompt_text) = &args.flag_prompt {
+                    // Chat mode keeps the legacy 0.8 confidence gate: it detects the language
+                    // of the user's own prose PROMPT - free-flowing natural language, which is
+                    // whatlang's actual design domain - not a proper-noun data table. It never
+                    // writes x-qsv, so it is outside the #4406 blast radius, and a one-line
+                    // prompt would fail the 3-chunk agreement split anyway.
+                    let threshold = threshold.unwrap_or(DEFAULT_LANGDETECTION_THRESHOLD);
                     if let Some(detected_lang) = detect_language_from_prompt(prompt_text, threshold)
                     {
                         args.flag_language = Some(detected_lang);
@@ -6584,8 +6704,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // bare threshold float can never reach attribution regardless of which phases ran.
         #[cfg(feature = "whatlang")]
         if input.phases.iter().any(|p| p.kind == "Dictionary") {
-            let (_, threshold, _) = parse_language_option(args.flag_language.as_ref());
-            detect_dataset_language(&input.analysis_results, threshold);
+            detect_dataset_language(&input.analysis_results, args.flag_language.as_ref());
         }
         resolve_output_language(&mut args);
 
@@ -6887,10 +7006,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // same resolved output language, and the dictionary output's detected_language/_code/
     // _confidence fields are populated regardless of which phases run.
     #[cfg(feature = "whatlang")]
-    {
-        let (_, threshold, _) = parse_language_option(args.flag_language.as_ref());
-        detect_dataset_language(&analysis_results, threshold);
-    }
+    detect_dataset_language(&analysis_results, args.flag_language.as_ref());
 
     // Resolve the output `language` template variable for the inference phases.
     // Chat mode (--prompt) already resolved it from the prompt text above.
@@ -7246,18 +7362,16 @@ mod tests {
 
     #[test]
     fn parse_language_option_classifies_thresholds_and_explicit_languages() {
-        // unset -> autodetect at the default threshold
-        assert_eq!(
-            parse_language_option(None),
-            (true, DEFAULT_LANGDETECTION_THRESHOLD, None)
-        );
+        // unset -> autodetect with NO confidence floor (agreement is the gate)
+        assert_eq!(parse_language_option(None), (true, None, None));
 
-        // in-range floats are detection thresholds, never output languages
+        // in-range floats are optional extra confidence floors, never output languages
         for (input, expected) in [("0.9", 0.9_f64), ("0.0", 0.0), ("1.0", 1.0)] {
-            let (is_autodetect, threshold, explicit) =
+            let (is_autodetect, min_confidence, explicit) =
                 parse_language_option(Some(&input.to_string()));
             assert!(is_autodetect, "{input} should enable autodetection");
-            assert!((threshold - expected).abs() < f64::EPSILON, "{input}");
+            let floor = min_confidence.expect("an explicit float must yield Some(floor)");
+            assert!((floor - expected).abs() < f64::EPSILON, "{input}");
             assert!(explicit.is_none(), "{input} must not become a language");
         }
 
@@ -7265,11 +7379,7 @@ mod tests {
         for input in ["1.5", "-0.1", "Spanish", "Pirate"] {
             assert_eq!(
                 parse_language_option(Some(&input.to_string())),
-                (
-                    false,
-                    DEFAULT_LANGDETECTION_THRESHOLD,
-                    Some(input.to_string())
-                ),
+                (false, None, Some(input.to_string())),
                 "{input} should be treated as an explicit language"
             );
         }
@@ -9528,21 +9638,79 @@ description_md_template = "OVERRIDDEN: {{ llm_response }}"
         assert!(sample.starts_with("café con leche"));
     }
 
+    /// The exact sample `build_language_detection_sample` produces for
+    /// `examples/viz/world_cities.csv` - the proper-noun table from issue #4406. whatlang reads
+    /// it as Italian with 0.9308 confidence, which cleared the old 0.8 gate and flipped the
+    /// whole `viz smart` Data Schematic to Italian. There is no Italian in it.
+    #[cfg(feature = "whatlang")]
+    const WORLD_CITIES_SAMPLE: &str = "Baoshan Barcelona Changsha Changzhi Fuzhou Gorakhpur \
+                                       Hyderabad Puyang Sahiwal Suzhou China India Brazil United \
+                                       States Mexico Russia Japan Nigeria Indonesia Pakistan Asia \
+                                       Africa Europe North America South America Oceania Aba \
+                                       Zunyi Afghanistan Zimbabwe Africa South America";
+
     #[test]
     #[cfg(feature = "whatlang")]
     fn detect_language_in_text_spanish_and_thresholds() {
         let spanish = "El rápido zorro marrón salta sobre el perro perezoso. La biblioteca \
                        municipal abre todos los días excepto los domingos y festivos.";
-        let (lang, code, confidence) =
-            detect_language_in_text(spanish, DEFAULT_LANGDETECTION_THRESHOLD).unwrap();
+        let (lang, code, confidence) = detect_language_in_text(spanish, None).unwrap();
         assert_eq!(lang, "Spanish");
         assert_eq!(code, "spa");
-        assert!((DEFAULT_LANGDETECTION_THRESHOLD..=1.0).contains(&confidence));
+        assert!((0.0..=1.0).contains(&confidence));
 
         // Trivially short text is never detected.
-        assert_eq!(detect_language_in_text("hola", 0.0), None);
-        // A threshold above any possible confidence yields None.
-        assert_eq!(detect_language_in_text(spanish, 1.1), None);
+        assert_eq!(detect_language_in_text("hola", None), None);
+        // An explicit floor above any possible confidence yields None.
+        assert_eq!(detect_language_in_text(spanish, Some(1.1)), None);
+    }
+
+    /// Regression for #4406: a table of city/country/continent proper nouns carries letter
+    /// statistics but no language, and its chunks disagree, so nothing is recorded. Asserts
+    /// only the verdict - never the per-chunk language identities, which are split-dependent.
+    #[test]
+    #[cfg(feature = "whatlang")]
+    fn detect_language_in_text_rejects_proper_noun_table() {
+        assert_eq!(
+            detect_language_in_text(WORLD_CITIES_SAMPLE, None),
+            None,
+            "a proper-noun table must not be reported as any language"
+        );
+    }
+
+    /// A chunk whose `detect()` returns None (all dates/numbers) must count as DISAGREEMENT,
+    /// not be skipped. Guards the `?`-inside-a-closure trap, which would read as agreement.
+    #[test]
+    #[cfg(feature = "whatlang")]
+    fn detect_language_in_text_rejects_undetectable_chunk() {
+        let mixed = "El rápido zorro marrón salta sobre el perro perezoso todos los días \
+                     2024-01-01 2024-02-02 2024-03-03 2024-04-04 2024-05-05 2024-06-06 La \
+                     biblioteca municipal abre todos los días excepto los domingos";
+        assert_eq!(detect_language_in_text(mixed, None), None);
+    }
+
+    #[test]
+    #[cfg(feature = "whatlang")]
+    fn split_into_chunks_partitions_and_guards() {
+        // Remainder is spread across the LEADING chunks: 11 tokens -> 4/4/3, not 3/3/5.
+        let eleven = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo";
+        let chunks = split_into_chunks(eleven, 3).unwrap();
+        let counts: Vec<usize> = chunks
+            .iter()
+            .map(|c| c.split_whitespace().count())
+            .collect();
+        assert_eq!(counts, vec![4, 4, 3]);
+        // Token order is preserved across the concatenation.
+        assert_eq!(chunks.join(" "), eleven);
+
+        // Fewer tokens than chunks -> None.
+        assert_eq!(split_into_chunks("solo duo", 3), None);
+        // A single unspaced token (or a space-free script) -> None.
+        assert_eq!(split_into_chunks("Baoshan", 3), None);
+        // Any chunk under MIN_SAMPLE_CHARS -> None.
+        assert_eq!(split_into_chunks("a b c d e f", 3), None);
+        // k == 0 is rejected rather than panicking.
+        assert_eq!(split_into_chunks(eleven, 0), None);
     }
 
     #[test]

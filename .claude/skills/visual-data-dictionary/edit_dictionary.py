@@ -223,7 +223,13 @@ def effective_route(role, concept, aggregation="", qsv_type="", content_type="")
     exactly as viz ignores it; showing it would promise a route viz will never
     produce.
     """
-    route = route_from_concept(concept) or route_from_role(role)
+    # Trimmed before routing, because `derive_semantics` does the same — it takes
+    # `row.concept.trim()` once at the top and `route_from_role(row.role.trim())` at
+    # the call. A hand-edited sidecar carrying "measure " must route exactly as
+    # "measure" does; `honored_agg` already trims, so not trimming here left the two
+    # halves disagreeing. The DISPLAYED values stay raw, so stray whitespace is
+    # still visible (and still earns a "*" against the vocab lists).
+    route = route_from_concept((concept or "").strip()) or route_from_role((role or "").strip())
     if route is None:
         # step 3 in derive_semantics: content_type, of which only "money" is a
         # measure. Everything else either routes elsewhere or hits the stats floor,

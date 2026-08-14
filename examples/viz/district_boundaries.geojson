@@ -1,0 +1,215 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "id": "Riverside",
+   "properties": {
+    "name": "Riverside",
+    "POP2020": 240000
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -98.58,
+       39.1
+      ],
+      [
+       -98.535,
+       39.1
+      ],
+      [
+       -98.535,
+       39.145
+      ],
+      [
+       -98.58,
+       39.145
+      ],
+      [
+       -98.58,
+       39.1
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "Old Quarter",
+   "properties": {
+    "name": "Old Quarter",
+    "POP2020": 32000
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -98.535,
+       39.1
+      ],
+      [
+       -98.49,
+       39.1
+      ],
+      [
+       -98.49,
+       39.145
+      ],
+      [
+       -98.535,
+       39.145
+      ],
+      [
+       -98.535,
+       39.1
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "Harbourview",
+   "properties": {
+    "name": "Harbourview",
+    "POP2020": 120000
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -98.49,
+       39.1
+      ],
+      [
+       -98.445,
+       39.1
+      ],
+      [
+       -98.445,
+       39.145
+      ],
+      [
+       -98.49,
+       39.145
+      ],
+      [
+       -98.49,
+       39.1
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "Northgate",
+   "properties": {
+    "name": "Northgate",
+    "POP2020": 90000
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -98.58,
+       39.145
+      ],
+      [
+       -98.535,
+       39.145
+      ],
+      [
+       -98.535,
+       39.19
+      ],
+      [
+       -98.58,
+       39.19
+      ],
+      [
+       -98.58,
+       39.145
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "Elmwood",
+   "properties": {
+    "name": "Elmwood",
+    "POP2020": 60000
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -98.535,
+       39.145
+      ],
+      [
+       -98.49,
+       39.145
+      ],
+      [
+       -98.49,
+       39.19
+      ],
+      [
+       -98.535,
+       39.19
+      ],
+      [
+       -98.535,
+       39.145
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "Stonebridge",
+   "properties": {
+    "name": "Stonebridge",
+    "POP2020": 15000
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -98.49,
+       39.145
+      ],
+      [
+       -98.445,
+       39.145
+      ],
+      [
+       -98.445,
+       39.19
+      ],
+      [
+       -98.49,
+       39.19
+      ],
+      [
+       -98.49,
+       39.145
+      ]
+     ]
+    ]
+   }
+  }
+ ]
+}

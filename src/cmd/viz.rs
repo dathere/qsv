@@ -23477,21 +23477,36 @@ fn build_smart_summary_choropleth_panels(
         m
     };
 
+    // Columns a per-region MEASURE panel must never chart: the region-code candidates themselves,
+    // plus any column a candidate declares as its DENOMINATOR (issue #4394). A denominator is
+    // region-constant by definition, so a "median <denominator> by region" panel would just redraw
+    // the divisor — a third map of the population, beside the count map and the rate map that
+    // already divides by it.
+    let mut measure_excluded: Vec<usize> = candidates.clone();
+    for &di in &candidates {
+        if let Some(name) = col_sems[di].denominator.as_deref()
+            && let Some(idx) = stats.iter().position(|s| s.field == name)
+            && !measure_excluded.contains(&idx)
+        {
+            measure_excluded.push(idx);
+        }
+    }
+
     // optional measure column to color the second panel: prefer a MAP_MEASURE_CONCEPTS concept,
     // else any `role=measure` column (catches an untagged-concept amount like PRICE whose
-    // dictionary role is still "measure"). Never a candidate region column.
+    // dictionary role is still "measure"). Never a candidate region column, never a denominator.
     let measure_idx: Option<usize> = first_col_by_concepts(
         col_sems,
         MAP_MEASURE_CONCEPTS,
         usize::MAX,
         usize::MAX,
-        &candidates,
+        &measure_excluded,
     )
     .or_else(|| {
         col_sems
             .iter()
             .enumerate()
-            .find(|(i, s)| s.route == Route::Measure && !candidates.contains(i))
+            .find(|(i, s)| s.route == Route::Measure && !measure_excluded.contains(i))
             .map(|(i, _)| i)
     });
 

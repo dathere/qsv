@@ -5474,7 +5474,7 @@ fn rate_scale(rates: &[f64]) -> u32 {
 /// dictionary label, or the last segment of a `--denominator-key` path).
 ///
 /// A label that reads as population maps to a localized "residents", because that is the phrasing
-/// almost every published per-capita rate uses and the raw field name ("POP2020", "total_pop") is
+/// almost every published per-capita rate uses and the raw field name (`POP2020`, `total_pop`) is
 /// not something to print in a chart title. Any other label is used VERBATIM — deliberately never
 /// machine-translated or pluralized, since an arbitrary denominator ("households", "km²",
 /// "licensed vehicles") has no reliable transformation and a wrong one would misstate the units.
@@ -23005,7 +23005,10 @@ fn build_smart_pip_choropleth_panel(
     snap_max_km: Option<f64>,
     coord_decimals: Option<u32>,
     loaded_geojson: Option<&serde_json::Value>,
-) -> CliResult<Option<Panel>> {
+    denominator_key: Option<&str>,
+    grain_unit: Option<&str>,
+    grain: Option<&str>,
+) -> CliResult<Option<Vec<Panel>>> {
     // an explicit --geojson is explicit intent: a missing file, bad GeoJSON, or wrong
     // --feature-id-key is a hard error, not a silently-dropped panel. `Ok(None)` is reserved for
     // valid inputs that simply don't yield enough regions (the <2 check below).
@@ -23142,63 +23145,151 @@ fn build_smart_pip_choropleth_panel(
     // build_smart_choropleth_panel uses — renders on a MapLibre tile basemap (fine street/coastline
     // detail) instead of the projection `geo` basemap (whose coastlines are too coarse at city
     // scale). Continental/global extents stay on the projection basemap (offline, no tile fetches).
-    let matched: std::collections::HashSet<&str> = order.iter().map(String::as_str).collect();
-    let mut min_lon = f64::INFINITY;
-    let mut min_lat = f64::INFINITY;
-    let mut max_lon = f64::NEG_INFINITY;
-    let mut max_lat = f64::NEG_INFINITY;
-    // a matched feature crossing the ±180° seam stores its bbox in a [0, 360) frame, so a raw
-    // min/max union would be meaningless; fall back to the projection basemap in that case.
-    let mut any_wrap = false;
-    for f in &features {
-        if matched.contains(f.id.as_str()) {
-            min_lon = min_lon.min(f.bbox[0]);
-            min_lat = min_lat.min(f.bbox[1]);
-            max_lon = max_lon.max(f.bbox[2]);
-            max_lat = max_lat.max(f.bbox[3]);
-            any_wrap |= f.wraps_antimeridian;
+    //
+    // Framed per PANEL rather than once: the rate panel below may cover fewer regions than the
+    // count panel (those without a denominator), and framing it to the count panel's wider extent
+    // would leave it oddly off-center.
+    let make_panel = |locs: Vec<String>,
+                      z: Vec<f64>,
+                      measure_label: String,
+                      hover_text: Vec<String>,
+                      title: String| {
+        let matched: std::collections::HashSet<&str> = locs.iter().map(String::as_str).collect();
+        let mut min_lon = f64::INFINITY;
+        let mut min_lat = f64::INFINITY;
+        let mut max_lon = f64::NEG_INFINITY;
+        let mut max_lat = f64::NEG_INFINITY;
+        // a matched feature crossing the ±180° seam stores its bbox in a [0, 360) frame, so a raw
+        // min/max union would be meaningless; fall back to the projection basemap in that case.
+        let mut any_wrap = false;
+        for f in &features {
+            if matched.contains(f.id.as_str()) {
+                min_lon = min_lon.min(f.bbox[0]);
+                min_lat = min_lat.min(f.bbox[1]);
+                max_lon = max_lon.max(f.bbox[2]);
+                max_lat = max_lat.max(f.bbox[3]);
+                any_wrap |= f.wraps_antimeridian;
+            }
+        }
+        let lon_span = max_lon - min_lon;
+        let lat_span = max_lat - min_lat;
+        let use_tiles = !any_wrap
+            && lon_span < SMART_CHOROPLETH_MIN_SPAN_DEG
+            && lat_span < SMART_CHOROPLETH_MIN_SPAN_DEG;
+
+        // the panel embeds the geometry, so it needs an owned document here. This clone replaces
+        // what used to be a whole extra fetch+parse of the same file, and is the only copy made.
+        let kind = if use_tiles {
+            PanelKind::ChoroplethMap {
+                locations: locs,
+                z,
+                geojson: geojson.clone(),
+                feature_id_key: feature_id_key.to_string(),
+                hover_text,
+                center_lon: (min_lon + max_lon) / 2.0,
+                center_lat: mercator_lat_center(min_lat, max_lat),
+                zoom: f64::from(fitbounds_zoom(
+                    min_lat,
+                    max_lat,
+                    lon_span,
+                    MAP_PANEL_ASSUMED_WIDTH_PX,
+                    MAP_PANEL_USABLE_HEIGHT_PX,
+                )),
+                measure_label,
+                region_filter: None,
+            }
+        } else {
+            PanelKind::Choropleth {
+                locations: locs,
+                z,
+                location_mode: LocationMode::GeoJsonId,
+                geojson: Some(geojson.clone()),
+                feature_id_key: Some(feature_id_key.to_string()),
+                hover_text,
+                measure_label,
+                region_filter: None,
+            }
+        };
+        Panel::new(title, kind)
+    };
+
+    let mut out = vec![make_panel(
+        order.clone(),
+        z.clone(),
+        t!("viz.chart.count").into_owned(),
+        hover_text,
+        panel_name,
+    )];
+
+    // Rate panel (issue #4394), beside the count panel. Only `--denominator-key` can feed this
+    // path: the regions come from point-in-polygon binning, so there is no per-row region column
+    // for a dataset denominator column to be constant within.
+    let mut rate_charted = false;
+    if let Some(denom_key) = denominator_key {
+        let denoms = build_denominator_map(geojson, feature_id_key, denom_key);
+        let series = build_rate_series(&order, &z, &denoms);
+        if series.locs.len() >= 2 {
+            let scale = rate_scale(&series.rates);
+            let denom_label = denom_key
+                .rsplit('.')
+                .next()
+                .unwrap_or(denom_key)
+                .to_string();
+            let noun = denominator_noun(&denom_label);
+            let per_phrase = rate_per_phrase(scale, &noun);
+            let scaled: Vec<f64> = series.rates.iter().map(|r| r * f64::from(scale)).collect();
+            let unit = count_unit_from_grain(grain_unit, grain);
+            let rate_names = aligned_region_names(&features, &series.locs);
+            let rate_hover = choropleth_rate_hover_text(
+                &series.locs,
+                rate_names.as_deref(),
+                &series.numerators,
+                &series.denominators,
+                &scaled,
+                &unit,
+                &denom_label,
+                &per_phrase,
+            );
+            let mut title = t!(
+                "viz.title.rate_by_region",
+                q_what = unit,
+                q_per = per_phrase,
+                q_region = t!("viz.title.regions")
+            )
+            .into_owned();
+            if series.excluded > 0 {
+                title.push_str(&format!(
+                    " ({})",
+                    t!(
+                        "viz.title.denom_excluded",
+                        q_n = series.excluded,
+                        q_total = order.len()
+                    )
+                ));
+                viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.denominator_excluded",
+                    q_n = series.excluded,
+                    q_total = order.len()
+                );
+            }
+            out.push(make_panel(
+                series.locs,
+                scaled,
+                t!("viz.chart.rate_label", q_what = unit, q_per = per_phrase).into_owned(),
+                rate_hover,
+                title,
+            ));
+            rate_charted = true;
         }
     }
-    let lon_span = max_lon - min_lon;
-    let lat_span = max_lat - min_lat;
-    let use_tiles = !any_wrap
-        && lon_span < SMART_CHOROPLETH_MIN_SPAN_DEG
-        && lat_span < SMART_CHOROPLETH_MIN_SPAN_DEG;
-
-    // the panel embeds the geometry, so it needs an owned document here. This clone replaces
-    // what used to be a whole extra fetch+parse of the same file, and is the only copy made.
-    let kind = if use_tiles {
-        PanelKind::ChoroplethMap {
-            locations: order,
-            z,
-            geojson: geojson.clone(),
-            feature_id_key: feature_id_key.to_string(),
-            hover_text,
-            center_lon: (min_lon + max_lon) / 2.0,
-            center_lat: mercator_lat_center(min_lat, max_lat),
-            zoom: f64::from(fitbounds_zoom(
-                min_lat,
-                max_lat,
-                lon_span,
-                MAP_PANEL_ASSUMED_WIDTH_PX,
-                MAP_PANEL_USABLE_HEIGHT_PX,
-            )),
-            measure_label: t!("viz.chart.count").into_owned(),
-            region_filter: None,
-        }
-    } else {
-        PanelKind::Choropleth {
-            locations: order,
-            z,
-            location_mode: LocationMode::GeoJsonId,
-            geojson: Some(geojson.clone()),
-            feature_id_key: Some(feature_id_key.to_string()),
-            hover_text,
-            measure_label: t!("viz.chart.count").into_owned(),
-            region_filter: None,
-        }
-    };
-    Ok(Some(Panel::new(panel_name, kind)))
+    if !rate_charted {
+        let caveated = out
+            .remove(0)
+            .with_subtitle(Some(t!("viz.notes.raw_count_caveat").into_owned()));
+        out.insert(0, caveated);
+    }
+    Ok(Some(out))
 }
 
 /// Resolve a region-code cell value to the matching GeoJSON feature id, or `None` when it matches
@@ -24147,7 +24238,7 @@ fn build_map_panel(
     // drawer can cross-link rows and map points. Off for image export (no JS) and when the drawer
     // is disabled (`--preview-threshold 0`), which keeps those payloads byte-identical.
     capture_row_ids: bool,
-) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize), usize)>> {
+) -> CliResult<Option<(Panel, Option<Vec<Panel>>, (usize, usize), usize)>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
     };
@@ -24584,6 +24675,9 @@ fn build_map_panel(
             args.flag_snap_max_dist,
             coord_decimals,
             loaded_geojson,
+            args.flag_denominator_key.as_deref(),
+            dict.and_then(|d| d.grain_unit.as_deref()),
+            dict.and_then(|d| d.grain.as_deref()),
         )?;
         // overlay the region boundaries + labels directly on the point map (best-effort; the panel
         // builder above already hard-errored on a bad --geojson). Independent of the choropleth's
@@ -24598,6 +24692,9 @@ fn build_map_panel(
             .flatten();
         #[cfg(not(feature = "geocode"))]
         let choropleth = None;
+        // the reverse-geocoded variant is a single panel; the --geojson branch above may return a
+        // count panel plus a rate panel.
+        let choropleth = choropleth.map(|p| vec![p]);
         (choropleth, None)
     };
 
@@ -26041,7 +26138,7 @@ struct SmartCtx<'a> {
     /// the geographic overview panels, built up front and prepended last so they lead the
     /// Data Schematic and survive the panel cap.
     map_panel:         Option<(Panel, (usize, usize))>,
-    choropleth_panel:  Option<Panel>,
+    choropleth_panel:  Option<Vec<Panel>>,
     summary_choros:    Option<(Vec<Panel>, usize)>,
     map_cols:          Option<(usize, usize)>,
     summary_choro_col: Option<usize>,
@@ -28092,9 +28189,14 @@ impl<'a> SmartCtx<'a> {
         // Schematic and survive the panel cap. Insert the per-country choropleth first,
         // then the point map at index 0, yielding [map, choropleth, ...] — the point map
         // for spatial detail, the choropleth beside it for the per-jurisdiction aggregate.
-        if let Some(mut panel) = self.choropleth_panel.take() {
-            panel.dict_info = self.geo_dict_info();
-            self.panels.insert(0, panel);
+        if let Some(cp_panels) = self.choropleth_panel.take() {
+            // may be [count] or [count, rate] (issue #4394). Inserted in reverse so the leading
+            // order stays [count, rate, …] once the point map goes in at 0 below.
+            let info = self.geo_dict_info();
+            for mut panel in cp_panels.into_iter().rev() {
+                panel.dict_info = info.clone();
+                self.panels.insert(0, panel);
+            }
         } else if let Some((sc_panels, region_idx)) = self.summary_choros.take() {
             // the region-code summary choropleth(s) replace the (absent) lat/lon choropleth
             // companion. No coordinate column drives them, so anchor --dict-info on the region key
@@ -41608,9 +41710,13 @@ mod tests {
             Some(10.0),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .unwrap()
-        .expect("2 regions keep points, so a panel renders");
+        .expect("2 regions keep points, so a panel renders")
+        .swap_remove(0);
         assert_eq!(panel.name, "Regions (1 of 5 dropped, >10 km)");
 
         // an unbounded cap snaps the gap point instead -> nothing dropped; the title surfaces the
@@ -41625,9 +41731,13 @@ mod tests {
             Some(f64::INFINITY),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .unwrap()
-        .expect("panel renders");
+        .expect("panel renders")
+        .swap_remove(0);
         assert!(
             snapped.name.starts_with("Regions (1 snapped"),
             "snapped points must surface in the title, got {:?}",
@@ -41645,9 +41755,13 @@ mod tests {
             Some(10.0),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .unwrap()
-        .expect("panel renders");
+        .expect("panel renders")
+        .swap_remove(0);
         assert_eq!(no_snap.name, "Regions (1 of 5 dropped, --no-snap)");
 
         // the continental-extent regions above (20 deg lon / 10 deg lat span, both >=
@@ -41699,9 +41813,13 @@ mod tests {
                 cap,
                 None,
                 None,
+                None,
+                None,
+                None,
             )
             .unwrap()
             .expect("2 regions keep points, so a panel renders")
+            .swap_remove(0)
         };
 
         // dropped branch: title shell, the drop clause and the ">N km" reason all localized
@@ -41776,9 +41894,13 @@ mod tests {
             Some(10.0),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .unwrap()
-        .expect("2 regions keep points, so a panel renders");
+        .expect("2 regions keep points, so a panel renders")
+        .swap_remove(0);
         match panel.kind {
             PanelKind::ChoroplethMap {
                 center_lon,

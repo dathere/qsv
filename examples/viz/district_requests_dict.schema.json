@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "district_requests",
+  "type": "object",
+  "description": "Synthetic municipal service requests, one row per request, used to demonstrate denominator-aware region maps. The districts are invented.",
+  "x-qsv": {
+    "grain": "one row = one service request",
+    "grain_unit": "service request"
+  },
+  "properties": {
+    "district": {
+      "type": "string",
+      "title": "District",
+      "x-qsv": {
+        "qsv_type": "String",
+        "role": "dimension",
+        "concept": "geo.county",
+        "content_type": "category",
+        "denominator": {
+          "column": "population"
+        }
+      }
+    },
+    "population": {
+      "type": "integer",
+      "title": "District Population",
+      "x-qsv": {
+        "qsv_type": "Integer",
+        "role": "measure",
+        "concept": "measure.count"
+      }
+    },
+    "request_type": {
+      "type": "string",
+      "title": "Request Type",
+      "x-qsv": {
+        "qsv_type": "String",
+        "role": "dimension",
+        "concept": "category.type",
+        "content_type": "category"
+      }
+    },
+    "response_hours": {
+      "type": "number",
+      "title": "Response Time (hours)",
+      "x-qsv": {
+        "qsv_type": "Float",
+        "role": "measure",
+        "concept": "measure.duration",
+        "aggregation": "mean"
+      }
+    }
+  }
+}

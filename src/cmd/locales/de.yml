@@ -123,6 +123,8 @@ viz:
     map_animation_over_budget: "animierte Karte übersprungen: %{q_buckets} Zeitintervalle würden das Budget von %{q_budget} Punkten selbst bei voller Ausdünnung überschreiten. Verwenden Sie eine gröbere Datumsspalte für die Animation."
     region_no_points_inside: "keiner der %{q_total} Punkte liegt in einer --geojson-Region, daher wurde kein Regionen-Panel erstellt. Prüfen Sie, ob die Grenzdatei diese Daten abdeckt und ob --lat/--lon nicht vertauscht sind."
     choropleth_no_id_overlap: "--geojson angegeben, aber keine Regionscode-Spalte stimmte mit den Grenz-Ids überein (bester Wert %{q_pct}%); die zusammenfassende Choroplethenkarte wird übersprungen."
+    denominator_invalid: "die Spalte '%{q_col}' aus x-qsv.denominator im Data Dictionary ist nicht verwendbar (%{q_reason}); es werden Rohwerte dargestellt."
+    denominator_excluded: "kein verwendbarer Nenner für %{q_n} von %{q_total} Regionen; sie fehlen im Raten-Panel."
     bivariate_column_cap: "%{q_ncols} Spalten überschreiten die Obergrenze von %{q_cap} Spalten (~%{q_pairs} Paare an der Grenze); die bivariaten Assoziationspanels werden übersprungen. Führen Sie `qsv moarstats --bivariate` direkt aus, um die vollständige paarweise Ausgabe zu erhalten."
     bivariate_stale_sidecar: "eine veraltete bivariate Begleitdatei konnte nicht entfernt werden und wurde von moarstats nicht neu erzeugt; die Assoziationspanels werden übersprungen."
     sankey_failed: "Panel für gerichtete Flüsse (Sankey) übersprungen (%{q_err})"
@@ -196,6 +198,7 @@ viz:
     other_bucket: "Sonstige (%{q_count})"
     records: "Datensätze"
     count: "Anzahl"
+    rate_label: "%{q_what} %{q_per}"
     trace_correlation: "Korrelation"
     trace_rank_correlation: "Rangkorrelation"
     trace_association: "Assoziation"
@@ -241,6 +244,8 @@ viz:
     us_states: "US-Bundesstaaten"
     countries: "Länder"
     count_by_region: "Anzahl nach %{q_region}"
+    rate_by_region: "%{q_what} %{q_per} nach %{q_region}"
+    denom_excluded: "%{q_n} von %{q_total} ohne Nenner"
     # `≤` / `>` are math symbols, `km` is SI, and `--no-snap` (which arrives as
     # `%{q_why}`) is a FLAG NAME -- all literal.
     regions: "Regionen"
@@ -266,6 +271,9 @@ viz:
     box_gini: "Gini %{q_gini}"
     lorenz_unit: "Konzentration ist zu erwarten, sofern die Zeilen keine vergleichbaren Einheiten sind"
     lorenz_zeros: "flacher Verlauf = %{q_pct} % Nullen, keine kleinen Werte · %{q_unit}"
+    raw_count_caveat: "Rohwerte — größere/aktivere Regionen zählen mehr Zeilen; --denominator-key ergänzen für eine Rate"
+    raw_count_paired: "Rohwerte — nicht um die Regionsgröße bereinigt"
+    denominator_excluded: "kein verwendbarer Nenner für %{q_n} von %{q_total} Regionen; sie werden nicht angezeigt."
     funnel_complete: "n = %{q_n} vollständige Fälle (%{q_pct} % der Zeilen)"
     funnel_violation: "%{q_here} übersteigt %{q_prev} in %{q_pct} % der Zeilen"
     funnel_bridge: "Stufen sind nicht ineinander verschachtelt — überbrückt, kein Funnel"
@@ -293,4 +301,10 @@ viz:
     # Prozentzeichen direkt hinter einem Platzhalter -- das ist unbedenklich.
     pct_of_total: "%{q_pct} % des Gesamtwerts"
     rank_of: "Rang %{q_rank} von %{q_total}"
+    rate_per: "%{q_rate} %{q_per}"
     snap_includes: "davon %{q_n} von außen zugeordnet"
+  rate:
+    per_scale: "pro %{q_scale} %{q_noun}"
+    per_unit: "pro %{q_noun}"
+    noun_residents: "Einwohner"
+    noun_resident: "Einwohner"

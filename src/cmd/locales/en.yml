@@ -184,6 +184,14 @@ viz:
     map_animation_over_budget: "skipped the animated map — %{q_buckets} time buckets would embed more than the %{q_budget} point budget even fully downsampled. Use a coarser date column to animate it."
     region_no_points_inside: "none of the %{q_total} points fell inside any --geojson region, so no region panel was built. Check that the boundary file covers this data and that --lat/--lon are not swapped."
     choropleth_no_id_overlap: "--geojson supplied but no region-code column overlapped the boundary ids (best %{q_pct}%); skipping the summary choropleth."
+    # A dictionary `x-qsv.denominator` hint that did not survive validation
+    # (issue #4394). Unlike the --denominator-key FLAG (whose violations are hard
+    # errors), a bad hint only costs the rate panel: the count panel still renders,
+    # carrying its raw-count caveat. `q_reason` is an English clause from the code.
+    denominator_invalid: "the dictionary's x-qsv.denominator column '%{q_col}' cannot be used (%{q_reason}); charting raw counts instead."
+    # Some regions lacked a usable denominator, so the rate panel covers fewer
+    # regions than the count panel beside it.
+    denominator_excluded: "no usable denominator for %{q_n} of %{q_total} regions; they are omitted from the rate panel."
     bivariate_column_cap: "%{q_ncols} columns exceeds the %{q_cap}-column cap (~%{q_pairs} pairs at the cap); skipping the bivariate association panels. Run `qsv moarstats --bivariate` directly for the full pairwise output."
     bivariate_stale_sidecar: "a stale bivariate sidecar could not be removed and was not refreshed by moarstats; skipping the association panels."
     sankey_failed: "directed-flow (Sankey) panel skipped (%{q_err})"
@@ -304,6 +312,12 @@ viz:
     # USER'S flag value, which is CLI syntax and stays English in every locale --
     # localizing them would break `--agg count` for everyone.
     count: "count"
+    # The colorbar label of a DENOMINATOR-aware region map (`--denominator-key` /
+    # `--denominator`, issue #4394). `q_what` is the numerator's own label (the
+    # `count` above, or a summed column's name) and `q_per` is the already-built
+    # `rate.per_scale`/`rate.per_unit` phrase -- assembled once in Rust so the
+    # colorbar, the panel title and the hover always state the same rate.
+    rate_label: "%{q_what} %{q_per}"
     # Heatmap TRACE names (plotly `.name`), naming the coefficient a cell holds.
     # The paired SYMBOL (`r`, `ρ`, `NMI`) is interpolated into the cell hover and
     # stays literal in every locale; only these names are words.
@@ -426,6 +440,18 @@ viz:
     us_states: "US states"
     countries: "Countries"
     count_by_region: "count by %{q_region}"
+    # Title of the RATE panel that sits BESIDE the count panel when a denominator
+    # is available (issue #4394). `q_what` is the numerator's label, `q_per` the
+    # shared "per N nouns" phrase, `q_region` the region column's label:
+    # "count per 1,000 residents by ZIP Code".
+    rate_by_region: "%{q_what} %{q_per} by %{q_region}"
+    # Suffix appended to a rate panel's title when some regions had no usable
+    # denominator and were left off the map, so the narrowed extent is explained
+    # in place rather than only on stderr.
+    # Phrased as a count-of-total rather than "%{q_n} regions", so it stays
+    # grammatical at n = 1 without needing a plural rule (same reason
+    # `snap_dropped` above reads "1 of 7,464 dropped").
+    denom_excluded: "%{q_n} of %{q_total} without a denominator"
     # The `--geojson` point-in-polygon panel (`build_smart_pip_choropleth_panel`).
     # Its title states the snap/drop accounting beside the map: e.g.
     # "Regions (110 snapped ≤0.36 km; 10 of 7,464 dropped, >0.36 km)", with the
@@ -467,6 +493,22 @@ viz:
     # repeating it, so a translation can put it wherever its grammar wants.
     lorenz_unit: "concentration is expected unless rows are comparable units"
     lorenz_zeros: "flat run = %{q_pct}% zeros, not small values · %{q_unit}"
+    # Subtitle on a region map colored by RAW ROW COUNTS with no denominator
+    # available (issue #4394). It names the population-map fallacy in one line:
+    # such a map largely redraws where the people (or the activity) are, so the
+    # busiest region wins on size rather than on intensity.
+    #
+    # `--denominator-key` is a FLAG NAME the user would type: it stays literal in
+    # every locale, exactly like `--no-snap` in `title.snap_dropped` above.
+    raw_count_caveat: "raw counts — bigger/busier regions tally more rows; add --denominator-key for a rate"
+    # Companion wording for when a rate panel IS charted beside this one: the
+    # count map is still unadjusted, but telling the reader to add a flag they
+    # already passed would be nonsense. Deliberately makes no reference to the
+    # rate PANEL, which an explicit --max-charts can drop.
+    raw_count_paired: "raw counts — not adjusted for region size"
+    # Below-map coverage note when some regions had no usable denominator (missing,
+    # zero or negative) and were left out of the rate.
+    denominator_excluded: "no usable denominator for %{q_n} of %{q_total} regions; they are not shown."
     # Funnel caveat clauses, joined with " · ". Each is a whole clause: the
     # stage names are slots, so word order is the translator's to choose.
     funnel_complete: "n = %{q_n} complete cases (%{q_pct}% of rows)"
@@ -503,6 +545,28 @@ viz:
     # shape the ORDERING RULE above explicitly permits.
     pct_of_total: "%{q_pct}% of total"
     rank_of: "rank %{q_rank} of %{q_total}"
+    # The rate line of a denominator-aware region hover (issue #4394). Deliberately
+    # has NO share-of-total companion: a rate is intensive, so "12% of total" on one
+    # would be a fabricated statistic. `q_per` is the shared "per N nouns" phrase.
+    rate_per: "%{q_rate} %{q_per}"
     # Appended to a PIP region's hover when some of its points were snapped in
     # from outside the polygon. The "<br>" separator stays in the code.
     snap_includes: "includes %{q_n} snapped from outside"
+  # Denominator-aware region rates (issue #4394). These four keys build the ONE
+  # "per N nouns" phrase that the colorbar (`chart.rate_label`), the panel title
+  # (`title.rate_by_region`) and the per-region hover (`hover.rate_per`) all share,
+  # so a locale can never have the three disagree.
+  rate:
+    # `per_scale` carries the number (1,000 / 10,000 / 100,000, already grouped
+    # with the locale's thousands separator by the caller); `per_unit` is the
+    # scale-of-1 form, where the noun is SINGULAR and no number is printed.
+    per_scale: "per %{q_scale} %{q_noun}"
+    per_unit: "per %{q_noun}"
+    # The noun a population denominator is counted in, plural and singular. It
+    # replaces the raw field name ("POP2020", "total_pop"), which is not something
+    # to print in a chart title. A denominator whose label does NOT read as
+    # population keeps its own label verbatim in both slots -- qsv never guesses a
+    # translation or a plural for an arbitrary unit (households, km², vehicles),
+    # because a wrong one would misstate what the rate measures.
+    noun_residents: "residents"
+    noun_resident: "resident"

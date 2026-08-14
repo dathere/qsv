@@ -123,6 +123,8 @@ viz:
     map_animation_over_budget: "carte animée ignorée : %{q_buckets} intervalles temporels dépasseraient le budget de %{q_budget} points même entièrement sous-échantillonnés. Utilisez une colonne de date plus grossière pour l'animer."
     region_no_points_inside: "aucun des %{q_total} points ne tombe dans une région --geojson ; aucun panneau de régions n'a été construit. Vérifiez que le fichier de limites couvre ces données et que --lat/--lon ne sont pas inversés."
     choropleth_no_id_overlap: "--geojson fourni mais aucune colonne de code de région ne recoupe les ids des limites (meilleur %{q_pct}%) ; la choroplèthe de synthèse est ignorée."
+    denominator_invalid: "la colonne '%{q_col}' de x-qsv.denominator du dictionnaire est inutilisable (%{q_reason}) ; les effectifs bruts sont représentés."
+    denominator_excluded: "aucun dénominateur exploitable pour %{q_n} régions sur %{q_total} ; elles sont omises du panneau de taux."
     bivariate_column_cap: "%{q_ncols} colonnes dépassent le plafond de %{q_cap} colonnes (~%{q_pairs} paires au plafond) ; les panneaux d'association bivariée sont ignorés. Lancez `qsv moarstats --bivariate` directement pour la sortie complète par paires."
     bivariate_stale_sidecar: "un fichier bivarié obsolète n'a pas pu être supprimé et n'a pas été régénéré par moarstats ; les panneaux d'association sont ignorés."
     sankey_failed: "panneau de flux dirigé (Sankey) ignoré (%{q_err})"
@@ -196,6 +198,7 @@ viz:
     other_bucket: "Autre (%{q_count})"
     records: "enregistrements"
     count: "nombre"
+    rate_label: "%{q_what} %{q_per}"
     trace_correlation: "corrélation"
     trace_rank_correlation: "corrélation des rangs"
     trace_association: "association"
@@ -241,6 +244,8 @@ viz:
     us_states: "États des États-Unis"
     countries: "Pays"
     count_by_region: "nombre par %{q_region}"
+    rate_by_region: "%{q_what} %{q_per} par %{q_region}"
+    denom_excluded: "%{q_n} sur %{q_total} sans dénominateur"
     # `≤` / `>` are math symbols, `km` is SI, and `--no-snap` (which arrives as
     # `%{q_why}`) is a FLAG NAME -- all literal.
     regions: "Régions"
@@ -266,6 +271,9 @@ viz:
     box_gini: "Gini %{q_gini}"
     lorenz_unit: "la concentration est attendue sauf si les lignes sont des unités comparables"
     lorenz_zeros: "palier plat = %{q_pct} % de zéros, et non de petites valeurs · %{q_unit}"
+    raw_count_caveat: "effectifs bruts — les régions plus grandes/actives totalisent plus de lignes ; ajoutez --denominator-key pour un taux"
+    raw_count_paired: "effectifs bruts — non ajustés à la taille de la région"
+    denominator_excluded: "aucun dénominateur exploitable pour %{q_n} régions sur %{q_total} ; elles ne sont pas affichées."
     funnel_complete: "n = %{q_n} cas complets (%{q_pct} % des lignes)"
     funnel_violation: "%{q_here} dépasse %{q_prev} dans %{q_pct} % des lignes"
     funnel_bridge: "les étapes ne s'emboîtent pas — pontées, et non en entonnoir"
@@ -293,4 +301,10 @@ viz:
     # pourcent LITTERAL placé juste après un emplacement, ce qui est sans danger.
     pct_of_total: "%{q_pct} % du total"
     rank_of: "rang %{q_rank} sur %{q_total}"
+    rate_per: "%{q_rate} %{q_per}"
     snap_includes: "dont %{q_n} rattachés depuis l'extérieur"
+  rate:
+    per_scale: "pour %{q_scale} %{q_noun}"
+    per_unit: "par %{q_noun}"
+    noun_residents: "habitants"
+    noun_resident: "habitant"

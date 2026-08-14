@@ -119,6 +119,8 @@ viz:
     map_animation_over_budget: "se omitió el mapa animado: %{q_buckets} intervalos temporales superarían el presupuesto de %{q_budget} puntos incluso con submuestreo completo. Use una columna de fecha más gruesa para animarlo."
     region_no_points_inside: "ninguno de los %{q_total} puntos cayó dentro de una región de --geojson, así que no se construyó el panel de regiones. Compruebe que el archivo de límites cubre estos datos y que --lat/--lon no están intercambiados."
     choropleth_no_id_overlap: "se indicó --geojson pero ninguna columna de código de región coincidió con los ids de los límites (mejor %{q_pct}%); se omite el coropleta resumen."
+    denominator_invalid: "la columna '%{q_col}' de x-qsv.denominator del diccionario no puede usarse (%{q_reason}); se representan recuentos brutos."
+    denominator_excluded: "sin denominador utilizable para %{q_n} de %{q_total} regiones; se omiten del panel de tasas."
     bivariate_column_cap: "%{q_ncols} columnas superan el límite de %{q_cap} columnas (~%{q_pairs} pares en el límite); se omiten los paneles de asociación bivariada. Ejecute `qsv moarstats --bivariate` directamente para la salida completa por pares."
     bivariate_stale_sidecar: "no se pudo eliminar un archivo bivariado obsoleto y moarstats no lo actualizó; se omiten los paneles de asociación."
     sankey_failed: "se omitió el panel de flujo dirigido (Sankey) (%{q_err})"
@@ -197,6 +199,7 @@ viz:
     records: "registros"
     # NO conectar con el analisis de `--agg`: ese valor es sintaxis de CLI.
     count: "recuento"
+    rate_label: "%{q_what} %{q_per}"
     # Nombres de traza: el simbolo emparejado (`r`, `ρ`, `NMI`) no se traduce.
     trace_correlation: "correlación"
     trace_rank_correlation: "correlación por rangos"
@@ -252,6 +255,8 @@ viz:
     us_states: "Estados de EE. UU."
     countries: "Países"
     count_by_region: "recuento por %{q_region}"
+    rate_by_region: "%{q_what} %{q_per} por %{q_region}"
+    denom_excluded: "%{q_n} de %{q_total} sin denominador"
     # `≤`, `>`, `km` y `--no-snap` no se traducen (simbolos, unidad SI y nombre
     # de opcion de la CLI).
     regions: "Regiones"
@@ -278,6 +283,9 @@ viz:
     box_gini: "Gini %{q_gini}"
     lorenz_unit: "la concentración es esperable salvo que las filas sean unidades comparables"
     lorenz_zeros: "tramo plano = %{q_pct}% ceros, no valores pequeños · %{q_unit}"
+    raw_count_caveat: "recuentos brutos — las regiones más grandes/activas acumulan más filas; añade --denominator-key para una tasa"
+    raw_count_paired: "recuentos brutos — sin ajustar por el tamaño de la región"
+    denominator_excluded: "sin denominador utilizable para %{q_n} de %{q_total} regiones; no se muestran."
     funnel_complete: "n = %{q_n} casos completos (%{q_pct}% de las filas)"
     funnel_violation: "%{q_here} supera a %{q_prev} en %{q_pct}% de las filas"
     funnel_bridge: "las etapas no se anidan — puente, no embudo"
@@ -303,4 +311,10 @@ viz:
     polar_records: "%{theta}<br>registros: %{r:,.0f}<extra></extra>"
     pct_of_total: "%{q_pct}% del total"
     rank_of: "puesto %{q_rank} de %{q_total}"
+    rate_per: "%{q_rate} %{q_per}"
     snap_includes: "incluye %{q_n} ajustados desde fuera"
+  rate:
+    per_scale: "por cada %{q_scale} %{q_noun}"
+    per_unit: "por %{q_noun}"
+    noun_residents: "habitantes"
+    noun_resident: "habitante"

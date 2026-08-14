@@ -837,6 +837,25 @@ FIGURES = [
             "--dictionary", "allegheny_dogs_dict.schema.json",
             "--geojson", "allegheny_zip_boundaries.geojson",
             "--feature-id-key", "properties.ZIP"]),
+    ("smart Data Schematic (denominator-aware region rate)",
+     "Auto Data Schematic for district_requests: the same region map, drawn twice. A choropleth "
+     "colored by raw row <b>counts</b> is largely a population map — the district with the most "
+     "people files the most requests — so <b>Riverside</b> (240k residents, 480 requests) leads the "
+     "count panel purely on size. The <b>rate</b> panel beside it divides by each district's "
+     "population and inverts the ranking: <b>Old&nbsp;Quarter</b> tops it at 6.0 requests per 1,000 "
+     "residents on 40% of Riverside's volume. The denominator is <b>declared, never guessed</b> "
+     "— here by <code>x-qsv.denominator: {&quot;column&quot;: &quot;population&quot;}</code> on the "
+     "region column in the curated dictionary; <code>--denominator-key properties.POP2020</code> "
+     "would instead read it from the boundary file, and <code>viz choropleth --denominator</code> "
+     "turns a standalone map into a rate map. The scale (per 1,000 / 10,000 / 100,000) is chosen "
+     "from the MEDIAN rate, so one freak district can't rescale the map, and hover keeps the raw "
+     "count and the named denominator beside the rate — with <b>no</b> share-of-total line, since a "
+     "rate is intensive. A region map with no denominator available instead says so in its subtitle. "
+     "The districts are <b>synthetic</b>, laid out on a grid at the geographic centre of the "
+     "contiguous US; only the shape of the fallacy is real.",
+     True, ["smart", "district_requests.csv", "--dict-info",
+            "--dictionary", "district_requests_dict.schema.json",
+            "--geojson", "district_boundaries.geojson"]),
     ("smart Data Schematic (animated geo, world events)",
      "Auto Data Schematic for world_events_dated: global-extent dated points across six continents "
      "(lon span ~300&deg;, lat span ~99&deg;). Because the extent is continental/global, "

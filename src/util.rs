@@ -3834,7 +3834,8 @@ pub fn csv_to_jsonl(
 
 // Build a `serde_json::Map` from a CSV record, coercing each cell to the JSON type
 // declared in `csv_types` (defaulting to String for unknown keys). Empty cells are
-// skipped entirely (no key is emitted), matching the JSONL sidecar behavior.
+// skipped entirely (no key is emitted), matching the JSONL sidecar behavior - with the
+// sole exception of `field`, which is always emitted (see below).
 fn csv_record_to_json_map(
     record: &csv::StringRecord,
     key_vec: &[String],
@@ -3849,6 +3850,14 @@ fn csv_record_to_json_map(
         };
         let data_type = csv_types.get(key.as_str()).unwrap_or(&JsonTypes::String);
         let value = if val.is_empty() {
+            // `field` carries the column's identity. Dropping it makes the record
+            // unattributable to a column and breaks StatsData deserialization when the
+            // column name is itself empty (issue #4410). Keyed by name rather than by
+            // position so a future reordering of the stats columns can't silently
+            // reintroduce the bug. All other empty cells are still skipped.
+            if key == "field" {
+                json_object.insert(key.to_string(), serde_json::Value::String(String::new()));
+            }
             continue;
         } else {
             match *data_type {

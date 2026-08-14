@@ -637,6 +637,33 @@ fn tojsonl_number_nan_infinity_literal_is_null() {
 
 #[test]
 #[serial]
+fn tojsonl_4410() {
+    // issue #4410: a CSV with an empty column name failed with
+    // `error parsing stats: Serde("missing field `field`")`, because the stats cache
+    // JSONL dropped the `field` key for the empty-named column.
+    let wrk = Workdir::new("tojsonl_4410");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["a", "", "c"],
+            svec!["1", "2", "3"],
+            svec!["4", "5", "6"],
+        ],
+    );
+
+    let mut cmd = wrk.command("tojsonl");
+    cmd.arg("in.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"a":1,"":2,"c":3}
+{"a":4,"":5,"c":6}"#;
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
 fn tojsonl_duplicate_headers_warns() {
     // Duplicate column names collapse into a single JSON key; warn the user.
     let wrk = Workdir::new("tojsonl_duplicate_headers_warns");

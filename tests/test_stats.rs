@@ -6530,6 +6530,65 @@ fn stats_pretty_json_stdout() {
 }
 
 #[test]
+fn stats_json_empty_column_name_keeps_field_key() {
+    // issue #4410: an empty column name means an empty `field` cell, and the CSV->JSON
+    // conversion used to drop empty cells wholesale - so the record lost its `field` key
+    // and became unattributable to a column (and unparseable as StatsData downstream).
+    let wrk = Workdir::new("stats_json_empty_column_name_keeps_field_key");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a", "", "c"],
+            svec!["1", "2", "3"],
+            svec!["4", "5", "6"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cache-threshold")
+        .arg("0")
+        .arg("--jsonl")
+        .arg("data.csv");
+    let got: String = wrk.stdout(&mut cmd);
+
+    let fields: Vec<String> = got
+        .lines()
+        .map(|line| {
+            let v: serde_json::Value = serde_json::from_str(line)
+                .unwrap_or_else(|_| panic!("each line should be valid JSON: {line}"));
+            v.get("field")
+                .unwrap_or_else(|| panic!("every record must carry a `field` key: {line}"))
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    assert_eq!(fields, vec!["a", "", "c"]);
+
+    // same guarantee for the --pretty-json array output
+    let mut pretty_cmd = wrk.command("stats");
+    pretty_cmd
+        .arg("--cache-threshold")
+        .arg("0")
+        .arg("--pretty-json")
+        .arg("data.csv");
+    let pretty_got: String = wrk.stdout(&mut pretty_cmd);
+    let arr: serde_json::Value = serde_json::from_str(&pretty_got).unwrap();
+    let pretty_fields: Vec<&str> = arr
+        .as_array()
+        .expect("output should be a JSON array")
+        .iter()
+        .map(|v| {
+            v.get("field")
+                .expect("every object must carry a `field` key")
+                .as_str()
+                .unwrap()
+        })
+        .collect();
+    assert_eq!(pretty_fields, vec!["a", "", "c"]);
+}
+
+#[test]
 fn stats_jsonl_matches_stats_jsonl_sidecar() {
     // --jsonl stdout must be byte-identical to what --stats-jsonl writes to its sidecar.
     let wrk = Workdir::new("stats_jsonl_matches_sidecar");

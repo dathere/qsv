@@ -272,6 +272,7 @@ viz:
     lorenz_unit: "la concentration est attendue sauf si les lignes sont des unités comparables"
     lorenz_zeros: "palier plat = %{q_pct} % de zéros, et non de petites valeurs · %{q_unit}"
     raw_count_caveat: "effectifs bruts — les régions plus grandes/actives totalisent plus de lignes ; ajoutez --denominator-key pour un taux"
+    raw_count_paired: "effectifs bruts — non ajustés à la taille de la région"
     denominator_excluded: "aucun dénominateur exploitable pour %{q_n} régions sur %{q_total} ; elles ne sont pas affichées."
     funnel_complete: "n = %{q_n} cas complets (%{q_pct} % des lignes)"
     funnel_violation: "%{q_here} dépasse %{q_prev} dans %{q_pct} % des lignes"

@@ -284,6 +284,7 @@ viz:
     lorenz_unit: "la concentración es esperable salvo que las filas sean unidades comparables"
     lorenz_zeros: "tramo plano = %{q_pct}% ceros, no valores pequeños · %{q_unit}"
     raw_count_caveat: "recuentos brutos — las regiones más grandes/activas acumulan más filas; añade --denominator-key para una tasa"
+    raw_count_paired: "recuentos brutos — sin ajustar por el tamaño de la región"
     denominator_excluded: "sin denominador utilizable para %{q_n} de %{q_total} regiones; no se muestran."
     funnel_complete: "n = %{q_n} casos completos (%{q_pct}% de las filas)"
     funnel_violation: "%{q_here} supera a %{q_prev} en %{q_pct}% de las filas"

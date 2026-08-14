@@ -279,6 +279,7 @@ viz:
     lorenz_unit: "除非各行是可比较的单位,否则出现集中是正常的"
     lorenz_zeros: "平缓段 = %{q_pct}% 为零,而非小数值 · %{q_unit}"
     raw_count_caveat: "原始计数 — 规模更大/更活跃的地区行数自然更多；添加 --denominator-key 可得到比率"
+    raw_count_paired: "原始计数 — 未按地区规模调整"
     denominator_excluded: "%{q_total} 个地区中有 %{q_n} 个没有可用分母，未予显示。"
     funnel_complete: "n = %{q_n} 个完整样本(占全部行的 %{q_pct}%)"
     funnel_violation: "在 %{q_pct}% 的行中 %{q_here} 超过 %{q_prev}"

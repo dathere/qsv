@@ -16789,3 +16789,461 @@ fn viz_smart_funnel_stage_honors_an_explicit_sum_over_the_name_heuristic() {
         "an explicitly-additive stage must not be refused as a rate; html: {html}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// issue #4394: denominator-aware region choropleths.
+//
+// A region map colored by raw row counts is largely a population map — the region with the most
+// people tallies the most rows — so these cover both halves of the fix: the RATE map/panel when a
+// denominator is available, and the caveat that says so when one is not.
+// ---------------------------------------------------------------------------
+
+/// Four regions whose populations differ by 20x, so a rate map ranks them differently from a count
+/// map. Region D carries a zero population: it is the "no usable denominator" case.
+fn denom_geojson() -> &'static str {
+    r#"{"type":"FeatureCollection","features":[
+{"type":"Feature","id":"A","properties":{"name":"Alpha","POP":"10000"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}},
+{"type":"Feature","id":"B","properties":{"name":"Beta","POP":200000},"geometry":{"type":"Polygon","coordinates":[[[1,0],[2,0],[2,1],[1,1],[1,0]]]}},
+{"type":"Feature","id":"C","properties":{"name":"Gamma","POP":50000},"geometry":{"type":"Polygon","coordinates":[[[2,0],[3,0],[3,1],[2,1],[2,0]]]}},
+{"type":"Feature","id":"D","properties":{"name":"Delta","POP":0},"geometry":{"type":"Polygon","coordinates":[[[3,0],[4,0],[4,1],[3,1],[3,0]]]}}
+]}"#
+}
+
+/// `region,pop` rows: A=30 rows/10k people, B=300/200k, C=60/50k. B leads on raw count, A leads on
+/// rate — the whole point of the issue.
+fn denom_csv() -> String {
+    let mut s = String::from("region,pop\n");
+    for (r, pop, n) in [("A", 10000, 30), ("B", 200000, 300), ("C", 50000, 60)] {
+        for _ in 0..n {
+            s.push_str(&format!("{r},{pop}\n"));
+        }
+    }
+    s
+}
+
+fn denom_dictionary(with_hint: bool) -> String {
+    let hint = if with_hint {
+        r#", "denominator": {"column": "pop"}"#
+    } else {
+        ""
+    };
+    format!(
+        r#"{{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object",
+ "x-qsv":{{"grain_unit":"service request"}},
+ "properties":{{
+   "region":{{"type":"string","title":"Region","x-qsv":{{"concept":"geo.zip_code","role":"dimension"{hint}}}}},
+   "pop":{{"type":"integer","title":"Population","x-qsv":{{"concept":"measure.count","role":"measure","qsv_type":"Integer"}}}}
+ }}}}"#
+    )
+}
+
+#[test]
+fn viz_choropleth_denominator_key_makes_a_rate_map() {
+    let wrk = Workdir::new("viz_choropleth_denominator_key_makes_a_rate_map");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--location-mode",
+        "geojson-id",
+        "--denominator-key",
+        "properties.POP",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the colorbar names the rate, not the raw count
+    assert!(
+        html.contains("count per 1,000 residents"),
+        "colorbar must state the rate: {html}"
+    );
+    // hover keeps the raw numerator AND the named denominator beside the rate
+    assert!(html.contains("count: 30"), "raw numerator stays visible");
+    assert!(html.contains("POP: 10,000"), "denominator is named");
+    assert!(html.contains("3 per 1,000 residents"), "A's rate");
+    assert!(html.contains("1.5 per 1,000 residents"), "B's rate");
+    // a rate is intensive, so no share-of-total may appear on it
+    assert!(
+        !html.contains("% of total"),
+        "a share-of-total on a rate would be a fabricated statistic: {html}"
+    );
+}
+
+#[test]
+fn viz_choropleth_denominator_column_and_agg_sum() {
+    // the "total spend per resident" case: a denominator is valid with --agg sum, since a sum is
+    // extensive just like a count.
+    let wrk = Workdir::new("viz_choropleth_denominator_column_and_agg_sum");
+    wrk.create_from_string(
+        "rg.csv",
+        "region,pop,spend\nA,10000,500\nA,10000,500\nB,200000,1000\nB,200000,1000\n",
+    );
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "spend",
+        "--agg",
+        "sum",
+        "--geojson",
+        "regions.geojson",
+        "--location-mode",
+        "geojson-id",
+        "--denominator",
+        "pop",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // A: 1,000 spend / 10,000 people = 0.1 -> per 1,000 = 100. B: 2,000 / 200,000 = 10 per 1,000.
+    assert!(
+        html.contains("spend per 1,000 residents"),
+        "the summed measure keeps its own name in the rate label: {html}"
+    );
+    assert!(html.contains("100 per 1,000 residents"), "A's rate: {html}");
+    assert!(html.contains("10 per 1,000 residents"), "B's rate: {html}");
+}
+
+#[test]
+fn viz_choropleth_denominator_rejects_intensive_agg() {
+    let wrk = Workdir::new("viz_choropleth_denominator_rejects_intensive_agg");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "pop",
+        "--agg",
+        "mean",
+        "--geojson",
+        "regions.geojson",
+        "--location-mode",
+        "geojson-id",
+        "--denominator",
+        "pop",
+    ]);
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("already"),
+        "a mean is already intensive; dividing it again is meaningless: {stderr}"
+    );
+}
+
+#[test]
+fn viz_choropleth_denominator_must_be_region_constant() {
+    // a denominator that changes row to row is a ROW-level amount passed by mistake; taking the
+    // first value would produce a confident wrong rate, so this is a hard error.
+    let wrk = Workdir::new("viz_choropleth_denominator_must_be_region_constant");
+    wrk.create_from_string(
+        "rg.csv",
+        "region,pop\nA,10000\nA,99999\nB,200000\nB,200000\n",
+    );
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--location-mode",
+        "geojson-id",
+        "--denominator",
+        "pop",
+    ]);
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("not constant within region 'A'"),
+        "the offending region must be named: {stderr}"
+    );
+}
+
+#[test]
+fn viz_choropleth_denominator_flags_are_mutually_exclusive() {
+    let wrk = Workdir::new("viz_choropleth_denominator_flags_are_mutually_exclusive");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--location-mode",
+        "geojson-id",
+        "--denominator",
+        "pop",
+        "--denominator-key",
+        "properties.POP",
+    ]);
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("mutually exclusive"), "{stderr}");
+}
+
+#[test]
+fn viz_choropleth_denominator_key_must_resolve() {
+    let wrk = Workdir::new("viz_choropleth_denominator_key_must_resolve");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--location-mode",
+        "geojson-id",
+        "--denominator-key",
+        "properties.NOPE",
+    ]);
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("resolves to no positive number"),
+        "an unresolvable key is explicit intent gone wrong, not a silent fallback: {stderr}"
+    );
+}
+
+#[test]
+fn viz_smart_denominator_hint_adds_a_rate_panel() {
+    let wrk = Workdir::new("viz_smart_denominator_hint_adds_a_rate_panel");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", &denom_dictionary(true));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the rate panel sits BESIDE the count panel — both must be present
+    assert!(html.contains("count by Region"), "count panel: {html}");
+    assert!(
+        html.contains("service request per 1,000 residents by Region"),
+        "rate panel, titled with the dictionary's grain unit: {html}"
+    );
+    assert!(html.contains("Population: 10,000"), "denominator in hover");
+    // a rate WAS charted, so the count panel uses the paired caveat, not the "add a flag" one
+    assert!(html.contains("not adjusted for region size"), "{html}");
+    assert!(!html.contains("add --denominator-key for a rate"), "{html}");
+}
+
+#[test]
+fn viz_smart_denominator_key_flag_adds_a_rate_panel() {
+    let wrk = Workdir::new("viz_smart_denominator_key_flag_adds_a_rate_panel");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    // dictionary WITHOUT the hint: the flag alone must be enough
+    wrk.create_from_string("d.schema.json", &denom_dictionary(false));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+        "--denominator-key",
+        "properties.POP",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("service request per 1,000 residents by Region"),
+        "rate panel from the flag: {html}"
+    );
+    assert!(
+        html.contains("POP: 10,000"),
+        "denominator named from the key"
+    );
+}
+
+#[test]
+fn viz_smart_bad_denominator_hint_degrades_to_caveated_counts() {
+    // a dictionary is a hand-editable sidecar, so a bad hint must never take the Data Schematic
+    // down: it costs the rate panel and nothing else.
+    let wrk = Workdir::new("viz_smart_bad_denominator_hint_degrades_to_caveated_counts");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string(
+        "d.schema.json",
+        &denom_dictionary(true).replace(r#""column": "pop""#, r#""column": "nosuchcolumn""#),
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success(), "a bad HINT is not a hard error");
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("nosuchcolumn") && stderr.contains("no such column"),
+        "the reason must name the column: {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(!html.contains("per 1,000 residents"), "no rate panel");
+    assert!(
+        html.contains("add --denominator-key for a rate"),
+        "the count panel must be caveated: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_region_map_without_a_denominator_is_caveated() {
+    let wrk = Workdir::new("viz_smart_region_map_without_a_denominator_is_caveated");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", &denom_dictionary(false));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("add --denominator-key for a rate"),
+        "an unqualified count choropleth reads as a map of where the problem is, when it is \
+         substantially a map of where the people are: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_zero_denominator_region_is_excluded_and_reported() {
+    // region D has POP 0 in the boundary file: it cannot divide, so it is dropped from the rate
+    // and the narrowing is stated in the title AND on stderr, never silently.
+    let wrk = Workdir::new("viz_smart_zero_denominator_region_is_excluded_and_reported");
+    let mut csv = denom_csv();
+    csv.push_str(&"D,0\n".repeat(5));
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", &denom_dictionary(false));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+        "--denominator-key",
+        "properties.POP",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("no usable denominator for 1 of 4 regions"),
+        "the exclusion must be reported: {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("1 of 4 without a denominator"),
+        "a sub-panel carries no below-map note, so the title states it: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_pip_region_map_rate_panel_and_caveat() {
+    // the Boston/Pittsburgh shape: regions come from point-in-polygon binning, not a region
+    // column, so only --denominator-key can feed the rate here.
+    let wrk = Workdir::new("viz_smart_pip_region_map_rate_panel_and_caveat");
+    // both coordinates must VARY: `viz smart` skips a constant column, and without a usable
+    // lat/lon pair there is no map panel and so no point-in-polygon region panel at all.
+    let mut csv = String::from("lat,lon\n");
+    for (lon_base, n) in [(0.0_f64, 30), (1.0, 300), (2.0, 60)] {
+        for i in 0..n {
+            let j = f64::from(i % 17);
+            csv.push_str(&format!(
+                "{:.4},{:.4}\n",
+                0.1 + j * 0.05,
+                lon_base + 0.1 + j * 0.05
+            ));
+        }
+    }
+    wrk.create_from_string("pts.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    // with a denominator: a rate panel appears beside the count panel
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--denominator-key",
+        "properties.POP",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("per 1,000 residents"),
+        "PIP rate panel: {html}"
+    );
+    assert!(html.contains("not adjusted for region size"), "{html}");
+
+    // without one: the count panel says why it is only showing counts
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv", "--geojson", "regions.geojson"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(!html.contains("per 1,000 residents"));
+    assert!(
+        html.contains("add --denominator-key for a rate"),
+        "PIP count panel must be caveated too: {html}"
+    );
+}

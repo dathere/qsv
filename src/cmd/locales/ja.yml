@@ -272,6 +272,7 @@ viz:
     lorenz_unit: "行が比較可能な単位でない限り、集中は想定どおりです"
     lorenz_zeros: "平坦な区間 = %{q_pct}% がゼロであり、小さな値ではありません · %{q_unit}"
     raw_count_caveat: "生の件数 — 規模が大きい・活動が多い地域ほど行数が増えます。比率にするには --denominator-key を指定してください"
+    raw_count_paired: "生の件数 — 地域の規模で調整していません"
     denominator_excluded: "%{q_total} 件中 %{q_n} 件の地域に使用可能な分母がないため、表示されません。"
     funnel_complete: "n = %{q_n} 件の完全なケース(全行の %{q_pct}%)"
     funnel_violation: "%{q_pct}% の行で %{q_here} が %{q_prev} を超過"

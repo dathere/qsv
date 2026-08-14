@@ -5481,15 +5481,20 @@ fn rate_scale(rates: &[f64]) -> u32 {
 fn denominator_noun(label: &str) -> (String, String) {
     let cleaned = label.trim();
     let folded = cleaned.to_ascii_lowercase();
-    let population_ish = ["pop", "population", "resident", "inhabitant", "census"]
-        .iter()
-        .any(|tok| {
-            folded == *tok
-                || folded
-                    .split(|c: char| !c.is_ascii_alphanumeric())
-                    .any(|w| w == *tok)
-                || folded.starts_with(&format!("{tok}_"))
-                || folded.starts_with(&format!("{tok}2"))
+    let population_ish = folded
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .any(|w| {
+            // "pop" is short enough to collide with unrelated words ("popular_vote"), so it
+            // matches only as a whole word or with a digit suffix ("pop2020"). The longer,
+            // unambiguous tokens match as a word PREFIX, which covers their plurals
+            // ("residents", "inhabitants") without needing a pluralization rule.
+            w == "pop"
+                || w.strip_prefix("pop")
+                    .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+                || ["population", "resident", "inhabitant", "census"]
+                    .iter()
+                    .any(|tok| w.starts_with(tok))
         });
     if population_ish {
         return (
@@ -23283,12 +23288,18 @@ fn build_smart_pip_choropleth_panel(
             rate_charted = true;
         }
     }
-    if !rate_charted {
-        let caveated = out
-            .remove(0)
-            .with_subtitle(Some(t!("viz.notes.raw_count_caveat").into_owned()));
-        out.insert(0, caveated);
-    }
+    // The count panel is caveated EITHER WAY, only with different wording. A raw-count region map
+    // is unadjusted whether or not a rate panel sits beside it — and the rate panel is not
+    // guaranteed to survive: both panels carry infinite `interest`, so `--max-charts 2` keeps the
+    // earlier one by document order and drops the rate, which without this would leave exactly the
+    // uncaveated count map this issue is about.
+    let caveat = if rate_charted {
+        t!("viz.notes.raw_count_paired")
+    } else {
+        t!("viz.notes.raw_count_caveat")
+    };
+    let caveated = out.remove(0).with_subtitle(Some(caveat.into_owned()));
+    out.insert(0, caveated);
     Ok(Some(out))
 }
 
@@ -23826,12 +23837,18 @@ fn build_smart_summary_choropleth_panels(
     }
     // No rate available: say so ON the count map. An unqualified count choropleth reads as a map
     // of where the problem is, when it is substantially a map of where the people are.
-    if !rate_charted {
-        let caveated = out
-            .remove(0)
-            .with_subtitle(Some(t!("viz.notes.raw_count_caveat").into_owned()));
-        out.insert(0, caveated);
-    }
+    // The count panel is caveated EITHER WAY, only with different wording. A raw-count region map
+    // is unadjusted whether or not a rate panel sits beside it — and the rate panel is not
+    // guaranteed to survive: both panels carry infinite `interest`, so `--max-charts 2` keeps the
+    // earlier one by document order and drops the rate, which without this would leave exactly the
+    // uncaveated count map this issue is about.
+    let caveat = if rate_charted {
+        t!("viz.notes.raw_count_paired")
+    } else {
+        t!("viz.notes.raw_count_caveat")
+    };
+    let caveated = out.remove(0).with_subtitle(Some(caveat.into_owned()));
+    out.insert(0, caveated);
 
     // median-measure panel (when a measure column exists): per-region median of the buffered
     // values, skipping regions with no parsed measure.
@@ -36204,6 +36221,190 @@ mod tests {
             derive_semantics(&stat("Integer", 33, Some(0.00003)), Some(tract)).route,
             Route::Dimension
         );
+    }
+
+    #[test]
+    fn xq_denominator_is_shape_checked_only() {
+        // issue #4394. `x-qsv.denominator` is validated for SHAPE here and for VALIDITY at the
+        // consumption site, so this test pins exactly where that line falls: a well-formed hint
+        // survives even when it names a column this parser cannot see, and a malformed one is
+        // dropped rather than half-honored.
+        let schema = r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "zip": { "type": "string", "title": "ZIP",
+              "x-qsv": { "role": "dimension", "concept": "geo.zip_code",
+                         "denominator": { "column": "  population  " } } },
+            "county": { "type": "string", "x-qsv": { "concept": "geo.county",
+                         "denominator": { "column": "nosuchcolumn" } } },
+            "empty": { "type": "string", "x-qsv": { "concept": "geo.county",
+                         "denominator": { "column": "   " } } },
+            "nokey": { "type": "string", "x-qsv": { "concept": "geo.county",
+                         "denominator": { "col": "population" } } },
+            "scalar": { "type": "string", "x-qsv": { "concept": "geo.county",
+                         "denominator": "population" } },
+            "plain": { "type": "string", "x-qsv": { "concept": "geo.county" } }
+          }
+        }"#;
+        let data = parse_dictionary_semantics(schema).expect("schema should parse");
+        let row = |n: &str| data.rows.get(n).expect("row");
+        // trimmed on read, exactly like every other x-qsv token
+        assert_eq!(row("zip").denominator.as_deref(), Some("population"));
+        // a name this parser cannot resolve is still well-SHAPED: the dictionary describes the
+        // dataset, not this file, so resolution belongs at the consumption site (which reports it
+        // and charts raw counts). Dropping it here would silently turn a typo into "no hint".
+        assert_eq!(row("county").denominator.as_deref(), Some("nosuchcolumn"));
+        // malformed shapes yield None so the column falls back to raw counts
+        assert_eq!(row("empty").denominator, None, "blank column name");
+        assert_eq!(row("nokey").denominator, None, "wrong key name");
+        assert_eq!(row("scalar").denominator, None, "must be an object");
+        assert_eq!(row("plain").denominator, None, "no hint at all");
+        // and it survives derive_semantics onto the region column's ColSemantics
+        let sems = derive_semantics(&stat("String", 33, None), Some(row("zip")));
+        assert_eq!(sems.denominator.as_deref(), Some("population"));
+    }
+
+    #[test]
+    fn rate_scale_puts_the_median_in_a_readable_band() {
+        // issue #4394: the smallest scale putting the MEDIAN rate in [1, 1000).
+        // a typical per-capita incidence (~1.5 per 1,000)
+        assert_eq!(rate_scale(&[0.003, 0.0015, 0.0012]), 1_000);
+        // a rare event needs the widest scale
+        assert_eq!(rate_scale(&[0.000_02, 0.000_03]), 100_000);
+        assert_eq!(rate_scale(&[0.000_3, 0.000_4]), 10_000);
+        // already more than one per unit: scale 1, no inflation
+        assert_eq!(rate_scale(&[2.5, 3.0, 4.0]), 1);
+        // at/above 1,000 per unit there is no larger rung to fall back to
+        assert_eq!(rate_scale(&[5000.0, 6000.0]), 1);
+        // the MEDIAN sets it, so one freak region cannot rescale the map
+        assert_eq!(rate_scale(&[0.002, 0.0021, 0.0019, 900.0]), 1_000);
+        // degenerate inputs fall back to the per-mille convention rather than panicking
+        assert_eq!(rate_scale(&[]), 1_000, "empty");
+        assert_eq!(rate_scale(&[0.0, 0.0]), 1_000, "all zero");
+        assert_eq!(rate_scale(&[f64::NAN, f64::INFINITY]), 1_000, "no finite");
+        assert_eq!(rate_scale(&[0.0025]), 1_000, "single");
+    }
+
+    #[test]
+    fn denominator_noun_only_renames_population() {
+        // a population-ish label becomes the localized "residents"; anything else is used
+        // VERBATIM, because qsv cannot pluralize or translate an arbitrary unit correctly.
+        for label in [
+            "POP",
+            "pop2020",
+            "POP2020",
+            "population",
+            "Total Residents",
+            "CENSUS_POP",
+        ] {
+            assert_eq!(
+                denominator_noun(label),
+                ("residents".to_string(), "resident".to_string()),
+                "{label} reads as population"
+            );
+        }
+        assert_eq!(
+            denominator_noun("households"),
+            ("households".to_string(), "households".to_string()),
+            "an arbitrary unit is never singularized"
+        );
+        assert_eq!(
+            denominator_noun("  km²  "),
+            ("km²".to_string(), "km²".to_string()),
+            "trimmed, otherwise verbatim"
+        );
+    }
+
+    #[test]
+    fn feature_f64_by_path_accepts_quoted_numbers() {
+        // issue #4394: census/boundary exports routinely QUOTE their population fields, and
+        // rejecting those would make --denominator-key mysteriously inert on real-world files.
+        let fc: geojson::FeatureCollection = serde_json::from_value(serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "A",
+                "properties": {
+                    "POP": 1234,
+                    "POP_STR": "42311",
+                    "POP_GROUPED": "1,234,567",
+                    "POP_ZERO": 0,
+                    "POP_NEG": -5,
+                    "NAME": "not a number",
+                    "nested": { "acs": { "pop": "900" } }
+                },
+                "geometry": { "type": "Point", "coordinates": [0.0, 0.0] }
+            }]
+        }))
+        .expect("fixture parses");
+        let f = &fc.features[0];
+        assert_eq!(feature_f64_by_path(f, "properties.POP"), Some(1234.0));
+        assert_eq!(feature_f64_by_path(f, "properties.POP_STR"), Some(42311.0));
+        assert_eq!(
+            feature_f64_by_path(f, "properties.POP_GROUPED"),
+            Some(1_234_567.0),
+            "thousands separators are tolerated"
+        );
+        // zero and negative are "no usable denominator", not errors: they cannot divide, so
+        // invalid and missing are deliberately the same outcome.
+        assert_eq!(feature_f64_by_path(f, "properties.POP_ZERO"), None);
+        assert_eq!(feature_f64_by_path(f, "properties.POP_NEG"), None);
+        assert_eq!(feature_f64_by_path(f, "properties.NAME"), None);
+        assert_eq!(feature_f64_by_path(f, "properties.MISSING"), None);
+        // nested paths address the same way --feature-id-key does
+        assert_eq!(
+            feature_f64_by_path(f, "properties.nested.acs.pop"),
+            Some(900.0)
+        );
+    }
+
+    #[test]
+    fn choropleth_rate_hover_omits_share_of_total() {
+        // issue #4394. A rate is INTENSIVE, so a share-of-total line on it would be a fabricated
+        // statistic — this test is the guard that keeps it out. The raw numerator stays visible so
+        // a reader can still see the underlying volume, and the rank is by RATE, not by count.
+        let locs = vec!["A".to_string(), "B".to_string()];
+        let names = vec!["Alpha".to_string(), "Beta".to_string()];
+        let hover = choropleth_rate_hover_text(
+            &locs,
+            Some(&names),
+            &[30.0, 300.0],
+            &[10_000.0, 200_000.0],
+            &[3.0, 1.5],
+            "count",
+            "POP",
+            "per 1,000 residents",
+        );
+        assert_eq!(hover.len(), 2);
+        assert!(hover[0].starts_with("<b>Alpha</b> (A)"), "{}", hover[0]);
+        assert!(hover[0].contains("count: 30"), "{}", hover[0]);
+        assert!(hover[0].contains("POP: 10,000"), "{}", hover[0]);
+        assert!(hover[0].contains("3 per 1,000 residents"), "{}", hover[0]);
+        // the whole point of the issue: A has a TENTH of B's raw count but ranks first by rate
+        assert!(hover[0].contains("rank 1 of 2"), "{}", hover[0]);
+        assert!(hover[1].contains("rank 2 of 2"), "{}", hover[1]);
+        for h in &hover {
+            assert!(!h.contains("of total"), "no share-of-total on a rate: {h}");
+        }
+    }
+
+    #[test]
+    fn build_rate_series_drops_regions_without_a_denominator() {
+        let locs: Vec<String> = ["A", "B", "C", "D"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        let denoms: HashMap<String, f64> =
+            [("A".to_string(), 10_000.0), ("C".to_string(), 50_000.0)]
+                .into_iter()
+                .collect();
+        let s = build_rate_series(&locs, &[30.0, 300.0, 60.0, 5.0], &denoms);
+        assert_eq!(s.locs, vec!["A".to_string(), "C".to_string()]);
+        assert_eq!(s.numerators, vec![30.0, 60.0]);
+        assert_eq!(s.denominators, vec![10_000.0, 50_000.0]);
+        assert_eq!(s.rates, vec![0.003, 0.0012]);
+        assert_eq!(s.excluded, 2, "B and D have no denominator");
     }
 
     #[test]

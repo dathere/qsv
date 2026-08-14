@@ -501,6 +501,11 @@ viz:
     # `--denominator-key` is a FLAG NAME the user would type: it stays literal in
     # every locale, exactly like `--no-snap` in `title.snap_dropped` above.
     raw_count_caveat: "raw counts — bigger/busier regions tally more rows; add --denominator-key for a rate"
+    # Companion wording for when a rate panel IS charted beside this one: the
+    # count map is still unadjusted, but telling the reader to add a flag they
+    # already passed would be nonsense. Deliberately makes no reference to the
+    # rate PANEL, which an explicit --max-charts can drop.
+    raw_count_paired: "raw counts — not adjusted for region size"
     # Below-map coverage note when some regions had no usable denominator (missing,
     # zero or negative) and were left out of the rate.
     denominator_excluded: "no usable denominator for %{q_n} of %{q_total} regions; they are not shown."

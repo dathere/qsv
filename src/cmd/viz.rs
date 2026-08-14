@@ -15534,10 +15534,13 @@ struct DictData {
     /// Provenance blurb from the jsonschema top-level `x-qsv.generated_by` (model, timestamp).
     generated_by:        Option<String>,
     /// ISO 639-3 language code that describegpt's whatlang pass detected for the dataset
-    /// (jsonschema top-level `x-qsv.detected_language_code`, e.g. "spa"). describegpt OMITS
-    /// the field entirely below its 0.8 confidence threshold, so absence is normal and
-    /// presence already implies confidence -- viz applies no threshold of its own. Drives the
-    /// Data Schematic UI language unless `--language` overrides it.
+    /// (jsonschema top-level `x-qsv.detected_language_code`, e.g. "spa"). describegpt OMITS the
+    /// field unless the full detection sample AND each of 3 disjoint sub-samples independently
+    /// agree on the language, and omits it entirely when an explicit `--language` pinned the
+    /// output. So absence is normal, and presence implies cross-chunk AGREEMENT rather than
+    /// confidence (the reported confidence is only the margin between whatlang's top two
+    /// candidates -- see issue #4406). viz applies no threshold of its own. Drives the Data
+    /// Schematic UI language unless `--language` overrides it.
     detected_language:   Option<String>,
 }
 
@@ -16396,8 +16399,9 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
             .map(|d| strip_dataset_attribution(&d))
             .filter(|s| !s.is_empty());
         let generated_by = top_str(v.get("x-qsv").and_then(|x| x.get("generated_by")));
-        // describegpt writes this only when whatlang cleared its confidence threshold, so a
-        // missing field means "unknown", never "English".
+        // describegpt writes this only when whatlang's verdict held across the full detection
+        // sample AND all 3 of its sub-samples, so a missing field means "unknown", never
+        // "English".
         let detected_language =
             top_str(v.get("x-qsv").and_then(|x| x.get("detected_language_code")));
         return Some(DictData {

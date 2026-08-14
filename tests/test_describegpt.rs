@@ -2730,9 +2730,11 @@ fn describegpt_process_response_attribution_uses_detected_language() {
     );
 }
 
-/// An explicit --language must not be annotated as dataset-detected, even when it happens to
-/// equal the language detection independently found (detection still runs, to populate the
-/// reported detected_language fields).
+/// An explicit --language must not be annotated as dataset-detected, and must SUPPRESS the
+/// recorded detection entirely (#4406). The detected_language_code field is what `viz smart`
+/// localizes the Data Schematic from, so recording a detection alongside a pinned language
+/// would let viz render in the detected language instead of the pinned one - which made
+/// `--language English` only a partial workaround for the original bug.
 #[test]
 #[cfg(feature = "whatlang")]
 fn describegpt_attribution_explicit_language_not_marked_detected() {
@@ -2742,8 +2744,18 @@ fn describegpt_attribution_explicit_language_not_marked_detected() {
     let json = process_response_dictionary_output_with(&wrk, "json", &["--language", "Spanish"]);
     let response = &json["Dictionary"]["response"];
 
-    // detection still ran and is still reported
-    assert_eq!(response["detected_language"], "Spanish");
+    // detection is suppressed under an explicit --language, even though this data IS Spanish
+    let response_obj = response.as_object().unwrap();
+    for key in [
+        "detected_language",
+        "detected_language_code",
+        "detected_language_confidence",
+    ] {
+        assert!(
+            !response_obj.contains_key(key),
+            "an explicit --language must suppress {key}"
+        );
+    }
 
     let attribution = response["attribution"].as_str().unwrap();
     let language_line = attribution
@@ -2758,6 +2770,31 @@ fn describegpt_attribution_explicit_language_not_marked_detected() {
         language_line.contains("Spanish"),
         "the explicit language should still be reported: {language_line:?}"
     );
+}
+
+/// The jsonschema `x-qsv` block is the exact path `viz smart` reads to localize the Data
+/// Schematic, so the explicit-language suppression must be pinned HERE and not only on the
+/// json dictionary - covering the json format alone would leave the #4406 blast radius open.
+#[test]
+#[cfg(feature = "whatlang")]
+fn describegpt_explicit_language_suppresses_detection_in_jsonschema() {
+    let wrk = Workdir::new("describegpt_explicit_lang_jsonschema");
+    wrk.create_indexed("data.csv", spanish_rows());
+
+    let schema =
+        process_response_dictionary_output_with(&wrk, "jsonschema", &["--language", "Spanish"]);
+    let x_qsv = schema["x-qsv"].as_object().unwrap();
+
+    for key in [
+        "detected_language",
+        "detected_language_code",
+        "detected_language_confidence",
+    ] {
+        assert!(
+            !x_qsv.contains_key(key),
+            "x-qsv.{key} must be absent under an explicit --language"
+        );
+    }
 }
 
 /// Detection now happens in `run()` rather than in `run_dictionary_phase`, so this pins the

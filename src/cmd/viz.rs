@@ -15752,23 +15752,32 @@ fn is_identifier_name(label: &str, field: &str) -> bool {
     })
 }
 
-/// Recognize a per-unit MONEY measure — `unit_price`, `unit_cost`, `cost_each`, `unitary_cost`.
-///
-/// Issue #4401: a price is not intensive because it is money, it is intensive because it is
-/// quoted PER SINGLE ITEM. So the rule is a conjunction — a money noun AND a per-single-item
-/// qualifier — never either half alone. Adding a bare `"price"`/`"cost"` to `INTENSIVE_TOKENS`
-/// instead would silently average `total_price`, `sale_price`, `order_price` and `shipping_cost`,
-/// all of which are genuinely additive (`shipping_cost` is per-order and renders as "Total
-/// Shipping Cost" in the committed gallery — a live canary for this rule).
-///
-/// Bare `per` is deliberately NOT a qualifier here: on a one-row-per-order dataset "price per
-/// order" sums perfectly well. The conclusive `per unit`/`per item` PHRASES are handled by
-/// `INTENSIVE_SUBSTRINGS` alongside `per capita`, since a phrase cannot survive tokenization.
 fn is_per_unit_money(tokens: &[String]) -> bool {
     const MONEY_NOUNS: &[&str] = &["price", "prices", "cost", "costs"];
     const PER_UNIT: &[&str] = &["unit", "units", "unitary", "each", "apiece"];
-    tokens.iter().any(|t| MONEY_NOUNS.contains(&t.as_str()))
-        && tokens.iter().any(|t| PER_UNIT.contains(&t.as_str()))
+    // ADJACENT, in either order. Mere co-occurrence anywhere in the name is far too loose:
+    // `cost_of_units_sold` and `unit_sales_cost` are both additive totals, and both contain a
+    // money noun AND a unit token. Adjacency is what separates the compound noun "unit price"
+    // from a sentence that merely mentions units and cost.
+    tokens.windows(2).any(|w| {
+        let (a, b) = (w[0].as_str(), w[1].as_str());
+        (MONEY_NOUNS.contains(&a) && PER_UNIT.contains(&b))
+            || (PER_UNIT.contains(&a) && MONEY_NOUNS.contains(&b))
+    })
+}
+
+/// Recognize the per-single-item PHRASE `per unit` / `per item` as adjacent TOKENS.
+///
+/// Deliberately not a substring test. `per_unit` is a substring of `upper_unit_sales` (`up`
+/// + `per_unit`) and `per_item` of `super_item_revenue` (`su` + `per_item`), both of which are
+/// additive — the same hazard this file already records for `ratio` inside `duration`. Token
+/// windows also pick up camelCase (`pricePerUnit`), which a substring test never could, since
+/// the tokenizer splits on case transitions.
+fn has_per_unit_phrase(tokens: &[String]) -> bool {
+    const UNIT_NOUNS: &[&str] = &["unit", "units", "item", "items"];
+    tokens
+        .windows(2)
+        .any(|w| w[0] == "per" && UNIT_NOUNS.contains(&w[1].as_str()))
 }
 
 fn is_intensive_measure(label: &str, field: &str) -> bool {
@@ -15851,23 +15860,20 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     ];
     // phrases and symbols can't survive tokenization (which splits on non-alphanumerics), so
     // these stay substring tests — none of them is a substring of a common additive word.
-    // `per unit`/`per item` join `per capita` here for the same reason: they are conclusive
-    // per-single-item phrases, and the `per` in them is only meaningful next to the unit noun.
-    const INTENSIVE_SUBSTRINGS: &[&str] = &[
-        "\u{b0}c",
-        "\u{b0}f",
-        "per capita",
-        "per_capita",
-        "per unit",
-        "per_unit",
-        "per item",
-        "per_item",
-    ];
+    const INTENSIVE_SUBSTRINGS: &[&str] = &["\u{b0}c", "\u{b0}f", "per capita", "per_capita"];
+    // The per-unit rules are evaluated over the label and the field SEPARATELY, never over the
+    // concatenation. Both are adjacency-based, and joining the two strings fabricates an
+    // adjacency across the seam that exists in neither: a column labelled "Total Cost" whose
+    // field is `units_sold` would otherwise read as `... cost | units ...` and be averaged.
+    let label_tokens = field_name_tokens(label, "");
+    let field_tokens = field_name_tokens("", field);
+    let per_unit = |t: &[String]| is_per_unit_money(t) || has_per_unit_phrase(t);
     tokens
         .iter()
         .any(|t| INTENSIVE_TOKENS.contains(&t.as_str()))
         || INTENSIVE_SUBSTRINGS.iter().any(|kw| hay.contains(kw))
-        || is_per_unit_money(&tokens)
+        || per_unit(&label_tokens)
+        || per_unit(&field_tokens)
 }
 
 /// Distill a column's `StatsData` + optional dictionary `row` into one charting verdict.
@@ -26668,7 +26674,16 @@ impl<'a> SmartCtx<'a> {
                 );
                 return Ok(None);
             }
-            if matches!(sem.agg, Some(Agg::Mean)) || is_intensive_measure(&sem.label, &s.field) {
+            // A resolved aggregation is AUTHORITATIVE here; the name heuristic is only the
+            // fallback for a column that has none. `sem.agg` already carries the heuristic's own
+            // verdict (derive_semantics downgrades an intensive Sum to Mean before it gets here),
+            // so re-running it on a column that resolved to Sum can only overrule a decision that
+            // was already made with more information — including an explicit `x-qsv.aggregation`
+            // of `sum`, which is documented to override the heuristic in BOTH directions but was
+            // silently ignored on this path (issue #4401).
+            if matches!(sem.agg, Some(Agg::Mean))
+                || (sem.agg.is_none() && is_intensive_measure(&sem.label, &s.field))
+            {
                 viz_skip_note!(
                     VIZ_SMART_PREFIX,
                     "viz.omit.funnel_stage_is_rate",
@@ -37566,6 +37581,48 @@ mod tests {
         // ...but a bare `per` is NOT a qualifier: on a one-row-per-order dataset "price per order"
         // sums perfectly well, so only an explicit unit noun is conclusive.
         assert!(!is_intensive_measure("price per order", "price_per_order"));
+    }
+
+    /// Both per-unit rules are ADJACENCY rules, not "these words appear somewhere" rules.
+    /// Co-occurrence alone matched additive totals, and the `per unit`/`per item` phrases were
+    /// substring-matched, which fired inside `upper_unit`/`super_item`.
+    #[test]
+    fn per_unit_rules_require_adjacency_not_mere_co_occurrence() {
+        // a money noun and a unit token both present, but NOT adjacent: additive totals
+        for additive in [
+            "cost_of_units_sold",
+            "unit_sales_cost",
+            "cost of goods per order",
+        ] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} only co-mentions units and cost, it is an additive total"
+            );
+        }
+        // `per_unit`/`per_item` as SUBSTRINGS of an ordinary word must not fire -- the same
+        // hazard already recorded for "ratio" inside "duration".
+        for additive in ["upper_unit_sales", "super_item_revenue", "upper_item_count"] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} merely contains per_unit/per_item and must stay additive"
+            );
+        }
+        // ...while genuine adjacency still matches, camelCase included (a substring test could
+        // never have matched `pricePerUnit`, which has no separator at all)
+        for intensive in ["pricePerUnit", "costPerItem", "paper_unit_cost"] {
+            assert!(
+                is_intensive_measure(intensive, intensive),
+                "{intensive} is a per-unit quantity"
+            );
+        }
+        // the label/field SEAM must not fabricate an adjacency that exists in neither string
+        assert!(
+            !is_intensive_measure("Total Cost", "units_sold"),
+            "adjacency across the label/field boundary is an artifact, not a signal"
+        );
+        // ...but each side is still checked on its own merits
+        assert!(is_intensive_measure("Unit Price", "up"));
+        assert!(is_intensive_measure("", "unit_price"));
     }
 
     #[test]

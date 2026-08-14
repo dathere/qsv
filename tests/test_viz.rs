@@ -16756,3 +16756,36 @@ fn viz_smart_explicit_aggregation_overrides_the_label_heuristic() {
         "an explicit `mean` must override the additive default; html: {html}"
     );
 }
+
+// Issue #4401: an explicit `x-qsv.aggregation` of `sum` is documented to override the name
+// heuristic in BOTH directions, but the pipeline funnel's stage validation re-ran
+// `is_intensive_measure` unconditionally and refused any stage whose NAME looked intensive --
+// even one the dictionary had explicitly declared additive. A lead-scoring funnel sums score
+// points per stage, and "score" is an intensive token.
+#[test]
+fn viz_smart_funnel_stage_honors_an_explicit_sum_over_the_name_heuristic() {
+    let wrk = Workdir::new("viz_smart_funnel_explicit_sum");
+    let mut csv = String::from("raw_score,qualified_score,won_score\n");
+    for i in 0..60 {
+        let raw = 900 - i * 3;
+        csv.push_str(&format!("{raw},{},{}\n", raw / 2, raw / 5));
+    }
+    let dict = r#"{
+      "properties": {
+        "raw_score":{"type":"integer","title":"Raw Score",
+          "x-qsv":{"qsv_type":"Integer","role":"measure","concept":"measure.amount","aggregation":"sum"}},
+        "qualified_score":{"type":"integer","title":"Qualified Score",
+          "x-qsv":{"qsv_type":"Integer","role":"measure","concept":"measure.amount","aggregation":"sum"}},
+        "won_score":{"type":"integer","title":"Won Score",
+          "x-qsv":{"qsv_type":"Integer","role":"measure","concept":"measure.amount","aggregation":"sum"}}
+      },
+      "x-qsv": { "relationships": [{"kind":"pipeline",
+        "members":["raw_score","qualified_score","won_score"]}] }
+    }"#;
+    let html = smart_with_dict(&wrk, &csv, dict);
+
+    assert!(
+        html.contains(r#""type":"funnel""#),
+        "an explicitly-additive stage must not be refused as a rate; html: {html}"
+    );
+}

@@ -17329,3 +17329,87 @@ fn viz_choropleth_denominator_all_zero_region_is_excluded_not_a_conflict() {
         "the excluded region must be reported: {html}"
     );
 }
+
+#[test]
+fn viz_smart_non_constant_hint_denominator_degrades_to_caveated_counts() {
+    // REGRESSION (roborev 4235): the constancy-before-positivity fix landed on BOTH the standalone
+    // column path and this dictionary-hint path, but only the former was pinned by a test, so the
+    // hint path could silently regress to filtering non-positives first. Region A holds 0 and 50,
+    // which is not a region-level quantity at all.
+    //
+    // A bad HINT never fails the run (unlike the flag): it costs the rate panel, names the reason,
+    // and the count panel falls back to its raw-count caveat.
+    let wrk = Workdir::new("viz_smart_non_constant_hint_denominator_degrades_to_caveated_counts");
+    let mut csv = String::from("region,pop\nA,0\n");
+    csv.push_str(&"A,50\n".repeat(29));
+    csv.push_str(&"B,200000\n".repeat(300));
+    csv.push_str(&"C,50000\n".repeat(60));
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", &denom_dictionary(true));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success(), "a bad hint is not a hard error");
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("not constant within region 'A'"),
+        "the zero row must take part in the comparison, and name the region: {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains("per 1,000 residents"),
+        "no rate panel: {html}"
+    );
+    assert!(
+        html.contains("add --denominator-key for a rate"),
+        "the count panel must fall back to its caveat: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_consistently_zero_hint_denominator_is_an_exclusion() {
+    // the other side of the line, on the hint path: a region whose denominator is CONSISTENTLY
+    // unusable is not a conflict — the rate panel still renders for the regions that do have one,
+    // and the narrowed coverage is reported. Without this, the constancy fix above would turn
+    // every genuinely-zero region into a dropped panel.
+    let wrk = Workdir::new("viz_smart_consistently_zero_hint_denominator_is_an_exclusion");
+    let mut csv = String::from("region,pop\n");
+    csv.push_str(&"A,10000\n".repeat(30));
+    csv.push_str(&"B,200000\n".repeat(300));
+    csv.push_str(&"C,0\n".repeat(60));
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", &denom_dictionary(true));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("no usable denominator for 1 of 3 regions"),
+        "reported, not silently narrowed: {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("per 1,000 residents"),
+        "the rate panel still renders for the covered regions: {html}"
+    );
+    assert!(html.contains("1 of 3 without a denominator"), "{html}");
+}

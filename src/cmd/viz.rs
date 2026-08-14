@@ -6909,24 +6909,27 @@ fn choropleth_literal_locations(
         if loc.is_empty() {
             continue;
         }
+        // Constancy is checked over every FINITE value, BEFORE the positivity filter below.
+        // Screening out non-positives first would hide the very mistake this check exists to
+        // catch: a row-level column like `fee` holding 0, 50, 50 for one region would look
+        // perfectly constant at 50 once the zeros were dropped, and would then divide the map.
         if let Some(di) = denom_idx
             && let Some(d) = parse_f64(record.get(di))
+            && d.is_finite()
         {
             denom_seen = true;
-            if d.is_finite() && d > 0.0 {
-                match denoms.get(&loc) {
-                    // A region whose denominator changes row to row is not a region-level quantity
-                    // at all (a row-level amount was passed by mistake), and silently taking the
-                    // first value would produce a confident wrong rate. Report the first conflict
-                    // AFTER the pass so the message can name the region.
-                    Some(&prev) if (prev - d).abs() > f64::EPSILON * prev.abs().max(1.0) => {
-                        denom_conflict.get_or_insert((loc.clone(), prev, d));
-                    },
-                    Some(_) => {},
-                    None => {
-                        denoms.insert(loc.clone(), d);
-                    },
-                }
+            match denoms.get(&loc) {
+                // A region whose denominator changes row to row is not a region-level quantity
+                // at all (a row-level amount was passed by mistake), and silently taking the
+                // first value would produce a confident wrong rate. Report the first conflict
+                // AFTER the pass so the message can name the region.
+                Some(&prev) if (prev - d).abs() > f64::EPSILON * prev.abs().max(1.0) => {
+                    denom_conflict.get_or_insert((loc.clone(), prev, d));
+                },
+                Some(_) => {},
+                None => {
+                    denoms.insert(loc.clone(), d);
+                },
             }
         }
         let value = match value_idx {
@@ -6952,6 +6955,10 @@ fn choropleth_literal_locations(
              (e.g. its population)."
         );
     }
+    // Only NOW drop the unusable values. A zero or negative denominator cannot divide, so those
+    // regions carry no rate and are reported as excluded — but they had to survive the constancy
+    // check above to be compared against their region's other rows.
+    denoms.retain(|_, d| *d > 0.0);
     let (locs, z) = aggregate(raw_locs, values, agg);
     // when a custom --geojson is supplied (geojson-id / --map paths), resolve region names from its
     // features so hover shows human-readable labels — matching the point-in-polygon path. Without a
@@ -23587,11 +23594,14 @@ fn build_smart_summary_choropleth_panels(
                     order[ci].push(k.clone());
                 },
             }
+            // every FINITE value, positive or not — screening non-positives out first would hide
+            // the mistake this check exists to catch (a row-level column holding 0, 50, 50 for one
+            // region reads as constant at 50 once the zeros are gone). Unusable values are dropped
+            // at the consumption site instead.
             if track_denoms
                 && let Some((_, Ok(dcol))) = &hints[ci]
                 && let Some(d) = parse_f64(record.get(*dcol))
                 && d.is_finite()
-                && d > 0.0
             {
                 match denom_by_cand[ci].get(&k) {
                     // A denominator that changes between rows of the same region is not a
@@ -23769,7 +23779,7 @@ fn build_smart_summary_choropleth_panels(
                     q_reason = format!("it is not constant within region '{region}'")
                 );
                 None
-            } else if denom_by_cand[ci].is_empty() {
+            } else if !denom_by_cand[ci].values().any(|d| *d > 0.0) {
                 viz_skip_note!(
                     VIZ_SMART_PREFIX,
                     "viz.omit.denominator_invalid",
@@ -23792,7 +23802,11 @@ fn build_smart_summary_choropleth_panels(
                 key.rsplit('.').next().unwrap_or(key).to_string(),
             ),
             DenominatorSource::Column(idx) => {
-                (std::mem::take(&mut denom_by_cand[ci]), label_of(*idx))
+                // drop the unusable values only now: they had to survive the constancy check
+                // above to be compared against their region's other rows.
+                let mut m = std::mem::take(&mut denom_by_cand[ci]);
+                m.retain(|_, d| *d > 0.0);
+                (m, label_of(*idx))
             },
         };
         let series = build_rate_series(&count_locs, &count_z, &denoms);
@@ -36303,6 +36317,9 @@ mod tests {
 
     #[test]
     fn denominator_noun_only_renames_population() {
+        // asserts the localized "residents"/"resident", so it must pin the process-global
+        // locale (see `english_locale`).
+        let _locale = english_locale();
         // a population-ish label becomes the localized "residents"; anything else is used
         // VERBATIM, because qsv cannot pluralize or translate an arbitrary unit correctly.
         for label in [
@@ -36376,6 +36393,8 @@ mod tests {
 
     #[test]
     fn choropleth_rate_hover_omits_share_of_total() {
+        // asserts localized hover lines (`viz.hover.rate_per`, `viz.hover.rank_of`).
+        let _locale = english_locale();
         // issue #4394. A rate is INTENSIVE, so a share-of-total line on it would be a fabricated
         // statistic — this test is the guard that keeps it out. The raw numerator stays visible so
         // a reader can still see the underlying volume, and the rank is by RATE, not by count.

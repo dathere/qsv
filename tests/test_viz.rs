@@ -17202,8 +17202,12 @@ fn viz_smart_pip_region_map_rate_panel_and_caveat() {
     let wrk = Workdir::new("viz_smart_pip_region_map_rate_panel_and_caveat");
     // both coordinates must VARY: `viz smart` skips a constant column, and without a usable
     // lat/lon pair there is no map panel and so no point-in-polygon region panel at all.
+    // District D (lon 3-4) has POP 0 in the boundary file and gets a healthy share of the points,
+    // so it survives `viz smart`'s geographic-outlier filter and actually exercises the PIP
+    // panel's OWN exclusion reporting — that title suffix and skip note are duplicated there, not
+    // shared with the region-code path.
     let mut csv = String::from("lat,lon\n");
-    for (lon_base, n) in [(0.0_f64, 30), (1.0, 300), (2.0, 60)] {
+    for (lon_base, n) in [(0.0_f64, 30), (1.0, 300), (2.0, 60), (3.0, 90)] {
         for i in 0..n {
             let j = f64::from(i % 17);
             csv.push_str(&format!(
@@ -17234,6 +17238,16 @@ fn viz_smart_pip_region_map_rate_panel_and_caveat() {
         "PIP rate panel: {html}"
     );
     assert!(html.contains("not adjusted for region size"), "{html}");
+    // District D binned points but has POP 0, so it is dropped from the rate and SAID so
+    assert!(
+        html.contains("1 of 4 without a denominator"),
+        "the PIP rate panel must state its own narrowed coverage: {html}"
+    );
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("no usable denominator for 1 of 4 regions"),
+        "and report it on stderr: {stderr}"
+    );
 
     // without one: the count panel says why it is only showing counts
     let mut cmd = wrk.command("viz");
@@ -17245,5 +17259,73 @@ fn viz_smart_pip_region_map_rate_panel_and_caveat() {
     assert!(
         html.contains("add --denominator-key for a rate"),
         "PIP count panel must be caveated too: {html}"
+    );
+}
+
+#[test]
+fn viz_choropleth_denominator_constancy_sees_non_positive_rows() {
+    // REGRESSION (roborev 4230/4232): constancy used to be checked only AFTER filtering to
+    // positive values, so a row-level column holding 0, 50, 50 for one region read as a perfectly
+    // constant 50 and went on to divide the map — the exact confident-wrong-rate the check exists
+    // to prevent. Every finite value must be compared, and the unusable ones dropped only after.
+    let wrk = Workdir::new("viz_choropleth_denominator_constancy_sees_non_positive_rows");
+    wrk.create_from_string("rg.csv", "region,fee\nA,0\nA,50\nA,50\nB,0\nB,120\nB,120\n");
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--location-mode",
+        "geojson-id",
+        "--denominator",
+        "fee",
+    ]);
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("not constant within region 'A' (0 then 50)"),
+        "the zero row must take part in the comparison: {stderr}"
+    );
+}
+
+#[test]
+fn viz_choropleth_denominator_all_zero_region_is_excluded_not_a_conflict() {
+    // the other side of the same line: a region whose denominator is CONSISTENTLY unusable is not
+    // a conflict — it simply has no rate, and is reported as excluded. Without this, the fix above
+    // would turn every genuinely-zero region into a hard error.
+    let wrk = Workdir::new("viz_choropleth_denominator_all_zero_region_is_excluded_not_a_conflict");
+    wrk.create_from_string(
+        "rg.csv",
+        "region,pop\nA,10000\nA,10000\nB,200000\nB,200000\nC,0\nC,0\n",
+    );
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--location-mode",
+        "geojson-id",
+        "--denominator",
+        "pop",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "a consistently-zero region is not an error"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("no usable denominator for 1 of 3 regions"),
+        "the excluded region must be reported: {html}"
     );
 }

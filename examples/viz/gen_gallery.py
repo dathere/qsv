@@ -843,7 +843,7 @@ FIGURES = [
      "people files the most requests — so <b>Riverside</b> (240k residents, 480 requests) leads the "
      "count panel purely on size. The <b>rate</b> panel beside it divides by each district's "
      "population and inverts the ranking: <b>Old&nbsp;Quarter</b> tops it at 6.0 requests per 1,000 "
-     "residents on a quarter of Riverside's volume. The denominator is <b>declared, never guessed</b> "
+     "residents on 40% of Riverside's volume. The denominator is <b>declared, never guessed</b> "
      "— here by <code>x-qsv.denominator: {&quot;column&quot;: &quot;population&quot;}</code> on the "
      "region column in the curated dictionary; <code>--denominator-key properties.POP2020</code> "
      "would instead read it from the boundary file, and <code>viz choropleth --denominator</code> "

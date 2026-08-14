@@ -302,7 +302,7 @@ viz:
     rate_per: "%{q_rate} %{q_per}"
     snap_includes: "うち %{q_n} 件は外部からスナップ"
   rate:
-    per_scale: "%{q_noun} %{q_scale} 人あたり"
+    per_scale: "%{q_noun} %{q_scale} あたり"
     per_unit: "%{q_noun} あたり"
     noun_residents: "住民"
     noun_resident: "住民"

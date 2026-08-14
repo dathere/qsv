@@ -16671,3 +16671,121 @@ fn viz_smart_money_non_english_keeps_si_suffix() {
         "no B may leak onto a non-English page"
     );
 }
+
+// Issue #4401: a per-unit money measure ("unit price") is INTENSIVE — summing it produces a
+// number with no meaning — but a money noun alone never is. The two columns here are the
+// regression pair: they were `Total Unit Price` (wrong) and `Total Shipping Cost` (right) side by
+// side in the same committed gallery figure, both tagged `role: measure, concept: measure.amount`.
+#[test]
+fn viz_smart_per_unit_money_is_averaged_but_plain_money_still_sums() {
+    let wrk = Workdir::new("viz_smart_per_unit_money_is_averaged");
+    // Cardinalities are tuned deliberately: too LOW and a numeric column charts as a
+    // categorical frequency bar, too HIGH (near-unique) and it is skipped as ID-like. Either way
+    // it never reaches the KPI row, which is what this test reads.
+    let mut csv = String::from("region,unit_price,shipping_cost,units_sold,total_price\n");
+    for i in 0..200 {
+        csv.push_str(&format!(
+            "R{},{}.5,{}.25,{},{}.75\n",
+            i % 4,
+            5 + i % 89,
+            1 + i % 37,
+            1 + i * 7 % 97,
+            50 + i % 149
+        ));
+    }
+    wrk.create_from_string("sales.csv", &csv);
+
+    let out_html = wrk.path("s.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sales.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("s.html").unwrap();
+
+    assert!(
+        html.contains(r#""text":"Mean unit_price""#),
+        "a per-unit price must headline as a MEAN; html: {html}"
+    );
+    // the canaries: a naive `INTENSIVE_TOKENS += "price"|"cost"` would have flipped all three.
+    for additive in ["shipping_cost", "units_sold", "total_price"] {
+        assert!(
+            html.contains(&format!(r#""text":"Total {additive}""#)),
+            "{additive} is additive and must keep its Total tile; html: {html}"
+        );
+    }
+}
+
+// Issue #4401: an explicit `x-qsv.aggregation` is the authoritative, language-neutral signal and
+// overrides the label heuristic in BOTH directions.
+#[test]
+fn viz_smart_explicit_aggregation_overrides_the_label_heuristic() {
+    let wrk = Workdir::new("viz_smart_explicit_aggregation_overrides");
+    let mut csv = String::from("region,unit_price,shipping_cost\n");
+    for i in 0..60 {
+        csv.push_str(&format!("R{},{},{}\n", i % 4, 10 + i % 9, 3 + i % 7));
+    }
+    wrk.create_from_string("sales.csv", &csv);
+    // deliberately INVERTED against what the heuristic would say for each column
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"type":"object","properties":{
+            "unit_price":{"title":"Unit Price","type":"number",
+              "x-qsv":{"role":"measure","concept":"measure.money","aggregation":"sum"}},
+            "shipping_cost":{"title":"Shipping Cost","type":"number",
+              "x-qsv":{"role":"measure","concept":"measure.money","aggregation":"mean"}}}}"#,
+    );
+
+    let out_html = wrk.path("s.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "sales.csv",
+        "--dictionary",
+        "dict.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("s.html").unwrap();
+
+    assert!(
+        html.contains(r#""text":"Total Unit Price""#),
+        "an explicit `sum` must override the intensive label heuristic; html: {html}"
+    );
+    assert!(
+        html.contains(r#""text":"Mean Shipping Cost""#),
+        "an explicit `mean` must override the additive default; html: {html}"
+    );
+}
+
+// Issue #4401: an explicit `x-qsv.aggregation` of `sum` is documented to override the name
+// heuristic in BOTH directions, but the pipeline funnel's stage validation re-ran
+// `is_intensive_measure` unconditionally and refused any stage whose NAME looked intensive --
+// even one the dictionary had explicitly declared additive. A lead-scoring funnel sums score
+// points per stage, and "score" is an intensive token.
+#[test]
+fn viz_smart_funnel_stage_honors_an_explicit_sum_over_the_name_heuristic() {
+    let wrk = Workdir::new("viz_smart_funnel_explicit_sum");
+    let mut csv = String::from("raw_score,qualified_score,won_score\n");
+    for i in 0..60 {
+        let raw = 900 - i * 3;
+        csv.push_str(&format!("{raw},{},{}\n", raw / 2, raw / 5));
+    }
+    let dict = r#"{
+      "properties": {
+        "raw_score":{"type":"integer","title":"Raw Score",
+          "x-qsv":{"qsv_type":"Integer","role":"measure","concept":"measure.amount","aggregation":"sum"}},
+        "qualified_score":{"type":"integer","title":"Qualified Score",
+          "x-qsv":{"qsv_type":"Integer","role":"measure","concept":"measure.amount","aggregation":"sum"}},
+        "won_score":{"type":"integer","title":"Won Score",
+          "x-qsv":{"qsv_type":"Integer","role":"measure","concept":"measure.amount","aggregation":"sum"}}
+      },
+      "x-qsv": { "relationships": [{"kind":"pipeline",
+        "members":["raw_score","qualified_score","won_score"]}] }
+    }"#;
+    let html = smart_with_dict(&wrk, &csv, dict);
+
+    assert!(
+        html.contains(r#""type":"funnel""#),
+        "an explicitly-additive stage must not be refused as a rate; html: {html}"
+    );
+}

@@ -585,7 +585,7 @@ smart options:
                            describegpt's completion cache, forcing a genuinely fresh inference
                            that overwrites the sidecar on success.
                            Generation/read failures soft-fall back to the stats-only Data Schematic.
-                           The dictionary also drives the KPI overview row via three optional
+                           The dictionary also drives the KPI overview row via four optional
                            per-field hints in a property's "x-qsv" object (edit them in the saved
                            schema to fine-tune). A "gauge_range" of [min, max] on a continuous
                            numeric measure renders its KPI tile as a GAUGE on that canonical scale
@@ -600,6 +600,13 @@ smart options:
                            names the currency in the panel subtitle; an unrecognized code renders
                            verbatim ("XOF 1.2B"). "infer" emits it for money columns, which it
                            also tags with the "measure.money" concept.
+                           An "aggregation" of "sum" or "mean" on a numeric measure declares how
+                           that column combines across a group, and OVERRIDES qsv's own
+                           extensive-vs-intensive guess in both directions. Use it when a measure
+                           does not add up - a unit price, a temperature, a rating - or when a
+                           measure whose NAME reads non-additive genuinely does sum. qsv's guess
+                           reads column names and is English-first, so this hint is the reliable
+                           way to state it, in any language. "infer" emits it for numeric measures.
                            Note that on ENGLISH pages large numbers use the financial convention
                            (1e9 reads "1B", not the SI "1G") consistently across KPI tiles, bar
                            value labels and axis ticks. Other languages keep the SI prefixes.
@@ -15403,6 +15410,13 @@ struct DictRow {
     /// currency in its panel subtitle. Normalized (trimmed/uppercased/shape-checked) on read,
     /// because a hand-edited sidecar never passed through describegpt's validator.
     currency:     Option<String>,
+    /// Optional explicit aggregation (`x-qsv.aggregation`, `sum`|`mean`) declaring how this
+    /// numeric measure combines across a group. The language-neutral, authoritative answer to a
+    /// question `is_intensive_measure` can only guess at from the column NAME (issue #4401), so it
+    /// OVERRIDES that heuristic in BOTH directions — it can force Mean on a name that reads as
+    /// additive, and equally force Sum on one the heuristic would wrongly average. Re-verified on
+    /// read, because a hand-edited sidecar never passed through describegpt's validator.
+    aggregation:  Option<Agg>,
 }
 
 /// Which form a declared pipeline is drawn as (issue #4222).
@@ -15738,6 +15752,34 @@ fn is_identifier_name(label: &str, field: &str) -> bool {
     })
 }
 
+fn is_per_unit_money(tokens: &[String]) -> bool {
+    const MONEY_NOUNS: &[&str] = &["price", "prices", "cost", "costs"];
+    const PER_UNIT: &[&str] = &["unit", "units", "unitary", "each", "apiece"];
+    // ADJACENT, in either order. Mere co-occurrence anywhere in the name is far too loose:
+    // `cost_of_units_sold` and `unit_sales_cost` are both additive totals, and both contain a
+    // money noun AND a unit token. Adjacency is what separates the compound noun "unit price"
+    // from a sentence that merely mentions units and cost.
+    tokens.windows(2).any(|w| {
+        let (a, b) = (w[0].as_str(), w[1].as_str());
+        (MONEY_NOUNS.contains(&a) && PER_UNIT.contains(&b))
+            || (PER_UNIT.contains(&a) && MONEY_NOUNS.contains(&b))
+    })
+}
+
+/// Recognize the per-single-item PHRASE `per unit` / `per item` as adjacent TOKENS.
+///
+/// Deliberately not a substring test. `per_unit` is a substring of `upper_unit_sales` (`up`
+/// + `per_unit`) and `per_item` of `super_item_revenue` (`su` + `per_item`), both of which are
+/// additive — the same hazard this file already records for `ratio` inside `duration`. Token
+/// windows also pick up camelCase (`pricePerUnit`), which a substring test never could, since
+/// the tokenizer splits on case transitions.
+fn has_per_unit_phrase(tokens: &[String]) -> bool {
+    const UNIT_NOUNS: &[&str] = &["unit", "units", "item", "items"];
+    tokens
+        .windows(2)
+        .any(|w| w[0] == "per" && UNIT_NOUNS.contains(&w[1].as_str()))
+}
+
 fn is_intensive_measure(label: &str, field: &str) -> bool {
     let hay = format!("{label} {field}").to_ascii_lowercase();
     let tokens = field_name_tokens(label, field);
@@ -15819,10 +15861,19 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     // phrases and symbols can't survive tokenization (which splits on non-alphanumerics), so
     // these stay substring tests — none of them is a substring of a common additive word.
     const INTENSIVE_SUBSTRINGS: &[&str] = &["\u{b0}c", "\u{b0}f", "per capita", "per_capita"];
+    // The per-unit rules are evaluated over the label and the field SEPARATELY, never over the
+    // concatenation. Both are adjacency-based, and joining the two strings fabricates an
+    // adjacency across the seam that exists in neither: a column labelled "Total Cost" whose
+    // field is `units_sold` would otherwise read as `... cost | units ...` and be averaged.
+    let label_tokens = field_name_tokens(label, "");
+    let field_tokens = field_name_tokens("", field);
+    let per_unit = |t: &[String]| is_per_unit_money(t) || has_per_unit_phrase(t);
     tokens
         .iter()
         .any(|t| INTENSIVE_TOKENS.contains(&t.as_str()))
         || INTENSIVE_SUBSTRINGS.iter().any(|kw| hay.contains(kw))
+        || per_unit(&label_tokens)
+        || per_unit(&field_tokens)
 }
 
 /// Distill a column's `StatsData` + optional dictionary `row` into one charting verdict.
@@ -15844,12 +15895,21 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     // legitimately monetary. Do NOT re-gate on route: the panel subtitle consults this for every
     // charted column, not just the ones that end up as measures.
     let currency = row.currency.clone();
+    // An explicit `x-qsv.aggregation` is the dictionary AUTHOR stating how the measure combines,
+    // already re-verified in `parse_dictionary_semantics`. It outranks every heuristic below —
+    // both the intensive downgrade and the `measure.count` exemption — because it is the one
+    // signal derived from what the column MEANS rather than from what it is NAMED (issue #4401).
+    let explicit_agg = row.aggregation;
     let make = |route: Route, agg: Option<Agg>| {
         // An intensive measure (temperature, rate, index, pre-averaged value) tagged additive by
         // the coarse measure.* concept vocab must be averaged, not summed, across a group. An
         // explicit `measure.count` is additive by definition (a count sums, never averages), so
         // it is never downgraded even if its label embeds an intensive token.
         let agg = if route == Route::Measure
+            && let Some(explicit) = explicit_agg
+        {
+            Some(explicit)
+        } else if route == Route::Measure
             && agg == Some(Agg::Sum)
             && concept != "measure.count"
             && is_intensive_measure(&label, &s.field)
@@ -16245,6 +16305,42 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 let measure = role.is_empty() || role == "measure";
                 (numeric && measure && money_ish).then_some(code)
             };
+            // `x-qsv.aggregation`: an explicit `sum`|`mean` for a numeric measure (issue #4401).
+            // describegpt's `verify_aggregation` already gated this on emit, but a hand-edited
+            // sidecar never passed through that validator, so viz re-applies the same check:
+            //
+            //   * token — trimmed, case-folded, and a member of the closed two-token vocabulary. An
+            //     unknown verb yields None so the column falls back to the label heuristic;
+            //     half-honoring an aggregation nobody can render is worse than ignoring it.
+            //   * semantics — a numeric MEASURE, the only thing an aggregation verb can describe.
+            //     Deliberately NOT concept-gated (unlike `currency`): non-additivity is not a
+            //     property of one namespace — a unit price, a temperature, a rating and a duration
+            //     are all intensive under different concepts.
+            let xq_aggregation = || -> Option<Agg> {
+                let agg = match xq
+                    .and_then(|x| x.get("aggregation"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(|s| s.trim().to_ascii_lowercase())?
+                    .as_str()
+                {
+                    "sum" => Agg::Sum,
+                    "mean" => Agg::Mean,
+                    _ => return None,
+                };
+                // `qsv_type` is absent on hand-written dictionaries; only reject when it is
+                // present AND says the column is non-numeric.
+                let type_raw = from_xq("qsv_type");
+                let numeric = match type_raw.trim() {
+                    "" => true,
+                    t => matches!(t, "Integer" | "Float"),
+                };
+                // an empty role is admissible: `concept` alone can establish the measure, which
+                // is the precedence `derive_semantics` uses.
+                let role_raw = from_xq("role");
+                let role = role_raw.trim();
+                let measure = role.is_empty() || role == "measure";
+                (numeric && measure).then_some(agg)
+            };
             let label = prop
                 .get("title")
                 .and_then(serde_json::Value::as_str)
@@ -16266,6 +16362,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     gauge_range: xq_range("gauge_range"),
                     target: xq_num("target"),
                     currency: xq_currency(),
+                    aggregation: xq_aggregation(),
                 },
             );
         }
@@ -16333,10 +16430,12 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 concept:      from_field("concept"),
                 label:        from_field("label"),
                 description:  from_field("description"),
-                // legacy plain-json dictionaries don't carry KPI gauge/target/currency hints
+                // legacy plain-json dictionaries don't carry KPI gauge/target/currency or
+                // aggregation hints
                 gauge_range:  None,
                 target:       None,
                 currency:     None,
+                aggregation:  None,
             },
         );
     }
@@ -24816,8 +24915,14 @@ fn build_kpi_row(
         // A `gauge_range` describes a bounded per-record quantity (a 0–5 rating, a 0–1 ratio), so
         // its headline value is the MEAN — summing it would blow past the gauge scale. Otherwise
         // fall back to the extensive/intensive keyword heuristic.
+        // An explicit `x-qsv.aggregation` wins outright — including over `gauge_range`, since a
+        // dictionary that states both has stated the aggregation deliberately (issue #4401).
         let has_range = row.and_then(|r| r.gauge_range).is_some();
-        let intensive = has_range || is_intensive_measure(&label, &s.field);
+        let intensive = match row.and_then(|r| r.aggregation) {
+            Some(Agg::Sum) => false,
+            Some(_) => true,
+            None => has_range || is_intensive_measure(&label, &s.field),
+        };
         let Some(value) = (if intensive { s.mean } else { s.sum }).filter(|v| v.is_finite()) else {
             continue;
         };
@@ -26569,7 +26674,16 @@ impl<'a> SmartCtx<'a> {
                 );
                 return Ok(None);
             }
-            if matches!(sem.agg, Some(Agg::Mean)) || is_intensive_measure(&sem.label, &s.field) {
+            // A resolved aggregation is AUTHORITATIVE here; the name heuristic is only the
+            // fallback for a column that has none. `sem.agg` already carries the heuristic's own
+            // verdict (derive_semantics downgrades an intensive Sum to Mean before it gets here),
+            // so re-running it on a column that resolved to Sum can only overrule a decision that
+            // was already made with more information — including an explicit `x-qsv.aggregation`
+            // of `sum`, which is documented to override the heuristic in BOTH directions but was
+            // silently ignored on this path (issue #4401).
+            if matches!(sem.agg, Some(Agg::Mean))
+                || (sem.agg.is_none() && is_intensive_measure(&sem.label, &s.field))
+            {
                 viz_skip_note!(
                     VIZ_SMART_PREFIX,
                     "viz.omit.funnel_stage_is_rate",
@@ -34151,6 +34265,86 @@ mod tests {
         assert_eq!(score_count.agg, Some(Agg::Sum));
     }
 
+    /// Issue #4401: an explicit `x-qsv.aggregation` is the authoritative, language-neutral signal
+    /// and outranks the lexical `is_intensive_measure` guard in BOTH directions.
+    #[test]
+    fn derive_semantics_explicit_aggregation_overrides_the_label_heuristic() {
+        let numeric = stat("Float", 300, Some(0.9));
+
+        // forcing Mean on a name the heuristic reads as additive
+        let mut row = dict_row("", "measure", "measure.money", "Metro Population");
+        row.aggregation = Some(Agg::Mean);
+        assert_eq!(derive_semantics(&numeric, Some(&row)).agg, Some(Agg::Mean));
+
+        // ...and forcing Sum on a name the heuristic would average. This direction is the reason
+        // the hint is not merely "a way to say intensive": the heuristic has false POSITIVES too.
+        let mut row = dict_row("", "measure", "measure.money", "Unit Price");
+        assert_eq!(
+            derive_semantics(&numeric, Some(&row)).agg,
+            Some(Agg::Mean),
+            "without the hint, the label heuristic averages a unit price"
+        );
+        row.aggregation = Some(Agg::Sum);
+        assert_eq!(derive_semantics(&numeric, Some(&row)).agg, Some(Agg::Sum));
+
+        // it also outranks the `measure.count` exemption -- explicit means explicit
+        let mut row = dict_row("", "measure", "measure.count", "Order Count");
+        row.aggregation = Some(Agg::Mean);
+        assert_eq!(derive_semantics(&numeric, Some(&row)).agg, Some(Agg::Mean));
+
+        // a hint on a NON-measure route is ignored: `make` only consults it for Route::Measure,
+        // so a stray aggregation cannot drag a dimension into being aggregated.
+        let mut row = dict_row("", "dimension", "geo.city", "City");
+        row.aggregation = Some(Agg::Sum);
+        let sem = derive_semantics(&numeric, Some(&row));
+        assert_eq!(sem.route, Route::Dimension);
+        assert_eq!(sem.agg, None);
+    }
+
+    /// Issue #4401: `x-qsv.aggregation` is re-verified on READ, because a hand-edited sidecar
+    /// never passed through describegpt's validator.
+    #[test]
+    fn parse_dictionary_semantics_gates_a_hand_authored_aggregation() {
+        let json = r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "unit_price":  {"type":"number","title":"Unit Price",
+              "x-qsv":{"qsv_type":"Float","role":"measure","concept":"measure.money",
+                       "aggregation":"mean"}},
+            "padded":      {"type":"number","title":"Padded",
+              "x-qsv":{"qsv_type":"Float","role":"measure ","concept":" measure.money ",
+                       "aggregation":"  MEAN  "}},
+            "concept_only":{"type":"number","title":"Concept Only",
+              "x-qsv":{"concept":"measure.amount","aggregation":"sum"}},
+            "on_a_dim":    {"type":"string","title":"Region",
+              "x-qsv":{"qsv_type":"String","role":"dimension","concept":"geo.state",
+                       "aggregation":"mean"}},
+            "non_numeric": {"type":"string","title":"Name",
+              "x-qsv":{"qsv_type":"String","role":"measure","aggregation":"sum"}},
+            "off_vocab":   {"type":"number","title":"Bogus",
+              "x-qsv":{"qsv_type":"Float","role":"measure","aggregation":"average"}},
+            "min_token":   {"type":"number","title":"Peak",
+              "x-qsv":{"qsv_type":"Float","role":"measure","aggregation":"max"}}
+          }
+        }"#;
+        let d = parse_dictionary_semantics(json).expect("dictionary parses");
+        assert_eq!(d.rows["unit_price"].aggregation, Some(Agg::Mean));
+        // trimmed and case-folded, exactly like `xq_currency` -- an untrimmed gate would silently
+        // discard the hint on a sidecar whose role reads `"measure "`.
+        assert_eq!(d.rows["padded"].aggregation, Some(Agg::Mean));
+        // an empty role is admissible: concept alone establishes the measure
+        assert_eq!(d.rows["concept_only"].aggregation, Some(Agg::Sum));
+        // ...but a dimension, a non-numeric column, and an off-vocab token are all dropped
+        assert_eq!(d.rows["on_a_dim"].aggregation, None);
+        assert_eq!(d.rows["non_numeric"].aggregation, None);
+        assert_eq!(d.rows["off_vocab"].aggregation, None);
+        // `min`/`max` are NOT accepted, though `Agg` has them: the KPI row has only total/mean
+        // headline forms, so honoring `max` there would silently render the MEAN. Falls back to the
+        // label heuristic instead of being half-applied.
+        assert_eq!(d.rows["min_token"].aggregation, None);
+    }
+
     #[test]
     fn route_from_content_type_legacy_mapping() {
         assert_eq!(route_from_content_type("category").0, Route::Dimension);
@@ -37329,6 +37523,106 @@ mod tests {
             "review score count",
             "review_score_count"
         ));
+    }
+
+    /// Issue #4401: a per-unit price is intensive, but a money noun ALONE never is.
+    #[test]
+    fn is_intensive_measure_needs_a_qualifier_before_averaging_money() {
+        // the whole point of the qualified rule: these are genuinely additive and a bare
+        // `INTENSIVE_TOKENS += "price"|"cost"` would have broken every one of them. `shipping_cost`
+        // is the live canary -- it renders as "Total Shipping Cost" in the committed gallery.
+        for additive in [
+            "price",
+            "cost",
+            "total_price",
+            "sale_price",
+            "list_price",
+            "order_price",
+            "shipping_cost",
+            "total_cost",
+            "labor_cost",
+            "cost_of_goods",
+            // a qualifier with NO money noun: the conjunction is what keeps this additive
+            "units_sold",
+            "unit_count",
+        ] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} is additive money, must not be averaged"
+            );
+        }
+        // money noun + per-single-item qualifier => intensive
+        for intensive in [
+            "unit_price",
+            "unitPrice",
+            "Unit Price",
+            "unit_cost",
+            "cost_each",
+            "price_each",
+            "unitary_cost",
+        ] {
+            assert!(
+                is_intensive_measure(intensive, intensive),
+                "{intensive} is a per-unit money measure and must be averaged"
+            );
+        }
+        // the `per <unit>` PHRASE is intensive on its own merits, money noun or not
+        for intensive in [
+            "price_per_unit",
+            "cost per item",
+            "weight_per_unit",
+            "revenue_per_item",
+        ] {
+            assert!(
+                is_intensive_measure(intensive, intensive),
+                "{intensive} is a per-unit quantity and must be averaged"
+            );
+        }
+        // ...but a bare `per` is NOT a qualifier: on a one-row-per-order dataset "price per order"
+        // sums perfectly well, so only an explicit unit noun is conclusive.
+        assert!(!is_intensive_measure("price per order", "price_per_order"));
+    }
+
+    /// Both per-unit rules are ADJACENCY rules, not "these words appear somewhere" rules.
+    /// Co-occurrence alone matched additive totals, and the `per unit`/`per item` phrases were
+    /// substring-matched, which fired inside `upper_unit`/`super_item`.
+    #[test]
+    fn per_unit_rules_require_adjacency_not_mere_co_occurrence() {
+        // a money noun and a unit token both present, but NOT adjacent: additive totals
+        for additive in [
+            "cost_of_units_sold",
+            "unit_sales_cost",
+            "cost of goods per order",
+        ] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} only co-mentions units and cost, it is an additive total"
+            );
+        }
+        // `per_unit`/`per_item` as SUBSTRINGS of an ordinary word must not fire -- the same
+        // hazard already recorded for "ratio" inside "duration".
+        for additive in ["upper_unit_sales", "super_item_revenue", "upper_item_count"] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} merely contains per_unit/per_item and must stay additive"
+            );
+        }
+        // ...while genuine adjacency still matches, camelCase included (a substring test could
+        // never have matched `pricePerUnit`, which has no separator at all)
+        for intensive in ["pricePerUnit", "costPerItem", "paper_unit_cost"] {
+            assert!(
+                is_intensive_measure(intensive, intensive),
+                "{intensive} is a per-unit quantity"
+            );
+        }
+        // the label/field SEAM must not fabricate an adjacency that exists in neither string
+        assert!(
+            !is_intensive_measure("Total Cost", "units_sold"),
+            "adjacency across the label/field boundary is an artifact, not a signal"
+        );
+        // ...but each side is still checked on its own merits
+        assert!(is_intensive_measure("Unit Price", "up"));
+        assert!(is_intensive_measure("", "unit_price"));
     }
 
     #[test]

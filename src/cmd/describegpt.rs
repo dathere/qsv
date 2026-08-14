@@ -2079,6 +2079,27 @@ fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
     )
 }
 
+fn provenance_command_line() -> String {
+    normalize_command_line(std::env::args())
+}
+
+/// The pure half of [`provenance_command_line`], split out so it is testable without mutating the
+/// process's own argv.
+fn normalize_command_line<I: Iterator<Item = String>>(mut args: I) -> String {
+    let Some(argv0) = args.next() else {
+        return String::new();
+    };
+    // `file_name` is None for an empty argv[0] (and for a path ending in `..`), so fall back to
+    // the original rather than dropping the program from the line entirely.
+    let program = std::path::Path::new(&argv0)
+        .file_name()
+        .map_or_else(|| argv0.clone(), |n| n.to_string_lossy().into_owned());
+    std::iter::once(program)
+        .chain(args)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Replace {`GENERATED_BY_SIGNATURE`} placeholder with actual attribution
 fn replace_attribution_placeholder(
     text: &str,
@@ -2223,7 +2244,7 @@ fn replace_attribution_placeholder(
         },
         qsv_variant = util::CARGO_BIN_NAME,
         qsv_version = util::CARGO_PKG_VERSION,
-        command_line = std::env::args().collect::<Vec<_>>().join(" "),
+        command_line = provenance_command_line(),
         ts = chrono::Utc::now().to_rfc3339(),
     );
 
@@ -2827,6 +2848,7 @@ fn get_prompt(
         content_type_vocab => dictionary::content_type_vocab_list(),
         concept_vocab => dictionary::concept_vocab_list(),
         role_vocab => dictionary::role_vocab_list(),
+        agg_vocab => dictionary::agg_vocab_list(),
         // Empty string unless we're rendering PromptType::DictionaryRefine during a
         // --two-pass run, where run_dictionary_phase seeds FIRST_PASS_DICT_JSON with the
         // first-pass dictionary JSON before calling get_prompt.
@@ -7175,6 +7197,45 @@ fn get_cached_analysis(
 mod tests {
     use super::*;
 
+    /// A Data Dictionary is a SHARED artifact, so its provenance command line must not disclose
+    /// the author's directory layout through `argv[0]`.
+    #[test]
+    fn normalize_command_line_strips_only_the_binary_directory() {
+        let line = |v: &[&str]| normalize_command_line(v.iter().map(ToString::to_string));
+
+        // the actual leak: an absolute path to the built binary
+        assert_eq!(
+            line(&[
+                "/Users/someone/GitHub/qsv/target/debug/qsv",
+                "describegpt",
+                "sales.csv"
+            ]),
+            "qsv describegpt sales.csv"
+        );
+        // relative invocations normalize to the same thing
+        assert_eq!(
+            line(&["../../target/debug/qsv", "describegpt"]),
+            "qsv describegpt"
+        );
+        // the variant name is preserved -- it is not always "qsv"
+        assert_eq!(line(&["/opt/bin/qsvlite", "stats"]), "qsvlite stats");
+        // a bare name is already normalized
+        assert_eq!(line(&["qsv", "describegpt"]), "qsv describegpt");
+
+        // USER arguments are left verbatim, including an absolute input path: which file was
+        // described is meaningful provenance, and a line labelled "Command line" must still
+        // reproduce the command that ran.
+        assert_eq!(
+            line(&["/x/y/qsv", "describegpt", "/Users/someone/Downloads/in.csv"]),
+            "qsv describegpt /Users/someone/Downloads/in.csv"
+        );
+
+        // degenerate argv: no panic, no dropped program
+        assert_eq!(line(&[]), "");
+        assert_eq!(line(&[""]), "");
+        assert_eq!(line(&["..", "x"]), ".. x");
+    }
+
     #[test]
     fn parse_language_option_classifies_thresholds_and_explicit_languages() {
         // unset -> autodetect at the default threshold
@@ -7972,6 +8033,7 @@ p_fewshot_examples = ""
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         }];
         let first = build_first_pass_dictionary_json_string(&args, &entries);
         sleep(Duration::from_millis(10));
@@ -8176,6 +8238,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "category|raw".to_string(),
@@ -8200,6 +8263,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -8286,6 +8350,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "Status".to_string(),
@@ -8323,6 +8388,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -8425,6 +8491,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "Status".to_string(),
@@ -8449,6 +8516,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -8526,6 +8594,7 @@ p_fewshot_examples = ""
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -8617,6 +8686,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             // Text column with only `min_length` retained.
             dictionary::DictionaryEntry {
@@ -8642,6 +8712,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             // Text column with only `max_length` retained.
             dictionary::DictionaryEntry {
@@ -8667,6 +8738,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -8743,6 +8815,7 @@ p_fewshot_examples = ""
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -8906,6 +8979,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "category".to_string(),
@@ -8930,6 +9004,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -8998,6 +9073,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             // datetime with an inferred format (contains colons) over an RFC3339 min/max.
             dictionary::DictionaryEntry {
@@ -9023,6 +9099,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             // bare `date` token (no inferred fmt) — Min/Max stay as-is.
             dictionary::DictionaryEntry {
@@ -9048,6 +9125,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
             // non-date content type — Min/Max untouched even though numeric.
             dictionary::DictionaryEntry {
@@ -9073,6 +9151,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                aggregation:     None,
             },
         ];
 
@@ -9197,6 +9276,7 @@ p_fewshot_examples = ""
                     content_type_vocab => dictionary::content_type_vocab_list(),
                     concept_vocab => dictionary::concept_vocab_list(),
                     role_vocab => dictionary::role_vocab_list(),
+                    agg_vocab => dictionary::agg_vocab_list(),
                 },
             )
             .unwrap()
@@ -9243,10 +9323,28 @@ p_fewshot_examples = ""
             on.contains(
                 "\"content_type\", \"role\", \"concept\" and (for canonical-scale numeric \
                  measures only) an optional \"gauge_range\", plus (for monetary measures only) an \
-                 optional \"currency\" properties"
+                 optional \"currency\" and (for numeric measures only) an optional \
+                 \"aggregation\" properties"
             ),
-            "flag-on prompt must list content_type/role/concept/gauge_range/currency in the \
-             properties sentence:\n{on}"
+            "flag-on prompt must list content_type/role/concept/gauge_range/currency/aggregation \
+             in the properties sentence:\n{on}"
+        );
+        // The Aggregation instruction, its vocabulary and its worked example (issue #4401).
+        assert!(
+            on.contains("- Aggregation (OPTIONAL, numeric MEASURE fields only)"),
+            "flag-on prompt must include the Aggregation instruction:\n{on}"
+        );
+        assert!(
+            on.contains("sum, mean"),
+            "flag-on prompt must inject AGG_VOCAB:\n{on}"
+        );
+        assert!(
+            on.contains("\"aggregation\": \"sum\""),
+            "flag-on prompt must include the aggregation JSON example key:\n{on}"
+        );
+        assert!(
+            !off.contains("- Aggregation (OPTIONAL"),
+            "flag-off prompt must NOT include the Aggregation instruction:\n{off}"
         );
         // The Currency instruction and its worked example are injected when the flag is on.
         assert!(

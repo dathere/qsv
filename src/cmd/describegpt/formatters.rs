@@ -504,6 +504,14 @@ fn build_x_qsv(
         if let Some(code) = &entry.currency {
             x_qsv.insert("currency".to_string(), json!(code));
         }
+        // How this numeric measure combines across a group, already verified in
+        // `verify_aggregation` (so it is only ever present on a numeric measure). Read by
+        // `viz smart --dictionary` as `x-qsv.aggregation`, where it OVERRIDES the language-bound
+        // `is_intensive_measure` label heuristic. Absent otherwise, keeping no-flag runs
+        // byte-identical.
+        if let Some(agg) = &entry.aggregation {
+            x_qsv.insert("aggregation".to_string(), json!(agg));
+        }
     }
     // Null sentinels. Deliberately NOT gated on the flag: emission keys off the lists being
     // non-empty, and they are only populated when a response actually supplied `null_values`.
@@ -1254,6 +1262,7 @@ mod tests {
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         }
     }
 
@@ -1784,6 +1793,83 @@ mod tests {
         );
     }
 
+    /// Issue #4401: the EMIT half of the aggregation round-trip. The parse/verify links are
+    /// covered in `dictionary.rs`, but nothing else asserts that a verified value actually
+    /// reaches `x-qsv.aggregation` in the emitted schema — which is what
+    /// `viz smart --dictionary` reads back, and what the USAGE text and docs promise
+    /// `--dictionary infer` emits.
+    #[test]
+    fn jsonschema_x_qsv_carries_aggregation_for_numeric_measure() {
+        let mut unit_price = sample_entry("unit_price", "money");
+        unit_price.r#type = "Float".to_string();
+        unit_price.role = "measure".to_string();
+        unit_price.concept = "measure.money".to_string();
+        unit_price.aggregation = Some("mean".to_string());
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&unit_price),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert_eq!(
+            schema["properties"]["unit_price"]["x-qsv"]["aggregation"],
+            json!("mean")
+        );
+
+        // flag off: aggregation absent, so a legacy schema stays byte-identical.
+        let off = format_dictionary_jsonschema(
+            std::slice::from_ref(&unit_price),
+            "test.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert!(
+            off["properties"]["unit_price"]["x-qsv"]
+                .get("aggregation")
+                .is_none(),
+            "aggregation leaked when flag off"
+        );
+
+        // None aggregation is omitted even with the flag on -- the common case, since the
+        // annotation is optional and `verify_aggregation` drops anything unverifiable.
+        let mut plain = sample_entry("plain_measure", "");
+        plain.r#type = "Float".to_string();
+        plain.role = "measure".to_string();
+        let schema3 = format_dictionary_jsonschema(
+            std::slice::from_ref(&plain),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert!(
+            schema3["properties"]["plain_measure"]["x-qsv"]
+                .get("aggregation")
+                .is_none(),
+            "aggregation emitted when None"
+        );
+    }
+
     #[test]
     fn tsv_header_unchanged_when_flag_off() {
         let entries = vec![sample_entry("col", "email")];
@@ -1880,6 +1966,7 @@ mod tests {
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            aggregation:     None,
         };
         let schema = format_dictionary_jsonschema(
             std::slice::from_ref(&entry),

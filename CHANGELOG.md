@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `stats`: **a CSV with an empty column name no longer breaks every stats-cache consumer.** The CSV→JSON conversion behind the stats cache omitted any key whose cell was empty, so a column with an empty *name* lost its `field` key entirely - and `StatsData.field` was the only non-`Option`/non-`#[serde(default)]` string in the struct, so the cache then failed to deserialize with ``missing field `field` ``. Reported against `tojsonl`, but `schema` and `frequency` failed identically; independently, `stats --jsonl` and `--pretty-json` silently emitted records that no downstream consumer could attribute to a column. `field` is now always emitted - keyed by name rather than position, so a future reordering of the stats columns cannot silently reintroduce the bug - and `StatsData.field` is marked `#[serde(default)]` so the poisoned caches the failing run had already written to disk, which still pass mtime validation after an upgrade, keep loading ([#4410](https://github.com/dathere/qsv/issues/4410), [#4412](https://github.com/dathere/qsv/pull/4412)).
+
 ## [22.0.1] - 2026-08-09 📐 The "Data Schematic" Release 📊
 
 qsv's biggest release ever with 580+ commits since v21.1.0. The headliner is **`viz`** - an entirely new command that turns a CSV into interactive [plotly](https://plotly.com/javascript/) charts and maps, with `viz smart` auto-designing a **Data Schematic** while bundling a [DataTables](https://datatables.net/) viewer as well. Schematics are **self-contained, offline-capable HTML** with static PNG/SVG/PDF export via `viz_static`. See the [gallery](https://dathere.github.io/qsv/gallery.html).

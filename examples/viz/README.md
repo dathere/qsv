@@ -39,6 +39,10 @@ To refresh those four, run the generator with a local LLM up (LM Studio / Ollama
   so the four figures are not byte-stable across runs — review the diff before committing. The
   curated dictionaries (`*_dict.schema.json`, `boston311`, `pitt311data`) are never touched.
 
+Reuse is the default for a reason: re-inferring is the one step here that is not reproducible. See
+[Curating a dictionary](#curating-a-dictionary) for why a committed sidecar is the artifact of
+record.
+
 The gallery closes with five clickable **screenshot link-outs** — `smart_nyc311.html`,
 `pitt311data.html`, `smart_boston_311_2025.html`, `smart-brazil-lpg-4-semanas.html` and
 `smart-colombia-calidad-aire.html` — full `--dict-info` **visual data dictionaries**: three over
@@ -108,6 +112,48 @@ render the dictionary as an in-page **Data Dictionary** tab. The committed ones 
 | `onboarding_funnel_dict.schema.json` | 6 | `onboarding_funnel.csv` — declares the four stage columns as a pipeline. Their totals nest, so the same declaration earns a **funnel** |
 | `ultimas-4-semanas-glp.schema.json` | 16 | `ultimas-4-semanas-glp.ssv` (not committed) for the Portuguese LPG-prices link-out Data Schematic |
 | `calidad-aire-pm-colombia.schema.json` | 25 | `calidad-aire-pm-colombia.csv` (not committed) for the Spanish air-quality link-out Data Schematic — **hand-tuned twice**: `Latitud`/`Longitud` carry explicit `geo.latitude`/`geo.longitude` concepts (viz's header-name fallback only matches the English `lat`/`lon`, so without them there is no map at all), and only the additive columns keep `role=measure`, since viz detects non-additive measures from an English token list and would otherwise SUM Spanish `Promedio`/`Mediana`/`Porcentaje` into meaningless KPI totals |
+
+### Curating a dictionary
+
+Every dictionary in that table started as a `--dictionary infer` draft. That is the intended
+workflow, and it has four steps:
+
+**infer → review → correct → keep.**
+
+An inferred dictionary is a draft, not an oracle. The deterministic half of a Data Schematic
+(statistics, heuristics, panel selection) is reproducible; the semantic half is an LLM's opinion and
+is *not*. Inferring twice over the same data can return different `role`/`concept` assignments, and
+`role` decides which panel a column gets — so a re-infer can hand you a structurally different
+dashboard from identical inputs. The corrected sidecar, not the model, is what makes a render
+reproducible. That is exactly why `QSV_VIZ_REGEN_LLM=1` (above) reuses the committed dictionaries:
+the gallery is immune to re-inference drift because its dictionaries are curated artifacts under
+version control.
+
+`calidad-aire-pm-colombia.schema.json` is the clearest case for the review step. Straight from the
+model it produced **no map at all** and KPI tiles that summed Spanish `Promedio`/`Mediana`
+columns into meaningless totals. Two hand-corrections fixed both. (Since
+[#4404](https://github.com/dathere/qsv/pull/4404) the second correction has a more direct
+expression: `x-qsv.aggregation: "mean"` states non-additivity per column, in any language, instead
+of demoting the column out of `role: measure`.)
+
+Working in a qsv checkout, the
+[`visual-data-dictionary`](https://github.com/dathere/qsv/tree/master/.claude/skills/visual-data-dictionary)
+Claude Code skill drives this whole flow — clean, infer, **fine-tune**, render. Its Stage 2.5
+`edit_dictionary.py` is a small terminal UI that walks every column, edits the five fields that
+steer panel selection (`role`, `concept`, label, description, `aggregation`), and previews how each
+edit reroutes the column *before* you render:
+
+```bash
+# non-interactive view of the current routing — safe anywhere
+python3 .claude/skills/visual-data-dictionary/edit_dictionary.py --summary examples/viz/sales_kpi_dict.schema.json
+
+# the TUI itself — needs a real terminal
+python3 .claude/skills/visual-data-dictionary/edit_dictionary.py <stem>.schema.json
+```
+
+`gauge_range`, `target`, `currency` and the dataset-level `relationships` (the pipeline
+funnel/bridge declaration) are hand-edited in the JSON. qsv re-verifies all of these on read, so a
+hand-edit can correct the model but cannot assert a hint the data does not support.
 
 ## The Data Schematic
 

@@ -581,6 +581,17 @@ smart options:
                            beside the input as <stem>.schema.json so you can fine-tune it; if that
                            file already exists, it is reused as-is (skipping the LLM) - edit it to
                            fine-tune, or delete it to force a fresh re-infer.
+                           An inferred dictionary is a DRAFT, not an oracle. It comes from an LLM,
+                           so re-inferring the SAME data can assign a column a different role or
+                           concept - and role drives panel selection, so a re-infer can hand you a
+                           structurally different Data Schematic. The saved sidecar is therefore the
+                           artifact of record: review it, correct what the model got wrong, and keep
+                           it beside the data (commit it, if the data is versioned). Every later run
+                           then reuses it and renders reproducibly - only deleting it, or setting
+                           QSV_VIZ_DICT_FRESH=1, re-rolls the model. Curating that sidecar once is
+                           the human-in-the-loop half of the Data Schematic; qsv re-verifies the
+                           hints below on read, so a hand-edit can correct the model but cannot
+                           smuggle in a hint the data does not support.
                            Set QSV_VIZ_DICT_FRESH=1 to ignore an existing sidecar and bypass
                            describegpt's completion cache, forcing a genuinely fresh inference
                            that overwrites the sidecar on success.
@@ -19044,8 +19055,9 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
     if let (Some(path), Some(_)) = (persist_to.as_ref(), data.as_ref()) {
         match write_dictionary_sidecar(path, &json_text) {
             Ok(()) => viz_note(&format!(
-                "viz smart --dictionary infer: saved inferred dictionary to '{}' (edit it to \
-                 fine-tune; reused on later runs).",
+                "viz smart --dictionary infer: saved inferred dictionary to '{}' - a DRAFT to \
+                 review (edit it to fine-tune; reused as-is on later runs, so a re-infer is not \
+                 needed and would not necessarily agree with this one).",
                 path.display()
             )),
             Err(e) => viz_note(&format!(

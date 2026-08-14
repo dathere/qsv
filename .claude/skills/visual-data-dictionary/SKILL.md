@@ -245,13 +245,15 @@ or anything you tag `aggregation: mean`), so you see the effect before
 rendering. It touches only those five fields, preserves every other key, and
 rewrites the file only if you save.
 
-`aggregation` is the one field qsv can also **drop** on read, and the TUI mirrors
-viz's whole read gate: the token must be `sum`/`mean`, `x-qsv.qsv_type` must be
-`Integer`/`Float` (or absent), and `x-qsv.role` must be empty or exactly
-`measure`. A value failing any of those is flagged `!` and left out of the ROUTE
-preview, because viz silently falls back to its own name heuristic there — which
-catches the two easy mistakes: `"average"` instead of `"mean"`, and an
-aggregation left behind on a column you just re-roled to `dimension`.
+`aggregation` is the one field qsv can also **drop** on read, and the `!` flag
+mirrors exactly when that happens: the token must be `sum`/`mean`,
+`x-qsv.qsv_type` must be `Integer`/`Float` (or absent), `x-qsv.role` must be
+empty or exactly `measure`, *and* the column must route to a measure at all. A
+value failing any of those is flagged and left out of the ROUTE preview, because
+viz silently falls back to its own name heuristic there. It catches the three
+easy mistakes: `"average"` instead of `"mean"`, an aggregation left behind on a
+column you just re-roled to `dimension`, and one on a column nothing classifies
+(`Defer→stats`), where viz's stats floor discards it outright.
 
 **Offer it with AskUserQuestion:** *"Hand-tune the data dictionary in a TUI
 before rendering?"* If **no**, go straight to Stage 3 — but say plainly that the

@@ -27,14 +27,15 @@ not the definitive `viz smart` disposition. Every other key (examples,
 cardinality, null_count, qsv_type, min/max, …) is preserved byte-for-byte, and
 the file is only rewritten if you actually change something and save.
 
-`aggregation` is the one field qsv can also DROP on read. `honored_agg` mirrors
-viz's whole read gate — the token must be `sum`/`mean` (trimmed, ASCII-folded),
-`qsv_type` must be Integer/Float or absent, and `role` must be empty or exactly
-`measure` — and a value failing it is flagged "!" and left out of the ROUTE
-preview, because viz falls back to its own name heuristic there. A gate-passing
-value on a route this projection cannot resolve ("Defer→stats") is NOT flagged:
-viz's content_type/stats fallbacks may still make that column a measure, so a
-warning would be a false positive.
+`aggregation` is the one field qsv can also DROP on read, and the "!" flag is an
+exact mirror of when that happens. `honored_agg` reproduces viz's whole read gate
+— the token must be `sum`/`mean` (trimmed, ASCII-folded), `qsv_type` must be
+Integer/Float or absent, and `role` must be empty or exactly `measure` — and the
+value is additionally only applied on a route that resolves to Measure. A value
+failing either test is flagged and left out of the ROUTE preview, because viz
+falls back to its own name heuristic there. That includes "Defer→stats": viz's
+stats floor returns no aggregation at all, so an aggregation on a column nothing
+resolves is simply lost.
 
     HOW TO RUN — this needs YOUR real terminal, not an agent's captured shell:
 
@@ -190,21 +191,44 @@ def honored_agg(aggregation, role, qsv_type):
     return normalized_agg(aggregation)
 
 
-def effective_route(role, concept, aggregation="", qsv_type=""):
+def content_type_is_measure(content_type):
+    """Whether `content_type` alone routes a column to Measure in `derive_semantics`.
+
+    `route_from_content_type` (src/cmd/viz.rs) has exactly ONE arm returning
+    Route::Measure — "money", the only numeric token in the vocabulary. Every other
+    token is Dimension/MapCoord/Temporal/Defer/Skip, and the stats floor below it
+    returns `agg: None`. So "money" is the single case where a column unresolved by
+    concept and role can still carry an explicit aggregation, which is why it is
+    special-cased here instead of mirroring the whole content_type vocabulary.
+
+    The base token is the part before ":" — the suffix carries an strftime format
+    (`"datetime:%Y-%m-%d"`), which routing throws away.
+    """
+    base = (content_type or "").split(":", 1)[0].strip()
+    return base == "money"
+
+
+def effective_route(role, concept, aggregation="", qsv_type="", content_type=""):
     """Concept→role route projection (concept first, then role).
 
     A preview of the concept/role contribution to routing only; it does NOT model
-    `viz smart`'s content_type or stats/label guardrails, so the final route can
-    differ. Anything unresolved by concept/role is shown as "Defer→stats".
+    `viz smart`'s stats/label guardrails, nor the content_type mapping beyond its
+    one numeric arm (see `content_type_is_measure`), so the final route can differ.
+    Anything still unresolved is shown as "Defer→stats".
 
     An explicit `x-qsv.aggregation` overrides the projected sum/mean, but ONLY when
     viz would honor it: it must survive the full read gate (`honored_agg`) AND land
-    on a route that already resolves to Measure — mirroring `derive_semantics`,
-    which consults it under `route == Route::Measure`. Anything else is ignored
-    here exactly as viz ignores it; showing it would promise a route viz will
-    never produce.
+    on a route that resolves to Measure — mirroring `derive_semantics`, which
+    consults it under `route == Route::Measure`. Anything else is ignored here
+    exactly as viz ignores it; showing it would promise a route viz will never
+    produce.
     """
-    route = route_from_concept(concept) or route_from_role(role) or "Defer→stats"
+    route = route_from_concept(concept) or route_from_role(role)
+    if route is None:
+        # step 3 in derive_semantics: content_type, of which only "money" is a
+        # measure. Everything else either routes elsewhere or hits the stats floor,
+        # where viz returns agg: None and the explicit aggregation is lost.
+        route = "Measure(sum)" if content_type_is_measure(content_type) else "Defer→stats"
     agg = honored_agg(aggregation, role, qsv_type)
     if agg and route.startswith("Measure"):
         return f"Measure({agg})"
@@ -268,8 +292,10 @@ def columns(schema):
         role = get_field(schema, name, "role")
         concept = get_field(schema, name, "concept")
         agg = get_field(schema, name, "aggregation")
-        qsv_type = (_prop(schema, name).get("x-qsv") or {}).get("qsv_type", "") or ""
-        route = effective_route(role, concept, agg, qsv_type)
+        xq = _prop(schema, name).get("x-qsv") or {}
+        qsv_type = xq.get("qsv_type", "") or ""
+        content_type = xq.get("content_type", "") or ""
+        route = effective_route(role, concept, agg, qsv_type, content_type)
         out.append({
             "name": name,
             "role": role,
@@ -280,17 +306,14 @@ def columns(schema):
             "route": route,
             "role_off_vocab": bool(role) and role not in ROLE_VOCAB,
             "concept_off_vocab": bool(concept) and concept not in CONCEPT_VOCAB,
-            # Flagged when viz is CERTAIN to ignore the aggregation: it fails the
-            # read gate (bad token / non-numeric qsv_type / non-measure role), or
-            # concept/role already pin the column to a non-Measure route.
-            # Deliberately NOT flagged on "Defer→stats" with a gate-passing value:
-            # viz's content_type and stats fallbacks may still route that column to
-            # a measure and honor it, so a warning there would be a false positive.
+            # Flagged whenever viz ignores the aggregation: it fails the read gate
+            # (bad token / non-numeric qsv_type / non-measure role), or the column
+            # does not route to Measure — including "Defer→stats", where the stats
+            # floor in `derive_semantics` returns agg: None and the value is simply
+            # lost. That last case needs no exemption now that the one content_type
+            # arm which rescues it ("money") resolves to Measure above.
             "agg_ineffective": bool(agg)
-            and (
-                not honored_agg(agg, role, qsv_type)
-                or (route != "Defer→stats" and not route.startswith("Measure"))
-            ),
+            and (not honored_agg(agg, role, qsv_type) or not route.startswith("Measure")),
         })
     return out
 

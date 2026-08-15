@@ -1954,6 +1954,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // The parsed+sanitized --geojson document, loaded ONCE here and threaded into whichever
     // plotting path consumes it (see `resolve_and_validate_geojson`).
     let mut loaded_geojson: Option<serde_json::Value> = None;
+    // Owns the temp file that `--geojson auto` buffers stdin into, when it does. Declared HERE so
+    // it is dropped — and the file deleted — when `run` returns, however it returns. The chart
+    // path re-opens that path after resolution, so the file must outlive the resolver but must not
+    // outlive the process.
+    let mut stdin_guard: Option<tempfile::TempPath> = None;
     // Resolve --geojson (a direct path/URL, or a QSV_GEOJSON_SHORTCUTS alias) and validate it
     // up front — fail fast on a bad source, unknown shortcut, or unusable feature-id-key before
     // any plotting work. Only the choropleth & smart subcommands consume --geojson.
@@ -1965,7 +1970,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let feature_id_key_explicit = argv
             .iter()
             .any(|a| *a == "--feature-id-key" || a.starts_with("--feature-id-key="));
-        loaded_geojson = resolve_and_validate_geojson(&mut args, feature_id_key_explicit)?;
+        loaded_geojson =
+            resolve_and_validate_geojson(&mut args, feature_id_key_explicit, &mut stdin_guard)?;
     }
 
     let out_format = match args.flag_output.as_deref() {
@@ -5115,13 +5121,21 @@ fn framing_extent(geojson: &serde_json::Value, args: &Args) -> (Vec<f64>, Vec<f6
 /// Returns the same `(path, Option<feature-id-key>)` shape as [`lookup_geojson_shortcut`] so the
 /// caller's validation runs over an auto-resolved set exactly as it does over a user-supplied
 /// file — the auto path earns no exemption from the feature-id-key and polygon checks.
-fn resolve_auto_geojson(args: &mut Args, spec: &str) -> CliResult<(String, Option<String>)> {
+fn resolve_auto_geojson(
+    args: &mut Args,
+    spec: &str,
+    stdin_guard: &mut Option<tempfile::TempPath>,
+) -> CliResult<(String, Option<String>)> {
     // `auto` has to read the region column BEFORE the chart is built, which means the input is
     // read twice. A file re-opens fine; stdin does not — the first pass drained it and the second
     // reader saw an empty stream, so the run died with "Selector name '<col>' does not exist as a
     // named header". Materialize stdin to a temp file and point the rest of the run at that.
-    // `.keep()` because a NamedTempFile deletes on drop, and the chart path re-opens this path
-    // later; created via tempfile (random name, O_EXCL) so a predictable path cannot be hijacked.
+    //
+    // The TempPath guard is handed back to `run` rather than `.keep()`-ed: the file must outlive
+    // this function (the chart path re-opens the path later) but NOT the process. Persisting it
+    // left a full copy of every piped input in the temp dir forever — unbounded accumulation, and
+    // a copy of whatever the user piped in, which may be sensitive. Created via tempfile (random
+    // name, O_EXCL) so a predictable path cannot be hijacked.
     if args.arg_input.as_deref().is_none_or(|input| input == "-") {
         use std::io::Write as _;
         let mut tmp = tempfile::Builder::new()
@@ -5130,12 +5144,10 @@ fn resolve_auto_geojson(args: &mut Args, spec: &str) -> CliResult<(String, Optio
             .tempfile()?;
         std::io::copy(&mut std::io::stdin().lock(), &mut tmp)?;
         tmp.flush()?;
-        let (_file, path) = tmp.keep().map_err(|e| {
-            crate::CliError::Other(format!(
-                "--geojson {spec}: could not buffer stdin for the boundary lookup: {e}"
-            ))
-        })?;
+        let path = tmp.into_temp_path();
         args.arg_input = Some(path.to_string_lossy().into_owned());
+        // dropped when `run` returns, which deletes the file
+        *stdin_guard = Some(path);
     }
     // `viz smart` picks its region column from the data dictionary, which does not exist yet at
     // this point in `run` (stats and column semantics are computed later), so `auto` cannot know
@@ -5251,6 +5263,7 @@ fn lookup_geojson_shortcut(name: &str) -> CliResult<(String, Option<String>)> {
 fn resolve_and_validate_geojson(
     args: &mut Args,
     feature_id_key_explicit: bool,
+    stdin_guard: &mut Option<tempfile::TempPath>,
 ) -> CliResult<Option<serde_json::Value>> {
     let Some(spec) = args.flag_geojson.clone() else {
         return Ok(None);
@@ -5266,7 +5279,7 @@ fn resolve_and_validate_geojson(
     let is_url = spec.starts_with("http://") || spec.starts_with("https://");
     let is_file = std::path::Path::new(&spec).is_file();
     let (resolved, shortcut_id) = if is_geojson_auto_spec(&spec) && !is_file {
-        resolve_auto_geojson(args, &spec)?
+        resolve_auto_geojson(args, &spec, stdin_guard)?
     } else if is_url || is_file {
         (spec, None)
     } else {

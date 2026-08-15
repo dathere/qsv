@@ -227,15 +227,30 @@ fn get_json(
     // are encoded onto the URL here instead — same percent-encoding, no new build feature.
     let target = reqwest::Url::parse_with_params(url, params.iter().copied())
         .map_err(|e| crate::CliError::Other(format!("could not build Census URL '{url}': {e}")))?;
-    let mut resp = client
+    // Classify the failure, because only a TRANSIENT one may be answered from a stale cache entry
+    // (see `resolve`). `error_for_status` turns any 4xx into an error too, so wrapping everything
+    // as `Network` would let a rejected query or a removed endpoint — the service answering us
+    // perfectly well, with "no" — be reported as a connectivity problem AND silently served from a
+    // previous run's boundaries.
+    //
+    //   * 4xx  -> the service understood and refused: semantic, surface it as itself.
+    //   * 5xx  -> the service is unwell: transient. (503 is already retried by the shared client.)
+    //   * none -> no response at all: connect failure, timeout, or a body that would not decode.
+    let mut resp = match client
         .get(target)
         .send()
         .and_then(reqwest::blocking::Response::error_for_status)
-        // CliError::Network marks this TRANSIENT: it is the only failure for which a stale cache
-        // entry may be substituted. A semantic failure — an unknown vintage, a missing layer, a
-        // query the service rejected — must never be reported to the user as a connectivity
-        // problem, nor silently answered from a previous run's boundaries.
-        .map_err(|e| crate::CliError::Network(format!("Census request to '{url}' failed: {e}")))?;
+    {
+        Ok(resp) => resp,
+        Err(e) => {
+            let msg = format!("Census request to '{url}' failed: {e}");
+            return Err(if e.status().is_some_and(|s| s.is_client_error()) {
+                crate::CliError::Other(msg)
+            } else {
+                crate::CliError::Network(msg)
+            });
+        },
+    };
     let mut buf: Vec<u8> = Vec::new();
     // one byte past the cap, so exceeding it is distinguishable from exactly reaching it
     resp.by_ref()

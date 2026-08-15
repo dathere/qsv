@@ -761,6 +761,36 @@ FIGURES = [
      True, ["choropleth", "northeast_states.csv", "--locations", "state", "--value",
              "people_per_sq_mi", "--agg", "mean", "--geojson", "northeast_states.geojson",
              "--feature-id-key", "properties.STUSAB", "--map", "--style", "carto-positron"]),
+    ("choropleth (--geojson auto, Census counties)",
+     "<b>No boundary file supplied.</b> <code>--geojson auto</code> reads the county FIPS codes in "
+     "<code>county_fips</code>, derives the states they name (PA, OH, WV), and fetches just those "
+     "states' county boundaries from the Census Bureau's TIGERweb service, setting "
+     "<code>--feature-id-key</code> to <code>properties.GEOID</code> itself. County FIPS and ZIP "
+     "codes are both 5-digit numerics, so qsv cannot tell them apart by shape — it probes each "
+     "candidate layer (geometry-free, a few KB) and takes the one the codes actually resolve "
+     "against, refusing to guess on a tie. Whole states are fetched rather than only the 13 "
+     "counties named, so the match fraction is scored against a boundary set that was NOT derived "
+     "from the column being scored. The note beneath the map records the vintage, which matters: "
+     "Connecticut replaced its 8 counties with 9 planning regions in the 2022 vintages, sharing no "
+     "GEOID, so append <code>@2021</code> to pin an older one. Boundaries are cached, so a repeat "
+     "run makes no network request at all. (Broadband figures here are synthetic.)",
+     False, ["choropleth", "tristate_county_broadband.csv", "--locations", "county_fips",
+             "--value", "broadband_pct", "--location-mode", "geojson-id", "--geojson", "auto",
+             "--title", "Household broadband adoption by county (synthetic)"]),
+    ("choropleth (--geojson auto, Census ZCTAs + honesty reporting)",
+     "The same one-flag boundary resolution against <b>real, messy data</b> — 50,013 Allegheny "
+     "County dog licenses keyed by owner ZIP. ZCTAs carry no <code>STATE</code> field, so unlike "
+     "counties they cannot be state-scoped and are fetched by exact code set, which is what makes "
+     "the two caveats in the note worth reading. <b>Five</b> of the 132 ZIPs match no ZCTA at all "
+     "(PO-box-only ZIPs have no tabulation area) and are reported rather than silently dropped. "
+     "<b>Six</b> more sit far outside the rest — two Florida and two Indiana owner ZIPs, four rows "
+     "out of 50,013 — and framing to the full extent would render the Pittsburgh cluster as a "
+     "speck on a map reaching Miami. Those regions are still <i>drawn</i>; they just do not get to "
+     "decide the frame, and the note says so. A boundary set qsv derived from your codes is not "
+     "the same as a file you chose, so it does not get the same benefit of the doubt.",
+     False, ["choropleth", "allegheny_dog_licenses.csv", "--locations", "OwnerZip",
+             "--location-mode", "geojson-id", "--geojson", "auto",
+             "--title", "Allegheny County dog licenses by owner ZIP"]),
     ("smart Data Schematic (time-series)",
      "Auto Data Schematic for stock_prices: a time-series trend panel (the first numeric column over the "
      "date) leads; the strongest-correlated pair drill-down (open vs close) is shown as a <b>static "

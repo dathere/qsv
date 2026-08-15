@@ -4864,58 +4864,86 @@ const GEOJSON_AUTO_MIN_MATCH_RATIO: f64 = 0.5;
 /// How many unmatched codes to name in the coverage error/warning before eliding.
 const GEOJSON_AUTO_UNMATCHED_SAMPLE: usize = 5;
 
+/// The inputs [`match_region_code`] needs, built once from a boundary document.
+///
+/// Exists so the code that VALIDATES a region column and the code that RENDERS it cannot drift
+/// apart. They did: coverage accepted `1001` as a match for feature id `01001` (a numeric CSV
+/// column drops the leading zero), while the choropleth trace emitted the raw `1001`, which
+/// matches no feature — so a column could pass validation with a perfect score and then render a
+/// completely blank map, silently. Anything that decides "does this cell name a region" must use
+/// this, and anything that emits a location must emit what this returns.
+struct RegionMatcher {
+    ids:            std::collections::HashSet<String>,
+    numeric_widths: Vec<usize>,
+    lowercased:     std::collections::HashMap<String, String>,
+}
+
+impl RegionMatcher {
+    /// Build from a GeoJSON document and the feature-id path in use.
+    fn new(geojson: &serde_json::Value, feature_id_key: &str) -> CliResult<Self> {
+        let features = build_pip_features(geojson, feature_id_key, None)?;
+        let ids: std::collections::HashSet<String> =
+            features.iter().map(|f| f.id.clone()).collect();
+        // distinct widths of the all-digit ids, ascending — precomputed so per-cell matching does
+        // not rescan every feature id
+        let numeric_widths: Vec<usize> = {
+            let mut w: Vec<usize> = ids
+                .iter()
+                .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+                .map(String::len)
+                .collect();
+            w.sort_unstable();
+            w.dedup();
+            w
+        };
+        // lower-cased id -> canonical id. Built from the ORDERED feature list, not the set: a
+        // folded key that maps to more than one distinct id is genuinely ambiguous and is REMOVED
+        // rather than resolved to whichever the set happened to yield first.
+        let lowercased: std::collections::HashMap<String, String> = {
+            let mut m: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for f in &features {
+                let folded = f.id.to_ascii_lowercase();
+                match m.get(&folded) {
+                    Some(existing) if *existing != f.id => {
+                        ambiguous.insert(folded);
+                    },
+                    Some(_) => {},
+                    None => {
+                        m.insert(folded, f.id.clone());
+                    },
+                }
+            }
+            for k in ambiguous {
+                m.remove(&k);
+            }
+            m
+        };
+        Ok(Self {
+            ids,
+            numeric_widths,
+            lowercased,
+        })
+    }
+
+    /// The feature id this cell names, in the BOUNDARY's spelling, or `None` if it names none.
+    fn canonicalize(&self, raw: &str) -> Option<String> {
+        match_region_code(raw, &self.ids, &self.numeric_widths, &self.lowercased)
+    }
+}
+
 /// Score `codes` against the fetched boundary set, returning
 /// `(matched_count, total_count, sample_of_unmatched)`.
-///
-/// Reuses [`match_region_code`] and the exact matcher inputs
-/// `build_smart_summary_choropleth_panels` builds, so an auto-resolved boundary set is scored by
-/// the same zero-padding and case-folding rules as a user-supplied one — a numeric column that
-/// dropped its leading zero (`1001` for `01001`) must not read as a miss.
 fn score_region_code_coverage(
     geojson: &serde_json::Value,
     feature_id_key: &str,
     codes: &[String],
 ) -> CliResult<(usize, usize, Vec<String>)> {
-    let features = build_pip_features(geojson, feature_id_key, None)?;
-    let feature_ids: std::collections::HashSet<&str> =
-        features.iter().map(|f| f.id.as_str()).collect();
-    let numeric_id_widths: Vec<usize> = {
-        let mut w: Vec<usize> = feature_ids
-            .iter()
-            .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
-            .map(|id| id.len())
-            .collect();
-        w.sort_unstable();
-        w.dedup();
-        w
-    };
-    // same ambiguity handling as the summary choropleth: a folded key mapping to more than one
-    // distinct id is removed rather than arbitrarily resolved
-    let lowercased_ids: std::collections::HashMap<String, String> = {
-        let mut m: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-        let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for f in &features {
-            let folded = f.id.to_ascii_lowercase();
-            match m.get(&folded) {
-                Some(existing) if *existing != f.id => {
-                    ambiguous.insert(folded);
-                },
-                Some(_) => {},
-                None => {
-                    m.insert(folded, f.id.clone());
-                },
-            }
-        }
-        for k in ambiguous {
-            m.remove(&k);
-        }
-        m
-    };
-
+    let matcher = RegionMatcher::new(geojson, feature_id_key)?;
     let mut matched = 0usize;
     let mut unmatched: Vec<String> = Vec::new();
     for code in codes {
-        if match_region_code(code, &feature_ids, &numeric_id_widths, &lowercased_ids).is_some() {
+        if matcher.canonicalize(code).is_some() {
             matched += 1;
         } else if unmatched.len() < GEOJSON_AUTO_UNMATCHED_SAMPLE {
             unmatched.push(code.clone());
@@ -5044,12 +5072,71 @@ fn detect_extent_outliers(geojson: &serde_json::Value, feature_id_key: &str) -> 
         .collect()
 }
 
+/// The `(lats, lons)` a choropleth should FRAME to, which is not always everything it draws.
+///
+/// A user-supplied `--geojson` is a deliberate choice — every polygon in it is intentional — so it
+/// frames to its full extent. An auto-resolved set is derived from the data's codes, so a few
+/// stray codes inject regions the author never chose; those are still drawn, but they do not get
+/// to decide the frame. Shared by the projection and MapLibre branches: when only one of them
+/// filtered, the note beneath the map claimed the outliers had been excluded while the tile map
+/// still centered on them.
+fn framing_extent(geojson: &serde_json::Value, args: &Args) -> (Vec<f64>, Vec<f64>) {
+    let outliers = auto_boundary_outliers();
+    if outliers.is_empty() {
+        return geojson_lat_lons(geojson);
+    }
+    let excluded: std::collections::HashSet<&str> = outliers.iter().map(String::as_str).collect();
+    let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
+    let kept = serde_json::json!({
+        "type": "FeatureCollection",
+        "features": geojson
+            .get("features")
+            .and_then(serde_json::Value::as_array)
+            .map(|fs| fs
+                .iter()
+                .filter(|f| feature_id_by_path_value(f, key)
+                    .is_none_or(|id| !excluded.contains(id.as_str())))
+                .cloned()
+                .collect::<Vec<_>>())
+            .unwrap_or_default(),
+    });
+    let (lats, lons) = geojson_lat_lons(&kept);
+    // never hand back an empty extent: if every feature somehow read as an outlier, framing to
+    // nothing would be worse than framing to everything
+    if lats.is_empty() {
+        geojson_lat_lons(geojson)
+    } else {
+        (lats, lons)
+    }
+}
+
 /// Resolve `--geojson auto|census` into a concrete boundary file plus its feature-id key.
 ///
 /// Returns the same `(path, Option<feature-id-key>)` shape as [`lookup_geojson_shortcut`] so the
 /// caller's validation runs over an auto-resolved set exactly as it does over a user-supplied
 /// file — the auto path earns no exemption from the feature-id-key and polygon checks.
-fn resolve_auto_geojson(args: &Args, spec: &str) -> CliResult<(String, Option<String>)> {
+fn resolve_auto_geojson(args: &mut Args, spec: &str) -> CliResult<(String, Option<String>)> {
+    // `auto` has to read the region column BEFORE the chart is built, which means the input is
+    // read twice. A file re-opens fine; stdin does not — the first pass drained it and the second
+    // reader saw an empty stream, so the run died with "Selector name '<col>' does not exist as a
+    // named header". Materialize stdin to a temp file and point the rest of the run at that.
+    // `.keep()` because a NamedTempFile deletes on drop, and the chart path re-opens this path
+    // later; created via tempfile (random name, O_EXCL) so a predictable path cannot be hijacked.
+    if args.arg_input.as_deref().is_none_or(|input| input == "-") {
+        use std::io::Write as _;
+        let mut tmp = tempfile::Builder::new()
+            .prefix("qsv-viz-auto-stdin-")
+            .suffix(".csv")
+            .tempfile()?;
+        std::io::copy(&mut std::io::stdin().lock(), &mut tmp)?;
+        tmp.flush()?;
+        let (_file, path) = tmp.keep().map_err(|e| {
+            crate::CliError::Other(format!(
+                "--geojson {spec}: could not buffer stdin for the boundary lookup: {e}"
+            ))
+        })?;
+        args.arg_input = Some(path.to_string_lossy().into_owned());
+    }
     // `viz smart` picks its region column from the data dictionary, which does not exist yet at
     // this point in `run` (stats and column semantics are computed later), so `auto` cannot know
     // what to fetch there. `viz choropleth --locations` names the column explicitly.
@@ -7086,8 +7173,10 @@ fn build_choropleth_plot(
             Some(v) => v,
             None => load_geojson(args.flag_geojson.as_deref().unwrap())?,
         };
-        // collect the GeoJSON extent BEFORE the value is moved into the trace below.
-        let (g_lats, g_lons) = geojson_lat_lons(&geojson);
+        // collect the extent BEFORE the value is moved into the trace below. Uses the same
+        // outlier-aware extent as the projection branch, so the note beneath the map cannot claim
+        // outliers were excluded from framing while the tile map still centers on them.
+        let (g_lats, g_lons) = framing_extent(&geojson, args);
         let trace = ChoroplethMap::new(locations, z)
             .geojson(geojson)
             .feature_id_key(args.flag_feature_id_key.as_deref().unwrap_or("id"))
@@ -7175,28 +7264,7 @@ fn build_choropleth_plot(
             // choice, so all of it frames the map. An auto-resolved set is derived from the data's
             // codes, so a few stray codes can inject regions a thousand miles away; those are still
             // drawn, but they do not get to decide the frame (and the note beneath says so).
-            let outliers = auto_boundary_outliers();
-            let (g_lats, g_lons) = if outliers.is_empty() {
-                geojson_lat_lons(&geojson)
-            } else {
-                let excluded: std::collections::HashSet<&str> =
-                    outliers.iter().map(String::as_str).collect();
-                let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
-                let kept = serde_json::json!({
-                    "type": "FeatureCollection",
-                    "features": geojson
-                        .get("features")
-                        .and_then(serde_json::Value::as_array)
-                        .map(|fs| fs
-                            .iter()
-                            .filter(|f| feature_id_by_path_value(f, key)
-                                .is_none_or(|id| !excluded.contains(id.as_str())))
-                            .cloned()
-                            .collect::<Vec<_>>())
-                        .unwrap_or_default(),
-                });
-                geojson_lat_lons(&kept)
-            };
+            let (g_lats, g_lons) = framing_extent(&geojson, args);
             if !g_lats.is_empty() {
                 let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons, 0.0);
                 geo = geo.projection(Projection::new().projection_type(proj));
@@ -7302,12 +7370,32 @@ fn choropleth_literal_locations(
     let mut denoms: HashMap<String, f64> = HashMap::new();
     let mut denom_conflict: Option<(String, f64, f64)> = None;
     let mut denom_seen = false;
+    // When a boundary document is in play, every location cell is canonicalized to the FEATURE's
+    // spelling before it is used for anything — aggregation, denominator keying, hover names, and
+    // the emitted trace. A numeric CSV column drops leading zeros (`01001` arrives as `1001`), and
+    // emitting the raw cell against a `properties.GEOID` of `01001` matches no feature, so the
+    // region renders unshaded. That produced a completely blank map that still exited 0, because
+    // the coverage check accepted the padded form the renderer never used. One matcher now decides
+    // both.
+    let region_matcher = match loaded_geojson {
+        Some(geojson) => Some(RegionMatcher::new(
+            geojson,
+            args.flag_feature_id_key.as_deref().unwrap_or("id"),
+        )?),
+        None => None,
+    };
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
-        let loc = cell_to_string(record.get(loc_idx));
-        if loc.is_empty() {
+        let raw_loc = cell_to_string(record.get(loc_idx));
+        if raw_loc.is_empty() {
             continue;
         }
+        // an unmatched cell keeps its raw spelling: it names no feature either way, and the
+        // coverage check is what reports it
+        let loc = region_matcher
+            .as_ref()
+            .and_then(|m| m.canonicalize(&raw_loc))
+            .unwrap_or(raw_loc);
         // Constancy is checked over every FINITE value, BEFORE the positivity filter below.
         // Screening out non-positives first would hide the very mistake this check exists to
         // catch: a row-level column like `fee` holding 0, 50, 50 for one region would look
@@ -23722,7 +23810,7 @@ fn build_smart_pip_choropleth_panel(
 /// [`build_smart_summary_choropleth_panels`].
 fn match_region_code(
     raw: &str,
-    feature_ids: &std::collections::HashSet<&str>,
+    feature_ids: &std::collections::HashSet<String>,
     numeric_id_widths: &[usize],
     lowercased_ids: &std::collections::HashMap<String, String>,
 ) -> Option<String> {
@@ -23841,8 +23929,8 @@ fn build_smart_summary_choropleth_panels(
         feature_id_key,
         args.flag_feature_name_key.as_deref(),
     )?;
-    let feature_ids: std::collections::HashSet<&str> =
-        features.iter().map(|f| f.id.as_str()).collect();
+    let feature_ids: std::collections::HashSet<String> =
+        features.iter().map(|f| f.id.clone()).collect();
     // distinct widths of the all-digit feature ids, ascending — precomputed once so the per-row
     // `match_region_code` does not rescan every feature id for each unmatched numeric cell (which
     // would make matching `rows * candidates * features`).
@@ -39440,7 +39528,10 @@ mod tests {
 
     #[test]
     fn match_region_code_falls_back_to_case_insensitive() {
-        let ids: std::collections::HashSet<&str> = ["CA", "NY", "06075"].into_iter().collect();
+        let ids: std::collections::HashSet<String> = ["CA", "NY", "06075"]
+            .into_iter()
+            .map(String::from)
+            .collect();
         let widths = vec![5_usize];
         let lower: std::collections::HashMap<String, String> = ids
             .iter()
@@ -39480,7 +39571,8 @@ mod tests {
         // two feature ids differing only by case make the folded key ambiguous: resolving it from
         // HashSet iteration order would aggregate the same CSV value under a different region
         // between runs, so the fuzzy fallback is forfeited instead (exact matching still works).
-        let ids: std::collections::HashSet<&str> = ["CA", "ca", "NY"].into_iter().collect();
+        let ids: std::collections::HashSet<String> =
+            ["CA", "ca", "NY"].into_iter().map(String::from).collect();
         let widths: Vec<usize> = Vec::new();
         let mut lower: std::collections::HashMap<String, String> = std::collections::HashMap::new();
         let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -43267,19 +43359,20 @@ mod tests {
     #[test]
     fn match_region_code_pads_and_matches() {
         // ascending, deduped digit-widths of the all-numeric ids, as the caller precomputes.
-        fn numeric_widths(ids: &std::collections::HashSet<&str>) -> Vec<usize> {
+        fn numeric_widths(ids: &std::collections::HashSet<String>) -> Vec<usize> {
             let mut w: Vec<usize> = ids
                 .iter()
                 .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
-                .map(|id| id.len())
+                .map(String::len)
                 .collect();
             w.sort_unstable();
             w.dedup();
             w
         }
 
-        let ids: std::collections::HashSet<&str> = ["07936", "15129", "15007", "BAKERSTOWN"]
+        let ids: std::collections::HashSet<String> = ["07936", "15129", "15007", "BAKERSTOWN"]
             .into_iter()
+            .map(String::from)
             .collect();
         let widths = numeric_widths(&ids);
         let lower_ids: std::collections::HashMap<String, String> = ids
@@ -43311,8 +43404,10 @@ mod tests {
 
         // non-zip widths: the code is padded to whatever numeric feature-id widths exist, not a
         // hardcoded 5. State FIPS (2-wide) and county FIPS (3-wide) both resolve.
-        let fips: std::collections::HashSet<&str> =
-            ["01", "06", "003", "037", "42003"].into_iter().collect();
+        let fips: std::collections::HashSet<String> = ["01", "06", "003", "037", "42003"]
+            .into_iter()
+            .map(String::from)
+            .collect();
         let fips_widths = numeric_widths(&fips);
         let lower_fips: std::collections::HashMap<String, String> = fips
             .iter()

@@ -10022,6 +10022,57 @@ fn viz_choropleth_geojson_auto_local_file_wins() {
     assert!(html.contains(r#""locations":["A","B"]"#));
 }
 
+// A numeric region column drops leading zeros (`01001` arrives as `1001`). The emitted locations
+// must be canonicalized to the BOUNDARY's spelling, or plotly matches nothing and the map renders
+// completely blank — while still exiting 0, because the coverage check accepted the padded form
+// the renderer never used. This is the render half of that invariant; no network involved.
+#[test]
+fn viz_choropleth_canonicalizes_zero_padded_locations() {
+    let wrk = Workdir::new("viz_choropleth_canonicalizes_zero_padded_locations");
+    wrk.create_from_string("counties.csv", "fips,cases\n1001,10\n1003,20\n");
+    wrk.create_from_string(
+        "b.geojson",
+        r#"{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"GEOID":"01001"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+{"type":"Feature","properties":{"GEOID":"01003"},"geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "counties.csv",
+        "--locations",
+        "fips",
+        "--value",
+        "cases",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "b.geojson",
+        "--feature-id-key",
+        "properties.GEOID",
+    ])
+    .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the padded ids the features actually carry, not the raw cells
+    assert!(
+        html.contains(r#""locations":["01001","01003"]"#),
+        "locations were not canonicalized to the feature ids"
+    );
+    assert!(
+        !html.contains(r#""locations":["1001""#),
+        "raw unpadded locations were emitted; the map would render blank"
+    );
+    // values must still ride along with their region
+    assert!(
+        html.contains(r#""z":[10.0,20.0]"#),
+        "values lost in canonicalization"
+    );
+}
+
 // a --geojson value that names a QSV_GEOJSON_SHORTCUTS entry resolves to the entry's path, and the
 // entry's `id` fills in --feature-id-key when the user doesn't pass one.
 #[test]

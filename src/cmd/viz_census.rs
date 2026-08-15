@@ -231,13 +231,17 @@ fn get_json(
         .get(target)
         .send()
         .and_then(reqwest::blocking::Response::error_for_status)
-        .map_err(|e| crate::CliError::Other(format!("Census request to '{url}' failed: {e}")))?;
+        // CliError::Network marks this TRANSIENT: it is the only failure for which a stale cache
+        // entry may be substituted. A semantic failure — an unknown vintage, a missing layer, a
+        // query the service rejected — must never be reported to the user as a connectivity
+        // problem, nor silently answered from a previous run's boundaries.
+        .map_err(|e| crate::CliError::Network(format!("Census request to '{url}' failed: {e}")))?;
     let mut buf: Vec<u8> = Vec::new();
     // one byte past the cap, so exceeding it is distinguishable from exactly reaching it
     resp.by_ref()
         .take(CENSUS_MAX_BYTES as u64 + 1)
         .read_to_end(&mut buf)
-        .map_err(|e| crate::CliError::Other(format!("reading Census response body: {e}")))?;
+        .map_err(|e| crate::CliError::Network(format!("reading Census response body: {e}")))?;
     if buf.len() > CENSUS_MAX_BYTES {
         return Err(crate::CliError::Other(format!(
             "Census response from '{url}' exceeds the {} MB limit. Narrow the dataset's \
@@ -627,6 +631,10 @@ fn cache_key(spec: AutoSpec, codes: &[String]) -> String {
     sorted.dedup();
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"census/v1/");
+    // the service root is part of the entry's IDENTITY: pointing QSV_CENSUS_TIGERWEB_URL at a
+    // mirror (or a mock) must not be served boundaries fetched from a different source
+    hasher.update(tigerweb_root().as_bytes());
+    hasher.update(b"/");
     hasher.update(spec.layer.map_or("auto", Layer::selector).as_bytes());
     hasher.update(b"@");
     hasher.update(
@@ -774,8 +782,11 @@ pub fn resolve(codes: &[String], spec: AutoSpec) -> CliResult<BoundarySet> {
             boundaries.path = cache_put(&key, &boundaries)?;
             Ok(boundaries)
         },
-        Err(e) => {
-            // the service is unreachable (or refused); a stale entry is the right answer here
+        // Only a TRANSIENT failure may be answered from a stale entry. Catching every error here
+        // reported semantic failures — a vintage the service does not publish, a layer that no
+        // longer exists, a rejected query — as "could not reach the Census service", and answered
+        // them with a previous run's boundaries. Those must surface as themselves.
+        Err(e) if matches!(e, crate::CliError::Network(_)) => {
             if let Some((boundaries, _)) = cached {
                 log::warn!("Census fetch failed, falling back to cache: {e}");
                 wwarn!(
@@ -787,6 +798,8 @@ pub fn resolve(codes: &[String], spec: AutoSpec) -> CliResult<BoundarySet> {
             }
             Err(e)
         },
+        // a semantic failure propagates as itself, cache or no cache
+        Err(e) => Err(e),
     }
 }
 
@@ -942,6 +955,27 @@ fn fetch_layer(
              {scope_desc}. Supply an explicit --geojson file.",
             layer.label()
         )));
+    }
+
+    // Give every feature a top-level `id` mirroring its GEOID. The cached file is advertised as
+    // reusable — pass the printed path back as an explicit `--geojson` for an archival, offline
+    // run — but `--feature-id-key` defaults to `id`, and TIGERweb puts the GEOID only under
+    // `properties`. Without this, reusing the path exactly as printed failed validation with
+    // "--feature-id-key 'id' resolves on no feature". Setting both makes the artifact portable
+    // with the default key AND with `properties.GEOID`.
+    let id_field = layer.id_field();
+    for feature in &mut features {
+        let Some(geoid) = feature
+            .get("properties")
+            .and_then(|p| p.get(id_field))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        if let Some(obj) = feature.as_object_mut() {
+            obj.insert("id".to_string(), serde_json::Value::String(geoid));
+        }
     }
 
     let geojson = serde_json::json!({

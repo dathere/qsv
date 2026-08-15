@@ -166,7 +166,7 @@ impl Layer {
     }
 
     /// Human label used in errors and provenance.
-    const fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::County => "county",
             Self::Zcta => "ZCTA",
@@ -771,6 +771,90 @@ fn cache_put(key: &str, boundaries: &BoundarySet) -> CliResult<String> {
     Ok(geojson_path.to_string_lossy().into_owned())
 }
 
+/// Resolve which ACS vintage to work against, returning the service's full list beside it.
+///
+/// Shared by the fetch path and the candidate scorer so a probe can never be issued against a
+/// different vintage than the fetch it is meant to predict.
+fn resolve_vintage(
+    client: &reqwest::blocking::Client,
+    spec: AutoSpec,
+) -> CliResult<(Vec<u16>, u16)> {
+    let vintages = available_acs_vintages(client)?;
+    let vintage = match spec.vintage {
+        Some(v) if vintages.contains(&v) => v,
+        Some(v) => {
+            return Err(crate::CliError::Other(format!(
+                "--geojson: the Census service has no {v} ACS vintage. Available: {}.",
+                vintages
+                    .iter()
+                    .map(u16::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        },
+        // safe: available_acs_vintages errors rather than returning an empty list
+        None => *vintages.last().unwrap(),
+    };
+    Ok((vintages, vintage))
+}
+
+/// How well one candidate column's codes resolve against a Census geography.
+#[derive(Clone, Copy, Debug)]
+pub struct CandidateScore {
+    /// The layer the codes resolved against best.
+    pub layer:   Layer,
+    /// How many of `total` codes exist in that layer.
+    pub matched: usize,
+    /// Codes considered, AFTER that layer's normalization — not the raw distinct count.
+    pub total:   usize,
+}
+
+/// Score several candidate code sets against the Census geographies, downloading no geometry.
+///
+/// `viz choropleth` is told which column holds region codes (`--locations`), but `viz smart`
+/// chooses that column itself, so it must compare columns BEFORE committing to a fetch. Scoring
+/// by fetching would be circular for a code-set-scoped layer: the boundary set would be derived
+/// from the very column being scored, and every column would then match perfectly.
+///
+/// A candidate that resolves against nothing scores `None` rather than failing the run — on the
+/// smart path the column choice is qsv's, so a column that turns out not to hold region codes must
+/// lose to a better one, not abort. (`choose_layer` keeps the erroring behavior for the explicit
+/// `--locations` path, where the column IS the user's stated intent.)
+pub fn score_candidates(
+    candidates: &[Vec<String>],
+    spec: AutoSpec,
+) -> CliResult<Vec<Option<CandidateScore>>> {
+    let client = census_client()?;
+    let (_, vintage) = resolve_vintage(&client, spec)?;
+    // an explicit `census:<layer>` pins the geography: probing the others would rank a column on a
+    // layer this run is never going to fetch
+    let layers: Vec<Layer> = spec.layer.map_or_else(|| Layer::ALL.to_vec(), |l| vec![l]);
+
+    let mut out: Vec<Option<CandidateScore>> = Vec::with_capacity(candidates.len());
+    for codes in candidates {
+        let scored = probe_scores(&client, vintage, &layers, codes)?;
+        // best by match ratio, compared exactly (matched_a/total_a vs matched_b/total_b as
+        // integers), mirroring `choose_layer`'s ordering
+        let best = scored
+            .into_iter()
+            .filter(|(_, m, t)| *t > 0 && ratio_at_least(*m, *t, LAYER_PROBE_MIN_RATIO))
+            .max_by(|a, b| (a.1 * b.2).cmp(&(b.1 * a.2)))
+            .map(|(layer, matched, total)| CandidateScore {
+                layer,
+                matched,
+                total,
+            });
+        out.push(best);
+    }
+    Ok(out)
+}
+
+/// Is `matched/total` at least `min`?
+#[allow(clippy::cast_precision_loss)]
+fn ratio_at_least(matched: usize, total: usize, min: f64) -> bool {
+    total > 0 && (matched as f64 / total as f64) >= min
+}
+
 /// Resolve boundaries for `codes` according to `spec`.
 ///
 /// County FIPS codes and ZIP codes are both 5-digit numerics, so when `spec.layer` is `None` the
@@ -795,22 +879,7 @@ pub fn resolve(codes: &[String], spec: AutoSpec) -> CliResult<BoundarySet> {
 
     let fetched = (|| -> CliResult<BoundarySet> {
         let client = census_client()?;
-        let vintages = available_acs_vintages(&client)?;
-        let vintage = match spec.vintage {
-            Some(v) if vintages.contains(&v) => v,
-            Some(v) => {
-                return Err(crate::CliError::Other(format!(
-                    "--geojson: the Census service has no {v} ACS vintage. Available: {}.",
-                    vintages
-                        .iter()
-                        .map(u16::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )));
-            },
-            // safe: available_acs_vintages errors rather than returning an empty list
-            None => *vintages.last().unwrap(),
-        };
+        let (vintages, vintage) = resolve_vintage(&client, spec)?;
         let layer = match spec.layer {
             Some(l) => l,
             None => choose_layer(&client, &vintages, vintage, codes)?,
@@ -853,15 +922,20 @@ const fn ratios_equal(a: (usize, usize), b: (usize, usize)) -> bool {
     a.0 * b.1 == b.0 * a.1
 }
 
-/// Probe every candidate layer and return the one the codes resolve against best.
-fn choose_layer(
+/// Probe each of `layers` and report how many of `codes` resolve against it.
+///
+/// The counts are reported against the layer's OWN normalization (`normalize_codes` re-pads to
+/// that layer's code width), so `total` is the per-layer denominator rather than the raw code
+/// count — comparing a layer's matches against a denominator it was not scored on would rank
+/// layers on different populations.
+fn probe_scores(
     client: &reqwest::blocking::Client,
-    vintages: &[u16],
     vintage: u16,
+    layers: &[Layer],
     codes: &[String],
-) -> CliResult<Layer> {
+) -> CliResult<Vec<(Layer, usize, usize)>> {
     let mut scored: Vec<(Layer, usize, usize)> = Vec::new();
-    for layer in Layer::ALL {
+    for &layer in layers {
         let normalized = normalize_codes(codes, layer);
         if normalized.is_empty() {
             continue;
@@ -869,18 +943,21 @@ fn choose_layer(
         let matched = probe_layer(client, vintage, layer, &normalized)?;
         scored.push((layer, matched, normalized.len()));
     }
+    Ok(scored)
+}
 
-    #[allow(clippy::cast_precision_loss)]
-    let ratio = |matched: usize, total: usize| -> f64 {
-        if total == 0 {
-            0.0
-        } else {
-            matched as f64 / total as f64
-        }
-    };
+/// Probe every candidate layer and return the one the codes resolve against best.
+fn choose_layer(
+    client: &reqwest::blocking::Client,
+    vintages: &[u16],
+    vintage: u16,
+    codes: &[String],
+) -> CliResult<Layer> {
+    let scored = probe_scores(client, vintage, &Layer::ALL, codes)?;
+
     let mut viable: Vec<&(Layer, usize, usize)> = scored
         .iter()
-        .filter(|(_, m, t)| ratio(*m, *t) >= LAYER_PROBE_MIN_RATIO)
+        .filter(|(_, m, t)| ratio_at_least(*m, *t, LAYER_PROBE_MIN_RATIO))
         .collect();
     // NB: ordering and tie detection below compare the ratios as INTEGERS
     // (a.matched * b.total vs b.matched * a.total). The two layers normally share a denominator,

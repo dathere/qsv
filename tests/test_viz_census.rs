@@ -340,3 +340,156 @@ fn viz_geojson_auto_different_codes_refetch() {
         );
     });
 }
+
+/// A dictionary tagging `fips` as a county-FIPS region column — what `viz smart` reads to find its
+/// region column, since a concept only ever comes from a dictionary.
+const COUNTY_DICT: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+    "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+  }
+}"#;
+
+// The headline of issue #4416: `viz smart --geojson auto` with no boundary asset supplied. The
+// region column is not named on the command line — it comes from the dictionary — so this can only
+// work if resolution is DEFERRED until after stats and column semantics exist.
+#[test]
+#[serial]
+fn viz_smart_geojson_auto_resolves_from_the_dictionary_region_column() {
+    let wrk = Workdir::new("viz_smart_geojson_auto_resolves_from_the_dictionary_region_column");
+    wrk.create_from_string(
+        "pa.csv",
+        "fips,cases\n42003,10\n42003,20\n42101,30\n42101,40\n",
+    );
+    wrk.create_from_string("dict.schema.json", COUNTY_DICT);
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "pa.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env(
+                "QSV_CACHE_DIR",
+                wrk.path("boundary-cache").to_string_lossy().to_string(),
+            );
+        let out = wrk.output(&mut cmd);
+        assert!(out.status.success(), "deferred auto resolution failed");
+        let html = String::from_utf8_lossy(&out.stdout);
+
+        // a region choropleth keyed off the fetched boundaries, not a bare frequency bar
+        assert!(
+            html.contains(r#""featureidkey":"properties.GEOID""#),
+            "expected the auto-resolved feature-id key: {html}"
+        );
+        assert!(
+            html.contains("count by fips"),
+            "expected the summary choropleth panel: {html}"
+        );
+
+        // the fetch was scoped to the state the data names, exactly as on the --locations path
+        let clauses = observed.where_clauses.lock().unwrap().clone();
+        assert!(
+            clauses.iter().any(|c| c == "STATE IN ('42')"),
+            "fetch was not scoped to the data's states: {clauses:?}"
+        );
+    });
+}
+
+// The zero-network criterion on the smart path. With a single region-code candidate there is
+// nothing to choose between, so no probe is issued for the choice at all and the second run is
+// served entirely from the boundary cache.
+#[test]
+#[serial]
+fn viz_smart_geojson_auto_second_run_makes_no_requests() {
+    let wrk = Workdir::new("viz_smart_geojson_auto_second_run_makes_no_requests");
+    wrk.create_from_string("pa.csv", "fips,cases\n42003,10\n42101,20\n42101,30\n");
+    wrk.create_from_string("dict.schema.json", COUNTY_DICT);
+    let cache = wrk.path("boundary-cache").to_string_lossy().to_string();
+
+    with_mock_tigerweb(|base, observed| {
+        let run = || {
+            let mut cmd = wrk.command("viz");
+            cmd.args(["smart", "pa.csv", "--geojson", "auto", "--dictionary"])
+                .arg(wrk.path("dict.schema.json"))
+                .env("QSV_CENSUS_TIGERWEB_URL", base)
+                .env("QSV_CACHE_DIR", &cache);
+            let out = wrk.output(&mut cmd);
+            assert!(out.status.success());
+        };
+
+        run();
+        let after_first = observed.requests.load(Ordering::SeqCst);
+        assert!(after_first > 0, "the first run should have fetched");
+
+        run();
+        assert_eq!(
+            observed.requests.load(Ordering::SeqCst),
+            after_first,
+            "the second run must be served entirely from cache"
+        );
+    });
+}
+
+// Candidate selection has to be honest: with more than one region-tagged column, the boundaries
+// cannot be fetched for an arbitrary one and the columns then scored against them — for a
+// code-set-scoped layer that set is DERIVED from the column it was fetched for, so whichever
+// column was picked would score perfectly by construction. The decoy here is tagged as a region
+// column (the only way in) and holds well-formed 5-digit codes that simply do not exist, so only
+// a geometry-free probe of BOTH columns can tell them apart.
+#[test]
+#[serial]
+fn viz_smart_geojson_auto_decoy_region_column_does_not_win() {
+    let wrk = Workdir::new("viz_smart_geojson_auto_decoy_region_column_does_not_win");
+    wrk.create_from_string(
+        "pa.csv",
+        "decoy,fips,cases\n99998,42003,10\n99998,42003,20\n99999,42101,30\n99999,42101,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "decoy": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.zip_code" } },
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "pa.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env(
+                "QSV_CACHE_DIR",
+                wrk.path("boundary-cache").to_string_lossy().to_string(),
+            );
+        let out = wrk.output(&mut cmd);
+        assert!(out.status.success(), "auto resolution failed");
+        let html = String::from_utf8_lossy(&out.stdout);
+
+        // the real column drove the fetch AND the panel
+        assert!(
+            html.contains("count by fips"),
+            "the decoy column should not have won: {html}"
+        );
+
+        // the decoy's codes were PROBED (that is how it lost) but never fetched geometry for:
+        // no state-scoped query may name a state the decoy implies
+        let clauses = observed.where_clauses.lock().unwrap().clone();
+        assert!(
+            clauses.iter().any(|c| c.contains("99998")),
+            "the decoy column was never probed, so it did not lose on evidence: {clauses:?}"
+        );
+        for clause in clauses.iter().filter(|c| c.starts_with("STATE IN")) {
+            assert_eq!(
+                clause, "STATE IN ('42')",
+                "geometry was fetched for something other than the winning column"
+            );
+        }
+    });
+}

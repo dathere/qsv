@@ -59,6 +59,31 @@ const CODES_PER_REQUEST: usize = 200;
 /// Minimum fraction of codes a layer must resolve for `auto` to consider it at all.
 const LAYER_PROBE_MIN_RATIO: f64 = 0.5;
 
+/// How long a cached boundary set stays fresh, in days. Overridable with
+/// `QSV_VIZ_BOUNDARY_CACHE_TTL_DAYS`.
+///
+/// Boundaries are annual-vintage artifacts, so this is long by qsv standards. It exists so a new
+/// vintage is eventually picked up, not to bound staleness within a session.
+const BOUNDARY_CACHE_TTL_DAYS: u64 = 30;
+
+/// Cache subdirectory under the qsv cache dir.
+const BOUNDARY_CACHE_SUBDIR: &str = "~/.qsv-cache/viz-boundaries";
+
+/// Sidecar recorded next to a cached boundary file.
+///
+/// The resolved vintage and layer live here rather than in the cache KEY: resolving them requires
+/// network (the service catalog, then the probe), so a key built from them could never produce a
+/// zero-network second run. The key is built from the INPUTS instead, and this records what those
+/// inputs resolved to so a hit can report identical provenance without asking the service again.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedMeta {
+    feature_id_key: String,
+    provenance:     String,
+    scope_key:      String,
+    /// Unix seconds at fetch time, for the TTL check.
+    fetched_at:     u64,
+}
+
 /// A resolved boundary set, ready to hand to `viz`'s existing `--geojson` consumers.
 ///
 /// Deliberately provider-agnostic: the eventual second provider (Eurostat GISCO/NUTS is the
@@ -70,6 +95,9 @@ pub struct BoundarySet {
     pub feature_id_key: String,
     /// Human-readable provenance for the panel subtitle / sidecar.
     pub provenance:     String,
+    /// On-disk path of the materialized boundary document. Empty until it is written; several
+    /// `--geojson` consumers re-read the flag as a path, so this is what they get.
+    pub path:           String,
     /// Stable identity of exactly what was fetched: provider, layer, vintage and the full scope.
     ///
     /// This is the cache key, and it must name the scope itself rather than summarize it — a key
@@ -174,40 +202,28 @@ fn get_json(
 ) -> CliResult<serde_json::Value> {
     // `RequestBuilder::query` is behind a reqwest feature qsv does not enable, so the parameters
     // are encoded onto the URL here instead — same percent-encoding, no new build feature.
-    let target = reqwest::Url::parse_with_params(url, params.iter().copied()).map_err(|e| {
-        crate::CliError::Other(format!(
-            "--geojson auto: could not build Census URL '{url}': {e}"
-        ))
-    })?;
+    let target = reqwest::Url::parse_with_params(url, params.iter().copied())
+        .map_err(|e| crate::CliError::Other(format!("could not build Census URL '{url}': {e}")))?;
     let mut resp = client
         .get(target)
         .send()
         .and_then(reqwest::blocking::Response::error_for_status)
-        .map_err(|e| {
-            crate::CliError::Other(format!(
-                "--geojson auto: Census request to '{url}' failed: {e}"
-            ))
-        })?;
+        .map_err(|e| crate::CliError::Other(format!("Census request to '{url}' failed: {e}")))?;
     let mut buf: Vec<u8> = Vec::new();
     // one byte past the cap, so exceeding it is distinguishable from exactly reaching it
     resp.by_ref()
         .take(CENSUS_MAX_BYTES as u64 + 1)
         .read_to_end(&mut buf)
-        .map_err(|e| {
-            crate::CliError::Other(format!("--geojson auto: reading Census response body: {e}"))
-        })?;
+        .map_err(|e| crate::CliError::Other(format!("reading Census response body: {e}")))?;
     if buf.len() > CENSUS_MAX_BYTES {
         return Err(crate::CliError::Other(format!(
-            "--geojson auto: Census response from '{url}' exceeds the {} MB limit. Narrow the \
-             dataset's geographic extent, or supply an explicit --geojson file.",
+            "Census response from '{url}' exceeds the {} MB limit. Narrow the dataset's \
+             geographic extent, or supply an explicit --geojson file.",
             CENSUS_MAX_BYTES / 1_000_000
         )));
     }
-    serde_json::from_slice(&buf).map_err(|e| {
-        crate::CliError::Other(format!(
-            "--geojson auto: Census response is not valid JSON: {e}"
-        ))
-    })
+    serde_json::from_slice(&buf)
+        .map_err(|e| crate::CliError::Other(format!("Census response is not valid JSON: {e}")))
 }
 
 /// Discover the newest ACS vintage the service actually publishes.
@@ -469,6 +485,117 @@ fn state_fips_from_geoids(codes: &[String], layer: Layer) -> Vec<String> {
     states
 }
 
+/// Resolve the boundary cache directory, creating it if absent.
+fn cache_dir() -> CliResult<std::path::PathBuf> {
+    Ok(std::path::PathBuf::from(
+        crate::diskcache::set_qsv_cache_dir(BOUNDARY_CACHE_SUBDIR)?,
+    ))
+}
+
+/// Cache key for a request, derived only from what the USER supplied.
+///
+/// Built from the requested layer (or `auto`) plus the sorted distinct codes, so an identical
+/// command hits without contacting the service at all. Sorting means column order and row order do
+/// not perturb the key; deduping means row count does not either.
+fn cache_key(explicit: Option<Layer>, codes: &[String]) -> String {
+    let mut sorted: Vec<&str> = codes
+        .iter()
+        .map(|c| c.trim())
+        .filter(|c| !c.is_empty())
+        .collect();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"census/v1/");
+    hasher.update(explicit.map_or("auto", Layer::selector).as_bytes());
+    for code in sorted {
+        hasher.update(b"\0");
+        hasher.update(code.as_bytes());
+    }
+    hasher.finalize().to_hex()[..32].to_string()
+}
+
+/// Seconds since the Unix epoch, or 0 if the clock is before it.
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// Configured cache TTL in seconds.
+fn cache_ttl_secs() -> u64 {
+    std::env::var("QSV_VIZ_BOUNDARY_CACHE_TTL_DAYS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(BOUNDARY_CACHE_TTL_DAYS)
+        * 24
+        * 60
+        * 60
+}
+
+/// Paths of a cache entry: the boundary document and its sidecar.
+fn cache_paths(key: &str) -> CliResult<(std::path::PathBuf, std::path::PathBuf)> {
+    let dir = cache_dir()?;
+    Ok((
+        dir.join(format!("{key}.geojson")),
+        dir.join(format!("{key}.json")),
+    ))
+}
+
+/// Read a cache entry if present, reporting whether it is still within the TTL.
+///
+/// Returns `(BoundarySet, is_fresh)`. A STALE entry is still returned, because it is the right
+/// answer when the service is unreachable — better a boundary set from last month than no map at
+/// all, as long as the staleness is reported.
+fn cache_get(key: &str) -> Option<(BoundarySet, bool)> {
+    let (geojson_path, meta_path) = cache_paths(key).ok()?;
+    let meta: CachedMeta = serde_json::from_slice(&std::fs::read(&meta_path).ok()?).ok()?;
+    let geojson: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&geojson_path).ok()?).ok()?;
+    let fresh = now_secs().saturating_sub(meta.fetched_at) <= cache_ttl_secs();
+    Some((
+        BoundarySet {
+            geojson,
+            feature_id_key: meta.feature_id_key,
+            provenance: meta.provenance,
+            scope_key: meta.scope_key,
+            path: geojson_path.to_string_lossy().into_owned(),
+        },
+        fresh,
+    ))
+}
+
+/// Write a boundary set to the cache and return its on-disk path.
+///
+/// Materializing is not optional even without caching: several `--geojson` consumers re-read the
+/// flag as a path, so an in-memory-only boundary set would re-fetch or panic. It also satisfies
+/// the "exportable" requirement — the path can be passed back as an explicit `--geojson` for an
+/// archival, network-free run.
+fn cache_put(key: &str, boundaries: &BoundarySet) -> CliResult<String> {
+    let (geojson_path, meta_path) = cache_paths(key)?;
+    let write_err = |path: &std::path::Path, e: &dyn std::fmt::Display| {
+        crate::CliError::Other(format!(
+            "--geojson auto: could not write boundary cache '{}': {e}",
+            path.display()
+        ))
+    };
+    let file = std::fs::File::create(&geojson_path).map_err(|e| write_err(&geojson_path, &e))?;
+    serde_json::to_writer(std::io::BufWriter::new(file), &boundaries.geojson)
+        .map_err(|e| write_err(&geojson_path, &e))?;
+    let meta = CachedMeta {
+        feature_id_key: boundaries.feature_id_key.clone(),
+        provenance:     boundaries.provenance.clone(),
+        scope_key:      boundaries.scope_key.clone(),
+        fetched_at:     now_secs(),
+    };
+    std::fs::write(
+        &meta_path,
+        serde_json::to_vec(&meta).map_err(|e| write_err(&meta_path, &e))?,
+    )
+    .map_err(|e| write_err(&meta_path, &e))?;
+    Ok(geojson_path.to_string_lossy().into_owned())
+}
+
 /// Resolve boundaries for `codes`, choosing the geography when `explicit` is `None`.
 ///
 /// County FIPS codes and ZIP codes are both 5-digit numerics, so the layer cannot be inferred from
@@ -476,15 +603,50 @@ fn state_fips_from_geoids(codes: &[String], layer: Layer) -> Vec<String> {
 /// one the codes actually resolve against. A genuine tie is reported rather than guessed: silently
 /// picking between two plausible geographies is precisely the silent-wrong-map outcome `auto`
 /// exists to avoid, and `--geojson census:county` / `census:zcta` lets the user settle it.
+///
+/// A fresh cache entry short-circuits everything, so a repeated command makes NO network request —
+/// not even the catalog lookup. If the service is unreachable and only a stale entry exists, the
+/// stale boundaries are used and reported, since a month-old boundary set beats no map at all.
 pub fn resolve(codes: &[String], explicit: Option<Layer>) -> CliResult<BoundarySet> {
-    let client = census_client()?;
-    let vintage = latest_acs_vintage(&client)?;
+    let key = cache_key(explicit, codes);
+    let cached = cache_get(&key);
+    if let Some((boundaries, true)) = &cached {
+        log::info!(
+            "--geojson auto: cache hit ({}), no network",
+            boundaries.provenance
+        );
+        return Ok(cached.map(|(b, _)| b).unwrap());
+    }
 
-    let layer = match explicit {
-        Some(l) => l,
-        None => choose_layer(&client, vintage, codes)?,
-    };
-    fetch_layer(&client, vintage, layer, codes)
+    let fetched = (|| -> CliResult<BoundarySet> {
+        let client = census_client()?;
+        let vintage = latest_acs_vintage(&client)?;
+        let layer = match explicit {
+            Some(l) => l,
+            None => choose_layer(&client, vintage, codes)?,
+        };
+        fetch_layer(&client, vintage, layer, codes)
+    })();
+
+    match fetched {
+        Ok(mut boundaries) => {
+            boundaries.path = cache_put(&key, &boundaries)?;
+            Ok(boundaries)
+        },
+        Err(e) => {
+            // the service is unreachable (or refused); a stale entry is the right answer here
+            if let Some((boundaries, _)) = cached {
+                log::warn!("Census fetch failed, falling back to cache: {e}");
+                wwarn!(
+                    "--geojson auto: could not reach the Census service; using cached boundaries \
+                     from a previous run ({}).",
+                    boundaries.provenance
+                );
+                return Ok(boundaries);
+            }
+            Err(e)
+        },
+    }
 }
 
 /// Are two `(matched, total)` scores exactly the same fraction?
@@ -629,6 +791,8 @@ fn fetch_layer(
     });
     Ok(BoundarySet {
         geojson,
+        // filled in by the caller once it is written to the cache
+        path: String::new(),
         feature_id_key: format!("properties.{}", layer.id_field()),
         // names the scope exactly — see the field docs for the collision this avoids
         scope_key: format!("census/{}/acs{vintage}/{scope_key_part}", layer.label()),
@@ -671,6 +835,27 @@ mod tests {
         assert!(Layer::Zcta.matches_catalog_name("2010 Census ZIP Code Tabulation Areas"));
         assert!(!Layer::Zcta.matches_catalog_name("Counties"));
         assert!(!Layer::County.matches_catalog_name("2020 Census ZIP Code Tabulation Areas"));
+    }
+
+    #[test]
+    fn cache_key_ignores_row_and_column_order() {
+        // the key is what makes a repeated command zero-network, so it must not be perturbed by
+        // how the CSV happened to be ordered, or by duplicate rows
+        let a = vec!["42003".to_string(), "42101".to_string()];
+        let b = vec![
+            "42101".to_string(),
+            "42003".to_string(),
+            "42003".to_string(),
+        ];
+        assert_eq!(cache_key(None, &a), cache_key(None, &b));
+        // ... but a different code set, or a different requested layer, is a different entry
+        let c = vec!["42003".to_string(), "42102".to_string()];
+        assert_ne!(cache_key(None, &a), cache_key(None, &c));
+        assert_ne!(cache_key(None, &a), cache_key(Some(Layer::Zcta), &a));
+        assert_ne!(
+            cache_key(Some(Layer::County), &a),
+            cache_key(Some(Layer::Zcta), &a)
+        );
     }
 
     #[test]

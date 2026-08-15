@@ -429,6 +429,11 @@ choropleth options:
                            feature-id-key to properties.GEOID, and currently requires
                            `viz choropleth --locations <column>`. An existing local
                            file named `auto` still takes precedence over the keyword.
+                           Fetched boundaries are cached under ~/.qsv-cache, so a
+                           repeated command makes no network request at all; the cache
+                           path can be passed back as an explicit --geojson for an
+                           archival run. Freshness defaults to 30 days, overridable
+                           with QSV_VIZ_BOUNDARY_CACHE_TTL_DAYS.
                            Required for --map, and for the geojson-id location mode. Also
                            enables point-in-polygon
                            binning: with --lat/--lon (and without --geocode), each row's
@@ -4841,38 +4846,6 @@ fn distinct_region_codes(args: &Args) -> CliResult<Vec<String>> {
     Ok(codes)
 }
 
-/// Write a resolved boundary set to the qsv cache dir and return its path.
-///
-/// Materializing is not optional: several `--geojson` consumers re-read the flag as a path
-/// (see `build_choropleth_plot` and the smart map path), so an in-memory-only boundary set would
-/// panic or re-fetch. Writing it also satisfies the "exportable" requirement — the path can be
-/// passed back as an explicit `--geojson` for an archival, network-free run.
-///
-/// The filename is deterministic in the provider, vintage and scope, so a later commit can turn
-/// this into a true cache hit by testing for the file before fetching.
-fn materialize_boundary_set(
-    boundaries: &crate::cmd::viz_census::BoundarySet,
-    scope_key: &str,
-) -> CliResult<String> {
-    let cache_dir = crate::diskcache::set_qsv_cache_dir("~/.qsv-cache/viz-boundaries")?;
-    // digest the scope rather than spelling it out: a 40-state county fetch would otherwise build
-    // a filename past the filesystem's name limit.
-    let digest = blake3::hash(scope_key.as_bytes()).to_hex();
-    let path = std::path::Path::new(&cache_dir).join(format!("{}.geojson", &digest[..32]));
-    let file = std::fs::File::create(&path).map_err(|e| {
-        crate::CliError::Other(format!(
-            "--geojson auto: could not write boundary cache '{}': {e}",
-            path.display()
-        ))
-    })?;
-    serde_json::to_writer(std::io::BufWriter::new(file), &boundaries.geojson).map_err(|e| {
-        crate::CliError::Other(format!(
-            "--geojson auto: could not serialize boundaries: {e}"
-        ))
-    })?;
-    Ok(path.to_string_lossy().into_owned())
-}
-
 /// Minimum fraction of DISTINCT region codes that must resolve to a fetched boundary for
 /// `--geojson auto` to render.
 ///
@@ -5010,12 +4983,12 @@ fn resolve_auto_geojson(args: &Args, spec: &str) -> CliResult<(String, Option<St
         );
     }
 
-    let path = materialize_boundary_set(&boundaries, &boundaries.scope_key)?;
     log::info!(
-        "--geojson {spec} resolved: {} -> {path} ({matched}/{total} codes matched)",
-        boundaries.provenance
+        "--geojson {spec} resolved: {} -> {} ({matched}/{total} codes matched)",
+        boundaries.provenance,
+        boundaries.path
     );
-    Ok((path, Some(boundaries.feature_id_key)))
+    Ok((boundaries.path, Some(boundaries.feature_id_key)))
 }
 
 /// Resolve a `--geojson` value as a `QSV_GEOJSON_SHORTCUTS` entry name.

@@ -420,12 +420,13 @@ choropleth options:
                            defined in the QSV_GEOJSON_SHORTCUTS env var (a JSON map of
                            name to {path, id}); the shortcut's id sets --feature-id-key
                            when you don't pass one. The source is validated up front.
-                           Use `auto` (or `census`) to fetch US county or ZIP Code
-                           Tabulation Area boundaries from the Census TIGERweb service
-                           automatically. County FIPS and ZIP codes are both 5-digit,
-                           so qsv probes both layers and picks whichever your codes
-                           resolve against, reporting both when it cannot tell; force
-                           one with `census:county` or `census:zcta`. Sets the
+                           Use `auto` (or `census`) to fetch US county, ZIP Code
+                           Tabulation Area, census tract or place boundaries from the
+                           Census TIGERweb service automatically. County FIPS and ZIP
+                           codes are both 5-digit, so qsv probes the layers and picks
+                           whichever your codes resolve against, reporting them when it
+                           cannot tell; force one with `census:county`, `census:zcta`,
+                           `census:tract` or `census:place`. Sets the
                            feature-id-key to properties.GEOID, and currently requires
                            `viz choropleth --locations <column>`. An existing local
                            file named `auto` still takes precedence over the keyword.

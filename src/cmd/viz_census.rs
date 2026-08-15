@@ -112,11 +112,13 @@ pub struct BoundarySet {
 pub enum Layer {
     County,
     Zcta,
+    Tract,
+    Place,
 }
 
 impl Layer {
     /// Every layer `auto` will probe, in the order they are reported when the choice is ambiguous.
-    pub const ALL: [Self; 2] = [Self::County, Self::Zcta];
+    pub const ALL: [Self; 4] = [Self::County, Self::Zcta, Self::Tract, Self::Place];
 
     /// Does a `MapServer` catalog entry name this layer?
     ///
@@ -128,6 +130,8 @@ impl Layer {
         match self {
             Self::County => name == "Counties",
             Self::Zcta => name.contains("ZIP Code Tabulation Areas"),
+            Self::Tract => name == "Census Tracts",
+            Self::Place => name == "Incorporated Places",
         }
     }
 
@@ -145,6 +149,10 @@ impl Layer {
             Self::County => 5,
             // 5-digit ZIP Code Tabulation Area
             Self::Zcta => 5,
+            // 2-digit state + 3-digit county + 6-digit tract
+            Self::Tract => 11,
+            // 2-digit state + 5-digit place
+            Self::Place => 7,
         }
     }
 
@@ -153,6 +161,8 @@ impl Layer {
         match self {
             Self::County => "county",
             Self::Zcta => "ZCTA",
+            Self::Tract => "census tract",
+            Self::Place => "place",
         }
     }
 
@@ -161,6 +171,8 @@ impl Layer {
         match self {
             Self::County => "census:county",
             Self::Zcta => "census:zcta",
+            Self::Tract => "census:tract",
+            Self::Place => "census:place",
         }
     }
 
@@ -169,6 +181,8 @@ impl Layer {
         match spec {
             "census:county" | "census:counties" => Some(Self::County),
             "census:zcta" | "census:zip" => Some(Self::Zcta),
+            "census:tract" | "census:tracts" => Some(Self::Tract),
+            "census:place" | "census:places" => Some(Self::Place),
             _ => None,
         }
     }
@@ -304,26 +318,40 @@ fn resolve_layer_id(
     )
 }
 
-/// Normalize region codes for a layer: trim, drop empties, and re-pad numeric codes whose leading
-/// zero a numeric CSV column dropped (`7936` -> `07936`, `1001` -> `01001`).
+/// Normalize region codes for a layer: keep only codes that could BE one of its ids, and re-pad
+/// those whose leading zero a numeric CSV column dropped (`7936` -> `07936`, `1001` -> `01001`).
 ///
 /// Padding must happen BEFORE the query, not just when matching results back: a `where ... IN
-/// ('7936')` clause matches no ZCTA at all, so an unpadded code would read as a nonexistent
-/// region rather than a formatting artifact.
+/// ('7936')` clause matches no ZCTA at all, so an unpadded code would read as a nonexistent region
+/// rather than a formatting artifact.
+///
+/// Codes are also filtered to a plausible width band for the layer — every Census id here is
+/// all-digit and fixed-width, so a code outside `[width-2, width]` cannot be one no matter how it
+/// is padded. That is what stops a 5-digit county dataset from wasting probes against the 7-digit
+/// place and 11-digit tract layers. Note this filters only what is QUERIED; coverage is still
+/// scored against the caller's original, unfiltered codes, so nothing is hidden from the honesty
+/// check by being dropped here.
 fn normalize_codes(codes: &[String], layer: Layer) -> Vec<String> {
     let width = layer.code_width();
+    // How many leading zeros a numeric column can actually have eaten is a property of the id, not
+    // a guess: a GEOID that starts with a state FIPS loses at most ONE (only states 01-09 have a
+    // leading zero), whereas a ZCTA can lose TWO, because Puerto Rico's run 006xx-009xx and
+    // `00601` arrives as `601`. Using the loosest band for every layer would make a 5-digit county
+    // code look like a paddable 7-digit place id (`0042003`, state "00", which does not exist) and
+    // buy a wasted probe on every run.
+    let min_width = width.saturating_sub(if matches!(layer, Layer::Zcta) { 2 } else { 1 });
     let mut out: Vec<String> = codes
         .iter()
         .filter_map(|raw| {
             let raw = raw.trim();
-            if raw.is_empty() {
+            if raw.is_empty()
+                || !raw.bytes().all(|b| b.is_ascii_digit())
+                || raw.len() > width
+                || raw.len() < min_width
+            {
                 return None;
             }
-            if raw.len() < width && raw.bytes().all(|b| b.is_ascii_digit()) {
-                Some(format!("{raw:0>width$}"))
-            } else {
-                Some(raw.to_string())
-            }
+            Some(format!("{raw:0>width$}"))
         })
         .collect();
     out.sort_unstable();
@@ -461,8 +489,8 @@ fn state_fips_from_geoids(codes: &[String], layer: Layer) -> Vec<String> {
     // 5-digit numeric, so nothing in the shape of the code would stop this from "deriving"
     // state 15 from ZCTA 15213 — which is not a state at all.
     debug_assert!(
-        matches!(layer, Layer::County),
-        "state FIPS can only be derived from a GEOID that embeds one"
+        !matches!(layer, Layer::Zcta),
+        "state FIPS can only be derived from a GEOID that embeds one; a ZCTA does not"
     );
     let geoid_width = layer.code_width();
     let mut states: Vec<String> = codes
@@ -848,7 +876,9 @@ fn fetch_layer(
     let (layer_id, catalog_name) = resolve_layer_id(client, vintage, layer)?;
 
     let (where_clauses, scope_desc, scope_key_part) = match layer {
-        Layer::County => {
+        // every layer whose GEOID embeds a state prefix is scoped by STATE, which keeps the
+        // boundary set independent of the column being scored
+        Layer::County | Layer::Tract | Layer::Place => {
             let states = state_fips_from_geoids(&normalized, layer);
             if states.is_empty() {
                 return Err(crate::CliError::Other(
@@ -945,6 +975,37 @@ mod tests {
         assert!(Layer::Zcta.matches_catalog_name("2010 Census ZIP Code Tabulation Areas"));
         assert!(!Layer::Zcta.matches_catalog_name("Counties"));
         assert!(!Layer::County.matches_catalog_name("2020 Census ZIP Code Tabulation Areas"));
+    }
+
+    #[test]
+    fn normalize_filters_to_a_plausible_width_band() {
+        // 5-digit county codes cannot be tract (11) or place (7) ids no matter how padded, so
+        // those layers are never probed for them
+        let county_codes = vec!["42003".to_string(), "1001".to_string()];
+        assert_eq!(
+            normalize_codes(&county_codes, Layer::County),
+            vec!["01001", "42003"]
+        );
+        assert!(normalize_codes(&county_codes, Layer::Tract).is_empty());
+        assert!(normalize_codes(&county_codes, Layer::Place).is_empty());
+
+        // an 11-digit tract id is likewise not a county
+        let tract_codes = vec!["09160310200".to_string()];
+        assert_eq!(
+            normalize_codes(&tract_codes, Layer::Tract),
+            vec!["09160310200"]
+        );
+        assert!(normalize_codes(&tract_codes, Layer::County).is_empty());
+
+        // non-numeric can never be a Census GEOID
+        assert!(normalize_codes(&["Allegheny".to_string()], Layer::County).is_empty());
+
+        // a Puerto Rico ZCTA loses TWO leading zeros in a numeric column (00601 -> 601), which is
+        // why ZCTAs get a wider band than the state-prefixed layers
+        assert_eq!(
+            normalize_codes(&["601".to_string()], Layer::Zcta),
+            vec!["00601"]
+        );
     }
 
     #[test]

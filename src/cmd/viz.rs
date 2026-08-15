@@ -36970,6 +36970,63 @@ mod tests {
         assert!(detect_extent_outliers(&gj, "properties.GEOID").is_empty());
     }
 
+    // The outlier detector and the framing filter read ids off the RAW json, while every other
+    // consumer reads them off the typed `geojson::Feature`. If the two disagree, the outlier ids
+    // never match the features and the frame silently excludes nothing — a failure that looks
+    // exactly like "no outliers". A user may pass --feature-id-key alongside --geojson auto, so
+    // the agreement has to hold for the shapes the typed reader special-cases, not just for the
+    // `properties.GEOID` the auto path sets itself.
+    #[test]
+    fn raw_and_typed_feature_id_readers_agree() {
+        let cases = [
+            // top-level string id
+            (
+                serde_json::json!({"type": "Feature", "id": "A",
+                                "properties": {}, "geometry": null}),
+                "id",
+            ),
+            // top-level NUMERIC id — both must coerce to the same string
+            (
+                serde_json::json!({"type": "Feature", "id": 42,
+                                "properties": {}, "geometry": null}),
+                "id",
+            ),
+            // properties path
+            (
+                serde_json::json!({"type": "Feature", "properties": {"GEOID": "42003"},
+                                "geometry": null}),
+                "properties.GEOID",
+            ),
+            // numeric under properties
+            (
+                serde_json::json!({"type": "Feature", "properties": {"GEOID": 42003},
+                                "geometry": null}),
+                "properties.GEOID",
+            ),
+            // top-level foreign member (TopoJSON-style exports carry names there)
+            (
+                serde_json::json!({"type": "Feature", "name": "Alpha",
+                                "properties": {}, "geometry": null}),
+                "name",
+            ),
+            // absent -> None from both
+            (
+                serde_json::json!({"type": "Feature", "properties": {},
+                                "geometry": null}),
+                "properties.NOPE",
+            ),
+        ];
+        for (value, key) in cases {
+            let typed: geojson::Feature = serde_json::from_value(value.clone())
+                .unwrap_or_else(|e| panic!("fixture is not a Feature: {e}"));
+            assert_eq!(
+                feature_id_by_path_value(&value, key),
+                feature_id_by_path(&typed, key),
+                "raw and typed readers disagree for key {key} on {value}"
+            );
+        }
+    }
+
     #[test]
     fn build_rate_series_drops_regions_without_a_denominator() {
         let locs: Vec<String> = ["A", "B", "C", "D"]

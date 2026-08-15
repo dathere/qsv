@@ -429,7 +429,12 @@ choropleth options:
                            feature-id-key to properties.GEOID, and currently requires
                            `viz choropleth --locations <column>`. An existing local
                            file named `auto` still takes precedence over the keyword.
-                           Fetched boundaries are cached under ~/.qsv-cache, so a
+                           Boundaries are re-drawn between vintages (Connecticut
+                           replaced its 8 counties with 9 planning regions in the 2022
+                           vintages, sharing no GEOID), so append @<year> to pin one,
+                           e.g. `census:county@2021`. When nothing matches the newest
+                           vintage, qsv probes older ones and names the vintage that
+                           does match. Fetched boundaries are cached under ~/.qsv-cache, so a
                            repeated command makes no network request at all; the cache
                            path can be passed back as an explicit --geojson for an
                            archival run. Freshness defaults to 30 days, overridable
@@ -4813,15 +4818,14 @@ struct GeojsonShortcut {
     id:   Option<String>,
 }
 
-/// `--geojson` values that request automatic boundary resolution rather than naming a source.
-/// `auto` iterates the registered providers; `census` names the US Census provider explicitly.
-const GEOJSON_AUTO_SPECS: [&str; 2] = ["auto", "census"];
-
-/// Is this `--geojson` value a request for automatic boundary resolution?
-/// Covers the bare keywords and the explicit `census:<layer>` selectors.
+/// Is this `--geojson` value a request for automatic boundary resolution rather than a source?
+///
+/// Covers `auto`, `census`, the `census:<layer>` selectors, and any of those with an `@<vintage>`
+/// suffix. Delegates to the one parser that defines the grammar, so a form accepted here can never
+/// drift from a form `resolve` understands — they did drift once, and `census:county@2021` was
+/// reported as a missing file.
 fn is_geojson_auto_spec(spec: &str) -> bool {
-    GEOJSON_AUTO_SPECS.contains(&spec)
-        || crate::cmd::viz_census::Layer::from_selector(spec).is_some()
+    crate::cmd::viz_census::parse_auto_spec(spec).is_some()
 }
 
 /// Collect the distinct, non-empty values of the `--locations` column.
@@ -4948,8 +4952,9 @@ fn resolve_auto_geojson(args: &Args, spec: &str) -> CliResult<(String, Option<St
              regions to fetch boundaries for."
         );
     }
-    let explicit_layer = crate::cmd::viz_census::Layer::from_selector(spec);
-    let boundaries = crate::cmd::viz_census::resolve(&codes, explicit_layer)?;
+    // safe: the caller only routes here when `parse_auto_spec` already matched
+    let auto_spec = crate::cmd::viz_census::parse_auto_spec(spec).unwrap_or_default();
+    let boundaries = crate::cmd::viz_census::resolve(&codes, auto_spec)?;
 
     // "auto" is only honest if the guess is testable: score the column against what was actually
     // fetched and refuse to render a mostly-unmatched map. Without this, a --locations column of

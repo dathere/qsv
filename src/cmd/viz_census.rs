@@ -226,21 +226,22 @@ fn get_json(
         .map_err(|e| crate::CliError::Other(format!("Census response is not valid JSON: {e}")))
 }
 
-/// Discover the newest ACS vintage the service actually publishes.
+/// Every ACS vintage the service publishes, ascending.
 ///
 /// Read from the catalog rather than computed from the current year: the vintages present are a
 /// property of the service (it listed `tigerWMS_ACS2012`..`tigerWMS_ACS2025` when this was
-/// written), and any "this year minus one" rule silently drifts every January.
-pub fn latest_acs_vintage(client: &reqwest::blocking::Client) -> CliResult<u16> {
+/// written), and any "this year minus one" rule silently drifts every January. The full list — not
+/// just the newest — is what lets a vintage mismatch be diagnosed instead of merely reported.
+pub fn available_acs_vintages(client: &reqwest::blocking::Client) -> CliResult<Vec<u16>> {
     let catalog = get_json(
         client,
         &format!("{TIGERWEB_ROOT}/TIGERweb"),
         &[("f", "json")],
     )?;
-    let latest = catalog
+    let mut vintages: Vec<u16> = catalog
         .get("services")
         .and_then(serde_json::Value::as_array)
-        .and_then(|services| {
+        .map(|services| {
             services
                 .iter()
                 .filter_map(|s| s.get("name").and_then(serde_json::Value::as_str))
@@ -248,18 +249,18 @@ pub fn latest_acs_vintage(client: &reqwest::blocking::Client) -> CliResult<u16> 
                 .filter_map(|name| name.rsplit('/').next())
                 .filter_map(|name| name.strip_prefix("tigerWMS_ACS"))
                 .filter_map(|year| year.parse::<u16>().ok())
-                .max()
-        });
-    latest.map_or_else(
-        || {
-            Err(crate::CliError::Other(format!(
-                "--geojson auto: no ACS vintages found in the Census TIGERweb catalog at \
-                 '{TIGERWEB_ROOT}/TIGERweb'. The service may have been reorganized; supply an \
-                 explicit --geojson file."
-            )))
-        },
-        Ok,
-    )
+                .collect()
+        })
+        .unwrap_or_default();
+    vintages.sort_unstable();
+    vintages.dedup();
+    if vintages.is_empty() {
+        return Err(crate::CliError::Other(format!(
+            "no ACS vintages found in the Census TIGERweb catalog at '{TIGERWEB_ROOT}/TIGERweb'. \
+             The service may have been reorganized; supply an explicit --geojson file."
+        )));
+    }
+    Ok(vintages)
 }
 
 /// Resolve a layer's numeric id by NAME within a vintage's `MapServer`, returning
@@ -485,6 +486,78 @@ fn state_fips_from_geoids(codes: &[String], layer: Layer) -> Vec<String> {
     states
 }
 
+/// A parsed `--geojson auto|census[:layer][@vintage]` request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct AutoSpec {
+    /// `None` means "probe every layer and choose".
+    pub layer:   Option<Layer>,
+    /// `None` means "use the newest vintage the service publishes".
+    pub vintage: Option<u16>,
+}
+
+/// Parse a `--geojson` value as an automatic-resolution request, or `None` if it names a source.
+///
+/// Grammar: `auto` | `census` | `census:<layer>`, each optionally suffixed `@<vintage>`.
+/// The vintage suffix exists because boundaries are re-drawn: Connecticut replaced its 8 counties
+/// with 9 planning regions in the 2022 vintages, with NO GEOID in common, so a pre-2022 CT dataset
+/// cannot be mapped against the newest boundaries at all.
+pub fn parse_auto_spec(spec: &str) -> Option<AutoSpec> {
+    let (base, vintage) = match spec.split_once('@') {
+        Some((base, year)) => (base, Some(year.parse::<u16>().ok()?)),
+        None => (spec, None),
+    };
+    let layer = match base {
+        "auto" | "census" => None,
+        other => Some(Layer::from_selector(other)?),
+    };
+    Some(AutoSpec { layer, vintage })
+}
+
+/// How many older vintages to probe when nothing matches, before giving up on diagnosing why.
+///
+/// Only ever runs on the failure path, and each probe is geometry-free. Four is enough to reach
+/// across a decennial boundary change from the newest vintage (Connecticut's county-to-planning-
+/// region switch is 4 vintages back from 2025).
+const VINTAGE_FALLBACK_PROBES: usize = 4;
+
+/// Look for an older vintage whose boundaries the codes DO match.
+///
+/// This turns a dead end into an instruction. Without it, a 2015 Connecticut county dataset
+/// reports "matches no Census geography" — true, but misleading, because the codes are perfectly
+/// valid county FIPS that simply predate the planning regions.
+fn suggest_alternate_vintage(
+    client: &reqwest::blocking::Client,
+    vintages: &[u16],
+    current: u16,
+    codes: &[String],
+) -> Option<(u16, Layer, usize, usize)> {
+    let older: Vec<u16> = vintages
+        .iter()
+        .copied()
+        .filter(|v| *v < current)
+        .rev()
+        .take(VINTAGE_FALLBACK_PROBES)
+        .collect();
+    for vintage in older {
+        for layer in Layer::ALL {
+            let normalized = normalize_codes(codes, layer);
+            if normalized.is_empty() {
+                continue;
+            }
+            // a probe against a vintage that lacks the layer is a miss, not an error
+            let Ok(matched) = probe_layer(client, vintage, layer, &normalized) else {
+                continue;
+            };
+            #[allow(clippy::cast_precision_loss)]
+            let ratio = matched as f64 / normalized.len() as f64;
+            if ratio >= LAYER_PROBE_MIN_RATIO {
+                return Some((vintage, layer, matched, normalized.len()));
+            }
+        }
+    }
+    None
+}
+
 /// Resolve the boundary cache directory, creating it if absent.
 fn cache_dir() -> CliResult<std::path::PathBuf> {
     Ok(std::path::PathBuf::from(
@@ -497,7 +570,7 @@ fn cache_dir() -> CliResult<std::path::PathBuf> {
 /// Built from the requested layer (or `auto`) plus the sorted distinct codes, so an identical
 /// command hits without contacting the service at all. Sorting means column order and row order do
 /// not perturb the key; deduping means row count does not either.
-fn cache_key(explicit: Option<Layer>, codes: &[String]) -> String {
+fn cache_key(spec: AutoSpec, codes: &[String]) -> String {
     let mut sorted: Vec<&str> = codes
         .iter()
         .map(|c| c.trim())
@@ -507,7 +580,13 @@ fn cache_key(explicit: Option<Layer>, codes: &[String]) -> String {
     sorted.dedup();
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"census/v1/");
-    hasher.update(explicit.map_or("auto", Layer::selector).as_bytes());
+    hasher.update(spec.layer.map_or("auto", Layer::selector).as_bytes());
+    hasher.update(b"@");
+    hasher.update(
+        spec.vintage
+            .map_or_else(|| "latest".to_string(), |v| v.to_string())
+            .as_bytes(),
+    );
     for code in sorted {
         hasher.update(b"\0");
         hasher.update(code.as_bytes());
@@ -596,19 +675,19 @@ fn cache_put(key: &str, boundaries: &BoundarySet) -> CliResult<String> {
     Ok(geojson_path.to_string_lossy().into_owned())
 }
 
-/// Resolve boundaries for `codes`, choosing the geography when `explicit` is `None`.
+/// Resolve boundaries for `codes` according to `spec`.
 ///
-/// County FIPS codes and ZIP codes are both 5-digit numerics, so the layer cannot be inferred from
-/// the codes' shape — `auto` probes each candidate layer (geometry-free, a few KB) and takes the
-/// one the codes actually resolve against. A genuine tie is reported rather than guessed: silently
-/// picking between two plausible geographies is precisely the silent-wrong-map outcome `auto`
-/// exists to avoid, and `--geojson census:county` / `census:zcta` lets the user settle it.
+/// County FIPS codes and ZIP codes are both 5-digit numerics, so when `spec.layer` is `None` the
+/// layer cannot be inferred from the codes' shape — `auto` probes each candidate layer
+/// (geometry-free, a few KB) and takes the one the codes actually resolve against. A genuine tie
+/// is reported rather than guessed: silently picking between two plausible geographies is
+/// precisely the silent-wrong-map outcome `auto` exists to avoid.
 ///
 /// A fresh cache entry short-circuits everything, so a repeated command makes NO network request —
 /// not even the catalog lookup. If the service is unreachable and only a stale entry exists, the
 /// stale boundaries are used and reported, since a month-old boundary set beats no map at all.
-pub fn resolve(codes: &[String], explicit: Option<Layer>) -> CliResult<BoundarySet> {
-    let key = cache_key(explicit, codes);
+pub fn resolve(codes: &[String], spec: AutoSpec) -> CliResult<BoundarySet> {
+    let key = cache_key(spec, codes);
     let cached = cache_get(&key);
     if let Some((boundaries, true)) = &cached {
         log::info!(
@@ -620,10 +699,25 @@ pub fn resolve(codes: &[String], explicit: Option<Layer>) -> CliResult<BoundaryS
 
     let fetched = (|| -> CliResult<BoundarySet> {
         let client = census_client()?;
-        let vintage = latest_acs_vintage(&client)?;
-        let layer = match explicit {
+        let vintages = available_acs_vintages(&client)?;
+        let vintage = match spec.vintage {
+            Some(v) if vintages.contains(&v) => v,
+            Some(v) => {
+                return Err(crate::CliError::Other(format!(
+                    "--geojson: the Census service has no {v} ACS vintage. Available: {}.",
+                    vintages
+                        .iter()
+                        .map(u16::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+            },
+            // safe: available_acs_vintages errors rather than returning an empty list
+            None => *vintages.last().unwrap(),
+        };
+        let layer = match spec.layer {
             Some(l) => l,
-            None => choose_layer(&client, vintage, codes)?,
+            None => choose_layer(&client, &vintages, vintage, codes)?,
         };
         fetch_layer(&client, vintage, layer, codes)
     })();
@@ -661,6 +755,7 @@ const fn ratios_equal(a: (usize, usize), b: (usize, usize)) -> bool {
 /// Probe every candidate layer and return the one the codes resolve against best.
 fn choose_layer(
     client: &reqwest::blocking::Client,
+    vintages: &[u16],
     vintage: u16,
     codes: &[String],
 ) -> CliResult<Layer> {
@@ -696,9 +791,24 @@ fn choose_layer(
             .map(|(l, m, t)| format!("{} {m}/{t}", l.label()))
             .collect::<Vec<_>>()
             .join(", ");
+        // before blaming the codes, check whether they are simply from an older vintage —
+        // boundaries get re-drawn, and valid codes for one vintage can be absent from the next
+        if let Some((alt_vintage, alt_layer, matched, total)) =
+            suggest_alternate_vintage(client, vintages, vintage, codes)
+        {
+            return Err(crate::CliError::Other(format!(
+                "--geojson auto: the --locations values match no Census geography in the \
+                 {vintage} vintage ({detail}), but {matched} of {total} match the {alt_vintage} \
+                 {} layer. Boundaries are re-drawn between vintages — pass `--geojson \
+                 {}@{alt_vintage}`.",
+                alt_layer.label(),
+                alt_layer.selector()
+            )));
+        }
         return Err(crate::CliError::Other(format!(
-            "--geojson auto: the --locations values match no Census geography ({detail}). They \
-             may not be US county FIPS or ZIP codes — supply an explicit --geojson file."
+            "--geojson auto: the --locations values match no Census geography in the {vintage} \
+             vintage ({detail}), nor in the vintages before it. They may not be US county FIPS or \
+             ZIP codes — supply an explicit --geojson file."
         )));
     }
     // descending by match ratio, compared exactly
@@ -838,6 +948,41 @@ mod tests {
     }
 
     #[test]
+    fn parse_auto_spec_grammar() {
+        assert_eq!(parse_auto_spec("auto"), Some(AutoSpec::default()));
+        assert_eq!(parse_auto_spec("census"), Some(AutoSpec::default()));
+        assert_eq!(
+            parse_auto_spec("census:county"),
+            Some(AutoSpec {
+                layer:   Some(Layer::County),
+                vintage: None,
+            })
+        );
+        // the vintage suffix on every form — `is_geojson_auto_spec` once accepted a narrower
+        // grammar than `resolve` understood, and `census:county@2021` was reported as a missing
+        // file. One parser now defines both.
+        assert_eq!(
+            parse_auto_spec("auto@2019"),
+            Some(AutoSpec {
+                layer:   None,
+                vintage: Some(2019),
+            })
+        );
+        assert_eq!(
+            parse_auto_spec("census:zcta@2021"),
+            Some(AutoSpec {
+                layer:   Some(Layer::Zcta),
+                vintage: Some(2021),
+            })
+        );
+        // things that name a source, not a request
+        assert_eq!(parse_auto_spec("regions.geojson"), None);
+        assert_eq!(parse_auto_spec("https://example.com/a.json"), None);
+        assert_eq!(parse_auto_spec("census:nope"), None);
+        assert_eq!(parse_auto_spec("auto@notayear"), None);
+    }
+
+    #[test]
     fn cache_key_ignores_row_and_column_order() {
         // the key is what makes a repeated command zero-network, so it must not be perturbed by
         // how the CSV happened to be ordered, or by duplicate rows
@@ -847,15 +992,27 @@ mod tests {
             "42003".to_string(),
             "42003".to_string(),
         ];
-        assert_eq!(cache_key(None, &a), cache_key(None, &b));
-        // ... but a different code set, or a different requested layer, is a different entry
+        let auto = AutoSpec::default();
+        assert_eq!(cache_key(auto, &a), cache_key(auto, &b));
+        // ... but a different code set, layer, or vintage is a different entry
         let c = vec!["42003".to_string(), "42102".to_string()];
-        assert_ne!(cache_key(None, &a), cache_key(None, &c));
-        assert_ne!(cache_key(None, &a), cache_key(Some(Layer::Zcta), &a));
-        assert_ne!(
-            cache_key(Some(Layer::County), &a),
-            cache_key(Some(Layer::Zcta), &a)
-        );
+        let zcta = AutoSpec {
+            layer:   Some(Layer::Zcta),
+            vintage: None,
+        };
+        let county = AutoSpec {
+            layer:   Some(Layer::County),
+            vintage: None,
+        };
+        let county_2019 = AutoSpec {
+            layer:   Some(Layer::County),
+            vintage: Some(2019),
+        };
+        assert_ne!(cache_key(auto, &a), cache_key(auto, &c));
+        assert_ne!(cache_key(auto, &a), cache_key(zcta, &a));
+        assert_ne!(cache_key(county, &a), cache_key(zcta, &a));
+        // a vintage-pinned request must not collide with the unpinned one
+        assert_ne!(cache_key(county, &a), cache_key(county_2019, &a));
     }
 
     #[test]

@@ -4863,6 +4863,79 @@ fn materialize_boundary_set(
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Minimum fraction of DISTINCT region codes that must resolve to a fetched boundary for
+/// `--geojson auto` to render.
+///
+/// Deliberately stricter than [`BIVARIATE_MIN_SUPPORT_RATIO`], which exists to *choose* among
+/// competing candidate columns — there, a weak-but-best candidate is still the most informative
+/// one available. Here the user has already named the column and asked qsv to fetch boundaries
+/// for it, so a majority of codes failing to resolve means the wrong geography was fetched, not a
+/// weak signal. Rendering that is the silent-wrong-map outcome auto exists to avoid.
+const GEOJSON_AUTO_MIN_MATCH_RATIO: f64 = 0.5;
+
+/// How many unmatched codes to name in the coverage error/warning before eliding.
+const GEOJSON_AUTO_UNMATCHED_SAMPLE: usize = 5;
+
+/// Score `codes` against the fetched boundary set, returning
+/// `(matched_count, total_count, sample_of_unmatched)`.
+///
+/// Reuses [`match_region_code`] and the exact matcher inputs
+/// `build_smart_summary_choropleth_panels` builds, so an auto-resolved boundary set is scored by
+/// the same zero-padding and case-folding rules as a user-supplied one — a numeric column that
+/// dropped its leading zero (`1001` for `01001`) must not read as a miss.
+fn score_region_code_coverage(
+    geojson: &serde_json::Value,
+    feature_id_key: &str,
+    codes: &[String],
+) -> CliResult<(usize, usize, Vec<String>)> {
+    let features = build_pip_features(geojson, feature_id_key, None)?;
+    let feature_ids: std::collections::HashSet<&str> =
+        features.iter().map(|f| f.id.as_str()).collect();
+    let numeric_id_widths: Vec<usize> = {
+        let mut w: Vec<usize> = feature_ids
+            .iter()
+            .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+            .map(|id| id.len())
+            .collect();
+        w.sort_unstable();
+        w.dedup();
+        w
+    };
+    // same ambiguity handling as the summary choropleth: a folded key mapping to more than one
+    // distinct id is removed rather than arbitrarily resolved
+    let lowercased_ids: std::collections::HashMap<String, String> = {
+        let mut m: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for f in &features {
+            let folded = f.id.to_ascii_lowercase();
+            match m.get(&folded) {
+                Some(existing) if *existing != f.id => {
+                    ambiguous.insert(folded);
+                },
+                Some(_) => {},
+                None => {
+                    m.insert(folded, f.id.clone());
+                },
+            }
+        }
+        for k in ambiguous {
+            m.remove(&k);
+        }
+        m
+    };
+
+    let mut matched = 0usize;
+    let mut unmatched: Vec<String> = Vec::new();
+    for code in codes {
+        if match_region_code(code, &feature_ids, &numeric_id_widths, &lowercased_ids).is_some() {
+            matched += 1;
+        } else if unmatched.len() < GEOJSON_AUTO_UNMATCHED_SAMPLE {
+            unmatched.push(code.clone());
+        }
+    }
+    Ok((matched, codes.len(), unmatched))
+}
+
 /// Resolve `--geojson auto|census` into a concrete boundary file plus its feature-id key.
 ///
 /// Returns the same `(path, Option<feature-id-key>)` shape as [`lookup_geojson_shortcut`] so the
@@ -4893,9 +4966,42 @@ fn resolve_auto_geojson(args: &Args, spec: &str) -> CliResult<(String, Option<St
         );
     }
     let boundaries = crate::cmd::viz_census::resolve_counties(&codes)?;
-    let path = materialize_boundary_set(&boundaries, &boundaries.provenance)?;
+
+    // "auto" is only honest if the guess is testable: score the column against what was actually
+    // fetched and refuse to render a mostly-unmatched map. Without this, a --locations column of
+    // plausible-but-nonexistent codes (42999, 42998, ...) fetches a state and renders a map that
+    // shades nothing, exits 0, and says nothing.
+    let (matched, total, unmatched_sample) =
+        score_region_code_coverage(&boundaries.geojson, &boundaries.feature_id_key, &codes)?;
+    #[allow(clippy::cast_precision_loss)]
+    let fraction = if total == 0 {
+        0.0
+    } else {
+        matched as f64 / total as f64
+    };
+    if fraction < GEOJSON_AUTO_MIN_MATCH_RATIO {
+        let sample = unmatched_sample.join(", ");
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec}: only {matched} of {total} distinct --locations values ({:.0}%) \
+             match a boundary in {}. Unmatched examples: {sample}. The column may not hold county \
+             FIPS codes, or the boundaries may be a different vintage — supply an explicit \
+             --geojson file if this is intentional.",
+            fraction * 100.0,
+            boundaries.provenance
+        );
+    }
+    if matched < total {
+        let sample = unmatched_sample.join(", ");
+        winfo!(
+            "--geojson {spec}: {} of {total} distinct --locations values matched no boundary and \
+             are omitted from the map (e.g. {sample}).",
+            total - matched
+        );
+    }
+
+    let path = materialize_boundary_set(&boundaries, &boundaries.scope_key)?;
     log::info!(
-        "--geojson {spec} resolved: {} -> {path}",
+        "--geojson {spec} resolved: {} -> {path} ({matched}/{total} codes matched)",
         boundaries.provenance
     );
     Ok((path, Some(boundaries.feature_id_key)))
@@ -36530,6 +36636,59 @@ mod tests {
         for h in &hover {
             assert!(!h.contains("of total"), "no share-of-total on a rate: {h}");
         }
+    }
+
+    // `--geojson auto` is only honest if the guess is testable. These pin the scorer that decides
+    // whether an auto-fetched boundary set actually covers the column, including the zero-padding
+    // case a numeric FIPS column always produces.
+    fn coverage_geojson() -> serde_json::Value {
+        serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "properties": {"GEOID": "01001"},
+                 "geometry": {"type": "Polygon",
+                              "coordinates": [[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+                {"type": "Feature", "properties": {"GEOID": "42003"},
+                 "geometry": {"type": "Polygon",
+                              "coordinates": [[[1,0],[1,1],[2,1],[2,0],[1,0]]]}}
+            ]
+        })
+    }
+
+    #[test]
+    fn auto_coverage_all_matched() {
+        let codes = vec!["01001".to_string(), "42003".to_string()];
+        let (matched, total, unmatched) =
+            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes).unwrap();
+        assert_eq!((matched, total), (2, 2));
+        assert!(unmatched.is_empty());
+    }
+
+    #[test]
+    fn auto_coverage_pads_leading_zero_stripped_code() {
+        // a numeric column renders 01001 as 1001; that is a MATCH, not a miss
+        let codes = vec!["1001".to_string()];
+        let (matched, total, unmatched) =
+            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes).unwrap();
+        assert_eq!((matched, total), (1, 1));
+        assert!(unmatched.is_empty());
+    }
+
+    #[test]
+    fn auto_coverage_reports_unmatched_codes() {
+        // plausible-looking but nonexistent FIPS: the case that used to render a blank map
+        let codes = vec![
+            "42999".to_string(),
+            "42998".to_string(),
+            "42003".to_string(),
+        ];
+        let (matched, total, unmatched) =
+            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes).unwrap();
+        assert_eq!((matched, total), (1, 3));
+        assert_eq!(unmatched, vec!["42999", "42998"]);
+        #[allow(clippy::cast_precision_loss)]
+        let fraction = matched as f64 / total as f64;
+        assert!(fraction < GEOJSON_AUTO_MIN_MATCH_RATIO);
     }
 
     #[test]

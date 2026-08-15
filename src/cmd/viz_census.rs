@@ -62,6 +62,13 @@ pub struct BoundarySet {
     pub feature_id_key: String,
     /// Human-readable provenance for the panel subtitle / sidecar.
     pub provenance:     String,
+    /// Stable identity of exactly what was fetched: provider, layer, vintage and the full scope.
+    ///
+    /// This is the cache key, and it must name the scope itself rather than summarize it — a key
+    /// built from the provenance string would fold "2 states" for PA+OH and NY+NJ onto the same
+    /// entry, which is invisible while every run overwrites but starts serving one dataset's
+    /// boundaries to another the moment a cache HIT is honored.
+    pub scope_key:      String,
 }
 
 /// The US standard jurisdictions `--geojson auto` can resolve.
@@ -366,8 +373,16 @@ pub fn resolve_counties(codes: &[String]) -> CliResult<BoundarySet> {
     Ok(BoundarySet {
         geojson,
         feature_id_key: "properties.GEOID".to_string(),
+        // names the scope exactly — see the field docs for the collision this avoids
+        scope_key: format!(
+            "census/{}/acs{vintage}/{}",
+            Layer::County.label(),
+            states.join(",")
+        ),
+        // NOT prefixed with "boundaries: " — that belongs to the subtitle that composes this with
+        // the denominator provenance, and embedding it here reads badly everywhere else.
         provenance: format!(
-            "boundaries: Census TIGERweb {vintage}, {} ({} state{})",
+            "Census TIGERweb {vintage}, {} ({} state{})",
             Layer::County.label(),
             states.len(),
             if states.len() == 1 { "" } else { "s" }

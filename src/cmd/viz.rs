@@ -4938,6 +4938,112 @@ fn auto_boundary_provenance() -> Option<&'static str> {
     AUTO_BOUNDARY_PROVENANCE.get().map(String::as_str)
 }
 
+/// Feature ids of auto-resolved regions that sit far outside the bulk of the boundary set.
+///
+/// Only ever populated for an auto-resolved set. A user-supplied `--geojson` is a deliberate
+/// choice — every polygon in it is intentional — but a code-set-scoped set (ZCTAs, which have no
+/// STATE field to scope by) is DERIVED from the data's codes, so a handful of stray codes silently
+/// injects regions the author never chose. In `allegheny_dog_licenses.csv`, 4 rows out of 50,013
+/// carry Florida and Indiana owner ZIPs, and framing to the full extent renders the 128 Allegheny
+/// ZCTAs as an unreadable speck between Pittsburgh and Miami.
+static AUTO_BOUNDARY_OUTLIERS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+/// Auto-resolved regions that lie far outside the main cluster, if any.
+fn auto_boundary_outliers() -> &'static [String] {
+    AUTO_BOUNDARY_OUTLIERS.get().map_or(&[], Vec::as_slice)
+}
+
+/// Read a feature id out of a RAW `serde_json` feature by dotted path (`id`, `properties.GEOID`).
+///
+/// The typed [`feature_id_by_path`] wants a `geojson::Feature`; these callers hold the untyped
+/// document (it is what the plot trace is built from), and deserializing the whole collection
+/// twice just to read one field per feature is not worth it.
+fn feature_id_by_path_value(feature: &serde_json::Value, path: &str) -> Option<String> {
+    let mut node = feature;
+    for segment in path.split('.') {
+        node = node.get(segment)?;
+    }
+    match node {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// Per-feature `(id, centroid_lat, centroid_lon)` for a GeoJSON `FeatureCollection`.
+///
+/// The centroid is the mean of the feature's coordinates — crude for an area calculation, but this
+/// is only used to ask "is this region somewhere else entirely", where crude is plenty.
+fn feature_centroids(geojson: &serde_json::Value, feature_id_key: &str) -> Vec<(String, f64, f64)> {
+    let Some(features) = geojson
+        .get("features")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Vec::new();
+    };
+    features
+        .iter()
+        .filter_map(|f| {
+            let id = feature_id_by_path_value(f, feature_id_key)?;
+            let geometry = f.get("geometry")?;
+            let mut lat_sum = 0.0;
+            let mut lon_sum = 0.0;
+            let mut n = 0u32;
+            // walk the nested coordinate arrays to their [lon, lat] leaves
+            let mut stack = vec![geometry.get("coordinates")?];
+            while let Some(node) = stack.pop() {
+                let Some(arr) = node.as_array() else { continue };
+                if arr.len() >= 2
+                    && let (Some(lon), Some(lat)) = (arr[0].as_f64(), arr[1].as_f64())
+                {
+                    lon_sum += lon;
+                    lat_sum += lat;
+                    n += 1;
+                    continue;
+                }
+                stack.extend(arr.iter());
+            }
+            (n > 0).then(|| (id, lat_sum / f64::from(n), lon_sum / f64::from(n)))
+        })
+        .collect()
+}
+
+/// Ids of regions whose centroid falls outside a Tukey fence on either axis.
+///
+/// A Tukey fence (Q1 - 1.5*IQR, Q3 + 1.5*IQR) is used rather than a fixed percentile because it
+/// reports NOTHING for a tight, well-behaved boundary set — a percentile trim would always flag
+/// some fraction as outliers even when there are none, and then every clean map would carry a
+/// spurious note and a cropped frame.
+fn detect_extent_outliers(geojson: &serde_json::Value, feature_id_key: &str) -> Vec<String> {
+    let centroids = feature_centroids(geojson, feature_id_key);
+    // a fence needs enough regions to have a meaningful quartile spread
+    if centroids.len() < 8 {
+        return Vec::new();
+    }
+    let fence = |mut vals: Vec<f64>| -> (f64, f64) {
+        vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let q = |p: f64| -> f64 {
+            #[allow(
+                clippy::cast_precision_loss,
+                clippy::cast_sign_loss,
+                clippy::cast_possible_truncation
+            )]
+            let idx = ((vals.len() - 1) as f64 * p).round() as usize;
+            vals[idx]
+        };
+        let (q1, q3) = (q(0.25), q(0.75));
+        let iqr = q3 - q1;
+        (q1 - 1.5 * iqr, q3 + 1.5 * iqr)
+    };
+    let (lat_lo, lat_hi) = fence(centroids.iter().map(|c| c.1).collect());
+    let (lon_lo, lon_hi) = fence(centroids.iter().map(|c| c.2).collect());
+    centroids
+        .into_iter()
+        .filter(|(_, lat, lon)| *lat < lat_lo || *lat > lat_hi || *lon < lon_lo || *lon > lon_hi)
+        .map(|(id, _, _)| id)
+        .collect()
+}
+
 /// Resolve `--geojson auto|census` into a concrete boundary file plus its feature-id key.
 ///
 /// Returns the same `(path, Option<feature-id-key>)` shape as [`lookup_geojson_shortcut`] so the
@@ -5006,6 +5112,10 @@ fn resolve_auto_geojson(args: &Args, spec: &str) -> CliResult<(String, Option<St
     // recorded for the provenance note beneath the map, and so the reader can tell an
     // auto-resolved boundary set from one they supplied
     let _ = AUTO_BOUNDARY_PROVENANCE.set(boundaries.provenance.clone());
+    let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(
+        &boundaries.geojson,
+        &boundaries.feature_id_key,
+    ));
     log::info!(
         "--geojson {spec} resolved: {} -> {} ({matched}/{total} codes matched)",
         boundaries.provenance,
@@ -6944,6 +7054,30 @@ fn build_choropleth_plot(
             None => Some(note),
         };
     }
+    // Outlying regions are still DRAWN — they are the reader's data — but the frame ignores them,
+    // so the note is what keeps that from being a silent cropping decision.
+    let outliers = auto_boundary_outliers();
+    if !outliers.is_empty() {
+        let shown: Vec<&str> = outliers
+            .iter()
+            .take(GEOJSON_AUTO_UNMATCHED_SAMPLE)
+            .map(String::as_str)
+            .collect();
+        let mut ids = shown.join(", ");
+        if outliers.len() > shown.len() {
+            ids.push_str(", …");
+        }
+        let note = t!(
+            "viz.notes.boundary_outliers",
+            q_n = outliers.len(),
+            q_ids = ids
+        )
+        .into_owned();
+        below_note = match below_note {
+            Some(existing) => Some(format!("{existing} {note}")),
+            None => Some(note),
+        };
+    }
 
     let mut plot = Plot::new();
     if args.flag_map {
@@ -7035,10 +7169,35 @@ fn build_choropleth_plot(
             // default whole-world projection. Frame the projection to the GeoJSON extent, reusing
             // the smart panel's geo_framing (albers-usa / natural-earth / mercator fit, padded and
             // antimeridian-aware). Collect the extent BEFORE the value is moved into the trace.
-            let (g_lats, g_lons) = geojson_lat_lons(&geojson);
+            // trim_frac stays 0.0 in both branches: every vertex of a region we intend to SHOW is
+            // intentional, and a percentile trim would crop legitimate edge/island polygons. What
+            // differs is which regions are considered. A user-supplied --geojson is a deliberate
+            // choice, so all of it frames the map. An auto-resolved set is derived from the data's
+            // codes, so a few stray codes can inject regions a thousand miles away; those are still
+            // drawn, but they do not get to decide the frame (and the note beneath says so).
+            let outliers = auto_boundary_outliers();
+            let (g_lats, g_lons) = if outliers.is_empty() {
+                geojson_lat_lons(&geojson)
+            } else {
+                let excluded: std::collections::HashSet<&str> =
+                    outliers.iter().map(String::as_str).collect();
+                let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
+                let kept = serde_json::json!({
+                    "type": "FeatureCollection",
+                    "features": geojson
+                        .get("features")
+                        .and_then(serde_json::Value::as_array)
+                        .map(|fs| fs
+                            .iter()
+                            .filter(|f| feature_id_by_path_value(f, key)
+                                .is_none_or(|id| !excluded.contains(id.as_str())))
+                            .cloned()
+                            .collect::<Vec<_>>())
+                        .unwrap_or_default(),
+                });
+                geojson_lat_lons(&kept)
+            };
             if !g_lats.is_empty() {
-                // trim_frac 0.0: every GeoJSON vertex is intentional, so frame the FULL extent —
-                // trimming would crop edge/island polygons.
                 let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons, 0.0);
                 geo = geo.projection(Projection::new().projection_type(proj));
                 if let Some(lonaxis) = lonaxis {
@@ -36751,6 +36910,64 @@ mod tests {
         assert!(!ja.contains("Boundaries:"), "not translated, got: {ja}");
 
         viz_i18n::set_active(viz_i18n::parse_lang("en").unwrap());
+    }
+
+    /// A FeatureCollection of 1-degree squares at the given (lon, lat) origins.
+    fn squares_at(points: &[(f64, f64)]) -> serde_json::Value {
+        let features: Vec<serde_json::Value> = points
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, y))| {
+                serde_json::json!({
+                    "type": "Feature",
+                    "properties": {"GEOID": format!("{i:05}")},
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [x, y], [x, y + 1.0], [x + 1.0, y + 1.0], [x + 1.0, y], [x, y]
+                        ]]
+                    }
+                })
+            })
+            .collect();
+        serde_json::json!({"type": "FeatureCollection", "features": features})
+    }
+
+    // A well-behaved boundary set must report NOTHING — otherwise every clean map carries a
+    // spurious note and a needlessly cropped frame. This is why the detector uses a Tukey fence
+    // rather than a fixed percentile trim, which would always flag some fraction.
+    #[test]
+    fn extent_outliers_are_not_reported_for_a_tight_cluster() {
+        let pts: Vec<(f64, f64)> = (0..12)
+            .map(|i| (f64::from(i) * 0.1, f64::from(i) * 0.1))
+            .collect();
+        let gj = squares_at(&pts);
+        assert!(detect_extent_outliers(&gj, "properties.GEOID").is_empty());
+    }
+
+    // The allegheny_dog_licenses case: a tight metro cluster plus a couple of stray ZIPs a
+    // thousand miles away, which must not be allowed to decide the frame.
+    #[test]
+    fn extent_outliers_catch_far_flung_regions() {
+        let mut pts: Vec<(f64, f64)> = (0..12)
+            .map(|i| (f64::from(i) * 0.1, f64::from(i) * 0.1))
+            .collect();
+        pts.push((-80.0, 26.0)); // Florida
+        pts.push((-86.0, 41.0)); // Indiana
+        let gj = squares_at(&pts);
+        let outliers = detect_extent_outliers(&gj, "properties.GEOID");
+        assert_eq!(outliers.len(), 2, "got: {outliers:?}");
+        // the two appended squares are ids 00012 and 00013
+        assert!(outliers.contains(&"00012".to_string()), "got: {outliers:?}");
+        assert!(outliers.contains(&"00013".to_string()), "got: {outliers:?}");
+    }
+
+    // Too few regions for a quartile spread to mean anything — reporting an "outlier" out of 3
+    // regions would be noise, and cropping to the other 2 would hide a third of the data.
+    #[test]
+    fn extent_outliers_need_enough_regions_to_judge() {
+        let gj = squares_at(&[(0.0, 0.0), (0.1, 0.1), (-80.0, 26.0)]);
+        assert!(detect_extent_outliers(&gj, "properties.GEOID").is_empty());
     }
 
     #[test]

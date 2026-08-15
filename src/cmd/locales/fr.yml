@@ -275,6 +275,7 @@ viz:
     raw_count_paired: "effectifs bruts — non ajustés à la taille de la région"
     denominator_excluded: "aucun dénominateur exploitable pour %{q_n} régions sur %{q_total} ; elles ne sont pas affichées."
     boundary_provenance: "Limites : %{q_source}."
+    boundary_outliers: "%{q_n} région(s) se situent très loin des autres (%{q_ids}) ; la carte est cadrée sur les autres."
     funnel_complete: "n = %{q_n} cas complets (%{q_pct} % des lignes)"
     funnel_violation: "%{q_here} dépasse %{q_prev} dans %{q_pct} % des lignes"
     funnel_bridge: "les étapes ne s'emboîtent pas — pontées, et non en entonnoir"

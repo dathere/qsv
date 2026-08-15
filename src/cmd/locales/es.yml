@@ -287,6 +287,7 @@ viz:
     raw_count_paired: "recuentos brutos — sin ajustar por el tamaño de la región"
     denominator_excluded: "sin denominador utilizable para %{q_n} de %{q_total} regiones; no se muestran."
     boundary_provenance: "Límites: %{q_source}."
+    boundary_outliers: "%{q_n} región(es) quedan muy lejos del resto (%{q_ids}); el mapa se encuadra en las demás."
     funnel_complete: "n = %{q_n} casos completos (%{q_pct}% de las filas)"
     funnel_violation: "%{q_here} supera a %{q_prev} en %{q_pct}% de las filas"
     funnel_bridge: "las etapas no se anidan — puente, no embudo"

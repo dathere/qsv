@@ -439,7 +439,15 @@ fn query_layer_geojson(
 /// taken — the same normalization `viz::match_region_code` applies when matching cells to
 /// feature ids. Codes that cannot be a GEOID at all are skipped here and surface later as
 /// unmatched rows in the overlap check, rather than being silently corrected.
-fn state_fips_from_geoids(codes: &[String], geoid_width: usize) -> Vec<String> {
+fn state_fips_from_geoids(codes: &[String], layer: Layer) -> Vec<String> {
+    // Only GEOIDs that actually EMBED a state prefix may go through here. A ZCTA is also a
+    // 5-digit numeric, so nothing in the shape of the code would stop this from "deriving"
+    // state 15 from ZCTA 15213 — which is not a state at all.
+    debug_assert!(
+        matches!(layer, Layer::County),
+        "state FIPS can only be derived from a GEOID that embeds one"
+    );
+    let geoid_width = layer.code_width();
     let mut states: Vec<String> = codes
         .iter()
         .filter_map(|raw| {
@@ -479,6 +487,15 @@ pub fn resolve(codes: &[String], explicit: Option<Layer>) -> CliResult<BoundaryS
     fetch_layer(&client, vintage, layer, codes)
 }
 
+/// Are two `(matched, total)` scores exactly the same fraction?
+///
+/// Cross-multiplied so the comparison is exact integer arithmetic. "Equally good" is a semantic
+/// condition that decides whether `auto` picks a geography or refuses to; deciding it by float
+/// equality would make it depend on rounding rather than on the counts.
+const fn ratios_equal(a: (usize, usize), b: (usize, usize)) -> bool {
+    a.0 * b.1 == b.0 * a.1
+}
+
 /// Probe every candidate layer and return the one the codes resolve against best.
 fn choose_layer(
     client: &reqwest::blocking::Client,
@@ -507,6 +524,10 @@ fn choose_layer(
         .iter()
         .filter(|(_, m, t)| ratio(*m, *t) >= LAYER_PROBE_MIN_RATIO)
         .collect();
+    // NB: ordering and tie detection below compare the ratios as INTEGERS
+    // (a.matched * b.total vs b.matched * a.total). The two layers normally share a denominator,
+    // so a float compare would in fact work — but "equally good" is an exact semantic condition,
+    // and cross-multiplication decides it without depending on that coincidence or on rounding.
     if viable.is_empty() {
         let detail = scored
             .iter()
@@ -518,16 +539,11 @@ fn choose_layer(
              may not be US county FIPS or ZIP codes — supply an explicit --geojson file."
         )));
     }
-    viable.sort_by(|a, b| {
-        ratio(b.1, b.2)
-            .partial_cmp(&ratio(a.1, a.2))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    // descending by match ratio, compared exactly
+    viable.sort_by(|a, b| (b.1 * a.2).cmp(&(a.1 * b.2)));
     // an exact tie is genuinely ambiguous — the same codes are equally valid as either geography
-    if viable.len() > 1 {
-        let best = ratio(viable[0].1, viable[0].2);
-        let runner_up = ratio(viable[1].1, viable[1].2);
-        if (best - runner_up).abs() < f64::EPSILON {
+    if viable.len() > 1 && ratios_equal((viable[0].1, viable[0].2), (viable[1].1, viable[1].2)) {
+        {
             let options = viable
                 .iter()
                 .map(|(l, m, t)| {
@@ -561,7 +577,7 @@ fn fetch_layer(
 
     let (where_clauses, scope_desc, scope_key_part) = match layer {
         Layer::County => {
-            let states = state_fips_from_geoids(&normalized, layer.code_width());
+            let states = state_fips_from_geoids(&normalized, layer);
             if states.is_empty() {
                 return Err(crate::CliError::Other(
                     "--geojson auto: no US state could be derived from the region-code column, so \
@@ -630,7 +646,10 @@ mod tests {
     fn state_fips_pads_leading_zero_stripped_codes() {
         // Alabama's 01001 arrives from a numeric column as 1001
         let codes = vec!["1001".to_string(), "42003".to_string(), "42007".to_string()];
-        assert_eq!(state_fips_from_geoids(&codes, 5), vec!["01", "42"]);
+        assert_eq!(
+            state_fips_from_geoids(&codes, Layer::County),
+            vec!["01", "42"]
+        );
     }
 
     #[test]
@@ -641,7 +660,7 @@ mod tests {
             "not-a-code".to_string(),
             "123456789".to_string(),
         ];
-        assert_eq!(state_fips_from_geoids(&codes, 5), vec!["42"]);
+        assert_eq!(state_fips_from_geoids(&codes, Layer::County), vec!["42"]);
     }
 
     #[test]
@@ -652,6 +671,19 @@ mod tests {
         assert!(Layer::Zcta.matches_catalog_name("2010 Census ZIP Code Tabulation Areas"));
         assert!(!Layer::Zcta.matches_catalog_name("Counties"));
         assert!(!Layer::County.matches_catalog_name("2020 Census ZIP Code Tabulation Areas"));
+    }
+
+    #[test]
+    fn tie_detection_is_exact_across_denominators() {
+        // same fraction, different denominators — a float compare happens to work here, but the
+        // integer compare does not depend on that
+        assert!(ratios_equal((2, 4), (3, 6)));
+        assert!(ratios_equal((1, 3), (2, 6)));
+        assert!(ratios_equal((6, 6), (5, 5)));
+        // the real PA county case: 6/6 counties vs 5/6 ZCTAs is NOT a tie, so auto picks
+        // rather than bailing out
+        assert!(!ratios_equal((6, 6), (5, 6)));
+        assert!(!ratios_equal((0, 6), (6, 6)));
     }
 
     #[test]

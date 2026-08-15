@@ -37,6 +37,15 @@ use crate::{CliResult, util};
 /// Root of the `TIGERweb` `ArcGIS` REST catalog.
 const TIGERWEB_ROOT: &str = "https://tigerweb.geo.census.gov/arcgis/rest/services";
 
+/// The catalog root to actually use, honoring `QSV_CENSUS_TIGERWEB_URL`.
+///
+/// The override exists for users behind a mirror or an offline replica of the service, and it is
+/// what lets the request-level behavior — state scoping, pagination, and the zero-network cache
+/// hit — be asserted against a mock server rather than the live Census endpoint.
+fn tigerweb_root() -> String {
+    std::env::var("QSV_CENSUS_TIGERWEB_URL").unwrap_or_else(|_| TIGERWEB_ROOT.to_string())
+}
+
 /// Per-request timeout for `TIGERweb` calls. Boundary payloads are large (an ungeneralized
 /// 67-county state runs ~7 MB), so this is more generous than the plain `--geojson` URL fetch.
 /// Honors `QSV_TIMEOUT` via [`util::timeout_secs`], like every other network path in qsv.
@@ -198,7 +207,7 @@ fn census_client() -> CliResult<reqwest::blocking::Client> {
     util::create_reqwest_blocking_client(
         None,
         u16::try_from(timeout).unwrap_or(CENSUS_FETCH_TIMEOUT_SECS),
-        Some(TIGERWEB_ROOT.to_string()),
+        Some(tigerweb_root()),
     )
 }
 
@@ -249,7 +258,7 @@ fn get_json(
 pub fn available_acs_vintages(client: &reqwest::blocking::Client) -> CliResult<Vec<u16>> {
     let catalog = get_json(
         client,
-        &format!("{TIGERWEB_ROOT}/TIGERweb"),
+        &format!("{}/TIGERweb", tigerweb_root()),
         &[("f", "json")],
     )?;
     let mut vintages: Vec<u16> = catalog
@@ -270,8 +279,9 @@ pub fn available_acs_vintages(client: &reqwest::blocking::Client) -> CliResult<V
     vintages.dedup();
     if vintages.is_empty() {
         return Err(crate::CliError::Other(format!(
-            "no ACS vintages found in the Census TIGERweb catalog at '{TIGERWEB_ROOT}/TIGERweb'. \
-             The service may have been reorganized; supply an explicit --geojson file."
+            "no ACS vintages found in the Census TIGERweb catalog at '{}/TIGERweb'. The service \
+             may have been reorganized; supply an explicit --geojson file.",
+            tigerweb_root()
         )));
     }
     Ok(vintages)
@@ -289,7 +299,10 @@ fn resolve_layer_id(
     vintage: u16,
     layer: Layer,
 ) -> CliResult<(u64, String)> {
-    let url = format!("{TIGERWEB_ROOT}/TIGERweb/tigerWMS_ACS{vintage}/MapServer");
+    let url = format!(
+        "{}/TIGERweb/tigerWMS_ACS{vintage}/MapServer",
+        tigerweb_root()
+    );
     let meta = get_json(client, &url, &[("f", "json")])?;
     let found = meta
         .get("layers")
@@ -392,7 +405,10 @@ fn probe_layer(
     codes: &[String],
 ) -> CliResult<usize> {
     let (layer_id, _) = resolve_layer_id(client, vintage, layer)?;
-    let url = format!("{TIGERWEB_ROOT}/TIGERweb/tigerWMS_ACS{vintage}/MapServer/{layer_id}/query");
+    let url = format!(
+        "{}/TIGERweb/tigerWMS_ACS{vintage}/MapServer/{layer_id}/query",
+        tigerweb_root()
+    );
     let mut found = 0usize;
     for clause in in_clauses(codes, layer) {
         let page = get_json(
@@ -426,7 +442,10 @@ fn query_layer_geojson(
     out_fields: &str,
     order_by: &str,
 ) -> CliResult<Vec<serde_json::Value>> {
-    let url = format!("{TIGERWEB_ROOT}/TIGERweb/tigerWMS_ACS{vintage}/MapServer/{layer_id}/query");
+    let url = format!(
+        "{}/TIGERweb/tigerWMS_ACS{vintage}/MapServer/{layer_id}/query",
+        tigerweb_root()
+    );
     let mut features: Vec<serde_json::Value> = Vec::new();
     let mut offset = 0usize;
     loop {

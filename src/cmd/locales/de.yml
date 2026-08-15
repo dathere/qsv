@@ -274,6 +274,7 @@ viz:
     raw_count_caveat: "Rohwerte — größere/aktivere Regionen zählen mehr Zeilen; --denominator-key ergänzen für eine Rate"
     raw_count_paired: "Rohwerte — nicht um die Regionsgröße bereinigt"
     denominator_excluded: "kein verwendbarer Nenner für %{q_n} von %{q_total} Regionen; sie werden nicht angezeigt."
+    boundary_provenance: "Grenzen: %{q_source}."
     funnel_complete: "n = %{q_n} vollständige Fälle (%{q_pct} % der Zeilen)"
     funnel_violation: "%{q_here} übersteigt %{q_prev} in %{q_pct} % der Zeilen"
     funnel_bridge: "Stufen sind nicht ineinander verschachtelt — überbrückt, kein Funnel"

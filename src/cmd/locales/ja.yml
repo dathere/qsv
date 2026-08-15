@@ -274,6 +274,7 @@ viz:
     raw_count_caveat: "生の件数 — 規模が大きい・活動が多い地域ほど行数が増えます。比率にするには --denominator-key を指定してください"
     raw_count_paired: "生の件数 — 地域の規模で調整していません"
     denominator_excluded: "%{q_total} 件中 %{q_n} 件の地域に使用可能な分母がないため、表示されません。"
+    boundary_provenance: "境界: %{q_source}。"
     funnel_complete: "n = %{q_n} 件の完全なケース(全行の %{q_pct}%)"
     funnel_violation: "%{q_pct}% の行で %{q_here} が %{q_prev} を超過"
     funnel_bridge: "各段階が入れ子になっていません — ファネルではなくブリッジです"

@@ -4924,6 +4924,20 @@ fn score_region_code_coverage(
     Ok((matched, codes.len(), unmatched))
 }
 
+/// Provenance of an auto-resolved boundary set, recorded for the note rendered beneath the map.
+///
+/// Process-global rather than threaded through, because `--geojson` is resolved during up-front
+/// validation while the note is composed deep inside the plot builders, and every intermediate
+/// signature takes `&Args` — which cannot carry it, being the docopt struct. `viz` already keeps
+/// the active locale this way (see `viz_i18n::active_locale`). One resolution per process, so a
+/// `OnceLock` is the right shape: a second write would mean two boundary sets in one run.
+static AUTO_BOUNDARY_PROVENANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The auto-resolved boundary provenance for this run, if `--geojson auto` resolved one.
+fn auto_boundary_provenance() -> Option<&'static str> {
+    AUTO_BOUNDARY_PROVENANCE.get().map(String::as_str)
+}
+
 /// Resolve `--geojson auto|census` into a concrete boundary file plus its feature-id key.
 ///
 /// Returns the same `(path, Option<feature-id-key>)` shape as [`lookup_geojson_shortcut`] so the
@@ -4989,8 +5003,18 @@ fn resolve_auto_geojson(args: &Args, spec: &str) -> CliResult<(String, Option<St
         );
     }
 
+    // recorded for the provenance note beneath the map, and so the reader can tell an
+    // auto-resolved boundary set from one they supplied
+    let _ = AUTO_BOUNDARY_PROVENANCE.set(boundaries.provenance.clone());
     log::info!(
         "--geojson {spec} resolved: {} -> {} ({matched}/{total} codes matched)",
+        boundaries.provenance,
+        boundaries.path
+    );
+    // the cache path IS the exportable artifact: pass it back as an explicit --geojson for an
+    // archival run that never touches the network
+    winfo!(
+        "--geojson {spec}: {} — boundaries cached at {}",
         boundaries.provenance,
         boundaries.path
     );
@@ -6908,6 +6932,17 @@ fn build_choropleth_plot(
                 None => Some(note),
             };
         }
+    }
+
+    // A reader cannot otherwise tell an auto-fetched boundary set from one the author chose, and
+    // which vintage it came from changes what the map means (Connecticut's counties became
+    // planning regions in the 2022 vintages). Appended last so it reads after any data caveat.
+    if let Some(provenance) = auto_boundary_provenance() {
+        let note = t!("viz.notes.boundary_provenance", q_source = provenance).into_owned();
+        below_note = match below_note {
+            Some(existing) => Some(format!("{existing} {note}")),
+            None => Some(note),
+        };
     }
 
     let mut plot = Plot::new();
@@ -36679,6 +36714,43 @@ mod tests {
         #[allow(clippy::cast_precision_loss)]
         let fraction = matched as f64 / total as f64;
         assert!(fraction < GEOJSON_AUTO_MIN_MATCH_RATIO);
+    }
+
+    // The boundary-provenance note is the only thing distinguishing an auto-fetched boundary set
+    // from one the author chose, and which vintage it came from changes what the map means. It is
+    // composed from a catalog key, so it must resolve in every locale — a missing key renders the
+    // key NAME into the annotation, which is exactly what happened when it was first added under
+    // the wrong parent section (viz.omit instead of viz.notes).
+    #[test]
+    fn boundary_provenance_note_is_localized() {
+        let _guard = viz_i18n::lock_locale();
+        let source = "Census TIGERweb 2025, Counties (1 state)";
+
+        viz_i18n::set_active(viz_i18n::parse_lang("en").unwrap());
+        let en = t!("viz.notes.boundary_provenance", q_source = source).into_owned();
+        assert!(en.starts_with("Boundaries:"), "got: {en}");
+        assert!(
+            en.contains(source),
+            "the source must survive verbatim, got: {en}"
+        );
+
+        viz_i18n::set_active(viz_i18n::parse_lang("de").unwrap());
+        let de = t!("viz.notes.boundary_provenance", q_source = source).into_owned();
+        assert!(
+            de.contains(source),
+            "the source must survive verbatim, got: {de}"
+        );
+        // a missing key renders as the key name itself
+        assert!(!de.contains("viz.notes"), "key did not resolve, got: {de}");
+        // and it must actually be translated, not the English fallback
+        assert!(!de.contains("Boundaries:"), "not translated, got: {de}");
+
+        viz_i18n::set_active(viz_i18n::parse_lang("ja").unwrap());
+        let ja = t!("viz.notes.boundary_provenance", q_source = source).into_owned();
+        assert!(!ja.contains("viz.notes"), "key did not resolve, got: {ja}");
+        assert!(!ja.contains("Boundaries:"), "not translated, got: {ja}");
+
+        viz_i18n::set_active(viz_i18n::parse_lang("en").unwrap());
     }
 
     #[test]

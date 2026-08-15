@@ -280,6 +280,7 @@ viz:
     raw_count_caveat: "contagens brutas — regiões maiores/mais movimentadas acumulam mais linhas; adicione --denominator-key para uma taxa"
     raw_count_paired: "contagens brutas — sem ajuste pelo tamanho da região"
     denominator_excluded: "sem denominador utilizável para %{q_n} de %{q_total} regiões; elas não são exibidas."
+    boundary_provenance: "Limites: %{q_source}."
     funnel_complete: "n = %{q_n} casos completos (%{q_pct}% das linhas)"
     funnel_violation: "%{q_here} excede %{q_prev} em %{q_pct}% das linhas"
     funnel_bridge: "as etapas não se aninham — ligadas, não em funil"

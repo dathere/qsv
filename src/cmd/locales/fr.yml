@@ -274,6 +274,7 @@ viz:
     raw_count_caveat: "effectifs bruts — les régions plus grandes/actives totalisent plus de lignes ; ajoutez --denominator-key pour un taux"
     raw_count_paired: "effectifs bruts — non ajustés à la taille de la région"
     denominator_excluded: "aucun dénominateur exploitable pour %{q_n} régions sur %{q_total} ; elles ne sont pas affichées."
+    boundary_provenance: "Limites : %{q_source}."
     funnel_complete: "n = %{q_n} cas complets (%{q_pct} % des lignes)"
     funnel_violation: "%{q_here} dépasse %{q_prev} dans %{q_pct} % des lignes"
     funnel_bridge: "les étapes ne s'emboîtent pas — pontées, et non en entonnoir"

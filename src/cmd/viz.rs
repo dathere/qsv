@@ -420,10 +420,13 @@ choropleth options:
                            defined in the QSV_GEOJSON_SHORTCUTS env var (a JSON map of
                            name to {path, id}); the shortcut's id sets --feature-id-key
                            when you don't pass one. The source is validated up front.
-                           Use `auto` (or `census`) to fetch US county boundaries from
-                           the Census TIGERweb service automatically, scoped to the
-                           states your data names; this sets the feature-id-key to
-                           properties.GEOID and currently requires
+                           Use `auto` (or `census`) to fetch US county or ZIP Code
+                           Tabulation Area boundaries from the Census TIGERweb service
+                           automatically. County FIPS and ZIP codes are both 5-digit,
+                           so qsv probes both layers and picks whichever your codes
+                           resolve against, reporting both when it cannot tell; force
+                           one with `census:county` or `census:zcta`. Sets the
+                           feature-id-key to properties.GEOID, and currently requires
                            `viz choropleth --locations <column>`. An existing local
                            file named `auto` still takes precedence over the keyword.
                            Required for --map, and for the geojson-id location mode. Also
@@ -4809,6 +4812,13 @@ struct GeojsonShortcut {
 /// `auto` iterates the registered providers; `census` names the US Census provider explicitly.
 const GEOJSON_AUTO_SPECS: [&str; 2] = ["auto", "census"];
 
+/// Is this `--geojson` value a request for automatic boundary resolution?
+/// Covers the bare keywords and the explicit `census:<layer>` selectors.
+fn is_geojson_auto_spec(spec: &str) -> bool {
+    GEOJSON_AUTO_SPECS.contains(&spec)
+        || crate::cmd::viz_census::Layer::from_selector(spec).is_some()
+}
+
 /// Collect the distinct, non-empty values of the `--locations` column.
 ///
 /// `--geojson auto` has to know which regions the data actually names before it can scope a
@@ -4965,7 +4975,8 @@ fn resolve_auto_geojson(args: &Args, spec: &str) -> CliResult<(String, Option<St
              regions to fetch boundaries for."
         );
     }
-    let boundaries = crate::cmd::viz_census::resolve_counties(&codes)?;
+    let explicit_layer = crate::cmd::viz_census::Layer::from_selector(spec);
+    let boundaries = crate::cmd::viz_census::resolve(&codes, explicit_layer)?;
 
     // "auto" is only honest if the guess is testable: score the column against what was actually
     // fetched and refuse to render a mostly-unmatched map. Without this, a --locations column of
@@ -5054,7 +5065,7 @@ fn resolve_and_validate_geojson(
     // still wins — `--geojson ./auto` remains the way to name it unambiguously.
     let is_url = spec.starts_with("http://") || spec.starts_with("https://");
     let is_file = std::path::Path::new(&spec).is_file();
-    let (resolved, shortcut_id) = if GEOJSON_AUTO_SPECS.contains(&spec.as_str()) && !is_file {
+    let (resolved, shortcut_id) = if is_geojson_auto_spec(&spec) && !is_file {
         resolve_auto_geojson(args, &spec)?
     } else if is_url || is_file {
         (spec, None)

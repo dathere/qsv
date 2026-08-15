@@ -420,6 +420,12 @@ choropleth options:
                            defined in the QSV_GEOJSON_SHORTCUTS env var (a JSON map of
                            name to {path, id}); the shortcut's id sets --feature-id-key
                            when you don't pass one. The source is validated up front.
+                           Use `auto` (or `census`) to fetch US county boundaries from
+                           the Census TIGERweb service automatically, scoped to the
+                           states your data names; this sets the feature-id-key to
+                           properties.GEOID and currently requires
+                           `viz choropleth --locations <column>`. An existing local
+                           file named `auto` still takes precedence over the keyword.
                            Required for --map, and for the geojson-id location mode. Also
                            enables point-in-polygon
                            binning: with --lat/--lon (and without --geocode), each row's
@@ -4799,6 +4805,102 @@ struct GeojsonShortcut {
     id:   Option<String>,
 }
 
+/// `--geojson` values that request automatic boundary resolution rather than naming a source.
+/// `auto` iterates the registered providers; `census` names the US Census provider explicitly.
+const GEOJSON_AUTO_SPECS: [&str; 2] = ["auto", "census"];
+
+/// Collect the distinct, non-empty values of the `--locations` column.
+///
+/// `--geojson auto` has to know which regions the data actually names before it can scope a
+/// boundary fetch, and this runs during up-front validation — before any stats or dictionary work
+/// — so it reads the column directly rather than depending on the smart pipeline's semantics.
+fn distinct_region_codes(args: &Args) -> CliResult<Vec<String>> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let loc_idx = resolve_one(args.flag_locations.as_ref(), &headers, nh, "locations")?;
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut codes: Vec<String> = Vec::new();
+    let mut record = csv::StringRecord::new();
+    while rdr.read_record(&mut record)? {
+        if let Some(cell) = record.get(loc_idx) {
+            let cell = cell.trim();
+            if !cell.is_empty() && seen.insert(cell.to_string()) {
+                codes.push(cell.to_string());
+            }
+        }
+    }
+    Ok(codes)
+}
+
+/// Write a resolved boundary set to the qsv cache dir and return its path.
+///
+/// Materializing is not optional: several `--geojson` consumers re-read the flag as a path
+/// (see `build_choropleth_plot` and the smart map path), so an in-memory-only boundary set would
+/// panic or re-fetch. Writing it also satisfies the "exportable" requirement — the path can be
+/// passed back as an explicit `--geojson` for an archival, network-free run.
+///
+/// The filename is deterministic in the provider, vintage and scope, so a later commit can turn
+/// this into a true cache hit by testing for the file before fetching.
+fn materialize_boundary_set(
+    boundaries: &crate::cmd::viz_census::BoundarySet,
+    scope_key: &str,
+) -> CliResult<String> {
+    let cache_dir = crate::diskcache::set_qsv_cache_dir("~/.qsv-cache/viz-boundaries")?;
+    // digest the scope rather than spelling it out: a 40-state county fetch would otherwise build
+    // a filename past the filesystem's name limit.
+    let digest = blake3::hash(scope_key.as_bytes()).to_hex();
+    let path = std::path::Path::new(&cache_dir).join(format!("{}.geojson", &digest[..32]));
+    let file = std::fs::File::create(&path).map_err(|e| {
+        crate::CliError::Other(format!(
+            "--geojson auto: could not write boundary cache '{}': {e}",
+            path.display()
+        ))
+    })?;
+    serde_json::to_writer(std::io::BufWriter::new(file), &boundaries.geojson).map_err(|e| {
+        crate::CliError::Other(format!(
+            "--geojson auto: could not serialize boundaries: {e}"
+        ))
+    })?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Resolve `--geojson auto|census` into a concrete boundary file plus its feature-id key.
+///
+/// Returns the same `(path, Option<feature-id-key>)` shape as [`lookup_geojson_shortcut`] so the
+/// caller's validation runs over an auto-resolved set exactly as it does over a user-supplied
+/// file — the auto path earns no exemption from the feature-id-key and polygon checks.
+fn resolve_auto_geojson(args: &Args, spec: &str) -> CliResult<(String, Option<String>)> {
+    // `viz smart` picks its region column from the data dictionary, which does not exist yet at
+    // this point in `run` (stats and column semantics are computed later), so `auto` cannot know
+    // what to fetch there. `viz choropleth --locations` names the column explicitly.
+    if !args.cmd_choropleth {
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec} currently requires `viz choropleth --locations <column>`, which \
+             names the region-code column up front. For `viz smart`, supply an explicit --geojson \
+             file."
+        );
+    }
+    if args.flag_locations.is_none() {
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec} needs --locations <column> to know which regions to fetch \
+             boundaries for."
+        );
+    }
+    let codes = distinct_region_codes(args)?;
+    if codes.is_empty() {
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec}: the --locations column has no non-empty values, so there are no \
+             regions to fetch boundaries for."
+        );
+    }
+    let boundaries = crate::cmd::viz_census::resolve_counties(&codes)?;
+    let path = materialize_boundary_set(&boundaries, &boundaries.provenance)?;
+    log::info!(
+        "--geojson {spec} resolved: {} -> {path}",
+        boundaries.provenance
+    );
+    Ok((path, Some(boundaries.feature_id_key)))
+}
+
 /// Resolve a `--geojson` value as a `QSV_GEOJSON_SHORTCUTS` entry name.
 /// Returns the resolved path/URL and the optional feature-id-key carried by the shortcut.
 fn lookup_geojson_shortcut(name: &str) -> CliResult<(String, Option<String>)> {
@@ -4837,11 +4939,18 @@ fn resolve_and_validate_geojson(
         return Ok(None);
     };
 
-    // Disambiguate: a direct source is an http(s) URL or an existing local file; anything else is
-    // treated as a shortcut NAME. (More robust than "try to load, fall back on failure": a 404'd
-    // URL or an existing-but-broken file must NOT be silently reinterpreted as a shortcut name.)
+    // Disambiguate: `auto`/`census` request automatic boundary resolution; a direct source is an
+    // http(s) URL or an existing local file; anything else is treated as a shortcut NAME. (More
+    // robust than "try to load, fall back on failure": a 404'd URL or an existing-but-broken file
+    // must NOT be silently reinterpreted as a shortcut name.)
+    //
+    // A local file named `auto` would otherwise be shadowed by the keyword, so an existing file
+    // still wins — `--geojson ./auto` remains the way to name it unambiguously.
     let is_url = spec.starts_with("http://") || spec.starts_with("https://");
-    let (resolved, shortcut_id) = if is_url || std::path::Path::new(&spec).is_file() {
+    let is_file = std::path::Path::new(&spec).is_file();
+    let (resolved, shortcut_id) = if GEOJSON_AUTO_SPECS.contains(&spec.as_str()) && !is_file {
+        resolve_auto_geojson(args, &spec)?
+    } else if is_url || is_file {
         (spec, None)
     } else {
         lookup_geojson_shortcut(&spec)?

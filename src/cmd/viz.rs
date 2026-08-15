@@ -5333,44 +5333,38 @@ fn resolve_smart_auto_geojson(
     let codes = distinct_column_values(args, &candidates)?;
     // safe: parse_auto_spec already matched in `is_geojson_auto_spec`
     let auto_spec = crate::cmd::viz_census::parse_auto_spec(&spec).unwrap_or_default();
+    let label_of = |slot: usize| {
+        let idx = candidates[slot];
+        let s = &col_sems[idx];
+        if s.label.is_empty() {
+            stats[idx].field.clone()
+        } else {
+            s.label.clone()
+        }
+    };
 
-    // Which candidate scopes the fetch? With one candidate there is nothing to choose between, so
-    // skip the probe entirely and let `resolve` do its own (cached) layer probe — that keeps the
-    // common case at literally zero network requests on a second run.
+    // In what ORDER should the candidates be tried? With one there is nothing to choose between,
+    // so skip the probe entirely and let `resolve` do its own (cached) layer probe — that keeps
+    // the common case at literally zero network requests on a second run.
     //
-    // With several, the column must be chosen BEFORE fetching: for a code-set-scoped layer (ZCTAs
+    // With several, the order must be decided BEFORE fetching: for a code-set-scoped layer (ZCTAs
     // have no STATE field to scope by) the boundary set is derived from the column it is fetched
     // for, so scoring columns against a fetched set would score every column against its own
     // answer. Probing is geometry-free and answers the question without that circularity.
-    let slot = if candidates.len() == 1 {
-        0
+    let ranked: Vec<usize> = if candidates.len() == 1 {
+        vec![0]
     } else {
         let samples: Vec<Vec<String>> = codes
             .iter()
             .map(|c| c.iter().take(SMART_AUTO_PROBE_SAMPLE).cloned().collect())
             .collect();
         let scores = crate::cmd::viz_census::score_candidates(&samples, auto_spec)?;
-        let label_of = |slot: usize| {
-            let idx = candidates[slot];
-            let s = &col_sems[idx];
-            if s.label.is_empty() {
-                stats[idx].field.clone()
-            } else {
-                s.label.clone()
-            }
-        };
-        // highest match ratio wins, compared exactly (cross-multiplied); ties keep the lowest
-        // column index, which the ascending scan preserves by only replacing on strictly greater
-        let mut best: Option<(usize, crate::cmd::viz_census::CandidateScore)> = None;
-        for (slot, score) in scores.iter().enumerate() {
-            let Some(score) = score else {
-                continue;
-            };
-            if best.is_none_or(|(_, b)| score.matched * b.total > b.matched * score.total) {
-                best = Some((slot, *score));
-            }
-        }
-        let Some((slot, score)) = best else {
+        let mut ranked: Vec<(usize, crate::cmd::viz_census::CandidateScore)> = scores
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, score)| score.map(|s| (slot, s)))
+            .collect();
+        if ranked.is_empty() {
             let tried = (0..candidates.len())
                 .map(label_of)
                 .collect::<Vec<_>>()
@@ -5379,51 +5373,110 @@ fn resolve_smart_auto_geojson(
                 "--geojson {spec}: none of this dataset's region columns ({tried}) hold values \
                  that resolve against a Census geography. Supply an explicit --geojson file."
             );
+        }
+        // descending by match ratio, compared exactly (cross-multiplied). A STABLE sort, so an
+        // exact tie keeps the lower column index.
+        ranked.sort_by(|(_, a), (_, b)| (b.matched * a.total).cmp(&(a.matched * b.total)));
+        for (slot, score) in &ranked {
+            log::info!(
+                "--geojson {spec}: candidate '{}' matches {}/{} sampled codes in the {} layer",
+                label_of(*slot),
+                score.matched,
+                score.total,
+                score.layer.label()
+            );
+        }
+        ranked.into_iter().map(|(slot, _)| slot).collect()
+    };
+
+    // Try them in that order, keeping the first whose FULL value set clears the coverage gate.
+    //
+    // Falling through rather than committing to the top-ranked column matters because the ranking
+    // is a sample: a column whose first `SMART_AUTO_PROBE_SAMPLE` distinct values resolve but
+    // whose tail does not would otherwise abort the run while a perfectly good sibling column sat
+    // unexamined. That is the same reasoning that makes an unresolvable candidate score `None`
+    // rather than error — on this path the column choice is qsv's, not the user's, so a bad guess
+    // must cost another attempt, not the Data Schematic. The wasted fetch is bounded by the
+    // candidate count and only ever happens on a run that would otherwise have failed outright.
+    let mut failures: Vec<(String, crate::CliError)> = Vec::new();
+    let mut resolved: Option<(
+        crate::cmd::viz_census::BoundarySet,
+        usize,
+        usize,
+        Vec<String>,
+    )> = None;
+    for slot in ranked {
+        let region_codes = &codes[slot];
+        if region_codes.is_empty() {
+            failures.push((
+                label_of(slot),
+                crate::CliError::IncorrectUsage(
+                    "the column has no non-empty values, so there are no regions to fetch \
+                     boundaries for"
+                        .to_string(),
+                ),
+            ));
+            continue;
+        }
+        let boundaries = match crate::cmd::viz_census::resolve(region_codes, auto_spec) {
+            Ok(b) => b,
+            Err(e) => {
+                failures.push((label_of(slot), e));
+                continue;
+            },
         };
-        log::info!(
-            "--geojson {spec}: fetching for '{}' ({}/{} sampled codes match the {} layer)",
-            label_of(slot),
-            score.matched,
-            score.total,
-            score.layer.label()
+
+        // The honesty gate, over EVERY code rather than the probe sample: a column of
+        // plausible-but-nonexistent codes must not render a map that shades nothing and exits 0.
+        let (matched, total, unmatched_sample) = score_region_code_coverage(
+            &boundaries.geojson,
+            &boundaries.feature_id_key,
+            region_codes,
+        )?;
+        #[allow(clippy::cast_precision_loss)]
+        let fraction = if total == 0 {
+            0.0
+        } else {
+            matched as f64 / total as f64
+        };
+        if fraction < GEOJSON_AUTO_MIN_MATCH_RATIO {
+            let sample = unmatched_sample.join(", ");
+            failures.push((
+                label_of(slot),
+                crate::CliError::IncorrectUsage(format!(
+                    "only {matched} of {total} distinct values ({:.0}%) match a boundary in {}. \
+                     Unmatched examples: {sample}. The column may not hold the codes it is tagged \
+                     with, or the boundaries may be a different vintage",
+                    fraction * 100.0,
+                    boundaries.provenance
+                )),
+            ));
+            continue;
+        }
+        resolved = Some((boundaries, matched, total, unmatched_sample));
+        break;
+    }
+
+    let Some((boundaries, matched, total, unmatched_sample)) = resolved else {
+        // One candidate: report its failure verbatim, which carries the resolver's own diagnosis
+        // (an alternate vintage to try, an ambiguous layer to name). Several: name each, since
+        // which column was even considered is not otherwise visible.
+        if let [(_, only)] = failures.as_slice() {
+            return Err(crate::CliError::IncorrectUsage(format!(
+                "--geojson {spec}: {only}"
+            )));
+        }
+        let detail = failures
+            .iter()
+            .map(|(label, e)| format!("'{label}': {e}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec}: no region column resolved against a Census geography — {detail}. \
+             Supply an explicit --geojson file if this is intentional."
         );
-        slot
     };
 
-    let region_codes = &codes[slot];
-    if region_codes.is_empty() {
-        return fail_incorrectusage_clierror!(
-            "--geojson {spec}: the region column has no non-empty values, so there are no regions \
-             to fetch boundaries for."
-        );
-    }
-    let boundaries = crate::cmd::viz_census::resolve(region_codes, auto_spec)?;
-
-    // Same honesty gate as the --locations path, over EVERY code rather than the probe sample: a
-    // column of plausible-but-nonexistent codes must not render a map that shades nothing and
-    // exits 0.
-    let (matched, total, unmatched_sample) = score_region_code_coverage(
-        &boundaries.geojson,
-        &boundaries.feature_id_key,
-        region_codes,
-    )?;
-    #[allow(clippy::cast_precision_loss)]
-    let fraction = if total == 0 {
-        0.0
-    } else {
-        matched as f64 / total as f64
-    };
-    if fraction < GEOJSON_AUTO_MIN_MATCH_RATIO {
-        let sample = unmatched_sample.join(", ");
-        return fail_incorrectusage_clierror!(
-            "--geojson {spec}: only {matched} of {total} distinct region values ({:.0}%) match a \
-             boundary in {}. Unmatched examples: {sample}. The column may not hold the codes it \
-             is tagged with, or the boundaries may be a different vintage — supply an explicit \
-             --geojson file if this is intentional.",
-            fraction * 100.0,
-            boundaries.provenance
-        );
-    }
     if matched < total {
         let sample = unmatched_sample.join(", ");
         winfo!(

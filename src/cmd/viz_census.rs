@@ -832,7 +832,7 @@ pub fn score_candidates(
 
     let mut out: Vec<Option<CandidateScore>> = Vec::with_capacity(candidates.len());
     for codes in candidates {
-        let scored = probe_scores(&client, vintage, &layers, codes)?;
+        let scored = probe_scores(&client, vintage, &layers, codes, true)?;
         // best by match ratio, compared exactly (matched_a/total_a vs matched_b/total_b as
         // integers), mirroring `choose_layer`'s ordering
         let best = scored
@@ -933,6 +933,7 @@ fn probe_scores(
     vintage: u16,
     layers: &[Layer],
     codes: &[String],
+    skip_unavailable: bool,
 ) -> CliResult<Vec<(Layer, usize, usize)>> {
     let mut scored: Vec<(Layer, usize, usize)> = Vec::new();
     for &layer in layers {
@@ -940,7 +941,20 @@ fn probe_scores(
         if normalized.is_empty() {
             continue;
         }
-        let matched = probe_layer(client, vintage, layer, &normalized)?;
+        let matched = match probe_layer(client, vintage, layer, &normalized) {
+            Ok(m) => m,
+            // A vintage need not publish every layer, and which ones it does is not knowable
+            // before asking. When the caller is RANKING (`score_candidates`), a layer the service
+            // does not carry is a layer these codes cannot resolve against — a miss, exactly as
+            // `suggest_alternate_vintage` already treats it — not a reason to abandon a run whose
+            // other candidates resolve fine. A NETWORK failure still propagates: "no layer
+            // matched" must never be how an unreachable service is reported.
+            Err(e) if skip_unavailable && !matches!(e, crate::CliError::Network(_)) => {
+                log::info!("--geojson auto: {} layer unavailable ({e})", layer.label());
+                continue;
+            },
+            Err(e) => return Err(e),
+        };
         scored.push((layer, matched, normalized.len()));
     }
     Ok(scored)
@@ -953,7 +967,9 @@ fn choose_layer(
     vintage: u16,
     codes: &[String],
 ) -> CliResult<Layer> {
-    let scored = probe_scores(client, vintage, &Layer::ALL, codes)?;
+    // the explicit `--locations` path: the user named this column, so a layer the service
+    // cannot serve is reported rather than quietly scored as a miss
+    let scored = probe_scores(client, vintage, &Layer::ALL, codes, false)?;
 
     let mut viable: Vec<&(Layer, usize, usize)> = scored
         .iter()

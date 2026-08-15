@@ -211,6 +211,29 @@ fn census_client() -> CliResult<reqwest::blocking::Client> {
     )
 }
 
+/// Is a failed request worth answering from a stale cache entry?
+///
+/// Only a transient failure is: a semantic one (the service understood the request and refused)
+/// must surface as itself rather than being reported as a connectivity problem and silently
+/// answered with a previous run's boundaries.
+///
+/// `None` means no response arrived at all — a connect failure, a timeout, or a body that would
+/// not decode — which is transient by definition.
+fn status_is_transient(status: Option<reqwest::StatusCode>) -> bool {
+    let Some(status) = status else {
+        return true;
+    };
+    // 408 and 429 are 4xx but mean "ask again later", not "no". Both are realistic here rather
+    // than theoretical: a large ZCTA set is fetched as a LOOP of chunked requests, which is
+    // exactly the shape a public service rate-limits.
+    if status == reqwest::StatusCode::REQUEST_TIMEOUT
+        || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+    {
+        return true;
+    }
+    !status.is_client_error()
+}
+
 /// GET `url` with `params` and parse the response as JSON, reading through a bounded `take` so an
 /// endless or merely enormous body cannot be buffered unchecked (the same guard
 /// `viz::load_geojson` applies).
@@ -233,7 +256,10 @@ fn get_json(
     // perfectly well, with "no" — be reported as a connectivity problem AND silently served from a
     // previous run's boundaries.
     //
-    //   * 4xx  -> the service understood and refused: semantic, surface it as itself.
+    //   * 408/429 -> "ask again later": transient despite being 4xx. Worth calling out for this
+    //     feature in particular — a large ZCTA set is fetched as a LOOP of chunked requests, which
+    //     is exactly the shape a public service rate-limits.
+    //   * other 4xx -> the service understood and refused: semantic, surface it as itself.
     //   * 5xx  -> the service is unwell: transient. (503 is already retried by the shared client.)
     //   * none -> no response at all: connect failure, timeout, or a body that would not decode.
     let mut resp = match client
@@ -244,10 +270,10 @@ fn get_json(
         Ok(resp) => resp,
         Err(e) => {
             let msg = format!("Census request to '{url}' failed: {e}");
-            return Err(if e.status().is_some_and(|s| s.is_client_error()) {
-                crate::CliError::Other(msg)
-            } else {
+            return Err(if status_is_transient(e.status()) {
                 crate::CliError::Network(msg)
+            } else {
+                crate::CliError::Other(msg)
             });
         },
     };
@@ -1142,6 +1168,25 @@ mod tests {
         assert_ne!(cache_key(county, &a), cache_key(zcta, &a));
         // a vintage-pinned request must not collide with the unpinned one
         assert_ne!(cache_key(county, &a), cache_key(county_2019, &a));
+    }
+
+    #[test]
+    fn only_transient_failures_may_be_answered_from_stale_cache() {
+        use reqwest::StatusCode;
+        // no response at all: connect failure, timeout, undecodable body
+        assert!(status_is_transient(None));
+        // "ask again later" — 4xx by number, transient in meaning. A chunked ZCTA fetch is a loop
+        // of requests, so a rate limit here is realistic rather than theoretical.
+        assert!(status_is_transient(Some(StatusCode::REQUEST_TIMEOUT)));
+        assert!(status_is_transient(Some(StatusCode::TOO_MANY_REQUESTS)));
+        // the service is unwell
+        assert!(status_is_transient(Some(StatusCode::BAD_GATEWAY)));
+        assert!(status_is_transient(Some(StatusCode::SERVICE_UNAVAILABLE)));
+        // the service understood and refused: must NOT be answered from a stale entry, nor
+        // reported to the user as a connectivity problem
+        assert!(!status_is_transient(Some(StatusCode::BAD_REQUEST)));
+        assert!(!status_is_transient(Some(StatusCode::NOT_FOUND)));
+        assert!(!status_is_transient(Some(StatusCode::FORBIDDEN)));
     }
 
     #[test]

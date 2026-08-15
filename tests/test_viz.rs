@@ -9945,6 +9945,134 @@ fn viz_choropleth_geojson_missing_file_errors() {
     assert!(stderr.contains("no QSV_GEOJSON_SHORTCUTS are defined"));
 }
 
+// `--geojson auto` needs the region-code column named up front, which only
+// `viz choropleth --locations` does: `viz smart` picks its region column from the data dictionary,
+// which does not exist yet when --geojson is resolved. The error must say so rather than failing
+// obscurely inside the fetch.
+#[test]
+fn viz_smart_geojson_auto_errors() {
+    let wrk = Workdir::new("viz_smart_geojson_auto_errors");
+    wrk.create_from_string("rg.csv", "region,val\n42003,10\n42101,20\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rg.csv", "--geojson", "auto"])
+        .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("viz choropleth --locations"));
+}
+
+// `--geojson auto` without --locations has no region codes to scope a boundary fetch by, so it
+// must say that instead of fetching something arbitrary.
+#[test]
+fn viz_choropleth_geojson_auto_requires_locations() {
+    let wrk = Workdir::new("viz_choropleth_geojson_auto_requires_locations");
+    wrk.create_from_string("rg.csv", "lat,lon,val\n40.4,-79.9,10\n39.9,-75.1,20\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--value",
+        "val",
+        "--geojson",
+        "auto",
+    ])
+    .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("--locations"));
+}
+
+// `auto` is a keyword, but an existing local file of that name must still win — otherwise the
+// keyword would silently shadow a real boundary file and fetch from the network instead.
+// Guards the disambiguation order in `resolve_and_validate_geojson`.
+#[test]
+fn viz_choropleth_geojson_auto_local_file_wins() {
+    let wrk = Workdir::new("viz_choropleth_geojson_auto_local_file_wins");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string("auto", SHORTCUT_GEOJSON);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "auto",
+        "--feature-id-key",
+        "properties.id",
+    ])
+    .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the LOCAL file's ids, not Census GEOIDs — proves no network resolution happened
+    assert!(html.contains(r#""featureidkey":"properties.id""#));
+    assert!(html.contains(r#""locations":["A","B"]"#));
+}
+
+// A numeric region column drops leading zeros (`01001` arrives as `1001`). The emitted locations
+// must be canonicalized to the BOUNDARY's spelling, or plotly matches nothing and the map renders
+// completely blank — while still exiting 0, because the coverage check accepted the padded form
+// the renderer never used. This is the render half of that invariant; no network involved.
+#[test]
+fn viz_choropleth_canonicalizes_zero_padded_locations() {
+    let wrk = Workdir::new("viz_choropleth_canonicalizes_zero_padded_locations");
+    wrk.create_from_string("counties.csv", "fips,cases\n1001,10\n1003,20\n");
+    wrk.create_from_string(
+        "b.geojson",
+        r#"{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"GEOID":"01001"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+{"type":"Feature","properties":{"GEOID":"01003"},"geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "counties.csv",
+        "--locations",
+        "fips",
+        "--value",
+        "cases",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "b.geojson",
+        "--feature-id-key",
+        "properties.GEOID",
+    ])
+    .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the padded ids the features actually carry, not the raw cells
+    assert!(
+        html.contains(r#""locations":["01001","01003"]"#),
+        "locations were not canonicalized to the feature ids"
+    );
+    assert!(
+        !html.contains(r#""locations":["1001""#),
+        "raw unpadded locations were emitted; the map would render blank"
+    );
+    // values must still ride along with their region
+    assert!(
+        html.contains(r#""z":[10.0,20.0]"#),
+        "values lost in canonicalization"
+    );
+}
+
 // a --geojson value that names a QSV_GEOJSON_SHORTCUTS entry resolves to the entry's path, and the
 // entry's `id` fills in --feature-id-key when the user doesn't pass one.
 #[test]

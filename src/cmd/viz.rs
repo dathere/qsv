@@ -420,6 +420,26 @@ choropleth options:
                            defined in the QSV_GEOJSON_SHORTCUTS env var (a JSON map of
                            name to {path, id}); the shortcut's id sets --feature-id-key
                            when you don't pass one. The source is validated up front.
+                           Use `auto` (or `census`) to fetch US county, ZIP Code
+                           Tabulation Area, census tract or place boundaries from the
+                           Census TIGERweb service automatically. County FIPS and ZIP
+                           codes are both 5-digit, so qsv probes the layers and picks
+                           whichever your codes resolve against, reporting them when it
+                           cannot tell; force one with `census:county`, `census:zcta`,
+                           `census:tract` or `census:place`. Sets the
+                           feature-id-key to properties.GEOID, and currently requires
+                           `viz choropleth --locations <column>`. An existing local
+                           file named `auto` still takes precedence over the keyword.
+                           Boundaries are re-drawn between vintages (Connecticut
+                           replaced its 8 counties with 9 planning regions in the 2022
+                           vintages, sharing no GEOID), so append @<year> to pin one,
+                           e.g. `census:county@2021`. When nothing matches the newest
+                           vintage, qsv probes older ones and names the vintage that
+                           does match. Fetched boundaries are cached under ~/.qsv-cache, so a
+                           repeated command makes no network request at all; the cache
+                           path can be passed back as an explicit --geojson for an
+                           archival run. Freshness defaults to 30 days, overridable
+                           with QSV_VIZ_BOUNDARY_CACHE_TTL_DAYS.
                            Required for --map, and for the geojson-id location mode. Also
                            enables point-in-polygon
                            binning: with --lat/--lon (and without --geocode), each row's
@@ -1934,6 +1954,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // The parsed+sanitized --geojson document, loaded ONCE here and threaded into whichever
     // plotting path consumes it (see `resolve_and_validate_geojson`).
     let mut loaded_geojson: Option<serde_json::Value> = None;
+    // Owns the temp file that `--geojson auto` buffers stdin into, when it does. Declared HERE so
+    // it is dropped — and the file deleted — when `run` returns, however it returns. The chart
+    // path re-opens that path after resolution, so the file must outlive the resolver but must not
+    // outlive the process.
+    let mut stdin_guard: Option<tempfile::TempPath> = None;
     // Resolve --geojson (a direct path/URL, or a QSV_GEOJSON_SHORTCUTS alias) and validate it
     // up front — fail fast on a bad source, unknown shortcut, or unusable feature-id-key before
     // any plotting work. Only the choropleth & smart subcommands consume --geojson.
@@ -1945,7 +1970,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let feature_id_key_explicit = argv
             .iter()
             .any(|a| *a == "--feature-id-key" || a.starts_with("--feature-id-key="));
-        loaded_geojson = resolve_and_validate_geojson(&mut args, feature_id_key_explicit)?;
+        loaded_geojson =
+            resolve_and_validate_geojson(&mut args, feature_id_key_explicit, &mut stdin_guard)?;
     }
 
     let out_format = match args.flag_output.as_deref() {
@@ -4799,6 +4825,411 @@ struct GeojsonShortcut {
     id:   Option<String>,
 }
 
+/// Is this `--geojson` value a request for automatic boundary resolution rather than a source?
+///
+/// Covers `auto`, `census`, the `census:<layer>` selectors, and any of those with an `@<vintage>`
+/// suffix. Delegates to the one parser that defines the grammar, so a form accepted here can never
+/// drift from a form `resolve` understands — they did drift once, and `census:county@2021` was
+/// reported as a missing file.
+fn is_geojson_auto_spec(spec: &str) -> bool {
+    crate::cmd::viz_census::parse_auto_spec(spec).is_some()
+}
+
+/// Collect the distinct, non-empty values of the `--locations` column.
+///
+/// `--geojson auto` has to know which regions the data actually names before it can scope a
+/// boundary fetch, and this runs during up-front validation — before any stats or dictionary work
+/// — so it reads the column directly rather than depending on the smart pipeline's semantics.
+fn distinct_region_codes(args: &Args) -> CliResult<Vec<String>> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let loc_idx = resolve_one(args.flag_locations.as_ref(), &headers, nh, "locations")?;
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut codes: Vec<String> = Vec::new();
+    let mut record = csv::StringRecord::new();
+    while rdr.read_record(&mut record)? {
+        if let Some(cell) = record.get(loc_idx) {
+            let cell = cell.trim();
+            if !cell.is_empty() && seen.insert(cell.to_string()) {
+                codes.push(cell.to_string());
+            }
+        }
+    }
+    Ok(codes)
+}
+
+/// Minimum fraction of DISTINCT region codes that must resolve to a fetched boundary for
+/// `--geojson auto` to render.
+///
+/// Deliberately stricter than [`BIVARIATE_MIN_SUPPORT_RATIO`], which exists to *choose* among
+/// competing candidate columns — there, a weak-but-best candidate is still the most informative
+/// one available. Here the user has already named the column and asked qsv to fetch boundaries
+/// for it, so a majority of codes failing to resolve means the wrong geography was fetched, not a
+/// weak signal. Rendering that is the silent-wrong-map outcome auto exists to avoid.
+const GEOJSON_AUTO_MIN_MATCH_RATIO: f64 = 0.5;
+
+/// How many unmatched codes to name in the coverage error/warning before eliding.
+const GEOJSON_AUTO_UNMATCHED_SAMPLE: usize = 5;
+
+/// The inputs [`match_region_code`] needs, built once from a boundary document.
+///
+/// Exists so the code that VALIDATES a region column and the code that RENDERS it cannot drift
+/// apart. They did: coverage accepted `1001` as a match for feature id `01001` (a numeric CSV
+/// column drops the leading zero), while the choropleth trace emitted the raw `1001`, which
+/// matches no feature — so a column could pass validation with a perfect score and then render a
+/// completely blank map, silently. Anything that decides "does this cell name a region" must use
+/// this, and anything that emits a location must emit what this returns.
+struct RegionMatcher {
+    ids:            std::collections::HashSet<String>,
+    numeric_widths: Vec<usize>,
+    lowercased:     std::collections::HashMap<String, String>,
+}
+
+impl RegionMatcher {
+    /// Build from a GeoJSON document and the feature-id path in use.
+    fn new(geojson: &serde_json::Value, feature_id_key: &str) -> CliResult<Self> {
+        let features = build_pip_features(geojson, feature_id_key, None)?;
+        let ids: std::collections::HashSet<String> =
+            features.iter().map(|f| f.id.clone()).collect();
+        // distinct widths of the all-digit ids, ascending — precomputed so per-cell matching does
+        // not rescan every feature id
+        let numeric_widths: Vec<usize> = {
+            let mut w: Vec<usize> = ids
+                .iter()
+                .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+                .map(String::len)
+                .collect();
+            w.sort_unstable();
+            w.dedup();
+            w
+        };
+        // lower-cased id -> canonical id. Built from the ORDERED feature list, not the set: a
+        // folded key that maps to more than one distinct id is genuinely ambiguous and is REMOVED
+        // rather than resolved to whichever the set happened to yield first.
+        let lowercased: std::collections::HashMap<String, String> = {
+            let mut m: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for f in &features {
+                let folded = f.id.to_ascii_lowercase();
+                match m.get(&folded) {
+                    Some(existing) if *existing != f.id => {
+                        ambiguous.insert(folded);
+                    },
+                    Some(_) => {},
+                    None => {
+                        m.insert(folded, f.id.clone());
+                    },
+                }
+            }
+            for k in ambiguous {
+                m.remove(&k);
+            }
+            m
+        };
+        Ok(Self {
+            ids,
+            numeric_widths,
+            lowercased,
+        })
+    }
+
+    /// The feature id this cell names, in the BOUNDARY's spelling, or `None` if it names none.
+    fn canonicalize(&self, raw: &str) -> Option<String> {
+        match_region_code(raw, &self.ids, &self.numeric_widths, &self.lowercased)
+    }
+}
+
+/// Score `codes` against the fetched boundary set, returning
+/// `(matched_count, total_count, sample_of_unmatched)`.
+fn score_region_code_coverage(
+    geojson: &serde_json::Value,
+    feature_id_key: &str,
+    codes: &[String],
+) -> CliResult<(usize, usize, Vec<String>)> {
+    let matcher = RegionMatcher::new(geojson, feature_id_key)?;
+    let mut matched = 0usize;
+    let mut unmatched: Vec<String> = Vec::new();
+    for code in codes {
+        if matcher.canonicalize(code).is_some() {
+            matched += 1;
+        } else if unmatched.len() < GEOJSON_AUTO_UNMATCHED_SAMPLE {
+            unmatched.push(code.clone());
+        }
+    }
+    Ok((matched, codes.len(), unmatched))
+}
+
+/// Provenance of an auto-resolved boundary set, recorded for the note rendered beneath the map.
+///
+/// Process-global rather than threaded through, because `--geojson` is resolved during up-front
+/// validation while the note is composed deep inside the plot builders, and every intermediate
+/// signature takes `&Args` — which cannot carry it, being the docopt struct. `viz` already keeps
+/// the active locale this way (see `viz_i18n::active_locale`). One resolution per process, so a
+/// `OnceLock` is the right shape: a second write would mean two boundary sets in one run.
+static AUTO_BOUNDARY_PROVENANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The auto-resolved boundary provenance for this run, if `--geojson auto` resolved one.
+fn auto_boundary_provenance() -> Option<&'static str> {
+    AUTO_BOUNDARY_PROVENANCE.get().map(String::as_str)
+}
+
+/// Feature ids of auto-resolved regions that sit far outside the bulk of the boundary set.
+///
+/// Only ever populated for an auto-resolved set. A user-supplied `--geojson` is a deliberate
+/// choice — every polygon in it is intentional — but a code-set-scoped set (ZCTAs, which have no
+/// STATE field to scope by) is DERIVED from the data's codes, so a handful of stray codes silently
+/// injects regions the author never chose. In `allegheny_dog_licenses.csv`, 4 rows out of 50,013
+/// carry Florida and Indiana owner ZIPs, and framing to the full extent renders the 128 Allegheny
+/// ZCTAs as an unreadable speck between Pittsburgh and Miami.
+static AUTO_BOUNDARY_OUTLIERS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+/// Auto-resolved regions that lie far outside the main cluster, if any.
+fn auto_boundary_outliers() -> &'static [String] {
+    AUTO_BOUNDARY_OUTLIERS.get().map_or(&[], Vec::as_slice)
+}
+
+/// Read a feature id out of a RAW `serde_json` feature by dotted path (`id`, `properties.GEOID`).
+///
+/// The typed [`feature_id_by_path`] wants a `geojson::Feature`; these callers hold the untyped
+/// document (it is what the plot trace is built from), and deserializing the whole collection
+/// twice just to read one field per feature is not worth it.
+fn feature_id_by_path_value(feature: &serde_json::Value, path: &str) -> Option<String> {
+    let mut node = feature;
+    for segment in path.split('.') {
+        node = node.get(segment)?;
+    }
+    match node {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// Per-feature `(id, centroid_lat, centroid_lon)` for a GeoJSON `FeatureCollection`.
+///
+/// The centroid is the mean of the feature's coordinates — crude for an area calculation, but this
+/// is only used to ask "is this region somewhere else entirely", where crude is plenty.
+fn feature_centroids(geojson: &serde_json::Value, feature_id_key: &str) -> Vec<(String, f64, f64)> {
+    let Some(features) = geojson
+        .get("features")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Vec::new();
+    };
+    features
+        .iter()
+        .filter_map(|f| {
+            let id = feature_id_by_path_value(f, feature_id_key)?;
+            let geometry = f.get("geometry")?;
+            let mut lat_sum = 0.0;
+            let mut lon_sum = 0.0;
+            let mut n = 0u32;
+            // walk the nested coordinate arrays to their [lon, lat] leaves
+            let mut stack = vec![geometry.get("coordinates")?];
+            while let Some(node) = stack.pop() {
+                let Some(arr) = node.as_array() else { continue };
+                if arr.len() >= 2
+                    && let (Some(lon), Some(lat)) = (arr[0].as_f64(), arr[1].as_f64())
+                {
+                    lon_sum += lon;
+                    lat_sum += lat;
+                    n += 1;
+                    continue;
+                }
+                stack.extend(arr.iter());
+            }
+            (n > 0).then(|| (id, lat_sum / f64::from(n), lon_sum / f64::from(n)))
+        })
+        .collect()
+}
+
+/// Ids of regions whose centroid falls outside a Tukey fence on either axis.
+///
+/// A Tukey fence (Q1 - 1.5*IQR, Q3 + 1.5*IQR) is used rather than a fixed percentile because it
+/// reports NOTHING for a tight, well-behaved boundary set — a percentile trim would always flag
+/// some fraction as outliers even when there are none, and then every clean map would carry a
+/// spurious note and a cropped frame.
+fn detect_extent_outliers(geojson: &serde_json::Value, feature_id_key: &str) -> Vec<String> {
+    let centroids = feature_centroids(geojson, feature_id_key);
+    // a fence needs enough regions to have a meaningful quartile spread
+    if centroids.len() < 8 {
+        return Vec::new();
+    }
+    let fence = |mut vals: Vec<f64>| -> (f64, f64) {
+        vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let q = |p: f64| -> f64 {
+            #[allow(
+                clippy::cast_precision_loss,
+                clippy::cast_sign_loss,
+                clippy::cast_possible_truncation
+            )]
+            let idx = ((vals.len() - 1) as f64 * p).round() as usize;
+            vals[idx]
+        };
+        let (q1, q3) = (q(0.25), q(0.75));
+        let iqr = q3 - q1;
+        (q1 - 1.5 * iqr, q3 + 1.5 * iqr)
+    };
+    let (lat_lo, lat_hi) = fence(centroids.iter().map(|c| c.1).collect());
+    let (lon_lo, lon_hi) = fence(centroids.iter().map(|c| c.2).collect());
+    centroids
+        .into_iter()
+        .filter(|(_, lat, lon)| *lat < lat_lo || *lat > lat_hi || *lon < lon_lo || *lon > lon_hi)
+        .map(|(id, _, _)| id)
+        .collect()
+}
+
+/// The `(lats, lons)` a choropleth should FRAME to, which is not always everything it draws.
+///
+/// A user-supplied `--geojson` is a deliberate choice — every polygon in it is intentional — so it
+/// frames to its full extent. An auto-resolved set is derived from the data's codes, so a few
+/// stray codes inject regions the author never chose; those are still drawn, but they do not get
+/// to decide the frame. Shared by the projection and MapLibre branches: when only one of them
+/// filtered, the note beneath the map claimed the outliers had been excluded while the tile map
+/// still centered on them.
+fn framing_extent(geojson: &serde_json::Value, args: &Args) -> (Vec<f64>, Vec<f64>) {
+    let outliers = auto_boundary_outliers();
+    if outliers.is_empty() {
+        return geojson_lat_lons(geojson);
+    }
+    let excluded: std::collections::HashSet<&str> = outliers.iter().map(String::as_str).collect();
+    let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
+    let kept = serde_json::json!({
+        "type": "FeatureCollection",
+        "features": geojson
+            .get("features")
+            .and_then(serde_json::Value::as_array)
+            .map(|fs| fs
+                .iter()
+                .filter(|f| feature_id_by_path_value(f, key)
+                    .is_none_or(|id| !excluded.contains(id.as_str())))
+                .cloned()
+                .collect::<Vec<_>>())
+            .unwrap_or_default(),
+    });
+    let (lats, lons) = geojson_lat_lons(&kept);
+    // never hand back an empty extent: if every feature somehow read as an outlier, framing to
+    // nothing would be worse than framing to everything
+    if lats.is_empty() {
+        geojson_lat_lons(geojson)
+    } else {
+        (lats, lons)
+    }
+}
+
+/// Resolve `--geojson auto|census` into a concrete boundary file plus its feature-id key.
+///
+/// Returns the same `(path, Option<feature-id-key>)` shape as [`lookup_geojson_shortcut`] so the
+/// caller's validation runs over an auto-resolved set exactly as it does over a user-supplied
+/// file — the auto path earns no exemption from the feature-id-key and polygon checks.
+fn resolve_auto_geojson(
+    args: &mut Args,
+    spec: &str,
+    stdin_guard: &mut Option<tempfile::TempPath>,
+) -> CliResult<(String, Option<String>)> {
+    // `auto` has to read the region column BEFORE the chart is built, which means the input is
+    // read twice. A file re-opens fine; stdin does not — the first pass drained it and the second
+    // reader saw an empty stream, so the run died with "Selector name '<col>' does not exist as a
+    // named header". Materialize stdin to a temp file and point the rest of the run at that.
+    //
+    // The TempPath guard is handed back to `run` rather than `.keep()`-ed: the file must outlive
+    // this function (the chart path re-opens the path later) but NOT the process. Persisting it
+    // left a full copy of every piped input in the temp dir forever — unbounded accumulation, and
+    // a copy of whatever the user piped in, which may be sensitive. Created via tempfile (random
+    // name, O_EXCL) so a predictable path cannot be hijacked.
+    if args.arg_input.as_deref().is_none_or(|input| input == "-") {
+        use std::io::Write as _;
+        let mut tmp = tempfile::Builder::new()
+            .prefix("qsv-viz-auto-stdin-")
+            .suffix(".csv")
+            .tempfile()?;
+        std::io::copy(&mut std::io::stdin().lock(), &mut tmp)?;
+        tmp.flush()?;
+        let path = tmp.into_temp_path();
+        args.arg_input = Some(path.to_string_lossy().into_owned());
+        // dropped when `run` returns, which deletes the file
+        *stdin_guard = Some(path);
+    }
+    // `viz smart` picks its region column from the data dictionary, which does not exist yet at
+    // this point in `run` (stats and column semantics are computed later), so `auto` cannot know
+    // what to fetch there. `viz choropleth --locations` names the column explicitly.
+    if !args.cmd_choropleth {
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec} currently requires `viz choropleth --locations <column>`, which \
+             names the region-code column up front. For `viz smart`, supply an explicit --geojson \
+             file."
+        );
+    }
+    if args.flag_locations.is_none() {
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec} needs --locations <column> to know which regions to fetch \
+             boundaries for."
+        );
+    }
+    let codes = distinct_region_codes(args)?;
+    if codes.is_empty() {
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec}: the --locations column has no non-empty values, so there are no \
+             regions to fetch boundaries for."
+        );
+    }
+    // safe: the caller only routes here when `parse_auto_spec` already matched
+    let auto_spec = crate::cmd::viz_census::parse_auto_spec(spec).unwrap_or_default();
+    let boundaries = crate::cmd::viz_census::resolve(&codes, auto_spec)?;
+
+    // "auto" is only honest if the guess is testable: score the column against what was actually
+    // fetched and refuse to render a mostly-unmatched map. Without this, a --locations column of
+    // plausible-but-nonexistent codes (42999, 42998, ...) fetches a state and renders a map that
+    // shades nothing, exits 0, and says nothing.
+    let (matched, total, unmatched_sample) =
+        score_region_code_coverage(&boundaries.geojson, &boundaries.feature_id_key, &codes)?;
+    #[allow(clippy::cast_precision_loss)]
+    let fraction = if total == 0 {
+        0.0
+    } else {
+        matched as f64 / total as f64
+    };
+    if fraction < GEOJSON_AUTO_MIN_MATCH_RATIO {
+        let sample = unmatched_sample.join(", ");
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec}: only {matched} of {total} distinct --locations values ({:.0}%) \
+             match a boundary in {}. Unmatched examples: {sample}. The column may not hold county \
+             FIPS codes, or the boundaries may be a different vintage — supply an explicit \
+             --geojson file if this is intentional.",
+            fraction * 100.0,
+            boundaries.provenance
+        );
+    }
+    if matched < total {
+        let sample = unmatched_sample.join(", ");
+        winfo!(
+            "--geojson {spec}: {} of {total} distinct --locations values matched no boundary and \
+             are omitted from the map (e.g. {sample}).",
+            total - matched
+        );
+    }
+
+    // recorded for the provenance note beneath the map, and so the reader can tell an
+    // auto-resolved boundary set from one they supplied
+    let _ = AUTO_BOUNDARY_PROVENANCE.set(boundaries.provenance.clone());
+    let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(
+        &boundaries.geojson,
+        &boundaries.feature_id_key,
+    ));
+    log::info!(
+        "--geojson {spec} resolved: {} -> {} ({matched}/{total} codes matched)",
+        boundaries.provenance,
+        boundaries.path
+    );
+    // the cache path IS the exportable artifact: pass it back as an explicit --geojson for an
+    // archival run that never touches the network
+    winfo!(
+        "--geojson {spec}: {} — boundaries cached at {}",
+        boundaries.provenance,
+        boundaries.path
+    );
+    Ok((boundaries.path, Some(boundaries.feature_id_key)))
+}
+
 /// Resolve a `--geojson` value as a `QSV_GEOJSON_SHORTCUTS` entry name.
 /// Returns the resolved path/URL and the optional feature-id-key carried by the shortcut.
 fn lookup_geojson_shortcut(name: &str) -> CliResult<(String, Option<String>)> {
@@ -4832,16 +5263,24 @@ fn lookup_geojson_shortcut(name: &str) -> CliResult<(String, Option<String>)> {
 fn resolve_and_validate_geojson(
     args: &mut Args,
     feature_id_key_explicit: bool,
+    stdin_guard: &mut Option<tempfile::TempPath>,
 ) -> CliResult<Option<serde_json::Value>> {
     let Some(spec) = args.flag_geojson.clone() else {
         return Ok(None);
     };
 
-    // Disambiguate: a direct source is an http(s) URL or an existing local file; anything else is
-    // treated as a shortcut NAME. (More robust than "try to load, fall back on failure": a 404'd
-    // URL or an existing-but-broken file must NOT be silently reinterpreted as a shortcut name.)
+    // Disambiguate: `auto`/`census` request automatic boundary resolution; a direct source is an
+    // http(s) URL or an existing local file; anything else is treated as a shortcut NAME. (More
+    // robust than "try to load, fall back on failure": a 404'd URL or an existing-but-broken file
+    // must NOT be silently reinterpreted as a shortcut name.)
+    //
+    // A local file named `auto` would otherwise be shadowed by the keyword, so an existing file
+    // still wins — `--geojson ./auto` remains the way to name it unambiguously.
     let is_url = spec.starts_with("http://") || spec.starts_with("https://");
-    let (resolved, shortcut_id) = if is_url || std::path::Path::new(&spec).is_file() {
+    let is_file = std::path::Path::new(&spec).is_file();
+    let (resolved, shortcut_id) = if is_geojson_auto_spec(&spec) && !is_file {
+        resolve_auto_geojson(args, &spec, stdin_guard)?
+    } else if is_url || is_file {
         (spec, None)
     } else {
         lookup_geojson_shortcut(&spec)?
@@ -6705,6 +7144,41 @@ fn build_choropleth_plot(
         }
     }
 
+    // A reader cannot otherwise tell an auto-fetched boundary set from one the author chose, and
+    // which vintage it came from changes what the map means (Connecticut's counties became
+    // planning regions in the 2022 vintages). Appended last so it reads after any data caveat.
+    if let Some(provenance) = auto_boundary_provenance() {
+        let note = t!("viz.notes.boundary_provenance", q_source = provenance).into_owned();
+        below_note = match below_note {
+            Some(existing) => Some(format!("{existing} {note}")),
+            None => Some(note),
+        };
+    }
+    // Outlying regions are still DRAWN — they are the reader's data — but the frame ignores them,
+    // so the note is what keeps that from being a silent cropping decision.
+    let outliers = auto_boundary_outliers();
+    if !outliers.is_empty() {
+        let shown: Vec<&str> = outliers
+            .iter()
+            .take(GEOJSON_AUTO_UNMATCHED_SAMPLE)
+            .map(String::as_str)
+            .collect();
+        let mut ids = shown.join(", ");
+        if outliers.len() > shown.len() {
+            ids.push_str(", …");
+        }
+        let note = t!(
+            "viz.notes.boundary_outliers",
+            q_n = outliers.len(),
+            q_ids = ids
+        )
+        .into_owned();
+        below_note = match below_note {
+            Some(existing) => Some(format!("{existing} {note}")),
+            None => Some(note),
+        };
+    }
+
     let mut plot = Plot::new();
     if args.flag_map {
         // ChoroplethMap on the MapLibre `map` subplot (GeoJSON-only).
@@ -6712,8 +7186,10 @@ fn build_choropleth_plot(
             Some(v) => v,
             None => load_geojson(args.flag_geojson.as_deref().unwrap())?,
         };
-        // collect the GeoJSON extent BEFORE the value is moved into the trace below.
-        let (g_lats, g_lons) = geojson_lat_lons(&geojson);
+        // collect the extent BEFORE the value is moved into the trace below. Uses the same
+        // outlier-aware extent as the projection branch, so the note beneath the map cannot claim
+        // outliers were excluded from framing while the tile map still centers on them.
+        let (g_lats, g_lons) = framing_extent(&geojson, args);
         let trace = ChoroplethMap::new(locations, z)
             .geojson(geojson)
             .feature_id_key(args.flag_feature_id_key.as_deref().unwrap_or("id"))
@@ -6795,10 +7271,14 @@ fn build_choropleth_plot(
             // default whole-world projection. Frame the projection to the GeoJSON extent, reusing
             // the smart panel's geo_framing (albers-usa / natural-earth / mercator fit, padded and
             // antimeridian-aware). Collect the extent BEFORE the value is moved into the trace.
-            let (g_lats, g_lons) = geojson_lat_lons(&geojson);
+            // trim_frac stays 0.0 in both branches: every vertex of a region we intend to SHOW is
+            // intentional, and a percentile trim would crop legitimate edge/island polygons. What
+            // differs is which regions are considered. A user-supplied --geojson is a deliberate
+            // choice, so all of it frames the map. An auto-resolved set is derived from the data's
+            // codes, so a few stray codes can inject regions a thousand miles away; those are still
+            // drawn, but they do not get to decide the frame (and the note beneath says so).
+            let (g_lats, g_lons) = framing_extent(&geojson, args);
             if !g_lats.is_empty() {
-                // trim_frac 0.0: every GeoJSON vertex is intentional, so frame the FULL extent —
-                // trimming would crop edge/island polygons.
                 let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons, 0.0);
                 geo = geo.projection(Projection::new().projection_type(proj));
                 if let Some(lonaxis) = lonaxis {
@@ -6903,12 +7383,32 @@ fn choropleth_literal_locations(
     let mut denoms: HashMap<String, f64> = HashMap::new();
     let mut denom_conflict: Option<(String, f64, f64)> = None;
     let mut denom_seen = false;
+    // When a boundary document is in play, every location cell is canonicalized to the FEATURE's
+    // spelling before it is used for anything — aggregation, denominator keying, hover names, and
+    // the emitted trace. A numeric CSV column drops leading zeros (`01001` arrives as `1001`), and
+    // emitting the raw cell against a `properties.GEOID` of `01001` matches no feature, so the
+    // region renders unshaded. That produced a completely blank map that still exited 0, because
+    // the coverage check accepted the padded form the renderer never used. One matcher now decides
+    // both.
+    let region_matcher = match loaded_geojson {
+        Some(geojson) => Some(RegionMatcher::new(
+            geojson,
+            args.flag_feature_id_key.as_deref().unwrap_or("id"),
+        )?),
+        None => None,
+    };
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
-        let loc = cell_to_string(record.get(loc_idx));
-        if loc.is_empty() {
+        let raw_loc = cell_to_string(record.get(loc_idx));
+        if raw_loc.is_empty() {
             continue;
         }
+        // an unmatched cell keeps its raw spelling: it names no feature either way, and the
+        // coverage check is what reports it
+        let loc = region_matcher
+            .as_ref()
+            .and_then(|m| m.canonicalize(&raw_loc))
+            .unwrap_or(raw_loc);
         // Constancy is checked over every FINITE value, BEFORE the positivity filter below.
         // Screening out non-positives first would hide the very mistake this check exists to
         // catch: a row-level column like `fee` holding 0, 50, 50 for one region would look
@@ -23323,7 +23823,7 @@ fn build_smart_pip_choropleth_panel(
 /// [`build_smart_summary_choropleth_panels`].
 fn match_region_code(
     raw: &str,
-    feature_ids: &std::collections::HashSet<&str>,
+    feature_ids: &std::collections::HashSet<String>,
     numeric_id_widths: &[usize],
     lowercased_ids: &std::collections::HashMap<String, String>,
 ) -> Option<String> {
@@ -23442,8 +23942,8 @@ fn build_smart_summary_choropleth_panels(
         feature_id_key,
         args.flag_feature_name_key.as_deref(),
     )?;
-    let feature_ids: std::collections::HashSet<&str> =
-        features.iter().map(|f| f.id.as_str()).collect();
+    let feature_ids: std::collections::HashSet<String> =
+        features.iter().map(|f| f.id.clone()).collect();
     // distinct widths of the all-digit feature ids, ascending — precomputed once so the per-row
     // `match_region_code` does not rescan every feature id for each unmatched numeric cell (which
     // would make matching `rows * candidates * features`).
@@ -36423,6 +36923,211 @@ mod tests {
         }
     }
 
+    // `--geojson auto` is only honest if the guess is testable. These pin the scorer that decides
+    // whether an auto-fetched boundary set actually covers the column, including the zero-padding
+    // case a numeric FIPS column always produces.
+    fn coverage_geojson() -> serde_json::Value {
+        serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "properties": {"GEOID": "01001"},
+                 "geometry": {"type": "Polygon",
+                              "coordinates": [[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+                {"type": "Feature", "properties": {"GEOID": "42003"},
+                 "geometry": {"type": "Polygon",
+                              "coordinates": [[[1,0],[1,1],[2,1],[2,0],[1,0]]]}}
+            ]
+        })
+    }
+
+    #[test]
+    fn auto_coverage_all_matched() {
+        let codes = vec!["01001".to_string(), "42003".to_string()];
+        let (matched, total, unmatched) =
+            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes).unwrap();
+        assert_eq!((matched, total), (2, 2));
+        assert!(unmatched.is_empty());
+    }
+
+    #[test]
+    fn auto_coverage_pads_leading_zero_stripped_code() {
+        // a numeric column renders 01001 as 1001; that is a MATCH, not a miss
+        let codes = vec!["1001".to_string()];
+        let (matched, total, unmatched) =
+            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes).unwrap();
+        assert_eq!((matched, total), (1, 1));
+        assert!(unmatched.is_empty());
+    }
+
+    #[test]
+    fn auto_coverage_reports_unmatched_codes() {
+        // plausible-looking but nonexistent FIPS: the case that used to render a blank map
+        let codes = vec![
+            "42999".to_string(),
+            "42998".to_string(),
+            "42003".to_string(),
+        ];
+        let (matched, total, unmatched) =
+            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes).unwrap();
+        assert_eq!((matched, total), (1, 3));
+        assert_eq!(unmatched, vec!["42999", "42998"]);
+        #[allow(clippy::cast_precision_loss)]
+        let fraction = matched as f64 / total as f64;
+        assert!(fraction < GEOJSON_AUTO_MIN_MATCH_RATIO);
+    }
+
+    // The boundary-provenance note is the only thing distinguishing an auto-fetched boundary set
+    // from one the author chose, and which vintage it came from changes what the map means. It is
+    // composed from a catalog key, so it must resolve in every locale — a missing key renders the
+    // key NAME into the annotation, which is exactly what happened when it was first added under
+    // the wrong parent section (viz.omit instead of viz.notes).
+    #[test]
+    fn boundary_provenance_note_is_localized() {
+        let _guard = viz_i18n::lock_locale();
+        let source = "Census TIGERweb 2025, Counties (1 state)";
+
+        viz_i18n::set_active(viz_i18n::parse_lang("en").unwrap());
+        let en = t!("viz.notes.boundary_provenance", q_source = source).into_owned();
+        assert!(en.starts_with("Boundaries:"), "got: {en}");
+        assert!(
+            en.contains(source),
+            "the source must survive verbatim, got: {en}"
+        );
+
+        viz_i18n::set_active(viz_i18n::parse_lang("de").unwrap());
+        let de = t!("viz.notes.boundary_provenance", q_source = source).into_owned();
+        assert!(
+            de.contains(source),
+            "the source must survive verbatim, got: {de}"
+        );
+        // a missing key renders as the key name itself
+        assert!(!de.contains("viz.notes"), "key did not resolve, got: {de}");
+        // and it must actually be translated, not the English fallback
+        assert!(!de.contains("Boundaries:"), "not translated, got: {de}");
+
+        viz_i18n::set_active(viz_i18n::parse_lang("ja").unwrap());
+        let ja = t!("viz.notes.boundary_provenance", q_source = source).into_owned();
+        assert!(!ja.contains("viz.notes"), "key did not resolve, got: {ja}");
+        assert!(!ja.contains("Boundaries:"), "not translated, got: {ja}");
+
+        viz_i18n::set_active(viz_i18n::parse_lang("en").unwrap());
+    }
+
+    /// A FeatureCollection of 1-degree squares at the given (lon, lat) origins.
+    fn squares_at(points: &[(f64, f64)]) -> serde_json::Value {
+        let features: Vec<serde_json::Value> = points
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, y))| {
+                serde_json::json!({
+                    "type": "Feature",
+                    "properties": {"GEOID": format!("{i:05}")},
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [x, y], [x, y + 1.0], [x + 1.0, y + 1.0], [x + 1.0, y], [x, y]
+                        ]]
+                    }
+                })
+            })
+            .collect();
+        serde_json::json!({"type": "FeatureCollection", "features": features})
+    }
+
+    // A well-behaved boundary set must report NOTHING — otherwise every clean map carries a
+    // spurious note and a needlessly cropped frame. This is why the detector uses a Tukey fence
+    // rather than a fixed percentile trim, which would always flag some fraction.
+    #[test]
+    fn extent_outliers_are_not_reported_for_a_tight_cluster() {
+        let pts: Vec<(f64, f64)> = (0..12)
+            .map(|i| (f64::from(i) * 0.1, f64::from(i) * 0.1))
+            .collect();
+        let gj = squares_at(&pts);
+        assert!(detect_extent_outliers(&gj, "properties.GEOID").is_empty());
+    }
+
+    // The allegheny_dog_licenses case: a tight metro cluster plus a couple of stray ZIPs a
+    // thousand miles away, which must not be allowed to decide the frame.
+    #[test]
+    fn extent_outliers_catch_far_flung_regions() {
+        let mut pts: Vec<(f64, f64)> = (0..12)
+            .map(|i| (f64::from(i) * 0.1, f64::from(i) * 0.1))
+            .collect();
+        pts.push((-80.0, 26.0)); // Florida
+        pts.push((-86.0, 41.0)); // Indiana
+        let gj = squares_at(&pts);
+        let outliers = detect_extent_outliers(&gj, "properties.GEOID");
+        assert_eq!(outliers.len(), 2, "got: {outliers:?}");
+        // the two appended squares are ids 00012 and 00013
+        assert!(outliers.contains(&"00012".to_string()), "got: {outliers:?}");
+        assert!(outliers.contains(&"00013".to_string()), "got: {outliers:?}");
+    }
+
+    // Too few regions for a quartile spread to mean anything — reporting an "outlier" out of 3
+    // regions would be noise, and cropping to the other 2 would hide a third of the data.
+    #[test]
+    fn extent_outliers_need_enough_regions_to_judge() {
+        let gj = squares_at(&[(0.0, 0.0), (0.1, 0.1), (-80.0, 26.0)]);
+        assert!(detect_extent_outliers(&gj, "properties.GEOID").is_empty());
+    }
+
+    // The outlier detector and the framing filter read ids off the RAW json, while every other
+    // consumer reads them off the typed `geojson::Feature`. If the two disagree, the outlier ids
+    // never match the features and the frame silently excludes nothing — a failure that looks
+    // exactly like "no outliers". A user may pass --feature-id-key alongside --geojson auto, so
+    // the agreement has to hold for the shapes the typed reader special-cases, not just for the
+    // `properties.GEOID` the auto path sets itself.
+    #[test]
+    fn raw_and_typed_feature_id_readers_agree() {
+        let cases = [
+            // top-level string id
+            (
+                serde_json::json!({"type": "Feature", "id": "A",
+                                "properties": {}, "geometry": null}),
+                "id",
+            ),
+            // top-level NUMERIC id — both must coerce to the same string
+            (
+                serde_json::json!({"type": "Feature", "id": 42,
+                                "properties": {}, "geometry": null}),
+                "id",
+            ),
+            // properties path
+            (
+                serde_json::json!({"type": "Feature", "properties": {"GEOID": "42003"},
+                                "geometry": null}),
+                "properties.GEOID",
+            ),
+            // numeric under properties
+            (
+                serde_json::json!({"type": "Feature", "properties": {"GEOID": 42003},
+                                "geometry": null}),
+                "properties.GEOID",
+            ),
+            // top-level foreign member (TopoJSON-style exports carry names there)
+            (
+                serde_json::json!({"type": "Feature", "name": "Alpha",
+                                "properties": {}, "geometry": null}),
+                "name",
+            ),
+            // absent -> None from both
+            (
+                serde_json::json!({"type": "Feature", "properties": {},
+                                "geometry": null}),
+                "properties.NOPE",
+            ),
+        ];
+        for (value, key) in cases {
+            let typed: geojson::Feature = serde_json::from_value(value.clone())
+                .unwrap_or_else(|e| panic!("fixture is not a Feature: {e}"));
+            assert_eq!(
+                feature_id_by_path_value(&value, key),
+                feature_id_by_path(&typed, key),
+                "raw and typed readers disagree for key {key} on {value}"
+            );
+        }
+    }
+
     #[test]
     fn build_rate_series_drops_regions_without_a_denominator() {
         let locs: Vec<String> = ["A", "B", "C", "D"]
@@ -38836,7 +39541,10 @@ mod tests {
 
     #[test]
     fn match_region_code_falls_back_to_case_insensitive() {
-        let ids: std::collections::HashSet<&str> = ["CA", "NY", "06075"].into_iter().collect();
+        let ids: std::collections::HashSet<String> = ["CA", "NY", "06075"]
+            .into_iter()
+            .map(String::from)
+            .collect();
         let widths = vec![5_usize];
         let lower: std::collections::HashMap<String, String> = ids
             .iter()
@@ -38876,7 +39584,8 @@ mod tests {
         // two feature ids differing only by case make the folded key ambiguous: resolving it from
         // HashSet iteration order would aggregate the same CSV value under a different region
         // between runs, so the fuzzy fallback is forfeited instead (exact matching still works).
-        let ids: std::collections::HashSet<&str> = ["CA", "ca", "NY"].into_iter().collect();
+        let ids: std::collections::HashSet<String> =
+            ["CA", "ca", "NY"].into_iter().map(String::from).collect();
         let widths: Vec<usize> = Vec::new();
         let mut lower: std::collections::HashMap<String, String> = std::collections::HashMap::new();
         let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -42663,19 +43372,20 @@ mod tests {
     #[test]
     fn match_region_code_pads_and_matches() {
         // ascending, deduped digit-widths of the all-numeric ids, as the caller precomputes.
-        fn numeric_widths(ids: &std::collections::HashSet<&str>) -> Vec<usize> {
+        fn numeric_widths(ids: &std::collections::HashSet<String>) -> Vec<usize> {
             let mut w: Vec<usize> = ids
                 .iter()
                 .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
-                .map(|id| id.len())
+                .map(String::len)
                 .collect();
             w.sort_unstable();
             w.dedup();
             w
         }
 
-        let ids: std::collections::HashSet<&str> = ["07936", "15129", "15007", "BAKERSTOWN"]
+        let ids: std::collections::HashSet<String> = ["07936", "15129", "15007", "BAKERSTOWN"]
             .into_iter()
+            .map(String::from)
             .collect();
         let widths = numeric_widths(&ids);
         let lower_ids: std::collections::HashMap<String, String> = ids
@@ -42707,8 +43417,10 @@ mod tests {
 
         // non-zip widths: the code is padded to whatever numeric feature-id widths exist, not a
         // hardcoded 5. State FIPS (2-wide) and county FIPS (3-wide) both resolve.
-        let fips: std::collections::HashSet<&str> =
-            ["01", "06", "003", "037", "42003"].into_iter().collect();
+        let fips: std::collections::HashSet<String> = ["01", "06", "003", "037", "42003"]
+            .into_iter()
+            .map(String::from)
+            .collect();
         let fips_widths = numeric_widths(&fips);
         let lower_fips: std::collections::HashMap<String, String> = fips
             .iter()

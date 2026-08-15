@@ -165,6 +165,8 @@ mod test_transpose;
 mod test_validate;
 #[cfg(feature = "viz")]
 mod test_viz;
+#[cfg(feature = "viz")]
+mod test_viz_census;
 
 fn qcheck<T: Testable>(p: T) {
     // safety: we are in single-threaded code.

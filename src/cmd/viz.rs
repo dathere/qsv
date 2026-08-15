@@ -4970,6 +4970,10 @@ fn score_region_code_coverage(
 /// signature takes `&Args` — which cannot carry it, being the docopt struct. `viz` already keeps
 /// the active locale this way (see `viz_i18n::active_locale`). One resolution per process, so a
 /// `OnceLock` is the right shape: a second write would mean two boundary sets in one run.
+///
+/// `viz smart`'s candidate fall-through (issue #4416) can FETCH more than one boundary set in a
+/// run, but writes only the one that wins the coverage gate — a rejected candidate never reaches
+/// here, so the single-write invariant is unchanged.
 static AUTO_BOUNDARY_PROVENANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 /// The auto-resolved boundary provenance for this run, if `--geojson auto` resolved one.

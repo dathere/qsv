@@ -5420,6 +5420,12 @@ fn resolve_smart_auto_geojson(
         }
         let boundaries = match crate::cmd::viz_census::resolve(region_codes, auto_spec) {
             Ok(b) => b,
+            // A transient failure is a statement about the SERVICE, not about this column —
+            // `resolve` has already tried a stale cache, so no other column can do better. Falling
+            // through would make WHICH column drew the map depend on network weather, and would
+            // report an outage as a usage error. Propagate it as itself, exactly as `probe_scores`
+            // does one level down.
+            Err(e @ crate::CliError::Network(_)) => return Err(e),
             Err(e) => {
                 failures.push((label_of(slot), e));
                 continue;

@@ -110,15 +110,25 @@ async fn serve_county_query(o: web::Data<Observed>, req: HttpRequest) -> HttpRes
     let where_clause = query_param(req.query_string(), "where");
     o.where_clauses.lock().unwrap().push(where_clause.clone());
 
-    // State 06 exists as far as a geometry-free PROBE is concerned, but its geometry fetch
-    // fails. That split is what lets a test drive a candidate column that ranks well and then
-    // cannot be fetched — the fall-through case in `resolve_smart_auto_geojson`.
-    if where_clause.starts_with("STATE IN") && where_clause.contains("06") {
+    // State 06 exists as far as a geometry-free PROBE is concerned, but its geometry fetch comes
+    // back empty. That split lets a test drive a candidate column that ranks well and then cannot
+    // be fetched — the fall-through case in `resolve_smart_auto_geojson`. Empty rather than a 5xx
+    // on purpose: a 5xx is classified TRANSIENT and must abort the whole run (a service outage is
+    // not a reason to silently draw a different column's map), so it would model the wrong thing.
+    // geometry-free probe vs. the real fetch — both answer from the same fixture
+    // State 12 answers probes but its geometry fetch is UNWELL (5xx -> transient). Distinct from
+    // state 06's empty-but-healthy answer, so the two failure classes can be told apart.
+    if where_clause.starts_with("STATE IN") && where_clause.contains("12") {
         return HttpResponse::InternalServerError().body("boom");
     }
-    // geometry-free probe vs. the real fetch — both answer from the same fixture
-    let features = if where_clause.starts_with("GEOID IN") && where_clause.contains("06") {
-        vec![county_feature("06001", 8.0), county_feature("06075", 10.0)]
+    let features = if where_clause.contains("12") {
+        vec![county_feature("12086", 12.0), county_feature("12099", 14.0)]
+    } else if where_clause.contains("06") {
+        if where_clause.starts_with("GEOID IN") {
+            vec![county_feature("06001", 8.0), county_feature("06075", 10.0)]
+        } else {
+            vec![]
+        }
     } else if where_clause.contains("42") {
         vec![county_feature("42003", 0.0), county_feature("42101", 2.0)]
     } else {
@@ -562,6 +572,65 @@ fn viz_smart_geojson_auto_falls_through_to_the_next_candidate() {
         assert!(
             clauses.iter().any(|c| c == "STATE IN (\'42\')"),
             "the surviving candidate was never fetched: {clauses:?}"
+        );
+    });
+}
+
+// The other half of the fall-through rule: a TRANSIENT failure is a statement about the service,
+// not about the column, so it must abort rather than quietly promote the next candidate. Silently
+// drawing a different column's map because one fetch timed out would make the output depend on
+// network weather — the same run would produce different maps on different days, with nothing
+// said. It must also stay classified as a network failure rather than being rewrapped as a usage
+// error. (roborev 4257.)
+#[test]
+#[serial]
+fn viz_smart_geojson_auto_transient_failure_aborts_rather_than_switching_columns() {
+    let wrk = Workdir::new(
+        "viz_smart_geojson_auto_transient_failure_aborts_rather_than_switching_columns",
+    );
+    // `fl` sits at column 0, so on the exact probe tie it ranks first; its geometry fetch 5xxs.
+    wrk.create_from_string(
+        "two.csv",
+        "fl,fips,cases\n12086,42003,10\n12086,42003,20\n12099,42101,30\n12099,42101,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "fl": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "two.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env(
+                "QSV_CACHE_DIR",
+                wrk.path("boundary-cache").to_string_lossy().to_string(),
+            );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            !out.status.success(),
+            "a service outage must not be papered over with another column's map"
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("Census request to") && stderr.contains("failed"),
+            "the outage must be reported as itself, not as a usage error: {stderr}"
+        );
+
+        // and the run stopped there — the sibling column was never fetched
+        let clauses = observed.where_clauses.lock().unwrap().clone();
+        assert!(
+            !clauses.iter().any(|c| c == "STATE IN (\'42\')"),
+            "the run continued to another column after a transient failure: {clauses:?}"
         );
     });
 }

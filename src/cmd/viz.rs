@@ -24439,25 +24439,31 @@ fn build_smart_summary_choropleth_panels(
             .iter()
             .map(String::as_str)
             .collect();
-        let framed = |f: &PipFeature| {
-            matched.contains(f.id.as_str())
-                && (excluded.is_empty() || !excluded.contains(f.id.as_str()))
-        };
-        let frame_all = !features.iter().any(framed);
-        let mut min_lon = f64::INFINITY;
-        let mut min_lat = f64::INFINITY;
-        let mut max_lon = f64::NEG_INFINITY;
-        let mut max_lat = f64::NEG_INFINITY;
-        let mut any_wrap = false;
-        for f in &features {
-            if framed(f) || (frame_all && matched.contains(f.id.as_str())) {
+        let extent = |skip_outliers: bool| {
+            let mut min_lon = f64::INFINITY;
+            let mut min_lat = f64::INFINITY;
+            let mut max_lon = f64::NEG_INFINITY;
+            let mut max_lat = f64::NEG_INFINITY;
+            let mut any_wrap = false;
+            let mut any = false;
+            for f in &features {
+                if !matched.contains(f.id.as_str())
+                    || (skip_outliers && excluded.contains(f.id.as_str()))
+                {
+                    continue;
+                }
                 min_lon = min_lon.min(f.bbox[0]);
                 min_lat = min_lat.min(f.bbox[1]);
                 max_lon = max_lon.max(f.bbox[2]);
                 max_lat = max_lat.max(f.bbox[3]);
                 any_wrap |= f.wraps_antimeridian;
+                any = true;
             }
-        }
+            any.then_some((min_lon, min_lat, max_lon, max_lat, any_wrap))
+        };
+        let (min_lon, min_lat, max_lon, max_lat, any_wrap) = extent(!excluded.is_empty())
+            .or_else(|| extent(false))
+            .unwrap_or_default();
         let lon_span = max_lon - min_lon;
         let lat_span = max_lat - min_lat;
         let use_tiles = !any_wrap

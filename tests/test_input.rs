@@ -338,9 +338,7 @@ fn test_input_both_skip_flexible() {
         .args(["--skip-lines", "5"])
         .arg(test_file);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["column1", "column2"],
         svec!["a", "1"],

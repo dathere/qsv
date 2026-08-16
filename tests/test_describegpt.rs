@@ -227,14 +227,13 @@ fn describegpt_valid_json() {
     cmd.arg("in.csv").arg("--all").args(["--format", "json"]);
 
     // Check that the output is valid JSON
-    let got = wrk.stdout::<String>(&mut cmd);
+    let got = wrk.stdout_on_success::<String>(&mut cmd);
     match serde_json::from_str::<serde_json::Value>(&got) {
         Ok(_) => (),
         Err(e) => panic!("Error parsing JSON: {e}"),
     }
 
     // Check that the command ran successfully
-    wrk.assert_success(&mut cmd);
 }
 // Test individual flags: --description
 #[test]
@@ -1176,14 +1175,13 @@ fn describegpt_larger_dataset() {
         .arg("--no-cache");
 
     // Check that the output is valid JSON
-    let got = wrk.stdout::<String>(&mut cmd);
+    let got = wrk.stdout_on_success::<String>(&mut cmd);
     match serde_json::from_str::<serde_json::Value>(&got) {
         Ok(_) => (),
         Err(e) => panic!("Error parsing JSON: {e}"),
     }
 
     // Check that the command ran successfully
-    wrk.assert_success(&mut cmd);
 }
 
 // Test with dataset containing special characters
@@ -1391,10 +1389,9 @@ fn describegpt_prompt_no_dictionary_output() {
         .arg("--no-cache");
 
     // Check that the command ran successfully
-    wrk.assert_success(&mut cmd);
 
     // Get the output and verify that it does not contain dictionary output
-    let output = wrk.stdout::<String>(&mut cmd);
+    let output = wrk.stdout_on_success::<String>(&mut cmd);
 
     // The output should not contain typical dictionary markers
     // Dictionary output typically contains structured JSON with field definitions

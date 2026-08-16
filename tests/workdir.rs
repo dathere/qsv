@@ -257,6 +257,14 @@ impl Workdir {
         Self::csv_from_stdout(&o.stdout)
     }
 
+    /// Run `cmd`, assert it exited with a non-zero status, and return its stdout
+    /// parsed as CSV. For commands that emit partial output and THEN fail — the
+    /// rows and the failure must come from the same run to mean anything.
+    pub fn read_stdout_on_error<T: Csv>(&self, cmd: &mut process::Command) -> T {
+        let o = self.run_once(cmd, Some(false));
+        Self::csv_from_stdout(&o.stdout)
+    }
+
     pub fn command(&self, command_str: &str) -> process::Command {
         let mut cmd = process::Command::new(self.qsv_bin());
         if command_str.is_empty() {

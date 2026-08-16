@@ -68,7 +68,7 @@ fn extdedupe_csvmode() {
     cmd.arg(test_file)
         .arg("boston311-100-extdeduped.csv")
         .args(["--select", "case_enquiry_id,open_dt,target_dt"]);
-    wrk.output(&mut cmd);
+    let output = wrk.output(&mut cmd);
 
     // load deduped output
     let deduped_output: String = wrk.from_str(&wrk.path("boston311-100-extdeduped.csv"));
@@ -78,9 +78,7 @@ fn extdedupe_csvmode() {
 
     assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
 
-    // Check that the correct number of rows were deduplicated
-    let output = wrk.output(&mut cmd);
-
+    // Check that the correct number of rows were deduplicated:
     // 20 duplicates should be removed
     assert!(String::from_utf8_lossy(&output.stderr).contains("20\n"));
 }
@@ -101,7 +99,7 @@ fn extdedupe_csvmode_dupesoutput() {
             "--dupes-output",
             "boston311-100-extdededuped-dupeoutput.csv",
         ]);
-    wrk.output(&mut cmd);
+    let output = wrk.output(&mut cmd);
 
     // load deduped output
     let deduped_output: String = wrk.from_str(&wrk.path("boston311-100-extdeduped.csv"));
@@ -120,7 +118,6 @@ fn extdedupe_csvmode_dupesoutput() {
     assert_eq!(dos2unix(&dupes_output), dos2unix(&expected_output));
 
     // Check that the correct number of rows were deduplicated
-    let output = wrk.output(&mut cmd);
     // 20 duplicates should be removed
     assert!(String::from_utf8_lossy(&output.stderr).contains("20\n"));
 }
@@ -136,7 +133,7 @@ fn extdedupe_csvmode_neighborhood() {
     cmd.arg(test_file)
         .arg("boston311-100-extdeduped.csv")
         .args(["--select", "neighborhood"]);
-    wrk.output(&mut cmd);
+    let output = wrk.output(&mut cmd);
 
     // load deduped output
     let deduped_output: String = wrk.from_str(&wrk.path("boston311-100-extdeduped.csv"));
@@ -146,9 +143,7 @@ fn extdedupe_csvmode_neighborhood() {
 
     assert_eq!(dos2unix(&deduped_output), dos2unix(&expected_csv));
 
-    // Check that the correct number of rows were deduplicated
-    let output = wrk.output(&mut cmd);
-
+    // Check that the correct number of rows were deduplicated:
     // 81 duplicates should be removed
     assert!(String::from_utf8_lossy(&output.stderr).contains("81\n"));
 }

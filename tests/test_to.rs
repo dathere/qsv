@@ -40,10 +40,8 @@ fn to_xlsx_roundtrip() {
     let mut cmd = wrk.command("excel");
     cmd.arg(xlsx_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, thedata);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -76,10 +74,8 @@ fn to_xlsx_roundtrip_all_strings() {
     let mut cmd = wrk.command("excel");
     cmd.arg(xlsx_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, thedata);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -121,18 +117,14 @@ fn to_xlsx_dir() {
     let mut cmd = wrk.command("excel");
     cmd.arg(xlsx_file.clone()).args(["--sheet", "cities"]);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, cities);
-
-    wrk.assert_success(&mut cmd);
 
     let mut cmd = wrk.command("excel");
     cmd.arg(xlsx_file).args(["--sheet", "places"]);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, places);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -166,9 +158,7 @@ fn to_datapackage() {
         .arg(generateddp_json_filename.clone())
         .arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected: String = r#"Table 'in' (8 rows)
 
 Field Name   Field Type  Field Format
@@ -473,10 +463,8 @@ fn to_ods_roundtrip() {
     let mut cmd = wrk.command("excel");
     cmd.arg(ods_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, thedata);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -515,19 +503,15 @@ fn to_ods_dir() {
     let mut cmd = wrk.command("excel");
     cmd.arg(ods_file.clone()).args(["--sheet", "file1"]);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, file1_data);
-
-    wrk.assert_success(&mut cmd);
 
     // Verify the content of the second sheet
     let mut cmd = wrk.command("excel");
     cmd.arg(ods_file).args(["--sheet", "file2"]);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, file2_data);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

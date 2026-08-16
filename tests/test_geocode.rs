@@ -24,9 +24,7 @@ fn geocode_suggest() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("suggest").arg("Location").arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["(41.90059, -87.85673)"],
@@ -68,9 +66,7 @@ fn geocode_suggest_select() {
     // use select syntax to select the last column
     cmd.arg("suggest").arg("_").arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["c1", "c2", "Location"],
         svec!["1", "2", "(41.90059, -87.85673)"],
@@ -96,9 +92,7 @@ fn geocode_suggestnow_default() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("suggestnow").arg("Brooklyn");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Brooklyn, New York US: 40.6501, -73.94958"],
@@ -117,9 +111,7 @@ fn geocode_suggestnow_formatstr_dyncols() {
          {state_fips:us_state_fips_code}, {county_fips:us_county_fips_code}, {timezone:timezone}",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "Location",
@@ -167,8 +159,7 @@ fn geocode_suggest_intl() {
         .args(["-f", "%city-admin1-country"])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Paris, Île-de-France Region FR"],
@@ -209,9 +200,7 @@ fn geocode_suggest_intl_country_filter() {
         .args(["-f", "%city-admin1-country"])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Paris, Texas US"],
@@ -260,9 +249,7 @@ fn geocode_suggestnow() {
         .args(["--country", "US"])
         .args(["-f", "%city-admin1-country"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["Location"], svec!["Paris, Texas US"]];
     assert_eq!(got, expected);
 }
@@ -277,9 +264,7 @@ fn geocode_reversenow() {
         "{name}, {admin2} County, {admin1} - {population} {timezone}",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Brooklyn, Kings County, New York - 2736074 America/New_York"],
@@ -355,9 +340,7 @@ fn geocode_suggest_intl_multi_country_filter() {
         .args(["-f", "%city-admin1-country"])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Paris, Île-de-France Region FR"],
@@ -399,9 +382,7 @@ fn geocode_suggest_filter_country_admin1() {
         .args(["--admin1", "US.NY,New J,Metro Manila"])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Melrose Park, Illinois, Cook US"],
@@ -448,9 +429,7 @@ fn geocode_suggest_invalid() {
         .args(["--invalid-result", "<ERROR>"])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["(41.90059, -87.85673)"],
@@ -492,9 +471,7 @@ fn geocode_suggest_dynfmt() {
         )
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["41.90059:-87.85673 - Melrose Park, Illinois:17-031 US NA USD CA,MX,CU"],
@@ -531,8 +508,7 @@ fn geocode_suggest_pretty_json() {
         .arg("%pretty-json")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec![
@@ -673,9 +649,7 @@ fn geocode_suggest_invalid_dynfmt() {
         .arg("{latitude}:{longitude} - {name}, {admin1} {invalid_field}")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Invalid dynfmt template."],
@@ -710,9 +684,7 @@ fn geocode_suggest_fmt() {
         .arg("%city-state-country")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Elmhurst, Illinois US"],
@@ -749,9 +721,7 @@ fn geocode_suggest_fmt_json() {
         .arg("%json")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected = r######"Location
 "{""cityrecord"":{""id"":4891010,""name"":""Elmhurst"",""latitude"":41.899471282958984,""longitude"":-87.94033813476562,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":4896861,""code"":""US.IL"",""name"":""Illinois""},""admin2_division"":{""id"":4890213,""code"":""US.IL.043"",""name"":""DuPage County""},""timezone"":""America/Chicago"",""names"":{""en"":""Elmhurst""},""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""Illinois""},""admin2_names"":{""en"":""DuPage County""},""population"":45957}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":327167434,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""IL"",""us_state_name"":""Illinois"",""us_state_fips_code"":""17"",""us_county"":""DuPage County"",""us_county_fips_code"":""043""}}"
@@ -787,9 +757,7 @@ fn geocode_suggest_fmt_cityrecord() {
         .arg("%cityrecord")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec![
@@ -875,9 +843,7 @@ fn geocode_reverse() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("reverse").arg("Location").arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["The Bronx, New York US"],
@@ -918,9 +884,7 @@ fn geocode_reverse_fmtstring() {
         .arg("%city-state-country")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["The Bronx, New York US"],
@@ -955,9 +919,7 @@ fn geocode_reverse_fmtstring_intl() {
         .arg("%city-admin1-country")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Barcelona, Catalonia ES"],
@@ -992,9 +954,7 @@ fn geocode_reverse_fmtstring_intl_dynfmt() {
         .arg("pop: {population} tz: {timezone}")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["pop: 1686208 tz: Europe/Madrid"],
@@ -1029,9 +989,7 @@ fn geocode_reverse_fmtstring_intl_invalid_dynfmt() {
         .arg("pop: {population} tz: {timezone} {doesnotexistfield}")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Invalid dynfmt template."],
@@ -1072,9 +1030,7 @@ fn geocode_suggest_dyncols_fmt() {
         ])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "Location",
@@ -1197,9 +1153,7 @@ fn geocode_reverse_dyncols_fmt() {
         ])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location", "city_col", "tz_col", "capital_col", "pop_col"],
         svec![
@@ -1287,9 +1241,7 @@ fn geocode_countryinfo() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("countryinfo").arg("Country").arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Country"],
         svec!["United States"],
@@ -1334,9 +1286,7 @@ fn geocode_countryinfo_formatstr() {
         ])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Country"],
         svec!["United States Pop: 327167434 in NA using Dollar all in 9629091 square kms."],
@@ -1377,9 +1327,7 @@ fn geocode_countryinfo_formatstr_pretty_json() {
         .args(["--formatstr", "%pretty-json"])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let expected = vec![
         svec!["Country"],
@@ -1465,8 +1413,7 @@ fn geocode_countryinfonow() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("countryinfonow").arg("US");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["Location"], svec!["United States"]];
     assert_eq!(got, expected);
 }
@@ -1483,9 +1430,7 @@ fn geocode_countryinfonow_formatstr() {
          {area} square kms.",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Canada Pop: 37058856 in NA using Dollar all in 9984670 square kms."],
@@ -1502,9 +1447,7 @@ fn geocode_countryinfonow_formatstr_pretty_json() {
         .arg("mx")
         .args(["--formatstr", "%pretty-json"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "{\n  \"info\": {\n    \"iso\": \"MX\",\"iso3\": \"MEX\",\"iso_numeric\": \
                     \"484\",\"fips\": \"MX\",\"name\": \"Mexico\",\"capital\": \"Mexico \
                     City\",\"area\": \"1972550\",\"population\": 126190788,\"continent\": \
@@ -1538,9 +1481,7 @@ fn geocode_iplookup() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("iplookup").arg("IP").arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["IP"],
         svec!["8.8.8.8"],
@@ -1574,9 +1515,7 @@ fn geocode_iplookup_formatstr() {
         .args(["--formatstr", "%city-state-country"])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["IP"],
         svec!["Ashburn, Virginia US"],
@@ -1609,9 +1548,7 @@ fn geocode_iplookup_formatstr_dynfmt() {
         ])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["IP"],
         svec!["City: Ashburn, State: Virginia, Country: US - America/New_York"],
@@ -1641,9 +1578,7 @@ fn geocode_iplookup_formatstr_json() {
         .args(["--formatstr", "%json"])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // The JSON output will contain the full city record, so we just check that it contains expected
     // fields
     assert!(got[1][0].contains("\"cityrecord\""));
@@ -1673,9 +1608,7 @@ fn geocode_iplookup_formatstr_pretty_json() {
         .args(["--formatstr", "%pretty-json"])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // The pretty JSON output will contain the full city record with proper formatting
     assert!(got[1][0].contains("\n  \"cityrecord\""));
     assert!(got[1][0].contains("\n  \"countryrecord\""));
@@ -1703,9 +1636,7 @@ fn geocode_iplookup_formatstr_cityrecord() {
         .args(["--formatstr", "%cityrecord"])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // The cityrecord output will contain the full ArchivedCitiesRecord debug format
     assert!(got[1][0].contains("ArchivedCitiesRecord"));
     assert!(got[1][0].contains("name: \"Ashburn\""));
@@ -1739,9 +1670,7 @@ fn geocode_iplookup_dyncols_fmt() {
         ])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["IP", "city_col", "state_col", "country_col", "tz_col"],
         svec!["3.3.3.3", "Ashburn", "Virginia", "US", "America/New_York"],
@@ -1778,9 +1707,7 @@ fn geocode_iplookup_invalid_result() {
         .args(["--invalid-result", "<NO_LOCATION>"])
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["IP"],
         svec!["Ashburn, Virginia US"],
@@ -1799,9 +1726,7 @@ fn geocode_iplookupnow() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("iplookupnow").arg("3.3.3.3");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["Ashburn, Virginia US: 39.04372, -77.48749"],
@@ -1817,9 +1742,7 @@ fn geocode_iplookupnow_url() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("iplookupnow").arg("https://nytimes.com");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["San Francisco, California US: 37.77493, -122.41942"],
@@ -1837,9 +1760,7 @@ fn geocode_iplookupnow_formatstr() {
         .arg("3.3.3.3")
         .args(["--formatstr", "%city-state-country"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["Location"], svec!["Ashburn, Virginia US"]];
     assert_eq!(got, expected);
 }
@@ -1855,9 +1776,7 @@ fn geocode_iplookupnow_formatstr_dynfmt() {
         "City: {name}, State: {admin1}, Country: {country} - {timezone}",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
         svec!["City: Ashburn, State: Virginia, Country: US - America/New_York"],
@@ -1875,9 +1794,7 @@ fn geocode_iplookupnow_formatstr_json() {
         .arg("3.3.3.3")
         .args(["--formatstr", "%json"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // The JSON output will contain the full city record
     assert!(got.contains("\"cityrecord\""));
     assert!(got.contains("\"countryrecord\""));
@@ -1894,9 +1811,7 @@ fn geocode_iplookupnow_formatstr_pretty_json() {
         .arg("3.3.3.3")
         .args(["--formatstr", "%pretty-json"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // The pretty JSON output will contain the full city record with proper formatting
     assert!(got.contains("\n  \"cityrecord\""));
     assert!(got.contains("\n  \"countryrecord\""));
@@ -1912,9 +1827,7 @@ fn geocode_iplookupnow_formatstr_cityrecord() {
         .arg("3.3.3.3")
         .args(["--formatstr", "%cityrecord"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // The cityrecord output will contain the full ArchivedCitiesRecord debug format
     assert!(got.contains("ArchivedCitiesRecord"));
     assert!(got.contains("Ashburn"));
@@ -1930,9 +1843,7 @@ fn geocode_iplookupnow_private_ip() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("iplookupnow").arg("192.168.1.1");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // Private IP should return the IP address as-is
     assert!(got.contains("192.168.1.1"));
 }
@@ -1945,9 +1856,7 @@ fn geocode_iplookupnow_localhost() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("iplookupnow").arg("127.0.0.1");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // Localhost should return the IP address as-is
     assert!(got.contains("127.0.0.1"));
 }
@@ -1960,9 +1869,7 @@ fn geocode_iplookupnow_invalid_ip() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("iplookupnow").arg("invalid-ip-address");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // Invalid IP should return the input as-is
     assert!(got.contains("invalid-ip-address"));
 }
@@ -1975,9 +1882,7 @@ fn geocode_iplookupnow_invalid_url() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("iplookupnow").arg("not-a-valid-url");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // Invalid URL should return the input as-is
     assert!(got.contains("not-a-valid-url"));
 }
@@ -2040,9 +1945,7 @@ fn geocode_opencage() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("opencage").arg("Location").arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 4);
     assert_eq!(got[0], svec!["Location"]);
     // forward & reverse rows are geocoded (changed from the input)
@@ -2064,9 +1967,7 @@ fn geocode_opencagenow_forward() {
         .arg("Brooklyn, NY")
         .args(["-f", "%location"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // %location format is "(lat, long)"
     assert!(got.contains('(') && got.contains(','));
 }
@@ -2079,9 +1980,7 @@ fn geocode_opencagenow_reverse() {
     let mut cmd = wrk.command("geocode");
     cmd.arg("opencagenow").arg("40.71427, -74.00597");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // a reverse geocode of a NYC coordinate should mention New York
     assert!(got.to_lowercase().contains("new york") || got.to_lowercase().contains("york"));
 }
@@ -2096,9 +1995,7 @@ fn geocode_opencagenow_json() {
         .arg("Brooklyn, NY")
         .args(["-f", "%json"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // %json on a now subcommand emits valid JSON (no "Location" header)
     let parsed: serde_json::Value = serde_json::from_str(got.trim()).unwrap();
     assert!(parsed.get("formatted").is_some());
@@ -2115,9 +2012,7 @@ fn geocode_opencagenow_dynfmt() {
         .arg("Brooklyn, NY")
         .args(["-f", "{components.country}"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert!(got.to_lowercase().contains("united states"));
 }
 

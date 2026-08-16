@@ -58,7 +58,7 @@ fn jsonl_simple_error() {
     let mut cmd = wrk.command("jsonl");
     cmd.arg("data.jsonl");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_error(&mut cmd);
     // 4 and 5 are not displayed as jsonl encounters an error and just stops
     let expected = vec![
         svec!["id", "father", "mother", "oldest_child", "boy"],
@@ -67,8 +67,6 @@ fn jsonl_simple_error() {
         svec!["3", "Bob", "Monika", "Jerry", "true"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -85,7 +83,7 @@ fn jsonl_simple_ignore_error() {
     let mut cmd = wrk.command("jsonl");
     cmd.arg("--ignore-errors").arg("data.jsonl");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // 4 is ignored as its invalid jsonl
     let expected = vec![
         svec!["id", "father", "mother", "oldest_child", "boy"],
@@ -95,8 +93,6 @@ fn jsonl_simple_ignore_error() {
         svec!["5", "Donald", "Melania", "Ivanka", "false"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -111,7 +107,7 @@ fn jsonl_ignore_error_first_line_malformed() {
     let mut cmd = wrk.command("jsonl");
     cmd.arg("--ignore-errors").arg("data.jsonl");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // line 1 is malformed; --ignore-errors must skip it and infer headers
     // from line 2 (the first parseable line).
     let expected = vec![
@@ -120,8 +116,6 @@ fn jsonl_ignore_error_first_line_malformed() {
         svec!["3", "Bob", "Jerry"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -131,7 +125,7 @@ fn jsonl_bare_scalars() {
     let mut cmd = wrk.command("jsonl");
     cmd.arg("data.jsonl");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // top-level non-Object roots: header is the synthesized "value" column,
     // each row is the stringified root (null -> empty cell, array -> joined).
     let expected = vec![
@@ -143,8 +137,6 @@ fn jsonl_bare_scalars() {
         svec!["1,2,3"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

@@ -867,7 +867,6 @@ fn split_filter_basic() {
             .arg(wrk.path("."))
             .arg("in.csv");
     }
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
 
     // Check that the original files were created
@@ -934,7 +933,6 @@ fn split_filter_with_padding() {
             .arg(wrk.path("."))
             .arg("in.csv");
     }
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
     // Check that the original files were created
     assert!(wrk.path("000.csv").exists());
@@ -998,7 +996,6 @@ fn split_filter_with_custom_filename() {
             .arg(wrk.path("."))
             .arg("in.csv");
     }
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
     // Check that the original files were created
     assert!(wrk.path("prefix-0.csv").exists());
@@ -1059,7 +1056,6 @@ fn split_filter_with_chunks() {
             .arg(wrk.path("."))
             .arg("in.csv");
     }
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
     // Check that the original files were created
     assert!(wrk.path("0.csv").exists());
@@ -1121,7 +1117,6 @@ fn split_filter_with_kb_size() {
             .arg(wrk.path("."))
             .arg(test_file);
     }
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
     // Check that at least some of the original files were created
     assert!(wrk.path("0.csv").exists());
@@ -1156,7 +1151,6 @@ fn split_filter_with_no_headers() {
             .arg(wrk.path("."))
             .arg("in.csv");
     }
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
     // Check that the original files were created
     assert!(wrk.path("0.csv").exists());
@@ -1217,7 +1211,6 @@ fn split_filter_with_cleanup() {
             .arg(wrk.path("."))
             .arg("in.csv");
     }
-    wrk.run(&mut cmd);
 
     wrk.assert_success(&mut cmd);
 
@@ -1281,7 +1274,6 @@ fn split_filter_without_cleanup() {
             .arg(wrk.path("."))
             .arg("in.csv");
     }
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
 
     // Check that the original files were kept
@@ -1346,7 +1338,6 @@ fn split_filter_with_cleanup_failed_command() {
             .arg(wrk.path("."))
             .arg("in.csv");
     }
-    wrk.run(&mut cmd);
     wrk.assert_err(&mut cmd);
 
     // The first chunk should still exist because it was created before the filter command failed
@@ -1385,7 +1376,6 @@ fn split_filter_with_ignore_errors() {
             .arg("in.csv");
     }
     // The command should run successfully despite the filter command failing
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
     // Check that the original files were created
     assert!(wrk.path("0.csv").exists());
@@ -1447,7 +1437,6 @@ fn split_filter_powershell() {
         .arg(&wrk.path("."))
         .arg("in.csv");
 
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
 
     // Check that the original CSV files were created
@@ -1475,7 +1464,6 @@ fn split_filter_powershell_cleanup() {
         .arg(&wrk.path("."))
         .arg("in.csv");
 
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
 
     // Check that the original CSV files were deleted after compression
@@ -1502,7 +1490,6 @@ fn split_filter_windows_paths() {
         .arg("copy /Y %FILE% {}.bak")
         .arg(&wrk.path("."))
         .arg("in.csv");
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
 
     // Check that the original files were created
@@ -1532,7 +1519,6 @@ fn split_filter_windows_long_paths() {
         .arg("copy /Y %FILE% {}.bak")
         .arg(&deep_dir)
         .arg("in.csv");
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
 
     // Check that the files were created in the deep directory

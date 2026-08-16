@@ -15,9 +15,7 @@ fn json_array_simple() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "father", "mother", "oldest_child", "boy"],
         svec!["1", "Mark", "Charlotte", "Tom", "true"],
@@ -81,9 +79,7 @@ fn json_object_simple() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "father", "mother", "oldest_child", "boy"],
         svec!["1", "Mark", "Charlotte", "Tom", "true"],
@@ -103,9 +99,7 @@ fn json_object_select_column_output() {
     cmd.args(["--select", "id,mother,oldest_child,father"])
         .arg("data.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "mother", "oldest_child", "father"],
         svec!["1", "Charlotte", "Tom", "Mark"],
@@ -130,9 +124,7 @@ fn json_object_select_column_output_reverse() {
     cmd.args(["--select", "boy,oldest_child,mother,father,id"])
         .arg("data.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["boy", "oldest_child", "mother", "father", "id"],
         svec!["true", "Tom", "Charlotte", "Mark", "1"],
@@ -165,9 +157,7 @@ fn json_fruits_stats() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"field,type,is_ascii,sum,min,max,range,min_length,max_length,mean,stddev,variance,nullcount,max_precision,sparsity
 fruit,String,true,,apple,strawberry,,5,10,,,,0,,0
 price,Float,,7,1.5,3.0,1.5,4,4,2.3333,0.6236,0.3889,0,1,0"#.to_string();
@@ -186,9 +176,7 @@ fn json_fruits_stats_slice_json() {
     let mut stats_cmd = wrk.command("stats");
     stats_cmd.arg(test_file).arg("--force");
 
-    wrk.assert_success(&mut stats_cmd);
-
-    let stats_output: String = wrk.stdout(&mut stats_cmd);
+    let stats_output: String = wrk.stdout_on_success(&mut stats_cmd);
     wrk.create_from_string("stats.csv", stats_output.as_str());
 
     // qsv slice --json
@@ -196,18 +184,14 @@ fn json_fruits_stats_slice_json() {
     slice_cmd.arg("stats.csv");
     slice_cmd.arg("--json");
 
-    wrk.assert_success(&mut slice_cmd);
-
-    let slice_output: String = wrk.stdout(&mut slice_cmd);
+    let slice_output: String = wrk.stdout_on_success(&mut slice_cmd);
     wrk.create_from_string("slice.json", slice_output.as_str());
 
     // qsv json
     let mut json_cmd = wrk.command("json");
     json_cmd.arg("slice.json");
 
-    wrk.assert_success(&mut json_cmd);
-
-    let json_output: String = wrk.stdout(&mut json_cmd);
+    let json_output: String = wrk.stdout_on_success(&mut json_cmd);
 
     assert_eq!(stats_output, json_output);
 }
@@ -236,9 +220,7 @@ fn json_house_stats_slice_json() {
     // qsv json
     let mut json_cmd = wrk.command("json");
     json_cmd.arg("slice.json");
-    let json_output: String = wrk.stdout(&mut json_cmd);
-
-    wrk.assert_success(&mut json_cmd);
+    let json_output: String = wrk.stdout_on_success(&mut json_cmd);
 
     assert_eq!(stats_output, json_output);
 }
@@ -268,8 +250,7 @@ fn json_house_diff() {
     // qsv json
     let mut json_cmd = wrk.command("json");
     json_cmd.arg("slice.json");
-    wrk.assert_success(&mut json_cmd);
-    let json_output: String = wrk.stdout(&mut json_cmd);
+    let json_output: String = wrk.stdout_on_success(&mut json_cmd);
     wrk.create_from_string("House2.csv", json_output.as_str());
 
     // qsv enum House2.csv -o House2_enum.csv
@@ -309,9 +290,7 @@ fn json_nested() {
     cmd.arg("data.json");
     cmd.args(vec!["--jaq", filter]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["fruit", "price"],
         svec!["apple", "0.5"],
@@ -333,9 +312,7 @@ fn json_nested_object() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["name", "details.color", "details.qty"],
         svec!["apple", "red", "5"],
@@ -356,9 +333,7 @@ fn json_nested_array() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["name", "tags.0", "tags.1"],
         svec!["apple", "fruit", "red"],
@@ -380,9 +355,7 @@ fn json_heterogeneous_missing_keys() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["fruit", "cost", "price", "rating"],
         svec!["apple", "1.75", "2.5", ""],
@@ -401,9 +374,7 @@ fn json_null_value_empty_field() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["a", "b"], svec!["1", ""], svec!["2", "3"]];
     assert_eq!(got, expected);
 }
@@ -435,9 +406,7 @@ fn json_literal_separator_char_preserved() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["a\u{241D}b", "c"], svec!["1", "2"]];
     assert_eq!(got, expected);
 }
@@ -498,9 +467,7 @@ fn json_2843_default_select() {
     let mut cmd = wrk.command("json");
     cmd.arg(test_file);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = wrk.load_test_resource("2843-test.csv");
 
     assert_eq!(got.trim(), expected.trim());
@@ -519,9 +486,7 @@ fn json_jaq_bigint_precision() {
     cmd.arg("data.json");
     cmd.args(vec!["--jaq", "."]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["id", "name"], svec!["9007199254740993", "alice"]];
     assert_eq!(got, expected);
 }
@@ -542,9 +507,7 @@ fn json_jaq_bigint_u64_precision() {
     cmd.arg("data.json");
     cmd.args(vec!["--jaq", "."]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["id", "name"], svec!["12345678901234567890", "alice"]];
     assert_eq!(got, expected);
 }

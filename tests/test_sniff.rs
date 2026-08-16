@@ -177,9 +177,7 @@ fn sniff_url_snappy() {
     let mut cmd = wrk.command("sniff");
     cmd.arg("https://github.com/dathere/qsv/raw/master/resources/test/boston311-100.csv.sz");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected_end = r#"Sampled Records: 100
 Estimated: false
@@ -686,9 +684,7 @@ fn sniff_github_blob_url() {
     let mut cmd = wrk.command("sniff");
     cmd.arg("https://github.com/dathere/qsv/blob/master/resources/test/boston311-100.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     // Should correctly sniff as CSV after auto-transforming to raw URL
     assert!(got.contains("Num Fields: 29"));
@@ -706,9 +702,7 @@ fn sniff_github_raw_url() {
         "https://raw.githubusercontent.com/dathere/qsv/master/resources/test/boston311-100.csv",
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     // Should correctly sniff as CSV
     assert!(got.contains("Num Fields: 29"));

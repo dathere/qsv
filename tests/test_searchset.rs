@@ -87,7 +87,7 @@ fn searchset() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
@@ -95,7 +95,6 @@ fn searchset() {
         svec!["is waldo here", "spot"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -106,12 +105,10 @@ fn searchset_indexed_parallel() {
     wrk.create_from_string("regexset.txt", "Brighton\nMission Hill");
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv");
-    wrk.assert_success(&mut cmd);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "case_enquiry_id,open_dt,target_dt,closed_dt,ontime,case_status,closure_reason,case_title,subject,reason,type,queue,department,submittedphoto,closedphoto,location,fire_district,pwd_district,city_council_district,police_district,neighborhood,neighborhood_services_district,ward,precinct,location_street_name,location_zipcode,latitude,longitude,source\n101004113747,2022-01-01 23:46:09,2022-01-17 08:30:00,2022-01-02 11:03:10,ONTIME,Closed,Case Closed. Closed date : Sun Jan 02 11:03:10 EST 2022 Noted Case noted. Duplicate case. Posts already marked for contractor to repair.  ,Street Light Outages,Public Works Department,Street Lights,Street Light Outages,PWDx_Street Light Outages,PWDx,https://311.boston.gov/media/boston/report/photos/61d12e0705bbcf180c29cfc2/report.jpg,,103 N Beacon St  Brighton  MA  02135,11,04,9,D14,Brighton,15,22,2205,103 N Beacon St,02135,42.3549,-71.143,Citizens Connect App\n101004113751,2022-01-01 23:53:44,2022-03-07 08:30:00,,OVERDUE,Open, ,Graffiti Removal,Property Management,Graffiti,Graffiti Removal,PROP_GRAF_GraffitiRemoval,PROP,https://311.boston.gov/media/boston/report/photos/61d12fc905bbcf180c29d11e/report.jpg,,1270 Commonwealth Ave  Allston  MA  02134,11,04,9,D14,Allston / Brighton,15,Ward 21,2105,1270 Commonwealth Ave,02134,42.3492,-71.1325,Citizens Connect App\n101004114593,2022-01-03 09:58:36,2022-01-04 09:58:36,2022-01-03 11:58:53,ONTIME,Closed,Case Closed. Closed date : Mon Jan 03 11:58:53 EST 2022 Resolved Picked up.  ,Pick up Dead Animal,Public Works Department,Street Cleaning,Pick up Dead Animal,PWDx_District 04: Allston/Brighton,PWDx,,,INTERSECTION of Greymere Rd & Washington St  Brighton  MA  ,11,04,8,D14,Allston / Brighton,15,22,2210,INTERSECTION Greymere Rd & Washington St,,42.3594,-71.0587,Citizens Connect App\n101004114624,2022-01-03 10:12:00,2022-05-03 10:12:36,2022-01-13 14:12:46,ONTIME,Closed,Case Closed. Closed date : Thu Jan 13 14:12:46 EST 2022 Noted Violations found. Notice written. ,SCHEDULED Pest Infestation - Residential,Inspectional Services,Housing,Pest Infestation - Residential,ISD_Housing (INTERNAL),ISD,,,20 Washington St  Brighton  MA  02135,11,04,9,D14,Allston / Brighton,15,Ward 21,2112,20 Washington St,02135,42.3425,-71.1412,Constituent Call\n101004114724,2022-01-03 11:36:21,,2022-01-04 16:31:31,ONTIME,Closed,Case Closed. Closed date : 2022-01-04 16:31:31.297 Bulk Item Automation ,Schedule Bulk Item Pickup,Public Works Department,Sanitation,Schedule a Bulk Item Pickup SS,PWDx_Schedule a Bulk Item Pickup,PWDx,,,352 Riverway  Boston  MA  02115,4,10A,8,B2,Mission Hill,14,Ward 10,1004,352 Riverway,02115,42.3335,-71.1113,Self Service\n101004115369,2022-01-04 06:15:33,2022-01-05 08:30:00,2022-01-04 10:00:57,ONTIME,Closed,Case Closed. Closed date : 2022-01-04 10:00:57.823 Case Noted ,Parking Enforcement,Transportation - Traffic Division,Enforcement & Abandoned Vehicles,Parking Enforcement,BTDT_Parking Enforcement,BTDT,https://311.boston.gov/media/boston/report/photos/61d42c4905bbcf180c2b73f2/report.jpg,,14 Wiltshire Rd  Brighton  MA  02135,11,04,9,D14,Allston / Brighton,15,Ward 22,2209,14 Wiltshire Rd,02135,42.3434,-71.1546,Citizens Connect App";
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 
     // now index the file
     let mut cmd = wrk.command("index");
@@ -121,11 +118,9 @@ fn searchset_indexed_parallel() {
     // should still have the same output
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv");
-    wrk.assert_success(&mut cmd);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -232,8 +227,7 @@ fn searchset_indexed_parallel_invert_match() {
         .arg("regexset.txt")
         .arg("--invert-match")
         .arg("data.csv");
-    let seq_out: String = wrk.stdout(&mut seq_cmd);
-    wrk.assert_success(&mut seq_cmd);
+    let seq_out: String = wrk.stdout_on_success(&mut seq_cmd);
 
     // index and run in parallel
     let mut idx_cmd = wrk.command("index");
@@ -247,8 +241,7 @@ fn searchset_indexed_parallel_invert_match() {
         .arg("--jobs")
         .arg("4")
         .arg("data.csv");
-    let par_out: String = wrk.stdout(&mut par_cmd);
-    wrk.assert_success(&mut par_cmd);
+    let par_out: String = wrk.stdout_on_success(&mut par_cmd);
 
     assert_eq!(seq_out, par_out);
 }
@@ -260,8 +253,6 @@ fn searchset_match() {
     wrk.create("regexset.txt", regexset_file());
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv");
-
-    wrk.assert_success(&mut cmd);
 
     wrk.assert_success(&mut cmd);
 }
@@ -323,7 +314,7 @@ fn searchset_unicode() {
     cmd.arg("regexset_unicode.txt").arg("data.csv");
     cmd.arg("--unicode");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
@@ -332,7 +323,6 @@ fn searchset_unicode() {
         svec!["Ḟooƀar", "ḃarḟoo"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -344,7 +334,7 @@ fn searchset_unicode_envvar() {
     cmd.env("QSV_REGEX_UNICODE", "1");
     cmd.arg("regexset_unicode.txt").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
@@ -353,7 +343,6 @@ fn searchset_unicode_envvar() {
         svec!["Ḟooƀar", "ḃarḟoo"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -388,7 +377,7 @@ fn searchset_ignore_case() {
     cmd.arg("regexset.txt").arg("data.csv");
     cmd.arg("--ignore-case");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
@@ -397,8 +386,6 @@ fn searchset_ignore_case() {
         svec!["bleh", "no, Waldo is there"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -434,14 +421,13 @@ fn searchset_no_headers() {
     cmd.arg("regexset.txt").arg("data.csv");
     cmd.arg("--no-headers");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["foobar", "barfoo"],
         svec!["barfoo", "foobar"],
         svec!["is waldo here", "spot"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -453,10 +439,9 @@ fn searchset_select() {
     cmd.arg("regexset.txt").arg("data.csv");
     cmd.arg("--select").arg("h2");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["h1", "h2"], svec!["barfoo", "foobar"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -469,10 +454,9 @@ fn searchset_select_no_headers() {
     cmd.arg("--select").arg("2");
     cmd.arg("--no-headers");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["barfoo", "foobar"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -484,7 +468,7 @@ fn searchset_invert_match() {
     cmd.arg("regexset.txt").arg("data.csv");
     cmd.arg("--invert-match");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["foobar", "barfoo"],
         svec!["a", "b"],
@@ -492,7 +476,6 @@ fn searchset_invert_match() {
         svec!["bleh", "no, Waldo is there"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -505,14 +488,13 @@ fn searchset_invert_match_no_headers() {
     cmd.arg("--invert-match");
     cmd.arg("--no-headers");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["a", "b"],
         svec!["Ḟooƀar", "ḃarḟoo"],
         svec!["bleh", "no, Waldo is there"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -525,7 +507,7 @@ fn searchset_flag() {
         .arg("data.csv")
         .args(["--flag", "flagged"]);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2", "flagged"],
         svec!["foobar", "barfoo", "1;1,2"],
@@ -536,7 +518,6 @@ fn searchset_flag() {
         svec!["bleh", "no, Waldo is there", "0"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -550,7 +531,7 @@ fn searchset_flag_invert_match() {
         .args(["--flag", "flagged"]);
     cmd.arg("--invert-match");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2", "flagged"],
         svec!["foobar", "barfoo", "0"],
@@ -561,7 +542,6 @@ fn searchset_flag_invert_match() {
         svec!["bleh", "no, Waldo is there", "6"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -622,7 +602,7 @@ fn searchset_literal() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv").arg("--literal");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foo$bar^", "barfoo"],
@@ -631,7 +611,6 @@ fn searchset_literal() {
         svec!["bleh", "no, Wal[do] is there"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -642,14 +621,13 @@ fn searchset_exact() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv").arg("--exact");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foo$bar^", "barfoo"],
         svec!["is wal[do] here", "spot"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -660,11 +638,10 @@ fn searchset_exact_with_dots() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv").arg("--exact");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // Should only match "J. Bloggs" exactly, not "F. J. Bloggs" or "JM Bloggs"
     let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -678,10 +655,9 @@ fn searchset_exact_case_insensitive() {
         .arg("--exact")
         .arg("--ignore-case");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -692,11 +668,10 @@ fn searchset_exact_no_match_substring() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv").arg("--exact");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // Should NOT match "F. J. Bloggs" even though it contains "J. Bloggs" as substring
     let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -711,7 +686,7 @@ fn searchset_comment_lines() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // Should match the same rows as the regular regexset (^foo and bar$),
     // ignoring all comment lines
     let expected = vec![
@@ -720,5 +695,4 @@ fn searchset_comment_lines() {
         svec!["barfoo", "foobar"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }

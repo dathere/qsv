@@ -530,7 +530,7 @@ fn excel_metadata() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("csv").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "index",
@@ -660,7 +660,6 @@ fn excel_metadata() {
         ],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -672,7 +671,7 @@ fn excel_short_metadata() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("short").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["index", "sheet_name", "type", "visible"],
         svec!["0", "First", "WorkSheet", "Visible"],
@@ -685,7 +684,6 @@ fn excel_short_metadata() {
         svec!["7", "Last", "WorkSheet", "Visible"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -697,7 +695,7 @@ fn excel_metadata_pretty_json() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("J").arg(xls_file);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected = r#"excel-xls.xls","format": "Excel: xls","sheet_count": 8,"has_1904_epoch": false,"sheet": [
     {
@@ -787,7 +785,6 @@ fn excel_metadata_pretty_json() {
   ],"name_count": 1,"tables": [],"table_count": 0
 }"#;
     assert!(got.ends_with(expected));
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -799,7 +796,7 @@ fn excel_metadata_xlsx_ranges_tables_pretty_json() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("J").arg(xls_file);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected = r#"excel-xlsx.xlsx","format": "Excel: xlsx","sheet_count": 7,"has_1904_epoch": false,"sheet": [
     {
@@ -931,7 +928,6 @@ fn excel_metadata_xlsx_ranges_tables_pretty_json() {
   ],"table_count": 1
 }"#;
     assert!(got.ends_with(expected));
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -943,7 +939,7 @@ fn ods_metadata() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("c").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "index",
@@ -976,7 +972,6 @@ fn ods_metadata() {
     ];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -988,14 +983,13 @@ fn ods_short_metadata() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("s").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["index", "sheet_name", "type", "visible"],
         svec!["0", "Sheet1", "WorkSheet", "Visible"],
     ];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1007,7 +1001,7 @@ fn ods_metadata_pretty_json() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("J").arg(xls_file);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"excel-ods.ods","format": "ODS","sheet_count": 1,"sheet": [
     {
       "index": 0,"name": "Sheet1","typ": "WorkSheet","visible": "Visible","headers": [
@@ -1022,7 +1016,6 @@ fn ods_metadata_pretty_json() {
 }"#;
 
     assert!(got.ends_with(expected));
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1034,7 +1027,7 @@ fn excel_metadata_sheet_types() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("csv").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "index",
@@ -1108,7 +1101,6 @@ fn excel_metadata_sheet_types() {
         ],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1120,7 +1112,7 @@ fn excel_metadata_sheet_types_xlsx() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("csv").arg(xlsx_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "index",
@@ -1195,7 +1187,6 @@ fn excel_metadata_sheet_types_xlsx() {
         ],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1207,10 +1198,9 @@ fn excel_metadata_sheet_types_xlsx_short_json() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("S").arg(xlsx_file);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"any_sheets.xlsx","format":"xlsx","sheet_count":4,"has_1904_epoch":false,"sheet":[{"index":0,"name":"Visible","typ":"WorkSheet","visible":"Visible"},{"index":1,"name":"Hidden","typ":"WorkSheet","visible":"Hidden"},{"index":2,"name":"VeryHidden","typ":"WorkSheet","visible":"VeryHidden"},{"index":3,"name":"Chart","typ":"ChartSheet","visible":"Visible"}]}"#;
     assert!(got.ends_with(expected));
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1226,10 +1216,9 @@ fn excel_metadata_1904_epoch_xlsx_short_json() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("S").arg(xlsx_file);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"excel-1904-epoch.xlsx","format":"xlsx","sheet_count":1,"has_1904_epoch":true,"sheet":[{"index":0,"name":"Dates1904","typ":"WorkSheet","visible":"Visible"}]}"#;
     assert!(got.ends_with(expected));
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1241,7 +1230,7 @@ fn excel_metadata_sheet_types_xlsb() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("csv").arg(xlsb_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "index",
@@ -1316,7 +1305,6 @@ fn excel_metadata_sheet_types_xlsb() {
         ],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1328,7 +1316,7 @@ fn excel_metadata_sheet_types_ods() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--metadata").arg("csv").arg(ods_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "index",
@@ -1402,7 +1390,6 @@ fn excel_metadata_sheet_types_ods() {
         ],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1453,7 +1440,7 @@ fn excel_integer_headers() {
     let mut cmd = wrk.command("excel");
     cmd.arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["location ", "2020", "2021", "2022"],
         svec!["Here", "1", "2", "3"],
@@ -1461,7 +1448,6 @@ fn excel_integer_headers() {
     ];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1473,11 +1459,10 @@ fn excel_range_cols() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("a:b").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["A", "B"], svec!["2", "3"], svec!["3", "4"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1489,11 +1474,10 @@ fn excel_range_rowcols() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("d2:e2").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["5", "6"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1505,11 +1489,10 @@ fn excel_range_double_letter_cols() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("z1:ab2").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["Z", "AA", "AB"], svec!["27", "28", "29"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1521,11 +1504,10 @@ fn excel_neg_float() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("b2:b").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["-100.01"], svec!["-200.02"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1537,11 +1519,10 @@ fn excel_small_neg_float() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("c2:c").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["-0.01"], svec!["-0.02"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1553,11 +1534,10 @@ fn excel_neg_int() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("d2:d").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["-1"], svec!["-2"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1569,11 +1549,10 @@ fn excel_zero() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("e2:e").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["0"], svec!["0"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1585,11 +1564,10 @@ fn excel_small_pos_float() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("f2:f").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["0.01"], svec!["0.02"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1601,11 +1579,10 @@ fn excel_pos_float() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("g2:g").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["100.01"], svec!["200.02"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1617,11 +1594,10 @@ fn excel_pos_int() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("h2:h").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["1"], svec!["2"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1633,11 +1609,10 @@ fn excel_large_floats() {
     let mut cmd = wrk.command("excel");
     cmd.arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["A"], svec!["9.22337203685478e+19"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1680,7 +1655,7 @@ fn excel_table_range() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--table").arg("Table1").arg(xlsx_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["tabc1", "tabc2", "tabc3"],
         svec!["a2", "false", "2.2"],
@@ -1691,7 +1666,6 @@ fn excel_table_range() {
     ];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1703,7 +1677,7 @@ fn excel_named_range() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("TestNamedRange").arg(xlsx_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["alpha", "1", "5"],
         svec!["beta", "2.2", "6"],
@@ -1713,7 +1687,6 @@ fn excel_named_range() {
     ];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1725,7 +1698,7 @@ fn excel_absolute_range() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("Sheet2!A1:C3").arg(xlsx_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["col1", "col2", "col3"],
         svec!["1", "e", "1.1"],
@@ -1733,7 +1706,6 @@ fn excel_absolute_range() {
     ];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1745,7 +1717,7 @@ fn excel_absolute_range2() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--range").arg("Sheet2!$A$1:$C$3").arg(xlsx_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["col1", "col2", "col3"],
         svec!["1", "e", "1.1"],
@@ -1753,7 +1725,6 @@ fn excel_absolute_range2() {
     ];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1765,11 +1736,10 @@ fn excel_cell_simple() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--cell").arg("d2").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["5"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1781,11 +1751,10 @@ fn excel_cell_sheet_qualified() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--cell").arg("Sheet2!C2").arg(xlsx_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["1.1"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1797,11 +1766,10 @@ fn excel_cell_absolute() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--cell").arg("Sheet2!$C$2").arg(xlsx_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["1.1"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1813,11 +1781,10 @@ fn excel_cell_double_letter_col() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--cell").arg("aa2").arg(xls_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["28"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1834,9 +1801,8 @@ fn excel_cell_precedence() {
         .arg(xls_file);
 
     // --cell should take precedence, so we should get d2's value, not e2's
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["5"]];
 
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }

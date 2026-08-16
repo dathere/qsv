@@ -91,8 +91,7 @@ fn extsort_issue_2391() {
     cmd.arg("issue2391-test_ids.csv")
         .args(["--select", "tc_id,pnm,pc_id"]);
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["pnm", "tc_id", "pc_id"],
         svec!["405", "139280", "9730000630075"],

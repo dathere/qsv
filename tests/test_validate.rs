@@ -25,9 +25,7 @@ fn validate_good_tab() {
     let mut cmd = wrk.command("validate");
     cmd.arg(tabfile);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"Valid: 29 Columns: ("case_enquiry_id", "open_dt", "target_dt", "closed_dt", "ontime", "case_status", "closure_reason", "case_title", "subject", "reason", "type", "queue", "department", "submittedphoto", "closedphoto", "location", "fire_district", "pwd_district", "city_council_district", "police_district", "neighborhood", "neighborhood_services_district", "ward", "precinct", "location_street_name", "location_zipcode", "latitude", "longitude", "source"); Records: 100; Delimiter: TAB"#;
     assert_eq!(got, expected);
 }
@@ -587,7 +585,7 @@ fn validate_adur_public_toilets_dataset_with_json_schema() {
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
 
-    wrk.output(&mut cmd);
+    wrk.assert_err(&mut cmd);
 
     // check invalid file output
     let invalid_output: String = wrk.from_str(&wrk.path("data.csv.invalid"));
@@ -597,7 +595,6 @@ fn validate_adur_public_toilets_dataset_with_json_schema() {
 
     let validation_error_output: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
     assert_eq!(adur_errors(), validation_error_output);
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -677,7 +674,7 @@ fn validate_adur_public_toilets_dataset_with_json_schema_url() {
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("https://raw.githubusercontent.com/dathere/qsv/master/resources/test/public-toilets-schema.json");
 
-    wrk.output(&mut cmd);
+    wrk.assert_err(&mut cmd);
 
     let invalid_output: String = wrk.from_str(&wrk.path("data.csv.invalid"));
     assert_eq!(adur_invalids().to_string(), invalid_output);
@@ -685,7 +682,6 @@ fn validate_adur_public_toilets_dataset_with_json_schema_url() {
     // check validation error output
     let validation_error_output: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
     assert_eq!(adur_errors(), validation_error_output);
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -735,8 +731,6 @@ fn validate_dynenum_with_column() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check validation-errors.tsv
@@ -757,8 +751,6 @@ fn validate_dynenum_with_column() {
     let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
     let expected_invalid = vec![svec!["3", "Orange", "fruit"], svec!["4", "Grape", "fruit"]];
     assert_eq!(invalid_records, expected_invalid);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -808,8 +800,6 @@ fn validate_dynenum_with_column_index() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check validation-errors.tsv
@@ -829,8 +819,6 @@ fn validate_dynenum_with_column_index() {
     let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
     let expected_invalid = vec![svec!["2", "vegetable", "D4"], svec!["4", "fruit", "X9"]];
     assert_eq!(invalid_records, expected_invalid);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -915,8 +903,6 @@ fn validate_dynenum_with_remote_csv() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check validation-errors.tsv
@@ -938,8 +924,6 @@ fn validate_dynenum_with_remote_csv() {
     let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
     let expected_invalid = vec![svec!["2", "mango"], svec!["4", "dragonfruit"]];
     assert_eq!(invalid_records, expected_invalid);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[cfg(feature = "lite")]
@@ -1098,8 +1082,6 @@ fn validate_unique_combined_with() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check validation-errors.tsv
@@ -1128,8 +1110,6 @@ fn validate_unique_combined_with() {
         svec!["5", "Jane Smith", "jane@example.com", "HR"],
     ];
     assert_eq!(invalid_records, expected_invalid);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1168,8 +1148,6 @@ fn validate_unique_combined_with_indices() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check validation-errors.tsv
@@ -1198,8 +1176,6 @@ fn validate_unique_combined_with_indices() {
         svec!["5", "Jane Smith", "jane@example.com", "HR"],
     ];
     assert_eq!(invalid_records, expected_invalid);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1238,8 +1214,6 @@ fn validate_unique_combined_with_both_names_and_indices() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check validation-errors.tsv
@@ -1268,8 +1242,6 @@ fn validate_unique_combined_with_both_names_and_indices() {
         svec!["5", "Jane Smith", "jane@example.com", "HR"],
     ];
     assert_eq!(invalid_records, expected_invalid);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1318,8 +1290,6 @@ fn validate_unique_combined_with_empty_values() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check validation-errors.tsv
@@ -1345,8 +1315,6 @@ fn validate_unique_combined_with_empty_values() {
     let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
     let expected_invalid = vec![svec!["5", "", "", "HR"]];
     assert_eq!(invalid_records, expected_invalid);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1385,8 +1353,6 @@ fn validate_unique_combined_with_special_chars() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check validation-errors.tsv
@@ -1415,8 +1381,6 @@ fn validate_unique_combined_with_special_chars() {
         svec!["5", "Jane-Smith", "jane.smith@example.com", "HR"],
     ];
     assert_eq!(invalid_records, expected_invalid);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1475,8 +1439,6 @@ fn validate_dynenum_with_multiple_columns() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check validation-errors.tsv
@@ -1502,8 +1464,6 @@ fn validate_dynenum_with_multiple_columns() {
     let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
     let expected_invalid = vec![svec!["3", "Orange", "fruit", "active"]];
     assert_eq!(invalid_records, expected_invalid);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[cfg(not(feature = "lite"))]
@@ -1552,8 +1512,6 @@ fn validate_dynenum_with_caching() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check validation-errors.tsv
@@ -1574,8 +1532,6 @@ fn validate_dynenum_with_caching() {
     let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
     let expected_invalid = vec![svec!["2", "Orange"]];
     assert_eq!(invalid_records, expected_invalid);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1658,8 +1614,6 @@ fn validate_unique_combined_with_mixed_names_and_indices() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check validation-errors.tsv
@@ -1693,8 +1647,6 @@ fn validate_unique_combined_with_mixed_names_and_indices() {
         svec!["5", "Jane Smith", "jane@example.com", "HR", "Manager"],
     ];
     assert_eq!(invalid_records, expected_invalid);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1752,8 +1704,6 @@ fn validate_no_format_validation() {
     // First, run validation WITH format validation (default behavior)
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check that format validation errors are present
@@ -1811,8 +1761,6 @@ fn validate_json_schema_file() {
     // Run validate command
     let mut cmd = wrk.command("validate");
     cmd.arg("schema").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_success(&mut cmd);
 }
 
@@ -2166,8 +2114,6 @@ fn validate_with_no_format_validation_success() {
     // Run validation WITH format validation (should fail)
     let mut cmd_with_format = wrk.command("validate");
     cmd_with_format.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd_with_format);
-
     wrk.assert_err(&mut cmd_with_format);
 
     // Check that format validation errors are present
@@ -2240,8 +2186,6 @@ fn validate_with_no_format_validation_mixed_errors() {
     // Run validation WITH format validation
     let mut cmd_with_format = wrk.command("validate");
     cmd_with_format.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd_with_format);
-
     wrk.assert_err(&mut cmd_with_format);
 
     // Should have both format and type errors
@@ -2262,8 +2206,6 @@ fn validate_with_no_format_validation_mixed_errors() {
         .arg("--no-format-validation")
         .arg("data.csv")
         .arg("schema.json");
-    wrk.output(&mut cmd_no_format);
-
     wrk.assert_err(&mut cmd_no_format);
 
     // Should only have type errors, no format errors
@@ -2406,8 +2348,6 @@ fn validate_with_no_format_validation_and_dynamic_enum() {
     // Run validation WITH format validation
     let mut cmd_with_format = wrk.command("validate");
     cmd_with_format.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd_with_format);
-
     wrk.assert_err(&mut cmd_with_format);
 
     // Should have both dynamicEnum and format errors
@@ -2428,8 +2368,6 @@ fn validate_with_no_format_validation_and_dynamic_enum() {
         .arg("--no-format-validation")
         .arg("data.csv")
         .arg("schema.json");
-    wrk.output(&mut cmd_no_format);
-
     wrk.assert_err(&mut cmd_no_format);
 
     // Should only have dynamicEnum errors, no format errors
@@ -2906,8 +2844,6 @@ fn validate_with_email_format_strict_default() {
     // Run validation WITH format validation (default - strict format validation)
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check that format validation errors are present
@@ -2986,8 +2922,6 @@ fn validate_with_email_format_strict_email_options() {
         .arg("--email-domain-literal")
         .arg("data.csv")
         .arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check that format validation errors are present
@@ -3028,8 +2962,6 @@ fn validate_with_email_format_strict_email_options() {
         .args(["--email-min-subdomains", "3"])
         .arg("data.csv")
         .arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check that format validation errors are present
@@ -3102,8 +3034,6 @@ fn validate_with_hostname_format_strict() {
     // Run validation WITH format validation (default - strict format validation)
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check that format validation errors are present
@@ -3169,8 +3099,6 @@ fn validate_with_ipv4_format_strict() {
     // Run validation WITH format validation (default - strict format validation)
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check that format validation errors are present
@@ -3237,8 +3165,6 @@ fn validate_with_ipv6_format_strict() {
     // Run validation WITH format validation (default - strict format validation)
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check that format validation errors are present
@@ -3352,8 +3278,6 @@ fn validate_with_multiple_formats_strict() {
     // Run validation WITH format validation (default - strict format validation)
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    wrk.output(&mut cmd);
-
     wrk.assert_err(&mut cmd);
 
     // Check that format validation errors are present for each format type

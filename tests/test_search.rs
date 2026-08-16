@@ -47,14 +47,13 @@ fn search() {
     let mut cmd = wrk.command("search");
     cmd.arg("^foo").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
         svec!["barfoo", "foobar"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -68,10 +67,9 @@ fn search_indexed_parallel() {
         .arg("data.csv")
         .arg("--jobs")
         .arg("2");
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "case_enquiry_id,open_dt,target_dt,closed_dt,ontime,case_status,closure_reason,case_title,subject,reason,type,queue,department,submittedphoto,closedphoto,location,fire_district,pwd_district,city_council_district,police_district,neighborhood,neighborhood_services_district,ward,precinct,location_street_name,location_zipcode,latitude,longitude,source\n101004154423,2022-01-31 08:05:00,,,ONTIME,Open, ,Sidewalk Cover / Manhole,Boston Water & Sewer Commission,Sidewalk Cover / Manhole,Sidewalk Cover / Manhole,INFO01_GenericeFormforOtherServiceRequestTypes,INFO,,,8 Putnam St  Charlestown  MA  02129,3,1A,1,A15,Charlestown,2,Ward 2,0201,8 Putnam St,02129,42.3735,-71.0599,Constituent Call\n101004114776,2022-01-03 12:13:47,2022-01-04 12:13:47,2022-01-03 12:41:17,ONTIME,Closed,Case Closed. Closed date : 2022-01-03 12:41:17.887 Case Resolved Area ticketed  ,Parking Enforcement,Transportation - Traffic Division,Enforcement & Abandoned Vehicles,Parking Enforcement,BTDT_Parking Enforcement,BTDT,https://311.boston.gov/media/boston/report/photos/61d32ebc05bbcf180c2b01ff/report.jpg,,126 Elm St  Charlestown  MA  02129,3,1A,1,A15,Charlestown,2,02,0204,126 Elm St,02129,42.3806,-71.0616,Citizens Connect App";
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 
     // now index the file
     let mut cmd = wrk.command("index");
@@ -84,9 +82,8 @@ fn search_indexed_parallel() {
         .arg("data.csv")
         .arg("--jobs")
         .arg("2");
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -101,10 +98,9 @@ fn search_indexed_parallel_json() {
         .arg("--jobs")
         .arg("2")
         .arg("--json");
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"[{"case_enquiry_id":"101004154423","open_dt":"2022-01-31 08:05:00","target_dt":null,"closed_dt":null,"ontime":"ONTIME","case_status":"Open","closure_reason":" ","case_title":"Sidewalk Cover / Manhole","subject":"Boston Water & Sewer Commission","reason":"Sidewalk Cover / Manhole","type":"Sidewalk Cover / Manhole","queue":"INFO01_GenericeFormforOtherServiceRequestTypes","department":"INFO","submittedphoto":null,"closedphoto":null,"location":"8 Putnam St  Charlestown  MA  02129","fire_district":"3","pwd_district":"1A","city_council_district":"1","police_district":"A15","neighborhood":"Charlestown","neighborhood_services_district":"2","ward":"Ward 2","precinct":"0201","location_street_name":"8 Putnam St","location_zipcode":"02129","latitude":"42.3735","longitude":"-71.0599","source":"Constituent Call"},{"case_enquiry_id":"101004114776","open_dt":"2022-01-03 12:13:47","target_dt":"2022-01-04 12:13:47","closed_dt":"2022-01-03 12:41:17","ontime":"ONTIME","case_status":"Closed","closure_reason":"Case Closed. Closed date : 2022-01-03 12:41:17.887 Case Resolved Area ticketed  ","case_title":"Parking Enforcement","subject":"Transportation - Traffic Division","reason":"Enforcement & Abandoned Vehicles","type":"Parking Enforcement","queue":"BTDT_Parking Enforcement","department":"BTDT","submittedphoto":"https://311.boston.gov/media/boston/report/photos/61d32ebc05bbcf180c2b01ff/report.jpg","closedphoto":null,"location":"126 Elm St  Charlestown  MA  02129","fire_district":"3","pwd_district":"1A","city_council_district":"1","police_district":"A15","neighborhood":"Charlestown","neighborhood_services_district":"2","ward":"02","precinct":"0204","location_street_name":"126 Elm St","location_zipcode":"02129","latitude":"42.3806","longitude":"-71.0616","source":"Citizens Connect App"}]"#;
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 
     // now index the file
     let mut cmd = wrk.command("index");
@@ -118,9 +114,8 @@ fn search_indexed_parallel_json() {
         .arg("--jobs")
         .arg("2")
         .arg("--json");
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -130,10 +125,9 @@ fn search_json() {
     let mut cmd = wrk.command("search");
     cmd.arg("^foo").arg("data.csv").arg("--json");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"[{"h1":"foobar","h2":"barfoo"},{"h1":"barfoo","h2":"foobar"}]"#;
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -146,10 +140,9 @@ fn search_matchonly_json() {
         .arg("--json")
         .args(["--flag", "M"]);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"[{"M":"1"},{"M":"3"}]"#;
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -167,13 +160,12 @@ fn search_json_escapes_keys() {
     let mut cmd = wrk.command("search");
     cmd.arg("^foo").arg("data.csv").arg("--json");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let parsed: Value = serde_json::from_str(&got)
         .unwrap_or_else(|e| panic!("output is not valid JSON: {e}\ngot: {got}"));
     let obj = &parsed[0];
     assert_eq!(obj[r#"he said "hi""#], Value::String("foobar".to_string()));
     assert_eq!(obj[r"back\slash"], Value::String("barfoo".to_string()));
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -187,11 +179,10 @@ fn search_json_escapes_flag_column_key() {
         .arg("--json")
         .args(["--flag", r#"M"quoted"#]);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let parsed: Value = serde_json::from_str(&got)
         .unwrap_or_else(|e| panic!("output is not valid JSON: {e}\ngot: {got}"));
     assert!(parsed[0].get(r#"M"quoted"#).is_some(), "got: {got}");
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -201,9 +192,7 @@ fn search_match() {
     let mut cmd = wrk.command("search");
     cmd.arg("^foo").arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
@@ -219,9 +208,7 @@ fn search_match_json() {
     let mut cmd = wrk.command("search");
     cmd.arg("^foo").arg("data.csv").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"[{"h1":"foobar","h2":"barfoo"},{"h1":"barfoo","h2":"foobar"}]"#;
     assert_eq!(got, expected);
 }
@@ -332,8 +319,7 @@ fn search_indexed_parallel_invert_match() {
         .arg("Charlestown")
         .arg("--invert-match")
         .arg("data.csv");
-    let seq_out: String = wrk.stdout(&mut seq_cmd);
-    wrk.assert_success(&mut seq_cmd);
+    let seq_out: String = wrk.stdout_on_success(&mut seq_cmd);
 
     // index and run in parallel
     let mut idx_cmd = wrk.command("index");
@@ -347,8 +333,7 @@ fn search_indexed_parallel_invert_match() {
         .arg("--jobs")
         .arg("4")
         .arg("data.csv");
-    let par_out: String = wrk.stdout(&mut par_cmd);
-    wrk.assert_success(&mut par_cmd);
+    let par_out: String = wrk.stdout_on_success(&mut par_cmd);
 
     assert_eq!(seq_out, par_out);
 }
@@ -392,15 +377,13 @@ fn search_ignore_case() {
     cmd.arg("^FoO").arg("data.csv");
     cmd.arg("--ignore-case");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
         svec!["barfoo", "foobar"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -431,11 +414,9 @@ fn search_unicode() {
     cmd.arg("^Ḟoo").arg("data.csv");
     cmd.arg("--unicode");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["h1", "h2"], svec!["Ḟooƀar", "ḃarḟoo"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -462,11 +443,9 @@ fn search_unicode_envvar() {
     cmd.env("QSV_REGEX_UNICODE", "1");
     cmd.arg("^Ḟoo").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["h1", "h2"], svec!["Ḟooƀar", "ḃarḟoo"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -493,11 +472,9 @@ fn search_no_headers() {
     cmd.arg("^foo").arg("data.csv");
     cmd.arg("--no-headers");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["foobar", "barfoo"], svec!["barfoo", "foobar"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -508,11 +485,9 @@ fn search_no_headers_json() {
     cmd.arg("^foo").arg("data.csv").arg("--json");
     cmd.arg("--no-headers");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"[{"0":"foobar","1":"barfoo"},{"0":"barfoo","1":"foobar"}]"#;
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -539,11 +514,9 @@ fn search_select() {
     cmd.arg("^foo").arg("data.csv");
     cmd.arg("--select").arg("h2");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["h1", "h2"], svec!["barfoo", "foobar"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -571,11 +544,9 @@ fn search_select_no_headers() {
     cmd.arg("--select").arg("2");
     cmd.arg("--no-headers");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["barfoo", "foobar"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -603,15 +574,13 @@ fn search_invert_match() {
     cmd.arg("^foo").arg("data.csv");
     cmd.arg("--invert-match");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["foobar", "barfoo"],
         svec!["a", "b"],
         svec!["Ḟooƀar", "ḃarḟoo"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -644,11 +613,9 @@ fn search_invert_match_no_headers() {
     cmd.arg("--invert-match");
     cmd.arg("--no-headers");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["a", "b"], svec!["Ḟooƀar", "ḃarḟoo"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -675,7 +642,7 @@ fn search_flag() {
     let mut cmd = wrk.command("search");
     cmd.arg("^foo").arg("data.csv").args(["--flag", "flagged"]);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2", "flagged"],
         svec!["foobar", "barfoo", "1"],
@@ -684,7 +651,6 @@ fn search_flag() {
         svec!["Ḟooƀar", "ḃarḟoo", "0"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -695,7 +661,7 @@ fn search_flag_no_headers() {
     cmd.arg("^foo").arg("data.csv").args(["--flag", "flagged"]);
     cmd.arg("--no-headers");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["foobar", "barfoo", "1"],
         svec!["a", "b", "0"],
@@ -703,7 +669,6 @@ fn search_flag_no_headers() {
         svec!["Ḟooƀar", "ḃarḟoo", "0"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -713,10 +678,9 @@ fn search_flag_match_only() {
     let mut cmd = wrk.command("search");
     cmd.arg("^foo").arg("data.csv").args(["--flag", "M"]);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["M"], svec!["1"], svec!["3"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -729,10 +693,9 @@ fn search_flag_match_only_no_headers() {
         .args(["--flag", "M"])
         .arg("--no-headers");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["1"], svec!["3"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -743,7 +706,7 @@ fn search_flag_invert_match() {
     cmd.arg("^foo").arg("data.csv").args(["--flag", "flagged"]);
     cmd.arg("--invert-match");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2", "flagged"],
         svec!["foobar", "barfoo", "0"],
@@ -752,8 +715,6 @@ fn search_flag_invert_match() {
         svec!["Ḟooƀar", "ḃarḟoo", "4"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -764,11 +725,9 @@ fn search_flag_invert_match_matchonly() {
     cmd.arg("^foo").arg("data.csv").args(["--flag", "M"]);
     cmd.arg("--invert-match");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["M"], svec!["2"], svec!["4"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -877,11 +836,9 @@ fn search_literal() {
     let mut cmd = wrk.command("search");
     cmd.arg("^bar").arg("data.csv").arg("--literal");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["foo^bar", "barfoo"], svec!["^barfoo", "foobar"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -891,11 +848,9 @@ fn search_exact() {
     let mut cmd = wrk.command("search");
     cmd.arg("--exact").arg("J. Bloggs").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -905,11 +860,9 @@ fn search_exact_with_special_chars() {
     let mut cmd = wrk.command("search");
     cmd.arg("--exact").arg("foo^bar").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["h1", "h2"], svec!["foo^bar", "barfoo"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -919,12 +872,10 @@ fn search_exact_no_match_substring() {
     let mut cmd = wrk.command("search");
     cmd.arg("--exact").arg("J. Bloggs").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // Should only match "J. Bloggs", not "F. J. Bloggs" (substring)
     let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -937,11 +888,9 @@ fn search_exact_case_insensitive() {
         .arg("j. bloggs")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 // Test for https://github.com/dathere/qsv/issues/3437
@@ -954,11 +903,9 @@ fn search_no_headers_envvar() {
     cmd.env("QSV_NO_HEADERS", "1");
     cmd.arg("^foo").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["foobar", "barfoo"], svec!["barfoo", "foobar"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -970,11 +917,9 @@ fn search_no_headers_envvar_select() {
     cmd.arg("^foo").arg("data.csv");
     cmd.arg("--select").arg("1");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["foobar", "barfoo"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 // Exact reproduction of https://github.com/dathere/qsv/issues/3437
@@ -996,9 +941,7 @@ fn search_no_headers_envvar_issue_3437() {
     cmd.env("QSV_NO_HEADERS", "1");
     cmd.arg("-s").arg("1").arg("@").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["@", "bar"], svec!["@", "bar"], svec!["@", "bar"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }

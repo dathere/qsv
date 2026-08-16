@@ -470,7 +470,18 @@ choropleth options:
                            `viz smart` a rate panel is added BESIDE the count panel.
                            Regions whose denominator is missing or non-positive are
                            excluded from the rate and reported. The per-region scale
-                           (per 1,000 / 10,000 / 100,000) is chosen automatically.
+                           (per 1,000 / 10,000 / 100,000 / 1,000,000 / 1,000,000,000)
+                           is chosen automatically.
+    --denominator-unit <u>
+                           Unit the denominator values are IN, so qsv can convert them
+                           and name them. Without this, an area denominator is divided
+                           in its raw unit and labelled with its raw field name — real
+                           boundary files carry land area in square METRES, which reads
+                           as "per 100,000 AREALAND" at approximately zero everywhere.
+                           One of: m2, km2 (also spelled m², km², sqm, sqkm). Values in
+                           m2 are converted to km², so the map reads "per km²". Never
+                           inferred from a field name; boundaries fetched by `--geojson
+                           auto` declare their own units and need no flag.
     --denominator <col>    Column holding each region's DENOMINATOR, as an alternative
                            to reading it from the GeoJSON. The value must be constant
                            within a region (it describes the region, not the row).
@@ -1779,6 +1790,7 @@ struct Args {
     flag_feature_name_key:   Option<String>,
     flag_denominator_key:    Option<String>,
     flag_denominator:        Option<SelectColumns>,
+    flag_denominator_unit:   Option<String>,
     flag_geocode:            bool,
     flag_no_snap:            bool,
     flag_snap_max_dist:      Option<f64>,
@@ -1928,6 +1940,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "--denominator and --denominator-key are mutually exclusive: both name the same \
              per-region denominator, one from a dataset column and one from a --geojson feature \
              property. Supply exactly one."
+        );
+    }
+    // An unrecognized unit is a typo, not a reason to quietly divide by raw metres: reject it here
+    // rather than letting it fall through to whatever the dictionary or boundary file declares
+    // (issue #4414).
+    if let Some(unit) = args.flag_denominator_unit.as_deref()
+        && parse_denominator_unit(unit).is_none()
+    {
+        return fail_incorrectusage_clierror!(
+            "--denominator-unit '{unit}' is not a unit qsv converts. Use one of: m2, km2 (also \
+             spelled m², km², sqm, sqkm)."
+        );
+    }
+    if args.flag_denominator_unit.is_some()
+        && args.flag_denominator_key.is_none()
+        && args.flag_denominator.is_none()
+    {
+        return fail_incorrectusage_clierror!(
+            "--denominator-unit names the unit of a denominator, so it needs --denominator or \
+             --denominator-key."
         );
     }
     if args.flag_denominator_key.is_some() {
@@ -6185,14 +6217,20 @@ fn build_rate_series(locs: &[String], values: &[f64], denoms: &HashMap<String, f
     out
 }
 
-/// Choose the display scale for a set of raw rates: the smallest of 1, 1,000, 10,000 and 100,000
-/// that puts the MEDIAN rate in [1, 1000), so the colorbar reads "37 per 100,000" rather than
-/// "0.00037" or "3,700,000". The median (not the mean or max) is what sets it, so one freak region
-/// can't rescale the whole map.
+/// Choose the display scale for a set of raw rates: the smallest of 1, 1,000, 10,000, 100,000,
+/// 1,000,000 and 1,000,000,000 that puts the MEDIAN rate in [1, 1000), so the colorbar reads
+/// "37 per 100,000" rather than "0.00037" or "3,700,000". The median (not the mean or max) is what
+/// sets it, so one freak region can't rescale the whole map.
 ///
 /// Falls back to 1,000 — the per-mille convention most readers already have an intuition for —
 /// when there is nothing to measure (no finite positive rate). A median at or above 1 gets scale 1
 /// (the quantity is already more than one event per unit, so scaling it up would only add noise).
+///
+/// The top two rungs exist for denominators whose unit is far smaller than the events they carry
+/// (issue #4414): a count per square METRE lands around 1e-9, which the old 100,000 ceiling
+/// rendered as 0.0001 — a map that reads as empty everywhere while exiting 0. A declared unit is
+/// the real fix, since "per 1,000,000,000 AREALAND" is true but still a poor headline; these rungs
+/// bound the damage when no unit is declared.
 fn rate_scale(rates: &[f64]) -> u32 {
     let mut finite: Vec<f64> = rates
         .iter()
@@ -6209,15 +6247,136 @@ fn rate_scale(rates: &[f64]) -> u32 {
     } else {
         (finite[m - 1] + finite[m]) / 2.0
     };
-    for scale in [1_u32, 1_000, 10_000, 100_000] {
+    for scale in [1_u32, 1_000, 10_000, 100_000, 1_000_000, 1_000_000_000] {
         let scaled = median * f64::from(scale);
         if (1.0..1000.0).contains(&scaled) {
             return scale;
         }
     }
-    // median below 1/100,000 (an extremely rare event) or at/above 1,000 per unit: clamp to the
-    // nearest usable end of the ladder rather than inventing a scale outside it.
-    if median >= 1.0 { 1 } else { 100_000 }
+    // median below 1/1,000,000,000 or at/above 1,000 per unit: clamp to the nearest usable end of
+    // the ladder rather than inventing a scale outside it.
+    if median >= 1.0 { 1 } else { 1_000_000_000 }
+}
+
+/// A declared denominator unit: how to convert the raw values, and what to call the result.
+///
+/// `factor` multiplies the raw denominator, so a rate divided by the converted value is already
+/// expressed in `noun` — the conversion happens on the VALUES rather than at display time, so the
+/// colorbar, the panel title and the per-region hover (which prints the denominator itself) cannot
+/// disagree about what unit they are showing.
+#[derive(Clone, Debug, PartialEq)]
+struct DenominatorUnit {
+    factor: f64,
+    noun:   String,
+}
+
+/// Resolve a declared unit token (`m2`, `km²`, …) to its conversion and display symbol.
+///
+/// Deliberately a CLOSED, tiny vocabulary. qsv never infers a unit from a field name — that is the
+/// #4394 rule, and guessing here would silently restate what a map means. Area is the case that
+/// exists: real published boundary files (and every `--geojson auto` fetch) carry land area in
+/// square metres, where a raw rate lands around 1e-9 and reads as zero. Units are declared, so
+/// widening this table is one row whenever a real dataset needs one.
+fn parse_denominator_unit(token: &str) -> Option<DenominatorUnit> {
+    let folded = token.trim().to_ascii_lowercase();
+    let (factor, noun) = match folded.as_str() {
+        // square metres -> square kilometres. Densities per m² are ~1e-6 of the per-km² figure,
+        // which no scale rung can rescue into a readable headline.
+        "m2" | "m²" | "sqm" | "square_meters" | "square_metres" => (1e-6, "km²"),
+        // already the target unit: no conversion, but the declaration still supplies the SYMBOL,
+        // which is the half a raw field name (`ALAND_KM`) gets wrong on its own.
+        "km2" | "km²" | "sqkm" | "square_kilometers" | "square_kilometres" => (1.0, "km²"),
+        _ => return None,
+    };
+    Some(DenominatorUnit {
+        factor,
+        noun: noun.to_string(),
+    })
+}
+
+/// The unit declared for `key` on this boundary document, if any.
+///
+/// Read from the `x-qsv.property_units` foreign member that `viz_census::fetch_layer` stamps onto
+/// an auto-resolved set (issue #4414). A user-supplied `--geojson` normally carries no such member
+/// and so declares nothing — which is correct: qsv knows the units of what IT fetched, and must
+/// not assume anything about a file it was handed.
+fn geojson_declared_unit(geojson: &serde_json::Value, key: &str) -> Option<DenominatorUnit> {
+    geojson
+        .get("x-qsv")?
+        .get("property_units")?
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .and_then(parse_denominator_unit)
+}
+
+/// Resolve the denominator's unit from the most authoritative source that declares one.
+///
+/// Precedence, most explicit first: the `--denominator-unit` FLAG (the user speaking now), then a
+/// dictionary declaration (the sidecar speaking from whenever it was written), then the boundary
+/// document's own declaration (qsv speaking about what it fetched). An unrecognized flag token is
+/// the caller's problem to report; here it simply declares nothing.
+fn resolve_denominator_unit(
+    flag: Option<&str>,
+    dict: Option<&str>,
+    geojson: Option<&serde_json::Value>,
+    key: Option<&str>,
+) -> Option<DenominatorUnit> {
+    if let Some(token) = flag
+        && let Some(unit) = parse_denominator_unit(token)
+    {
+        return Some(unit);
+    }
+    if let Some(token) = dict
+        && let Some(unit) = parse_denominator_unit(token)
+    {
+        return Some(unit);
+    }
+    let (geojson, key) = (geojson?, key?);
+    geojson_declared_unit(geojson, key)
+}
+
+/// How a denominator is named once its declared unit (if any) has been applied.
+struct DenominatorLabels {
+    /// plural/singular noun for the "per N nouns" phrase
+    noun:  (String, String),
+    /// what the per-region hover calls the denominator VALUE it prints
+    hover: String,
+}
+
+/// Apply a declared unit to a per-region denominator map, returning how to name the result.
+///
+/// Converts in place so `build_rate_series` divides by the converted quantity — see
+/// [`DenominatorUnit`] for why the values rather than the display are scaled. The hover label
+/// moves with the values for the same reason: printing a converted figure under the raw field
+/// name ("AREALAND: 12,542" for 12,542 km²) would contradict the colorbar in the same panel.
+///
+/// With no declared unit the map is untouched, the noun falls back to `denominator_noun`'s
+/// verbatim rule, and the hover keeps naming the field exactly as before.
+fn apply_denominator_unit(
+    denoms: &mut HashMap<String, f64>,
+    label: &str,
+    unit: Option<&DenominatorUnit>,
+) -> DenominatorLabels {
+    match unit {
+        Some(unit) => {
+            if (unit.factor - 1.0).abs() > f64::EPSILON {
+                for value in denoms.values_mut() {
+                    *value *= unit.factor;
+                }
+            }
+            // a unit symbol is the same in both forms ("per km²", "per 1,000 km²") and is never
+            // translated or pluralized — same reasoning as the verbatim branch of
+            // `denominator_noun`, which a symbol satisfies by construction
+            DenominatorLabels {
+                noun:  (unit.noun.clone(), unit.noun.clone()),
+                hover: unit.noun.clone(),
+            }
+        },
+        None => DenominatorLabels {
+            noun:  denominator_noun(label),
+            hover: label.to_string(),
+        },
+    }
 }
 
 /// The noun a rate is measured against, in plural and singular form, e.g. `("residents",
@@ -7365,7 +7524,7 @@ fn build_choropleth_plot(
     // z values become the scaled rate, the colorbar says so, and the hover keeps the raw numerator
     // visible so the underlying volume is not lost.
     if denominator_requested {
-        let (denoms, denom_label) = match (
+        let (mut denoms, denom_label, declared_unit) = match (
             args.flag_denominator_key.as_deref(),
             column_denominator.take(),
         ) {
@@ -7380,14 +7539,31 @@ fn build_choropleth_plot(
                 };
                 let id_key = args.flag_feature_id_key.as_deref().unwrap_or("id");
                 let label = key.rsplit('.').next().unwrap_or(key).to_string();
-                (build_denominator_map(geojson, id_key, key), label)
+                // the boundary document may DECLARE this property's unit (issue #4414) — every
+                // `--geojson auto` set does
+                let unit = resolve_denominator_unit(
+                    args.flag_denominator_unit.as_deref(),
+                    None,
+                    Some(geojson),
+                    Some(key),
+                );
+                (build_denominator_map(geojson, id_key, key), label, unit)
             },
-            (None, Some(pair)) => pair,
+            (None, Some((map, label))) => {
+                let unit = resolve_denominator_unit(
+                    args.flag_denominator_unit.as_deref(),
+                    None,
+                    None,
+                    None,
+                );
+                (map, label, unit)
+            },
             // unreachable: `denominator_requested` is exactly "one of the two flags is set", and
             // the column path always returns its pair. Fall through to an empty map, which the
             // <2-region check below reports rather than panicking.
-            (None, None) => (HashMap::new(), String::new()),
+            (None, None) => (HashMap::new(), String::new(), None),
         };
+        let unit_noun = apply_denominator_unit(&mut denoms, &denom_label, declared_unit.as_ref());
         let series = build_rate_series(&locations, &z, &denoms);
         if series.locs.len() < 2 {
             return fail_clierror!(
@@ -7399,8 +7575,7 @@ fn build_choropleth_plot(
             );
         }
         let scale = rate_scale(&series.rates);
-        let noun = denominator_noun(&denom_label);
-        let per_phrase = rate_per_phrase(scale, &noun);
+        let per_phrase = rate_per_phrase(scale, &unit_noun.noun);
         let scaled: Vec<f64> = series.rates.iter().map(|r| r * f64::from(scale)).collect();
         // region names for the rate hover: recomputed here because the raw-count hover built
         // upstream is discarded, and the geocoded/built-in-geometry paths have no feature names.
@@ -7428,7 +7603,7 @@ fn build_choropleth_plot(
             &series.denominators,
             &scaled,
             &measure_label,
-            &denom_label,
+            &unit_noun.hover,
             &per_phrase,
         );
         measure_label = t!(
@@ -16717,55 +16892,63 @@ enum DenominatorSource {
 /// `derive_semantics`; `Agg` is the existing chart-aggregation enum, reused here.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 struct ColSemantics {
-    route:       Route,
-    agg:         Option<Agg>,
-    concept:     String,
-    label:       String,
+    route:            Route,
+    agg:              Option<Agg>,
+    concept:          String,
+    label:            String,
     /// ISO-4217 code from the dictionary (`x-qsv.currency`), carried here so the panel-building
     /// pass — which sees `ColSemantics`, not the `DictData` — can name the currency in the
     /// column's subtitle.
-    currency:    Option<String>,
+    currency:         Option<String>,
     /// Denominator column NAME from the dictionary (`x-qsv.denominator.column`), carried here so
     /// the region-choropleth builder — which sees `ColSemantics`, not the `DictData` — can turn a
     /// raw-count region map into a rate map (issue #4394). Still just a name at this point: it is
     /// resolved against the actual columns, and validated as region-constant, at that site.
-    denominator: Option<String>,
+    denominator:      Option<String>,
+    /// `x-qsv.denominator.unit`: the unit that denominator column's values are IN, so an area
+    /// denominator can be converted and named rather than divided in its raw unit and labelled
+    /// with its raw field name (issue #4414). Only a declared unit is honored — never one guessed
+    /// from a column name.
+    denominator_unit: Option<String>,
 }
 
 /// One column's semantic signals parsed from a describegpt Data Dictionary.
 #[derive(Clone, Debug, Default)]
 struct DictRow {
-    content_type: String,
-    role:         String,
-    concept:      String,
-    label:        String,
-    description:  String,
+    content_type:     String,
+    role:             String,
+    concept:          String,
+    label:            String,
+    description:      String,
     /// Optional `[min, max]` domain for a KPI gauge tile (`x-qsv.gauge_range`), set only for
     /// numeric measures whose concept implies a canonical scale (percent, ratio, rating, score).
     /// The KPI builder still validates that the observed value falls inside the range before
     /// drawing a gauge (else it falls back to a plain number tile).
-    gauge_range:  Option<[f64; 2]>,
+    gauge_range:      Option<[f64; 2]>,
     /// Optional KPI delta reference (`x-qsv.target`): a semantically-justified TARGET/goal (e.g.
     /// 100% completeness, 0 error-rate), never a fabricated prior-period baseline. Rendered as a
     /// "vs target" delta.
-    target:       Option<f64>,
+    target:           Option<f64>,
     /// Optional ISO-4217 alpha-3 code (`x-qsv.currency`) naming the currency a monetary measure
     /// is denominated in. Prefixes the column's KPI tile with the currency symbol and names the
     /// currency in its panel subtitle. Normalized (trimmed/uppercased/shape-checked) on read,
     /// because a hand-edited sidecar never passed through describegpt's validator.
-    currency:     Option<String>,
+    currency:         Option<String>,
     /// Optional explicit aggregation (`x-qsv.aggregation`, `sum`|`mean`) declaring how this
     /// numeric measure combines across a group. The language-neutral, authoritative answer to a
     /// question `is_intensive_measure` can only guess at from the column NAME (issue #4401), so it
     /// OVERRIDES that heuristic in BOTH directions — it can force Mean on a name that reads as
     /// additive, and equally force Sum on one the heuristic would wrongly average. Re-verified on
     /// read, because a hand-edited sidecar never passed through describegpt's validator.
-    aggregation:  Option<Agg>,
+    aggregation:      Option<Agg>,
     /// Optional denominator column name (`x-qsv.denominator.column`) declared on a REGION-CODE
     /// column, naming the column that holds each region's denominator (its population, households,
     /// area) so a region map can chart a RATE beside the raw count (issue #4394). Shape-checked
     /// only on read; resolved and validated where it is consumed.
-    denominator:  Option<String>,
+    denominator:      Option<String>,
+    /// `x-qsv.denominator.unit`: what unit those values are in (issue #4414). Shape-checked only,
+    /// like its sibling; an unrecognized token simply declares nothing at the consumption site.
+    denominator_unit: Option<String>,
 }
 
 /// Which form a declared pipeline is drawn as (issue #4222).
@@ -17250,6 +17433,9 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     // Carried through unconditionally like `currency`: it is declared on the REGION column (a
     // dimension), so gating it on a measure route would drop every legitimate use.
     let denominator = row.denominator.clone();
+    // carried unconditionally like `denominator`: it qualifies that hint, so gating it separately
+    // could leave a converted denominator labelled in its raw unit
+    let denominator_unit = row.denominator_unit.clone();
     // An explicit `x-qsv.aggregation` is the dictionary AUTHOR stating how the measure combines,
     // already re-verified in `parse_dictionary_semantics`. It outranks every heuristic below —
     // both the intensive downgrade and the `measure.count` exemption — because it is the one
@@ -17281,6 +17467,7 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
                 label: label.clone(),
                 currency: currency.clone(),
                 denominator: denominator.clone(),
+                denominator_unit: denominator_unit.clone(),
             },
             s,
         )
@@ -17312,6 +17499,7 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
         label,
         currency,
         denominator,
+        denominator_unit,
     }
 }
 
@@ -17709,15 +17897,18 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
             // failure degrades to a skip note rather than a hard error ("shape at parse time,
             // validity at the consumption site", as `xq_pipelines` documents). A dictionary is a
             // hand-editable sidecar, so a bad hint must never take the whole Data Schematic down.
-            let xq_denominator = || -> Option<String> {
+            let xq_denominator_field = |field: &str| -> Option<String> {
                 xq.and_then(|x| x.get("denominator"))
                     .and_then(serde_json::Value::as_object)?
-                    .get("column")
+                    .get(field)
                     .and_then(serde_json::Value::as_str)
                     .map(str::trim)
                     .filter(|s| !s.is_empty())
                     .map(ToString::to_string)
             };
+            let xq_denominator = || xq_denominator_field("column");
+            // `unit` rides beside `column` in the same object (issue #4414)
+            let xq_denominator_unit = || xq_denominator_field("unit");
             let label = prop
                 .get("title")
                 .and_then(serde_json::Value::as_str)
@@ -17741,6 +17932,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     currency: xq_currency(),
                     aggregation: xq_aggregation(),
                     denominator: xq_denominator(),
+                    denominator_unit: xq_denominator_unit(),
                 },
             );
         }
@@ -17804,18 +17996,19 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
         rows.insert(
             name.to_string(),
             DictRow {
-                content_type: from_field("content_type"),
-                role:         from_field("role"),
-                concept:      from_field("concept"),
-                label:        from_field("label"),
-                description:  from_field("description"),
+                content_type:     from_field("content_type"),
+                role:             from_field("role"),
+                concept:          from_field("concept"),
+                label:            from_field("label"),
+                description:      from_field("description"),
                 // legacy plain-json dictionaries don't carry KPI gauge/target/currency,
                 // aggregation or denominator hints
-                gauge_range:  None,
-                target:       None,
-                currency:     None,
-                aggregation:  None,
-                denominator:  None,
+                gauge_range:      None,
+                target:           None,
+                currency:         None,
+                aggregation:      None,
+                denominator:      None,
+                denominator_unit: None,
             },
         );
     }
@@ -23803,6 +23996,10 @@ fn build_smart_pip_choropleth_panel(
     coord_decimals: Option<u32>,
     loaded_geojson: Option<&serde_json::Value>,
     denominator_key: Option<&str>,
+    // `--denominator-unit`'s raw token, so an area denominator can be converted and named rather
+    // than divided in its raw unit (issue #4414). The boundary document's own declaration is read
+    // from `geojson` below and needs no parameter.
+    denominator_unit: Option<&str>,
     grain_unit: Option<&str>,
     grain: Option<&str>,
 ) -> CliResult<Option<Vec<Panel>>> {
@@ -24023,17 +24220,18 @@ fn build_smart_pip_choropleth_panel(
     // for a dataset denominator column to be constant within.
     let mut rate_charted = false;
     if let Some(denom_key) = denominator_key {
-        let denoms = build_denominator_map(geojson, feature_id_key, denom_key);
+        let mut denoms = build_denominator_map(geojson, feature_id_key, denom_key);
+        let denom_label = denom_key
+            .rsplit('.')
+            .next()
+            .unwrap_or(denom_key)
+            .to_string();
+        let unit = resolve_denominator_unit(denominator_unit, None, Some(geojson), Some(denom_key));
+        let noun = apply_denominator_unit(&mut denoms, &denom_label, unit.as_ref());
         let series = build_rate_series(&order, &z, &denoms);
         if series.locs.len() >= 2 {
             let scale = rate_scale(&series.rates);
-            let denom_label = denom_key
-                .rsplit('.')
-                .next()
-                .unwrap_or(denom_key)
-                .to_string();
-            let noun = denominator_noun(&denom_label);
-            let per_phrase = rate_per_phrase(scale, &noun);
+            let per_phrase = rate_per_phrase(scale, &noun.noun);
             let scaled: Vec<f64> = series.rates.iter().map(|r| r * f64::from(scale)).collect();
             let unit = count_unit_from_grain(grain_unit, grain);
             let rate_names = aligned_region_names(&features, &series.locs);
@@ -24044,7 +24242,7 @@ fn build_smart_pip_choropleth_panel(
                 &series.denominators,
                 &scaled,
                 &unit,
-                &denom_label,
+                &noun.hover,
                 &per_phrase,
             );
             let mut title = t!(
@@ -24635,25 +24833,41 @@ fn build_smart_summary_choropleth_panels(
 
     let mut rate_charted = false;
     if let Some(source) = denom_source {
-        let (denoms, denom_label) = match &source {
+        // The unit the denominator is IN (issue #4414), declared never guessed. For a GeoJSON
+        // property the document may declare it — every `--geojson auto` set does; for a dictionary
+        // column it rides beside the column name as `x-qsv.denominator.unit`. The flag outranks
+        // both.
+        let (mut denoms, denom_label, declared_unit) = match &source {
             DenominatorSource::GeojsonProperty(key) => (
                 build_denominator_map(geojson, feature_id_key, key),
                 key.rsplit('.').next().unwrap_or(key).to_string(),
+                resolve_denominator_unit(
+                    args.flag_denominator_unit.as_deref(),
+                    None,
+                    Some(geojson),
+                    Some(key),
+                ),
             ),
             DenominatorSource::Column(idx) => {
                 // drop the unusable values only now: they had to survive the constancy check
                 // above to be compared against their region's other rows.
                 let mut m = std::mem::take(&mut denom_by_cand[ci]);
                 m.retain(|_, d| *d > 0.0);
-                (m, label_of(*idx))
+                let unit = resolve_denominator_unit(
+                    args.flag_denominator_unit.as_deref(),
+                    col_sems[region_idx].denominator_unit.as_deref(),
+                    None,
+                    None,
+                );
+                (m, label_of(*idx), unit)
             },
         };
+        let noun = apply_denominator_unit(&mut denoms, &denom_label, declared_unit.as_ref());
         let series = build_rate_series(&count_locs, &count_z, &denoms);
         // one rated region is a number, not a map: there is nothing to compare it against.
         if series.locs.len() >= 2 {
             let scale = rate_scale(&series.rates);
-            let noun = denominator_noun(&denom_label);
-            let per_phrase = rate_per_phrase(scale, &noun);
+            let per_phrase = rate_per_phrase(scale, &noun.noun);
             let scaled: Vec<f64> = series.rates.iter().map(|r| r * f64::from(scale)).collect();
             let unit = count_unit_from_grain(grain_unit, grain);
             let names = aligned_region_names(&features, &series.locs);
@@ -24664,7 +24878,7 @@ fn build_smart_summary_choropleth_panels(
                 &series.denominators,
                 &scaled,
                 &unit,
-                &denom_label,
+                &noun.hover,
                 &per_phrase,
             );
             let mut title = t!(
@@ -25578,6 +25792,7 @@ fn build_map_panel(
             coord_decimals,
             loaded_geojson,
             args.flag_denominator_key.as_deref(),
+            args.flag_denominator_unit.as_deref(),
             dict.and_then(|d| d.grain_unit.as_deref()),
             dict.and_then(|d| d.grain.as_deref()),
         )?;
@@ -37198,6 +37413,118 @@ mod tests {
         assert_eq!(rate_scale(&[0.0, 0.0]), 1_000, "all zero");
         assert_eq!(rate_scale(&[f64::NAN, f64::INFINITY]), 1_000, "no finite");
         assert_eq!(rate_scale(&[0.0025]), 1_000, "single");
+        // issue #4414: a denominator whose unit is far smaller than the events it carries (counts
+        // per square METRE) used to clamp at 100,000 and render as 0.0001 everywhere
+        assert_eq!(
+            rate_scale(&[9.6e-9, 1.6e-8]),
+            1_000_000_000,
+            "per square metre"
+        );
+        assert_eq!(rate_scale(&[2.0e-6, 3.0e-6]), 1_000_000, "per hectare-ish");
+        // still clamps at the new floor rather than inventing a rung beyond it
+        assert_eq!(
+            rate_scale(&[1.0e-15]),
+            1_000_000_000,
+            "below the widest rung"
+        );
+    }
+
+    #[test]
+    fn denominator_unit_is_declared_never_inferred() {
+        // the closed vocabulary, case- and spelling-tolerant
+        assert_eq!(parse_denominator_unit("m2").unwrap().noun, "km²");
+        assert_eq!(parse_denominator_unit(" M² ").unwrap().noun, "km²");
+        assert!((parse_denominator_unit("m2").unwrap().factor - 1e-6).abs() < f64::EPSILON);
+        // already the target unit: the declaration supplies the SYMBOL, not a conversion
+        assert!((parse_denominator_unit("KM2").unwrap().factor - 1.0).abs() < f64::EPSILON);
+        // anything else declares nothing — a field NAME is never read as a unit
+        assert_eq!(parse_denominator_unit("AREALAND"), None);
+        assert_eq!(parse_denominator_unit("acres"), None);
+        assert_eq!(parse_denominator_unit(""), None);
+    }
+
+    #[test]
+    fn denominator_unit_precedence_and_geojson_declaration() {
+        let doc = serde_json::json!({
+            "type": "FeatureCollection",
+            "x-qsv": {"property_units": {"properties.AREALAND": "m2"}},
+            "features": []
+        });
+        // the boundary document declares what qsv fetched
+        let from_doc =
+            resolve_denominator_unit(None, None, Some(&doc), Some("properties.AREALAND")).unwrap();
+        assert_eq!(from_doc.noun, "km²");
+        // an undeclared property on the same document declares nothing
+        assert_eq!(
+            resolve_denominator_unit(None, None, Some(&doc), Some("properties.POP2020")),
+            None
+        );
+        // a document with no member at all (a user-supplied --geojson) declares nothing: qsv knows
+        // the units of what IT fetched and must not assume anything about a file it was handed
+        let plain = serde_json::json!({"type": "FeatureCollection", "features": []});
+        assert_eq!(
+            resolve_denominator_unit(None, None, Some(&plain), Some("properties.AREALAND")),
+            None
+        );
+        // flag outranks dictionary outranks document
+        assert_eq!(
+            resolve_denominator_unit(
+                Some("km2"),
+                Some("m2"),
+                Some(&doc),
+                Some("properties.AREALAND")
+            )
+            .unwrap()
+            .factor,
+            1.0
+        );
+        assert!(
+            (resolve_denominator_unit(None, Some("m2"), Some(&doc), Some("properties.AREALAND"))
+                .unwrap()
+                .factor
+                - 1e-6)
+                .abs()
+                < f64::EPSILON
+        );
+        // an unrecognized flag token declares nothing and falls through, keeping the helper total.
+        // End to end this is unreachable: `run` rejects an unknown --denominator-unit up front.
+        assert_eq!(
+            resolve_denominator_unit(
+                Some("furlongs"),
+                None,
+                Some(&doc),
+                Some("properties.AREALAND")
+            )
+            .unwrap()
+            .noun,
+            "km²"
+        );
+    }
+
+    #[test]
+    fn applying_a_unit_converts_the_values_not_the_display() {
+        let mut denoms: HashMap<String, f64> = HashMap::new();
+        denoms.insert("CT".to_string(), 12_542_136_566.0);
+        let unit = parse_denominator_unit("m2");
+        let labels = apply_denominator_unit(&mut denoms, "AREALAND", unit.as_ref());
+        // Connecticut is ~12,542 km²; the HOVER prints this converted figure, which is why the
+        // conversion happens on the values rather than at display time
+        assert!(
+            (denoms["CT"] - 12_542.136_566).abs() < 1e-6,
+            "{:?}",
+            denoms["CT"]
+        );
+        assert_eq!(labels.noun, ("km²".to_string(), "km²".to_string()));
+        // and the hover names it in the unit it now holds, not the raw field it came from —
+        // "AREALAND: 12,542" would contradict the colorbar in the same panel
+        assert_eq!(labels.hover, "km²");
+        // with nothing declared the values are untouched and the verbatim label rule applies
+        let mut raw: HashMap<String, f64> = HashMap::new();
+        raw.insert("CT".to_string(), 12_542_136_566.0);
+        let labels = apply_denominator_unit(&mut raw, "AREALAND", None);
+        assert!((raw["CT"] - 12_542_136_566.0).abs() < f64::EPSILON);
+        assert_eq!(labels.noun.0, "AREALAND");
+        assert_eq!(labels.hover, "AREALAND");
     }
 
     #[test]
@@ -43042,6 +43369,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .unwrap()
         .expect("2 regions keep points, so a panel renders")
@@ -43058,6 +43386,7 @@ mod tests {
             &lons,
             true,
             Some(f64::INFINITY),
+            None,
             None,
             None,
             None,
@@ -43082,6 +43411,7 @@ mod tests {
             &lons,
             false,
             Some(10.0),
+            None,
             None,
             None,
             None,
@@ -43140,6 +43470,7 @@ mod tests {
                 &lons,
                 snap,
                 cap,
+                None,
                 None,
                 None,
                 None,
@@ -43221,6 +43552,7 @@ mod tests {
             &lons,
             true,
             Some(10.0),
+            None,
             None,
             None,
             None,

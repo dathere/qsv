@@ -17544,3 +17544,147 @@ fn viz_smart_consistently_zero_hint_denominator_is_an_exclusion() {
     );
     assert!(html.contains("1 of 3 without a denominator"), "{html}");
 }
+
+// issue #4414: `--denominator-key` derived its label from the property path's last segment and
+// divided by the raw value, so real published boundary files — which carry land area in square
+// METRES — rendered "per 100,000 AREALAND" at a rate that clamped to the widest rung and still
+// read as ~0. A DECLARED unit converts the values and names them, so the same file reads "per
+// 1,000 km²" with the hover, colorbar and title all in the same unit.
+#[test]
+fn viz_choropleth_denominator_unit_converts_and_names_area() {
+    let wrk = Workdir::new("viz_choropleth_denominator_unit_converts_and_names_area");
+    wrk.create_from_string("rg.csv", "region,val\nA,120\nB,80\n");
+    // AREALAND in square metres, as TIGER/Census boundary files publish it
+    wrk.create_from_string(
+        "areas.geojson",
+        r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","id":"A","properties":{"AREALAND":12542136566},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},
+          {"type":"Feature","id":"B","properties":{"AREALAND":5046806309},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+
+    // without a declaration, the old behavior: the raw field name, in its raw unit
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "areas.geojson",
+        "--denominator-key",
+        "properties.AREALAND",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // still named verbatim (qsv never infers a unit from a field name) — but the widened ladder
+    // now reaches a rung that makes the numbers readable instead of clamping at 100,000 and
+    // rendering 0.0001 everywhere
+    assert!(
+        html.contains("per 1,000,000,000 AREALAND"),
+        "an undeclared denominator is named verbatim, at a scale that can reach it: {html}"
+    );
+
+    // with one, the values are converted and everything is named in the converted unit
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "areas.geojson",
+        "--denominator-key",
+        "properties.AREALAND",
+        "--denominator-unit",
+        "m2",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("per 1,000 km²"),
+        "expected a converted, named rate: {html}"
+    );
+    // the raw field name survives only inside the embedded geometry (the boundary document is
+    // part of the plot); what must NOT survive is its use as a LABEL — the hover prints
+    // "<label>: <value>", so a km² figure under an m² name would contradict the colorbar
+    assert!(
+        !html.contains("AREALAND:") && !html.contains("AREALAND\\u003c"),
+        "the raw field name was still used as a label: {html}"
+    );
+    assert!(
+        html.contains("km²\\u003c") || html.contains("km²:"),
+        "the hover should name the denominator in the unit it now holds: {html}"
+    );
+}
+
+// A unit is DECLARED, never inferred: an unrecognized token is a typo, and quietly dividing by raw
+// metres instead would produce a confident wrong map. It also needs a denominator to qualify.
+#[test]
+fn viz_denominator_unit_is_validated() {
+    let wrk = Workdir::new("viz_denominator_unit_is_validated");
+    wrk.create_from_string("rg.csv", "region,val\nA,120\nB,80\n");
+    wrk.create_from_string("areas.geojson", SHORTCUT_GEOJSON);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "areas.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--denominator-key",
+        "properties.pop",
+        "--denominator-unit",
+        "furlongs",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("not a unit qsv converts"),
+        "expected the closed-vocabulary error: {stderr}"
+    );
+
+    // and it is meaningless on its own
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "areas.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--denominator-unit",
+        "m2",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("needs --denominator"),
+        "expected the missing-denominator error: {stderr}"
+    );
+}

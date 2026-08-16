@@ -671,7 +671,11 @@ fn cache_key(spec: AutoSpec, codes: &[String]) -> String {
     sorted.sort_unstable();
     sorted.dedup();
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"census/v1/");
+    // v2: entries written before #4414 carry no `x-qsv.property_units` declaration, so reusing one
+    // would silently label an area denominator "per 100,000 AREALAND" until the 30-day TTL expired
+    // — the same command giving different maps depending on when the cache was warmed. Bumping the
+    // version retires them instead.
+    hasher.update(b"census/v2/");
     // the service root is part of the entry's IDENTITY: pointing QSV_CENSUS_TIGERWEB_URL at a
     // mirror (or a mock) must not be served boundaries fetched from a different source
     hasher.update(tigerweb_root().as_bytes());
@@ -1112,8 +1116,25 @@ fn fetch_layer(
         }
     }
 
+    // DECLARE the units of the numeric properties this fetch asked for (issue #4414). TIGERweb's
+    // AREALAND/AREAWATER are square METRES, and this is the one place that knows it asked for
+    // them — the same way it knows the feature-id key is `properties.GEOID`. Without a
+    // declaration, `--denominator-key properties.AREALAND` can only take the raw field NAME as its
+    // label and divide by metres, so the map reads "per 100,000 AREALAND" at ~0 everywhere.
+    //
+    // Carried as a GeoJSON foreign member (RFC 7946 §6.1) rather than on `BoundarySet` because
+    // the document IS the cache artifact: a warm run reads the declaration back with the
+    // geometry, so cold and warm runs cannot label the same map differently. It also survives the
+    // advertised archival flow — passing the cached path back as an explicit `--geojson` keeps
+    // the units. Consumers that do not know the member ignore it.
     let geojson = serde_json::json!({
         "type": "FeatureCollection",
+        "x-qsv": {
+            "property_units": {
+                "properties.AREALAND": "m2",
+                "properties.AREAWATER": "m2",
+            }
+        },
         "features": features,
     });
     Ok(BoundarySet {

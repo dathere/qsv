@@ -1780,16 +1780,14 @@ fn validate_no_format_validation() {
         .arg("data.csv")
         .arg("schema.json");
 
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    let expected = "All 3 records valid.\n";
+    assert_eq!(got, expected);
 
     // Should not create any error files since all records are valid
     // when format validation is disabled
     assert!(!wrk.path("data.csv.invalid").exists());
     assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
-
-    let got: String = wrk.output_stderr(&mut cmd);
-    let expected = "All 3 records valid.\n";
-    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1848,9 +1846,7 @@ fn validate_invalid_json_schema_file() {
     let mut cmd = wrk.command("validate");
     cmd.arg("schema").arg("schema.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     // reqwest >=0.13.4 appends " for url (<url>)" to body-decoding errors; match the
     // stable prefix only so we don't re-couple to reqwest's exact wording.
     let expected_prefix =
@@ -1885,9 +1881,7 @@ fn validate_invalid_json_schema_file() {
     let mut cmd = wrk.command("validate");
     cmd.arg("schema").arg("schema2.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert_eq!(
         got,
         "JSON Schema Meta-Reference Error: \"stringy\" is not valid under any of the schemas \
@@ -2691,12 +2685,14 @@ fn validate_multiple_files_quiet_mode() {
     let mut cmd = wrk.command("validate");
     cmd.arg("--quiet").arg("file1.csv").arg("file2.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    // In quiet mode, there should be no output to stderr
-    let got: String = wrk.output_stderr(&mut cmd);
-    // The output might be "No error" if there's no stderr output
-    assert!(got.is_empty() || got == "No error");
+    // In quiet mode, there should be no output to stderr. `output_stderr` used to
+    // substitute the literal "No error" for empty stderr on a successful run, so the
+    // assertion had to accept it; `stderr_on_success` returns stderr verbatim.
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        got.is_empty(),
+        "expected no stderr in quiet mode, got: {got:?}"
+    );
 }
 
 #[test]

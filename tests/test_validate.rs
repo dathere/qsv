@@ -2202,14 +2202,14 @@ fn validate_with_no_format_validation_success() {
         .arg("data.csv")
         .arg("schema.json");
 
+    let got: String = wrk.stderr_on_success(&mut cmd_no_format);
+    let expected = "All 2 records valid.\n";
+    assert_eq!(got, expected);
+
     // Should not create any error files since all records are valid
     // when format validation is disabled
     assert!(!wrk.path("data.csv.invalid").exists());
     assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
-
-    let got: String = wrk.stderr_on_success(&mut cmd_no_format);
-    let expected = "All 2 records valid.\n";
-    assert_eq!(got, expected);
 }
 
 #[test]

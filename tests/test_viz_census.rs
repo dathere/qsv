@@ -155,6 +155,32 @@ async fn serve_empty_query(o: web::Data<Observed>, req: HttpRequest) -> HttpResp
     }))
 }
 
+/// The Census DATA API (issue #4395) — a different service from TIGERweb: tabular ACS estimates,
+/// returned as an array of arrays whose first row names the columns.
+async fn serve_acs(o: web::Data<Observed>, req: HttpRequest) -> HttpResponse {
+    o.requests.fetch_add(1, Ordering::SeqCst);
+    let q = req.query_string();
+    o.where_clauses
+        .lock()
+        .unwrap()
+        .push(format!("acs?{}", query_param(q, "for")));
+    // an API key must never be required — and when one IS set, it must arrive
+    let for_clause = query_param(q, "for");
+    if for_clause.starts_with("county") {
+        HttpResponse::Ok().json(serde_json::json!([
+            ["B01003_001E", "NAME", "state", "county"],
+            ["1250578", "Allegheny County, Pennsylvania", "42", "003"],
+            ["1603797", "Philadelphia County, Pennsylvania", "42", "101"]
+        ]))
+    } else {
+        HttpResponse::Ok().json(serde_json::json!([
+            ["B01003_001E", "NAME", "state"],
+            ["12989208", "Pennsylvania", "42"],
+            ["19571216", "New York", "36"]
+        ]))
+    }
+}
+
 async fn run_webserver(
     tx: std::sync::mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
     observed: Observed,
@@ -177,6 +203,9 @@ async fn run_webserver(
                 web::resource("/TIGERweb/tigerWMS_ACS2023/MapServer/99/query")
                     .to(serve_empty_query),
             )
+            // the Data API lives under its own root; only 2023 is "published" here, so the
+            // vintage probe has to walk back to find it
+            .service(web::resource("/data/2023/acs/acs5").to(serve_acs))
     });
     let bound = match server_builder.bind((BIND_HOST, 0)) {
         Ok(b) => b,
@@ -700,4 +729,154 @@ fn viz_geojson_auto_declares_its_area_unit_and_the_cache_keeps_it() {
             "a warm cache labelled the same map differently"
         );
     });
+}
+
+// issue #4395: `--denominator census` fetches per-region population from the Census Data API and
+// divides by it, so a raw-count map becomes a per-capita rate with nothing supplied. Asserted
+// against the mock rather than the live Bureau: what matters is that qsv asks for the right
+// geography, joins on FIPS, states which release it divided by, and does not ask twice.
+#[test]
+#[serial]
+fn viz_denominator_census_fetches_population_and_states_its_release() {
+    let wrk = Workdir::new("viz_denominator_census_fetches_population_and_states_its_release");
+    wrk.create_from_string("pa.csv", "fips,cases\n42003,600\n42003,700\n42101,800\n");
+    let cache = wrk.path("census-cache").to_string_lossy().to_string();
+
+    with_mock_tigerweb(|base, observed| {
+        let run = || {
+            let mut cmd = wrk.command("viz");
+            cmd.args([
+                "choropleth",
+                "pa.csv",
+                "--locations",
+                "fips",
+                "--location-mode",
+                "geojson-id",
+                "--geojson",
+                "auto",
+                "--denominator",
+                "census",
+            ])
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CENSUS_API_URL", format!("{base}/data"))
+            .env("QSV_CACHE_DIR", &cache);
+            let out = wrk.output(&mut cmd);
+            assert!(
+                out.status.success(),
+                "census denominator failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8_lossy(&out.stdout).into_owned()
+        };
+
+        let html = run();
+        // a per-capita rate, named in people rather than by a raw field name
+        assert!(
+            html.contains("residents"),
+            "expected a per-capita rate: {html}"
+        );
+        // the release is stated — a rate means something different against a different vintage
+        assert!(
+            html.contains("ACS") && html.contains("B01003"),
+            "the ACS release must be stated beneath the map: {html}"
+        );
+        // it asked for COUNTY population, because the codes are 5-digit county FIPS
+        let asked = observed.where_clauses.lock().unwrap().clone();
+        assert!(
+            asked.iter().any(|c| c.starts_with("acs?county")),
+            "expected a county-level ACS request, got: {asked:?}"
+        );
+
+        // and a repeated command makes no further request — the Data Schematic's offline promise
+        let after_first = observed.requests.load(Ordering::SeqCst);
+        run();
+        assert_eq!(
+            observed.requests.load(Ordering::SeqCst),
+            after_first,
+            "the second run must be served entirely from cache"
+        );
+    });
+}
+
+// `--denominator census` is accepted on `viz smart` too (issue #4395), which the pre-existing gate
+// rejected for every `--denominator` value. The rule it enforces — a denominator COLUMN must be
+// constant within a region, so it can only be read where a region key is read from the same row —
+// simply does not reach a source qsv fetches itself.
+#[test]
+#[serial]
+fn viz_smart_accepts_the_census_denominator() {
+    let wrk = Workdir::new("viz_smart_accepts_the_census_denominator");
+    wrk.create_from_string(
+        "pa.csv",
+        "fips,cases\n42003,600\n42003,700\n42101,800\n42101,900\n",
+    );
+    wrk.create_from_string("dict.schema.json", COUNTY_DICT);
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "pa.csv",
+            "--geojson",
+            "auto",
+            "--denominator",
+            "census",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env("QSV_CENSUS_API_URL", format!("{base}/data"))
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("census-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "`viz smart --denominator census` was rejected: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            html.contains("residents"),
+            "expected a rate panel beside the count panel: {html}"
+        );
+        assert!(
+            html.contains("ACS"),
+            "the rate panel must carry the release it divided by: {html}"
+        );
+    });
+}
+
+// A denominator column NAMED "census" is not a way to opt out: the value is reserved, and the help
+// text says so. This pins the reservation rather than leaving it to prose.
+#[test]
+fn viz_denominator_census_is_reserved() {
+    let wrk = Workdir::new("viz_denominator_census_is_reserved");
+    wrk.create_from_string("rg.csv", "region,census,val\nAB,100,10\nCD,200,20\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "auto",
+        "--denominator",
+        "census",
+    ])
+    .env("QSV_CENSUS_API_URL", "http://127.0.0.1:1/data");
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // it tried to RESOLVE the region codes as Census geographies rather than reading the column
+    assert!(
+        stderr.contains("county FIPS") || stderr.contains("state codes"),
+        "the reserved value should have been treated as a source, not a column: {stderr}"
+    );
 }

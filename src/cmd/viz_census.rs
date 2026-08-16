@@ -176,7 +176,8 @@ impl Layer {
     }
 
     /// The explicit `--geojson census:<name>` selector for this layer.
-    const fn selector(self) -> &'static str {
+    #[must_use]
+    pub const fn selector(self) -> &'static str {
         match self {
             Self::County => "census:county",
             Self::Zcta => "census:zcta",
@@ -671,11 +672,14 @@ fn cache_key(spec: AutoSpec, codes: &[String]) -> String {
     sorted.sort_unstable();
     sorted.dedup();
     let mut hasher = blake3::Hasher::new();
-    // v2: entries written before #4414 carry no `x-qsv.property_units` declaration, so reusing one
-    // would silently label an area denominator "per 100,000 AREALAND" until the 30-day TTL expired
-    // — the same command giving different maps depending on when the cache was warmed. Bumping the
-    // version retires them instead.
-    hasher.update(b"census/v2/");
+    // The version retires entries whose STAMPED CONTENT this build no longer matches — reusing one
+    // makes the same command behave differently depending on when the cache was warmed, which is
+    // invisible and lasts until the 30-day TTL expires.
+    //   v2 (#4414): added `x-qsv.property_units`, without which an area denominator silently
+    //               labelled itself "per 100,000 AREALAND".
+    //   v3 (#4395): added `x-qsv.layer`, without which a ZCTA set is indistinguishable from a
+    //               county set and a Census denominator fetches the wrong geography.
+    hasher.update(b"census/v3/");
     // the service root is part of the entry's IDENTITY: pointing QSV_CENSUS_TIGERWEB_URL at a
     // mirror (or a mock) must not be served boundaries fetched from a different source
     hasher.update(tigerweb_root().as_bytes());
@@ -1133,7 +1137,12 @@ fn fetch_layer(
             "property_units": {
                 "properties.AREALAND": "m2",
                 "properties.AREAWATER": "m2",
-            }
+            },
+            // WHICH geography these regions are. A 5-digit ZCTA and a 5-digit county FIPS are
+            // indistinguishable by shape — that ambiguity is why `auto` probes at all — so a
+            // consumer that needs to know (a Census denominator covers counties and states, not
+            // ZCTAs) would otherwise have to guess from the code width and be wrong.
+            "layer": layer.selector(),
         },
         "features": features,
     });
@@ -1358,4 +1367,538 @@ mod tests {
         assert!(Layer::County.matches_catalog_name("Counties"));
         assert!(!Layer::County.matches_catalog_name("County"));
     }
+}
+
+// ===========================================================================================
+// Census DATA API (issue #4395) — population denominators.
+//
+// A DIFFERENT service from everything above: TIGERweb serves boundary GEOMETRY from an ArcGIS
+// catalog; this serves TABULAR estimates from `api.census.gov`, with its own host, its own
+// optional API key, and an array-of-arrays response shape. The two share a Bureau and nothing
+// else, so the only reuse is the plumbing this module already settled — the HTTP client, the
+// transient-vs-semantic error rule, and the disk cache.
+// ===========================================================================================
+
+/// Root of the Census Data API.
+const ACS_ROOT: &str = "https://api.census.gov/data";
+
+/// The Data API root to actually use, honoring `QSV_CENSUS_API_URL` — same rationale as
+/// [`tigerweb_root`]: a mirror for users behind one, and a mock server for the tests.
+fn acs_root() -> String {
+    std::env::var("QSV_CENSUS_API_URL").unwrap_or_else(|_| ACS_ROOT.to_string())
+}
+
+/// ACS 5-year table for TOTAL POPULATION. `B01003_001E` is the estimate cell.
+///
+/// 5-year rather than 1-year because it is the only product published for every geography this
+/// resolves (the 1-year product omits small counties entirely), and because a rate map compares
+/// regions — a denominator that exists for some of them and not others silently reshapes the map.
+const ACS_POPULATION_TABLE: &str = "B01003_001E";
+
+/// How many vintages back to probe when finding the newest published one. ACS 5-year releases lag
+/// roughly a year, and a probe is a single tiny request, so this only has to cover the gap between
+/// "this year" and the newest release.
+const ACS_VINTAGE_PROBES: u16 = 4;
+
+/// How long a cached denominator set stays fresh, in days. Overridable with
+/// `QSV_VIZ_DENOMINATOR_CACHE_TTL_DAYS`. Long for the same reason boundaries are: an ACS vintage
+/// is an annual artifact, so this exists to pick up a new release eventually, not to bound
+/// staleness within a session.
+const DENOMINATOR_CACHE_TTL_DAYS: u64 = 30;
+
+/// Cache subdirectory under the qsv cache dir.
+const DENOMINATOR_CACHE_SUBDIR: &str = "~/.qsv-cache/viz-denominators";
+
+/// The geographies a Census population denominator can be resolved for.
+///
+/// Deliberately only the two whose ACS coverage is complete and uncaveated. Tracts and ZCTAs are
+/// real follow-ups, not oversights: a ZCTA is not a ZIP code (PO-box ZIPs have no ZCTA at all, and
+/// the boundaries differ), which has to be stamped into the provenance rather than quietly
+/// approximated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DenominatorGeography {
+    State,
+    County,
+}
+
+impl DenominatorGeography {
+    /// The Data API `for=` clause for this geography.
+    const fn for_clause(self) -> &'static str {
+        match self {
+            Self::State => "state:*",
+            Self::County => "county:*",
+        }
+    }
+
+    /// Human label used in provenance and errors.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::State => "state",
+            Self::County => "county",
+        }
+    }
+
+    /// Which `--geojson auto` boundary layer this geography pairs with, so a caller can derive one
+    /// from the other rather than asking the user twice.
+    #[must_use]
+    pub const fn from_layer(layer: Layer) -> Option<Self> {
+        match layer {
+            Layer::County => Some(Self::County),
+            // a state-level dataset resolves against the county layer's STATE scoping, so there is
+            // no separate state layer to map from; state denominators are requested directly
+            Layer::Zcta | Layer::Tract | Layer::Place => None,
+        }
+    }
+}
+
+/// A per-region population denominator fetched from the Census Data API.
+pub struct PopulationSet {
+    /// GEOID -> population estimate. Keyed exactly as the boundary features are, so the caller
+    /// joins on the same ids it already canonicalized.
+    pub values:     std::collections::HashMap<String, f64>,
+    /// Human-readable lineage for the panel subtitle, e.g.
+    /// "ACS 2019–2023 5-yr (B01003), fetched 2026-08-16".
+    pub provenance: String,
+    /// The vintage actually used, so a caller can report it separately from the prose.
+    pub vintage:    u16,
+}
+
+/// Parse a `--denominator` value as a Census request, returning the pinned vintage if one was
+/// given. `None` means the value names a column, not this source.
+///
+/// Grammar: `census` | `census@<year>`, mirroring `--geojson census:county@2021` so the two flags
+/// pin a vintage the same way. `census` is a RESERVED value: a dataset column of that name cannot
+/// be used as a denominator, which the flag's help text states.
+#[must_use]
+pub fn parse_census_denominator(spec: &str) -> Option<Option<u16>> {
+    let (base, vintage) = match spec.split_once('@') {
+        Some((base, year)) => (base, Some(year.parse::<u16>().ok()?)),
+        None => (spec, None),
+    };
+    (base.eq_ignore_ascii_case("census")).then_some(vintage)
+}
+
+/// The Census Data API key to use, or an actionable error.
+///
+/// The key is REQUIRED, which contradicts what the Bureau's older documentation (and issue #4395)
+/// says. Verified against the live service: every unkeyed request — including the documented
+/// one-row example — 302s to `data/missing_key.html`, which then answers 200 with HTML. So an
+/// unkeyed run fails not with an HTTP error but with "response is not valid JSON", which reads
+/// like a qsv bug. Demand the key up front instead, and say where to get one.
+///
+/// Skipped when `QSV_CENSUS_API_URL` points somewhere else: an override means a mirror or a mock,
+/// and neither is obliged to want a Bureau key.
+fn census_api_key() -> CliResult<Option<String>> {
+    let key = std::env::var("QSV_CENSUS_API_KEY")
+        .ok()
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty());
+    if key.is_none() && acs_root() == ACS_ROOT {
+        return Err(crate::CliError::Other(
+            "--denominator census: the Census Data API requires an API key. Request a free one at \
+             https://api.census.gov/data/key_signup.html, then set QSV_CENSUS_API_KEY. (An \
+             unkeyed request is redirected to a 'Missing Key' page rather than refused, so it \
+             cannot be reported as a permission error.)"
+                .to_string(),
+        ));
+    }
+    Ok(key)
+}
+
+/// Build the Data API query parameters, appending the API key.
+///
+/// The key is never logged: `get_json` logs the URL, so the key is appended to the PARAMS the
+/// caller passes, and errors quote the url without it.
+fn acs_params<'a>(
+    get: &'a str,
+    for_clause: &'a str,
+    in_clause: Option<&'a str>,
+    key: Option<&'a str>,
+) -> Vec<(&'a str, &'a str)> {
+    let mut params = vec![("get", get), ("for", for_clause)];
+    if let Some(in_clause) = in_clause {
+        params.push(("in", in_clause));
+    }
+    if let Some(key) = key {
+        params.push(("key", key));
+    }
+    params
+}
+
+/// The newest ACS 5-year vintage the service actually publishes.
+///
+/// Probed rather than computed: the release calendar slips, and a computed guess would produce a
+/// 404 that reads like a code bug. Each probe is a single one-row request.
+fn newest_acs_vintage(client: &reqwest::blocking::Client, this_year: u16) -> CliResult<u16> {
+    let key = census_api_key()?;
+    let mut last_err: Option<crate::CliError> = None;
+    for vintage in (this_year.saturating_sub(ACS_VINTAGE_PROBES)..=this_year).rev() {
+        let url = format!("{}/{vintage}/acs/acs5", acs_root());
+        match get_json(
+            client,
+            &url,
+            &acs_params(ACS_POPULATION_TABLE, "state:01", None, key.as_deref()),
+        ) {
+            Ok(_) => return Ok(vintage),
+            // an INVALID key lands on the same HTML page as no key at all, so a body that will not
+            // parse is far more likely to be a key problem than an unpublished vintage
+            Err(e) if e.to_string().contains("not valid JSON") => {
+                return Err(crate::CliError::Other(format!(
+                    "--denominator census: the Census Data API did not return JSON, which is what \
+                     it does for a missing or invalid key. Check QSV_CENSUS_API_KEY (request one \
+                     at https://api.census.gov/data/key_signup.html). Underlying error: {e}"
+                )));
+            },
+            // a vintage the service does not publish answers 404 — a SEMANTIC "no", so keep
+            // walking back. A transient failure is about the service and must not be reported as
+            // "no vintage exists".
+            Err(e @ crate::CliError::Network(_)) => return Err(e),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(crate::CliError::Other(format!(
+        "--denominator census: no published ACS 5-year vintage found in the last \
+         {ACS_VINTAGE_PROBES} years. Last response: {}",
+        last_err.map_or_else(|| "none".to_string(), |e| e.to_string())
+    )))
+}
+
+/// Parse a Data API response — a JSON array of arrays whose FIRST row names the columns — into
+/// `GEOID -> value`.
+///
+/// The column order is read from that header row rather than assumed positionally: the API returns
+/// the requested variables followed by the geography columns, and the geography ones vary by query
+/// (`state` alone, or `state` + `county`). Assuming a position silently mis-keys every region the
+/// day the shape changes.
+fn parse_acs_rows(
+    body: &serde_json::Value,
+    geo: DenominatorGeography,
+) -> CliResult<std::collections::HashMap<String, f64>> {
+    let rows = body.as_array().ok_or_else(|| {
+        crate::CliError::Other(
+            "--denominator census: the Census Data API returned something that is not a JSON array"
+                .to_string(),
+        )
+    })?;
+    let Some((header, data)) = rows.split_first() else {
+        return Ok(std::collections::HashMap::new());
+    };
+    let names: Vec<&str> = header
+        .as_array()
+        .map(|h| h.iter().filter_map(serde_json::Value::as_str).collect())
+        .unwrap_or_default();
+    let col = |want: &str| names.iter().position(|n| *n == want);
+    let (Some(value_at), Some(state_at)) = (col(ACS_POPULATION_TABLE), col("state")) else {
+        return Err(crate::CliError::Other(format!(
+            "--denominator census: the Census Data API response is missing the \
+             {ACS_POPULATION_TABLE} or state column (got: {})",
+            names.join(", ")
+        )));
+    };
+    let county_at = col("county");
+    let mut out = std::collections::HashMap::new();
+    for row in data {
+        let Some(cells) = row.as_array() else {
+            continue;
+        };
+        let cell = |at: usize| cells.get(at).and_then(serde_json::Value::as_str);
+        let (Some(state), Some(raw)) = (cell(state_at), cell(value_at)) else {
+            continue;
+        };
+        // the API returns numbers as STRINGS; a negative value is one of the Bureau's annotation
+        // sentinels (-666666666 and friends) meaning "not available", never a population
+        let Ok(value) = raw.parse::<f64>() else {
+            continue;
+        };
+        if !value.is_finite() || value < 0.0 {
+            continue;
+        }
+        let geoid = match (geo, county_at.and_then(cell)) {
+            (DenominatorGeography::County, Some(county)) => format!("{state:0>2}{county:0>3}"),
+            (DenominatorGeography::County, None) => continue,
+            (DenominatorGeography::State, _) => format!("{state:0>2}"),
+        };
+        out.insert(geoid, value);
+    }
+    Ok(out)
+}
+
+/// Fetch population for `geo`, scoped to `states` (ignored for a state-level request).
+fn fetch_population(
+    client: &reqwest::blocking::Client,
+    vintage: u16,
+    geo: DenominatorGeography,
+    states: &[String],
+) -> CliResult<std::collections::HashMap<String, f64>> {
+    let key = census_api_key()?;
+    let url = format!("{}/{vintage}/acs/acs5", acs_root());
+    let get = format!("{ACS_POPULATION_TABLE},NAME");
+    let mut values = std::collections::HashMap::new();
+    match geo {
+        // one request covers every state
+        DenominatorGeography::State => {
+            let body = get_json(
+                client,
+                &url,
+                &acs_params(&get, geo.for_clause(), None, key.as_deref()),
+            )?;
+            values.extend(parse_acs_rows(&body, geo)?);
+        },
+        // one request per state, mirroring how the boundary fetch scopes by STATE — a handful of
+        // requests for a handful of states, and no dependence on the API's support for a
+        // comma-separated `in=` list, which varies by vintage
+        DenominatorGeography::County => {
+            for state in states {
+                let in_clause = format!("state:{state}");
+                let body = get_json(
+                    client,
+                    &url,
+                    &acs_params(&get, geo.for_clause(), Some(&in_clause), key.as_deref()),
+                )?;
+                values.extend(parse_acs_rows(&body, geo)?);
+            }
+        },
+    }
+    Ok(values)
+}
+
+/// Cache key for a denominator request, derived only from what the request IS.
+fn denominator_cache_key(geo: DenominatorGeography, vintage: u16, states: &[String]) -> String {
+    let mut sorted: Vec<&str> = states.iter().map(String::as_str).collect();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"acs/v1/");
+    // the service root is part of the entry's IDENTITY, exactly as it is for boundaries
+    hasher.update(acs_root().as_bytes());
+    hasher.update(b"/");
+    hasher.update(geo.label().as_bytes());
+    hasher.update(b"@");
+    hasher.update(vintage.to_string().as_bytes());
+    for state in sorted {
+        hasher.update(b"\0");
+        hasher.update(state.as_bytes());
+    }
+    hasher.finalize().to_hex()[..32].to_string()
+}
+
+/// Resolve population denominators, answering from the disk cache when it can.
+///
+/// The cache is what keeps the Data Schematic's "deterministic and offline" promise honest: a
+/// repeated command makes no network request at all, and the cached JSON can be inspected. Like
+/// the boundary cache, a STALE entry is preferred to no map when the service is unreachable, and
+/// the staleness is reported by the caller through the provenance it stamps.
+pub fn resolve_population(
+    geo: DenominatorGeography,
+    states: &[String],
+    pinned_vintage: Option<u16>,
+    this_year: u16,
+) -> CliResult<PopulationSet> {
+    let client = census_client()?;
+    let vintage = match pinned_vintage {
+        Some(v) => v,
+        None => newest_acs_vintage_cached(&client, this_year)?,
+    };
+    let cache_key = denominator_cache_key(geo, vintage, states);
+    let path = std::path::PathBuf::from(crate::diskcache::set_qsv_cache_dir(
+        DENOMINATOR_CACHE_SUBDIR,
+    )?)
+    .join(format!("{cache_key}.json"));
+
+    let ttl = denominator_cache_ttl_secs();
+    let cached: Option<(std::collections::HashMap<String, f64>, bool)> = std::fs::read(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_slice::<CachedPopulation>(&raw).ok())
+        .map(|c| {
+            let fresh = now_secs().saturating_sub(c.fetched_at) <= ttl;
+            (c.values, fresh)
+        });
+    if let Some((values, true)) = cached {
+        log::info!(
+            "--denominator census: cache hit ({vintage} {}), no network",
+            geo.label()
+        );
+        return Ok(PopulationSet {
+            values,
+            provenance: acs_provenance(vintage),
+            vintage,
+        });
+    }
+
+    match fetch_population(&client, vintage, geo, states) {
+        Ok(values) => {
+            if values.is_empty() {
+                return Err(crate::CliError::Other(format!(
+                    "--denominator census: the {vintage} ACS 5-year release returned no \
+                     population for any requested {}. Supply the denominator explicitly if this \
+                     is intentional.",
+                    geo.label()
+                )));
+            }
+            let payload = CachedPopulation {
+                values:     values.clone(),
+                fetched_at: now_secs(),
+            };
+            if let Ok(raw) = serde_json::to_vec(&payload) {
+                let _ = std::fs::write(&path, raw);
+            }
+            Ok(PopulationSet {
+                values,
+                provenance: acs_provenance(vintage),
+                vintage,
+            })
+        },
+        // only a TRANSIENT failure may be answered from a stale entry — the same rule the boundary
+        // fetch settled: a rejected query or an unpublished vintage is the service answering "no",
+        // and must surface as itself rather than as last month's numbers
+        Err(e @ crate::CliError::Network(_)) => match cached {
+            Some((values, _)) => {
+                log::warn!("--denominator census: {e}; using stale cached population");
+                Ok(PopulationSet {
+                    values,
+                    provenance: format!("{} (stale cache)", acs_provenance(vintage)),
+                    vintage,
+                })
+            },
+            None => Err(e),
+        },
+        Err(e) => Err(e),
+    }
+}
+
+/// The newest published vintage, remembered on disk.
+///
+/// The probe is a network request, and it runs BEFORE the denominator cache can be consulted
+/// (the cache is keyed by vintage, so the vintage has to be known first). Without this, a repeated
+/// command still made one request — which is exactly the "no network on a warm run" promise the
+/// rest of this module keeps. Cached under the same TTL as the denominators themselves, since it
+/// answers the same question: has the Bureau published a new release?
+fn newest_acs_vintage_cached(client: &reqwest::blocking::Client, this_year: u16) -> CliResult<u16> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"acs-newest/v1/");
+    hasher.update(acs_root().as_bytes());
+    let key = hasher.finalize().to_hex()[..16].to_string();
+    let path = std::path::PathBuf::from(crate::diskcache::set_qsv_cache_dir(
+        DENOMINATOR_CACHE_SUBDIR,
+    )?)
+    .join(format!("newest-{key}.json"));
+
+    if let Ok(raw) = std::fs::read(&path)
+        && let Ok(cached) = serde_json::from_slice::<CachedVintage>(&raw)
+        && now_secs().saturating_sub(cached.fetched_at) <= denominator_cache_ttl_secs()
+    {
+        return Ok(cached.vintage);
+    }
+    let vintage = newest_acs_vintage(client, this_year)?;
+    if let Ok(raw) = serde_json::to_vec(&CachedVintage {
+        vintage,
+        fetched_at: now_secs(),
+    }) {
+        let _ = std::fs::write(&path, raw);
+    }
+    Ok(vintage)
+}
+
+/// Configured denominator-cache TTL in seconds.
+fn denominator_cache_ttl_secs() -> u64 {
+    std::env::var("QSV_VIZ_DENOMINATOR_CACHE_TTL_DAYS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DENOMINATOR_CACHE_TTL_DAYS)
+        * 24
+        * 60
+        * 60
+}
+
+/// On-disk shape of the remembered newest vintage.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedVintage {
+    vintage:    u16,
+    fetched_at: u64,
+}
+
+/// The provenance line for an ACS 5-year vintage: the window it covers and the table it came from.
+fn acs_provenance(vintage: u16) -> String {
+    format!("ACS {}–{vintage} 5-yr (B01003)", vintage.saturating_sub(4))
+}
+
+/// On-disk shape of a cached denominator set.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedPopulation {
+    values:     std::collections::HashMap<String, f64>,
+    fetched_at: u64,
+}
+
+/// USPS two-letter code -> state FIPS, for joining a `--location-mode usa-states` column to Census
+/// data (which is keyed by FIPS).
+///
+/// Duplicated rather than borrowed from `geocode`'s table because `viz` must not depend on the
+/// `geocode` feature — a Data Schematic builds in a build without it. The data is inert: postal
+/// abbreviations and state FIPS have been stable for decades, and a new entry would be a new
+/// state.
+const USPS_STATE_FIPS: &[(&str, &str)] = &[
+    ("AL", "01"),
+    ("AK", "02"),
+    ("AZ", "04"),
+    ("AR", "05"),
+    ("CA", "06"),
+    ("CO", "08"),
+    ("CT", "09"),
+    ("DE", "10"),
+    ("DC", "11"),
+    ("FL", "12"),
+    ("GA", "13"),
+    ("HI", "15"),
+    ("ID", "16"),
+    ("IL", "17"),
+    ("IN", "18"),
+    ("IA", "19"),
+    ("KS", "20"),
+    ("KY", "21"),
+    ("LA", "22"),
+    ("ME", "23"),
+    ("MD", "24"),
+    ("MA", "25"),
+    ("MI", "26"),
+    ("MN", "27"),
+    ("MS", "28"),
+    ("MO", "29"),
+    ("MT", "30"),
+    ("NE", "31"),
+    ("NV", "32"),
+    ("NH", "33"),
+    ("NJ", "34"),
+    ("NM", "35"),
+    ("NY", "36"),
+    ("NC", "37"),
+    ("ND", "38"),
+    ("OH", "39"),
+    ("OK", "40"),
+    ("OR", "41"),
+    ("PA", "42"),
+    ("RI", "44"),
+    ("SC", "45"),
+    ("SD", "46"),
+    ("TN", "47"),
+    ("TX", "48"),
+    ("UT", "49"),
+    ("VT", "50"),
+    ("VA", "51"),
+    ("WA", "53"),
+    ("WV", "54"),
+    ("WI", "55"),
+    ("WY", "56"),
+    // territories the ACS publishes alongside the states
+    ("PR", "72"),
+];
+
+/// State FIPS for a USPS code, case-insensitively.
+#[must_use]
+pub fn state_fips_for_usps(code: &str) -> Option<&'static str> {
+    let folded = code.trim().to_ascii_uppercase();
+    USPS_STATE_FIPS
+        .iter()
+        .find(|(usps, _)| *usps == folded)
+        .map(|(_, fips)| *fips)
 }

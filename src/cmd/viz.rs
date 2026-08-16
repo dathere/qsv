@@ -491,6 +491,24 @@ choropleth options:
                            aggregations are already intensive, so a denominator is
                            rejected. In `viz smart`, declare the column in the data
                            dictionary instead, via x-qsv.denominator (see --dictionary).
+                           The value `census` is RESERVED (a column of that name cannot
+                           be used): it fetches US population from the Census Data API
+                           and divides by it, giving a per-capita rate with nothing
+                           supplied. It works on `viz smart` too, being a source rather
+                           than a column. Region codes must be 5-digit county FIPS,
+                           2-digit state FIPS, or 2-letter state codes. The newest
+                           published ACS 5-year release is used; append @<year> to pin
+                           one, e.g. `census@2019`. The release is always stated beneath
+                           the map, since a rate means something different against a
+                           different one. Regions the release does not cover are
+                           excluded and reported. Results are cached under ~/.qsv-cache,
+                           so a repeated command makes no network request; freshness
+                           defaults to 30 days, overridable with
+                           QSV_VIZ_DENOMINATOR_CACHE_TTL_DAYS. REQUIRES a Census API
+                           key in QSV_CENSUS_API_KEY - request a free one at
+                           https://api.census.gov/data/key_signup.html. (The Bureau
+                           redirects unkeyed requests to a "Missing Key" page rather
+                           than refusing them, so qsv asks for the key up front.)
     --geocode              Derive the region codes by reusing qsv's geocode engine
                            (needs a build with the geocode feature). Either reverse-geocode
                            the lat/lon points, or forward-geocode the locations name
@@ -1991,9 +2009,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // A dataset column can only be read where a region key is read from the same row, which is the
     // `viz choropleth --locations` path. `viz smart` picks its region column automatically, so it
     // takes the denominator column from the data dictionary (x-qsv.denominator) instead of a flag.
-    if args.flag_denominator.is_some() && !args.cmd_choropleth {
+    // `--denominator census` names a source qsv FETCHES, not a column, so the rule above does not
+    // reach it: there is no per-row value to be constant within a region (issue #4395). It is
+    // therefore accepted on both subcommands, and is the only spelling that is.
+    if args.flag_denominator.is_some()
+        && !args.cmd_choropleth
+        && ArgvExtras::from_argv(argv).census_denominator.is_none()
+    {
         return fail_incorrectusage_clierror!(
-            "--denominator only applies to `viz choropleth`. In `viz smart`, declare the \
+            "--denominator only applies to `viz choropleth` (except `--denominator census`, which \
+             names a fetched source rather than a column). In `viz smart`, declare the \
              denominator column in the data dictionary via x-qsv.denominator, or read it from the \
              boundary file with --denominator-key."
         );
@@ -2012,9 +2037,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Scan argv so an explicit key — including `--feature-id-key id` — always wins over a
     // shortcut's (or an auto-resolved layer's) id. Resolved here rather than inside the block
     // below because `viz smart` resolves `--geojson auto` later, once its region column is known.
-    let feature_id_key_explicit = argv
-        .iter()
-        .any(|a| *a == "--feature-id-key" || a.starts_with("--feature-id-key="));
+    let extras = ArgvExtras::from_argv(argv);
+    let feature_id_key_explicit = extras.feature_id_key_explicit;
     // Resolve --geojson (a direct path/URL, or a QSV_GEOJSON_SHORTCUTS alias) and validate it
     // up front — fail fast on a bad source, unknown shortcut, or unusable feature-id-key before
     // any plotting work. Only the choropleth & smart subcommands consume --geojson.
@@ -2072,7 +2096,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             &progress,
             show_progress,
             loaded_geojson.as_ref(),
-            feature_id_key_explicit,
+            extras,
         )? {
             // >8-panel HTML dashboards are assembled as an inline-div grid that bypasses the
             // single-`Plot` output path entirely.
@@ -2125,7 +2149,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     } else {
         (
-            Box::new(build_plot(&args, out_format, &progress, loaded_geojson)?),
+            Box::new(build_plot(
+                &args,
+                out_format,
+                &progress,
+                loaded_geojson,
+                extras,
+            )?),
             None,
         )
     };
@@ -2222,6 +2252,7 @@ fn build_plot(
     out_format: OutFormat,
     progress: &ProgressBar,
     geojson: Option<serde_json::Value>,
+    extras: ArgvExtras,
 ) -> CliResult<Plot> {
     progress.set_message("Building chart…");
     let kind = chart_kind(args);
@@ -2351,7 +2382,7 @@ fn build_plot(
     // choropleth fills whole regions on a `geo` (projection) or `map` (MapLibre) subplot — never
     // cartesian — so it owns its whole `Plot` like the maps above.
     if matches!(chart_kind(args), Chart::Choropleth) {
-        return build_choropleth_plot(args, out_format, geojson);
+        return build_choropleth_plot(args, out_format, geojson, extras);
     }
     if matches!(chart_kind(args), Chart::Scatter3D) {
         return build_scatter3d_plot(args);
@@ -6322,6 +6353,189 @@ fn geojson_declared_unit(geojson: &serde_json::Value, key: &str) -> Option<Denom
         .and_then(parse_denominator_unit)
 }
 
+/// Things parsed from `argv` that the docopt `Args` cannot express, threaded to the paths that
+/// need them.
+///
+/// docopt fills defaults and parses `--denominator` into a `SelectColumns`, so neither "was this
+/// flag passed explicitly" nor "did it name the reserved `census` source" survives into `Args`.
+/// Both are read from the raw argv once, in `run`, rather than re-scanned wherever they are wanted.
+#[derive(Clone, Copy, Default)]
+struct ArgvExtras {
+    /// `--feature-id-key` was passed explicitly, so a shortcut's or an auto-resolved layer's id
+    /// must not overwrite it (issue #4416).
+    feature_id_key_explicit: bool,
+    /// `--denominator census[@<year>]`: the outer `Option` is "is this a Census request", the
+    /// inner one the pinned vintage (issue #4395).
+    census_denominator:      Option<Option<u16>>,
+}
+
+impl ArgvExtras {
+    /// Read both from the raw argv.
+    fn from_argv(argv: &[&str]) -> Self {
+        let value_of = |flag: &str| -> Option<&str> {
+            let eq = format!("{flag}=");
+            argv.iter()
+                .position(|a| *a == flag)
+                .and_then(|i| argv.get(i + 1).copied())
+                .or_else(|| argv.iter().find_map(|a| a.strip_prefix(eq.as_str())))
+        };
+        Self {
+            feature_id_key_explicit: argv
+                .iter()
+                .any(|a| *a == "--feature-id-key" || a.starts_with("--feature-id-key=")),
+            census_denominator:      value_of("--denominator")
+                .and_then(crate::cmd::viz_census::parse_census_denominator),
+        }
+    }
+}
+
+/// Fetch Census population for `codes`, returning a map keyed by those SAME codes plus the
+/// provenance to stamp (issue #4395).
+///
+/// The geography is read from the codes' own shape rather than asked for again: 5-digit numerics
+/// are county FIPS, 2-digit numerics are state FIPS, and 2-letter alphabetics are USPS codes for
+/// states (what `--location-mode usa-states` produces). Anything else is refused rather than
+/// guessed — `--denominator census` is explicit intent, so an explicit failure naming the way out
+/// beats a confident wrong map, exactly as `--geojson auto` treats a non-Census geography.
+///
+/// Re-keying to the caller's spelling happens here so every consumer joins on the ids it already
+/// canonicalized, and never has to know that the Bureau keys everything by FIPS.
+fn census_denominator_map(
+    codes: &[String],
+    vintage: Option<u16>,
+    geojson: Option<&serde_json::Value>,
+) -> CliResult<(HashMap<String, f64>, String)> {
+    use crate::cmd::viz_census::DenominatorGeography;
+
+    // If the boundary set DECLARED its geography (every `--geojson auto` set does), believe it
+    // over the codes' shape: a 5-digit ZCTA reads exactly like a 5-digit county FIPS, so a
+    // ZIP-keyed dataset would otherwise be sent to fetch county population and come back with
+    // almost nothing matched — a confusing failure instead of a clear one.
+    if let Some(layer) = geojson
+        .and_then(|g| g.get("x-qsv"))
+        .and_then(|x| x.get("layer"))
+        .and_then(serde_json::Value::as_str)
+        && !matches!(layer, "census:county")
+    {
+        return fail_incorrectusage_clierror!(
+            "--denominator census resolves US state and county population, but these regions are \
+             {}. Supply the denominator with --denominator-key (boundary files often carry one) \
+             or a dataset column.",
+            layer.trim_start_matches("census:")
+        );
+    }
+
+    let trimmed: Vec<&str> = codes
+        .iter()
+        .map(|c| c.trim())
+        .filter(|c| !c.is_empty())
+        .collect();
+    if trimmed.is_empty() {
+        return fail_incorrectusage_clierror!(
+            "--denominator census: the region column has no values to fetch population for."
+        );
+    }
+    let all = |f: &dyn Fn(&str) -> bool| trimmed.iter().all(|c| f(c));
+    let numeric_of =
+        |n: usize| move |c: &str| c.len() == n && c.bytes().all(|b| b.is_ascii_digit());
+
+    // (geography, state FIPS to scope by, caller-code -> Census GEOID)
+    let (geo, states, keyed): (DenominatorGeography, Vec<String>, Vec<(String, String)>) =
+        if all(&numeric_of(5)) {
+            let states: Vec<String> = trimmed.iter().map(|c| c[..2].to_string()).collect();
+            let keyed = trimmed
+                .iter()
+                .map(|c| ((*c).to_string(), (*c).to_string()))
+                .collect();
+            (DenominatorGeography::County, states, keyed)
+        } else if all(&numeric_of(2)) {
+            let keyed: Vec<(String, String)> = trimmed
+                .iter()
+                .map(|c| ((*c).to_string(), (*c).to_string()))
+                .collect();
+            let states = keyed.iter().map(|(_, g)| g.clone()).collect();
+            (DenominatorGeography::State, states, keyed)
+        } else if all(&|c: &str| c.len() == 2 && c.bytes().all(|b| b.is_ascii_alphabetic())) {
+            let mut keyed: Vec<(String, String)> = Vec::with_capacity(trimmed.len());
+            let mut unknown: Vec<&str> = Vec::new();
+            for code in &trimmed {
+                match crate::cmd::viz_census::state_fips_for_usps(code) {
+                    Some(fips) => keyed.push(((*code).to_string(), fips.to_string())),
+                    None => unknown.push(code),
+                }
+            }
+            if !unknown.is_empty() {
+                return fail_incorrectusage_clierror!(
+                    "--denominator census: {} of {} location values are not US state codes (e.g. \
+                     {}). Census population is resolved for US states and counties.",
+                    unknown.len(),
+                    trimmed.len(),
+                    unknown
+                        .iter()
+                        .take(5)
+                        .copied()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+            let states = keyed.iter().map(|(_, g)| g.clone()).collect();
+            (DenominatorGeography::State, states, keyed)
+        } else {
+            return fail_incorrectusage_clierror!(
+                "--denominator census resolves US state and county geographies, so it needs the \
+                 region column to hold 5-digit county FIPS, 2-digit state FIPS, or 2-letter state \
+                 codes. Supply the population with --denominator <col> or --denominator-key \
+                 instead."
+            );
+        };
+
+    // the newest published vintage is probed relative to TODAY; the probe walks back from here,
+    // so an over-estimate costs one extra 404 and never a wrong answer
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let this_year = chrono::Utc::now()
+        .format("%Y")
+        .to_string()
+        .parse::<u16>()
+        .unwrap_or(2026);
+    let population = crate::cmd::viz_census::resolve_population(geo, &states, vintage, this_year)?;
+
+    let mut out: HashMap<String, f64> = HashMap::new();
+    let mut missing: Vec<String> = Vec::new();
+    for (caller_code, geoid) in keyed {
+        match population.values.get(&geoid) {
+            Some(&value) if value > 0.0 => {
+                out.insert(caller_code, value);
+            },
+            // a region the release does not cover is EXCLUDED from the rate and reported, never
+            // divided by zero — the same treatment a missing --denominator-key value gets
+            _ => missing.push(caller_code),
+        }
+    }
+    if !missing.is_empty() {
+        winfo!(
+            "--denominator census: {} of {} regions have no {} population in {} and are excluded \
+             from the rate (e.g. {}).",
+            missing.len(),
+            out.len() + missing.len(),
+            geo.label(),
+            population.provenance,
+            missing
+                .iter()
+                .take(5)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    if out.is_empty() {
+        return fail_incorrectusage_clierror!(
+            "--denominator census: none of the regions have a population in {}.",
+            population.provenance
+        );
+    }
+    Ok((out, population.provenance))
+}
+
 /// Resolve the denominator's unit from the most authoritative source that declares one.
 ///
 /// Precedence, most explicit first: the `--denominator-unit` FLAG (the user speaking now), then a
@@ -7379,6 +7593,7 @@ fn build_choropleth_plot(
     args: &Args,
     out_format: OutFormat,
     geojson: Option<serde_json::Value>,
+    extras: ArgvExtras,
 ) -> CliResult<Plot> {
     // loaded once by `resolve_and_validate_geojson`; every consumer below borrows it and the
     // trace takes ownership last, so the document is fetched and parsed exactly once per run.
@@ -7506,6 +7721,10 @@ fn build_choropleth_plot(
     let mut below_note: Option<String> = None;
     // Some((per-region denominators, its human label)) when --denominator named a column.
     let mut column_denominator: Option<(HashMap<String, f64>, String)> = None;
+    // set when `--denominator census` resolved one, so the map can state which ACS release it
+    // divided by — a rate whose denominator is fetched rather than supplied is unreadable without
+    // its lineage (issue #4395)
+    let mut census_provenance: Option<String> = None;
     let (mut locations, mut z, mut measure_label, mut hover_text) = if pip {
         let (locs, z, label, hover, note) = choropleth_pip_locations(
             args,
@@ -7520,7 +7739,7 @@ fn build_choropleth_plot(
         choropleth_geocoded_locations(args, mode.clone(), agg)?
     } else {
         let (locs, z, label, hover, denom) =
-            choropleth_literal_locations(args, agg, loaded_geojson.as_ref())?;
+            choropleth_literal_locations(args, agg, loaded_geojson.as_ref(), extras)?;
         column_denominator = denom;
         (locs, z, label, hover)
     };
@@ -7541,6 +7760,20 @@ fn build_choropleth_plot(
             args.flag_denominator_key.as_deref(),
             column_denominator.take(),
         ) {
+            // `--denominator census` names no column, so it is resolved before either reader
+            // (issue #4395). `locations` is already canonicalized to the boundary's spelling, so
+            // the fetched population keys onto exactly what the trace will draw.
+            _ if extras.census_denominator.is_some() => {
+                let (map, provenance) = census_denominator_map(
+                    &locations,
+                    extras.census_denominator.flatten(),
+                    loaded_geojson.as_ref(),
+                )?;
+                census_provenance = Some(provenance);
+                // "population" routes through `denominator_noun`'s population branch, so the rate
+                // reads "per 100,000 residents" in whatever language the run is in
+                (map, "population".to_string(), None)
+            },
             (Some(key), _) => {
                 let owned;
                 let geojson = match loaded_geojson.as_ref() {
@@ -7644,6 +7877,16 @@ fn build_choropleth_plot(
         }
     }
 
+    // A FETCHED denominator's release is part of what the map means — "per 100,000 residents" is
+    // a different statement against ACS 2019-2023 than against 2015-2019 — so it is stated
+    // alongside the boundary provenance rather than left implicit (issue #4395).
+    if let Some(provenance) = census_provenance {
+        let note = t!("viz.notes.denominator_provenance", q_source = provenance).into_owned();
+        below_note = match below_note {
+            Some(existing) => Some(format!("{existing} {note}")),
+            None => Some(note),
+        };
+    }
     // Appended last so it reads after any data caveat.
     if let Some(note) = auto_boundary_notes() {
         below_note = match below_note {
@@ -7826,6 +8069,7 @@ fn choropleth_literal_locations(
     args: &Args,
     agg: Agg,
     loaded_geojson: Option<&serde_json::Value>,
+    extras: ArgvExtras,
 ) -> CliResult<(
     Vec<String>,
     Vec<f64>,
@@ -7839,7 +8083,11 @@ fn choropleth_literal_locations(
         Some(s) => Some(resolve_one(Some(s), &headers, nh, "value")?),
         None => None,
     };
+    // `--denominator census` names a fetched SOURCE, not a column, so it must not be resolved
+    // against the headers — doing so failed with "Selector name 'census' does not exist"
+    // (issue #4395).
     let denom_idx = match args.flag_denominator.as_ref() {
+        Some(_) if extras.census_denominator.is_some() => None,
         Some(s) => Some(resolve_one(Some(s), &headers, nh, "denominator")?),
         None => None,
     };
@@ -16887,15 +17135,18 @@ enum Route {
 /// `--denominator` or the dictionary's `x-qsv.denominator` hint; `GeojsonProperty` from
 /// `--denominator-key`.
 ///
-/// A future `Named(String)` variant is the intended home for externally-fetched denominators
-/// (e.g. `Named("census")` resolving US Census population by FIPS — issue #4395); it is named here
-/// only to fix the shape, and no such source is resolved today.
+/// `Census` is the externally-FETCHED source (issue #4395): the value is not in the dataset or the
+/// boundary file at all, so it is the one source qsv supplies itself — which is exactly why it
+/// carries its vintage into the provenance rather than being silently assumed.
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum DenominatorSource {
     /// A dataset column index, whose value must be constant within a region.
     Column(usize),
     /// A dotted property path on each `--geojson` feature (e.g. `properties.POP2020`).
     GeojsonProperty(String),
+    /// US Census population, fetched by FIPS. The payload is the vintage the user pinned with
+    /// `census@<year>`, or `None` for "the newest the Bureau publishes".
+    Census(Option<u16>),
 }
 
 /// A column's resolved charting verdict: where it goes (`route`), how to aggregate it over time
@@ -24444,6 +24695,7 @@ fn build_smart_summary_choropleth_panels(
     loaded_geojson: Option<&serde_json::Value>,
     grain_unit: Option<&str>,
     grain: Option<&str>,
+    extras: ArgvExtras,
 ) -> CliResult<Option<(Vec<Panel>, usize)>> {
     // explicit intent: only build when the user supplied a --geojson boundary file.
     let Some(spec) = args.flag_geojson.as_deref() else {
@@ -24808,6 +25060,11 @@ fn build_smart_summary_choropleth_panels(
     // Precedence: the --denominator-key FLAG outranks the dictionary hint. A flag is the user
     // speaking now; the hint is the sidecar speaking from whenever it was written.
     let denom_source: Option<DenominatorSource> = match (denom_flag, &hints[ci]) {
+        // `--denominator census` outranks both: it is the user naming a source qsv fetches, which
+        // neither the boundary file nor the dictionary can be speaking about (issue #4395)
+        _ if extras.census_denominator.is_some() => Some(DenominatorSource::Census(
+            extras.census_denominator.flatten(),
+        )),
         (Some(key), _) => Some(DenominatorSource::GeojsonProperty(key.to_string())),
         // A bad HINT never fails the run — it only costs the rate panel, and the count panel then
         // carries its raw-count caveat. (A bad FLAG is a hard error, raised back in `run`.)
@@ -24845,6 +25102,9 @@ fn build_smart_summary_choropleth_panels(
     };
 
     let mut rate_charted = false;
+    // stamped into the rate panel's subtitle below: a denominator qsv FETCHED is unreadable
+    // without its release, and the reader cannot see it anywhere else (issue #4395)
+    let mut census_provenance: Option<String> = None;
     if let Some(source) = denom_source {
         // The unit the denominator is IN (issue #4414), declared never guessed. For a GeoJSON
         // property the document may declare it — every `--geojson auto` set does; for a dictionary
@@ -24873,6 +25133,15 @@ fn build_smart_summary_choropleth_panels(
                     None,
                 );
                 (m, label_of(*idx), unit)
+            },
+            // fetched rather than read from the data (issue #4395); `count_locs` are the region
+            // ids already matched against the boundary set, so the population keys straight onto
+            // them. A unit declaration is meaningless here — the source's unit is people.
+            DenominatorSource::Census(vintage) => {
+                let (map, provenance) =
+                    census_denominator_map(&count_locs, *vintage, Some(geojson))?;
+                census_provenance = Some(provenance);
+                (map, "population".to_string(), None)
             },
         };
         let noun = apply_denominator_unit(&mut denoms, &denom_label, declared_unit.as_ref());
@@ -24920,13 +25189,19 @@ fn build_smart_summary_choropleth_panels(
                     q_total = count_locs.len()
                 );
             }
-            out.push(make_panel(
+            let mut rate_panel = make_panel(
                 series.locs,
                 scaled,
                 t!("viz.chart.rate_label", q_what = unit, q_per = per_phrase).into_owned(),
                 hover,
                 title,
-            ));
+            );
+            if let Some(provenance) = census_provenance.take() {
+                rate_panel = rate_panel.with_subtitle(Some(
+                    t!("viz.notes.denominator_provenance", q_source = provenance).into_owned(),
+                ));
+            }
+            out.push(rate_panel);
             rate_charted = true;
         }
     }
@@ -27321,7 +27596,7 @@ impl<'a> SmartCtx<'a> {
         out_format: OutFormat,
         progress: &'a ProgressBar,
         loaded_geojson: Option<&serde_json::Value>,
-        feature_id_key_explicit: bool,
+        extras: ArgvExtras,
     ) -> CliResult<Self> {
         // Owned rather than borrowed from `prep`: a deferred `--geojson auto` (issue #4416)
         // rewrites `flag_geojson` to the resolved boundary path below, and that can only happen
@@ -27466,8 +27741,12 @@ impl<'a> SmartCtx<'a> {
         // resolving here rewrites `args.flag_geojson` to the fetched boundary path, so every
         // consumer below reads a real file exactly as it would a user-supplied one. A no-op
         // unless `--geojson` names an auto spec.
-        let auto_geojson =
-            resolve_smart_auto_geojson(&mut args, &stats, &col_sems, feature_id_key_explicit)?;
+        let auto_geojson = resolve_smart_auto_geojson(
+            &mut args,
+            &stats,
+            &col_sems,
+            extras.feature_id_key_explicit,
+        )?;
         let loaded_geojson = auto_geojson.as_ref().or(loaded_geojson);
 
         // Build the geographic map panel up front (one data pass) so we can learn which lat/lon
@@ -27601,6 +27880,7 @@ impl<'a> SmartCtx<'a> {
                 loaded_geojson,
                 dict_data.as_ref().and_then(|d| d.grain_unit.as_deref()),
                 dict_data.as_ref().and_then(|d| d.grain.as_deref()),
+                extras,
             )?
         } else {
             None
@@ -29997,18 +30277,10 @@ fn build_smart(
     progress: &ProgressBar,
     show_progress: bool,
     loaded_geojson: Option<&serde_json::Value>,
-    // whether `--feature-id-key` was passed explicitly, so a deferred `--geojson auto` knows not
-    // to overwrite it with the fetched layer's key (issue #4416)
-    feature_id_key_explicit: bool,
+    extras: ArgvExtras,
 ) -> CliResult<SmartRender> {
     let prep = smart_prepare(args, progress, show_progress)?;
-    let mut ctx = SmartCtx::new(
-        &prep,
-        out_format,
-        progress,
-        loaded_geojson,
-        feature_id_key_explicit,
-    )?;
+    let mut ctx = SmartCtx::new(&prep, out_format, progress, loaded_geojson, extras)?;
     ctx.classify_columns();
     ctx.add_relationship_panels()?;
     ctx.add_overview_panels()?;

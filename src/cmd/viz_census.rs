@@ -242,6 +242,39 @@ fn status_is_transient(status: Option<reqwest::StatusCode>) -> bool {
 /// Query parameters are passed to reqwest rather than interpolated into the URL: a `where` clause
 /// carries quotes, commas and spaces that must be percent-encoded, and hand-rolling that is how
 /// injection-shaped bugs get in.
+/// Strip an API key out of any text that may quote a request URL.
+///
+/// NOT optional hygiene: `reqwest`'s own error `Display` embeds the full URL, query string
+/// included, so interpolating an error into a message printed the Census key to stderr verbatim.
+/// A key is a credential — it must not reach a log, a terminal, or a bug report — so every error
+/// this module builds from a URL or an underlying error goes through here.
+fn redact_api_key(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("key=") {
+        // Redact unless "key=" is the tail of a longer word ("monkey="). Deliberately NOT
+        // "preceded by ? or &": a wrapped or reformatted log line puts whitespace there, and a
+        // credential that survives because a line broke in the wrong place is not protected.
+        let is_param = at == 0
+            || !matches!(
+                rest.as_bytes()[at - 1],
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-'
+            );
+        out.push_str(&rest[..at + 4]);
+        rest = &rest[at + 4..];
+        if !is_param {
+            continue;
+        }
+        let end = rest
+            .find(|c: char| c == '&' || c == ')' || c == '\'' || c.is_whitespace())
+            .unwrap_or(rest.len());
+        out.push_str("REDACTED");
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 fn get_json(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -249,8 +282,11 @@ fn get_json(
 ) -> CliResult<serde_json::Value> {
     // `RequestBuilder::query` is behind a reqwest feature qsv does not enable, so the parameters
     // are encoded onto the URL here instead — same percent-encoding, no new build feature.
-    let target = reqwest::Url::parse_with_params(url, params.iter().copied())
-        .map_err(|e| crate::CliError::Other(format!("could not build Census URL '{url}': {e}")))?;
+    let target = reqwest::Url::parse_with_params(url, params.iter().copied()).map_err(|e| {
+        crate::CliError::Other(redact_api_key(&format!(
+            "could not build Census URL '{url}': {e}"
+        )))
+    })?;
     // Classify the failure, because only a TRANSIENT one may be answered from a stale cache entry
     // (see `resolve`). `error_for_status` turns any 4xx into an error too, so wrapping everything
     // as `Network` would let a rejected query or a removed endpoint — the service answering us
@@ -270,7 +306,7 @@ fn get_json(
     {
         Ok(resp) => resp,
         Err(e) => {
-            let msg = format!("Census request to '{url}' failed: {e}");
+            let msg = redact_api_key(&format!("Census request to '{url}' failed: {e}"));
             return Err(if status_is_transient(e.status()) {
                 crate::CliError::Network(msg)
             } else {
@@ -283,7 +319,11 @@ fn get_json(
     resp.by_ref()
         .take(CENSUS_MAX_BYTES as u64 + 1)
         .read_to_end(&mut buf)
-        .map_err(|e| crate::CliError::Network(format!("reading Census response body: {e}")))?;
+        .map_err(|e| {
+            crate::CliError::Network(redact_api_key(&format!(
+                "reading Census response body: {e}"
+            )))
+        })?;
     if buf.len() > CENSUS_MAX_BYTES {
         return Err(crate::CliError::Other(format!(
             "Census response from '{url}' exceeds the {} MB limit. Narrow the dataset's \
@@ -291,8 +331,11 @@ fn get_json(
             CENSUS_MAX_BYTES / 1_000_000
         )));
     }
-    serde_json::from_slice(&buf)
-        .map_err(|e| crate::CliError::Other(format!("Census response is not valid JSON: {e}")))
+    serde_json::from_slice(&buf).map_err(|e| {
+        crate::CliError::Other(redact_api_key(&format!(
+            "Census response is not valid JSON: {e}"
+        )))
+    })
 }
 
 /// Every ACS vintage the service publishes, ascending.
@@ -1164,6 +1207,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn api_key_is_redacted_from_anything_quoting_a_url() {
+        // a credential must not survive into stderr, a log, or a pasted bug report. reqwest's own
+        // error Display embeds the whole query string, so this is the last line of defence.
+        //
+        // The fixture is SYNTHETIC on purpose: never paste a captured secret in here. The natural
+        // way to write this test is to copy the error you just reproduced, which is how a real key
+        // once ended up committed inside the very fix for credential leaking.
+        let leaked = concat!(
+            "error sending request for url (https://api.census.gov/data/2024/acs/acs5",
+            "?get=B01003_001E&for=state%3A01&key=EXAMPLE0000NOTAREALKEY0000EXAMPLE)"
+        );
+        let safe = redact_api_key(leaked);
+        assert!(!safe.contains("EXAMPLE0000"), "{safe}");
+        assert!(safe.contains("key=REDACTED"), "{safe}");
+        // the rest of the URL survives, because it is what makes the error diagnosable
+        assert!(safe.contains("for=state%3A01"), "{safe}");
+        // a trailing paren ends the value rather than being swallowed
+        assert!(safe.ends_with(')'), "{safe}");
+        // multiple occurrences, and a key= that is not a query parameter
+        assert_eq!(
+            redact_api_key("?key=aaa&x=1 and ?key=bbb"),
+            "?key=REDACTED&x=1 and ?key=REDACTED"
+        );
+        assert_eq!(redact_api_key("the monkey=banana"), "the monkey=banana");
+        // a URL that a log wrapped: the key is no less secret for having a space before it
+        assert_eq!(redact_api_key("...& key=abc123"), "...& key=REDACTED");
+        assert_eq!(redact_api_key("no key here"), "no key here");
+    }
+
+    #[test]
     fn state_fips_pads_leading_zero_stripped_codes() {
         // Alabama's 01001 arrives from a numeric column as 1001
         let codes = vec!["1001".to_string(), "42003".to_string(), "42007".to_string()];
@@ -1508,8 +1581,9 @@ fn census_api_key() -> CliResult<Option<String>> {
 
 /// Build the Data API query parameters, appending the API key.
 ///
-/// The key is never logged: `get_json` logs the URL, so the key is appended to the PARAMS the
-/// caller passes, and errors quote the url without it.
+/// The key is a credential, so every error this module builds from a URL or an underlying error is
+/// passed through [`redact_api_key`] — `reqwest`'s error `Display` embeds the full query string,
+/// and an earlier version of this code printed the key to stderr on any network failure.
 fn acs_params<'a>(
     get: &'a str,
     for_clause: &'a str,
@@ -1547,7 +1621,8 @@ fn newest_acs_vintage(client: &reqwest::blocking::Client, this_year: u16) -> Cli
                 return Err(crate::CliError::Other(format!(
                     "--denominator census: the Census Data API did not return JSON, which is what \
                      it does for a missing or invalid key. Check QSV_CENSUS_API_KEY (request one \
-                     at https://api.census.gov/data/key_signup.html). Underlying error: {e}"
+                     at https://api.census.gov/data/key_signup.html). Underlying error: {}",
+                    redact_api_key(&e.to_string())
                 )));
             },
             // a vintage the service does not publish answers 404 — a SEMANTIC "no", so keep

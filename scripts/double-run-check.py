@@ -15,18 +15,27 @@ data, or a second run that fails yet still emits parseable output. The `*_on_suc
 This script finds the sites that still don't.
 
 Usage:
-    scripts/double-run-check.py [--json] [--hazards] [PATH ...]
+    scripts/double-run-check.py [--json] [--hazards] [--check] [PATH ...]
 
     (no flags)  summary counts by shape and by file
     --json      one JSON object per site on stdout, for scripted conversion
     --hazards   only sites where converting could change WHEN the command runs
+    --check     CI gate: print offending sites and exit 1 if any need action
 
-Exit status is 0 regardless of findings; this is a reporting tool, not a gate.
+Without --check the exit status is always 0 — it reports, it does not gate.
+With --check it exits 1 when any site needs action; combining it with --json
+keeps stdout parseable and still returns that status. Sites where the SAME
+command variable is reconfigured (`.arg()`/`.env()`/...) between its runs are
+deliberately two different commands, so they are listed as informational and do
+NOT fail the check — a mutation of some OTHER command in between does not
+exempt anything.
 
 Two classes of finding must NOT be blindly converted, and are reported separately:
 
-  * `mutated`  — a `.arg()` / `.env()` call sits between the two runs, so they
-    are deliberately two different commands.
+  * `mutated`  — THAT command variable is reconfigured (`.arg()` / `.env()` /
+    ...) between the two runs, so they are deliberately two different commands.
+    The receiver is checked: an intervening `other.arg(..)` on a different
+    command does not exempt anything.
   * `hazard`   — a statement between the two runs observes or alters state
     (`.exists()`, `read_to_string`, `wrk.create*`, `std::fs::`). Collapsing to a
     single run moves WHEN the command executes relative to that statement. The
@@ -82,6 +91,11 @@ BIND_RE = re.compile(
 )
 FN_RE = re.compile(r"fn (\w+)\(")
 MUT_RE = re.compile(r"\.\s*(args?|envs?|env_remove|env_clear|current_dir|stdin)\s*\(")
+# start of a method-call statement: `cmd.arg(..)`, `cmd` alone on its own line
+# (a common style here — 182 occurrences in tests/), and `.arg(..)` continuations
+RECEIVER_RE = re.compile(r"^\s*(\w+)\s*\.")
+BARE_RECEIVER_RE = re.compile(r"^\s*(\w+)\s*$")
+CONTINUATION_RE = re.compile(r"^\s*\.")
 # statements whose meaning depends on whether the command has run yet
 HAZARD_RE = re.compile(
     r"\.exists\(\)|read_to_string|read_csv|wrk\.path\(|wrk\.from_str|load_test"
@@ -175,6 +189,32 @@ def blank_literals(src):
     return "".join(out)
 
 
+def mutates(var, code_lines):
+    """True if `var` itself is reconfigured (.arg/.env/...) within `code_lines`.
+
+    The receiver matters: an intervening `other.arg("x")` on a DIFFERENT command
+    says nothing about `var`, and treating it as though it did would exempt a
+    real double run of `var` from the gate. Builder chains split across lines
+    keep the receiver of the line that started the statement, in both styles
+    used here:
+
+        cmd.args([..])          cmd
+            .arg("x");             .arg("x");
+
+    Missing the second style would leave the `.arg()` unattributed and report a
+    site that IS two different commands, i.e. a spurious CI failure.
+    """
+    receiver = None
+    for line in code_lines:
+        if m := RECEIVER_RE.match(line) or BARE_RECEIVER_RE.match(line):
+            receiver = m.group(1)
+        elif not CONTINUATION_RE.match(line):
+            receiver = None
+        if receiver == var and MUT_RE.search(line):
+            return True
+    return False
+
+
 def scan(path):
     """Yield one dict per command variable that is run more than once in a test fn."""
     raw = open(path, encoding="utf-8").read()
@@ -231,6 +271,9 @@ def scan(path):
             if any(blocks[k] != blocks[first] for k, _ in evs):
                 continue
             between = body[first + 1 : last]
+            # match on the literal-blanked copy so a ".arg(" inside a fixture
+            # string is not read as a real reconfiguration
+            between_code = code_lines[start + first + 1 : start + last]
             names = [n for _, n in evs]
             yield {
                 "file": path,
@@ -241,9 +284,47 @@ def scan(path):
                 "runners": names,
                 "runs": len(evs),
                 "reads_data": bool({n for n in names} - STATUS),
-                "mutated": bool(MUT_RE.search("\n".join(between))),
+                "mutated": mutates(var, between_code),
                 "hazard": [b.strip()[:100] for b in between if HAZARD_RE.search(b)],
             }
+
+
+def rel(path, root):
+    """Repo-relative path, falling back to the raw path for anything outside it."""
+    r = os.path.relpath(path, root)
+    return path if r.startswith("..") else r
+
+
+def gate(sites, root):
+    """CI mode: report actionable sites and return 1 if there are any."""
+    actionable = [s for s in sites if not s["mutated"]]
+    informational = [s for s in sites if s["mutated"]]
+
+    for s in informational:
+        print(
+            f"note: {rel(s['file'], root)}:{s['line']} {s['fn']} runs "
+            f"`{s['var']}` {s['runs']}x with an arg/env change between them — "
+            "treated as two different commands"
+        )
+    if not actionable:
+        print(f"OK: no test asserts on more than one run of the same command ({len(sites)} noted)")
+        return 0
+
+    for s in actionable:
+        why = "ordering hazard: " + s["hazard"][0] if s["hazard"] else "collapse to a single run"
+        print(
+            f"{rel(s['file'], root)}:{s['line']}: {s['fn']} runs `{s['var']}` "
+            f"{s['runs']}x ({' + '.join(sorted(set(s['runners'])))}) — {why}"
+        )
+    print(
+        f"\n{len(actionable)} site(s) run one command more than once, so the exit status,\n"
+        "stdout and stderr being asserted come from DIFFERENT executions.\n"
+        "Use the single-run helpers in tests/workdir.rs (read_stdout_on_success,\n"
+        "stdout_on_success, stderr_on_error, *_and_stderr_*), anchoring the run at the\n"
+        "EARLIEST original execution point. If a test means to run twice, say so with\n"
+        "`// double-run-check: intentional -- <why>` in the test function."
+    )
+    return 1
 
 
 def main():
@@ -251,6 +332,11 @@ def main():
     ap.add_argument("paths", nargs="*", default=None)
     ap.add_argument("--json", action="store_true", help="emit one JSON object per site")
     ap.add_argument("--hazards", action="store_true", help="only ordering-hazard sites")
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="CI gate: list offending sites and exit 1 if any need action",
+    )
     args = ap.parse_args()
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -263,7 +349,12 @@ def main():
     if args.json:
         for s in sites:
             print(json.dumps(s))
-        return
+        # --check governs the exit status even here; the human-readable gate
+        # report is suppressed so stdout stays parseable as JSON lines
+        return 1 if args.check and any(not s["mutated"] for s in sites) else 0
+
+    if args.check:
+        return gate(sites, root)
 
     convertible = [s for s in sites if not s["mutated"] and not s["hazard"]]
     print(f"double-run sites:            {len(sites)}")
@@ -279,7 +370,7 @@ def main():
         print(f"  {n:4d}  {' + '.join(shape)}")
     print("\nby file:")
     for f, n in collections.Counter(s["file"] for s in sites).most_common():
-        print(f"  {n:4d}  {os.path.relpath(f, root)}")
+        print(f"  {n:4d}  {rel(f, root)}")
 
 
 if __name__ == "__main__":

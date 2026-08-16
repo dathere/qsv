@@ -181,6 +181,16 @@ async fn serve_acs(o: web::Data<Observed>, req: HttpRequest) -> HttpResponse {
     }
 }
 
+/// What the Bureau actually serves for a missing or invalid key: a 302 to `missing_key.html`,
+/// which answers **HTTP 200 with HTML**. Not an error status — which is precisely why the raw
+/// failure is "response is not valid JSON" rather than anything about credentials.
+async fn serve_missing_key(o: web::Data<Observed>) -> HttpResponse {
+    o.requests.fetch_add(1, Ordering::SeqCst);
+    HttpResponse::Ok()
+        .content_type("text/html")
+        .body("<html><head><title>Missing Key</title></head><body>Missing Key</body></html>")
+}
+
 async fn run_webserver(
     tx: std::sync::mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
     observed: Observed,
@@ -206,6 +216,8 @@ async fn run_webserver(
             // the Data API lives under its own root; only 2023 is "published" here, so the
             // vintage probe has to walk back to find it
             .service(web::resource("/data/2023/acs/acs5").to(serve_acs))
+            // a vintage that answers like an unkeyed request, so the key hint can be observed
+            .service(web::resource("/data/2019/acs/acs5").to(serve_missing_key))
     });
     let bound = match server_builder.bind((BIND_HOST, 0)) {
         Ok(b) => b,
@@ -924,4 +936,91 @@ fn viz_denominator_census_is_rejected_where_nothing_can_use_it() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+// The key hint has to be observable, or the wrapper that centralizes it can be quietly unwound.
+// This is the path that motivated it: a PINNED vintage skips the newest-vintage probe entirely, so
+// before the wrapper existed it surfaced the bare "response is not valid JSON" — verified by hand
+// against the live Bureau, and unpinned by any test until now. (roborev 4266.)
+#[test]
+#[serial]
+fn viz_denominator_census_reports_a_key_problem_rather_than_bad_json() {
+    let wrk = Workdir::new("viz_denominator_census_reports_a_key_problem_rather_than_bad_json");
+    wrk.create_from_string("pa.csv", "fips,cases\n42003,600\n42101,800\n");
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "pa.csv",
+            "--locations",
+            "fips",
+            "--location-mode",
+            "geojson-id",
+            "--geojson",
+            "auto",
+            // pinned, so the vintage probe (where the hint used to live) never runs
+            "--denominator",
+            "census@2019",
+        ])
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env("QSV_CENSUS_API_URL", format!("{base}/data"))
+        .env("QSV_CENSUS_API_KEY", "test-key-not-a-real-credential")
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("census-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("QSV_CENSUS_API_KEY") && stderr.contains("key_signup"),
+            "an HTML answer must be diagnosed as a key problem, not as bad JSON: {stderr}"
+        );
+    });
+}
+
+// The redaction, end to end rather than as a helper: a network failure quotes the request URL, and
+// reqwest's error Display carries the whole query string — which is how a real key reached stderr
+// in the first place. The unit test covers the function; this covers the wiring.
+#[test]
+#[serial]
+fn viz_denominator_census_never_prints_the_api_key() {
+    let wrk = Workdir::new("viz_denominator_census_never_prints_the_api_key");
+    wrk.create_from_string("pa.csv", "fips,cases\n42003,600\n42101,800\n");
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "pa.csv",
+            "--locations",
+            "fips",
+            "--location-mode",
+            "geojson-id",
+            "--geojson",
+            "auto",
+            "--denominator",
+            "census",
+        ])
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        // a port nothing is listening on: the failure quotes the URL, key and all
+        .env("QSV_CENSUS_API_URL", "http://127.0.0.1:1/data")
+        .env("QSV_CENSUS_API_KEY", "sup3rs3cret-census-key-value")
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("census-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !stderr.contains("sup3rs3cret"),
+            "the API key must never reach stderr: {stderr}"
+        );
+        assert!(
+            stderr.contains("key=REDACTED"),
+            "the redaction should be visible where the key was: {stderr}"
+        );
+    });
 }

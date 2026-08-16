@@ -17762,4 +17762,35 @@ fn viz_smart_dictionary_declares_the_denominator_unit() {
         !html.contains("land_area:"),
         "the raw column name must not label a converted value: {html}"
     );
+
+    // and the FLAG outranks the dictionary, as documented. Reachable only because
+    // --denominator-unit is accepted on `viz smart` with a --dictionary: the dictionary is the
+    // third denominator source, so requiring one of the two denominator FLAGS would have made the
+    // highest-precedence flag unusable on exactly the path it is meant to override. (roborev 4261.)
+    wrk.create_from_string("wrong.schema.json", &dict(r#", "unit": "km2""#));
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "regions.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+    ])
+    .arg(wrk.path("wrong.schema.json"))
+    .args(["--denominator-unit", "m2"]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "--denominator-unit must be usable with a dictionary-declared denominator: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    // The dictionary declares km2, which converts nothing, so ~1.5e9 m² is read as 1.5e9 km² and
+    // the rate needs the widest rung: "per 1,000,000,000 km²". The flag declares m2, so the areas
+    // become ~1,500 and ~600 km² and the rate lands at "per 1,000 km²". Asserting the flagged
+    // phrasing exactly — a mere `contains("km²")` would hold under either unit and prove nothing.
+    assert!(
+        html.contains("per 1,000 km²"),
+        "the flag should have overridden the dictionary's unit: {html}"
+    );
 }

@@ -1957,13 +1957,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
              spelled m², km², sqm, sqkm)."
         );
     }
+    // A unit qualifies a denominator, so it needs one to qualify. `viz smart` has a THIRD source
+    // besides the two flags — the dictionary's `x-qsv.denominator.column` — and the flag is
+    // documented as outranking it, so a dictionary makes the flag meaningful even with neither
+    // denominator flag present. Whether that dictionary actually declares a denominator cannot be
+    // known here (it is read much later, in `SmartCtx::new`), and a dictionary that declares none
+    // already degrades to raw counts with a note rather than an error — so this stays permissive
+    // rather than becoming a late hard failure.
     if args.flag_denominator_unit.is_some()
         && args.flag_denominator_key.is_none()
         && args.flag_denominator.is_none()
+        && !(args.cmd_smart && args.flag_dictionary.is_some())
     {
         return fail_incorrectusage_clierror!(
             "--denominator-unit names the unit of a denominator, so it needs --denominator or \
-             --denominator-key."
+             --denominator-key — or, in `viz smart`, a --dictionary declaring one via \
+             x-qsv.denominator."
         );
     }
     if args.flag_denominator_key.is_some() {

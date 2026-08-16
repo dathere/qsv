@@ -1600,6 +1600,35 @@ fn acs_params<'a>(
     params
 }
 
+/// `get_json` for the Data API, mapping an unparseable body to the API-key hint.
+///
+/// The Bureau answers a missing OR INVALID key with an HTML page under HTTP 200, so the raw
+/// failure is "response is not valid JSON" — which reads like a qsv bug. The hint used to live
+/// only in the vintage probe, so a pinned `census@2023` (or an unpinned run whose vintage was
+/// already cached) skipped the probe and surfaced the raw error. Every ACS request goes through
+/// here instead, so the diagnosis cannot depend on which path reached the service.
+///
+/// Classified as `IncorrectUsage` rather than `Other`: it is the user's configuration that is
+/// wrong, and the vintage walk-back uses that distinction to stop rather than blame the vintage.
+fn acs_get_json(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    params: &[(&str, &str)],
+) -> CliResult<serde_json::Value> {
+    get_json(client, url, params).map_err(|e| {
+        let msg = redact_api_key(&e.to_string());
+        if msg.contains("not valid JSON") {
+            crate::CliError::IncorrectUsage(format!(
+                "--denominator census: the Census Data API did not return JSON, which is what it \
+                 does for a missing or invalid key. Check QSV_CENSUS_API_KEY (request one at \
+                 https://api.census.gov/data/key_signup.html). Underlying error: {msg}"
+            ))
+        } else {
+            e
+        }
+    })
+}
+
 /// The newest ACS 5-year vintage the service actually publishes.
 ///
 /// Probed rather than computed: the release calendar slips, and a computed guess would produce a
@@ -1609,26 +1638,19 @@ fn newest_acs_vintage(client: &reqwest::blocking::Client, this_year: u16) -> Cli
     let mut last_err: Option<crate::CliError> = None;
     for vintage in (this_year.saturating_sub(ACS_VINTAGE_PROBES)..=this_year).rev() {
         let url = format!("{}/{vintage}/acs/acs5", acs_root());
-        match get_json(
+        match acs_get_json(
             client,
             &url,
             &acs_params(ACS_POPULATION_TABLE, "state:01", None, key.as_deref()),
         ) {
             Ok(_) => return Ok(vintage),
-            // an INVALID key lands on the same HTML page as no key at all, so a body that will not
-            // parse is far more likely to be a key problem than an unpublished vintage
-            Err(e) if e.to_string().contains("not valid JSON") => {
-                return Err(crate::CliError::Other(format!(
-                    "--denominator census: the Census Data API did not return JSON, which is what \
-                     it does for a missing or invalid key. Check QSV_CENSUS_API_KEY (request one \
-                     at https://api.census.gov/data/key_signup.html). Underlying error: {}",
-                    redact_api_key(&e.to_string())
-                )));
+            // A vintage the service does not publish answers 404 — a SEMANTIC "no", so keep
+            // walking back. Two failures are NOT about the vintage and must not be reported as
+            // "no vintage exists": a transient failure (the service is unwell) and a key problem
+            // (every vintage would fail the same way).
+            Err(e @ (crate::CliError::Network(_) | crate::CliError::IncorrectUsage(_))) => {
+                return Err(e);
             },
-            // a vintage the service does not publish answers 404 — a SEMANTIC "no", so keep
-            // walking back. A transient failure is about the service and must not be reported as
-            // "no vintage exists".
-            Err(e @ crate::CliError::Network(_)) => return Err(e),
             Err(e) => last_err = Some(e),
         }
     }
@@ -1713,7 +1735,7 @@ fn fetch_population(
     match geo {
         // one request covers every state
         DenominatorGeography::State => {
-            let body = get_json(
+            let body = acs_get_json(
                 client,
                 &url,
                 &acs_params(&get, geo.for_clause(), None, key.as_deref()),
@@ -1726,7 +1748,7 @@ fn fetch_population(
         DenominatorGeography::County => {
             for state in states {
                 let in_clause = format!("state:{state}");
-                let body = get_json(
+                let body = acs_get_json(
                     client,
                     &url,
                     &acs_params(&get, geo.for_clause(), Some(&in_clause), key.as_deref()),

@@ -880,3 +880,48 @@ fn viz_denominator_census_is_reserved() {
         "the reserved value should have been treated as a source, not a column: {stderr}"
     );
 }
+
+// The `--denominator census` exception is for `viz smart` ONLY. Exempting it from the
+// non-choropleth check everywhere let a mistyped subcommand pass validation and then silently
+// ignore the flag — worse than the error it replaced, which at least said so. And on `viz smart`
+// it needs a --geojson, or there is no region map for a rate to become. (roborev 4264.)
+#[test]
+fn viz_denominator_census_is_rejected_where_nothing_can_use_it() {
+    let wrk = Workdir::new("viz_denominator_census_is_rejected_where_nothing_can_use_it");
+    wrk.create_from_string("t.csv", "a,b\nx,1\ny,2\n");
+
+    // a subcommand that has no region map at all
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "bar",
+        "t.csv",
+        "--x",
+        "a",
+        "--y",
+        "b",
+        "--denominator",
+        "census",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        !out.status.success(),
+        "`viz bar --denominator census` must not silently ignore the flag"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("only applies to `viz choropleth`"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // `viz smart` builds its region choropleth only when a boundary set is in play
+    wrk.create_from_string("fips.csv", "fips,cases\n42003,10\n42101,20\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fips.csv", "--denominator", "census"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("needs a --geojson"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

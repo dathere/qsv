@@ -1954,6 +1954,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
+    // `--denominator census` is read from the raw argv: docopt parses the flag into a
+    // `SelectColumns`, which cannot tell the reserved source name from a column of that name.
+    let census_denominator = ArgvExtras::from_argv(argv).census_denominator.is_some();
+
     // Denominator scope checks (issue #4394). Both flags name a per-region denominator that turns
     // a raw-count region map into a rate map; they are two SOURCES for the same quantity, so
     // supplying both is ambiguous rather than additive.
@@ -1993,6 +1997,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
              x-qsv.denominator."
         );
     }
+    // `viz smart` only builds a region choropleth when a boundary set is in play, so without one
+    // there is no panel a fetched denominator could reach — it would be silently ignored.
+    // (`viz choropleth` needs no --geojson: a usa-states map draws built-in geometry.)
+    if census_denominator && args.cmd_smart && args.flag_geojson.is_none() {
+        return fail_incorrectusage_clierror!(
+            "--denominator census turns `viz smart`'s region map into a rate map, so it needs a \
+             --geojson for that map to exist (try `--geojson auto` to fetch boundaries too)."
+        );
+    }
     if args.flag_denominator_key.is_some() {
         if !(args.cmd_choropleth || args.cmd_smart) {
             return fail_incorrectusage_clierror!(
@@ -2011,10 +2024,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // takes the denominator column from the data dictionary (x-qsv.denominator) instead of a flag.
     // `--denominator census` names a source qsv FETCHES, not a column, so the rule above does not
     // reach it: there is no per-row value to be constant within a region (issue #4395). It is
-    // therefore accepted on both subcommands, and is the only spelling that is.
+    // therefore accepted on `viz smart` as well — but ONLY there. Exempting it everywhere let
+    // `viz bar --denominator census` pass validation and then silently ignore the flag, which is
+    // worse than the error it replaced: a mistyped subcommand used to say so.
     if args.flag_denominator.is_some()
         && !args.cmd_choropleth
-        && ArgvExtras::from_argv(argv).census_denominator.is_none()
+        && !(args.cmd_smart && census_denominator)
     {
         return fail_incorrectusage_clierror!(
             "--denominator only applies to `viz choropleth` (except `--denominator census`, which \

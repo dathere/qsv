@@ -274,13 +274,9 @@ fn searchset_match_count() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("--count").arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_success(&mut cmd);
     let expected = "3\n";
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

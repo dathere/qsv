@@ -488,12 +488,11 @@ joinp_test!(
     joinp_outer_left_validate_manytoone,
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--left").args(["--validate", "manytoone"]);
-        let got: String = wrk.output_stderr(&mut cmd);
+        let got: String = wrk.stderr_on_error(&mut cmd);
         assert_eq!(
             got,
             "Polars error: ComputeError(ErrString(\"join keys did not fulfill m:1 validation\"))\n"
         );
-        wrk.assert_err(&mut cmd);
     }
 );
 
@@ -501,12 +500,11 @@ joinp_test!(
     joinp_outer_invalid_validation,
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--left").args(["--validate", "manytoeveryone"]);
-        let got: String = wrk.output_stderr(&mut cmd);
+        let got: String = wrk.stderr_on_error(&mut cmd);
         assert_eq!(
             got,
             "usage error: Invalid join validation: manytoeveryone\n"
         );
-        wrk.assert_err(&mut cmd);
     }
 );
 
@@ -514,9 +512,8 @@ joinp_test!(
     joinp_outer_left_validate_onetomany,
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--left").args(["--validate", "OneToMany"]);
-        let got: String = wrk.output_stderr(&mut cmd);
+        let got: String = wrk.stderr_on_success(&mut cmd);
         assert_eq!(got, "(5, 3)\n");
-        wrk.assert_success(&mut cmd);
     }
 );
 
@@ -524,12 +521,11 @@ joinp_test!(
     joinp_outer_left_validate_onetoone,
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--left").args(["--validate", "OneToone"]);
-        let got: String = wrk.output_stderr(&mut cmd);
+        let got: String = wrk.stderr_on_error(&mut cmd);
         assert_eq!(
             got,
             "Polars error: ComputeError(ErrString(\"join keys did not fulfill 1:1 validation\"))\n"
         );
-        wrk.assert_err(&mut cmd);
     }
 );
 

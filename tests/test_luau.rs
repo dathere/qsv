@@ -540,12 +540,12 @@ END {
         .arg("file:testlookup.luau")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    // Add a delay or ensure the file is closed properly
+    // Add a delay or ensure the file is closed properly. Kept ahead of the single
+    // run below: it guarded the registered lookup file's handle being released on
+    // Windows, which is a concern before the command runs, not between runs.
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Running Total"],
         svec!["d", "7", "7.28"],
@@ -555,11 +555,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 7.28/74.88 Grand total of 4 rows: 120.64\n";
     assert!(end.ends_with(expected_end));
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -637,9 +634,7 @@ END {
         .arg("file:testlookup.luau")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Running Total"],
         svec!["d", "7", "7.28"],
@@ -649,11 +644,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 7.28/74.88 Grand total of 4 rows: 120.64\n";
     assert!(end.ends_with(expected_end));
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

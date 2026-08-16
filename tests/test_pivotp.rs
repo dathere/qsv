@@ -329,8 +329,7 @@ pivotp_test!(
             "quantile@1.5",
             "sales.csv",
         ]);
-        wrk.assert_err(&mut cmd);
-        let stderr = wrk.output_stderr(&mut cmd);
+        let stderr = wrk.stderr_on_error(&mut cmd);
         assert!(
             stderr.contains("Invalid quantile probability"),
             "expected 'Invalid quantile probability' in stderr, got: {stderr}"
@@ -468,9 +467,7 @@ pivotp_test!(
             "sales.csv",
         ]);
 
-        wrk.assert_err(&mut cmd);
-
-        let msg = wrk.output_stderr(&mut cmd);
+        let msg = wrk.stderr_on_error(&mut cmd);
         let expected_msg = r#"Polars error: ExprContext { error: ComputeError(ErrString("aggregation 'item' expected no or a single value, got 2 values")), expr: ErrString("col(\"sales\").filter([(col(\"product\"))"#;
         assert!(msg.starts_with(expected_msg));
     }
@@ -834,9 +831,7 @@ pivotp_test!(
             "sales.csv",
         ]);
 
-        wrk.assert_success(&mut cmd);
-
-        let msg = wrk.output_stderr(&mut cmd);
+        let msg = wrk.stderr_on_success(&mut cmd);
         let expected_msg = "Info: High variability in values (CV > 1), using Median for more \
                             robust central tendency\nPivot on-column cardinality:\n  product: \
                             2\n(2, 3)\n";
@@ -1393,9 +1388,8 @@ fn pivotp_smart_date_ascending() {
         "--try-parsedates",
         "date_ascending.csv",
     ]);
-    wrk.assert_success(&mut cmd);
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     // Should use Last — ascending date values, most recent is most useful
     assert!(
         stderr.contains("Last") || stderr.contains("Ascending"),
@@ -1985,8 +1979,7 @@ pivotp_groupby_test!(
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.args(["--agg", "len", "test.csv"]);
 
-        wrk.assert_err(&mut cmd);
-        let stderr = wrk.output_stderr(&mut cmd);
+        let stderr = wrk.stderr_on_error(&mut cmd);
         assert!(
             stderr.contains("--index <cols> is required in group-by mode"),
             "Expected --index required error, got: {stderr}"
@@ -2000,8 +1993,7 @@ pivotp_groupby_test!(
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.args(["--index", "GROUP", "--agg", "len", "--subtotal", "test.csv"]);
 
-        wrk.assert_err(&mut cmd);
-        let stderr = wrk.output_stderr(&mut cmd);
+        let stderr = wrk.stderr_on_error(&mut cmd);
         assert!(
             stderr.contains("--subtotal is not supported in group-by mode"),
             "Expected --subtotal error, got: {stderr}"
@@ -2015,8 +2007,7 @@ pivotp_groupby_test!(
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.args(["--index", "GROUP", "--agg", "len", "--validate", "test.csv"]);
 
-        wrk.assert_err(&mut cmd);
-        let stderr = wrk.output_stderr(&mut cmd);
+        let stderr = wrk.stderr_on_error(&mut cmd);
         assert!(
             stderr.contains("--validate is not supported in group-by mode"),
             "Expected --validate error, got: {stderr}"
@@ -2037,8 +2028,7 @@ pivotp_groupby_test!(
             "test.csv",
         ]);
 
-        wrk.assert_err(&mut cmd);
-        let stderr = wrk.output_stderr(&mut cmd);
+        let stderr = wrk.stderr_on_error(&mut cmd);
         assert!(
             stderr.contains("--sort-columns is not supported in group-by mode"),
             "Expected --sort-columns error, got: {stderr}"
@@ -2052,8 +2042,7 @@ pivotp_groupby_test!(
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.args(["--index", "GROUP", "--agg", "none", "test.csv"]);
 
-        wrk.assert_err(&mut cmd);
-        let stderr = wrk.output_stderr(&mut cmd);
+        let stderr = wrk.stderr_on_error(&mut cmd);
         assert!(
             stderr.contains("not supported in group-by mode"),
             "Expected --agg none error, got: {stderr}"
@@ -2067,8 +2056,7 @@ pivotp_groupby_test!(
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.args(["--index", "GROUP", "--agg", "item", "test.csv"]);
 
-        wrk.assert_err(&mut cmd);
-        let stderr = wrk.output_stderr(&mut cmd);
+        let stderr = wrk.stderr_on_error(&mut cmd);
         assert!(
             stderr.contains("--agg item is not supported in group-by mode"),
             "Expected --agg item error, got: {stderr}"

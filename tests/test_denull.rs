@@ -463,9 +463,9 @@ fn denull_apply_passes_data_through_when_nothing_is_confirmed() {
 
     let mut cmd = wrk.command("denull");
     cmd.arg("--apply").arg("d.csv");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, stderr): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr(&mut cmd);
     assert_eq!(got, vec![vec!["a", "b"], vec!["x", "y"], vec!["z", "w"]]);
-    assert!(wrk.output_stderr(&mut cmd).contains("no column confirmed"));
+    assert!(stderr.contains("no column confirmed"));
 }
 
 #[test]
@@ -502,9 +502,9 @@ fn denull_apply_leaves_rejected_columns_untouched() {
 
     let mut cmd = wrk.command("denull");
     cmd.arg("--apply").arg("d.csv");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, stderr): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr(&mut cmd);
     assert_eq!(got.iter().skip(1).filter(|r| r[0] == "NULL").count(), 10);
-    assert!(wrk.output_stderr(&mut cmd).contains("rejected:off-vocab"));
+    assert!(stderr.contains("rejected:off-vocab"));
 }
 
 #[test]

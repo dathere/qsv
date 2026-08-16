@@ -1938,12 +1938,9 @@ fn validate_with_fancy_regex() {
         .arg("data.csv")
         .arg("schema.json")
         .arg("--fancy-regex");
-    wrk.output(&mut cmd_fancy);
-
     // we still get an error here as the test data is invalid,
     // not because of the regex engine
-    wrk.assert_err(&mut cmd_fancy);
-    let got = wrk.output_stderr(&mut cmd_fancy);
+    let got = wrk.stderr_on_error(&mut cmd_fancy);
     assert_eq!(got, "4 out of 5 records invalid.\n");
 
     // Check validation-errors.tsv - should show 4 invalid passwords
@@ -2612,14 +2609,10 @@ fn validate_multiple_files_json_output() {
     let mut cmd = wrk.command("validate");
     cmd.arg("--json").arg("file1.csv").arg("file2.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let (stdout_str, got): (String, String) = wrk.stdout_and_stderr_on_success(&mut cmd);
     assert!(got.contains("✅ All 2 files are valid."));
 
     // Check that JSON output is produced for each file
-    let output = wrk.output(&mut cmd);
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
     assert!(stdout_str.contains("\"delimiter_char\":\",\""));
     assert!(stdout_str.contains("\"num_records\":2"));
 }
@@ -2647,14 +2640,10 @@ fn validate_multiple_files_pretty_json_output() {
     let mut cmd = wrk.command("validate");
     cmd.arg("--pretty-json").arg("file1.csv").arg("file2.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let (stdout_str, got): (String, String) = wrk.stdout_and_stderr_on_success(&mut cmd);
     assert!(got.contains("✅ All 2 files are valid."));
 
     // Check that pretty JSON output is produced for each file
-    let output = wrk.output(&mut cmd);
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
     assert!(stdout_str.contains("{\n  \"delimiter_char\": \",\""));
     assert!(stdout_str.contains("\"num_records\": 2"));
 }
@@ -2768,15 +2757,13 @@ fn validate_single_file_backward_compatibility() {
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got_stderr: String = wrk.output_stderr(&mut cmd);
-    let output = wrk.output(&mut cmd);
-    let got_stdout = String::from_utf8_lossy(&output.stdout);
+    let (got_stdout, got_stderr): (String, String) = wrk.stdout_and_stderr_on_success(&mut cmd);
 
     let expected = "Valid: 3 Columns: (\"id\", \"name\", \"age\"); Records: 2; Delimiter: ,";
-    // The output might be on stdout instead of stderr
-    if got_stderr.contains("No error") {
+    // The output might be on stdout instead of stderr. `output_stderr` used to
+    // return the literal "No error" sentinel for the empty-stderr case this
+    // branch is testing for.
+    if got_stderr.is_empty() {
         assert_eq!(got_stdout.trim(), expected);
     } else {
         assert_eq!(got_stderr, expected);

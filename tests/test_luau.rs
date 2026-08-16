@@ -272,7 +272,6 @@ BEGIN {
     end
 }!
 
-
 -- this is the MAIN script loop, which is executed for each row
 -- note how we use the _IDX special variable to get the row index
 amount_array[_IDX] = Amount;
@@ -282,7 +281,6 @@ adjusted_array[_IDX] = Amount + margin(Amount, 0.25);
 
 -- running_total is the value we "map" to the "Running Total" column of each row
 return running_total;
-
 
 END {
     -- and this is the END block, which is executed once at the end
@@ -384,7 +382,6 @@ BEGIN {
     _INDEX = _LASTROW;
 }!
 
-
 ----------------------------------------------------------------------------
 -- this is the MAIN script, which is executed for the row specified by _INDEX
 -- As we are doing random access, to exit this loop, we need to set 
@@ -402,7 +399,6 @@ _INDEX = _INDEX - 1;
 
 -- running_total is the value we "map" to the "Running Total" column of each row
 return running_total;
-
 
 ----------------------------------------------------------------------------
 END {
@@ -521,7 +517,6 @@ BEGIN {
     _INDEX = _LASTROW;
 }!
 
-
 ----------------------------------------------------------------------------
 -- this is the MAIN script, which is executed for the row specified by _INDEX
 -- As we are doing random access, to exit this loop, we need to set 
@@ -539,7 +534,6 @@ _INDEX = _INDEX - 1;
 
 -- running_total is the value we "map" to the "Running Total" column of each row
 return running_total;
-
 
 ----------------------------------------------------------------------------
 END {
@@ -620,7 +614,6 @@ BEGIN {
     _INDEX = _LASTROW;
 }!
 
-
 ----------------------------------------------------------------------------
 -- this is the MAIN script, which is executed for the row specified by _INDEX
 -- As we are doing random access, to exit this loop, we need to set 
@@ -638,7 +631,6 @@ _INDEX = _INDEX - 1;
 
 -- running_total is the value we "map" to the "Running Total" column of each row
 return running_total;
-
 
 ----------------------------------------------------------------------------
 END {
@@ -750,13 +742,11 @@ END {
         .arg("https://data.boston.gov/api/3/action")
         .arg("data.csv");
 
-    let end = wrk.output_stderr(&mut cmd);
+    let end = wrk.stderr_on_success(&mut cmd);
     let expected_end = "previous_day_score,previous_month_score,previous_quarter_score,\
                         previous_week_score,score_calculated_ts,score_day_name,\
                         score_final_table_ts,\n";
     assert!(end.ends_with(expected_end));
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1126,13 +1116,11 @@ END {
         .arg("file:testqsvcmd.luau")
         .arg("data.csv");
 
-    let output_stderr = wrk.output_stderr(&mut cmd);
+    let output_stderr = wrk.stderr_on_success(&mut cmd);
     assert!(
         output_stderr.starts_with("<ERROR>")
             && output_stderr.contains("runtime error: Invalid shell command: \"rm\".")
     );
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1519,7 +1507,6 @@ BEGIN {
     _INDEX = _LASTROW;
 }!
 
-
 ----------------------------------------------------------------------------
 -- this is the MAIN script, which is executed for the row specified by _INDEX
 -- As we are doing random access, to exit this loop, we need to set 
@@ -1537,7 +1524,6 @@ _INDEX = _INDEX - 1;
 
 -- running_total is the value we "map" to the "Running Total" column of each row
 return running_total;
-
 
 ----------------------------------------------------------------------------
 END {
@@ -1609,7 +1595,6 @@ BEGIN {
     _INDEX = _LASTROW;
 }!
 
-
 ----------------------------------------------------------------------------
 -- this is the MAIN script loop, which is executed for the row specified by _INDEX
 -- As we are doing random access, to exit this loop, we need to set 
@@ -1629,7 +1614,6 @@ _INDEX = _INDEX - 1;
 -- Note that the CURRENT row is still the _INDEX value when we entered this loop iteration,
 -- not _INDEX - 1 which will become the next CURRENT row AFTER this loop iteration
 return running_total;
-
 
 ----------------------------------------------------------------------------
 END {
@@ -1698,7 +1682,6 @@ BEGIN {
     _INDEX = _LASTROW;
 }!
 
-
 ----------------------------------------------------------------------------
 -- this is the MAIN script, which is executed for the row specified by _INDEX
 -- As we are doing random access, to exit this loop, we need to set 
@@ -1716,7 +1699,6 @@ _INDEX = _INDEX - 1;
 
 -- running_total is the value we "map" to the "Running Total" column of each row
 return {running_total, running_total + (running_total * 0.1)};
-
 
 ----------------------------------------------------------------------------
 END {
@@ -1955,8 +1937,7 @@ fn luau_map_error() {
         .arg("math.dancefloor(number / 2)")
         .arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-    let stderr_string = wrk.output_stderr(&mut cmd);
+    let stderr_string = wrk.stderr_on_error(&mut cmd);
     assert!(stderr_string.ends_with("Luau errors encountered: 4\n"));
 }
 
@@ -3311,8 +3292,7 @@ fn luau_cumsum_overflow() {
         .arg(r#"qsv_cumsum(value)"#)
         .arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     let expected = "Luau errors encountered: 1\n";
     assert_eq!(stderr, expected);
 }
@@ -3336,8 +3316,7 @@ return "ok"
         )
         .arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(stderr.contains("Invalid shell command"));
 }
 

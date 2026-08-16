@@ -150,8 +150,7 @@ fn searchset_indexed_parallel_quick() {
         .arg("--jobs")
         .arg("1")
         .arg("data.csv");
-    let seq_err = wrk.output_stderr(&mut seq_cmd);
-    wrk.assert_success(&mut seq_cmd);
+    let seq_err = wrk.stderr_on_success(&mut seq_cmd);
 
     // parallel run
     let mut par_cmd = wrk.command("searchset");
@@ -196,8 +195,7 @@ fn searchset_indexed_parallel_quick_json() {
         .arg("--jobs")
         .arg("4")
         .arg("data.csv");
-    let stderr = wrk.output_stderr(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
 
     // stderr must be a JSON summary, not a single row number
     let json: serde_json::Value = serde_json::from_str(stderr.trim())

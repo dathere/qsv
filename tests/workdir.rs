@@ -223,6 +223,33 @@ impl Workdir {
         String::from_utf8_lossy(&o.stderr).to_string()
     }
 
+    /// Run `cmd`, assert it exited with a NON-zero status, and return its
+    /// stderr as a `String`. The failure-path twin of `stderr_on_success`: use
+    /// it instead of `assert_err` followed by `output_stderr`, which executes
+    /// `cmd` twice — the run whose exit status is asserted is then a different
+    /// run from the one whose stderr is inspected, so a command that failed for
+    /// an unrelated reason (or succeeded on the second run) can still satisfy
+    /// both assertions.
+    pub fn stderr_on_error(&self, cmd: &mut process::Command) -> String {
+        {
+            // ensures stderr has been flushed before we run our cmd
+            let mut _stderr = io::stderr();
+            _stderr.flush().unwrap();
+        }
+        let o = cmd.output().unwrap();
+        assert!(
+            !o.status.success(),
+            "\n\n===== {:?} =====\ncommand succeeded but expected an error!\n\ncwd: {}\n\nstatus: \
+             {}\n\nstdout: {}\n\nstderr: {}\n\n=====\n",
+            cmd,
+            self.dir.display(),
+            o.status,
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        );
+        String::from_utf8_lossy(&o.stderr).to_string()
+    }
+
     /// Run `cmd`, assert it exited successfully, and return its stdout parsed
     /// as `T`. Unlike calling `assert_success` then `stdout` (which executes the
     /// command twice and only asserts success on the first run), this captures a

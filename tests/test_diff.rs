@@ -403,12 +403,11 @@ fn diff_key_by_column_name_columns_have_different_order_error() {
     let mut cmd = wrk.command("diff");
     cmd.args(["left.csv", "right.csv", "--key", "h1"]);
 
-    wrk.assert_err(&mut cmd);
     let expected = "usage error: Column names on left and right CSVs do not match.\nUse `qsv \
                     select` to reorder the columns on the right CSV to match the order of the \
                     left CSV.\nThe key column indices on the left CSV are in index \
                     locations:\n[0]\nand on the right CSV are:\n[1]\n";
-    assert_eq!(wrk.output_stderr(&mut cmd), expected);
+    assert_eq!(wrk.stderr_on_error(&mut cmd), expected);
 }
 
 #[test]
@@ -432,12 +431,11 @@ fn diff_sort_by_column_name_columns_have_different_order_error() {
     let mut cmd = wrk.command("diff");
     cmd.args(["left.csv", "right.csv", "--sort-columns", "h1"]);
 
-    wrk.assert_err(&mut cmd);
     let expected = "usage error: Column names on left and right CSVs do not match.\nUse `qsv \
                     select` to reorder the columns on the right CSV to match the order of the \
                     left CSV.\nThe sort column indices on the left CSV are in index \
                     locations:\n[0]\nand on the right CSV are:\n[1]\n";
-    assert_eq!(wrk.output_stderr(&mut cmd), expected);
+    assert_eq!(wrk.stderr_on_error(&mut cmd), expected);
 }
 
 #[test]

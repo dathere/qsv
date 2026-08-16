@@ -304,8 +304,7 @@ fn search_indexed_parallel_quick() {
         .arg("--jobs")
         .arg("1")
         .arg("data.csv");
-    let seq_err = wrk.output_stderr(&mut seq_cmd);
-    wrk.assert_success(&mut seq_cmd);
+    let seq_err = wrk.stderr_on_success(&mut seq_cmd);
 
     // parallel run
     let mut par_cmd = wrk.command("search");

@@ -1630,8 +1630,7 @@ p_fewshot_examples = ""
         .arg("--all")
         .arg("--no-cache");
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(
         got.contains("QSV_LLM_APIKEY") || got.to_lowercase().contains("api"),
         "Remote prompt-file URL must trigger the missing-API-key error.\nGot: {}",

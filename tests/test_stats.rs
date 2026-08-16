@@ -6689,8 +6689,7 @@ fn stats_jsonl_conflicts_with_pretty_json() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--jsonl").arg("--pretty-json").arg("data.csv");
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
         stderr.contains("cannot be combined"),
         "expected mutual-exclusivity error, got: {stderr}"
@@ -6704,8 +6703,7 @@ fn stats_jsonl_conflicts_with_stats_jsonl() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--jsonl").arg("--stats-jsonl").arg("data.csv");
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
         stderr.contains("cannot be combined"),
         "expected mutual-exclusivity error, got: {stderr}"

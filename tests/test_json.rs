@@ -35,9 +35,7 @@ fn json_array_empty() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     let expected = "Expected an array of objects in JSON\n".to_string();
 
     assert_eq!(got, expected);
@@ -51,9 +49,7 @@ fn json_array_first_object_empty() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     let expected = "Expected a non-empty JSON object\n".to_string();
 
     assert_eq!(got, expected);
@@ -67,9 +63,7 @@ fn json_random() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     let expected =
         "Failed to parse JSON from file: expected value at line 1 column 1\n".to_string();
 
@@ -154,9 +148,7 @@ fn json_object_empty() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     let expected = "Expected a non-empty JSON object\n".to_string();
 
     assert_eq!(got, expected);
@@ -425,9 +417,7 @@ fn json_flatten_key_collision() {
     let mut cmd = wrk.command("json");
     cmd.arg("data.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(
         got.contains("Flattening Key Collision error"),
         "unexpected stderr: {got}"
@@ -575,8 +565,7 @@ fn json_jaq_runtime_error_surfaced() {
     cmd.arg("data.json");
     cmd.args(vec!["--jaq", r#"error("custom_runtime_err")"#]);
 
-    wrk.assert_err(&mut cmd);
-    let got_stderr = wrk.output_stderr(&mut cmd);
+    let got_stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
         got_stderr.contains("jaq query returned no results"),
         "stderr did not mention 'no results': {got_stderr}"

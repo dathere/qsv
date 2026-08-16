@@ -134,9 +134,8 @@ fn excel_open_xlsx_readpassword() {
     let mut cmd = wrk.command("excel");
     cmd.arg(xlsx_file);
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert_eq!(got, "Xlsx error: Workbook is password protected\n");
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -148,9 +147,8 @@ fn excel_open_ods_readpassword() {
     let mut cmd = wrk.command("excel");
     cmd.arg(ods_file);
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert_eq!(got, "Ods error: Workbook is password protected\n");
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -441,10 +439,9 @@ fn excel_invalid_sheet_index() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--sheet").arg("100").arg(xls_file);
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     let expected = "usage error: sheet index 100 is greater than number of sheets 8\n".to_string();
     assert_eq!(got, expected);
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -456,10 +453,9 @@ fn excel_invalid_sheet_neg_index() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--sheet").arg("-100").arg(xls_file);
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     let expected = "usage error: negative sheet index -100 is out of range for 8 sheets\n";
     assert_eq!(got, expected);
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1444,9 +1440,8 @@ fn excel_empty_sheet2_message() {
     let mut cmd = wrk.command("excel");
     cmd.arg("--sheet").arg("Sheet1").arg(xls_file);
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert_eq!(got, "\"Sheet: Sheet1 \"is empty.\n");
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1657,12 +1652,11 @@ fn excel_range_empty_sheet() {
     cmd.arg("-s").arg("Sheet2");
 
     assert!(
-        wrk.output_stderr(&mut cmd)
+        wrk.stderr_on_error(&mut cmd)
             .matches("sheet is empty")
             .min()
             .is_some()
     );
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]

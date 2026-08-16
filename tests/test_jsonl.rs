@@ -161,13 +161,11 @@ fn jsonl_error_line_number() {
     let mut cmd = wrk.command("jsonl");
     cmd.arg("data.jsonl");
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
         stderr.contains("Could not parse input line 4 as JSON"),
         "expected stderr to reference input line 4, got: {stderr}"
     );
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]

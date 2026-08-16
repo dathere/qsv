@@ -129,14 +129,12 @@ fn safenames_verify() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("verify").arg("in.csv");
 
-    let changed_headers = wrk.output_stderr(&mut cmd);
+    let changed_headers = wrk.stderr_on_success(&mut cmd);
     // 8 unsafe = 4 distinct invalid headers + 2 duplicate `col1` slots
     // (renamed col1_2, col1_3) + 2 duplicate empty slots (renamed unsafe__2,
     // unsafe__3). Matches always-mode's changed_count for the same input.
     let expected_count = "8\n";
     assert_eq!(changed_headers, expected_count);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -169,7 +167,7 @@ fn safenames_verify_verbose() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("V").arg("in.csv");
 
-    let got_stderr = wrk.output_stderr(&mut cmd);
+    let got_stderr = wrk.stderr_on_success(&mut cmd);
 
     let expected_stderr = r#"13 header/s
 2 duplicate/s: ":4, col1:5"
@@ -178,8 +176,6 @@ fn safenames_verify_verbose() {
 "#;
 
     assert_eq!(got_stderr, expected_stderr);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

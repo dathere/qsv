@@ -680,8 +680,12 @@ smart options:
                            busiest region wins on size rather than on intensity; the count panel
                            says so in its subtitle. The named column must hold the same value on
                            every row of a region (it describes the region, not the row); when it
-                           does not, qsv notes why and charts raw counts only. Prefer the
-                           denominator-key flag when the boundary file already carries the figure.
+                           does not, qsv notes why and charts raw counts only. Add a "unit" beside
+                           the "column" - {"column": "land_area", "unit": "m2"} - when the values
+                           are an area in square metres, so qsv converts them and names the rate
+                           "per km2" instead of dividing by metres and printing the raw column
+                           name. Prefer the denominator-key flag when the boundary file already
+                           carries the figure.
                            Note that on ENGLISH pages large numbers use the financial convention
                            (1e9 reads "1B", not the SI "1G") consistently across KPI tiles, bar
                            value labels and axis ticks. Other languages keep the SI prefixes.
@@ -37373,6 +37377,12 @@ mod tests {
                          "denominator": { "col": "population" } } },
             "scalar": { "type": "string", "x-qsv": { "concept": "geo.county",
                          "denominator": "population" } },
+            "unit": { "type": "string", "x-qsv": { "concept": "geo.county",
+                         "denominator": { "column": "land_area", "unit": " M2 " } } },
+            "badunit": { "type": "string", "x-qsv": { "concept": "geo.county",
+                         "denominator": { "column": "land_area", "unit": 42 } } },
+            "emptyunit": { "type": "string", "x-qsv": { "concept": "geo.county",
+                         "denominator": { "column": "land_area", "unit": "  " } } },
             "plain": { "type": "string", "x-qsv": { "concept": "geo.county" } }
           }
         }"#;
@@ -37389,9 +37399,20 @@ mod tests {
         assert_eq!(row("nokey").denominator, None, "wrong key name");
         assert_eq!(row("scalar").denominator, None, "must be an object");
         assert_eq!(row("plain").denominator, None, "no hint at all");
+        // `unit` (issue #4414) rides beside `column` in the same object and is shape-checked the
+        // same way: trimmed on read, dropped when it is not a non-empty string. Whether the token
+        // names a unit qsv converts is decided at the consumption site, like `column`'s existence.
+        assert_eq!(row("unit").denominator_unit.as_deref(), Some("M2"));
+        assert_eq!(row("badunit").denominator_unit, None, "non-string unit");
+        assert_eq!(row("emptyunit").denominator_unit, None, "blank unit");
+        assert_eq!(row("zip").denominator_unit, None, "no unit declared");
+        // a malformed unit never takes its sibling down with it
+        assert_eq!(row("badunit").denominator.as_deref(), Some("land_area"));
         // and it survives derive_semantics onto the region column's ColSemantics
         let sems = derive_semantics(&stat("String", 33, None), Some(row("zip")));
         assert_eq!(sems.denominator.as_deref(), Some("population"));
+        let sems = derive_semantics(&stat("String", 33, None), Some(row("unit")));
+        assert_eq!(sems.denominator_unit.as_deref(), Some("M2"));
     }
 
     #[test]

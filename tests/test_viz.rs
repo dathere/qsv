@@ -17688,3 +17688,78 @@ fn viz_denominator_unit_is_validated() {
         "expected the missing-denominator error: {stderr}"
     );
 }
+
+// The dictionary half of #4414: `x-qsv.denominator.unit` rides beside `column` in the same object
+// on the REGION column, because that object describes one relationship ("this region's denominator
+// is <column>, in <unit>"). Wired but untested until now — the flag and the GeoJSON declaration
+// have their own coverage, and this is the path a `viz smart` user actually authors.
+#[test]
+fn viz_smart_dictionary_declares_the_denominator_unit() {
+    let wrk = Workdir::new("viz_smart_dictionary_declares_the_denominator_unit");
+    // land_area is region-constant and in square metres; two rows per region so the rate is a map
+    wrk.create_from_string(
+        "regions.csv",
+        "fips,land_area,cases\n42003,1500000000,60\n42003,1500000000,90\n36061,600000000,40\n         36061,600000000,80\n",
+    );
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","id":"42003","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},
+          {"type":"Feature","id":"36061","properties":{},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    let dict = |unit: &str| {
+        format!(
+            r#"{{
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {{
+                "fips": {{ "type": "string", "x-qsv": {{ "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips", "denominator": {{ "column": "land_area"{unit} }} }} }},
+                "land_area": {{ "type": "number", "x-qsv": {{ "qsv_type": "Integer", "role": "measure" }} }},
+                "cases": {{ "type": "number", "x-qsv": {{ "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" }} }}
+              }}
+            }}"#
+        )
+    };
+
+    // no unit declared: the column is named verbatim and divided in its raw unit
+    wrk.create_from_string("plain.schema.json", &dict(""));
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "regions.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+    ])
+    .arg(wrk.path("plain.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("land_area"),
+        "an undeclared denominator column is named verbatim: {html}"
+    );
+
+    // with the unit, the rate is converted and named in km²
+    wrk.create_from_string("unit.schema.json", &dict(r#", "unit": "m2""#));
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "regions.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+    ])
+    .arg(wrk.path("unit.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("km²"),
+        "a dictionary-declared unit should reach the rate panel: {html}"
+    );
+    assert!(
+        !html.contains("land_area:"),
+        "the raw column name must not label a converted value: {html}"
+    );
+}

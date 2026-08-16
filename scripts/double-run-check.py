@@ -102,6 +102,12 @@ def blank_literals(src):
     corrupts block identity for the rest of the function and silently hides
     real double-run sites (tests/test_search.rs::search_indexed_parallel_json
     and five in tests/test_excel.rs are the cases that proved it).
+
+    Char and byte-char literals matter for the same reason and for a worse one:
+    `b'{'` (tests/test_viz.rs) unbalances the brace stack, and `split_once('"')`
+    (also test_viz) would otherwise open a bogus string literal that blanks
+    everything up to the next quote. A `'` that is not a char literal is a
+    lifetime and is left alone.
     """
     out = []
     i, n = 0, len(src)
@@ -131,6 +137,24 @@ def blank_literals(src):
                     j += 1
                     break
                 j += 1
+            out.append(re.sub(r"[^\n]", " ", src[i:j]))
+            i = j
+            continue
+        # char / byte-char literal: 'x', '\n', b'{'. A `'` that is NOT one of
+        # these is a lifetime (`&'a str`, `'static`) and must be left alone.
+        if c == "'":
+            j = i + 1
+            if j < n and src[j] == "\\":
+                j += 2
+                while j < n and src[j] != "'":
+                    j += 1
+                j += 1
+            elif j + 1 < n and src[j + 1] == "'":
+                j += 2
+            else:
+                out.append(c)  # lifetime
+                i += 1
+                continue
             out.append(re.sub(r"[^\n]", " ", src[i:j]))
             i = j
             continue

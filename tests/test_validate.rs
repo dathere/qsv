@@ -618,11 +618,10 @@ fn validate_adur_public_toilets_dataset_with_json_schema_valid_output() {
         .arg("schema.json")
         .args(["--valid-output", "-"]);
 
-    let out = wrk.output_stderr(&mut cmd);
+    let (got, out): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_error(&mut cmd);
     let expected = "13\n";
     assert_eq!(out, expected);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["ExtractDate", "OrganisationURI", "OrganisationLabel", "ServiceTypeURI", "ServiceTypeLabel", "LocationText", "CoordinateReferenceSystem", "GeoX", "GeoY", "GeoPointLicensingURL", "Category", "AccessibleCategory", "RADARKeyNeeded", "BabyChange", "FamilyToilet", "ChangingPlace", "AutomaticPublicConvenience", "FullTimeStaffing", "PartOfCommunityScheme", "CommunitySchemeName", "ChargeAmount", "InfoURL", "OpeningHours", "ManagedBy", "ReportEmail", "ReportTel", "Notes", "UPRN", "Postcode", "StreetAddress", "GeoAreaURI", "GeoAreaLabel"], 
         svec!["07/07/2014 00:00", "http://opendatacommunities.org/id/district-council/adur", "Adur", "http://id.esd.org.uk/service/579", "Public toilets", "PUBLIC CONVENIENCES MONKS RECREATION GROUND CRABTREE LANE LANCING", "OSGB36", "518225", "104730", "http://www.ordnancesurvey.co.uk/business-and-government/help-and-support/public-sector/guidance/derived-data-exemptions.html", "Female and male", "None", "Yes", "No", "No", "No", "No", "No", "No", "", "", "http://www.adur-worthing.gov.uk/streets-and-travel/public-toilets/", "S = 09:00 - 15:00 W = 09:00 - 15:00", "ADC", "surveyor_2@adur-worthing.gov.uk", "01903 221471", "", "60002210", "", "PUBLIC CONVENIENCES MONKS RECREATION GROUND CRABTREE LANE LANCING", "", ""], 
@@ -640,8 +639,6 @@ fn validate_adur_public_toilets_dataset_with_json_schema_valid_output() {
         svec!["07/07/2014 00:00", "http://opendatacommunities.org/id/district-council/adur", "Adur", "http://id.esd.org.uk/service/579", "Public toilets", "BEACH TOILETS BASIN ROAD SOUTH SOUTHWICK", "OSGB36", "522083", "105168", "http://www.ordnancesurvey.co.uk/business-and-government/help-and-support/public-sector/guidance/derived-data-exemptions.html", "Female and male", "Unisex", "Yes", "No", "No", "No", "No", "No", "No", "", "", "http://www.adur-worthing.gov.uk/streets-and-travel/public-toilets/", "09.00 - 17.00", "ADC", "surveyor_15@adur-worthing.gov.uk", "01903 221471", "", "60034215", "", "PUBLIC CONVENIENCES CIVIC CENTRE HAM ROAD SHOREHAM-BY-SEA", "", ""]    
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1780,16 +1777,14 @@ fn validate_no_format_validation() {
         .arg("data.csv")
         .arg("schema.json");
 
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    let expected = "All 3 records valid.\n";
+    assert_eq!(got, expected);
 
     // Should not create any error files since all records are valid
     // when format validation is disabled
     assert!(!wrk.path("data.csv.invalid").exists());
     assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
-
-    let got: String = wrk.output_stderr(&mut cmd);
-    let expected = "All 3 records valid.\n";
-    assert_eq!(got, expected);
 }
 
 #[test]
@@ -1848,9 +1843,7 @@ fn validate_invalid_json_schema_file() {
     let mut cmd = wrk.command("validate");
     cmd.arg("schema").arg("schema.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     // reqwest >=0.13.4 appends " for url (<url>)" to body-decoding errors; match the
     // stable prefix only so we don't re-couple to reqwest's exact wording.
     let expected_prefix =
@@ -1885,9 +1878,7 @@ fn validate_invalid_json_schema_file() {
     let mut cmd = wrk.command("validate");
     cmd.arg("schema").arg("schema2.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert_eq!(
         got,
         "JSON Schema Meta-Reference Error: \"stringy\" is not valid under any of the schemas \
@@ -1947,12 +1938,9 @@ fn validate_with_fancy_regex() {
         .arg("data.csv")
         .arg("schema.json")
         .arg("--fancy-regex");
-    wrk.output(&mut cmd_fancy);
-
     // we still get an error here as the test data is invalid,
     // not because of the regex engine
-    wrk.assert_err(&mut cmd_fancy);
-    let got = wrk.output_stderr(&mut cmd_fancy);
+    let got = wrk.stderr_on_error(&mut cmd_fancy);
     assert_eq!(got, "4 out of 5 records invalid.\n");
 
     // Check validation-errors.tsv - should show 4 invalid passwords
@@ -2621,14 +2609,10 @@ fn validate_multiple_files_json_output() {
     let mut cmd = wrk.command("validate");
     cmd.arg("--json").arg("file1.csv").arg("file2.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let (stdout_str, got): (String, String) = wrk.stdout_and_stderr_on_success(&mut cmd);
     assert!(got.contains("✅ All 2 files are valid."));
 
     // Check that JSON output is produced for each file
-    let output = wrk.output(&mut cmd);
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
     assert!(stdout_str.contains("\"delimiter_char\":\",\""));
     assert!(stdout_str.contains("\"num_records\":2"));
 }
@@ -2656,14 +2640,10 @@ fn validate_multiple_files_pretty_json_output() {
     let mut cmd = wrk.command("validate");
     cmd.arg("--pretty-json").arg("file1.csv").arg("file2.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let (stdout_str, got): (String, String) = wrk.stdout_and_stderr_on_success(&mut cmd);
     assert!(got.contains("✅ All 2 files are valid."));
 
     // Check that pretty JSON output is produced for each file
-    let output = wrk.output(&mut cmd);
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
     assert!(stdout_str.contains("{\n  \"delimiter_char\": \",\""));
     assert!(stdout_str.contains("\"num_records\": 2"));
 }
@@ -2691,12 +2671,14 @@ fn validate_multiple_files_quiet_mode() {
     let mut cmd = wrk.command("validate");
     cmd.arg("--quiet").arg("file1.csv").arg("file2.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    // In quiet mode, there should be no output to stderr
-    let got: String = wrk.output_stderr(&mut cmd);
-    // The output might be "No error" if there's no stderr output
-    assert!(got.is_empty() || got == "No error");
+    // In quiet mode, there should be no output to stderr. `output_stderr` used to
+    // substitute the literal "No error" for empty stderr on a successful run, so the
+    // assertion had to accept it; `stderr_on_success` returns stderr verbatim.
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        got.is_empty(),
+        "expected no stderr in quiet mode, got: {got:?}"
+    );
 }
 
 #[test]
@@ -2775,15 +2757,13 @@ fn validate_single_file_backward_compatibility() {
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got_stderr: String = wrk.output_stderr(&mut cmd);
-    let output = wrk.output(&mut cmd);
-    let got_stdout = String::from_utf8_lossy(&output.stdout);
+    let (got_stdout, got_stderr): (String, String) = wrk.stdout_and_stderr_on_success(&mut cmd);
 
     let expected = "Valid: 3 Columns: (\"id\", \"name\", \"age\"); Records: 2; Delimiter: ,";
-    // The output might be on stdout instead of stderr
-    if got_stderr.contains("No error") {
+    // The output might be on stdout instead of stderr. `output_stderr` used to
+    // return the literal "No error" sentinel for the empty-stderr case this
+    // branch is testing for.
+    if got_stderr.is_empty() {
         assert_eq!(got_stdout.trim(), expected);
     } else {
         assert_eq!(got_stderr, expected);

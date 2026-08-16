@@ -106,9 +106,9 @@ impl Workdir {
         Ok(contents)
     }
 
-    /// read stdout of a command
-    pub fn read_stdout<T: Csv>(&self, cmd: &mut process::Command) -> T {
-        let stdout: String = self.stdout(cmd);
+    /// Parse captured stdout bytes as CSV. The single definition of how
+    /// `read_stdout` and friends interpret stdout, so every variant agrees.
+    fn csv_from_stdout<T: Csv>(stdout: &[u8]) -> T {
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(false)
             .flexible(true)
@@ -124,35 +124,137 @@ impl Workdir {
         Csv::from_vecs(records)
     }
 
+    /// Parse captured stdout bytes as `T`. Note the trailing CR/LF trim —
+    /// assertions comparing against literals depend on it, so every variant
+    /// must go through here rather than parsing the bytes directly.
+    fn parse_stdout<T: FromStr>(stdout: &[u8]) -> T {
+        let stdout = String::from_utf8_lossy(stdout);
+        stdout
+            .trim_matches(&['\r', '\n'][..])
+            .parse()
+            .ok()
+            .unwrap_or_else(|| panic!("Could not convert from string: '{stdout}'"))
+    }
+
+    /// Run `cmd` exactly once, optionally asserting the exit status.
+    /// `expect_success` of `None` makes no assertion at all.
+    fn run_once(
+        &self,
+        cmd: &mut process::Command,
+        expect_success: Option<bool>,
+    ) -> process::Output {
+        {
+            // ensures stderr has been flushed before we run our cmd
+            let mut _stderr = io::stderr();
+            _stderr.flush().unwrap();
+        }
+        let o = cmd.output().unwrap();
+        if let Some(want) = expect_success {
+            assert!(
+                o.status.success() == want,
+                "\n\n===== {:?} =====\ncommand {} but expected {}!\n\ncwd: {}\n\nstatus: \
+                 {}\n\nstdout: {}\n\nstderr: {}\n\n=====\n",
+                cmd,
+                if want { "failed" } else { "succeeded" },
+                if want { "success" } else { "an error" },
+                self.dir.display(),
+                o.status,
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr)
+            );
+        }
+        o
+    }
+
+    /// Run `cmd` ONCE and return `(stdout parsed as CSV, stderr)`. Use this
+    /// when a test asserts on both streams: `read_stdout` followed by
+    /// `output_stderr` runs the command twice, so the rows and the stderr text
+    /// come from different executions. Makes no assertion about exit status —
+    /// see `read_stdout_and_stderr_on_success` when success matters.
+    pub fn read_stdout_and_stderr<T: Csv>(&self, cmd: &mut process::Command) -> (T, String) {
+        let o = self.run_once(cmd, None);
+        (
+            Self::csv_from_stdout(&o.stdout),
+            String::from_utf8_lossy(&o.stderr).to_string(),
+        )
+    }
+
+    /// Run `cmd` ONCE, assert it exited successfully, and return
+    /// `(stdout parsed as CSV, stderr)`.
+    pub fn read_stdout_and_stderr_on_success<T: Csv>(
+        &self,
+        cmd: &mut process::Command,
+    ) -> (T, String) {
+        let o = self.run_once(cmd, Some(true));
+        (
+            Self::csv_from_stdout(&o.stdout),
+            String::from_utf8_lossy(&o.stderr).to_string(),
+        )
+    }
+
+    /// Run `cmd` ONCE, assert it exited with a non-zero status, and return
+    /// `(stdout parsed as CSV, stderr)`.
+    pub fn read_stdout_and_stderr_on_error<T: Csv>(
+        &self,
+        cmd: &mut process::Command,
+    ) -> (T, String) {
+        let o = self.run_once(cmd, Some(false));
+        (
+            Self::csv_from_stdout(&o.stdout),
+            String::from_utf8_lossy(&o.stderr).to_string(),
+        )
+    }
+
+    /// Run `cmd` ONCE and return `(stdout parsed as T, stderr)`. The
+    /// non-CSV counterpart of `read_stdout_and_stderr`; stdout is trimmed of
+    /// trailing CR/LF exactly as `stdout` does.
+    pub fn stdout_and_stderr<T: FromStr>(&self, cmd: &mut process::Command) -> (T, String) {
+        let o = self.run_once(cmd, None);
+        (
+            Self::parse_stdout(&o.stdout),
+            String::from_utf8_lossy(&o.stderr).to_string(),
+        )
+    }
+
+    /// Run `cmd` ONCE, assert it exited successfully, and return
+    /// `(stdout parsed as T, stderr)`.
+    pub fn stdout_and_stderr_on_success<T: FromStr>(
+        &self,
+        cmd: &mut process::Command,
+    ) -> (T, String) {
+        let o = self.run_once(cmd, Some(true));
+        (
+            Self::parse_stdout(&o.stdout),
+            String::from_utf8_lossy(&o.stderr).to_string(),
+        )
+    }
+
+    /// Run `cmd` ONCE, assert it exited with a non-zero status, and return
+    /// `(stdout parsed as T, stderr)`.
+    pub fn stdout_and_stderr_on_error<T: FromStr>(
+        &self,
+        cmd: &mut process::Command,
+    ) -> (T, String) {
+        let o = self.run_once(cmd, Some(false));
+        (
+            Self::parse_stdout(&o.stdout),
+            String::from_utf8_lossy(&o.stderr).to_string(),
+        )
+    }
+
+    /// read stdout of a command
+    pub fn read_stdout<T: Csv>(&self, cmd: &mut process::Command) -> T {
+        let stdout: String = self.stdout(cmd);
+        Self::csv_from_stdout(stdout.as_bytes())
+    }
+
     /// Run `cmd`, assert it exited successfully, and return its stdout parsed
     /// as CSV. Use this instead of `assert_success` followed by `read_stdout`,
     /// which executes `cmd` twice — the second run could fail yet still emit
     /// parseable CSV, silently masking the failure.
     pub fn read_stdout_on_success<T: Csv>(&self, cmd: &mut process::Command) -> T {
-        let o = cmd.output().unwrap();
-        assert!(
-            o.status.success(),
-            "\n\n===== {:?} =====\ncommand failed but expected success!\n\ncwd: {}\n\nstatus: \
-             {}\n\nstdout: {}\n\nstderr: {}\n\n=====\n",
-            cmd,
-            self.dir.display(),
-            o.status,
-            String::from_utf8_lossy(&o.stdout),
-            String::from_utf8_lossy(&o.stderr)
-        );
-        let mut rdr = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .flexible(true)
-            .from_reader(io::Cursor::new(o.stdout));
-
-        let records: Vec<Vec<String>> = rdr
-            .records()
-            .collect::<Result<Vec<csv::StringRecord>, _>>()
-            .unwrap()
-            .into_iter()
-            .map(|r| r.iter().map(std::string::ToString::to_string).collect())
-            .collect();
-        Csv::from_vecs(records)
+        let o = self.run_once(cmd, Some(true));
+        Self::csv_from_stdout(&o.stdout)
     }
 
     pub fn command(&self, command_str: &str) -> process::Command {
@@ -175,12 +277,7 @@ impl Workdir {
 
     pub fn stdout<T: FromStr>(&self, cmd: &mut process::Command) -> T {
         let o = self.output(cmd);
-        let stdout = String::from_utf8_lossy(&o.stdout);
-        stdout
-            .trim_matches(&['\r', '\n'][..])
-            .parse()
-            .ok()
-            .unwrap_or_else(|| panic!("Could not convert from string: '{stdout}'"))
+        Self::parse_stdout(&o.stdout)
     }
 
     pub fn output_stderr(&self, cmd: &mut process::Command) -> String {

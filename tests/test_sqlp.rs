@@ -3573,8 +3573,7 @@ fn sqlp_decimal_comma_validation() {
         .arg("--decimal-comma")
         .arg("select * from _t_1");
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains("Using --decimal-comma with a comma separator is invalid"));
 
     // Test 2: --decimal-comma with semicolon delimiter should succeed
@@ -3698,8 +3697,7 @@ fn sqlp_decimal_comma_validation_with_output_file() {
         .args(["--output", "output.csv"])
         .arg("select * from _t_1");
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains("Using --decimal-comma with a comma separator is invalid"));
 }
 

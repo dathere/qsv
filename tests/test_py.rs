@@ -517,7 +517,8 @@ fn py_filter_error() {
         .arg("integerthis(number) > 14")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, stderr_string): (Vec<Vec<String>>, String) =
+        wrk.read_stdout_and_stderr_on_error(&mut cmd);
     let expected = vec![
         svec!["letter", "number"],
         svec!["a", "13"],
@@ -527,8 +528,6 @@ fn py_filter_error() {
     ];
     assert_eq!(got, expected);
 
-    wrk.assert_err(&mut cmd);
-    let stderr_string = wrk.output_stderr(&mut cmd);
     assert!(stderr_string.ends_with("Python errors encountered: 4\n"));
 }
 

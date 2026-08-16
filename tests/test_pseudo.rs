@@ -186,11 +186,10 @@ fn pseudo_overflow() {
         .args(["--increment", "5"])
         .arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
+    let (got, got_err): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_error(&mut cmd);
     // Sue gets the last valid counter (u64::MAX) and is written. Repeats of
     // Mary/John continue to resolve from the cache. Bob would need a new
     // pseudonym after the counter overflowed, so the command errors there.
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["name", "colors"],
         svec!["ID-18446744073709551605", "yellow"],
@@ -202,7 +201,6 @@ fn pseudo_overflow() {
     ];
     assert_eq!(got, expected);
 
-    let got_err = wrk.output_stderr(&mut cmd);
     assert_eq!(
         got_err,
         "usage error: Counter overflow: incrementing past u64::MAX (18446744073709551615). Last \
@@ -220,14 +218,12 @@ fn pseudo_increment_zero_rejected() {
     let mut cmd = wrk.command("pseudo");
     cmd.arg("name").args(["--increment", "0"]).arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-    let got_err = wrk.output_stderr(&mut cmd);
+    let (got_stdout, got_err): (String, String) = wrk.stdout_and_stderr_on_error(&mut cmd);
     assert!(
         got_err.contains("--increment must be greater than 0"),
         "stderr was: {got_err}"
     );
     // usage-level errors must not write any partial output to stdout
-    let got_stdout = wrk.stdout::<String>(&mut cmd);
     assert!(
         got_stdout.is_empty(),
         "expected empty stdout, got: {got_stdout:?}"

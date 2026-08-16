@@ -488,12 +488,11 @@ joinp_test!(
     joinp_outer_left_validate_manytoone,
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--left").args(["--validate", "manytoone"]);
-        let got: String = wrk.output_stderr(&mut cmd);
+        let got: String = wrk.stderr_on_error(&mut cmd);
         assert_eq!(
             got,
             "Polars error: ComputeError(ErrString(\"join keys did not fulfill m:1 validation\"))\n"
         );
-        wrk.assert_err(&mut cmd);
     }
 );
 
@@ -501,12 +500,11 @@ joinp_test!(
     joinp_outer_invalid_validation,
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--left").args(["--validate", "manytoeveryone"]);
-        let got: String = wrk.output_stderr(&mut cmd);
+        let got: String = wrk.stderr_on_error(&mut cmd);
         assert_eq!(
             got,
             "usage error: Invalid join validation: manytoeveryone\n"
         );
-        wrk.assert_err(&mut cmd);
     }
 );
 
@@ -514,9 +512,8 @@ joinp_test!(
     joinp_outer_left_validate_onetomany,
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--left").args(["--validate", "OneToMany"]);
-        let got: String = wrk.output_stderr(&mut cmd);
+        let got: String = wrk.stderr_on_success(&mut cmd);
         assert_eq!(got, "(5, 3)\n");
-        wrk.assert_success(&mut cmd);
     }
 );
 
@@ -524,12 +521,11 @@ joinp_test!(
     joinp_outer_left_validate_onetoone,
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--left").args(["--validate", "OneToone"]);
-        let got: String = wrk.output_stderr(&mut cmd);
+        let got: String = wrk.stderr_on_error(&mut cmd);
         assert_eq!(
             got,
             "Polars error: ComputeError(ErrString(\"join keys did not fulfill 1:1 validation\"))\n"
         );
-        wrk.assert_err(&mut cmd);
     }
 );
 
@@ -2705,8 +2701,7 @@ fn joinp_decimal_comma_validation() {
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma");
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains("Using --decimal-comma with a comma separator is invalid"));
 
     // Test 2: --decimal-comma with semicolon delimiter should succeed
@@ -2803,8 +2798,7 @@ fn joinp_decimal_comma_validation_with_ssv_files() {
     cmd.args(["id", "left.ssv", "id", "right.ssv"])
         .arg("--decimal-comma");
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains("Using --decimal-comma with a comma separator is invalid"));
 
     // Test 2: --decimal-comma with SSV files (semicolon delimiter) should succeed
@@ -2855,8 +2849,7 @@ fn joinp_decimal_comma_validation_with_output_file() {
         .arg("--decimal-comma")
         .args(["--output", "output.csv"]);
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains("Using --decimal-comma with a comma separator is invalid"));
 }
 
@@ -2940,8 +2933,7 @@ fn joinp_decimal_comma_validation_with_cross_join() {
         .args(["left.ssv", "right.ssv"])
         .arg("--decimal-comma");
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains("Using --decimal-comma with a comma separator is invalid"));
 
     // Test: --decimal-comma with cross join and semicolon delimiter should succeed
@@ -2983,8 +2975,7 @@ fn joinp_decimal_comma_validation_with_non_equi_join() {
         .args(["left.csv", "right.csv"])
         .arg("--decimal-comma");
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains("Using --decimal-comma with a comma separator is invalid"));
 
     // Test: --decimal-comma with non-equi join and semicolon delimiter should succeed
@@ -3031,8 +3022,7 @@ fn joinp_decimal_comma_validation_with_asof_join() {
         .args(["date", "left.csv", "date", "right.csv"])
         .arg("--decimal-comma");
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains("Using --decimal-comma with a comma separator is invalid"));
 
     // Test: --decimal-comma with asof join and pipe delimiter should succeed
@@ -3071,8 +3061,7 @@ fn joinp_decimal_comma_validation_with_sql_filter() {
         .arg("--sql-filter")
         .arg("select id, value from join_result where value > 150");
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains("Using --decimal-comma with a comma separator is invalid"));
 
     // Test: --decimal-comma with SQL filter and semicolon delimiter should succeed

@@ -187,7 +187,6 @@ def fibonacci(input):
     else:
         return fibonacci(n-1) + fibonacci(n-2)
 
-
 def celsius_to_fahrenheit(celsius):
     try:
         float(celsius)
@@ -273,7 +272,6 @@ def fibonacci(input):
         return 1
     else:
         return fibonacci(n-1) + fibonacci(n-2)
-
 
 def celsius_to_fahrenheit(celsius):
     try:
@@ -656,8 +654,7 @@ fn py_map_jagged_rows_error() {
     let mut cmd = wrk.command("py");
     cmd.arg("map").arg("x").arg("a").arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
         stderr.contains("Error reading file") && stderr.contains("fields"),
         "expected csv reader error about field count, got: {stderr}"

@@ -2777,8 +2777,7 @@ fn joinp_decimal_comma_validation_with_tsv_files() {
     cmd.args(["id", "left.tsv", "id", "right.tsv"])
         .arg("--decimal-comma");
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains("Using --decimal-comma with a comma separator is invalid"));
 }
 
@@ -3210,8 +3209,7 @@ fn joinp_manytomany_validate_rejected() {
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .args(["--validate", "manytomany"]);
 
-    let stderr = wrk.output_stderr(&mut cmd);
-    wrk.assert_err(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(stderr.contains("Invalid join validation"));
 }
 

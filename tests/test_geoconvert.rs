@@ -154,12 +154,11 @@ fn geoconvert_csv_partial_latlon_flag_errors() {
         .arg("geojson")
         .args(["--latitude", "lat"]);
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert!(
         got.contains("--latitude and --longitude must be used together"),
         "expected partial-flag error, got: {got}"
     );
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]

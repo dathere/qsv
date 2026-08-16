@@ -1278,13 +1278,12 @@ fn apply_ops_replace_validation_error() {
         .arg("silver")
         .arg("data.csv");
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert_eq!(
         got,
         "usage error: --comparand (-C) and --replacement (-R) are required for replace \
          operation.\n"
     );
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1383,13 +1382,12 @@ fn apply_ops_regex_replace_validation_error() {
         .arg("(?:\\d{3}-\\d{2}-\\d{4})")
         .arg("data.csv");
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert_eq!(
         got,
         "usage error: --comparand (-C) and --replacement (-R) are required for regex_replace \
          operation.\n"
     );
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1412,9 +1410,7 @@ fn apply_ops_regex_replace_error() {
         .arg("SSN")
         .arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     // invalid user-supplied regex is an IncorrectUsage error, so stderr is prefixed
     // with "usage error: " (consistent with other validate_operations failures).
     assert!(got.starts_with("usage error: regex_replace expression error"));
@@ -1505,14 +1501,13 @@ fn apply_ops_chain_validation_error() {
         .arg("new_column")
         .arg("data.csv");
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert_eq!(
         got,
         "usage error: you can only use censor(0), copy(0), eudex(0), regex_replace(0), \
          replace(0), sentiment(0), similarity(2), strip(0), and whatlang(0) ONCE per operation \
          series.\n"
     );
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1530,13 +1525,12 @@ fn apply_ops_chain_validation_error_missing_comparand() {
         .arg("new_column")
         .arg("data.csv");
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert_eq!(
         got,
         "usage error: --comparand (-C) and --new-column (-c) are required for similarity \
          operations.\n"
     );
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1556,14 +1550,13 @@ fn apply_ops_multi_column_new_column_rejected() {
         .arg("new")
         .arg("data.csv");
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     assert_eq!(
         got,
         "usage error: --new-column (-c) requires a single input column. For multi-column \
          operations/emptyreplace, omit --new-column to transform columns in place; optionally use \
          --rename (-r) to rename the transformed columns.\n"
     );
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -3114,9 +3107,7 @@ fn apply_empty_selection_without_new_column() {
         .arg("!id")
         .arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     let expected = "usage error: No columns selected. Column selection is empty.\n";
     assert_eq!(got, expected);
 }
@@ -3325,8 +3316,7 @@ fn apply_summarize_no_headers_error() {
         .arg("--no-cache")
         .arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains("requires headers"), "got: {got}");
 }
 

@@ -541,8 +541,7 @@ fn template_render_error() {
         .arg("Hello {{name}, invalid syntax!")
         .arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     let expected = "syntax error: unexpected `}`, expected end of variable block (in template:1)\n";
     assert_eq!(got, expected);
 }
@@ -1065,9 +1064,7 @@ fn template_lookup_register_errors() {
         ))
         .arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     assert!(got.contains(
         r#"invalid operation: failed to load lookup table "test": failed to open nonexistent.csv:"#
     ));

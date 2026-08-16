@@ -161,11 +161,8 @@ fn transpose_long_multipass_mutually_exclusive() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "1"]).arg("--multipass").arg("in.csv");
 
-    // Should fail with an error
-    wrk.assert_err(&mut cmd);
-
     // Verify the error message mentions mutual exclusivity
-    let stderr: String = wrk.output_stderr(&mut cmd);
+    let stderr: String = wrk.stderr_on_error(&mut cmd);
     assert!(
         stderr.contains("mutually exclusive") || stderr.contains("mutually-exclusive"),
         "Expected error message about mutual exclusivity, got: {}",
@@ -453,11 +450,8 @@ fn transpose_long_format_no_columns_selected() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "/^nonexistent/"]).arg("in.csv"); // Regex that matches nothing
 
-    // Should fail with an error
-    wrk.assert_err(&mut cmd);
-
     // Verify the error message mentions no columns selected
-    let stderr: String = wrk.output_stderr(&mut cmd);
+    let stderr: String = wrk.stderr_on_error(&mut cmd);
     let expected = "--long selection error: Selector regex '^nonexistent' does not match any \
                     columns in the CSV header.\n";
     assert_eq!(stderr, expected);
@@ -741,11 +735,8 @@ fn transpose_select_empty_result() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--select", "/^nonexistent/"]).arg("in.csv"); // Regex matching nothing
 
-    // Should fail with an error
-    wrk.assert_err(&mut cmd);
-
     // Verify the error message
-    let stderr: String = wrk.output_stderr(&mut cmd);
+    let stderr: String = wrk.stderr_on_error(&mut cmd);
     assert!(
         stderr.contains("does not match any columns"),
         "Expected error about no columns selected, got: {}",

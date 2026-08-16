@@ -490,10 +490,8 @@ fn fetch_jaq_jaqfile_error() {
         .arg(r#"."places"[0]."place name""#)
         .arg("data.csv");
 
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     assert!(got.starts_with("Invalid arguments."));
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -609,10 +607,8 @@ fn fetch_custom_invalid_header_error() {
         .arg("X-Api-\tSecret :ABC123XYZ") // embedded tab is not valid
         .arg("data.csv");
 
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     assert!(got.starts_with("usage error: Invalid header name"));
-
-    wrk.assert_err(&mut cmd);
 }
 #[test]
 fn fetch_custom_invalid_user_agent_error() {
@@ -628,10 +624,8 @@ fn fetch_custom_invalid_user_agent_error() {
         .arg("Mðzilla/5.0\n (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxvèrsion")
         .arg("data.csv");
 
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     assert!(got.starts_with("usage error: Invalid user-agent"));
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -688,10 +682,8 @@ fn fetch_custom_invalid_value_error() {
         .arg("X-Api-Secret :ABC123\r\nXYZ") // non-visible ascii not valid
         .arg("data.csv");
 
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     assert!(got.starts_with("usage error: Invalid header value"));
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -712,10 +704,8 @@ fn fetchpost_custom_invalid_header_error() {
         .arg("X-Api-\tSecret :ABC123XYZ") // non-visible ascii not valid
         .arg("data.csv");
 
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     assert!(got.starts_with("usage error: Invalid header name"));
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -736,10 +726,8 @@ fn fetchpost_custom_invalid_value_error() {
         .arg("X-Api-Secret :ABC123\r\nXYZ") // non-visible ascii not valid
         .arg("data.csv");
 
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     assert!(got.starts_with("usage error: Invalid header value"));
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -761,10 +749,8 @@ fn fetchpost_custom_invalid_user_agent_error() {
         .arg("Mðzilla/5.0\n (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxvèrsion")
         .arg("data.csv");
 
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     assert!(got.starts_with("usage error: Invalid user-agent"));
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]

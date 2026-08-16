@@ -348,8 +348,7 @@ pivotp_test!(
             "q@-0.1",
             "sales.csv",
         ]);
-        wrk.assert_err(&mut cmd_2);
-        let stderr2 = wrk.output_stderr(&mut cmd_2);
+        let stderr2 = wrk.stderr_on_error(&mut cmd_2);
         assert!(
             stderr2.contains("Invalid quantile probability"),
             "expected 'Invalid quantile probability' in stderr, got: {stderr2}"
@@ -367,8 +366,7 @@ pivotp_test!(
             "quantile@abc",
             "sales.csv",
         ]);
-        wrk.assert_err(&mut cmd3);
-        let stderr3 = wrk.output_stderr(&mut cmd3);
+        let stderr3 = wrk.stderr_on_error(&mut cmd3);
         assert!(
             stderr3.contains("Invalid quantile probability"),
             "expected 'Invalid quantile probability' in stderr, got: {stderr3}"
@@ -892,9 +890,8 @@ fn pivotp_smart_no_moarstats() {
         "smart",
         "normal.csv",
     ]);
-    wrk.assert_success(&mut cmd);
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     // Existing behavior: CV > 1% triggers Median, and no moarstats checks fire
     // (because moarstats hasn't been run, so all moarstats fields are None)
     assert!(
@@ -947,9 +944,8 @@ fn pivotp_smart_moarstats_high_kurtosis() {
         "smart",
         "kurtosis.csv",
     ]);
-    wrk.assert_success(&mut cmd);
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     // Should use Median due to moarstats detecting heavy tails or outliers
     assert!(
         stderr.contains("Median"),
@@ -1000,9 +996,8 @@ fn pivotp_smart_moarstats_bimodal() {
         "smart",
         "bimodal.csv",
     ]);
-    wrk.assert_success(&mut cmd);
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     // Bimodal data: moarstats --advanced computes bimodality_coefficient >= 0.555,
     // the bimodal branch fires first and picks Len (central tendency is misleading).
     // If other checks fire first (e.g., high CV or outlier fraction), Median is also valid.
@@ -1054,9 +1049,8 @@ fn pivotp_smart_moarstats_outliers() {
         "smart",
         "outliers.csv",
     ]);
-    wrk.assert_success(&mut cmd);
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     // Should use Median due to outlier contamination
     assert!(
         stderr.contains("Median"),
@@ -1106,9 +1100,8 @@ fn pivotp_smart_moarstats_mad_stddev_ratio() {
         "smart",
         "mad_stddev.csv",
     ]);
-    wrk.assert_success(&mut cmd);
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     // Should use Median — outliers inflate stddev but MAD stays robust
     assert!(
         stderr.contains("Median"),
@@ -1160,9 +1153,8 @@ fn pivotp_smart_moarstats_median_mean_divergence() {
         "smart",
         "median_mean.csv",
     ]);
-    wrk.assert_success(&mut cmd);
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     // Should use Median — mean and median diverge significantly
     assert!(
         stderr.contains("Median"),
@@ -1200,9 +1192,8 @@ fn pivotp_smart_moarstats_quartile_dispersion() {
     cmd.args([
         "group", "--index", "category", "--values", "value", "--agg", "smart", "qcd.csv",
     ]);
-    wrk.assert_success(&mut cmd);
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     // Should use Median — high quartile-based dispersion
     assert!(
         stderr.contains("Median"),
@@ -1248,9 +1239,8 @@ fn pivotp_smart_mixed_sign() {
         "smart",
         "mixed_sign.csv",
     ]);
-    wrk.assert_success(&mut cmd);
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     // Should use Mean — mixed-sign data makes Sum cancel out
     assert!(
         stderr.contains("Mean") || stderr.contains("Mixed-sign"),
@@ -1301,9 +1291,8 @@ fn pivotp_smart_multimodal() {
         "smart",
         "multimodal.csv",
     ]);
-    wrk.assert_success(&mut cmd);
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     // Should use Len — too many modes means central tendency is misleading
     assert!(
         stderr.contains("Len") || stderr.contains("modes"),
@@ -1353,9 +1342,8 @@ fn pivotp_smart_date_sparse() {
         "--try-parsedates",
         "date_sparse.csv",
     ]);
-    wrk.assert_success(&mut cmd);
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     // Should use Len — >50% NULLs in date column
     assert!(
         stderr.contains("Len") || stderr.contains("NULL"),

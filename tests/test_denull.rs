@@ -477,9 +477,8 @@ fn denull_apply_refuses_to_overwrite_its_own_input() {
 
     let mut cmd = wrk.command("denull");
     cmd.arg("--apply").arg("d.csv").args(["-o", "d.csv"]);
-    wrk.assert_err(&mut cmd);
     assert!(
-        wrk.output_stderr(&mut cmd)
+        wrk.stderr_on_error(&mut cmd)
             .contains("cannot write to its own input"),
         "expected same-path refusal"
     );
@@ -519,9 +518,8 @@ fn denull_apply_refuses_dash_stdin() {
 
     let mut cmd = wrk.command("denull");
     cmd.arg("--apply").arg("-");
-    wrk.assert_err(&mut cmd);
     assert!(
-        wrk.output_stderr(&mut cmd)
+        wrk.stderr_on_error(&mut cmd)
             .contains("stdin is not supported"),
         "expected stdin refusal for \"-\""
     );

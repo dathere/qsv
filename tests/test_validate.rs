@@ -138,13 +138,11 @@ fn validate_bad_csv() {
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv");
 
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     let expected = r#"Validation error: CSV error: record 2 (line: 3, byte: 36): found record with 2 fields, but the previous record has 3 fields.
 Use `qsv fixlengths` to fix record length issues.
 "#;
     assert_eq!(got, expected);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -162,13 +160,11 @@ fn validate_bad_csv_first_record() {
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv");
 
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     let expected = r#"Validation error: CSV error: record 1 (line: 2, byte: 15): found record with 2 fields, but the previous record has 3 fields.
 Use `qsv fixlengths` to fix record length issues.
 "#;
     assert_eq!(got, expected);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -186,13 +182,11 @@ fn validate_bad_csv_last_record() {
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv");
 
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     let expected = r#"Validation error: CSV error: record 3 (line: 4, byte: 54): found record with 4 fields, but the previous record has 3 fields.
 Use `qsv fixlengths` to fix record length issues.
 "#;
     assert_eq!(got, expected);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -392,8 +386,7 @@ fn validate_split_ragged_aborts_on_bad_utf8() {
     let mut cmd = wrk.command("validate");
     cmd.arg("--split-ragged").arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(stderr.contains("non-utf8"), "stderr was: {stderr}");
 }
 
@@ -542,7 +535,7 @@ fn validate_bad_csv_prettyjson() {
     let mut cmd = wrk.command("validate");
     cmd.arg("--pretty-json").arg("data.csv");
 
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     let expected = r#"{
   "errors": [
     {
@@ -556,8 +549,6 @@ fn validate_bad_csv_prettyjson() {
 }
 "#;
     assert_eq!(got, expected);
-
-    wrk.assert_err(&mut cmd);
 }
 
 fn adur_errors() -> &'static str {
@@ -672,11 +663,9 @@ fn validate_with_schema_noheader() {
         .arg("--no-headers")
         .args(["--valid-output", "-"]);
 
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     let expected = "Cannot validate CSV without headers against a JSON Schema.\n".to_string();
     assert_eq!(got, expected);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -885,15 +874,13 @@ fn validate_dynenum_with_invalid_column() {
     cmd.arg("data.csv").arg("schema.json");
 
     // Check error output
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
     // Both lite and non-lite share the same helper (`load_dynenum_set`) and emit the
     // same error wording.
     assert!(got.ends_with(
         "Cannot compile JSONschema. error: Column 'nonexistent_column' not found in lookup \
          table\nTry running `qsv validate schema schema.json` to check the JSON Schema file.\n"
     ));
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -1629,11 +1616,9 @@ fn validate_dynenum_with_invalid_uri() {
     cmd.arg("data.csv").arg("schema.json");
 
     // Check error output
-    let got = wrk.output_stderr(&mut cmd);
+    let got = wrk.stderr_on_error(&mut cmd);
 
     assert!(got.starts_with("Cannot compile JSONschema."));
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -2025,9 +2010,7 @@ fn validate_schema_subcommand_valid_schema() {
     let mut cmd = wrk.command("validate");
     cmd.arg("schema").arg("schema.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
     let expected = "Valid JSON Schema.\n";
     assert_eq!(got, expected);
 }
@@ -2053,9 +2036,7 @@ fn validate_schema_subcommand_invalid_schema() {
     let mut cmd = wrk.command("validate");
     cmd.arg("schema").arg("schema.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     let expected = "JSON Schema Meta-Reference Error: \"invalid_type\" is not valid under any of \
                     the schemas listed in the 'anyOf' keyword\n";
     assert_eq!(got, expected);
@@ -2081,9 +2062,7 @@ fn validate_schema_subcommand_invalid_draft() {
     let mut cmd = wrk.command("validate");
     cmd.arg("schema").arg("schema.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     // reqwest >=0.13.4 appends " for url (<url>)" to body-decoding errors; match the
     // stable prefix only so we don't re-couple to reqwest's exact wording.
     let expected_prefix =
@@ -2105,9 +2084,7 @@ fn validate_schema_subcommand_no_schema_file() {
     let mut cmd = wrk.command("validate");
     cmd.arg("schema");
 
-    wrk.assert_err(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     let expected = "No JSON Schema file supplied.\n";
     assert_eq!(got, expected);
 }
@@ -2146,9 +2123,7 @@ fn validate_schema_subcommand_with_no_format_validation() {
         .arg("--no-format-validation")
         .arg("schema.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
     let expected = "Valid JSON Schema.\n";
     assert_eq!(got, expected);
 }
@@ -2227,16 +2202,14 @@ fn validate_with_no_format_validation_success() {
         .arg("data.csv")
         .arg("schema.json");
 
-    wrk.assert_success(&mut cmd_no_format);
+    let got: String = wrk.stderr_on_success(&mut cmd_no_format);
+    let expected = "All 2 records valid.\n";
+    assert_eq!(got, expected);
 
     // Should not create any error files since all records are valid
     // when format validation is disabled
     assert!(!wrk.path("data.csv.invalid").exists());
     assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
-
-    let got: String = wrk.output_stderr(&mut cmd_no_format);
-    let expected = "All 2 records valid.\n";
-    assert_eq!(got, expected);
 }
 
 #[test]
@@ -2360,9 +2333,7 @@ fn validate_schema_subcommand_with_invalid_format_validation() {
         .arg("--no-format-validation")
         .arg("schema.json");
 
-    wrk.assert_success(&mut cmd_no_format);
-
-    let got: String = wrk.output_stderr(&mut cmd_no_format);
+    let got: String = wrk.stderr_on_success(&mut cmd_no_format);
     let expected = "Valid JSON Schema.\n";
     assert_eq!(got, expected);
 }
@@ -2376,9 +2347,7 @@ fn validate_schema_subcommand_with_url_schema() {
     cmd.arg("schema")
         .arg("https://raw.githubusercontent.com/dathere/qsv/master/resources/test/public-toilets-schema.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
     let expected = "Valid JSON Schema.\n";
     assert_eq!(got, expected);
 }
@@ -2392,9 +2361,7 @@ fn validate_schema_subcommand_with_invalid_url_schema() {
     cmd.arg("schema")
         .arg("https://raw.githubusercontent.com/dathere/qsv/master/nonexistent-schema.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     assert!(
         got.contains("Cannot compile JSONschema")
             || got.contains("io error")
@@ -2531,9 +2498,7 @@ fn validate_multiple_files_rfc4180() {
     let mut cmd = wrk.command("validate");
     cmd.arg("file1.csv").arg("file2.csv").arg("file3.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
 
     // The Extended Input Support should work and show a summary
     assert!(got.contains("✅ All 3 files are valid."));
@@ -2563,9 +2528,7 @@ fn validate_multiple_files_with_invalid() {
     let mut cmd = wrk.command("validate");
     cmd.arg("valid.csv").arg("invalid.csv");
 
-    wrk.assert_err(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
 
     // The output should contain error information and summary
     assert!(got.contains("❌ 1 out of 2 files are invalid."));
@@ -2597,9 +2560,7 @@ fn validate_directory() {
     let mut cmd = wrk.command("validate");
     cmd.arg("data");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
     // The Extended Input Support should work for directories
     assert!(got.contains("✅ All 2 files are valid."));
 }
@@ -2633,9 +2594,7 @@ fn validate_infile_list() {
     let mut cmd = wrk.command("validate");
     cmd.arg("filelist.infile-list");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
     assert!(got.contains("✅ All 2 files are valid."));
 }
 
@@ -2768,9 +2727,7 @@ fn validate_multiple_files_with_mixed_delimiters() {
     let mut cmd = wrk.command("validate");
     cmd.arg("comma.csv").arg("tab.tsv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
     assert!(got.contains("✅ All 2 files are valid."));
 }
 
@@ -2796,9 +2753,7 @@ fn validate_multiple_files_no_headers() {
     let mut cmd = wrk.command("validate");
     cmd.arg("--no-headers").arg("file1.csv").arg("file2.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
     assert!(got.contains("✅ All 2 files are valid."));
 }
 
@@ -2853,9 +2808,7 @@ fn validate_single_file_error_backward_compatibility() {
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     // The exact byte position may vary, so we check for key components
     assert!(got.contains("Validation error: CSV error: record 2 (line: 3, byte:"));
     assert!(got.contains("found record with 2 fields, but the previous record has 3 fields."));
@@ -2894,9 +2847,7 @@ fn validate_json_schema_still_single_file() {
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
     let expected = "All 2 records valid.\n";
     assert_eq!(got, expected);
 }
@@ -2927,9 +2878,7 @@ fn validate_json_schema_rejects_multiple_files() {
     let mut cmd = wrk.command("validate");
     cmd.arg("file1.csv").arg("file2.csv").arg("schema.json");
 
-    wrk.assert_err(&mut cmd);
-
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_error(&mut cmd);
     let expected = "JSON Schema validation only supports a single input file. Use RFC 4180 \
                     validation mode for multiple files.\n";
     assert_eq!(got, expected);

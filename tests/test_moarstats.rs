@@ -5681,8 +5681,7 @@ fn moarstats_bivariate_index_auto_creation() {
     // Run moarstats with --bivariate (should auto-create index)
     let mut cmd = wrk.command("moarstats");
     cmd.arg("--bivariate").arg("test.csv");
-    let output = wrk.output_stderr(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let output = wrk.stderr_on_success(&mut cmd);
 
     // Verify index was auto-created or message was logged
     assert!(

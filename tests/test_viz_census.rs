@@ -95,7 +95,9 @@ async fn serve_mapserver(o: web::Data<Observed>) -> HttpResponse {
 fn county_feature(geoid: &str, x: f64) -> serde_json::Value {
     serde_json::json!({
         "type": "Feature",
-        "properties": {"GEOID": geoid, "NAME": format!("County {geoid}")},
+        // AREALAND in square metres, as TIGERweb publishes it — the fetch declares that unit so
+        // `--denominator-key properties.AREALAND` needs no --denominator-unit (issue #4414)
+        "properties": {"GEOID": geoid, "NAME": format!("County {geoid}"), "AREALAND": 1_500_000_000_i64},
         "geometry": {
             "type": "Polygon",
             "coordinates": [[[x, 0.0], [x, 1.0], [x + 1.0, 1.0], [x + 1.0, 0.0], [x, 0.0]]]
@@ -631,6 +633,71 @@ fn viz_smart_geojson_auto_transient_failure_aborts_rather_than_switching_columns
         assert!(
             !clauses.iter().any(|c| c == "STATE IN (\'42\')"),
             "the run continued to another column after a transient failure: {clauses:?}"
+        );
+    });
+}
+
+// issue #4414's acceptance case, reachable only because #4416 landed: auto-fetched boundaries
+// carry land area in square METRES, so without a unit declaration the density map reads
+// "per 1,000,000,000 AREALAND". `fetch_layer` stamps the unit onto the document it builds, so the
+// user passes no unit flag at all. The declaration rides in the GeoJSON rather than beside it
+// precisely so it survives the cache: asserted here by running twice, warm the second time.
+#[test]
+#[serial]
+fn viz_geojson_auto_declares_its_area_unit_and_the_cache_keeps_it() {
+    let wrk = Workdir::new("viz_geojson_auto_declares_its_area_unit_and_the_cache_keeps_it");
+    wrk.create_from_string("pa.csv", "fips,cases\n42003,600\n42003,700\n42101,800\n");
+    let cache = wrk.path("boundary-cache").to_string_lossy().to_string();
+
+    with_mock_tigerweb(|base, observed| {
+        let run = || {
+            let mut cmd = wrk.command("viz");
+            cmd.args([
+                "choropleth",
+                "pa.csv",
+                "--locations",
+                "fips",
+                "--value",
+                "cases",
+                "--location-mode",
+                "geojson-id",
+                "--geojson",
+                "auto",
+                "--denominator-key",
+                "properties.AREALAND",
+            ])
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CACHE_DIR", &cache);
+            let out = wrk.output(&mut cmd);
+            assert!(out.status.success(), "auto + area denominator failed");
+            String::from_utf8_lossy(&out.stdout).into_owned()
+        };
+
+        let cold = run();
+        assert!(
+            cold.contains("km²") && !cold.contains("AREALAND:"),
+            "the fetch should declare its own unit, with no --denominator-unit passed: {cold}"
+        );
+        let after_first = observed.requests.load(Ordering::SeqCst);
+
+        // the same command, served from cache, must label the map identically — a declaration
+        // stored beside the document rather than in it would make run 2 say "AREALAND"
+        let warm = run();
+        assert_eq!(
+            observed.requests.load(Ordering::SeqCst),
+            after_first,
+            "the second run should have been served from cache"
+        );
+        let rate_phrase = |h: &str| {
+            h.split("per ")
+                .filter(|s| s.starts_with("km²") || s.starts_with("1,"))
+                .map(|s| s.chars().take(24).collect::<String>())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            rate_phrase(&cold),
+            rate_phrase(&warm),
+            "a warm cache labelled the same map differently"
         );
     });
 }

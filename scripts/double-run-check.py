@@ -23,14 +23,19 @@ Usage:
     --check     CI gate: print offending sites and exit 1 if any need action
 
 Without --check the exit status is always 0 — it reports, it does not gate.
-With --check it exits 1 when any site needs action. Sites whose two runs are
-separated by an `.arg()`/`.env()` call are deliberately two different commands,
-so they are listed as informational and do NOT fail the check.
+With --check it exits 1 when any site needs action; combining it with --json
+keeps stdout parseable and still returns that status. Sites where the SAME
+command variable is reconfigured (`.arg()`/`.env()`/...) between its runs are
+deliberately two different commands, so they are listed as informational and do
+NOT fail the check — a mutation of some OTHER command in between does not
+exempt anything.
 
 Two classes of finding must NOT be blindly converted, and are reported separately:
 
-  * `mutated`  — a `.arg()` / `.env()` call sits between the two runs, so they
-    are deliberately two different commands.
+  * `mutated`  — THAT command variable is reconfigured (`.arg()` / `.env()` /
+    ...) between the two runs, so they are deliberately two different commands.
+    The receiver is checked: an intervening `other.arg(..)` on a different
+    command does not exempt anything.
   * `hazard`   — a statement between the two runs observes or alters state
     (`.exists()`, `read_to_string`, `wrk.create*`, `std::fs::`). Collapsing to a
     single run moves WHEN the command executes relative to that statement. The
@@ -86,6 +91,9 @@ BIND_RE = re.compile(
 )
 FN_RE = re.compile(r"fn (\w+)\(")
 MUT_RE = re.compile(r"\.\s*(args?|envs?|env_remove|env_clear|current_dir|stdin)\s*\(")
+# start of a method-call statement: `cmd.arg(..)`, and its `.arg(..)` continuations
+RECEIVER_RE = re.compile(r"^\s*(\w+)\s*\.")
+CONTINUATION_RE = re.compile(r"^\s*\.")
 # statements whose meaning depends on whether the command has run yet
 HAZARD_RE = re.compile(
     r"\.exists\(\)|read_to_string|read_csv|wrk\.path\(|wrk\.from_str|load_test"
@@ -179,6 +187,26 @@ def blank_literals(src):
     return "".join(out)
 
 
+def mutates(var, code_lines):
+    """True if `var` itself is reconfigured (.arg/.env/...) within `code_lines`.
+
+    The receiver matters: an intervening `other.arg("x")` on a DIFFERENT command
+    says nothing about `var`, and treating it as though it did would exempt a
+    real double run of `var` from the gate. Builder chains split across lines
+    (`cmd.args([..])\\n    .arg("x");`) keep the receiver of the line that
+    started the statement.
+    """
+    receiver = None
+    for line in code_lines:
+        if m := RECEIVER_RE.match(line):
+            receiver = m.group(1)
+        elif not CONTINUATION_RE.match(line):
+            receiver = None
+        if receiver == var and MUT_RE.search(line):
+            return True
+    return False
+
+
 def scan(path):
     """Yield one dict per command variable that is run more than once in a test fn."""
     raw = open(path, encoding="utf-8").read()
@@ -235,6 +263,9 @@ def scan(path):
             if any(blocks[k] != blocks[first] for k, _ in evs):
                 continue
             between = body[first + 1 : last]
+            # match on the literal-blanked copy so a ".arg(" inside a fixture
+            # string is not read as a real reconfiguration
+            between_code = code_lines[start + first + 1 : start + last]
             names = [n for _, n in evs]
             yield {
                 "file": path,
@@ -245,7 +276,7 @@ def scan(path):
                 "runners": names,
                 "runs": len(evs),
                 "reads_data": bool({n for n in names} - STATUS),
-                "mutated": bool(MUT_RE.search("\n".join(between))),
+                "mutated": mutates(var, between_code),
                 "hazard": [b.strip()[:100] for b in between if HAZARD_RE.search(b)],
             }
 
@@ -310,7 +341,9 @@ def main():
     if args.json:
         for s in sites:
             print(json.dumps(s))
-        return
+        # --check governs the exit status even here; the human-readable gate
+        # report is suppressed so stdout stays parseable as JSON lines
+        return 1 if args.check and any(not s["mutated"] for s in sites) else 0
 
     if args.check:
         return gate(sites, root)

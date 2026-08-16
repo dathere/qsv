@@ -102,7 +102,7 @@ fn generate_schema_with_optional_flags_notrim_and_validate_with_errors_s390x() {
     let mut cmd3 = wrk.command("validate");
     cmd3.arg("adur-public-toilets.csv");
     cmd3.arg("adur-public-toilets.csv.schema.json");
-    wrk.output(&mut cmd3);
+    wrk.assert_err(&mut cmd3);
 
     // validation report
     let validation_errors_expected = r#"row_number	field	error
@@ -141,7 +141,6 @@ fn generate_schema_with_optional_flags_notrim_and_validate_with_errors_s390x() {
         validation_errors_expected.to_string(),
         validation_error_output
     );
-    wrk.assert_err(&mut cmd3);
 }
 
 #[test]
@@ -188,7 +187,7 @@ fn generate_schema_with_optional_flags_trim_and_validate_with_errors_s390x() {
     cmd3.arg("adur-public-toilets.csv");
     cmd3.arg("--trim");
     cmd3.arg("adur-public-toilets.csv.schema.json");
-    wrk.output(&mut cmd3);
+    wrk.assert_err(&mut cmd3);
 
     // validation report
     let validation_errors_expected = r#"row_number	field	error
@@ -226,7 +225,6 @@ fn generate_schema_with_optional_flags_trim_and_validate_with_errors_s390x() {
         validation_errors_expected.to_string(),
         validation_error_output
     );
-    wrk.assert_err(&mut cmd3);
 }
 
 #[test]
@@ -243,8 +241,6 @@ fn generate_schema_with_defaults_to_stdout() {
     // run schema command
     let mut cmd = wrk.command("schema");
     cmd.arg("adur-public-toilets.csv");
-    wrk.output(&mut cmd);
-
     wrk.assert_success(&mut cmd);
 
     // load output schema file

@@ -94,9 +94,69 @@ STATUS = {"assert_success", "assert_err"}
 OPT_OUT_RE = re.compile(r"//\s*double-run-check:\s*intentional")
 
 
+def blank_literals(src):
+    """Replace the CONTENTS of string/char literals and comments with spaces.
+
+    Line structure is preserved, so line numbers still line up. Without this the
+    braces inside a `r#"[{"a": 1}]"#` fixture are counted as blocks, which
+    corrupts block identity for the rest of the function and silently hides
+    real double-run sites (tests/test_search.rs::search_indexed_parallel_json
+    and five in tests/test_excel.rs are the cases that proved it).
+    """
+    out = []
+    i, n = 0, len(src)
+    while i < n:
+        c = src[i]
+        # raw string: r, r#, r##, ...
+        if c == "r" and i + 1 < n and src[i + 1] in '"#':
+            j = i + 1
+            hashes = 0
+            while j < n and src[j] == "#":
+                hashes += 1
+                j += 1
+            if j < n and src[j] == '"':
+                close = '"' + "#" * hashes
+                end = src.find(close, j + 1)
+                end = n if end == -1 else end + len(close)
+                out.append(" " * (end - i) if "\n" not in src[i:end] else re.sub(r"[^\n]", " ", src[i:end]))
+                i = end
+                continue
+        if c == '"':
+            j = i + 1
+            while j < n:
+                if src[j] == "\\":
+                    j += 2
+                    continue
+                if src[j] == '"':
+                    j += 1
+                    break
+                j += 1
+            out.append(re.sub(r"[^\n]", " ", src[i:j]))
+            i = j
+            continue
+        if c == "/" and i + 1 < n and src[i + 1] == "/":
+            j = src.find("\n", i)
+            j = n if j == -1 else j
+            out.append(" " * (j - i))
+            i = j
+            continue
+        if c == "/" and i + 1 < n and src[i + 1] == "*":
+            j = src.find("*/", i + 2)
+            j = n if j == -1 else j + 2
+            out.append(re.sub(r"[^\n]", " ", src[i:j]))
+            i = j
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def scan(path):
     """Yield one dict per command variable that is run more than once in a test fn."""
-    lines = open(path, encoding="utf-8").read().split("\n")
+    raw = open(path, encoding="utf-8").read()
+    lines = raw.split("\n")
+    # braces are counted on a literal-free copy; everything else reads the real source
+    code_lines = blank_literals(raw).split("\n")
     fns = [(i, m.group(1)) for i, l in enumerate(lines) if (m := FN_RE.match(l))]
     fns.append((len(lines), None))
 
@@ -108,8 +168,8 @@ def scan(path):
         blocks = []
         stack = []
         next_id = 0
-        for line in body:
-            trimmed = re.sub(r"//.*$", "", line).strip()
+        for line in code_lines[start:end]:
+            trimmed = line.strip()
             # a leading `}` closes the block this line's statement is NOT in,
             # so pop before recording (`} else {` belongs to neither arm)
             closes_first = trimmed.startswith("}")

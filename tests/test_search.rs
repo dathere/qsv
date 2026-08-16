@@ -98,10 +98,9 @@ fn search_indexed_parallel_json() {
         .arg("--jobs")
         .arg("2")
         .arg("--json");
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"[{"case_enquiry_id":"101004154423","open_dt":"2022-01-31 08:05:00","target_dt":null,"closed_dt":null,"ontime":"ONTIME","case_status":"Open","closure_reason":" ","case_title":"Sidewalk Cover / Manhole","subject":"Boston Water & Sewer Commission","reason":"Sidewalk Cover / Manhole","type":"Sidewalk Cover / Manhole","queue":"INFO01_GenericeFormforOtherServiceRequestTypes","department":"INFO","submittedphoto":null,"closedphoto":null,"location":"8 Putnam St  Charlestown  MA  02129","fire_district":"3","pwd_district":"1A","city_council_district":"1","police_district":"A15","neighborhood":"Charlestown","neighborhood_services_district":"2","ward":"Ward 2","precinct":"0201","location_street_name":"8 Putnam St","location_zipcode":"02129","latitude":"42.3735","longitude":"-71.0599","source":"Constituent Call"},{"case_enquiry_id":"101004114776","open_dt":"2022-01-03 12:13:47","target_dt":"2022-01-04 12:13:47","closed_dt":"2022-01-03 12:41:17","ontime":"ONTIME","case_status":"Closed","closure_reason":"Case Closed. Closed date : 2022-01-03 12:41:17.887 Case Resolved Area ticketed  ","case_title":"Parking Enforcement","subject":"Transportation - Traffic Division","reason":"Enforcement & Abandoned Vehicles","type":"Parking Enforcement","queue":"BTDT_Parking Enforcement","department":"BTDT","submittedphoto":"https://311.boston.gov/media/boston/report/photos/61d32ebc05bbcf180c2b01ff/report.jpg","closedphoto":null,"location":"126 Elm St  Charlestown  MA  02129","fire_district":"3","pwd_district":"1A","city_council_district":"1","police_district":"A15","neighborhood":"Charlestown","neighborhood_services_district":"2","ward":"02","precinct":"0204","location_street_name":"126 Elm St","location_zipcode":"02129","latitude":"42.3806","longitude":"-71.0616","source":"Citizens Connect App"}]"#;
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 
     // now index the file
     let mut cmd = wrk.command("index");

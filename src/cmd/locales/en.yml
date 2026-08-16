@@ -510,6 +510,7 @@ viz:
     # zero or negative) and were left out of the rate.
     denominator_excluded: "no usable denominator for %{q_n} of %{q_total} regions; they are not shown."
     boundary_provenance: "Boundaries: %{q_source}."
+    denominator_provenance: "Denominator: %{q_source}."
     boundary_outliers: "%{q_n} region(s) lie far outside the rest (%{q_ids}); the map is framed to the others."
     # Funnel caveat clauses, joined with " · ". Each is a whole clause: the
     # stage names are slots, so word order is the translator's to choose.

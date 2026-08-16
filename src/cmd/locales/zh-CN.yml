@@ -282,6 +282,7 @@ viz:
     raw_count_paired: "原始计数 — 未按地区规模调整"
     denominator_excluded: "%{q_total} 个地区中有 %{q_n} 个没有可用分母，未予显示。"
     boundary_provenance: "边界：%{q_source}。"
+    denominator_provenance: "分母：%{q_source}。"
     boundary_outliers: "%{q_n} 个地区远离其余地区（%{q_ids}）；地图按其余地区取景。"
     funnel_complete: "n = %{q_n} 个完整样本(占全部行的 %{q_pct}%)"
     funnel_violation: "在 %{q_pct}% 的行中 %{q_here} 超过 %{q_prev}"

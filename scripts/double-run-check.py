@@ -15,13 +15,17 @@ data, or a second run that fails yet still emits parseable output. The `*_on_suc
 This script finds the sites that still don't.
 
 Usage:
-    scripts/double-run-check.py [--json] [--hazards] [PATH ...]
+    scripts/double-run-check.py [--json] [--hazards] [--check] [PATH ...]
 
     (no flags)  summary counts by shape and by file
     --json      one JSON object per site on stdout, for scripted conversion
     --hazards   only sites where converting could change WHEN the command runs
+    --check     CI gate: print offending sites and exit 1 if any need action
 
-Exit status is 0 regardless of findings; this is a reporting tool, not a gate.
+Without --check the exit status is always 0 — it reports, it does not gate.
+With --check it exits 1 when any site needs action. Sites whose two runs are
+separated by an `.arg()`/`.env()` call are deliberately two different commands,
+so they are listed as informational and do NOT fail the check.
 
 Two classes of finding must NOT be blindly converted, and are reported separately:
 
@@ -246,11 +250,54 @@ def scan(path):
             }
 
 
+def rel(path, root):
+    """Repo-relative path, falling back to the raw path for anything outside it."""
+    r = os.path.relpath(path, root)
+    return path if r.startswith("..") else r
+
+
+def gate(sites, root):
+    """CI mode: report actionable sites and return 1 if there are any."""
+    actionable = [s for s in sites if not s["mutated"]]
+    informational = [s for s in sites if s["mutated"]]
+
+    for s in informational:
+        print(
+            f"note: {rel(s['file'], root)}:{s['line']} {s['fn']} runs "
+            f"`{s['var']}` {s['runs']}x with an arg/env change between them — "
+            "treated as two different commands"
+        )
+    if not actionable:
+        print(f"OK: no test asserts on more than one run of the same command ({len(sites)} noted)")
+        return 0
+
+    for s in actionable:
+        why = "ordering hazard: " + s["hazard"][0] if s["hazard"] else "collapse to a single run"
+        print(
+            f"{rel(s['file'], root)}:{s['line']}: {s['fn']} runs `{s['var']}` "
+            f"{s['runs']}x ({' + '.join(sorted(set(s['runners'])))}) — {why}"
+        )
+    print(
+        f"\n{len(actionable)} site(s) run one command more than once, so the exit status,\n"
+        "stdout and stderr being asserted come from DIFFERENT executions.\n"
+        "Use the single-run helpers in tests/workdir.rs (read_stdout_on_success,\n"
+        "stdout_on_success, stderr_on_error, *_and_stderr_*), anchoring the run at the\n"
+        "EARLIEST original execution point. If a test means to run twice, say so with\n"
+        "`// double-run-check: intentional -- <why>` in the test function."
+    )
+    return 1
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     ap.add_argument("paths", nargs="*", default=None)
     ap.add_argument("--json", action="store_true", help="emit one JSON object per site")
     ap.add_argument("--hazards", action="store_true", help="only ordering-hazard sites")
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="CI gate: list offending sites and exit 1 if any need action",
+    )
     args = ap.parse_args()
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -264,6 +311,9 @@ def main():
         for s in sites:
             print(json.dumps(s))
         return
+
+    if args.check:
+        return gate(sites, root)
 
     convertible = [s for s in sites if not s["mutated"] and not s["hazard"]]
     print(f"double-run sites:            {len(sites)}")
@@ -279,7 +329,7 @@ def main():
         print(f"  {n:4d}  {' + '.join(shape)}")
     print("\nby file:")
     for f, n in collections.Counter(s["file"] for s in sites).most_common():
-        print(f"  {n:4d}  {os.path.relpath(f, root)}")
+        print(f"  {n:4d}  {rel(f, root)}")
 
 
 if __name__ == "__main__":

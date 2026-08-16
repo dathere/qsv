@@ -1,0 +1,58 @@
+# Double-run check — fails when an integration test runs one qsv command more
+# than once and asserts across those separate executions.
+#
+# Each tests/workdir.rs helper spawns the binary, so a test that calls two of
+# them on the same `Command` gets its exit status from one run and its output
+# from another:
+#
+#     wrk.assert_success(&mut cmd);                           // run #1: status
+#     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);  // run #2: data
+#
+# Either direction can be masked — a run that succeeds while emitting the wrong
+# data, or a second run that fails yet still emits parseable output. Issue #4415
+# and PRs #4422/#4423/#4424/#4425 removed ~750 such sites; this keeps the count
+# at zero rather than letting it grow back.
+#
+# A test that runs one command twice ON PURPOSE (caching, idempotence, indexed
+# vs unindexed) opts out with `// double-run-check: intentional -- <why>`.
+#
+# Triggers:
+#   - PRs touching the tests, the helpers they call, the script, or this file
+#   - Nightly cron (catches sites introduced by pushes that bypassed a PR)
+#   - Manual workflow_dispatch
+
+name: Double-run check
+
+on:
+  schedule:
+    - cron: '23 5 * * *'   # nightly @ 05:23 UTC
+  pull_request:
+    paths:
+      - 'tests/**'
+      - 'scripts/double-run-check.py'
+      - '.github/workflows/double-run-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: double-run-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      # stdlib-only; no pip install needed. Runs in well under a second.
+      - name: Run double-run-check
+        run: python3 scripts/double-run-check.py --check

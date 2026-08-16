@@ -91,8 +91,10 @@ BIND_RE = re.compile(
 )
 FN_RE = re.compile(r"fn (\w+)\(")
 MUT_RE = re.compile(r"\.\s*(args?|envs?|env_remove|env_clear|current_dir|stdin)\s*\(")
-# start of a method-call statement: `cmd.arg(..)`, and its `.arg(..)` continuations
+# start of a method-call statement: `cmd.arg(..)`, `cmd` alone on its own line
+# (a common style here — 182 occurrences in tests/), and `.arg(..)` continuations
 RECEIVER_RE = re.compile(r"^\s*(\w+)\s*\.")
+BARE_RECEIVER_RE = re.compile(r"^\s*(\w+)\s*$")
 CONTINUATION_RE = re.compile(r"^\s*\.")
 # statements whose meaning depends on whether the command has run yet
 HAZARD_RE = re.compile(
@@ -193,12 +195,18 @@ def mutates(var, code_lines):
     The receiver matters: an intervening `other.arg("x")` on a DIFFERENT command
     says nothing about `var`, and treating it as though it did would exempt a
     real double run of `var` from the gate. Builder chains split across lines
-    (`cmd.args([..])\\n    .arg("x");`) keep the receiver of the line that
-    started the statement.
+    keep the receiver of the line that started the statement, in both styles
+    used here:
+
+        cmd.args([..])          cmd
+            .arg("x");             .arg("x");
+
+    Missing the second style would leave the `.arg()` unattributed and report a
+    site that IS two different commands, i.e. a spurious CI failure.
     """
     receiver = None
     for line in code_lines:
-        if m := RECEIVER_RE.match(line):
+        if m := RECEIVER_RE.match(line) or BARE_RECEIVER_RE.match(line):
             receiver = m.group(1)
         elif not CONTINUATION_RE.match(line):
             receiver = None

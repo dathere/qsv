@@ -444,7 +444,7 @@ fn denull_apply_sends_the_report_to_stderr() {
 
     let mut cmd = wrk.command("denull");
     cmd.arg("--apply").arg("d.csv");
-    let stderr = wrk.output_stderr(&mut cmd);
+    let (got, stderr): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr(&mut cmd);
     assert!(stderr.contains("confirmed"), "report missing: {stderr}");
     assert!(
         stderr.contains("blanked 10 cell(s)"),
@@ -452,7 +452,6 @@ fn denull_apply_sends_the_report_to_stderr() {
     );
 
     // ...and stdout carries the DATA, not the report
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got[0], vec!["depth"]);
     assert!(!got.iter().any(|r| r[0] == "confirmed"));
 }

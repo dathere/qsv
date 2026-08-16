@@ -160,15 +160,13 @@ fn searchset_indexed_parallel_quick() {
         .arg("--jobs")
         .arg("4")
         .arg("data.csv");
-    let par_err = wrk.output_stderr(&mut par_cmd);
-    wrk.assert_success(&mut par_cmd);
+    let (par_out, par_err): (String, String) = wrk.stdout_and_stderr_on_success(&mut par_cmd);
 
     // Same earliest-match row regardless of parallelism
     assert_eq!(seq_err, par_err);
     assert!(!seq_err.trim().is_empty());
 
     // --quick produces no stdout
-    let par_out: String = wrk.stdout(&mut par_cmd);
     assert_eq!(par_out, "");
 }
 
@@ -293,10 +291,8 @@ fn searchset_quick() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("--quick").arg("data.csv");
 
-    let got_err = wrk.output_stderr(&mut cmd);
+    let (got, got_err): (String, String) = wrk.stdout_and_stderr_on_success(&mut cmd);
     assert_eq!(got_err, "1\n");
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "");
 }
 
@@ -418,7 +414,8 @@ fn searchset_ignore_case_count() {
     cmd.arg("regexset.txt").arg("--count").arg("data.csv");
     cmd.arg("--ignore-case");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, got_count): (Vec<Vec<String>>, String) =
+        wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
@@ -428,11 +425,8 @@ fn searchset_ignore_case_count() {
     ];
     assert_eq!(got, expected);
 
-    let got = wrk.output_stderr(&mut cmd);
     let expected = "4\n";
-    assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
+    assert_eq!(got_count, expected);
 }
 
 #[test]
@@ -587,15 +581,13 @@ fn searchset_flag_complex() {
         .arg("--flag-matches-only")
         .arg("--json");
 
-    let got: String = wrk.stdout(&mut cmd);
-    let got_stderr: String = wrk.output_stderr(&mut cmd);
+    let (got, got_stderr): (String, String) = wrk.stdout_and_stderr_on_success(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-100-pii-searchset.csv");
     assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 
     let expected_stderr = r#"{"rows_with_matches":5,"total_matches":6,"record_count":100}"#;
     assert_eq!(got_stderr.trim_end(), expected_stderr);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -614,8 +606,7 @@ fn searchset_flag_complex_unmatched_output() {
         .arg("unmatched.csv")
         .arg("--json");
 
-    let got: String = wrk.stdout(&mut cmd);
-    let got_stderr: String = wrk.output_stderr(&mut cmd);
+    let (got, got_stderr): (String, String) = wrk.stdout_and_stderr_on_success(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-100-pii-searchset.csv");
     assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
@@ -625,8 +616,6 @@ fn searchset_flag_complex_unmatched_output() {
 
     let unmatched_got: String = wrk.from_str(&wrk.path("unmatched.csv"));
     assert_eq!(unmatched_got, nopii_file);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

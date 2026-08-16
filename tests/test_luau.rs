@@ -175,7 +175,7 @@ fn luau_aggregation_with_begin_end() {
         .arg(r#"return ("Min/Max: " .. math.min(unpack(amt_array)) .. "/" .. math.max(unpack(amt_array)) .. " Grand total of " .. _ROWCOUNT .. " rows: " .. gtotal)"#)
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Total"],
         svec!["a", "13", "13"],
@@ -185,11 +185,8 @@ fn luau_aggregation_with_begin_end() {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 7/72 Grand total of 4 rows: 275\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -216,7 +213,7 @@ fn luau_aggregation_with_embedded_begin_end() {
         )
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Total"],
         svec!["a", "13", "13"],
@@ -226,11 +223,8 @@ fn luau_aggregation_with_embedded_begin_end() {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 7/72 Grand total of 4 rows: 275\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -302,7 +296,7 @@ END {
         .arg("file:testbeginend.luau")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Running Total"],
         svec!["a", "13", "13"],
@@ -312,11 +306,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 7/72 Grand total of 4 rows: 116 adjusted: 145\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -417,7 +408,7 @@ END {
         .arg("file:testlookup.luau")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Running Total"],
         svec!["d", "7", "7.28"],
@@ -427,11 +418,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 7.28/74.88 Grand total of 4 rows: 120.64\n";
     assert!(end.ends_with(expected_end));
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[cfg(feature = "polars")]
@@ -834,7 +822,7 @@ END {
         .arg("testbreak.lua")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Running Total"],
         svec!["a", "13", "13"],
@@ -842,12 +830,9 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end =
         "This is the break msg.\nMin/Max: 13/24 Grand total of 2 rows: 50\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -904,7 +889,7 @@ END {
         .arg("testbreak.LUAU")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Running Total"],
         svec!["a", "13", "13"],
@@ -913,11 +898,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 0/24 Grand total of 3 rows: 94\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -970,7 +952,7 @@ END {
         .arg("test_loadcsv.LUAU")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "description"],
         svec!["a", "13", "alpha"],
@@ -980,11 +962,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "4 rows\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1041,7 +1020,7 @@ END {
         .arg("testqsvcmd.Lua")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Running Total"],
         svec!["a", "13", "13"],
@@ -1051,15 +1030,12 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 7/72 Grand total of 3 rows: 275\n".to_string();
     assert_eq!(end, expected_end);
 
     let table_txt = wrk.read_to_string("count.txt").unwrap();
     let expected_table_txt = "4\n";
     assert_eq!(table_txt, expected_table_txt);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1253,7 +1229,7 @@ END {
         .arg("file:testbeginend.luau")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Running Total"],
         svec!["a", "13", "13"],
@@ -1268,11 +1244,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 7/72 Grand total of 4 rows: 275\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1338,7 +1311,7 @@ END {
         .arg("file:testrandominsertrecord.luau")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     // let got2: String = wrk.stdout(&mut cmd);
     // println!("got2: {got2:?}");
 
@@ -1356,11 +1329,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 7/72 Grand total of 4 rows: 305\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1408,7 +1378,7 @@ END {
         .arg("file:testbeginend.luau")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "code digit", "Running Total"],
         svec!["a", "2", "2"],
@@ -1418,11 +1388,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "The lock combination is 2715. Again, 2, 7, 1, 5.\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1459,7 +1426,7 @@ fn luau_aggregation_with_embedded_begin_end_and_beginend_options() {
         )
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Total"],
         svec!["a", "13", "14"],
@@ -1469,11 +1436,8 @@ fn luau_aggregation_with_embedded_begin_end_and_beginend_options() {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Minimum/Maximum: 7/72 Grand total of 4 rows: 279\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1542,7 +1506,7 @@ END {
         .arg("file:testbeginend.luau")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Running Total"],
         svec!["d", "7", "7"],
@@ -1552,11 +1516,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 7/72 Grand total of 4 rows: 305\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1634,7 +1595,7 @@ END {
         .arg("file:testbeginend.luau")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Running Total"],
         svec!["d", "7", "7"],
@@ -1644,11 +1605,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max/Range: 7/72/65 Grand total of 4 rows: 305\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1717,7 +1675,7 @@ END {
         .arg("file:testbeginend.luau")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec![
             "letter",
@@ -1732,11 +1690,8 @@ END {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: 7/72 Grand total of 4 rows: 305\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1762,7 +1717,7 @@ fn luau_aggregation_with_begin_end_and_luau_syntax() {
         .arg(r#"return ("Min/Max: " .. math.min(unpack(amt_array)) .. "/" .. math.max(unpack(amt_array)) .. " Grand total of " .. _ROWCOUNT .. " rows: " .. gtotal)"#)
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, end): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Total"],
         svec!["a", "13", "13"],
@@ -1772,11 +1727,8 @@ fn luau_aggregation_with_begin_end_and_luau_syntax() {
     ];
     assert_eq!(got, expected);
 
-    let end = wrk.output_stderr(&mut cmd);
     let expected_end = "Min/Max: -72/13 Grand total of 4 rows: 275\n".to_string();
     assert_eq!(end, expected_end);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

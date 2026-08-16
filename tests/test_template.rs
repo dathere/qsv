@@ -1182,14 +1182,13 @@ fn template_render_error_summary() {
         .arg("template.txt")
         .arg("data.csv");
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let (got, stderr): (String, String) = wrk.stdout_and_stderr(&mut cmd);
     assert!(
         stderr.contains("3 row(s) failed to render"),
         "expected render-failure summary on stderr, got: {stderr:?}"
     );
 
     // The per-row error message should still be in stdout (existing behavior).
-    let got: String = wrk.stdout(&mut cmd);
     assert!(
         got.contains("RENDERING ERROR (1)"),
         "expected per-row error in stdout, got: {got:?}"

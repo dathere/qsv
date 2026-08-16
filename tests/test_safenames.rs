@@ -25,7 +25,7 @@ fn safenames_conditional() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("c").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, changed_headers): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr(&mut cmd);
     let expected = vec![
         svec![
             "col1",
@@ -50,7 +50,6 @@ fn safenames_conditional() {
     ];
     assert_eq!(got, expected);
 
-    let changed_headers = wrk.output_stderr(&mut cmd);
     let expected_count = "7\n";
     assert_eq!(changed_headers, expected_count);
 }
@@ -80,7 +79,7 @@ fn safenames_always() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("always").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, changed_headers): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr(&mut cmd);
     let expected = vec![
         svec![
             "col1",
@@ -99,7 +98,6 @@ fn safenames_always() {
     ];
     assert_eq!(got, expected);
 
-    let changed_headers = wrk.output_stderr(&mut cmd);
     let expected_count = "6\n";
     assert_eq!(changed_headers, expected_count);
 }
@@ -324,7 +322,7 @@ fn safenames_reserved_names_default() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, changed_headers): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr(&mut cmd);
     let expected = vec![
         svec![
             "col1",
@@ -340,7 +338,6 @@ fn safenames_reserved_names_default() {
     ];
     assert_eq!(got, expected);
 
-    let changed_headers = wrk.output_stderr(&mut cmd);
     let expected_count = "6\n";
     assert_eq!(changed_headers, expected_count);
 }
@@ -653,7 +650,7 @@ fn safenames_reserved_names_specified() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--reserved").arg("waldo").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, changed_headers): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr(&mut cmd);
     let expected = vec![
         svec![
             "col1",
@@ -669,7 +666,6 @@ fn safenames_reserved_names_specified() {
     ];
     assert_eq!(got, expected);
 
-    let changed_headers = wrk.output_stderr(&mut cmd);
     let expected_count = "6\n";
     assert_eq!(changed_headers, expected_count);
 }
@@ -697,7 +693,7 @@ fn safenames_reserved_names_specified_case_insensitive() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--reserved").arg("waldo").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, changed_headers): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr(&mut cmd);
     let expected = vec![
         svec![
             "col1",
@@ -713,7 +709,6 @@ fn safenames_reserved_names_specified_case_insensitive() {
     ];
     assert_eq!(got, expected);
 
-    let changed_headers = wrk.output_stderr(&mut cmd);
     let expected_count = "6\n";
     assert_eq!(changed_headers, expected_count);
 }

@@ -129,11 +129,11 @@ fn replace_null() {
     let mut cmd = wrk.command("replace");
     cmd.arg("\\.0$").arg("<NULL>").arg("data.csv");
 
-    let got_err = wrk.output_stderr(&mut cmd);
+    let (got, got_err): (Vec<Vec<String>>, String) =
+        wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected_err = "5\n";
     assert_eq!(got_err, expected_err);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["identifier", "color"],
         svec!["164", "yellow"],
@@ -142,8 +142,6 @@ fn replace_null() {
         svec!["167", "yellow"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -167,7 +165,8 @@ fn replace_unicode() {
         .arg("--unicode")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, got_err): (Vec<Vec<String>>, String) =
+        wrk.read_stdout_and_stderr_on_success(&mut cmd);
     let expected = vec![
         svec!["identifier", "color"],
         svec!["164.0", "Ƀellow"],
@@ -179,11 +178,8 @@ fn replace_unicode() {
     ];
     assert_eq!(got, expected);
 
-    let got_err = wrk.output_stderr(&mut cmd);
     let expected_err = "4\n";
     assert_eq!(got_err, expected_err);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -330,7 +326,8 @@ fn replace_exact() {
         .arg("John Bloggs")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, got_err): (Vec<Vec<String>>, String) =
+        wrk.read_stdout_and_stderr_on_success(&mut cmd);
     // Should only replace exact match "J. Bloggs", not "F. J. Bloggs"
     let expected = vec![
         svec!["id", "name"],
@@ -340,11 +337,8 @@ fn replace_exact() {
     ];
     assert_eq!(got, expected);
 
-    let got_err = wrk.output_stderr(&mut cmd);
     let expected_err = "1\n";
     assert_eq!(got_err, expected_err);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -366,7 +360,8 @@ fn replace_exact_with_special_chars() {
         .arg("yellow")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, got_err): (Vec<Vec<String>>, String) =
+        wrk.read_stdout_and_stderr_on_success(&mut cmd);
     // Should only replace exact field match, not substring
     let expected = vec![
         svec!["identifier", "color"],
@@ -377,11 +372,8 @@ fn replace_exact_with_special_chars() {
     ];
     assert_eq!(got, expected);
 
-    let got_err = wrk.output_stderr(&mut cmd);
     let expected_err = "1\n";
     assert_eq!(got_err, expected_err);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -402,7 +394,8 @@ fn replace_exact_no_substring_match() {
         .arg("REPLACED")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, got_err): (Vec<Vec<String>>, String) =
+        wrk.read_stdout_and_stderr_on_success(&mut cmd);
     // Should NOT replace "F. J. Bloggs" even though it contains "J. Bloggs"
     let expected = vec![
         svec!["id", "name"],
@@ -412,11 +405,8 @@ fn replace_exact_no_substring_match() {
     ];
     assert_eq!(got, expected);
 
-    let got_err = wrk.output_stderr(&mut cmd);
     let expected_err = "1\n";
     assert_eq!(got_err, expected_err);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -439,7 +429,8 @@ fn replace_exact_case_insensitive() {
         .arg("John Bloggs")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, got_err): (Vec<Vec<String>>, String) =
+        wrk.read_stdout_and_stderr_on_success(&mut cmd);
     // Should replace both "J. Bloggs" and "j. bloggs" with case-insensitive exact match
     let expected = vec![
         svec!["id", "name"],
@@ -450,11 +441,8 @@ fn replace_exact_case_insensitive() {
     ];
     assert_eq!(got, expected);
 
-    let got_err = wrk.output_stderr(&mut cmd);
     let expected_err = "2\n";
     assert_eq!(got_err, expected_err);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -477,7 +465,8 @@ fn replace_exact_with_select() {
         .arg("REPLACED")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let (got, got_err): (Vec<Vec<String>>, String) =
+        wrk.read_stdout_and_stderr_on_success(&mut cmd);
     // Should only replace exact "test" in name column, not "testing"
     let expected = vec![
         svec!["id", "name", "email"],
@@ -487,11 +476,8 @@ fn replace_exact_with_select() {
     ];
     assert_eq!(got, expected);
 
-    let got_err = wrk.output_stderr(&mut cmd);
     let expected_err = "2\n";
     assert_eq!(got_err, expected_err);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

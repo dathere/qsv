@@ -166,18 +166,6 @@ impl Workdir {
         o
     }
 
-    /// Run `cmd` once and return its full `Output` with success asserted, for
-    /// tests that need both streams in a shape the tuple helpers don't cover.
-    pub fn output_on_success(&self, cmd: &mut process::Command) -> process::Output {
-        self.run_once(cmd, Some(true))
-    }
-
-    /// Run `cmd` once and return its full `Output` with a non-zero exit
-    /// asserted. The failure-path twin of `output_on_success`.
-    pub fn output_on_error(&self, cmd: &mut process::Command) -> process::Output {
-        self.run_once(cmd, Some(false))
-    }
-
     /// Run `cmd` ONCE and return `(stdout parsed as CSV, stderr)`. Use this
     /// when a test asserts on both streams: `read_stdout` followed by
     /// `output_stderr` runs the command twice, so the rows and the stderr text

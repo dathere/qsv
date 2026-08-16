@@ -515,9 +515,7 @@ fn sample_bernoulli_seed() {
         .arg("0.5")
         .arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["R", "S"],
         svec!["4", "c"],
@@ -639,9 +637,7 @@ fn sample_systematic() {
     let mut cmd = wrk.command("sample");
     cmd.args(["--systematic", "first"]).arg("3").arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["R", "S"],
         svec!["1", "b"],
@@ -680,9 +676,7 @@ fn sample_stratified() {
         .arg("2")
         .arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Group", "Value"],
         svec!["A", "3"],
@@ -724,9 +718,7 @@ fn sample_stratified_large_sample_size() {
         .arg("100")
         .arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Group", "Value"],
         svec!["A", "1"],
@@ -882,9 +874,7 @@ fn sample_stratified_empty_stratum() {
         .arg("2")
         .arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Group", "Value"],
         svec!["", "2"],
@@ -942,9 +932,7 @@ fn sample_cluster_single_record() {
         .arg("2")
         .arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Cluster", "Value"],
         svec!["A", "1"],
@@ -1129,9 +1117,7 @@ fn sample_weighted_invalid_weights() {
         .arg("2")
         .arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // Records with invalid weights are treated as having zero weight
     // we requested two samples but returning only one as we ran out of records
     let expected = vec![svec!["ID", "Weight"], svec!["4", "40"]];
@@ -1189,9 +1175,7 @@ fn sample_stratified_with_delimiter() {
         .arg("1")
         .arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["Group|Value"], svec!["A|2"], svec!["B|3"]];
     assert_eq!(got, expected);
 }
@@ -1293,9 +1277,7 @@ fn sample_remote_bernoulli_streaming_standard_rng() {
         .arg("0.3") // 30% probability
         .arg(test_url);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Verify we got the header
     assert_eq!(
@@ -1371,9 +1353,7 @@ fn sample_remote_bernoulli_streaming_cryptosecure() {
         .arg("0.3") // 30% probability
         .arg(test_url);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Verify we got the header
     assert_eq!(

@@ -16,7 +16,7 @@ fn replace() {
     let mut cmd = wrk.command("replace");
     cmd.arg("\\.0$").arg("").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["identifier", "color"],
         svec!["164", "yellow"],
@@ -25,7 +25,6 @@ fn replace() {
         svec!["167", "yellow"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -44,7 +43,7 @@ fn replace_regex_literal() {
     let mut cmd = wrk.command("replace");
     cmd.arg("$low^").arg("low").arg("--literal").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["identifier", "color"],
         svec!["164.0", "yellow"],
@@ -53,7 +52,6 @@ fn replace_regex_literal() {
         svec!["167.0", "yellow.0"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -501,7 +499,7 @@ fn replace_all_emails_with_placeholder() {
         .arg("<EMAIL>")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["email"],
         svec!["<EMAIL>"],
@@ -513,8 +511,6 @@ fn replace_all_emails_with_placeholder() {
         svec!["hello world"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -527,7 +523,7 @@ fn replace_indexed_parallel() {
     let mut cmd = wrk.command("replace");
     cmd.arg("Police").arg("Pulisya").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "Unique Key",
@@ -794,7 +790,6 @@ fn replace_indexed_parallel() {
         ],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 
     // now index the file
     wrk.create_from_string("data.csv", &data);
@@ -848,8 +843,7 @@ fn replace_indexed_empty() {
         .arg("--jobs")
         .arg("2")
         .arg("--not-one");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["identifier", "color"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }

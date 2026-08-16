@@ -677,9 +677,7 @@ fn frequency_all_unique() {
     let mut cmd = wrk.command("frequency");
     cmd.args(["--select", "1"]).arg(testdata);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
         svec!["case_enquiry_id", "<ALL_UNIQUE>", "100", "100", "0"],
@@ -906,9 +904,7 @@ fn frequency_all_unique_stats_cache_default() {
     let mut cmd = wrk.command("frequency");
     cmd.args(["--select", "1"]).arg(testdata);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
         svec!["case_enquiry_id", "<ALL_UNIQUE>", "100", "100", "0"],
@@ -1201,9 +1197,7 @@ fn frequency_vis_whitespace() {
         .arg("--vis-whitespace")
         .arg("--pct-nulls");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // NULL is now at the end by default (--null-sorted flag changes this behavior)
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
@@ -1499,8 +1493,7 @@ fn frequency_json_all_unique() {
     cmd.args(["--select", "1"])
         .arg(testdata.clone())
         .arg("--json");
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let v: Value = serde_json::from_str(&got).unwrap();
     // Accept either full path or just filename for input
     let input = v["input"].as_str().unwrap();
@@ -1539,8 +1532,7 @@ fn frequency_json_vis_whitespace() {
         .arg("--vis-whitespace")
         .arg("--json")
         .arg("--pct-nulls");
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let v: Value = serde_json::from_str(&got).unwrap();
     assert!(v["input"].as_str().unwrap().ends_with("in.csv"));
     assert_eq!(v["rowcount"], 6);
@@ -1748,8 +1740,7 @@ fn frequency_toon_all_unique() {
     cmd.args(["--select", "1"])
         .arg(testdata.clone())
         .arg("--toon");
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"rowcount: 100
 fieldcount: 1
 fields[1]:
@@ -1796,8 +1787,7 @@ fn frequency_toon_vis_whitespace() {
         .arg("--vis-whitespace")
         .arg("--toon")
         .arg("--pct-nulls");
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let v: Value = toon_format::decode(
         &got,
         &toon_format::DecodeOptions {
@@ -2191,9 +2181,7 @@ fn frequency_rank_ties_json() {
     let (wrk, mut cmd) = setup_rank_test_sorted("frequency_rank_ties_json");
     cmd.args(["--rank-strategy", "average"]).arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let v: Value = serde_json::from_str(&got).unwrap();
     assert!(v["input"].as_str().unwrap().ends_with("in.csv"));
     assert_eq!(v["rowcount"], 16);
@@ -2900,9 +2888,7 @@ fn frequency_weight_with_unq_limit_all_unique() {
         .args(["--limit", "0"])
         .args(["--unq-limit", "10"]); // This should be ignored for all-unique columns
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // With --weight and all-unique columns, should show a single <ALL_UNIQUE> entry
     let freq_rows: Vec<_> = got.iter().filter(|r| r.len() > 1 && r[0] == "id").collect();
@@ -2945,9 +2931,7 @@ fn frequency_weight_with_unq_limit_and_limit() {
         .args(["--limit", "5"])
         .args(["--unq-limit", "10"]); // Both should be ignored for all-unique columns
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // With --weight and all-unique columns, should show a single <ALL_UNIQUE> entry
     let freq_rows: Vec<_> = got.iter().filter(|r| r.len() > 1 && r[0] == "id").collect();
@@ -3215,9 +3199,7 @@ fn frequency_weight_infinity_values() {
         .args(["--select", "value"])
         .args(["--weight", "weight"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let expected_values = vec![
         svec!["field", "value", "count", "percentage", "rank"],

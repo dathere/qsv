@@ -206,7 +206,7 @@ fn safenames_verify_verbose_pretty_json() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("J").arg("in.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected = r#"{
   "header_count": 13,"duplicate_count": 2,"duplicate_headers": [
@@ -230,8 +230,6 @@ fn safenames_verify_verbose_pretty_json() {
   ]
 }"#;
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -264,13 +262,11 @@ fn safenames_verify_verbose_json() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("j").arg("in.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected = r#"{"header_count":13,"duplicate_count":2,"duplicate_headers":[":4","col1:5"],"unsafe_headers":["This is a column with invalid chars!# and leading & trailing spaces","","this is already a Postgres Safe Column","1starts with 1","col1","col1","col1","","","","col1","_1"],"safe_headers":["col1"]}"#;
 
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

@@ -1546,9 +1546,7 @@ fn stats_typesonly_infer_boolean_t_f() {
     let mut cmd = wrk.command("stats");
     cmd.arg("--typesonly").arg("--infer-boolean").arg(test_file);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-10-typesonly-boolean-tf-stats.csv");
 
@@ -1566,9 +1564,7 @@ fn stats_typesonly_infer_boolean_t_f_infer_dates() {
         .arg("--infer-dates")
         .arg(test_file);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-10-typesonly-boolean-tf-inferdates-stats.csv");
 
@@ -4190,9 +4186,8 @@ fn stats_issue_2668_semicolon_separator() {
 
     // should not fail, and just treat the data as a single column
     // as the default delimiter is comma, and the separator is semicolon
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "field",
@@ -4855,9 +4850,8 @@ fn stats_weighted_stddev() {
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(got.len() > 1, "Should have at least one data row");
 
@@ -4906,9 +4900,8 @@ fn stats_weighted_median() {
         .arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(
         got.len() > 1,
@@ -4959,9 +4952,8 @@ fn stats_weighted_quartiles() {
         .arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(
         got.len() > 1,
@@ -5031,9 +5023,8 @@ fn stats_weighted_mad() {
         .arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(
         got.len() > 1,
@@ -5090,9 +5081,8 @@ fn stats_weighted_percentiles() {
         .arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(
         got.len() > 1,
@@ -5189,9 +5179,8 @@ fn stats_weighted_geometric_mean() {
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(got.len() > 1, "Should have at least one data row");
 
@@ -5237,9 +5226,8 @@ fn stats_weighted_geometric_mean_unequal_weights() {
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(got.len() > 1, "Should have at least one data row");
 
@@ -5291,9 +5279,8 @@ fn stats_weighted_harmonic_mean() {
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(got.len() > 1, "Should have at least one data row");
 
@@ -5340,9 +5327,8 @@ fn stats_weighted_harmonic_mean_unequal_weights() {
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(got.len() > 1, "Should have at least one data row");
 
@@ -5392,9 +5378,8 @@ fn stats_weighted_geometric_mean_zero_or_negative() {
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(got.len() > 1, "Should have at least one data row");
 
@@ -5440,9 +5425,8 @@ fn stats_weighted_harmonic_mean_zero() {
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(got.len() > 1, "Should have at least one data row");
 
@@ -5499,9 +5483,8 @@ fn stats_weighted_modes() {
         .arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(
         got.len() > 1,
@@ -5608,9 +5591,8 @@ fn stats_weighted_modes_multiple() {
         .arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(
         got.len() > 1,
@@ -5687,9 +5669,8 @@ fn stats_weighted_modes_cardinality() {
         .arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(
         got.len() > 1,
@@ -5781,9 +5762,8 @@ fn stats_weighted_excludes_weight_column() {
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
     // Check command succeeds
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(got.len() > 1, "Should have at least one data row");
 
@@ -5921,9 +5901,8 @@ fn stats_weighted_all_zero_weights() {
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
     // Command should succeed even with all zero weights
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
     assert!(
         got.len() > 1,
@@ -5965,9 +5944,7 @@ fn stats_weighted_negative_weights() {
     let mut cmd = wrk.command("stats");
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let headers = &got[0];
     let value_row = &got[1];
 
@@ -6002,9 +5979,7 @@ fn stats_weighted_mixed_zero_and_nonzero_weights() {
     let mut cmd = wrk.command("stats");
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let headers = &got[0];
     let value_row = &got[1];
 
@@ -6039,9 +6014,8 @@ fn stats_weighted_nan_weights() {
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
     // Command should succeed
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
 
     let headers = &got[0];
@@ -6078,9 +6052,8 @@ fn stats_weighted_infinity_weights() {
     cmd.arg("--weight").arg("weight").arg("data.csv");
 
     // Command should succeed without overflow
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
 
     let headers = &got[0];
@@ -6124,9 +6097,7 @@ fn stats_weighted_zero_weights_with_modes() {
         .arg("--mode")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let headers = &got[0];
     let value_row = &got[1];
 
@@ -6164,9 +6135,7 @@ fn stats_weighted_negative_weights_with_quartiles() {
         .arg("--quartiles")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let headers = &got[0];
     let value_row = &got[1];
 
@@ -6215,9 +6184,7 @@ fn stats_weighted_mixed_edge_cases() {
         .arg("--mad")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got.is_empty(), "Stats output should not be empty");
 
     let headers = &got[0];

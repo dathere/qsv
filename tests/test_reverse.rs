@@ -137,8 +137,7 @@ fn reverse_indexed_asserts_success() {
     wrk.create_indexed("in.csv", vec![svec!["h1", "h2"], svec!["a", "b"]]);
     let mut cmd = wrk.command("reverse");
     cmd.arg("in.csv");
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["h1", "h2"], svec!["a", "b"]];
     assert_eq!(got, expected);
 
@@ -155,8 +154,7 @@ fn reverse_indexed_asserts_success() {
     );
     let mut cmd = wrk.command("reverse");
     cmd.arg("in.csv");
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["c", "3"],
@@ -173,8 +171,7 @@ fn reverse_indexed_asserts_success() {
     );
     let mut cmd = wrk.command("reverse");
     cmd.arg("--no-headers").arg("in.csv");
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["c", "3"], svec!["b", "2"], svec!["a", "1"]];
     assert_eq!(got, expected);
 }

@@ -20,9 +20,7 @@ fn tojsonl_simple() {
     let mut cmd = wrk.command("tojsonl");
     cmd.arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"{"id":1,"father":"Mark","mother":"Charlotte","oldest_child":"Tom","boy":true,"weight":150.2}
 {"id":2,"father":"John","mother":"Ann","oldest_child":"Jessika","boy":false,"weight":175.5}
 {"id":3,"father":"Bob","mother":"Monika","oldest_child":"Jerry","boy":true,"weight":199.5}"#;
@@ -49,9 +47,7 @@ fn tojsonl_2579() {
     let mut cmd = wrk.command("tojsonl");
     cmd.arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"{"Date":"1937-01-01","Product":"Milk","Unit":"1 gallon","Price":0.1}
 {"Date":"1937-01-01","Product":"Bread","Unit":"1 loaf","Price":0.09}
 {"Date":"1937-01-01","Product":"Movie ticket","Unit":"1 ticket","Price":0.25}
@@ -560,9 +556,7 @@ fn tojsonl_number_empty_field_is_null() {
     let mut cmd = wrk.command("tojsonl");
     cmd.arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"{"id":1,"weight":150.2}
 {"id":2,"weight":null}
 {"id":3,"weight":199.5}"#;
@@ -591,9 +585,7 @@ fn tojsonl_number_non_finite_is_null() {
     let mut cmd = wrk.command("tojsonl");
     cmd.arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"{"id":1,"magnitude":1.5}
 {"id":2,"magnitude":null}
 {"id":3,"magnitude":null}
@@ -624,9 +616,7 @@ fn tojsonl_number_nan_infinity_literal_is_null() {
     let mut cmd = wrk.command("tojsonl");
     cmd.arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"{"id":1,"score":1.5}
 {"id":2,"score":null}
 {"id":3,"score":null}
@@ -654,9 +644,7 @@ fn tojsonl_4410() {
     let mut cmd = wrk.command("tojsonl");
     cmd.arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"{"a":1,"":2,"c":3}
 {"a":4,"":5,"c":6}"#;
     assert_eq!(got, expected);
@@ -717,9 +705,8 @@ fn tojsonl_4410_legacy_cache_missing_field_key() {
     // the consumer must load that cache and still map the empty header correctly
     let mut cmd = wrk.command("tojsonl");
     cmd.arg("in.csv");
-    wrk.assert_success(&mut cmd);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"{"a":1,"":2,"c":3}
 {"a":4,"":5,"c":6}"#;
     assert_eq!(got, expected);

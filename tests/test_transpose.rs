@@ -59,7 +59,7 @@ fn transpose_long_format() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "1"]).arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected long format: field, attribute, value
     // Empty values should be skipped
@@ -75,7 +75,6 @@ fn transpose_long_format() {
         svec!["age", "max", "53"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -91,12 +90,11 @@ fn transpose_long_format_empty_csv() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "1"]).arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Should only have headers, no data rows
     let expected = vec![svec!["field", "attribute", "value"]];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -115,12 +113,11 @@ fn transpose_long_format_all_empty() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "1"]).arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Should only have headers, all values were empty and skipped
     let expected = vec![svec!["field", "attribute", "value"]];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -136,12 +133,11 @@ fn transpose_long_format_single_column() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "1"]).arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Should only have headers, no attribute columns to process
     let expected = vec![svec!["field", "attribute", "value"]];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -186,7 +182,7 @@ fn transpose_long_format_by_name() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "field"]).arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let expected = vec![
         svec!["field", "attribute", "value"],
@@ -198,7 +194,6 @@ fn transpose_long_format_by_name() {
         svec!["age", "value", "25"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -218,7 +213,7 @@ fn transpose_long_format_by_index() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "2"]).arg("in.csv"); // Select second column (1-based index)
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: second column (field) selected as field column
     let expected = vec![
@@ -231,7 +226,6 @@ fn transpose_long_format_by_index() {
         svec!["age", "value", "25"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -251,7 +245,7 @@ fn transpose_long_format_by_range() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "2-3"]).arg("in.csv"); // Select columns 2-3 as field columns
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: columns 2-3 (category, field) concatenated with | separator
     let expected = vec![
@@ -264,7 +258,6 @@ fn transpose_long_format_by_range() {
         svec!["person|age", "value", "25"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -284,7 +277,7 @@ fn transpose_long_format_by_range_to_end() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "2-"]).arg("in.csv"); // Select from column 2 to end
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: columns 2-4 (category, field, type) concatenated with | separator
     let expected = vec![
@@ -293,7 +286,6 @@ fn transpose_long_format_by_range_to_end() {
         svec!["person|age|Integer", "id", "2"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -313,7 +305,7 @@ fn transpose_long_format_by_regex() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "/^field/"]).arg("in.csv"); // Select columns starting with "field"
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: field_name and field_type concatenated with | separator
     let expected = vec![
@@ -324,7 +316,6 @@ fn transpose_long_format_by_regex() {
         svec!["age|Integer", "value", "25"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -344,7 +335,7 @@ fn transpose_long_format_multiple_fields_by_name() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "category,field"]).arg("in.csv"); // Select multiple columns by name
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: category and field concatenated with | separator
     let expected = vec![
@@ -357,7 +348,6 @@ fn transpose_long_format_multiple_fields_by_name() {
         svec!["person|age", "value", "25"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -377,7 +367,7 @@ fn transpose_long_format_multiple_fields_by_index() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "2,3"]).arg("in.csv"); // Select multiple columns by index
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: columns 2 and 3 (category, field) concatenated with | separator
     let expected = vec![
@@ -390,7 +380,6 @@ fn transpose_long_format_multiple_fields_by_index() {
         svec!["person|age", "value", "25"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -473,12 +462,11 @@ fn transpose_long_format_all_columns_as_fields() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "1-3"]).arg("in.csv"); // Select all columns as fields
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: only headers, no attribute columns to process
     let expected = vec![svec!["field", "attribute", "value"]];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -498,7 +486,7 @@ fn transpose_long_format_quoted_column_name() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", r#""field name""#]).arg("in.csv"); // Select quoted column name with space
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: "field name" column selected as field column
     let expected = vec![
@@ -511,7 +499,6 @@ fn transpose_long_format_quoted_column_name() {
         svec!["age", "value", "25"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -533,12 +520,11 @@ fn transpose_select_by_index() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--select", "1,3"]).arg("in.csv"); // Select columns 1 and 3 (a and c)
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: only columns a and c transposed
     let expected = vec![svec!["a", "1", "4"], svec!["c", "3", "6"]];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -558,12 +544,11 @@ fn transpose_select_by_name() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--select", "a,c"]).arg("in.csv"); // Select columns a and c by name
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: only columns a and c transposed
     let expected = vec![svec!["a", "1", "4"], svec!["c", "3", "6"]];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -583,12 +568,11 @@ fn transpose_select_by_range() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--select", "2-3"]).arg("in.csv"); // Select columns 2-3 (b and c)
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: only columns b and c transposed
     let expected = vec![svec!["b", "2", "6"], svec!["c", "3", "7"]];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -608,12 +592,11 @@ fn transpose_select_by_regex() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--select", "/^val/"]).arg("in.csv"); // Select columns starting with "val"
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: only columns val_a and val_b transposed
     let expected = vec![svec!["val_a", "1", "4"], svec!["val_b", "2", "5"]];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -633,12 +616,11 @@ fn transpose_select_multipass() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--multipass", "--select", "a,c"]).arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: only columns a and c transposed
     let expected = vec![svec!["a", "1", "4"], svec!["c", "3", "6"]];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -660,7 +642,7 @@ fn transpose_select_long_format() {
     cmd.args(["--long", "id", "--select", "val1,val3"])
         .arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: only val1 and val3 become attribute rows
     let expected = vec![
@@ -671,7 +653,6 @@ fn transpose_select_long_format() {
         svec!["2", "val3", "60"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -692,7 +673,7 @@ fn transpose_select_long_format_by_range() {
     // Select columns 3-5 (val1, val2, val3) as attributes, use id as field column
     cmd.args(["--long", "id", "--select", "3-5"]).arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: val1, val2, val3 become attribute rows (name excluded)
     let expected = vec![
@@ -705,7 +686,6 @@ fn transpose_select_long_format_by_range() {
         svec!["2", "val3", "60"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -759,12 +739,11 @@ fn transpose_select_single_column() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--select", "b"]).arg("in.csv"); // Select only column b
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: only column b transposed
     let expected = vec![svec!["b", "2", "5"]];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -785,7 +764,7 @@ fn transpose_long_format_mixed_empty_values() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--long", "1"]).arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let expected = vec![
         svec!["field", "attribute", "value"],
@@ -795,7 +774,6 @@ fn transpose_long_format_mixed_empty_values() {
         svec!["age", "max", "53"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -850,7 +828,7 @@ fn transpose_select_all_columns() {
     let mut cmd = wrk.command("transpose");
     cmd.args(["--select", "1-"]).arg("in.csv"); // Select all columns (1 to end)
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // Expected: same as regular transpose
     let expected = vec![
@@ -859,7 +837,6 @@ fn transpose_select_all_columns() {
         svec!["c", "3", "6"],
     ];
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 

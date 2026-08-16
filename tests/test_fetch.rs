@@ -326,7 +326,7 @@ fn fetch_simple_diskcache() {
         .args(["--disk-cache-dir", dc_dir])
         .args(["--rate-limit", "2"]);
 
-    let got = wrk.stdout::<String>(&mut cmd);
+    let got = wrk.stdout_on_success::<String>(&mut cmd);
 
     let expected = r#"{"errors":[{"title":"HTTP ERROR","detail":"HTTP ERROR 404 - Not Found"}]}
 {"country":"United States","country abbreviation":"US","post code":"90210","places":[{"place name":"Beverly Hills","longitude":"-118.4065","latitude":"34.0901","state":"California","state abbreviation":"CA"}]}
@@ -335,8 +335,6 @@ fn fetch_simple_diskcache() {
 {"errors":[{"title":"Invalid URL","detail":"relative URL without a base"}]}"#;
 
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 
     // cached v3 uses redb (a single file), not sled (a directory): the on-disk
     // cache is `{name}_v{DISK_FILE_VERSION}.redb`, not `{name}_v1/conf`.
@@ -587,9 +585,7 @@ fn fetch_custom_header() {
         .arg(r#"[ ."headers"."X-Api-Key", ."headers"."X-Api-Secret" ]"#)
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got = wrk.stdout::<String>(&mut cmd);
+    let got = wrk.stdout_on_success::<String>(&mut cmd);
     let expected = "[\"DEMO_KEY\",\"ABC123XYZ\"]";
     assert_eq!(got, expected);
 }
@@ -662,11 +658,10 @@ fn fetch_user_agent() {
     let mut cmd = wrk.command("fetch");
     cmd.arg("URL").arg("data.csv");
 
-    let got = wrk.stdout::<String>(&mut cmd);
+    let got = wrk.stdout_on_success::<String>(&mut cmd);
     // the default user agent should contain the name of the qsv command used,
     // in this case "fetch"
     assert!(got.contains("; fetch; "));
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -1073,9 +1068,7 @@ fn fetchpost_simple_test() {
         .arg("response")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let mut got_parsed: Vec<Vec<String>> = Vec::new();
     let mut record_parsed: Vec<String> = Vec::new();
@@ -1400,9 +1393,7 @@ fn fetchpost_literalurl_test() {
         .arg("response")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let mut got_parsed: Vec<Vec<String>> = Vec::new();
     let mut record_parsed: Vec<String> = Vec::new();
@@ -1545,9 +1536,7 @@ fn fetchpost_payload_template() {
         .arg(r#"."data""#)
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let expected = vec![
         svec!["first_name", "last_name", "age", "city", "response"],
@@ -1624,9 +1613,7 @@ fn fetchpost_payload_template_with_globals() {
         .arg(r#"."data""#)
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let expected = vec![
         svec!["first_name", "last_name", "age", "city", "response"],
@@ -1693,9 +1680,7 @@ fn fetchpost_payload_template_with_report() {
         .arg("short")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let expected = vec![
         svec!["first_name", "last_name", "age", "city", "response"],
@@ -1751,9 +1736,7 @@ fn fetchpost_with_headers() {
         .arg(r#"."headers""#)
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got = wrk.stdout::<String>(&mut cmd);
+    let got = wrk.stdout_on_success::<String>(&mut cmd);
     assert!(got.contains("X-Test-Header"));
     assert!(got.contains("test123"));
     assert!(got.contains("X-Another-Header"));
@@ -1824,9 +1807,7 @@ fn fetchpost_content_type() {
         .arg("text/plain")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got = wrk.stdout::<String>(&mut cmd);
+    let got = wrk.stdout_on_success::<String>(&mut cmd);
     assert!(got.starts_with(
         r#"{"args":{},"data":"\"Greeting: Hello World\"","files":{},"form":{},"headers":{"#
     ));

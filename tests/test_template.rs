@@ -19,10 +19,9 @@ fn template_basic() {
         .arg("template.txt")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "Hello John from New York!\nHello Jane from Boston!";
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -38,10 +37,9 @@ fn template_no_headers() {
         .arg("data.csv")
         .arg("--no-headers");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "Name: name, Age: age\nName: John, Age: 30\nName: Jane, Age: 25";
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -55,10 +53,9 @@ fn template_string() {
         .arg("{{name}} is {{age}} years old\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "John is 30 years old\nJane is 25 years old";
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -77,10 +74,9 @@ fn template_custom_delimiter() {
         .arg("data.csv")
         .args(["--delimiter", ";"]);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "Name: John, Age: 30\nName: Jane, Age: 25";
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -98,10 +94,9 @@ fn template_with_filters() {
         .arg("template.txt")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "John: $1234.57\nJane: $9876.54";
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -119,10 +114,9 @@ fn template_with_conditionals() {
         .arg("template.txt")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "John is a minor\nJane is an adult";
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -140,10 +134,9 @@ fn template_missing_field() {
         .arg("template.txt")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "John (N/A)\nJane (N/A)";
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -158,10 +151,9 @@ fn template_empty_input() {
         .arg("template.txt")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "";
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -183,10 +175,9 @@ fn template_with_loops() {
         .arg("template.txt")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "John's hobbies: reading, gaming, cooking\nJane's hobbies: hiking, painting";
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -232,10 +223,9 @@ fn template_with_whitespace_control() {
         .arg("template.txt")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "Items:\n  - a\n  - b\n  - c";
 
-    wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
 
@@ -847,9 +837,7 @@ fn template_to_bool_filter() {
         .arg("{% if value|to_bool %}true{% else %}false{% endif %}\n\n")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"true
 true
 true
@@ -940,9 +928,7 @@ fn template_lookup_filter_simple() {
         .arg("<not found>")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = concat!(
         "1: apple - A red fruit\n",
         "2: banana - A yellow fruit\n",
@@ -992,9 +978,7 @@ fn template_lookup_filter_invalid_field() {
         .arg("<not found>")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = concat!(
         r#"1: apple - <not found> - lookup: "products-non_existent_column" not found for: "1"
 "#,
@@ -1017,9 +1001,7 @@ fn template_lookup_filter_errors() {
         .arg("{{id|lookup('', 'name')}}")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert!(got.contains("RENDERING ERROR"));
 
     // Test missing field name
@@ -1037,9 +1019,7 @@ fn template_lookup_filter_errors() {
         .arg("{{id|lookup('non_existent lookup', 'name')}}")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(
         got,
         "<FILTER_ERROR> - lookup: \"non_existent lookup-name\" not found for: \"1\""
@@ -1158,8 +1138,7 @@ fn template_lookup_key_normalization() {
         ))
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "answer\ncentury\nperson");
 }
 
@@ -1355,8 +1334,7 @@ fn template_regex_replace() {
         .arg("{{ phone|regex_replace(\"[^0-9]\", \"\") }}\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "2125550100\n8005550199");
 }
 
@@ -1370,8 +1348,7 @@ fn template_regex_replace_captures() {
         .arg("{{ zip|regex_replace(\"([0-9]{3})([0-9]{4})$\", \"${1}-${2}\") }}\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "212555-0100");
 }
 
@@ -1388,8 +1365,7 @@ fn template_regex_match_and_find() {
         )
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "OK 123\nNO");
 }
 
@@ -1404,8 +1380,7 @@ fn template_floor_ceil() {
         .arg("data.csv");
 
     // floor/ceil return floats; pipe |int (next test) for clean integers.
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "42.0/43.0\n42.0/43.0");
 }
 
@@ -1419,8 +1394,7 @@ fn template_floor_ceil_int() {
         .arg("{{ v|floor|int }}/{{ v|ceil|int }}\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "42/43");
 }
 
@@ -1446,8 +1420,7 @@ fn template_floor_ceil_large_integers() {
         .arg("{{ v|floor }}/{{ v|ceil }}\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = values
         .iter()
         .map(|v| format!("{v}/{v}"))
@@ -1504,8 +1477,7 @@ fn template_datefmt() {
         .arg("{{ d|datefmt(\"%Y-%m-%d\") }}\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "2022-03-04\n2022-03-04");
 }
 
@@ -1519,8 +1491,7 @@ fn template_datefmt_prefer_dmy() {
         .arg("{{ d|datefmt(\"%Y-%m-%d\", true) }}\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "2022-04-03");
 }
 
@@ -1534,8 +1505,7 @@ fn template_padding() {
         .arg("[{{ v|zfill(5) }}][{{ v|lpad(5) }}][{{ v|rpad(5, \"*\") }}]\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "[00042][   42][42***]");
 }
 
@@ -1549,8 +1519,7 @@ fn template_slugify() {
         .arg("{{ title|slugify }}\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "nyc-311-data");
 }
 
@@ -1564,8 +1533,7 @@ fn template_blake3() {
         .arg("{{ v|blake3 }}\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let lines: Vec<&str> = got.lines().collect();
     assert_eq!(lines.len(), 3);
     // deterministic + 64-char hex digest
@@ -1585,8 +1553,7 @@ fn template_fromjson() {
         .arg("{{ (j|fromjson).a }}-{{ (j|parse_json).b }}\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "1-2");
 }
 
@@ -1600,8 +1567,7 @@ fn template_coalesce() {
         .arg("{{ coalesce(a, b, \"fallback\") }}\n\n")
         .arg("data.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "x\nfallback");
 }
 

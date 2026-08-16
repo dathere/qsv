@@ -293,9 +293,7 @@ fn snappy_plain_csv_with_sz_extension_fallback() {
     let mut cmd = wrk.command("count");
     cmd.arg("plain.csv.sz");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "2"); // Should count 2 data rows (excluding header)
 }
 
@@ -320,9 +318,7 @@ fn snappy_case_insensitive_extension() {
     let mut cmd = wrk.command("count");
     cmd.arg("test.csv.SZ");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "1");
 }
 
@@ -345,10 +341,8 @@ fn snappy_validation_prevents_corrupt_error() {
     let mut cmd = wrk.command("slice");
     cmd.args(["--len", "1"]).arg("data.csv.sz");
 
-    wrk.assert_success(&mut cmd);
-
     // Verify we got the data (should be first row after header)
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["name", "age"], svec!["Alice", "30"]];
     assert_eq!(got, expected);
 }

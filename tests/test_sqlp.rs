@@ -1189,9 +1189,7 @@ fn sqlp_boston311_sql_cache_schema_decimal_override() {
         .arg("test.sql")
         .args(["--format", "jsonl", "--cache-schema"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"{"latitude":"42.359","longitude":"-71.058700"}
 {"latitude":"42.363","longitude":"-71.056600"}
 {"latitude":"42.288","longitude":"-71.133000"}
@@ -1270,9 +1268,7 @@ fn sqlp_boston311_cte_gz() {
     select ward,count(*) as cnt from boston311_roxbury group by ward order by cnt desc, ward asc;"#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["ward", "cnt"],
         svec!["Ward 11", "2"],
@@ -1912,9 +1908,7 @@ fn sqlp_length_fns() {
 "#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "words", "n_chrs1", "n_chrs2", "n_chrs3", "n_bytes", "n_bits"
@@ -1953,9 +1947,7 @@ fn sqlp_length_fns_rnull_set_to_null() {
         )
         .args(["--rnull-values", "NULL"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "words", "n_chrs1", "n_chrs2", "n_chrs3", "n_bytes", "n_bits"
@@ -2001,9 +1993,7 @@ fn sqlp_control_flow() {
 "#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "coalsc",
@@ -2051,9 +2041,7 @@ fn sqlp_div_sign() {
 "#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["a_div_b", "a_floordiv_b", "b_sign"],
         svec!["-0.09950248756218906", "-1", "-1.0"],
@@ -2093,9 +2081,7 @@ fn sqlp_string_replace() {
         )
         .args(["--rnull-values", "NULL"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["words"],
         svec!["English breakfast tea is the best tea"],
@@ -2142,9 +2128,7 @@ fn sqlp_compound_join_basic() {
         )
         .arg("--truncate-ragged-lines");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["a", "b", "a:test2", "b:test2"],
         svec!["2", "3", "2", "3"],
@@ -2191,9 +2175,7 @@ fn sqlp_compound_join_diff_colnames() {
         )
         .arg("--truncate-ragged-lines");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["a", "b", "a:test2", "b:test2", "c"],
         svec!["2", "2", "2", "2", "8"],
@@ -2255,9 +2237,7 @@ fn sqlp_compound_join_three_tables() {
         )
         .arg("--truncate-ragged-lines");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["a", "b", "a:test2", "b:test2", "a:test3", "b:test3", "c"],
         svec!["2", "3", "2", "3", "2", "3", "3"],
@@ -2295,9 +2275,7 @@ fn sqlp_string_concat() {
 "#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["c0", "c1", "c2", "c3", "c4", "c5", "c6"],
         svec!["aad", "ad1", "aad", "aad", "ad2", "a:d:1", "a!d!1"],
@@ -2357,9 +2335,7 @@ fn sqlp_string_right_reverse() {
 "#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["l", "r", "rev"],
         svec!["ab", "de", "edcba"],
@@ -2398,9 +2374,7 @@ fn sqlp_modulo() {
 "#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["a2", "b3", "c4", "d55"],
         svec!["1.5", "0.0", "3.0", "0.0"],
@@ -2436,9 +2410,7 @@ fn sqlp_try_cast() {
 "#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["foo", "bar"],
         svec!["65432", "1999-12-31"],
@@ -2478,9 +2450,7 @@ fn sqlp_stddev_variance() {
 "#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "v1_std", "v2_std", "v3_std", "v4_std", "v1_var", "v2_var", "v3_var", "v4_var"
@@ -2528,9 +2498,7 @@ fn sqlp_string_position() {
 "#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["a_lc1", "a_uc1", "a_lc2", "a_uc2"],
         svec!["4", "0", "4", "0"],
@@ -2579,9 +2547,7 @@ fn sqlp_date_part() {
         )
         .arg("--try-parsedates");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "c1", "c2", "c3", "c4", "c5", "c6", "c61", "c62", "c63", "c7", "c8", "c9", "c10",
@@ -2654,9 +2620,7 @@ fn sqlp_date_part_tz() {
         )
         .arg("--try-parsedates");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "c1", "c2", "c3", "c4", "c5", "c6", "c61", "c62", "c63", "c7", "c8", "c9", "c10",
@@ -2764,9 +2728,7 @@ fn sqlp_date() {
             DATE('03-15-2021 10:30:20 AM EST', '%m-%d-%Y %I:%M:%S %p %Z') as c3"#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // this is the documented behavior of the date function
     // use STRFTIME and STRPTIME for more control
     let expected = vec![
@@ -2802,9 +2764,7 @@ fn sqlp_date_strftime() {
         )
         .arg("--try-parsedates");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["s_dtm", "s_dt", "s_tm"],
         svec!["03.06.1972/23:50:03", "July 05, 1978", "10.10.10"],
@@ -2829,9 +2789,7 @@ fn sqlp_read_jsonl() {
         .as_str(),
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "case_enquiry_id",
@@ -2988,9 +2946,7 @@ fn sqlp_string_like_ops() {
         FROM likedata"#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "x",
@@ -3050,9 +3006,7 @@ fn sqlp_natural_join() {
   ORDER BY CharacterID"#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["CharacterID", "FirstName", "LastName", "Book", "Ship"],
         svec![
@@ -3091,9 +3045,7 @@ fn sqlp_star_ilike() {
   ORDER BY FirstName"#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["FirstName", "LastName", "Address"],
         svec!["Bruce", "Wayne", "The Batcave"],
@@ -3111,9 +3063,7 @@ fn sqlp_star_ilike() {
   ORDER BY 3 DESC"#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["ID", "Name", "City"],
         svec!["666", "Diana", "Themyscira"],
@@ -3131,9 +3081,7 @@ fn sqlp_star_ilike() {
   ORDER BY Name"#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Name", "Address"],
         svec!["Bruce", "The Batcave"],
@@ -3152,9 +3100,7 @@ fn sqlp_skip_input() {
     cmd.arg("SKIP_INPUT")
         .arg("SELECT 1 AS one, '2' AS two, 3.0 AS three");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["one", "two", "three"], svec!["1", "2", "3.0"]];
 
     assert_eq!(got, expected);
@@ -3290,9 +3236,7 @@ fn sqlp_string_function_joins() {
          STRPOS(r.val, l.val) > 0 ORDER BY l.val, r.val",
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["left_val", "right_val"],
         svec!["bird", "jailbird"],
@@ -3311,9 +3255,7 @@ fn sqlp_string_function_joins() {
          STARTS_WITH(r.val, l.val) ORDER BY l.val, r.val",
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["left_val", "right_val"],
         svec!["cat", "catalog"],
@@ -3329,9 +3271,7 @@ fn sqlp_string_function_joins() {
          ENDS_WITH(r.val, l.val) ORDER BY l.val, r.val",
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["left_val", "right_val"],
         svec!["bird", "jailbird"],
@@ -3347,9 +3287,7 @@ fn sqlp_string_function_joins() {
          STRPOS(l.val, r.val) > 0 ORDER BY l.val, r.val",
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["left_val", "right_val"]]; // Empty because no left values contain right values in our test data
     assert_eq!(got, expected);
 }
@@ -3375,9 +3313,7 @@ fn sqlp_string_to_array() {
         )
         .args(["--format", "json"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"[{"id":1,"cities":["Dubai","Abu Dhabi","Sharjah"]},{"id":2,"cities":["Mumbai","Delhi","Bangalore"]}]"#;
     assert_eq!(got, expected);
 }
@@ -3406,9 +3342,7 @@ fn sqlp_split_part() {
     "#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["s+1", "s+3", "s-2"],
         svec!["xx", "zz", "yy"],
@@ -3438,9 +3372,7 @@ fn sqlp_corr() {
         .arg("SELECT CORR(foo, bar) AS corr FROM data")
         .args(["--float-precision", "6"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["corr"], svec!["0.877809"]];
     assert_eq!(got, expected);
 }
@@ -3465,8 +3397,7 @@ fn sqlp_covar_pop() {
         .arg("SELECT COVAR(foo, bar) AS covar FROM data")
         .args(["--float-precision", "2"]);
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["covar"], svec!["3.75"]];
     assert_eq!(got, expected);
 }
@@ -3494,9 +3425,7 @@ fn sqlp_corr_covar_covar_pop() {
         )
         .args(["--float-precision", "2"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["corr", "covar", "covar_pop"],
         svec!["0.88", "3.75", "3.00"],
@@ -3583,8 +3512,7 @@ fn sqlp_decimal_comma_validation() {
         .args(["--delimiter", ";"])
         .arg("select * from _t_1");
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "id,value\n\"1,\"\"100,50\"\"\"\n\"2,\"\"200,75\"\"\"";
     assert_eq!(got, expected);
 
@@ -3595,8 +3523,7 @@ fn sqlp_decimal_comma_validation() {
         .args(["--delimiter", "\t"])
         .arg("select * from _t_1");
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "id,value\n\"1,\"\"100,50\"\"\"\n\"2,\"\"200,75\"\"\"";
     assert_eq!(got, expected);
 
@@ -3607,8 +3534,7 @@ fn sqlp_decimal_comma_validation() {
         .args(["--delimiter", "|"])
         .arg("select * from _t_1");
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "id,value\n\"1,\"\"100,50\"\"\"\n\"2,\"\"200,75\"\"\"";
     assert_eq!(got, expected);
 }
@@ -3631,8 +3557,7 @@ fn sqlp_decimal_comma_validation_with_tsv_file() {
         .arg("--decimal-comma")
         .arg("select * from _t_1");
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "value"],
         svec!["1", "100,5"],
@@ -3659,8 +3584,7 @@ fn sqlp_decimal_comma_validation_with_ssv_file() {
         .arg("--decimal-comma")
         .arg("select * from _t_1");
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "id,value\n1,\"100,5\"\n2,\"200,75\"";
     assert_eq!(got, expected);
 }
@@ -3812,9 +3736,7 @@ fn sqlp_union_positional() {
         ) u ORDER BY Value"#,
     );
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Value", "Tag"],
         svec!["100", "hello"],
@@ -3836,8 +3758,7 @@ fn sqlp_unnest_issue_3108_first() {
     cmd.arg("data.csv")
         .arg("select first(id) as idf, unnest(string_to_array(data, ',')) as value from data");
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["idf", "value"],
         svec!["1", "a"],
@@ -3876,8 +3797,7 @@ fn sqlp_rank_funcs() {
         ORDER BY value, id DESC"#,
     );
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["value", "row_num", "rank", "dense_rank"],
         svec!["10", "6", "6", "6"],
@@ -3900,8 +3820,7 @@ fn sqlp_rank_funcs() {
         FROM data
         ORDER BY value, id"#,
     );
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["value", "row_num", "rank", "dense_rank"],
         svec!["10", "1", "1", "1"],
@@ -3925,8 +3844,7 @@ fn sqlp_rank_funcs() {
         FROM data
         ORDER BY category, value"#,
     );
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category", "value", "row_num", "rank", "dense"],
         svec!["A", "10", "1", "1", "1"],
@@ -3970,8 +3888,7 @@ fn sqlp_named_window_references() {
       WINDOW w AS (PARTITION BY category ORDER BY value)
       ORDER BY category, value"#,
     );
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category", "value", "w:sum", "w:min", "w:avg"],
         svec!["A", "10", "10", "10", "20.0"],
@@ -3999,8 +3916,7 @@ fn sqlp_named_window_references() {
         w3 AS ()
       ORDER BY category, value"#,
     );
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "category",
@@ -4046,8 +3962,7 @@ fn sqlp_array_to_string() {
         ORDER BY a2s"#,
     );
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["b", "a2s"],
         svec!["1", "first, first"],
@@ -4074,8 +3989,7 @@ fn sqlp_unnest_issue_3108() {
     cmd.arg("data.csv")
         .arg("select id, unnest(string_to_array(data, ',')) as value from data");
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "value"],
         svec!["1", "a"],
@@ -4115,8 +4029,7 @@ fn sqlp_distinct_basic() {
         .args(["--wnull-value", "NULL"])
         .arg("SELECT DISTINCT category FROM data ORDER BY category NULLS LAST");
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category"],
         svec!["A"],
@@ -4156,8 +4069,7 @@ fn sqlp_distinct_multiple_columns() {
              subcategory",
         );
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category", "subcategory"],
         svec!["A", "x"],
@@ -4197,8 +4109,7 @@ fn sqlp_distinct_with_nulls() {
         .args(["--wnull-value", "NULL"])
         .arg("SELECT DISTINCT category FROM data ORDER BY category NULLS FIRST");
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category"],
         svec!["NULL"],
@@ -4238,8 +4149,7 @@ fn sqlp_distinct_all_columns() {
              status, score",
         );
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category", "subcategory", "value", "status", "score"],
         svec!["A", "x", "100", "active", "10"],
@@ -4284,8 +4194,7 @@ fn sqlp_distinct_on_basic() {
              NULLS LAST, value DESC",
         );
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category", "value", "status"],
         svec!["A", "100", "active"],
@@ -4325,8 +4234,7 @@ fn sqlp_distinct_on_multiple_keys() {
              subcategory, score DESC",
         );
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category", "subcategory", "value", "status", "score"],
         svec!["A", "x", "100", "active", "20"],
@@ -4366,8 +4274,7 @@ fn sqlp_distinct_on_with_nulls() {
         .args(["--wnull-value", "NULL"])
         .arg("SELECT DISTINCT ON (category) * FROM data ORDER BY category NULLS LAST, value DESC");
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category", "subcategory", "value", "status", "score"],
         svec!["A", "x", "100", "active", "10"],
@@ -4412,8 +4319,7 @@ fn sqlp_distinct_on_expression() {
              LAST, value DESC",
         );
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category", "value"],
         svec!["A", "100"],
@@ -4453,8 +4359,7 @@ fn sqlp_distinct_with_aggregation() {
              category NULLS LAST",
         );
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category", "cnt"],
         svec!["A", "3"],
@@ -4494,8 +4399,7 @@ fn sqlp_distinct_on_complex_ordering() {
              NULLS LAST, value DESC, status ASC",
         );
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category", "value", "status"],
         svec!["A", "100", "active"],
@@ -4548,10 +4452,9 @@ fn sqlp_datetime_schema_inference() {
         .arg("--cardinality")
         .arg("--stats-jsonl")
         .args(["--cache-threshold", "1"]);
-    wrk.assert_success(&mut cmd);
 
     // Verify stats detected DateTime columns
-    let stats_output: String = wrk.stdout(&mut cmd);
+    let stats_output: String = wrk.stdout_on_success(&mut cmd);
     assert!(stats_output.contains("created_at,DateTime"));
     assert!(stats_output.contains("updated_at,DateTime"));
 

@@ -1505,9 +1505,7 @@ fn joinp_filter_pattern_matching() {
             "select * from join_result where STARTS_WITH(id, code)",
         ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["code", "description", "id", "value"],
         svec!["ABC", "Alpha Beta Charlie", "ABC123", "First"],
@@ -1526,9 +1524,7 @@ fn joinp_filter_pattern_matching() {
             "select * from join_result where STRPOS(id, code) > 0",
         ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["code", "description", "id", "value"],
         svec!["ABC", "Alpha Beta Charlie", "ABC123", "First"],
@@ -1550,9 +1546,7 @@ fn joinp_filter_pattern_matching() {
             "select * from join_result where ENDS_WITH(id, code)",
         ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["code", "description", "id", "value"],
         svec!["123", "One Two Three", "ABC123", "First"],
@@ -1591,9 +1585,7 @@ fn joinp_filter_pattern_matching() {
             "select * from join_result where STARTS_WITH(code, pattern)",
         ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["code", "description", "pattern", "meaning"],
         svec!["ABC123", "Full Code 1", "ABC", "Alpha Beta Charlie"],
@@ -1611,9 +1603,7 @@ fn joinp_filter_pattern_matching() {
             "select * from join_result where STRPOS(code, pattern) > 0",
         ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["code", "description", "pattern", "meaning"],
         svec!["ABC123", "Full Code 1", "ABC", "Alpha Beta Charlie"],
@@ -1632,9 +1622,7 @@ fn joinp_filter_pattern_matching() {
             "select * from join_result where ENDS_WITH(code, pattern)",
         ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["code", "description", "pattern", "meaning"],
         svec!["ABC123", "Full Code 1", "123", "One Two Three"],
@@ -1672,9 +1660,8 @@ fn test_joinp_cache_schema() {
     // Test 1: No schema caching (default)
     let mut cmd = wrk.command("joinp");
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"]);
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "has_text", "col3", "col4", "col5", "id_right"],
         svec!["1", "1", "a", "b", "c", "1"],
@@ -1706,9 +1693,8 @@ fn test_joinp_cache_schema() {
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("-1");
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, expected);
 
     // Test 4: Use and cache string schema
@@ -1716,9 +1702,8 @@ fn test_joinp_cache_schema() {
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("-2");
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, expected);
 
     // Test 5: Invalid cache-schema value
@@ -1831,9 +1816,7 @@ fn joinp_ignore_leading_zero() {
     let mut cmd = wrk.command("joinp");
     cmd.args(["id", "left.csv", "id", "right.csv"]).arg("-z");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // note that id and id_right have been stripped of leading zeros
     // this is because Polars inferred the schema as all integers
     // and automatically converted the values to integers
@@ -1875,9 +1858,7 @@ fn joinp_ignore_leading_zero_string_schema() {
         .arg("-z")
         .args(["--cache-schema", "-2"]); // force schema to all String types
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // note that id and id_right have been stripped of leading zeros
     // this is because Polars inferred the schema as all integers
     // and automatically converted the values to integers
@@ -1918,9 +1899,7 @@ fn joinp_ignore_leading_zero_with_non_numeric() {
     cmd.args(["code", "left.csv", "code", "right.csv"])
         .arg("--ignore-leading-zeros");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["code", "value", "code_right", "desc"],
         svec!["001A", "a", "1A", "one"],
@@ -1959,9 +1938,7 @@ fn joinp_ignore_leading_zero_multiple_columns() {
         .arg("--ignore-leading-zeros")
         .args(["--cache-schema", "-2"]); // force schema to all String types
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "code", "value", "id_right", "code_right", "desc"],
         svec!["001", "001A", "a", "1", "1A", "one"],
@@ -2001,9 +1978,7 @@ fn joinp_ignore_case_and_leading_zeros() {
         .arg("--ignore-case")
         .args(["--cache-schema", "-2"]); // force schema to all String types
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "code", "value", "id_right", "code_right", "desc"],
         svec!["001", "001abc", "a", "1", "00001ABC", "one"],
@@ -2043,9 +2018,7 @@ fn joinp_ignore_case_and_leading_zeros_coalesce() {
         .arg("--coalesce")
         .args(["--cache-schema", "-2"]); // force schema to all String types
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "code", "value", "desc"],
         svec!["001", "001abc", "a", "one"],
@@ -2082,9 +2055,7 @@ fn joinp_non_equi_greater_than() {
         .args(["prices.csv", "budgets.csv"])
         .args(["--float-precision", "2"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["item_left", "price_left", "customer_right", "budget_right"],
         svec!["apple", "1.00", "Bob", "1.50"],
@@ -2122,9 +2093,7 @@ fn joinp_non_equi_less_than() {
         .arg("date_left < deadline_right")
         .args(["events.csv", "deadlines.csv"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["event_left", "date_left", "task_right", "deadline_right"],
         svec!["meeting", "2024-01-01", "report", "2024-03-01"],
@@ -2162,9 +2131,7 @@ fn joinp_non_equi_less_than_date_arithmetic() {
         .args(["events.csv", "deadlines.csv"])
         .arg("--try-parsedates");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["event_left", "date_left", "task_right", "deadline_right"],
         // svec!["meeting", "2024-01-01", "report", "2024-03-01"], this is less than 4 months
@@ -2201,9 +2168,7 @@ fn joinp_non_equi_not_equal() {
         .arg("team_left != team_right")
         .args(["teams.csv", "matches.csv"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["player_left", "team_left", "opponent1_right", "team_right"],
         svec!["Alice", "Red", "David", "Green"],
@@ -2275,9 +2240,7 @@ fn joinp_non_equi_compound() {
              position_right",
         ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "name_left",
@@ -2339,9 +2302,7 @@ fn joinp_ignore_leading_zeros_issue_2424() {
         "file2.csv",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "company_id", "art_no"],
         svec!["1", "COM1", "0724"],
@@ -2381,9 +2342,7 @@ fn joinp_unicode_normalization() {
     cmd.args(["name", "left.csv", "name", "right.csv"])
         .args(["--norm-unicode", "nfc"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["name", "value", "name_right", "desc"],
         svec!["cafe\u{301}", "a", "café", "one"],
@@ -2423,9 +2382,7 @@ fn joinp_unicode_normalization_with_other_options() {
         .arg("--ignore-case")
         .args(["--cache-schema", "-2"]); // force schema to all String types
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "name", "value", "id_right", "name_right", "desc"],
         svec!["001", "CAFÉ", "a", "1", "café", "one"],
@@ -2467,9 +2424,7 @@ fn joinp_unicode_normalization_ligatures() {
         .args(["--norm-unicode", "nfkc"])
         .args(["--maintain-order", "left"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["name", "value", "name_right", "desc"],
         svec!["ﬁle", "b", "file", "plain"],
@@ -2485,9 +2440,7 @@ fn joinp_unicode_normalization_ligatures() {
     cmd.args(["name", "left.csv", "name", "right.csv"])
         .args(["--norm-unicode", "nfkd"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, expected);
 
     // Test NFC normalization (should NOT decompose ligatures)
@@ -2496,9 +2449,7 @@ fn joinp_unicode_normalization_ligatures() {
         .args(["--norm-unicode", "nfc"])
         .args(["--maintain-order", "left"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["name", "value", "name_right", "desc"],
         svec!["file", "c", "file", "plain"],
@@ -2714,8 +2665,7 @@ fn joinp_decimal_comma_validation() {
         .arg("--decimal-comma")
         .args(["--delimiter", ";"]);
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"id;value;name
 1;100,5;Alice
 2;200,75;Bob"#;
@@ -2731,8 +2681,7 @@ fn joinp_decimal_comma_validation() {
         .arg("--decimal-comma")
         .args(["--delimiter", "\t"]);
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "id\tvalue\tname\n1\t100,5\tAlice\n2\t200,75\tBob";
     assert_eq!(got, expected);
 
@@ -2745,8 +2694,7 @@ fn joinp_decimal_comma_validation() {
         .arg("--decimal-comma")
         .args(["--delimiter", "|"]);
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "id|value|name\n1|100,5|Alice\n2|200,75|Bob";
     assert_eq!(got, expected);
 }
@@ -2807,8 +2755,7 @@ fn joinp_decimal_comma_validation_with_ssv_files() {
         .arg("--decimal-comma")
         .args(["--delimiter", ";"]);
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "id;value;name\n1;100,5;Alice\n2;200,75;Bob";
     assert_eq!(got, expected);
 }
@@ -2943,8 +2890,7 @@ fn joinp_decimal_comma_validation_with_cross_join() {
         .arg("--decimal-comma")
         .args(["--delimiter", ";"]);
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "id;value;name\n1;100,5;Alice\n1;100,5;Bob\n2;200,75;Alice\n2;200,75;Bob";
     assert_eq!(got, expected);
 }
@@ -2986,8 +2932,7 @@ fn joinp_decimal_comma_validation_with_non_equi_join() {
         .arg("--decimal-comma")
         .args(["--delimiter", ";"]);
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"id_left;value_left;id_right;min_val_right;max_val_right
 1;100,5;1;50,5;150,5
 2;200,75;2;150,0;250,0"#;
@@ -3032,8 +2977,7 @@ fn joinp_decimal_comma_validation_with_asof_join() {
         .arg("--decimal-comma")
         .args(["--delimiter", "|"]);
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected =
         "id|value|date|id_right|price\n1|100,5|2023-01-01||\n2|200,75|2023-01-02|1|50,25";
     assert_eq!(got, expected);
@@ -3072,8 +3016,7 @@ fn joinp_decimal_comma_validation_with_sql_filter() {
         .arg("--sql-filter")
         .arg("select id, value from join_result where value > 150");
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "id;value\n2;200,75";
     assert_eq!(got, expected);
 }
@@ -3153,9 +3096,8 @@ fn test_joinp_cache_schema_datetime() {
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--cache-schema")
         .arg("1");
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 3); // header + 2 matching rows
     assert_eq!(got[0][0], "id");
     assert_eq!(got[0][1], "event_time");

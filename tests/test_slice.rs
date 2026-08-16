@@ -291,7 +291,7 @@ fn slice_json_escapes_keys() {
     let mut cmd = wrk.command("slice");
     cmd.arg("data.csv").args(["--start", "0"]).arg("--json");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let parsed: serde_json::Value = serde_json::from_str(&got)
         .unwrap_or_else(|e| panic!("output is not valid JSON: {e}\ngot: {got}"));
     let obj = &parsed[0];
@@ -303,7 +303,6 @@ fn slice_json_escapes_keys() {
         obj[r"back\slash"],
         serde_json::Value::String("b".to_string())
     );
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -682,9 +681,7 @@ fn slice_from_parquet() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"[{"Unique Key":"20520945","Created Date":"05/27/2011 12:00:00 AM","Closed Date":null,"Agency":"HPD","Agency Name":"Department of Housing Preservation and Development","Complaint Type":"PAINT - PLASTER","Descriptor":"WALLS","Location Type":"RESIDENTIAL BUILDING","Incident Zip":"11225","Incident Address":"1700 BEDFORD AVENUE","Street Name":"BEDFORD AVENUE","Cross Street 1":"MONTGOMERY STREET","Cross Street 2":"SULLIVAN PLACE","Intersection Street 1":null,"Intersection Street 2":null,"Address Type":"ADDRESS","City":"BROOKLYN","Landmark":null,"Facility Type":"N/A","Status":"Open","Due Date":null,"Resolution Description":"The following complaint conditions are still open.HPD may attempt to contact you to verify the correction of the condition or may conduct an inspection.","Resolution Action Updated Date":"06/15/2011 12:00:00 AM","Community Board":"09 BROOKLYN","BBL":"3013020001","Borough":"BROOKLYN","X Coordinate (State Plane)":"996197","Y Coordinate (State Plane)":"181752","Open Data Channel Type":"UNKNOWN","Park Facility Name":"Unspecified","Park Borough":"BROOKLYN","Vehicle Type":null,"Taxi Company Borough":null,"Taxi Pick Up Location":null,"Bridge Highway Name":null,"Bridge Highway Direction":null,"Road Ramp":null,"Bridge Highway Segment":null,"Latitude":null,"Longitude":null,"Location":null}]"#;
     assert_eq!(got, expected);
 }
@@ -697,9 +694,7 @@ fn slice_from_json() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#""Unique Key":"20520945""#;
     assert!(got.contains(expected));
 }
@@ -752,9 +747,7 @@ fn slice_from_arrow() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#""Unique Key":"20520945""#;
     assert!(got.contains(expected));
 }
@@ -767,9 +760,7 @@ fn slice_from_csvgz() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "20520945";
     assert!(got.contains(expected));
 }
@@ -782,9 +773,7 @@ fn slice_from_csvzst() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "20520945";
     assert!(got.contains(expected));
 }
@@ -797,9 +786,7 @@ fn slice_from_csvzlib() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "20520945";
     assert!(got.contains(expected));
 }
@@ -812,9 +799,7 @@ fn slice_from_tsvgz() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "20520945";
     assert!(got.contains(expected));
 }
@@ -827,9 +812,7 @@ fn slice_from_tsvzst() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "20520945";
     assert!(got.contains(expected));
 }
@@ -842,9 +825,7 @@ fn slice_from_tsvzlib() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "20520945";
     assert!(got.contains(expected));
 }
@@ -858,9 +839,7 @@ fn slice_from_csvzip() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("0").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "101004143000";
     assert!(got.contains(expected));
 }
@@ -879,9 +858,7 @@ fn slice_from_zip_multientry() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("0").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert!(got.contains("position"));
     assert!(got.contains("title"));
 }
@@ -893,9 +870,7 @@ fn slice_from_tsv() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "20520945";
     assert!(got.contains(expected));
 }
@@ -968,29 +943,25 @@ fn slice_float_precision() {
     // Test with default precision
     let mut cmd = wrk.command("slice");
     cmd.arg(&gzipped_file).arg("--json");
-    wrk.assert_success(&mut cmd);
-    let got_default: String = wrk.stdout(&mut cmd);
+    let got_default: String = wrk.stdout_on_success(&mut cmd);
 
     // Test with custom precision (2 decimal places)
     let mut cmd = wrk.command("slice");
     cmd.arg(&gzipped_file).arg("--json");
     cmd.env("QSV_POLARS_FLOAT_PRECISION", "2");
-    wrk.assert_success(&mut cmd);
-    let got_precision_2: String = wrk.stdout(&mut cmd);
+    let got_precision_2: String = wrk.stdout_on_success(&mut cmd);
 
     // Test with custom precision (5 decimal places)
     let mut cmd = wrk.command("slice");
     cmd.arg(&gzipped_file).arg("--json");
     cmd.env("QSV_POLARS_FLOAT_PRECISION", "5");
-    wrk.assert_success(&mut cmd);
-    let got_precision_5: String = wrk.stdout(&mut cmd);
+    let got_precision_5: String = wrk.stdout_on_success(&mut cmd);
 
     // Test with custom precision (20 decimal places)
     let mut cmd = wrk.command("slice");
     cmd.arg(&parquet_file).arg("--json");
     cmd.env("QSV_POLARS_FLOAT_PRECISION", "20");
-    wrk.assert_success(&mut cmd);
-    let got_precision_20: String = wrk.stdout(&mut cmd);
+    let got_precision_20: String = wrk.stdout_on_success(&mut cmd);
 
     // Verify that the precision affects the output
     // The default precision should be different from precision 2
@@ -1054,10 +1025,8 @@ fn slice_from_json_with_pschema() {
     let mut cmd = wrk.command("slice");
     cmd.arg("test.json").arg("--index").arg("1").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
     // Verify the output - age should be a string
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#""age":"25""#;
     assert!(got.contains(expected));
 }
@@ -1089,10 +1058,8 @@ fn slice_from_jsonl_with_pschema() {
     let mut cmd = wrk.command("slice");
     cmd.arg("test.jsonl").arg("--index").arg("1").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
     // Verify the output - age should be a string
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#""age":"25""#;
     assert!(got.contains(expected));
 }
@@ -1127,10 +1094,8 @@ fn slice_from_csvgz_with_pschema() {
     let mut cmd = wrk.command("slice");
     cmd.arg("test.csv.gz").arg("--index").arg("1").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
     // Verify the output - age should be a string
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#""age":"25""#;
     assert!(got.contains(expected));
 }
@@ -1169,10 +1134,8 @@ fn slice_from_csvzst_with_pschema() {
         .arg("1")
         .arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
     // Verify the output - age should be a string
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#""age":"25""#;
     assert!(got.contains(expected));
 }
@@ -1215,10 +1178,8 @@ fn slice_from_csvzlib_with_pschema() {
         .arg("1")
         .arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
     // Verify the output - age should be a string
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#""age":"25""#;
     assert!(got.contains(expected));
 }
@@ -1305,10 +1266,8 @@ fn slice_from_tsvgz_with_decimal_precision() {
         .arg("test.tsv.gz")
         .arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
     // Verify the output - value should maintain all decimal places
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     assert!(got.contains("3.1415926535897931159979635"));
     assert!(got.contains("2.7182818284590450907955983"));

@@ -33,8 +33,7 @@ fn count_from_csvzip() {
     let mut cmd = wrk.command("count");
     cmd.arg(test_file);
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "100".to_string());
 }
 
@@ -49,8 +48,7 @@ fn count_from_zip_multientry() {
     let mut cmd = wrk.command("count");
     cmd.arg(test_file);
 
-    wrk.assert_success(&mut cmd);
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(got, "6".to_string());
 }
 

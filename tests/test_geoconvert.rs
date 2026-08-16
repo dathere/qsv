@@ -19,9 +19,7 @@ fn geoconvert_geojson_to_csv_basic() {
     let mut cmd = wrk.command("geoconvert");
     cmd.arg("data.geojson").arg("geojson").arg("csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["geometry", "name"],
         svec!["POINT(125.6 10.1)", "Dinagat Islands"],
@@ -90,9 +88,7 @@ fn geoconvert_csv_to_geojson_latlon_order() {
         .args(["--latitude", "lat"])
         .args(["--longitude", "lon"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // Coordinates must be [longitude, latitude]: longitude (125.6) first.
     assert!(
         got.contains("\"coordinates\":[125.6,10.1]"),
@@ -125,9 +121,7 @@ fn geoconvert_geojson_to_csv_max_length_inline() {
         .arg("csv")
         .args(["--max-length", "5"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // Header row plus the truncated data row.
     assert_eq!(got[0], svec!["geometry", "name"]);
     // geometry "POINT(125.6 10.1)" is longer than 5, so it must be truncated to <=5 bytes + "...".
@@ -184,9 +178,7 @@ fn geoconvert_geojson_to_csv_max_length() {
     let mut cmd = wrk.command("slice");
     cmd.arg(txcities_csv).args(["--len", "5"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected = r#"geometry,OBJECTID,name,Shape_Length,Shape_Area
 POLYGON((-...,1,Abbott,0,0

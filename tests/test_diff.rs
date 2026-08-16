@@ -92,9 +92,7 @@ fn diff_diff_left_and_original_right_sort_diff_result_by_lines_by_default() {
     let mut cmd = wrk.command("diff");
     cmd.arg(test_file).arg(test_file2);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let diff_result_file_name = "diff_result_diff_left_original_right.csv";
 
@@ -148,9 +146,7 @@ fn diff_sort_diff_result_by_lines_by_default_modified_rows_interleaved() {
     let mut cmd = wrk.command("diff");
     cmd.args(["left.csv", "right.csv"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected: Vec<Vec<String>> = vec![
         svec!["diffresult", "h1", "h2", "h3"],
         svec!["-", "4", "foo", "bar"],
@@ -269,9 +265,7 @@ fn diff_different_delimiters_sort_diff_result_by_first_column() {
         ";",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let diff_result_file_name = "diff_result_original_left_diff_right_sort_columns.csv";
 
@@ -370,9 +364,7 @@ fn diff_key_sort_by_column_name() {
         "h1,h3,h2",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected: Vec<Vec<String>> = vec![
         svec!["diffresult", "h1", "h2", "h3"],
         svec!["-", "2", "fooz", "bart"],
@@ -451,9 +443,7 @@ fn diff_only_left_has_headers_headers_in_result() {
     let mut cmd = wrk.command("diff");
     cmd.args(["left.csv", "right.csv", "--no-headers-right"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["diffresult", "h1", "h2", "h3"],
         svec!["-", "1", "foo", "bar",],
@@ -476,9 +466,7 @@ fn diff_only_right_has_headers_headers_in_result() {
     let mut cmd = wrk.command("diff");
     cmd.args(["left.csv", "right.csv", "--no-headers-left"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["diffresult", "h1", "h2", "h3"],
         svec!["-", "1", "foo", "bar",],
@@ -562,9 +550,7 @@ fn diff_no_diff_with_generic_headers_in_result() {
         "--no-headers-right",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["diffresult", "_col_1", "_col_2", "_col_3",]];
 
     assert_eq!(got, expected);
@@ -677,9 +663,7 @@ fn diff_drop_equal_fields_flag_on_modified_rows_one_row_modified() {
     let mut cmd = wrk.command("diff");
     cmd.args(["left.csv", "right.csv", "--drop-equal-fields"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "\
 diffresult,h1,h2,h3
 -,1,deleted,row
@@ -786,9 +770,7 @@ fn diff_drop_equal_fields_flag_on_modified_rows_multiple_key_fields_far_apart() 
     // here, first and last columns are our key fields
     cmd.args(["left.csv", "right.csv", "--drop-equal-fields", "-k", "0,3"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "\
 diffresult,h1,h2,h3,h4
 -,1,deleted,row,id1
@@ -821,9 +803,7 @@ fn diff_drop_equal_columns_drops_unchanged_columns() {
     let mut cmd = wrk.command("diff");
     cmd.args(["left.csv", "right.csv", "--drop-equal-columns"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // h2 is unchanged everywhere, so it is dropped. h1 (key) and h3 (modified) remain.
     let expected = "\
 diffresult,h1,h3
@@ -858,9 +838,7 @@ fn diff_drop_equal_columns_combined_with_drop_equal_fields() {
         "--drop-equal-fields",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // h4 is unchanged everywhere -> dropped. h2 differs in row 2, h3 differs in row 1,
     // so both columns are kept; within them, equal fields are blanked per modified row.
     let expected = "\
@@ -893,9 +871,7 @@ fn diff_drop_equal_columns_keeps_columns_with_added_or_deleted_data() {
     let mut cmd = wrk.command("diff");
     cmd.args(["left.csv", "right.csv", "--drop-equal-columns"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // h2 is equal in the modified row but has data in the added/deleted rows, so it is
     // kept. h4 is empty everywhere, so it is dropped.
     let expected = "\
@@ -926,9 +902,7 @@ fn diff_drop_equal_columns_with_no_headers_projects_generic_headers() {
         "--drop-equal-columns",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     // generic headers are generated, then projected to the kept columns.
     let expected = "\
 diffresult,_col_1,_col_3
@@ -1023,9 +997,7 @@ fn diff_with_mixed_delimiters() {
         "right.csv",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "\
 diffresult|h1|h2|h3
 -|1|foo|bar

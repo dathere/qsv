@@ -87,7 +87,7 @@ fn searchset() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
@@ -95,7 +95,6 @@ fn searchset() {
         svec!["is waldo here", "spot"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -232,8 +231,7 @@ fn searchset_indexed_parallel_invert_match() {
         .arg("regexset.txt")
         .arg("--invert-match")
         .arg("data.csv");
-    let seq_out: String = wrk.stdout(&mut seq_cmd);
-    wrk.assert_success(&mut seq_cmd);
+    let seq_out: String = wrk.stdout_on_success(&mut seq_cmd);
 
     // index and run in parallel
     let mut idx_cmd = wrk.command("index");
@@ -247,8 +245,7 @@ fn searchset_indexed_parallel_invert_match() {
         .arg("--jobs")
         .arg("4")
         .arg("data.csv");
-    let par_out: String = wrk.stdout(&mut par_cmd);
-    wrk.assert_success(&mut par_cmd);
+    let par_out: String = wrk.stdout_on_success(&mut par_cmd);
 
     assert_eq!(seq_out, par_out);
 }
@@ -323,7 +320,7 @@ fn searchset_unicode() {
     cmd.arg("regexset_unicode.txt").arg("data.csv");
     cmd.arg("--unicode");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
@@ -332,7 +329,6 @@ fn searchset_unicode() {
         svec!["Ḟooƀar", "ḃarḟoo"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -344,7 +340,7 @@ fn searchset_unicode_envvar() {
     cmd.env("QSV_REGEX_UNICODE", "1");
     cmd.arg("regexset_unicode.txt").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
@@ -353,7 +349,6 @@ fn searchset_unicode_envvar() {
         svec!["Ḟooƀar", "ḃarḟoo"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -388,7 +383,7 @@ fn searchset_ignore_case() {
     cmd.arg("regexset.txt").arg("data.csv");
     cmd.arg("--ignore-case");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foobar", "barfoo"],
@@ -397,8 +392,6 @@ fn searchset_ignore_case() {
         svec!["bleh", "no, Waldo is there"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -434,14 +427,13 @@ fn searchset_no_headers() {
     cmd.arg("regexset.txt").arg("data.csv");
     cmd.arg("--no-headers");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["foobar", "barfoo"],
         svec!["barfoo", "foobar"],
         svec!["is waldo here", "spot"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -453,10 +445,9 @@ fn searchset_select() {
     cmd.arg("regexset.txt").arg("data.csv");
     cmd.arg("--select").arg("h2");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["h1", "h2"], svec!["barfoo", "foobar"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -469,10 +460,9 @@ fn searchset_select_no_headers() {
     cmd.arg("--select").arg("2");
     cmd.arg("--no-headers");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["barfoo", "foobar"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -484,7 +474,7 @@ fn searchset_invert_match() {
     cmd.arg("regexset.txt").arg("data.csv");
     cmd.arg("--invert-match");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["foobar", "barfoo"],
         svec!["a", "b"],
@@ -492,7 +482,6 @@ fn searchset_invert_match() {
         svec!["bleh", "no, Waldo is there"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -505,14 +494,13 @@ fn searchset_invert_match_no_headers() {
     cmd.arg("--invert-match");
     cmd.arg("--no-headers");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["a", "b"],
         svec!["Ḟooƀar", "ḃarḟoo"],
         svec!["bleh", "no, Waldo is there"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -525,7 +513,7 @@ fn searchset_flag() {
         .arg("data.csv")
         .args(["--flag", "flagged"]);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2", "flagged"],
         svec!["foobar", "barfoo", "1;1,2"],
@@ -536,7 +524,6 @@ fn searchset_flag() {
         svec!["bleh", "no, Waldo is there", "0"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -550,7 +537,7 @@ fn searchset_flag_invert_match() {
         .args(["--flag", "flagged"]);
     cmd.arg("--invert-match");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2", "flagged"],
         svec!["foobar", "barfoo", "0"],
@@ -561,7 +548,6 @@ fn searchset_flag_invert_match() {
         svec!["bleh", "no, Waldo is there", "6"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -622,7 +608,7 @@ fn searchset_literal() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv").arg("--literal");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foo$bar^", "barfoo"],
@@ -631,7 +617,6 @@ fn searchset_literal() {
         svec!["bleh", "no, Wal[do] is there"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -642,14 +627,13 @@ fn searchset_exact() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv").arg("--exact");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["h1", "h2"],
         svec!["foo$bar^", "barfoo"],
         svec!["is wal[do] here", "spot"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -660,11 +644,10 @@ fn searchset_exact_with_dots() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv").arg("--exact");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // Should only match "J. Bloggs" exactly, not "F. J. Bloggs" or "JM Bloggs"
     let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -678,10 +661,9 @@ fn searchset_exact_case_insensitive() {
         .arg("--exact")
         .arg("--ignore-case");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -692,11 +674,10 @@ fn searchset_exact_no_match_substring() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv").arg("--exact");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // Should NOT match "F. J. Bloggs" even though it contains "J. Bloggs" as substring
     let expected = vec![svec!["id", "name"], svec!["3", "J. Bloggs"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -711,7 +692,7 @@ fn searchset_comment_lines() {
     let mut cmd = wrk.command("searchset");
     cmd.arg("regexset.txt").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // Should match the same rows as the regular regexset (^foo and bar$),
     // ignoring all comment lines
     let expected = vec![
@@ -720,5 +701,4 @@ fn searchset_comment_lines() {
         svec!["barfoo", "foobar"],
     ];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }

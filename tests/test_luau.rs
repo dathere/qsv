@@ -1743,7 +1743,7 @@ fn luau_map_remap_with_qsv_coalesce() {
         .arg("{id,qsv_coalesce(name_right,name)}")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["id", "name"],
         svec!["1", "Artur A. Mosiyan"],
@@ -1752,8 +1752,6 @@ fn luau_map_remap_with_qsv_coalesce() {
         svec!["4", "Eleonora V. Avanesyan"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -3424,10 +3422,9 @@ fn luau_map_remap_does_not_overwrite_input_globals() {
         .arg("{a, tonumber(b) * 2}")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["a", "doubled"], svec!["1", "4"]];
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -3452,9 +3449,8 @@ return headers[1] .. "/" .. headers[2] .. "/" .. headers[3];
     let mut cmd = wrk.command("luau");
     cmd.arg("map").arg("h").arg("test.LUAU").arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, vec![svec!["k", "h"], svec!["x", "k/v1/v2"]]);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -3479,8 +3475,7 @@ fn luau_random_access_lastrow_no_headers() {
             r#"BEGIN { _INDEX = _LASTROW }! _INDEX = -1; return tostring(_LASTROW) .. "/" .. tostring(_ROWCOUNT)"#,
         )
         .arg("data.csv");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // only the row at _LASTROW (index 2, value "3") is processed before _INDEX = -1
     assert_eq!(got, vec![svec!["3", "2/3"]]);
-    wrk.assert_success(&mut cmd);
 }

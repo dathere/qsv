@@ -974,10 +974,6 @@ fn stats_no_rounding() {
         .arg(test_file);
 
     let got2: String = wrk.stdout(&mut cmd);
-    let got: Vec<Vec<String>> = Workdir::csv_from(&got2);
-
-    wrk.create("in2.csv", got);
-
     let expected2 = wrk.load_test_resource("boston311-100-everything-norounding-stats.csv");
 
     // this should NOT BE EQUAL as floats are not rounded, and comparing floats is not reliable
@@ -1074,10 +1070,6 @@ fn stats_with_date_inference_variance_stddev() {
         .args(["--dates-whitelist", "all"]);
 
     let got2: String = wrk.stdout_on_success(&mut cmd);
-    let got: Vec<Vec<String>> = Workdir::csv_from(&got2);
-
-    wrk.create("in2.csv", got);
-
     let expected2 =
         wrk.load_test_resource("boston311-100-everything-date-stats-variance-stddev.csv");
 

@@ -427,9 +427,12 @@ choropleth options:
                            whichever your codes resolve against, reporting them when it
                            cannot tell; force one with `census:county`, `census:zcta`,
                            `census:tract` or `census:place`. Sets the
-                           feature-id-key to properties.GEOID, and currently requires
-                           `viz choropleth --locations <column>`. An existing local
-                           file named `auto` still takes precedence over the keyword.
+                           feature-id-key to properties.GEOID. It needs to know which
+                           column holds the region codes: `viz choropleth` reads the
+                           column named by --locations, while `viz smart` takes the
+                           region column its data dictionary names — so there it needs
+                           a --dictionary. An existing local file named `auto` takes
+                           precedence over the keyword.
                            Boundaries are re-drawn between vintages (Connecticut
                            replaced its 8 counties with 9 planning regions in the 2022
                            vintages, sharing no GEOID), so append @<year> to pin one,
@@ -1959,17 +1962,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // path re-opens that path after resolution, so the file must outlive the resolver but must not
     // outlive the process.
     let mut stdin_guard: Option<tempfile::TempPath> = None;
+    // Detect whether --feature-id-key was explicitly passed (docopt fills its `id` default, so
+    // the parsed value alone can't tell an explicit `--feature-id-key id` from the default).
+    // Scan argv so an explicit key — including `--feature-id-key id` — always wins over a
+    // shortcut's (or an auto-resolved layer's) id. Resolved here rather than inside the block
+    // below because `viz smart` resolves `--geojson auto` later, once its region column is known.
+    let feature_id_key_explicit = argv
+        .iter()
+        .any(|a| *a == "--feature-id-key" || a.starts_with("--feature-id-key="));
     // Resolve --geojson (a direct path/URL, or a QSV_GEOJSON_SHORTCUTS alias) and validate it
     // up front — fail fast on a bad source, unknown shortcut, or unusable feature-id-key before
     // any plotting work. Only the choropleth & smart subcommands consume --geojson.
     if args.flag_geojson.is_some() && (args.cmd_choropleth || args.cmd_smart) {
-        // Detect whether --feature-id-key was explicitly passed (docopt fills its `id` default, so
-        // the parsed value alone can't tell an explicit `--feature-id-key id` from the default).
-        // Scan argv so an explicit key — including `--feature-id-key id` — always wins over a
-        // shortcut's id.
-        let feature_id_key_explicit = argv
-            .iter()
-            .any(|a| *a == "--feature-id-key" || a.starts_with("--feature-id-key="));
         loaded_geojson =
             resolve_and_validate_geojson(&mut args, feature_id_key_explicit, &mut stdin_guard)?;
     }
@@ -2023,6 +2027,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             &progress,
             show_progress,
             loaded_geojson.as_ref(),
+            feature_id_key_explicit,
         )? {
             // >8-panel HTML dashboards are assembled as an inline-div grid that bypasses the
             // single-`Plot` output path entirely.
@@ -4965,6 +4970,10 @@ fn score_region_code_coverage(
 /// signature takes `&Args` — which cannot carry it, being the docopt struct. `viz` already keeps
 /// the active locale this way (see `viz_i18n::active_locale`). One resolution per process, so a
 /// `OnceLock` is the right shape: a second write would mean two boundary sets in one run.
+///
+/// `viz smart`'s candidate fall-through (issue #4416) can FETCH more than one boundary set in a
+/// run, but writes only the one that wins the coverage gate — a rejected candidate never reaches
+/// here, so the single-write invariant is unchanged.
 static AUTO_BOUNDARY_PROVENANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 /// The auto-resolved boundary provenance for this run, if `--geojson auto` resolved one.
@@ -5078,6 +5087,47 @@ fn detect_extent_outliers(geojson: &serde_json::Value, feature_id_key: &str) -> 
         .collect()
 }
 
+/// The reader-facing note for an auto-resolved boundary set: where it came from, and which of its
+/// regions the frame ignored. `None` when `--geojson` named a source rather than `auto`.
+///
+/// A reader cannot otherwise tell an auto-fetched boundary set from one the author chose, and
+/// which vintage it came from changes what the map means (Connecticut's counties became planning
+/// regions in the 2022 vintages). Outlying regions are still DRAWN — they are the reader's data —
+/// but the frame ignores them, so the note is what keeps that from being a silent cropping
+/// decision.
+///
+/// Shared by the standalone choropleth (which prints it beneath the map) and `viz smart`'s summary
+/// choropleth (which carries it in the panel subtitle, having no below-map annotation): an
+/// auto-resolved map must not be able to lose its provenance by being rendered on a different
+/// path.
+fn auto_boundary_notes() -> Option<String> {
+    let mut out: Option<String> = auto_boundary_provenance()
+        .map(|provenance| t!("viz.notes.boundary_provenance", q_source = provenance).into_owned());
+    let outliers = auto_boundary_outliers();
+    if !outliers.is_empty() {
+        let shown: Vec<&str> = outliers
+            .iter()
+            .take(GEOJSON_AUTO_UNMATCHED_SAMPLE)
+            .map(String::as_str)
+            .collect();
+        let mut ids = shown.join(", ");
+        if outliers.len() > shown.len() {
+            ids.push_str(", …");
+        }
+        let note = t!(
+            "viz.notes.boundary_outliers",
+            q_n = outliers.len(),
+            q_ids = ids
+        )
+        .into_owned();
+        out = match out {
+            Some(existing) => Some(format!("{existing} {note}")),
+            None => Some(note),
+        };
+    }
+    out
+}
+
 /// The `(lats, lons)` a choropleth should FRAME to, which is not always everything it draws.
 ///
 /// A user-supplied `--geojson` is a deliberate choice — every polygon in it is intentional — so it
@@ -5148,16 +5198,6 @@ fn resolve_auto_geojson(
         args.arg_input = Some(path.to_string_lossy().into_owned());
         // dropped when `run` returns, which deletes the file
         *stdin_guard = Some(path);
-    }
-    // `viz smart` picks its region column from the data dictionary, which does not exist yet at
-    // this point in `run` (stats and column semantics are computed later), so `auto` cannot know
-    // what to fetch there. `viz choropleth --locations` names the column explicitly.
-    if !args.cmd_choropleth {
-        return fail_incorrectusage_clierror!(
-            "--geojson {spec} currently requires `viz choropleth --locations <column>`, which \
-             names the region-code column up front. For `viz smart`, supply an explicit --geojson \
-             file."
-        );
     }
     if args.flag_locations.is_none() {
         return fail_incorrectusage_clierror!(
@@ -5230,6 +5270,256 @@ fn resolve_auto_geojson(
     Ok((boundaries.path, Some(boundaries.feature_id_key)))
 }
 
+/// How many distinct values per candidate column `--geojson auto` probes when it has to CHOOSE
+/// between columns.
+///
+/// Bounds the probe to one request per layer per candidate. A ratio over the first 200 distinct
+/// values is ample to tell county FIPS from ZIPs from a column that holds neither — and the
+/// unsampled honesty check still runs afterwards, over every code, against what was actually
+/// fetched (`score_region_code_coverage`).
+const SMART_AUTO_PROBE_SAMPLE: usize = 200;
+
+/// Collect the distinct, non-empty values of each of `cols`, in first-seen order, in ONE pass.
+fn distinct_column_values(args: &Args, cols: &[usize]) -> CliResult<Vec<Vec<String>>> {
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    let mut seen: Vec<std::collections::HashSet<String>> =
+        vec![std::collections::HashSet::new(); cols.len()];
+    let mut out: Vec<Vec<String>> = vec![Vec::new(); cols.len()];
+    let mut record = csv::StringRecord::new();
+    while rdr.read_record(&mut record)? {
+        for (slot, &col) in cols.iter().enumerate() {
+            let Some(cell) = record.get(col) else {
+                continue;
+            };
+            let cell = cell.trim();
+            if !cell.is_empty() && seen[slot].insert(cell.to_string()) {
+                out[slot].push(cell.to_string());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Resolve a DEFERRED `--geojson auto` for `viz smart`, once stats and column semantics exist
+/// (issue #4416).
+///
+/// `viz choropleth` is told which column holds region codes, so `auto` resolves during up-front
+/// validation. `viz smart` chooses that column itself from the data dictionary, which is not
+/// loaded until `SmartCtx::new` — so resolution waits until here, where the candidate columns and
+/// their values are both known.
+///
+/// Returns `Ok(None)` when `--geojson` is absent or names a real source, leaving the caller's
+/// already-loaded document in play.
+fn resolve_smart_auto_geojson(
+    args: &mut Args,
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    feature_id_key_explicit: bool,
+) -> CliResult<Option<serde_json::Value>> {
+    let Some(spec) = args.flag_geojson.clone() else {
+        return Ok(None);
+    };
+    // mirrors the up-front disambiguation: an existing local file named `auto` still wins
+    if !is_geojson_auto_spec(&spec) || std::path::Path::new(&spec).is_file() {
+        return Ok(None);
+    }
+
+    let candidates = region_code_candidates(stats, col_sems);
+    if candidates.is_empty() {
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec}: no region-code column to fetch boundaries for. `viz smart` \
+             identifies one from a data dictionary, so it needs --dictionary with a column tagged \
+             as a region concept (e.g. geo.county_fips, geo.zip_code, geo.census_tract). Supply \
+             one, or pass an explicit --geojson file."
+        );
+    }
+
+    let codes = distinct_column_values(args, &candidates)?;
+    // safe: parse_auto_spec already matched in `is_geojson_auto_spec`
+    let auto_spec = crate::cmd::viz_census::parse_auto_spec(&spec).unwrap_or_default();
+    let label_of = |slot: usize| {
+        let idx = candidates[slot];
+        let s = &col_sems[idx];
+        if s.label.is_empty() {
+            stats[idx].field.clone()
+        } else {
+            s.label.clone()
+        }
+    };
+
+    // In what ORDER should the candidates be tried? With one there is nothing to choose between,
+    // so skip the probe entirely and let `resolve` do its own (cached) layer probe — that keeps
+    // the common case at literally zero network requests on a second run.
+    //
+    // With several, the order must be decided BEFORE fetching: for a code-set-scoped layer (ZCTAs
+    // have no STATE field to scope by) the boundary set is derived from the column it is fetched
+    // for, so scoring columns against a fetched set would score every column against its own
+    // answer. Probing is geometry-free and answers the question without that circularity.
+    let ranked: Vec<usize> = if candidates.len() == 1 {
+        vec![0]
+    } else {
+        let samples: Vec<Vec<String>> = codes
+            .iter()
+            .map(|c| c.iter().take(SMART_AUTO_PROBE_SAMPLE).cloned().collect())
+            .collect();
+        let scores = crate::cmd::viz_census::score_candidates(&samples, auto_spec)?;
+        let mut ranked: Vec<(usize, crate::cmd::viz_census::CandidateScore)> = scores
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, score)| score.map(|s| (slot, s)))
+            .collect();
+        if ranked.is_empty() {
+            let tried = (0..candidates.len())
+                .map(label_of)
+                .collect::<Vec<_>>()
+                .join(", ");
+            return fail_incorrectusage_clierror!(
+                "--geojson {spec}: none of this dataset's region columns ({tried}) hold values \
+                 that resolve against a Census geography. Supply an explicit --geojson file."
+            );
+        }
+        // descending by match ratio, compared exactly (cross-multiplied). A STABLE sort, so an
+        // exact tie keeps the lower column index.
+        ranked.sort_by(|(_, a), (_, b)| (b.matched * a.total).cmp(&(a.matched * b.total)));
+        for (slot, score) in &ranked {
+            log::info!(
+                "--geojson {spec}: candidate '{}' matches {}/{} sampled codes in the {} layer",
+                label_of(*slot),
+                score.matched,
+                score.total,
+                score.layer.label()
+            );
+        }
+        ranked.into_iter().map(|(slot, _)| slot).collect()
+    };
+
+    // Try them in that order, keeping the first whose FULL value set clears the coverage gate.
+    //
+    // Falling through rather than committing to the top-ranked column matters because the ranking
+    // is a sample: a column whose first `SMART_AUTO_PROBE_SAMPLE` distinct values resolve but
+    // whose tail does not would otherwise abort the run while a perfectly good sibling column sat
+    // unexamined. That is the same reasoning that makes an unresolvable candidate score `None`
+    // rather than error — on this path the column choice is qsv's, not the user's, so a bad guess
+    // must cost another attempt, not the Data Schematic. The wasted fetch is bounded by the
+    // candidate count and only ever happens on a run that would otherwise have failed outright.
+    let mut failures: Vec<(String, crate::CliError)> = Vec::new();
+    let mut resolved: Option<(
+        crate::cmd::viz_census::BoundarySet,
+        usize,
+        usize,
+        Vec<String>,
+    )> = None;
+    for slot in ranked {
+        let region_codes = &codes[slot];
+        if region_codes.is_empty() {
+            failures.push((
+                label_of(slot),
+                crate::CliError::IncorrectUsage(
+                    "the column has no non-empty values, so there are no regions to fetch \
+                     boundaries for"
+                        .to_string(),
+                ),
+            ));
+            continue;
+        }
+        let boundaries = match crate::cmd::viz_census::resolve(region_codes, auto_spec) {
+            Ok(b) => b,
+            // A transient failure is a statement about the SERVICE, not about this column —
+            // `resolve` has already tried a stale cache, so no other column can do better. Falling
+            // through would make WHICH column drew the map depend on network weather, and would
+            // report an outage as a usage error. Propagate it as itself, exactly as `probe_scores`
+            // does one level down.
+            Err(e @ crate::CliError::Network(_)) => return Err(e),
+            Err(e) => {
+                failures.push((label_of(slot), e));
+                continue;
+            },
+        };
+
+        // The honesty gate, over EVERY code rather than the probe sample: a column of
+        // plausible-but-nonexistent codes must not render a map that shades nothing and exits 0.
+        let (matched, total, unmatched_sample) = score_region_code_coverage(
+            &boundaries.geojson,
+            &boundaries.feature_id_key,
+            region_codes,
+        )?;
+        #[allow(clippy::cast_precision_loss)]
+        let fraction = if total == 0 {
+            0.0
+        } else {
+            matched as f64 / total as f64
+        };
+        if fraction < GEOJSON_AUTO_MIN_MATCH_RATIO {
+            let sample = unmatched_sample.join(", ");
+            failures.push((
+                label_of(slot),
+                crate::CliError::IncorrectUsage(format!(
+                    "only {matched} of {total} distinct values ({:.0}%) match a boundary in {}. \
+                     Unmatched examples: {sample}. The column may not hold the codes it is tagged \
+                     with, or the boundaries may be a different vintage",
+                    fraction * 100.0,
+                    boundaries.provenance
+                )),
+            ));
+            continue;
+        }
+        resolved = Some((boundaries, matched, total, unmatched_sample));
+        break;
+    }
+
+    let Some((boundaries, matched, total, unmatched_sample)) = resolved else {
+        // One candidate: report its failure verbatim, which carries the resolver's own diagnosis
+        // (an alternate vintage to try, an ambiguous layer to name). Several: name each, since
+        // which column was even considered is not otherwise visible.
+        if let [(_, only)] = failures.as_slice() {
+            return Err(crate::CliError::IncorrectUsage(format!(
+                "--geojson {spec}: {only}"
+            )));
+        }
+        let detail = failures
+            .iter()
+            .map(|(label, e)| format!("'{label}': {e}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec}: no region column resolved against a Census geography — {detail}. \
+             Supply an explicit --geojson file if this is intentional."
+        );
+    };
+
+    if matched < total {
+        let sample = unmatched_sample.join(", ");
+        winfo!(
+            "--geojson {spec}: {} of {total} distinct region values matched no boundary and are \
+             omitted from the map (e.g. {sample}).",
+            total - matched
+        );
+    }
+
+    let _ = AUTO_BOUNDARY_PROVENANCE.set(boundaries.provenance.clone());
+    let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(
+        &boundaries.geojson,
+        &boundaries.feature_id_key,
+    ));
+    log::info!(
+        "--geojson {spec} resolved: {} -> {} ({matched}/{total} codes matched)",
+        boundaries.provenance,
+        boundaries.path
+    );
+    winfo!(
+        "--geojson {spec}: {} — boundaries cached at {}",
+        boundaries.provenance,
+        boundaries.path
+    );
+    validate_geojson_source(
+        args,
+        boundaries.path,
+        Some(boundaries.feature_id_key),
+        feature_id_key_explicit,
+    )
+    .map(Some)
+}
+
 /// Resolve a `--geojson` value as a `QSV_GEOJSON_SHORTCUTS` entry name.
 /// Returns the resolved path/URL and the optional feature-id-key carried by the shortcut.
 fn lookup_geojson_shortcut(name: &str) -> CliResult<(String, Option<String>)> {
@@ -5279,6 +5569,13 @@ fn resolve_and_validate_geojson(
     let is_url = spec.starts_with("http://") || spec.starts_with("https://");
     let is_file = std::path::Path::new(&spec).is_file();
     let (resolved, shortcut_id) = if is_geojson_auto_spec(&spec) && !is_file {
+        // `viz smart` chooses its region column from the data dictionary, which does not exist
+        // yet at this point in `run` — so there is nothing for `auto` to scope a fetch by.
+        // Resolution is DEFERRED to `SmartCtx::new`, which has stats and column semantics in
+        // hand (issue #4416); leave the spec in `flag_geojson` for it to pick up.
+        if args.cmd_smart {
+            return Ok(None);
+        }
         resolve_auto_geojson(args, &spec, stdin_guard)?
     } else if is_url || is_file {
         (spec, None)
@@ -5286,6 +5583,21 @@ fn resolve_and_validate_geojson(
         lookup_geojson_shortcut(&spec)?
     };
 
+    validate_geojson_source(args, resolved, shortcut_id, feature_id_key_explicit).map(Some)
+}
+
+/// Adopt a resolved `--geojson` source: apply the shortcut/auto feature-id key, validate the
+/// document, and rewrite `args.flag_geojson` to the concrete path.
+///
+/// Shared by the up-front resolution above and `viz smart`'s deferred `--geojson auto` (issue
+/// #4416), so an auto-resolved boundary set is validated by exactly the same checks a
+/// user-supplied file is — the auto path earns no exemption.
+fn validate_geojson_source(
+    args: &mut Args,
+    resolved: String,
+    shortcut_id: Option<String>,
+    feature_id_key_explicit: bool,
+) -> CliResult<serde_json::Value> {
     // A shortcut's id fills in only when the user didn't explicitly pass --feature-id-key; an
     // explicit flag (including `--feature-id-key id`) always wins.
     if let Some(id) = shortcut_id
@@ -5352,7 +5664,7 @@ fn resolve_and_validate_geojson(
     // geometry) and 2-3x again under `viz smart`. Beyond the wasted HTTP GETs and parse time,
     // a non-deterministic URL made those loads disagree — points binned against one fetch while
     // the map drew another's geometry.
-    Ok(Some(geojson))
+    Ok(geojson)
 }
 
 /// Load a GeoJSON `FeatureCollection` from a local file path or an http(s) URL into a JSON value.
@@ -7144,35 +7456,8 @@ fn build_choropleth_plot(
         }
     }
 
-    // A reader cannot otherwise tell an auto-fetched boundary set from one the author chose, and
-    // which vintage it came from changes what the map means (Connecticut's counties became
-    // planning regions in the 2022 vintages). Appended last so it reads after any data caveat.
-    if let Some(provenance) = auto_boundary_provenance() {
-        let note = t!("viz.notes.boundary_provenance", q_source = provenance).into_owned();
-        below_note = match below_note {
-            Some(existing) => Some(format!("{existing} {note}")),
-            None => Some(note),
-        };
-    }
-    // Outlying regions are still DRAWN — they are the reader's data — but the frame ignores them,
-    // so the note is what keeps that from being a silent cropping decision.
-    let outliers = auto_boundary_outliers();
-    if !outliers.is_empty() {
-        let shown: Vec<&str> = outliers
-            .iter()
-            .take(GEOJSON_AUTO_UNMATCHED_SAMPLE)
-            .map(String::as_str)
-            .collect();
-        let mut ids = shown.join(", ");
-        if outliers.len() > shown.len() {
-            ids.push_str(", …");
-        }
-        let note = t!(
-            "viz.notes.boundary_outliers",
-            q_n = outliers.len(),
-            q_ids = ids
-        )
-        .into_owned();
+    // Appended last so it reads after any data caveat.
+    if let Some(note) = auto_boundary_notes() {
         below_note = match below_note {
             Some(existing) => Some(format!("{existing} {note}")),
             None => Some(note),
@@ -23805,7 +24090,24 @@ fn build_smart_pip_choropleth_panel(
     } else {
         t!("viz.notes.raw_count_caveat")
     };
-    let caveated = out.remove(0).with_subtitle(Some(caveat.into_owned()));
+    // A sub-panel has no below-map annotation, so an auto-resolved set's provenance rides in the
+    // subtitle instead (issue #4416). Without it a `viz smart --geojson auto` map is the one place
+    // a reader cannot tell fetched boundaries from supplied ones, nor which vintage drew them.
+    let subtitle = match auto_boundary_notes() {
+        // the caveat is a sentence in its own right but does not always end in punctuation (and
+        // which mark that is varies by locale), so supply a stop when it lacks one — otherwise the
+        // two notes run together mid-sentence
+        Some(note) => {
+            let stop = if caveat.ends_with(['.', '!', '?', '…', '。']) {
+                " "
+            } else {
+                ". "
+            };
+            format!("{caveat}{stop}{note}")
+        },
+        None => caveat.into_owned(),
+    };
+    let caveated = out.remove(0).with_subtitle(Some(subtitle));
     out.insert(0, caveated);
     Ok(Some(out))
 }
@@ -23856,6 +24158,48 @@ fn match_region_code(
     lowercased_ids.get(&raw.to_ascii_lowercase()).cloned()
 }
 
+/// Region-code candidate columns: geo dimensions that NAME a boundary region (zip, county, state,
+/// ...), excluding point coordinates and address/city fields that don't key polygons. Canonical
+/// describegpt geo leaves plus lenient aliases for hand-curated dictionaries (`zip`/`postal_code`
+/// for the canonical `zip_code`, `fips` for a county/tract code).
+const REGION_CODE_LEAVES: &[&str] = &[
+    "zip_code",
+    "zip",
+    "postal_code",
+    "census_tract",
+    "county",
+    "county_fips",
+    "state",
+    "state_fips",
+    "country",
+    "fips",
+];
+
+/// The columns `viz smart` will consider as a summary-choropleth region key, in column order.
+///
+/// Shared by the panel builder and `--geojson auto`'s deferred resolution (issue #4416) so the
+/// boundaries are fetched for exactly the columns the panel builder will later score — a resolver
+/// working from a different candidate set could fetch for a column that never charts.
+///
+/// A concept comes only from a data dictionary (`derive_semantics` returns the default without
+/// one), so a stats-only run has no candidates at all.
+fn region_code_candidates(
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+) -> Vec<usize> {
+    col_sems
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| {
+            stats.get(*i).is_some_and(|st| st.cardinality >= 2)
+                && s.concept
+                    .strip_prefix("geo.")
+                    .is_some_and(|leaf| REGION_CODE_LEAVES.contains(&leaf))
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
 /// Build `viz smart` summary choropleth panel(s) keyed off a region-code DIMENSION column (e.g. a
 /// `zip_code` column) matched against a user `--geojson` boundary file via `--feature-id-key`,
 /// independent of any lat/lon columns. Emits up to three panels, in order:
@@ -23895,33 +24239,7 @@ fn build_smart_summary_choropleth_panels(
         return Ok(None);
     };
 
-    // region-code candidate columns: geo dimensions that NAME a boundary region (zip, county,
-    // state, ...), excluding point coordinates and address/city fields that don't key polygons.
-    // Canonical describegpt geo leaves plus lenient aliases for hand-curated dictionaries
-    // ("zip"/"postal_code" for the canonical "zip_code", "fips" for a county/tract code).
-    const REGION_CODE_LEAVES: &[&str] = &[
-        "zip_code",
-        "zip",
-        "postal_code",
-        "census_tract",
-        "county",
-        "county_fips",
-        "state",
-        "state_fips",
-        "country",
-        "fips",
-    ];
-    let candidates: Vec<usize> = col_sems
-        .iter()
-        .enumerate()
-        .filter(|(i, s)| {
-            stats.get(*i).is_some_and(|st| st.cardinality >= 2)
-                && s.concept
-                    .strip_prefix("geo.")
-                    .is_some_and(|leaf| REGION_CODE_LEAVES.contains(&leaf))
-        })
-        .map(|(i, _)| i)
-        .collect();
+    let candidates = region_code_candidates(stats, col_sems);
     if candidates.is_empty() {
         return Ok(None);
     }
@@ -24174,20 +24492,41 @@ fn build_smart_summary_choropleth_panels(
                       hover_text: Vec<String>,
                       title: String| {
         let matched: std::collections::HashSet<&str> = locs.iter().map(String::as_str).collect();
-        let mut min_lon = f64::INFINITY;
-        let mut min_lat = f64::INFINITY;
-        let mut max_lon = f64::NEG_INFINITY;
-        let mut max_lat = f64::NEG_INFINITY;
-        let mut any_wrap = false;
-        for f in &features {
-            if matched.contains(f.id.as_str()) {
+        // An AUTO-resolved boundary set is derived from the data's codes, so a handful of stray
+        // codes inject regions the author never chose. They are still drawn — they are the
+        // reader's data — but they do not get to decide the frame, exactly as on the standalone
+        // choropleth path (`framing_extent`). Four Florida/Indiana owner ZIPs out of 50,013 rows
+        // otherwise render 128 Allegheny ZCTAs as an unreadable speck. Skipped when it would
+        // leave nothing to frame to.
+        let excluded: std::collections::HashSet<&str> = auto_boundary_outliers()
+            .iter()
+            .map(String::as_str)
+            .collect();
+        let extent = |skip_outliers: bool| {
+            let mut min_lon = f64::INFINITY;
+            let mut min_lat = f64::INFINITY;
+            let mut max_lon = f64::NEG_INFINITY;
+            let mut max_lat = f64::NEG_INFINITY;
+            let mut any_wrap = false;
+            let mut any = false;
+            for f in &features {
+                if !matched.contains(f.id.as_str())
+                    || (skip_outliers && excluded.contains(f.id.as_str()))
+                {
+                    continue;
+                }
                 min_lon = min_lon.min(f.bbox[0]);
                 min_lat = min_lat.min(f.bbox[1]);
                 max_lon = max_lon.max(f.bbox[2]);
                 max_lat = max_lat.max(f.bbox[3]);
                 any_wrap |= f.wraps_antimeridian;
+                any = true;
             }
-        }
+            any.then_some((min_lon, min_lat, max_lon, max_lat, any_wrap))
+        };
+        let (min_lon, min_lat, max_lon, max_lat, any_wrap) = extent(!excluded.is_empty())
+            .or_else(|| extent(false))
+            .unwrap_or_default();
         let lon_span = max_lon - min_lon;
         let lat_span = max_lat - min_lat;
         let use_tiles = !any_wrap
@@ -24376,7 +24715,24 @@ fn build_smart_summary_choropleth_panels(
     } else {
         t!("viz.notes.raw_count_caveat")
     };
-    let caveated = out.remove(0).with_subtitle(Some(caveat.into_owned()));
+    // A sub-panel has no below-map annotation, so an auto-resolved set's provenance rides in the
+    // subtitle instead (issue #4416). Without it a `viz smart --geojson auto` map is the one place
+    // a reader cannot tell fetched boundaries from supplied ones, nor which vintage drew them.
+    let subtitle = match auto_boundary_notes() {
+        // the caveat is a sentence in its own right but does not always end in punctuation (and
+        // which mark that is varies by locale), so supply a stop when it lacks one — otherwise the
+        // two notes run together mid-sentence
+        Some(note) => {
+            let stop = if caveat.ends_with(['.', '!', '?', '…', '。']) {
+                " "
+            } else {
+                ". "
+            };
+            format!("{caveat}{stop}{note}")
+        },
+        None => caveat.into_owned(),
+    };
+    let caveated = out.remove(0).with_subtitle(Some(subtitle));
     out.insert(0, caveated);
 
     // median-measure panel (when a measure column exists): per-region median of the buffered
@@ -26666,7 +27022,11 @@ struct SmartPanelData {
 /// phases below be methods at a readable arity, instead of free functions taking 15-20 positional
 /// parameters — which would move the complexity into the signatures rather than remove it.
 struct SmartCtx<'a> {
-    args:       &'a Args,
+    /// OWNED rather than borrowed: a deferred `--geojson auto` rewrites `flag_geojson` to the
+    /// resolved boundary path in `new` (issue #4416), after the data dictionary that names the
+    /// region column has been read. Every consumer below therefore sees a real path, exactly as
+    /// on the up-front-resolved `viz choropleth` path.
+    args:       Args,
     out_format: OutFormat,
     progress:   &'a ProgressBar,
 
@@ -26733,8 +27093,13 @@ impl<'a> SmartCtx<'a> {
         out_format: OutFormat,
         progress: &'a ProgressBar,
         loaded_geojson: Option<&serde_json::Value>,
+        feature_id_key_explicit: bool,
     ) -> CliResult<Self> {
-        let args = &prep.args;
+        // Owned rather than borrowed from `prep`: a deferred `--geojson auto` (issue #4416)
+        // rewrites `flag_geojson` to the resolved boundary path below, and that can only happen
+        // once stats and column semantics exist — by which point a shared borrow is all `prep`
+        // can offer.
+        let mut args = prep.args.clone();
 
         let schema_args = util::SchemaArgs {
             flag_enum_threshold:  0,
@@ -26773,7 +27138,7 @@ impl<'a> SmartCtx<'a> {
         // in one streaming pass so `classify_measure` can upgrade such a column to a
         // histogram WITHOUT requiring `--smarter`. No-op (and no pass) when moarstats
         // already enriched the cache or no column qualifies. Soft-fail to a box plot.
-        if let Err(e) = enrich_bimodality(args, &mut stats) {
+        if let Err(e) = enrich_bimodality(&args, &mut stats) {
             viz_note(&format!(
                 "viz smart: bimodality detection failed ({e}); bimodal columns may render as box \
                  plots. Use --smarter for moarstats-based enrichment."
@@ -26788,7 +27153,7 @@ impl<'a> SmartCtx<'a> {
         // phase): its output is captured by run_qsv_cmd, and load_dictionary_semantics
         // suspends the bar only around its own messages.
         progress.set_message("Inferring data dictionary…");
-        let (dict_data, dict_json_text) = match load_dictionary_semantics(args)? {
+        let (dict_data, dict_json_text) = match load_dictionary_semantics(&args)? {
             Some((data, json_text)) => (Some(data), Some(json_text)),
             None => (None, None),
         };
@@ -26859,7 +27224,7 @@ impl<'a> SmartCtx<'a> {
         // rule above can only fire on a `<base>_code` spelling, and the reporting Data Schematic
         // has neither that spelling nor a dictionary. Soft-fail: a Data Schematic with a
         // duplicate panel beats no Data Schematic.
-        match one_to_one_categorical_twins(args, &stats, &col_sems, &name_twins) {
+        match one_to_one_categorical_twins(&args, &stats, &col_sems, &name_twins) {
             Ok(dupes) => twin_suppress.extend(dupes),
             Err(e) => viz_note(&format!(
                 "viz smart: 1:1 dimension detection failed ({e}); redundant categorical panels \
@@ -26867,6 +27232,15 @@ impl<'a> SmartCtx<'a> {
             )),
         }
         collapse_twin_chains(&mut twin_suppress);
+
+        // DEFERRED `--geojson auto` (issue #4416). This is the earliest point the region-code
+        // candidate columns exist, and the LAST point before anything consumes `--geojson`:
+        // resolving here rewrites `args.flag_geojson` to the fetched boundary path, so every
+        // consumer below reads a real file exactly as it would a user-supplied one. A no-op
+        // unless `--geojson` names an auto spec.
+        let auto_geojson =
+            resolve_smart_auto_geojson(&mut args, &stats, &col_sems, feature_id_key_explicit)?;
+        let loaded_geojson = auto_geojson.as_ref().or(loaded_geojson);
 
         // Build the geographic map panel up front (one data pass) so we can learn which lat/lon
         // columns it ACTUALLY consumed. Those columns are charted on the map only —
@@ -26892,7 +27266,7 @@ impl<'a> SmartCtx<'a> {
             let cluster_mode = parse_cluster_mode(&args.flag_cluster)?;
             progress.set_message("Building map panel…");
             match build_map_panel(
-                args,
+                &args,
                 &stats,
                 &col_sems,
                 dict_data.as_ref(),
@@ -26993,7 +27367,7 @@ impl<'a> SmartCtx<'a> {
         // companion above).
         let summary_choros = if choropleth_panel.is_none() && !out_format.is_image() {
             build_smart_summary_choropleth_panels(
-                args,
+                &args,
                 &stats,
                 &col_sems,
                 loaded_geojson,
@@ -27130,8 +27504,9 @@ impl<'a> SmartCtx<'a> {
             nonnumeric_measures,
             ..
         } = self;
-        let (args, out_format, log_scale, violin_mode) =
-            (*args, *out_format, *log_scale, *violin_mode);
+        // `args` stays a reference: the field is OWNED since the deferred `--geojson auto` work
+        // (issue #4416), so copying it out would be a move (and a clone of the whole struct).
+        let (out_format, log_scale, violin_mode) = (*out_format, *log_scale, *violin_mode);
         let (map_cols, summary_choro_col) = (*map_cols, *summary_choro_col);
         // the same two derived values `SmartCtx::is_map_col` / `dict_icons` compute; recreated as
         // locals here because `self` is destructured for the duration of the loop.
@@ -27387,7 +27762,7 @@ impl<'a> SmartCtx<'a> {
         if self.bivariate_sidecar_fresh {
             let input = self.args.arg_input.as_deref().unwrap_or_default();
             let (assoc_panel, top_panel) =
-                bivariate_panels(self.args, input, &self.stats, &self.col_sems, |i| {
+                bivariate_panels(&self.args, input, &self.stats, &self.col_sems, |i| {
                     self.is_map_col(i)
                 });
             if let Some(panel) = top_panel {
@@ -27418,7 +27793,7 @@ impl<'a> SmartCtx<'a> {
                     })
                     .collect();
                 let built = sankey_panel(
-                    self.args,
+                    &self.args,
                     input,
                     &self.stats,
                     &self.col_sems,
@@ -27447,7 +27822,7 @@ impl<'a> SmartCtx<'a> {
         // filled INSIDE the numeric block (T3 needs a measure pair). The T1 insertion consults
         // both, and the winner is inserted by `add_overview_panels`.
         {
-            let mode = smart_slider_mode(self.args);
+            let mode = smart_slider_mode(&self.args);
             // respect `--slider off` and image output (animations are HTML-only), like T1
             if !self.out_format.is_image()
                 && !matches!(mode, SmartSliderMode::Off)
@@ -27465,7 +27840,7 @@ impl<'a> SmartCtx<'a> {
                 };
                 let prefer_dmy = self.dmy_pref(date_idx);
                 if let Some(data) = read_geo_anim(
-                    self.args, lat_idx, lon_idx, date_idx, prefer_dmy, min_frames,
+                    &self.args, lat_idx, lon_idx, date_idx, prefer_dmy, min_frames,
                 )? {
                     let frame_label = self
                         .col_sems
@@ -27509,7 +27884,7 @@ impl<'a> SmartCtx<'a> {
             .collect();
         if numeric_indices.len() >= 2 {
             self.progress.set_message("Computing correlations…");
-            let (mut rdr, headers, nh) = reader_and_headers(self.args)?;
+            let (mut rdr, headers, nh) = reader_and_headers(&self.args)?;
             let (labels, columns, kept_indices) =
                 read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices, false)?;
             // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
@@ -27547,7 +27922,7 @@ impl<'a> SmartCtx<'a> {
                 // heatmap consumes `labels`/`matrix`; returns the selected (i, j) plus the built
                 // Panel so the static drill-down below can de-dupe when they coincide.
                 let anim_sel: Option<(usize, usize, Panel)> = 'anim: {
-                    let mode = smart_slider_mode(self.args);
+                    let mode = smart_slider_mode(&self.args);
                     if self.out_format.is_image() || matches!(mode, SmartSliderMode::Off) {
                         break 'anim None;
                     }
@@ -27564,7 +27939,7 @@ impl<'a> SmartCtx<'a> {
                     };
                     let prefer_dmy = self.dmy_pref(date_idx);
                     let Some(bucket_means) = read_bucketed_means(
-                        self.args,
+                        &self.args,
                         &kept_indices,
                         date_idx,
                         prefer_dmy,
@@ -27590,7 +27965,7 @@ impl<'a> SmartCtx<'a> {
                         break 'anim None;
                     }
                     let Some(data) = read_scatter_pair_anim(
-                        self.args,
+                        &self.args,
                         kept_indices[i],
                         kept_indices[j],
                         date_idx,
@@ -27653,7 +28028,7 @@ impl<'a> SmartCtx<'a> {
                 // strict cell/entity gates — enough non-sparse per-(entity,bucket) support
                 // (this is what rejects sparse zone-per-month datasets).
                 {
-                    let mode = smart_slider_mode(self.args);
+                    let mode = smart_slider_mode(&self.args);
                     if self.bubble_panel.is_none()
                         && !self.out_format.is_image()
                         && !matches!(mode, SmartSliderMode::Off)
@@ -27708,7 +28083,7 @@ impl<'a> SmartCtx<'a> {
                                 warn: false,
                             };
                             if let Some(data) = read_entity_bucket_agg(
-                                self.args,
+                                &self.args,
                                 e_idx,
                                 kept_indices[i],
                                 kept_indices[j],
@@ -28142,7 +28517,7 @@ impl<'a> SmartCtx<'a> {
         // Dedicated pass over exactly the declared stages, so the complete-case denominator is
         // the funnel's own rather than one diluted by unrelated numeric columns.
         self.progress.set_message("Reading pipeline stages…");
-        let (mut rdr, headers, nh) = reader_and_headers(self.args)?;
+        let (mut rdr, headers, nh) = reader_and_headers(&self.args)?;
         let (labels, columns, kept) =
             read_numeric_columns(&mut rdr, &headers, nh, &indices, false)?;
         if kept.len() != indices.len() || columns.first().is_none_or(Vec::is_empty) {
@@ -28254,7 +28629,7 @@ impl<'a> SmartCtx<'a> {
 
         self.progress.set_message("Reading pipeline stages…");
         let (totals, counts, matched) =
-            read_stage_totals(self.args, stage_idx, value_idx, &wanted)?;
+            read_stage_totals(&self.args, stage_idx, value_idx, &wanted)?;
         if counts.iter().filter(|c| **c > 0).count() < 2 {
             viz_skip_note!(
                 VIZ_SMART_PREFIX,
@@ -28418,7 +28793,7 @@ impl<'a> SmartCtx<'a> {
             // bound the immutable borrows of `self` to this statement so the insert below can take
             // `&mut self.panels`
             let built = measure_by_dim_panel(
-                self.args,
+                &self.args,
                 &self.stats,
                 &self.col_sems,
                 &measure_indices,
@@ -28456,7 +28831,7 @@ impl<'a> SmartCtx<'a> {
             let n = self.row_count();
             let measure_nonnull = n.saturating_sub(self.stats[m_idx].nullcount);
             let built = grouped_violin_panel(
-                self.args,
+                &self.args,
                 &self.stats,
                 &self.col_sems,
                 &measure_indices,
@@ -28518,7 +28893,7 @@ impl<'a> SmartCtx<'a> {
             // insert weakest-first so the strongest inequality ends up topmost among them
             for (idx, gini) in lorenz_candidates.into_iter().rev() {
                 let built =
-                    build_lorenz_panel(self.args, &self.col_sems, idx, gini, &self.stats[idx]);
+                    build_lorenz_panel(&self.args, &self.col_sems, idx, gini, &self.stats[idx]);
                 match built {
                     Ok(Some(panel)) => self.panels.insert(0, panel),
                     Ok(None) => {},
@@ -28540,7 +28915,8 @@ impl<'a> SmartCtx<'a> {
         // part-to-whole hierarchy panel, so it suppresses parcats entirely (the user chose the
         // nested view) and, below, bypasses the hierarchy's independence/Sankey screens.
         let explicit_hierarchy_style = matches!(
-            self.args
+            &self
+                .args
                 .flag_hierarchy_style
                 .as_deref()
                 .map(str::to_ascii_lowercase)
@@ -28555,7 +28931,7 @@ impl<'a> SmartCtx<'a> {
             let n = self.row_count();
             let parcats_eligible =
                 eligible_categorical_dims(&self.panels, &self.stats, &self.col_sems, n);
-            let built = parcats_panel(self.args, parcats_eligible);
+            let built = parcats_panel(&self.args, parcats_eligible);
             match built {
                 Ok(Some((panel, dim_idxs))) => {
                     parcats_dims = Some(dim_idxs);
@@ -28637,7 +29013,7 @@ impl<'a> SmartCtx<'a> {
                     // branch, conveying nothing the separate frequency bars don't already show more
                     // legibly. The association is read off the joint counts already in hand (no
                     // re-scan).
-                    let leaves = collect_hierarchy_counts(self.args, &dim_idxs, None)?;
+                    let leaves = collect_hierarchy_counts(&self.args, &dim_idxs, None)?;
                     let assoc = max_pairwise_cramers_v(&leaves, depth);
                     if !explicit_style && assoc < HIER_MIN_ASSOCIATION_CRAMERS_V {
                         viz_skip_note!(
@@ -28690,7 +29066,7 @@ impl<'a> SmartCtx<'a> {
                 .and_then(|d| d.grain_unit.as_deref());
             let cadence = self.dict_data.as_ref().and_then(|d| d.cadence.as_deref());
             build_timeseries_panel(
-                self.args,
+                &self.args,
                 &self.stats,
                 &self.dmy_prefs,
                 self.map_cols,
@@ -28710,7 +29086,7 @@ impl<'a> SmartCtx<'a> {
         // so it can't be statically exported — build it for HTML only.
         if !self.out_format.is_image() {
             let built = build_cyclic_panel(
-                self.args,
+                &self.args,
                 &self.stats,
                 &self.dmy_prefs,
                 self.map_cols,
@@ -28985,12 +29361,12 @@ impl<'a> SmartCtx<'a> {
         } else {
             // Prefer a pre-existing `frequency` cache (no data pass); fall back to a
             // single-pass recompute when it's absent/stale/incompatible.
-            match freq_from_cache(self.args, &self.stats, &bar_indices, top_n) {
+            match freq_from_cache(&self.args, &self.stats, &bar_indices, top_n) {
                 Some(cached) => {
                     freq_cache_used = true;
                     cached
                 },
-                None => count_values(self.args, &bar_indices, top_n)?,
+                None => count_values(&self.args, &bar_indices, top_n)?,
             }
         };
 
@@ -29063,7 +29439,7 @@ impl<'a> SmartCtx<'a> {
             (HashMap::new(), HashMap::new())
         } else {
             self.progress.set_message("Preparing panel data…");
-            collect_smart_values(self.args, &raw_indices, &raw_strides, &fence_bounds)?
+            collect_smart_values(&self.args, &raw_indices, &raw_strides, &fence_bounds)?
         };
 
         // Data Schematic title: the user's --title, else the dataset's file name
@@ -29214,7 +29590,7 @@ impl<'a> SmartCtx<'a> {
             // enabled (issue #4283), the count links to it: "(Explore)" when every row is
             // embedded, "(Preview)" when only the first --preview-threshold rows are.
             let n = self.row_count();
-            data_viewer = build_data_viewer_chrome(self.args, &self.stats, n, &self.dmy_prefs)?;
+            data_viewer = build_data_viewer_chrome(&self.args, &self.stats, n, &self.dmy_prefs)?;
             let data_link = match &data_viewer {
                 Some((_, label)) => format!(
                     " <a href=\"#\" class=\"qsv-data-link\" onclick=\"return \
@@ -29334,7 +29710,7 @@ impl<'a> SmartCtx<'a> {
         self.progress.set_message("Rendering Data Schematic…");
         if self.inline {
             Ok(SmartRender::Inline(render_smart_inline(
-                self.args,
+                &self.args,
                 &self.panels,
                 &freq,
                 &raw_values,
@@ -29359,7 +29735,7 @@ impl<'a> SmartCtx<'a> {
             // the grid as raw JSON with domain-positioned xaxis9+ and (for geo panels) geo/geo2+
             // subplots.
             render_smart_grid_json(
-                self.args,
+                &self.args,
                 &self.panels,
                 &freq,
                 &raw_values,
@@ -29369,7 +29745,7 @@ impl<'a> SmartCtx<'a> {
             )
         } else {
             render_smart_grid(
-                self.args,
+                &self.args,
                 &self.panels,
                 &freq,
                 &raw_values,
@@ -29393,9 +29769,18 @@ fn build_smart(
     progress: &ProgressBar,
     show_progress: bool,
     loaded_geojson: Option<&serde_json::Value>,
+    // whether `--feature-id-key` was passed explicitly, so a deferred `--geojson auto` knows not
+    // to overwrite it with the fetched layer's key (issue #4416)
+    feature_id_key_explicit: bool,
 ) -> CliResult<SmartRender> {
     let prep = smart_prepare(args, progress, show_progress)?;
-    let mut ctx = SmartCtx::new(&prep, out_format, progress, loaded_geojson)?;
+    let mut ctx = SmartCtx::new(
+        &prep,
+        out_format,
+        progress,
+        loaded_geojson,
+        feature_id_key_explicit,
+    )?;
     ctx.classify_columns();
     ctx.add_relationship_panels()?;
     ctx.add_overview_panels()?;

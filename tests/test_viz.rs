@@ -9945,13 +9945,13 @@ fn viz_choropleth_geojson_missing_file_errors() {
     assert!(stderr.contains("no QSV_GEOJSON_SHORTCUTS are defined"));
 }
 
-// `--geojson auto` needs the region-code column named up front, which only
-// `viz choropleth --locations` does: `viz smart` picks its region column from the data dictionary,
-// which does not exist yet when --geojson is resolved. The error must say so rather than failing
-// obscurely inside the fetch.
+// `viz smart` resolves `--geojson auto` from the region column its DICTIONARY names (issue
+// #4416), so without a dictionary there is no region column and nothing to scope a fetch by. The
+// error must say that rather than failing obscurely inside the fetch — and must not reach the
+// network at all, which is what makes this test hermetic.
 #[test]
-fn viz_smart_geojson_auto_errors() {
-    let wrk = Workdir::new("viz_smart_geojson_auto_errors");
+fn viz_smart_geojson_auto_without_a_region_column_errors() {
+    let wrk = Workdir::new("viz_smart_geojson_auto_without_a_region_column_errors");
     wrk.create_from_string("rg.csv", "region,val\n42003,10\n42101,20\n");
 
     let mut cmd = wrk.command("viz");
@@ -9959,8 +9959,11 @@ fn viz_smart_geojson_auto_errors() {
         .env_remove("QSV_GEOJSON_SHORTCUTS");
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
-    assert!(stderr.contains("viz choropleth --locations"));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("no region-code column") && stderr.contains("--dictionary"),
+        "expected the deferred-auto diagnostic naming --dictionary: {stderr}"
+    );
 }
 
 // `--geojson auto` without --locations has no region codes to scope a boundary fetch by, so it

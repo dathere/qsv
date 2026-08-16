@@ -141,7 +141,7 @@ fn viz_scatter_color_size_with_series_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("cannot be combined with --series"));
 }
 
@@ -163,7 +163,7 @@ fn viz_color_size_non_scatter_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("only apply to `viz scatter`"));
 }
 
@@ -219,7 +219,7 @@ fn viz_rangeslider_non_cartesian_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--rangeslider only applies to cartesian charts"));
 }
 
@@ -389,7 +389,7 @@ fn viz_slider_auto_standalone_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("auto/on/off only apply to `viz smart`"));
 }
 
@@ -402,7 +402,7 @@ fn viz_slider_unsupported_chart_errors() {
     cmd.args(["histogram", "fruits.csv", "--x", "Price", "--slider", "Qty"]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--slider currently supports"));
 }
 
@@ -447,7 +447,7 @@ fn viz_map_slider_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("isn't supported for `viz map`"));
     assert!(stderr.contains("viz geo"));
 }
@@ -721,7 +721,7 @@ fn viz_scatter_slider_bubble_sparse_is_drawn_and_noted() {
     assert_eq!(bubble_x(&frames, "2024-02-01", "C"), None);
     assert_eq!(bubble_x(&frames, "2024-03-01", "C"), Some(90.0));
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("cells have no data"));
 }
 
@@ -739,7 +739,7 @@ fn viz_scatter_slider_bubble_agg_count_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--agg count has no meaning"));
     // must NOT tell the user to omit --size: the bubble path is only dispatched WITH --size, so
     // dropping it silently yields a plain animated scatter (many points per series, no sizing),
@@ -891,7 +891,7 @@ fn viz_scatter_slider_size_without_series_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("Add --series"));
 }
 
@@ -908,7 +908,7 @@ fn viz_scatter_slider_color_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--slider cannot yet be combined with --color"));
 }
 
@@ -928,7 +928,7 @@ fn viz_scatter_slider_color_with_series_still_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("cannot be combined with --series"));
 }
 
@@ -1759,7 +1759,7 @@ fn viz_box_points_invalid_errors() {
     cmd.args(["box", "fruits.csv", "--y", "Price", "--box-points", "bogus"]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("Unknown --box-points"));
 }
 
@@ -1823,7 +1823,7 @@ fn viz_box_y_range_invalid_errors() {
     cmd.args(["box", "fruits.csv", "--y", "Price", "--y-range=5:1"]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--y-range"));
 
     // non-numeric is rejected
@@ -1831,7 +1831,7 @@ fn viz_box_y_range_invalid_errors() {
     cmd_2.args(["box", "fruits.csv", "--y", "Price", "--y-range=abc"]);
     let out2 = wrk.output(&mut cmd_2);
     assert!(!out2.status.success());
-    let stderr2 = wrk.output_stderr(&mut cmd_2);
+    let stderr2 = String::from_utf8_lossy(&out2.stderr);
     assert!(stderr2.contains("--y-range"));
 }
 
@@ -1901,7 +1901,7 @@ fn viz_violin_no_numeric_errors() {
     cmd.args(["violin", "fruits.csv", "--y", "Fruit"]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("violin plot"));
 }
 
@@ -2297,7 +2297,7 @@ fn viz_smart_violin_invalid_errors() {
     cmd.args(["smart", "fruits.csv", "--violin", "bogus"]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("Unknown --violin"));
 }
 
@@ -3125,8 +3125,7 @@ fn viz_smart_twelve_distinct_cardinality_columns_all_charted() {
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "wide.csv", "-o", &out_html]);
-    let stderr = wrk.output_stderr(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
 
     assert!(
         !stderr.contains("they are 1:1"),
@@ -3171,8 +3170,7 @@ fn viz_static_more_than_eight_panels() {
     let out_svg = wrk.path("dash.svg").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "wide.csv", "-o", &out_svg]);
-    let stderr = wrk.output_stderr(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
 
     // Load-bearing premise check (issue #4343): all 12 columns must actually be charted. stderr is
     // emitted during panel selection, before any rendering, so it is unaffected by how plotly
@@ -3226,8 +3224,7 @@ fn viz_static_max_charts_caps_panels() {
     let out_svg = wrk.path("dash.svg").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "wide.csv", "--max-charts", "4", "-o", &out_svg]);
-    let stderr = wrk.output_stderr(&mut cmd);
-    wrk.assert_success(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
 
     // Load-bearing assertion: the cap is applied during panel selection, so stderr proves it ran.
     // (The previous fixture collapsed to a single panel, which is BELOW the cap — the cap was
@@ -5228,7 +5225,7 @@ fn viz_map_unknown_style_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("Unknown --style"));
 }
 
@@ -5251,7 +5248,7 @@ fn viz_map_density_with_series_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("cannot be combined with --series"));
 }
 
@@ -7795,9 +7792,10 @@ fn viz_geo_bad_projection_errors() {
         "--projection",
         "bogus",
     ]);
-    let got = wrk.output_stderr(&mut cmd);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let got = String::from_utf8_lossy(&out.stderr);
     assert!(got.contains("Unknown --projection"));
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -7984,9 +7982,10 @@ fn viz_contour_non_numeric_errors() {
     // `place` and `region` are non-numeric, so there are no plottable rows
     let mut cmd = wrk.command("viz");
     cmd.args(["contour", "quakes.csv", "--x", "place", "--y", "region"]);
-    let got = wrk.output_stderr(&mut cmd);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let got = String::from_utf8_lossy(&out.stderr);
     assert!(got.contains("No rows with numeric"));
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -8103,12 +8102,13 @@ fn viz_theme_unknown_errors() {
         "--theme",
         "bogus",
     ]);
-    let got = wrk.output_stderr(&mut cmd);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let got = String::from_utf8_lossy(&out.stderr);
     assert!(got.contains("Unknown --theme 'bogus'"));
     // the error lists the valid theme names
     assert!(got.contains("plotly_dark"));
     assert!(got.contains("seaborn_whitegrid"));
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -9941,7 +9941,7 @@ fn viz_choropleth_geojson_missing_file_errors() {
     .env_remove("QSV_GEOJSON_SHORTCUTS");
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("no QSV_GEOJSON_SHORTCUTS are defined"));
 }
 
@@ -9989,7 +9989,7 @@ fn viz_choropleth_geojson_auto_requires_locations() {
     .env_remove("QSV_GEOJSON_SHORTCUTS");
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--locations"));
 }
 
@@ -10199,7 +10199,7 @@ fn viz_choropleth_geojson_shortcut_unknown_errors() {
     );
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("Unknown --geojson shortcut 'counties'"));
     assert!(stderr.contains("regions, wards"));
 }
@@ -10225,7 +10225,7 @@ fn viz_choropleth_geojson_shortcut_malformed_json_errors() {
     .env("QSV_GEOJSON_SHORTCUTS", r#"{"regions": not json}"#);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("QSV_GEOJSON_SHORTCUTS is not valid JSON"));
 }
 
@@ -10252,7 +10252,7 @@ fn viz_choropleth_geojson_bad_feature_id_key_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("resolves on no feature"));
 }
 
@@ -10287,7 +10287,7 @@ fn viz_choropleth_geojson_id_only_on_non_polygon_errors() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("no usable Polygon/MultiPolygon features"));
 }
 
@@ -14243,9 +14243,7 @@ fn viz_smart_notes_and_drops_dictionary_with_no_headers() {
         "-o",
         &out,
     ]);
-    wrk.assert_success(&mut cmd);
-
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     assert!(
         stderr.contains("no entry can match"),
         "expected a notice explaining the dictionary cannot apply; got: {stderr}"
@@ -15803,8 +15801,9 @@ fn viz_smart_unknown_language_is_a_usage_error() {
 
     // Silently anglicizing an explicit request would hide the typo until someone
     // opened the dashboard, so this fails fast and names the curated set.
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("Unknown --language 'klingon'") && stderr.contains("en, es"),
         "the error should name the bad value and list the curated languages, got: {stderr}"
@@ -17071,8 +17070,9 @@ fn viz_choropleth_denominator_rejects_intensive_agg() {
         "--denominator",
         "pop",
     ]);
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("already"),
         "a mean is already intensive; dividing it again is meaningless: {stderr}"
@@ -17103,8 +17103,9 @@ fn viz_choropleth_denominator_must_be_region_constant() {
         "--denominator",
         "pop",
     ]);
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("not constant within region 'A'"),
         "the offending region must be named: {stderr}"
@@ -17132,8 +17133,9 @@ fn viz_choropleth_denominator_flags_are_mutually_exclusive() {
         "--denominator-key",
         "properties.POP",
     ]);
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("mutually exclusive"), "{stderr}");
 }
 
@@ -17156,8 +17158,9 @@ fn viz_choropleth_denominator_key_must_resolve() {
         "--denominator-key",
         "properties.NOPE",
     ]);
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("resolves to no positive number"),
         "an unresolvable key is explicit intent gone wrong, not a silent fallback: {stderr}"
@@ -17251,7 +17254,7 @@ fn viz_smart_bad_denominator_hint_degrades_to_caveated_counts() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(out.status.success(), "a bad HINT is not a hard error");
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("nosuchcolumn") && stderr.contains("no such column"),
         "the reason must name the column: {stderr}"
@@ -17314,7 +17317,7 @@ fn viz_smart_zero_denominator_region_is_excluded_and_reported() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("no usable denominator for 1 of 4 regions"),
         "the exclusion must be reported: {stderr}"
@@ -17374,7 +17377,7 @@ fn viz_smart_pip_region_map_rate_panel_and_caveat() {
         html.contains("1 of 4 without a denominator"),
         "the PIP rate panel must state its own narrowed coverage: {html}"
     );
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("no usable denominator for 1 of 4 regions"),
         "and report it on stderr: {stderr}"
@@ -17416,8 +17419,9 @@ fn viz_choropleth_denominator_constancy_sees_non_positive_rows() {
         "--denominator",
         "fee",
     ]);
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("not constant within region 'A' (0 then 50)"),
         "the zero row must take part in the comparison: {stderr}"
@@ -17490,7 +17494,7 @@ fn viz_smart_non_constant_hint_denominator_degrades_to_caveated_counts() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(out.status.success(), "a bad hint is not a hard error");
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("not constant within region 'A'"),
         "the zero row must take part in the comparison, and name the region: {stderr}"
@@ -17532,7 +17536,7 @@ fn viz_smart_consistently_zero_hint_denominator_is_an_exclusion() {
     ]);
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("no usable denominator for 1 of 3 regions"),
         "reported, not silently narrowed: {stderr}"

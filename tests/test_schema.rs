@@ -22,8 +22,6 @@ fn generate_schema_with_defaults_and_validate_trim_with_no_errors() {
     // run schema command with value constraints option
     let mut cmd = wrk.command("schema");
     cmd.arg("adur-public-toilets.csv");
-    wrk.output(&mut cmd);
-
     wrk.assert_success(&mut cmd);
 
     // load output schema file
@@ -48,7 +46,9 @@ fn generate_schema_with_defaults_and_validate_trim_with_no_errors() {
     cmd3.arg("adur-public-toilets.csv");
     cmd3.arg("--trim");
     cmd3.arg("adur-public-toilets.csv.schema.json");
-    wrk.output(&mut cmd3);
+    // NB: assert on cmd3. This used to run `cmd` (the SCHEMA command) a second
+    // time down below, so `validate --trim`'s own exit status went unasserted.
+    wrk.assert_success(&mut cmd3);
 
     // not expecting any invalid rows, so confirm there are NO output files generated
     let validation_error_path = &wrk.path("adur-public-toilets.csv.validation-errors.tsv");
@@ -56,7 +56,6 @@ fn generate_schema_with_defaults_and_validate_trim_with_no_errors() {
     assert!(!Path::new(validation_error_path).exists());
     assert!(!Path::new(&wrk.path("adur-public-toilets.csv.valid")).exists());
     assert!(!Path::new(&wrk.path("adur-public-toilets.csv.invalid")).exists());
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

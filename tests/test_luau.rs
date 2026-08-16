@@ -1145,7 +1145,7 @@ END {
         .arg("file:testqsvcmd.luau")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["letter", "Amount", "Running Total"],
         svec!["a", "13", "13"],
@@ -1161,8 +1161,6 @@ END {
         dos2unix(&echo_text).trim_end(),
         dos2unix(expected_echo_text).trim_end()
     );
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

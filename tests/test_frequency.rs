@@ -154,9 +154,7 @@ fn frequency_trim() {
         .args(["--limit", "0"])
         .args(["--select", "h2"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     got.sort_unstable();
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
@@ -2237,9 +2235,7 @@ fn frequency_weight_basic() {
         .args(["--select", "value"])
         .args(["--weight", "weight"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // Sort by value for consistent comparison
     got.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
@@ -3073,9 +3069,7 @@ fn frequency_weight_unq_limit_with_limit_zero() {
         .args(["--limit", "0"])
         .args(["--unq-limit", "5"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     got.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
             std::cmp::Ordering::Equal
@@ -3233,9 +3227,7 @@ fn frequency_weight_extremely_large_values() {
         .args(["--select", "value"])
         .args(["--weight", "weight"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     got.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
             std::cmp::Ordering::Equal
@@ -3414,9 +3406,7 @@ fn frequency_weight_no_other_zero() {
         .args(["--select", "value"])
         .args(["--weight", "weight"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     got.sort_by(|a, b| {
         if a.len() < 2 || b.len() < 2 {
             std::cmp::Ordering::Equal

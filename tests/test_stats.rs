@@ -973,11 +973,11 @@ fn stats_no_rounding() {
         .args(["--round", "9999"])
         .arg(test_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got2: String = wrk.stdout(&mut cmd);
+    let got: Vec<Vec<String>> = Workdir::csv_from(&got2);
 
     wrk.create("in2.csv", got);
 
-    let got2: String = wrk.stdout(&mut cmd);
     let expected2 = wrk.load_test_resource("boston311-100-everything-norounding-stats.csv");
 
     // this should NOT BE EQUAL as floats are not rounded, and comparing floats is not reliable
@@ -1073,13 +1073,11 @@ fn stats_with_date_inference_variance_stddev() {
         .arg("--infer-dates")
         .args(["--dates-whitelist", "all"]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got2: String = wrk.stdout_on_success(&mut cmd);
+    let got: Vec<Vec<String>> = Workdir::csv_from(&got2);
 
     wrk.create("in2.csv", got);
 
-    let got2: String = wrk.stdout(&mut cmd);
     let expected2 =
         wrk.load_test_resource("boston311-100-everything-date-stats-variance-stddev.csv");
 

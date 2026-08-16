@@ -638,13 +638,10 @@ fn fetch_custom_user_agent() {
         .arg("Mozilla/5.0 (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxversion")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got = wrk.stdout::<String>(&mut cmd);
+    let got = wrk.stdout_on_success::<String>(&mut cmd);
     assert!(got.contains(
         "Mozilla/5.0 (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxversion"
     ));
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -767,13 +764,10 @@ fn fetchpost_custom_user_agent() {
         .arg("Mozilla/5.0 (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxversion")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got = wrk.stdout::<String>(&mut cmd);
+    let got = wrk.stdout_on_success::<String>(&mut cmd);
     assert!(got.contains(
         "Mozilla/5.0 (platform; rv:geckoversion) Gecko/geckotrail Firefox/firefoxversion"
     ));
-    wrk.assert_success(&mut cmd);
 }
 
 use std::{net::SocketAddr, sync::mpsc, thread};
@@ -1771,6 +1765,8 @@ fn fetchpost_disk_cache() {
         .arg(r#"."form""#)
         .arg("data.csv");
 
+    // double-run-check: intentional -- the point of the test is that the SECOND
+    // run hits the disk cache, so it must stay two executions.
     // First request should not be cached
     let got1 = wrk.stdout::<String>(&mut cmd);
 

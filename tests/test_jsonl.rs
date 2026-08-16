@@ -58,7 +58,7 @@ fn jsonl_simple_error() {
     let mut cmd = wrk.command("jsonl");
     cmd.arg("data.jsonl");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_error(&mut cmd);
     // 4 and 5 are not displayed as jsonl encounters an error and just stops
     let expected = vec![
         svec!["id", "father", "mother", "oldest_child", "boy"],
@@ -67,8 +67,6 @@ fn jsonl_simple_error() {
         svec!["3", "Bob", "Monika", "Jerry", "true"],
     ];
     assert_eq!(got, expected);
-
-    wrk.assert_err(&mut cmd);
 }
 
 #[test]

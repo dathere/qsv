@@ -38,10 +38,8 @@ fn snappy_roundtrip() {
     let mut cmd = wrk.command("snappy"); // DevSkim: ignore DS126858
     cmd.arg("decompress").arg(out_file); // DevSkim: ignore DS126858
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd); // DevSkim: ignore DS126858
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd); // DevSkim: ignore DS126858
     assert_eq!(got, thedata);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -53,13 +51,11 @@ fn snappy_decompress() {
     let mut cmd = wrk.command("snappy");
     cmd.arg("decompress").arg(test_file);
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-100.csv");
 
     assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -70,13 +66,11 @@ fn snappy_decompress_url() {
     cmd.arg("decompress")
         .arg("https://github.com/dathere/qsv/raw/master/resources/test/boston311-100.csv.sz");
 
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected = wrk.load_test_resource("boston311-100.csv");
 
     assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -233,13 +227,9 @@ fn snappy_automatic_decompression() {
     let mut cmd = wrk.command("count");
     cmd.arg(test_file);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "100";
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -260,13 +250,9 @@ fn snappy_automatic_compression() {
     let mut cmd = wrk.command("count");
     cmd.arg(got_path);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "50";
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

@@ -806,11 +806,9 @@ fn replace_indexed_parallel() {
         .arg("data.csv")
         .arg("--jobs")
         .arg("2");
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, expected);
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]

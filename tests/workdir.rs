@@ -124,6 +124,13 @@ impl Workdir {
         Csv::from_vecs(records)
     }
 
+    /// Parse an already-captured stdout string as CSV. Use when a test needs the
+    /// same run's stdout in BOTH forms — the raw text and the rows — so it does
+    /// not have to run the command twice to get them.
+    pub fn csv_from<T: Csv>(stdout: &str) -> T {
+        Self::csv_from_stdout(stdout.as_bytes())
+    }
+
     /// Parse captured stdout bytes as `T`. Note the trailing CR/LF trim —
     /// assertions comparing against literals depend on it, so every variant
     /// must go through here rather than parsing the bytes directly.
@@ -254,6 +261,14 @@ impl Workdir {
     /// parseable CSV, silently masking the failure.
     pub fn read_stdout_on_success<T: Csv>(&self, cmd: &mut process::Command) -> T {
         let o = self.run_once(cmd, Some(true));
+        Self::csv_from_stdout(&o.stdout)
+    }
+
+    /// Run `cmd`, assert it exited with a non-zero status, and return its stdout
+    /// parsed as CSV. For commands that emit partial output and THEN fail — the
+    /// rows and the failure must come from the same run to mean anything.
+    pub fn read_stdout_on_error<T: Csv>(&self, cmd: &mut process::Command) -> T {
+        let o = self.run_once(cmd, Some(false));
         Self::csv_from_stdout(&o.stdout)
     }
 

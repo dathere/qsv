@@ -34,9 +34,15 @@ Two classes of finding must NOT be blindly converted, and are reported separatel
     assertions that used to observe the command's side effects start running
     before it and pass vacuously.
 
-Calls in different `if`/`else` branches are NOT double runs; brace depth is
-tracked so those are excluded (`tests/test_slice.rs::test_slice` is the case
-that proves it).
+Calls in different `if`/`else` branches are NOT double runs; each line's
+enclosing block is identified so those are excluded (`tests/test_slice.rs::test_slice`
+is the case that proves it — `assert_success` in the `--json` arm, `read_stdout`
+in the `else`).
+
+A test that runs one command twice ON PURPOSE (caching, idempotence, indexed vs
+unindexed) opts out with a comment anywhere in the function:
+
+    // double-run-check: intentional -- second request must hit the disk cache
 """
 
 import argparse
@@ -71,7 +77,9 @@ RUNNERS = [
 RUN_RE = re.compile(r"wrk\.(" + "|".join(RUNNERS) + r")(?:::<[^>]*>)?\(&mut (\w+)\)")
 # a fresh `let mut cmd = wrk.command(..)` starts a new logical command, even when
 # it reuses the name of an earlier one
-BIND_RE = re.compile(r"^\s*let mut (\w+)\s*(?::[^=]*)?=\s*(wrk\.command|process::Command|Command::new)")
+BIND_RE = re.compile(
+    r"^\s*let mut (\w+)\s*(?::[^=]*)?=\s*(?:[\w:]*::)?(?:wrk\.command|Command::new)"
+)
 FN_RE = re.compile(r"fn (\w+)\(")
 MUT_RE = re.compile(r"\.\s*(args?|envs?|env_remove|env_clear|current_dir|stdin)\s*\(")
 # statements whose meaning depends on whether the command has run yet
@@ -82,6 +90,8 @@ HAZARD_RE = re.compile(
 )
 # helpers that only assert the exit status vs. those that read what the command produced
 STATUS = {"assert_success", "assert_err"}
+# a test that runs one command twice deliberately says so with this marker
+OPT_OUT_RE = re.compile(r"//\s*double-run-check:\s*intentional")
 
 
 def scan(path):
@@ -92,12 +102,31 @@ def scan(path):
 
     for (start, name), (end, _) in zip(fns, fns[1:]):
         body = lines[start:end]
-        depth = 0
-        depths = []
+        # Identify the enclosing block of every line by a stack of unique block ids,
+        # not by brace DEPTH: the two arms of an if/else sit at the same depth but are
+        # different blocks, and only one of them runs.
+        blocks = []
+        stack = []
+        next_id = 0
         for line in body:
-            depths.append(depth)
-            code = re.sub(r"//.*$", "", line)
-            depth += code.count("{") - code.count("}")
+            trimmed = re.sub(r"//.*$", "", line).strip()
+            # a leading `}` closes the block this line's statement is NOT in,
+            # so pop before recording (`} else {` belongs to neither arm)
+            closes_first = trimmed.startswith("}")
+            if closes_first and stack:
+                stack.pop()
+            blocks.append(tuple(stack))
+            for ch in trimmed[1:] if closes_first else trimmed:
+                if ch == "{":
+                    stack.append(next_id)
+                    next_id += 1
+                elif ch == "}" and stack:
+                    stack.pop()
+
+        # a test that runs one command twice ON PURPOSE (caching, idempotence,
+        # index-vs-no-index) opts out by saying so
+        if OPT_OUT_RE.search("\n".join(body)):
+            continue
 
         generation = collections.Counter()
         events = collections.defaultdict(list)
@@ -113,11 +142,9 @@ def scan(path):
             if len(evs) < 2:
                 continue
             first, last = evs[0][0], evs[-1][0]
-            # different if/else branches are not sequential runs
-            block = depths[first]
-            if any(depths[k] != block for k, _ in evs):
-                continue
-            if any(depths[k] < block for k in range(first + 1, last)):
+            # calls in different blocks (if/else arms, separate loop bodies) are
+            # alternatives, not sequential runs of the same command
+            if any(blocks[k] != blocks[first] for k, _ in evs):
                 continue
             between = body[first + 1 : last]
             names = [n for _, n in evs]

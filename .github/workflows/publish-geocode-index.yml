@@ -1,0 +1,180 @@
+name: Publish Geonames index assets
+
+# Builds the prebuilt Geonames indexes for a release and attaches them to it.
+#
+# WHY THIS EXISTS
+# qsv downloads a prebuilt index rather than making every user rebuild one from Geonames
+# (~200 MB and several minutes). Those assets are version-pinned - `geocode` fetches
+# `qsv-<version>-geocode-index.rkyv.cities<floor>[.sz]` from the release matching its OWN version -
+# so every release needs its own copy, and until now they were produced by hand. A release that
+# ships none of them leaves `geocode` unable to bootstrap at all.
+#
+# There are TWO floors to publish, not one (issue #4433 / PR #4435):
+#   cities15000 - the default (~26k cities, ~23 MiB). Fetched on first use of any geocode command.
+#   cities1000  - the denser opt-in (~140k cities, ~83 MiB) reached via `geocode index-load 1000`,
+#                 for datasets full of small towns the default floor omits.
+#
+# WHICH FILE NAMES MATTER (they are not interchangeable):
+#   ...rkyv.cities<floor>      - UNcompressed. What the first-use/index-reset path downloads.
+#   ...rkyv.cities<floor>.sz   - Snappy-framed. What the `index-load <floor>` shortcut downloads.
+#   ...rkyv                    - bare name, kept for compatibility with older qsv versions; current
+#                                code always appends `.cities<floor>`.
+#
+# Run it AFTER the release exists (it uploads to that tag), and re-run with the same tag to
+# replace assets - uploads use --clobber.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to build for and attach to (e.g. 22.1.0)'
+        required: true
+        type: string
+      floors:
+        description: 'Which population floors to build'
+        required: true
+        default: 'both'
+        type: choice
+        options: [both, '15000', '1000']
+      languages:
+        description: 'Geonames languages to index (comma-separated ISO 639-2)'
+        required: true
+        default: 'en'
+        type: string
+      upload:
+        description: 'Upload to the release. Uncheck to build and verify only (assets are still attached to this run).'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write # required to upload release assets
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+    # a cities1000 build pulls ~200 MB from Geonames and indexes ~140k records; the release build
+    # of qsv itself is the other long pole
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag }}
+
+      - name: Verify the tag's version matches the asset names
+        # The asset name embeds CARGO_PKG_VERSION, and a qsv binary only ever asks for its own
+        # version. Building 22.1.0's index from a checkout that says 22.0.1 produces assets no
+        # binary will ever request, so fail loudly rather than publish something unreachable.
+        run: |
+          set -euo pipefail
+          CARGO_VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "Cargo.toml version: $CARGO_VERSION"
+          echo "requested tag:      ${{ inputs.release_tag }}"
+          if [ "$CARGO_VERSION" != "${{ inputs.release_tag }}" ]; then
+            echo "::error::Cargo.toml says $CARGO_VERSION but the tag is ${{ inputs.release_tag }}."
+            echo "::error::The assets embed the Cargo version, so they would be unreachable."
+            exit 1
+          fi
+          echo "QSV_VERSION=$CARGO_VERSION" >> "$GITHUB_ENV"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build qsv (geocode only)
+        # the index builder and the Snappy compressor are all this needs; skipping the rest of the
+        # feature set keeps the build short
+        run: cargo build --release --locked --bin qsv --features feature_capable,geocode
+
+      - name: Build, verify and package each index
+        env:
+          QSV: ${{ github.workspace }}/target/release/qsv
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          case "${{ inputs.floors }}" in
+            both) FLOORS="15000 1000" ;;
+            *)    FLOORS="${{ inputs.floors }}" ;;
+          esac
+          echo "building floors: $FLOORS"
+
+          for FLOOR in $FLOORS; do
+            echo "::group::cities$FLOOR"
+            WORK="$PWD/idx-$FLOOR"
+            rm -rf "$WORK" && mkdir -p "$WORK"
+
+            # index-update writes to the ACTIVE index path, i.e. $QSV_CACHE_DIR/qsv-<ver>-geocode-index.rkyv.
+            # Build under the default name so `index-check` accepts it (it requires a .rkyv
+            # extension), then rename to the asset name afterwards.
+            BUILT="$WORK/qsv-$QSV_VERSION-geocode-index.rkyv"
+
+            QSV_CACHE_DIR="$WORK" "$QSV" geocode index-update \
+              --cities-url "$FLOOR" \
+              --languages "${{ inputs.languages }}" \
+              --timeout 300 \
+              --force
+
+            test -f "$BUILT" || { echo "::error::index-update produced no index at $BUILT"; exit 1; }
+
+            # 1. the index carries readable metadata (this is what `index-load` validates against)
+            QSV_CACHE_DIR="$WORK" "$QSV" geocode index-check
+
+            # 2. and it actually resolves - an index that loads but geocodes nothing is worse than
+            #    no index, because it fails silently at the point of use
+            printf 'city\nParis\n' > "$WORK/smoke.csv"
+            SMOKE=$(QSV_CACHE_DIR="$WORK" "$QSV" geocode suggest city \
+                      --formatstr '%dyncols: {c:name},{a:admin1}' "$WORK/smoke.csv")
+            echo "$SMOKE"
+            echo "$SMOKE" | grep -q 'Paris' || { echo "::error::cities$FLOOR index did not resolve Paris"; exit 1; }
+
+            ASSET="dist/qsv-$QSV_VERSION-geocode-index.rkyv.cities$FLOOR"
+            cp "$BUILT" "$ASSET"
+            "$QSV" snappy compress "$ASSET" -o "$ASSET.sz"
+
+            # 3. the compressed asset must round-trip byte-for-byte - it is what `index-load
+            #    <floor>` installs, and a corrupt index is not detected until it is loaded
+            "$QSV" snappy decompress "$ASSET.sz" -o "$WORK/roundtrip.rkyv"
+            if ! cmp -s "$ASSET" "$WORK/roundtrip.rkyv"; then
+              echo "::error::cities$FLOOR .sz did not round-trip to an identical file"
+              exit 1
+            fi
+
+            # the bare name is what older qsv versions fetch; it mirrors the default floor
+            if [ "$FLOOR" = "15000" ]; then
+              cp "$ASSET" "dist/qsv-$QSV_VERSION-geocode-index.rkyv"
+            fi
+
+            rm -rf "$WORK"
+            echo "::endgroup::"
+          done
+
+          echo "### Geonames index assets" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          ls -lh dist | tail -n +2 | awk '{print $5"\t"$9}' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach to the workflow run
+        # kept whether or not the release upload runs, so a dry run still produces something
+        # inspectable and a failed upload does not throw away an hour of indexing
+        uses: actions/upload-artifact@v7
+        with:
+          name: geocode-index-${{ inputs.release_tag }}
+          path: dist/
+          retention-days: 7
+
+      - name: Upload to the release
+        if: ${{ inputs.upload }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "${{ inputs.release_tag }}" dist/* --clobber
+          echo "uploaded to ${{ inputs.release_tag }}:"
+          gh release view "${{ inputs.release_tag }}" \
+            --json assets --jq '.assets[] | select(.name|test("rkyv")) | "\(.name)  \(.size) bytes"'

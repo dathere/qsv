@@ -54,6 +54,6 @@ jobs:
             src/cmd/assets/datatables.min.css
         
       - name: Upload DevSkim scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4.37.6
+        uses: github/codeql-action/upload-sarif@v4.37.7
         with:
           sarif_file: devskim-results.sarif

@@ -11836,6 +11836,38 @@ fn viz_choropleth_geocode_reverse_border_points_stay_in_us() {
     );
 }
 
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_reverse_rejects_unknown_country_hint() {
+    let wrk = Workdir::new("viz_choropleth_geocode_reverse_rejects_unknown_country_hint");
+    // roborev #4291: the forward path validated hinted codes, the reverse path did not - so `UK`
+    // (for `GB`) reached the engine, which silently drops an unknown code and matches nothing,
+    // reporting "matched no known place" for a point that plainly resolves
+    wrk.create_from_string("pts.csv", "place,lat,lon,cc\nDetroit,42.3200,-83.0400,UK\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--geocode",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--location-mode",
+        "iso3",
+        "--geocode-country",
+        "cc",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Unknown country hint 'UK'"),
+        "the bad code must be named: {stderr}"
+    );
+}
+
 // actual reverse-geocoding needs the Geonames index (downloaded on first use); skipped in CI like
 // the webdriver-dependent static-export tests.
 #[cfg(feature = "geocode")]

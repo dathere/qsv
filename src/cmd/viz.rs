@@ -8631,7 +8631,15 @@ fn choropleth_geocoded_locations(
 
     let dropped = no_match + rejected + unmapped;
     if dropped > 0 {
-        let kept_units: f64 = kept_values.iter().sum();
+        // `[f64].iter().sum()` over an EMPTY slice yields negative zero, which Display renders as
+        // "-0" - so a run that resolved nothing reported "-0 of 1 count". Normalize every total.
+        let unsign = |x: f64| if x == 0.0 { 0.0 } else { x };
+        let kept_units = unsign(kept_values.iter().sum());
+        let (no_match_units, rejected_units, unmapped_units) = (
+            unsign(no_match_units),
+            unsign(rejected_units),
+            unsign(unmapped_units),
+        );
         let total_units = kept_units + no_match_units + rejected_units + unmapped_units;
         let mut note = format!(
             "viz: --geocode resolved {kept} of {total} rows ({kept_units} of {total_units} \

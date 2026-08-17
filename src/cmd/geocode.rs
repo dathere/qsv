@@ -3866,8 +3866,11 @@ pub fn reverse_geocode_regions(
     }
     let lang_lookup = lang.unwrap_or("en");
     let empty_hint = RegionHint::default();
-    with_geocode_engine(|engine| {
-        points
+    with_geocode_engine(|engine| -> CliResult<Vec<Option<GeoRegion>>> {
+        // same guard as the forward path: an unknown code would silently resolve every point to
+        // nothing, which reads as "no city matched" rather than "your hint is wrong"
+        validate_hint_countries(engine, hints.iter())?;
+        Ok(points
             .iter()
             .enumerate()
             .map(|(i, &(lat, lon))| {
@@ -3879,8 +3882,36 @@ pub fn reverse_geocode_regions(
                 let cityrecord = search_result?.into_iter().next().map(|ri| ri.city)?;
                 cityrecord_to_region(engine, cityrecord, lang_lookup)
             })
-            .collect()
-    })
+            .collect())
+    })?
+}
+
+/// Reject a hinted country code the engine does not recognize, naming it.
+///
+/// The engine's country prefilter SILENTLY DROPS an unknown code, leaving an empty country set that
+/// matches nothing at all — so a typo like `UK` (for `GB`) resolves zero rows and reads as "none of
+/// your places exist". Shared by BOTH region resolvers: the forward path is not the only one that
+/// can be handed a bad code (roborev #4291).
+fn validate_hint_countries<'a>(
+    engine: &Engine,
+    hints: impl IntoIterator<Item = &'a RegionHint>,
+) -> CliResult<()> {
+    // a handful of distinct codes at most, so a Vec beats a HashSet here
+    let mut checked: Vec<&str> = Vec::new();
+    for hint in hints {
+        for code in hint.countries.iter().flatten() {
+            if !checked.contains(&code.as_str()) {
+                checked.push(code.as_str());
+                if engine.country_info(code).is_none() {
+                    return fail_incorrectusage_clierror!(
+                        "Unknown country hint '{code}'. It must be an ISO-3166-1 alpha-2 code \
+                         known to the Geonames index (e.g. GB, not UK)."
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Forward-geocode a batch of place names to region codes (see [`GeoRegion`]) via the same fuzzy
@@ -3933,21 +3964,7 @@ pub fn forward_geocode_regions(
     };
 
     with_geocode_engine(|engine| -> CliResult<Vec<ForwardMatch>> {
-        // The engine's country prefilter SILENTLY DROPS a code it doesn't know, leaving an empty
-        // country set that matches nothing at all — so a typo like "UK" (for "GB") would resolve
-        // zero rows and read as "none of your places exist". Validate up front and name the code.
-        for hint in &distinct {
-            if let Some(countries) = hint.countries.as_ref() {
-                for code in countries {
-                    if engine.country_info(code).is_none() {
-                        return fail_incorrectusage_clierror!(
-                            "Unknown country hint '{code}'. It must be an ISO-3166-1 alpha-2 code \
-                             known to the Geonames index (e.g. GB, not UK)."
-                        );
-                    }
-                }
-            }
-        }
+        validate_hint_countries(engine, distinct.iter().copied())?;
 
         let mut memo: HashMap<(&str, usize), ForwardMatch> = HashMap::new();
         let mut resolved = Vec::with_capacity(names.len());

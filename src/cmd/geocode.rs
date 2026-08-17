@@ -1278,7 +1278,10 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     winfo!("Validating alternate Geonames index: {index_file}...");
                     check_index_file(&index_file)?;
 
-                    let (engine_data, loaded_index_file) =
+                    // the load itself is the parse check - it errors on anything the engine
+                    // cannot read - so the returned data is deliberately unused; what we need
+                    // from it is the resolved path
+                    let (_engine_data, loaded_index_file) =
                         load_engine_data_resolved(index_file.clone().into(), &progress).await?;
 
                     // Validate through the SAME API `index-check` uses. `Storage::load_from` does
@@ -1297,8 +1300,28 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     // copy it to the default geocode index file
 
                     if metadata.is_some() {
-                        let _ =
-                            index_storage.dump_to(active_geocode_index_file.clone(), &engine_data);
+                        // COPY the file; do not re-serialize the loaded engine.
+                        // `Storage::dump_to` rewrote the index 696 bytes shorter (for every
+                        // index, whatever its size) and the result could not be loaded at all -
+                        // "Error initializing Engine: subtree pointer overran range". Since its
+                        // return value was also discarded, `index-load` reported success and left
+                        // an unusable index in place. The source is already a valid index file, so
+                        // copying it is exact and cannot corrupt it.
+                        let active_index_path = PathBuf::from(&active_geocode_index_file);
+                        let same_file = loaded_index_file
+                            .canonicalize()
+                            .ok()
+                            .zip(active_index_path.canonicalize().ok())
+                            .is_some_and(|(from, to)| from == to);
+                        if !same_file {
+                            fs::copy(&loaded_index_file, &active_index_path).map_err(|e| {
+                                CliError::Other(format!(
+                                    "Could not install {} as the active Geonames index \
+                                     ({active_geocode_index_file}): {e}",
+                                    loaded_index_file.display()
+                                ))
+                            })?;
+                        }
                         winfo!(
                             "Valid Geonames index file {index_file} successfully copied to \
                              {active_geocode_index_file}. It will be used from now on or until \

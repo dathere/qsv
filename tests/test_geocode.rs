@@ -2300,16 +2300,62 @@ fn geocode_index_load_accepts_a_valid_index() {
     // ready-made valid index to exercise the explicit-path form with - no second download
     let decompressed = wrk.path("15000.rkyv");
     if decompressed.exists() {
-        let mut cmd2 = wrk.command("geocode");
-        cmd2.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
-        cmd2.arg("index-load").arg(decompressed);
-        let out2 = wrk.output(&mut cmd2);
+        let mut cmd_2 = wrk.command("geocode");
+        cmd_2.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+        cmd_2.arg("index-load").arg(&decompressed);
+        let out2 = wrk.output(&mut cmd_2);
         let stderr2 = String::from_utf8_lossy(&out2.stderr);
         assert!(
             out2.status.success(),
             "an explicit .rkyv index path must load: {stderr2}"
         );
+
+        // The installed index must be BYTE-IDENTICAL to the source. Re-serializing the loaded
+        // engine instead of copying the file produced an index 696 bytes shorter that could not
+        // be loaded at all, while index-load still reported success - so asserting only on the
+        // exit status let a corrupt install pass.
+        let installed = wrk.path(&format!(
+            "qsv-{}-geocode-index.rkyv",
+            env!("CARGO_PKG_VERSION")
+        ));
+        assert!(
+            installed.exists(),
+            "index-load must install the active index"
+        );
+        // compare CONTENT, not just length: the corruption this pins was a re-serialization, and
+        // a same-sized rewrite would sail straight past a length check
+        let loaded_bytes = std::fs::read(&decompressed).unwrap();
+        let installed_bytes = std::fs::read(&installed).unwrap();
+        assert!(
+            loaded_bytes == installed_bytes,
+            "the installed index must be a byte-exact copy of the one that was loaded (loaded {} \
+             bytes, installed {} bytes)",
+            loaded_bytes.len(),
+            installed_bytes.len()
+        );
     }
+
+    // and the end that actually matters: the installed index must WORK
+    wrk.create_from_string("city.csv", "city\nParis\n");
+    let mut cmd_3 = wrk.command("geocode");
+    cmd_3.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd_3.args([
+        "suggest",
+        "city",
+        "--formatstr",
+        "%dyncols: {c:name}",
+        "city.csv",
+    ]);
+    let out3 = wrk.output(&mut cmd_3);
+    let stderr3 = String::from_utf8_lossy(&out3.stderr);
+    assert!(
+        out3.status.success(),
+        "the index index-load installed must be usable: {stderr3}"
+    );
+    assert!(
+        String::from_utf8_lossy(&out3.stdout).contains("Paris"),
+        "the installed index must resolve a well-known city"
+    );
 }
 
 #[test]

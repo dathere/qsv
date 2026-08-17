@@ -1314,12 +1314,35 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                             .zip(active_index_path.canonicalize().ok())
                             .is_some_and(|(from, to)| from == to);
                         if !same_file {
-                            fs::copy(&loaded_index_file, &active_index_path).map_err(|e| {
+                            // Stage beside the destination, then RENAME over it. Copying straight
+                            // onto the active index would leave the user's previously working
+                            // index truncated if the copy died partway (out of space, killed) -
+                            // the exact failure this whole fix exists to prevent. A rename within
+                            // the same directory is atomic, so the active index is either the old
+                            // one or the new one, never a partial write.
+                            let staged_index_path = active_index_path.with_file_name(format!(
+                                "{}.{}.tmp",
+                                active_index_path
+                                    .file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy(),
+                                std::process::id()
+                            ));
+                            let install_err = |e: std::io::Error| {
                                 CliError::Other(format!(
                                     "Could not install {} as the active Geonames index \
                                      ({active_geocode_index_file}): {e}",
                                     loaded_index_file.display()
                                 ))
+                            };
+                            fs::copy(&loaded_index_file, &staged_index_path).map_err(|e| {
+                                // a partial staged file is ours alone, so clean it up
+                                let _ = fs::remove_file(&staged_index_path);
+                                install_err(e)
+                            })?;
+                            fs::rename(&staged_index_path, &active_index_path).map_err(|e| {
+                                let _ = fs::remove_file(&staged_index_path);
+                                install_err(e)
                             })?;
                         }
                         winfo!(

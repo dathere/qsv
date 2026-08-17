@@ -2322,25 +2322,31 @@ fn geocode_index_load_accepts_a_valid_index() {
             installed.exists(),
             "index-load must install the active index"
         );
-        assert_eq!(
-            std::fs::metadata(&decompressed).unwrap().len(),
-            std::fs::metadata(&installed).unwrap().len(),
-            "the installed index must be a byte-exact copy of the one that was loaded"
+        // compare CONTENT, not just length: the corruption this pins was a re-serialization, and
+        // a same-sized rewrite would sail straight past a length check
+        let loaded_bytes = std::fs::read(&decompressed).unwrap();
+        let installed_bytes = std::fs::read(&installed).unwrap();
+        assert!(
+            loaded_bytes == installed_bytes,
+            "the installed index must be a byte-exact copy of the one that was loaded (loaded {} \
+             bytes, installed {} bytes)",
+            loaded_bytes.len(),
+            installed_bytes.len()
         );
     }
 
     // and the end that actually matters: the installed index must WORK
     wrk.create_from_string("city.csv", "city\nParis\n");
-    let mut cmd3 = wrk.command("geocode");
-    cmd3.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
-    cmd3.args([
+    let mut cmd_3 = wrk.command("geocode");
+    cmd_3.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd_3.args([
         "suggest",
         "city",
         "--formatstr",
         "%dyncols: {c:name}",
         "city.csv",
     ]);
-    let out3 = wrk.output(&mut cmd3);
+    let out3 = wrk.output(&mut cmd_3);
     let stderr3 = String::from_utf8_lossy(&out3.stderr);
     assert!(
         out3.status.success(),

@@ -659,10 +659,81 @@ struct Args {
     flag_older_than:     Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Admin1Filter {
     admin1_string: String,
     is_code:       bool,
+}
+
+/// Parse raw `--country` / `--admin1` strings into the filter lists the search paths consume.
+///
+/// Shared by `geocode`'s own suggest path and by the `pub` region resolvers `viz` calls (issue
+/// #4427), so the code-vs-name classification and the "a common `XX.` admin1 prefix implies the
+/// country" rule cannot drift between callers.
+///
+/// An admin1 entry matching [`ADMIN1_CODE_REGEX`] is kept verbatim as a CODE; anything else is
+/// lowercased and matched later as a NAME prefix. When every entry is a code sharing one country
+/// prefix, that country is inferred; otherwise an admin1 filter without a country is an error,
+/// because a bare admin1 name is not unique across countries.
+fn parse_region_filters(
+    country_list: Option<&str>,
+    admin1_list: Option<&str>,
+) -> CliResult<(Option<Vec<String>>, Option<Vec<Admin1Filter>>)> {
+    let mut admin1_code_prefix = String::new();
+    let mut admin1_same_prefix = true;
+    let mut country_list = country_list.map(ToString::to_string);
+
+    let admin1_filter_list = if let Some(admin1_list) = admin1_list {
+        let admin1_code_re = ADMIN1_CODE_REGEX();
+        let list = admin1_list
+            .split(',')
+            .map(|s| {
+                let temp_s = s.trim();
+                let is_code_flag = admin1_code_re.is_match(temp_s);
+                Admin1Filter {
+                    admin1_string: if is_code_flag {
+                        if admin1_same_prefix {
+                            if admin1_code_prefix.is_empty() {
+                                admin1_code_prefix = temp_s[0..3].to_string();
+                            } else if admin1_code_prefix != temp_s[0..3] {
+                                // different country prefixes, so the country can't be inferred
+                                admin1_same_prefix = false;
+                            }
+                        }
+                        temp_s.to_string()
+                    } else {
+                        // its an admin1 name, lowercase it for case-insensitive starts_with()
+                        temp_s.to_lowercase()
+                    },
+                    is_code:       is_code_flag,
+                }
+            })
+            .collect::<Vec<Admin1Filter>>();
+
+        if country_list.is_none() {
+            if !admin1_code_prefix.is_empty() && admin1_same_prefix {
+                admin1_code_prefix.pop(); // remove the dot
+                country_list = Some(admin1_code_prefix);
+            } else {
+                return fail_incorrectusage_clierror!(
+                    "If --admin1 is set, --country must also be set unless admin1 codes are used \
+                     with a common country prefix (e.g. US.CA,US.NY,US.OH, etc)."
+                );
+            }
+        }
+        Some(list)
+    } else {
+        None
+    };
+
+    let country_filter_list = country_list.map(|country_list| {
+        country_list
+            .split(',')
+            .map(|s| s.trim().to_ascii_uppercase())
+            .collect::<Vec<String>>()
+    });
+
+    Ok((country_filter_list, admin1_filter_list))
 }
 
 #[derive(Clone)]
@@ -1355,88 +1426,26 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         wtr.write_record(&headers)?;
     }
 
-    // setup admin1 filter for Suggest/Now
-    let mut admin1_code_prefix = String::new();
-    let mut admin1_same_prefix = true;
-    let mut flag_country = args.flag_country.clone();
-    let admin1_filter_list = match geocode_cmd {
+    // setup the country & admin1 filters. Both suggest/now and reverse/now support the country
+    // filter (countryinfo/now ignores it); only suggest/now support the admin1 filter.
+    // The parsing rules live in parse_region_filters so `viz`'s region resolvers share them.
+    let (country_filter_list, admin1_filter_list) = match geocode_cmd {
         GeocodeSubCmd::Suggest | GeocodeSubCmd::SuggestNow => {
-            // admin1 filter: if all uppercase, search for admin1 code, else, search for admin1 name
-            // see https://download.geonames.org/export/dump/admin1CodesASCII.txt for valid codes
-            if let Some(admin1_list) = args.flag_admin1.clone() {
-                // this regex matches admin1 codes (e.g. US.NY, JP.40, CN.23, HK.NYL, GG.6417214)
-                let admin1_code_re = ADMIN1_CODE_REGEX();
-                let admin1_list_work = Some(
-                    admin1_list
-                        .split(',')
-                        .map(|s| {
-                            let temp_s = s.trim();
-                            let is_code_flag = admin1_code_re.is_match(temp_s);
-                            Admin1Filter {
-                                admin1_string: if is_code_flag {
-                                    if admin1_same_prefix {
-                                        // check if all admin1 codes have the same prefix
-                                        if admin1_code_prefix.is_empty() {
-                                            // first admin1 code, so set the prefix
-                                            admin1_code_prefix = temp_s[0..3].to_string();
-                                        } else if admin1_code_prefix != temp_s[0..3] {
-                                            // admin1 codes have different prefixes, so we can't
-                                            // infer the country from the admin1 code
-                                            admin1_same_prefix = false;
-                                        }
-                                    }
-                                    temp_s.to_string()
-                                } else {
-                                    // its an admin1 name, lowercase it
-                                    // so we can do case-insensitive starts_with() comparisons
-                                    temp_s.to_lowercase()
-                                },
-                                is_code:       is_code_flag,
-                            }
-                        })
-                        .collect::<Vec<Admin1Filter>>(),
-                );
-
-                // if admin1 is set, country must also be set
-                // however, if all admin1 codes have the same prefix, we can infer the country from
-                // the admin1 codes. Otherwise, we can't infer the country from the
-                // admin1 code, so we error out.
-                if args.flag_admin1.is_some() && flag_country.is_none() {
-                    if !admin1_code_prefix.is_empty() && admin1_same_prefix {
-                        admin1_code_prefix.pop(); // remove the dot
-                        flag_country = Some(admin1_code_prefix);
-                    } else {
-                        return fail_incorrectusage_clierror!(
-                            "If --admin1 is set, --country must also be set unless admin1 codes \
-                             are used with a common country prefix (e.g. US.CA,US.NY,US.OH, etc)."
-                        );
-                    }
-                }
-                admin1_list_work
-            } else {
-                None
-            }
+            parse_region_filters(args.flag_country.as_deref(), args.flag_admin1.as_deref())?
         },
         _ => {
-            // reverse/now and countryinfo/now subcommands don't support admin1 filter
             if args.flag_admin1.is_some() {
                 return fail_incorrectusage_clierror!(
                     "reverse/reversenow & countryinfo subcommands do not support the --admin1 \
                      filter option."
                 );
             }
-            None
+            (
+                parse_region_filters(args.flag_country.as_deref(), None)?.0,
+                None,
+            )
         },
-    }; // end setup admin1 filters
-
-    // setup country filter - both suggest/now and reverse/now support country filters
-    // countryinfo/now subcommands ignores the country filter
-    let country_filter_list = flag_country.map(|country_list| {
-        country_list
-            .split(',')
-            .map(|s| s.trim().to_ascii_uppercase())
-            .collect::<Vec<String>>()
-    });
+    };
 
     log::debug!("country_filter_list: {country_filter_list:?}");
     log::debug!("admin1_filter_list: {admin1_filter_list:?}");
@@ -3642,6 +3651,126 @@ pub struct GeoRegion {
     pub us_state_code: Option<String>,
 }
 
+/// How many candidates the HINTED forward path scores before applying an admin1 hint.
+///
+/// Deliberately separate from [`SUGGEST_ADMIN1_LIMIT`], which feeds `search_index_uncached`'s
+/// `unwrap_or(first_result)` fallback — raising that would change which record `geocode suggest`
+/// returns. Generous here because geosuggest sorts and dedupes the FULL candidate set before
+/// `take(limit)` (geosuggest-core `Engine::suggest`), so a larger limit costs one longer `Vec` and
+/// no extra scanning or scoring. It has to be generous: a prefix match scores exactly 1.0 and ties
+/// break by population descending, so a small town in the hinted subdivision sits below every
+/// same-named larger city (measured: `Springfield` + `US.CO` needs far more than 10).
+static SUGGEST_HINT_LIMIT: usize = 250;
+
+/// Matches a bare (unqualified) admin1 hint token, e.g. `AL`, `NYL`, `40`.
+///
+/// Minimum 2 characters: the admin1 code scan is a `starts_with`, so a 1-character `A` would
+/// prefix-match `US.AK`, `US.AL`, `US.AR` and `US.AZ` alike.
+static ADMIN1_BARE_REGEX: fn() -> &'static Regex = || regex_oncelock!(r"^[A-Za-z0-9]{2,8}$");
+
+/// The outcome of resolving one place name, distinguishing "nothing matched" from "a place matched
+/// but the caller's hint excluded it" so a caller can report the difference instead of silently
+/// dropping the row (issue #4427).
+#[derive(Clone, Debug)]
+pub enum ForwardMatch {
+    /// A place matched, and satisfied the hint (if any).
+    Matched(GeoRegion),
+    /// Nothing resolvable matched the name.
+    NoMatch,
+    /// A place DID match, but the hint excluded it. Carries what was found so the report can name
+    /// it ("Montgomery matched Sahiwal District, PK").
+    HintRejected(GeoRegion),
+}
+
+/// A per-row geocoding hint: which country (and, for forward lookups, which admin1 subdivision) a
+/// place is expected to be in.
+///
+/// Fields are private because [`Admin1Filter`] is an internal detail; build one with
+/// [`RegionHint::parse`]. A default (empty) hint filters nothing, which is the pre-#4427 behavior.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct RegionHint {
+    countries: Option<Vec<String>>,
+    admin1:    Option<Vec<Admin1Filter>>,
+}
+
+impl RegionHint {
+    /// Parse one row's raw hint cells.
+    ///
+    /// `country` must be an ISO-3166-1 alpha-2 code (`US`); a country NAME is rejected, because the
+    /// Geonames engine filters on codes and qsv has no name-to-code table. `admin1` is either a
+    /// qualified Geonames code (`US.AL`, per [`ADMIN1_CODE_REGEX`]) or a bare token promoted to
+    /// `<CC>.<TOKEN>` using the effective country (`AL` -> `US.AL`); when only a qualified code is
+    /// given, the country is inferred from its prefix.
+    ///
+    /// A bare token is NEVER matched as an admin1 NAME. `geocode suggest`'s name path is a
+    /// case-insensitive `starts_with`, under which a hint of `AL` also accepts *Alaska* — exactly
+    /// the silent mis-resolution this hint exists to prevent.
+    pub fn parse(
+        country: Option<&str>,
+        admin1: Option<&str>,
+        default_country: Option<&str>,
+    ) -> CliResult<Self> {
+        // a nested fn rather than a closure: it must return a reference borrowed from its argument
+        fn cell(v: Option<&str>) -> Option<&str> {
+            v.map(str::trim).filter(|s| !s.is_empty())
+        }
+        let country = cell(country);
+        let admin1 = cell(admin1);
+
+        if let Some(c) = country
+            && !(c.len() == 2 && c.bytes().all(|b| b.is_ascii_alphabetic()))
+        {
+            return fail_incorrectusage_clierror!(
+                "Invalid country hint '{c}'. It must be an ISO-3166-1 alpha-2 code (e.g. US, GB, \
+                 BR), not a country name."
+            );
+        }
+
+        // an explicit country wins; otherwise fall back to the caller's default (e.g. `us` for a
+        // US-states choropleth), and failing that infer it from a qualified admin1 code's prefix
+        let mut effective_country = country
+            .or_else(|| cell(default_country))
+            .map(str::to_ascii_uppercase);
+
+        let admin1 = match admin1 {
+            None => None,
+            Some(a) if ADMIN1_CODE_REGEX().is_match(a) => {
+                if effective_country.is_none() {
+                    effective_country = Some(a[0..2].to_ascii_uppercase());
+                }
+                Some(a.to_string())
+            },
+            Some(a) if ADMIN1_BARE_REGEX().is_match(a) => {
+                let Some(cc) = effective_country.as_ref() else {
+                    return fail_incorrectusage_clierror!(
+                        "The admin1 hint '{a}' is unqualified, so it needs a country. Supply a \
+                         country hint, or use the qualified Geonames form (e.g. US.{}).",
+                        a.to_ascii_uppercase()
+                    );
+                };
+                Some(format!("{cc}.{}", a.to_ascii_uppercase()))
+            },
+            Some(a) => {
+                return fail_incorrectusage_clierror!(
+                    "Invalid admin1 hint '{a}'. Use a Geonames admin1 code (e.g. US.AL) or a bare \
+                     subdivision code of 2-8 alphanumerics (e.g. AL). Spelled-out names are not \
+                     accepted: they are matched by prefix, so 'AL' would silently accept Alaska."
+                );
+            },
+        };
+
+        Ok(Self {
+            countries: effective_country.map(|c| vec![c]),
+            admin1:    admin1.map(|code| {
+                vec![Admin1Filter {
+                    admin1_string: code,
+                    is_code:       true,
+                }]
+            }),
+        })
+    }
+}
+
 /// Load the shared Geonames engine (downloading the index on first use), run `f` against it, and
 /// return its owned result. Centralizes the index-resolution + tokio + `as_engine` boilerplate so
 /// the engine (which borrows `EngineData`) stays alive for the whole batch and is dropped after
@@ -3712,22 +3841,41 @@ fn cityrecord_to_region(
 /// matched or the match lacks a country. `Err` only on a hard setup failure — callers degrade
 /// gracefully, exactly like [`reverse_geocode_points`]. `lang` selects the localized-name language
 /// (defaults to `"en"`).
+///
+/// `hints` is either EMPTY or one [`RegionHint`] per point, and only its COUNTRY is honored here.
+/// This matters at national borders: reverse geocoding returns the nearest POPULATED PLACE, so a US
+/// point can resolve abroad (measured: San Ysidro CA -> Tijuana MX, Point Roberts WA -> Delta BC).
+/// A country hint keeps the answer in the intended country (issue #4427).
+///
+/// An admin1 hint is deliberately ignored: the nearest place to a point near a state line may
+/// legitimately sit in the neighboring subdivision, so filtering on it would discard good points.
+/// It does NOT fix county-level error either — the nearest populated place is not the containing
+/// region, which is why lat/lon is not a route to county resolution (see issue #4417).
 #[allow(clippy::cast_possible_truncation)]
 pub fn reverse_geocode_regions(
     points: &[(f64, f64)],
+    hints: &[RegionHint],
     lang: Option<&str>,
 ) -> CliResult<Vec<Option<GeoRegion>>> {
+    if !hints.is_empty() && hints.len() != points.len() {
+        return fail_clierror!(
+            "internal error: {} region hints for {} points.",
+            hints.len(),
+            points.len()
+        );
+    }
     let lang_lookup = lang.unwrap_or("en");
+    let empty_hint = RegionHint::default();
     with_geocode_engine(|engine| {
         points
             .iter()
-            .map(|&(lat, lon)| {
+            .enumerate()
+            .map(|(i, &(lat, lon))| {
                 if !((-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)) {
                     return None;
                 }
-                // turbofish pins the unused `countries` filter's element type (both filters None).
-                let search_result =
-                    engine.reverse::<String>((lat as f32, lon as f32), 1, None, None);
+                let countries = hints.get(i).unwrap_or(&empty_hint).countries.as_deref();
+                let search_result = engine.reverse((lat as f32, lon as f32), 1, None, countries);
                 let cityrecord = search_result?.into_iter().next().map(|ri| ri.city)?;
                 cityrecord_to_region(engine, cityrecord, lang_lookup)
             })
@@ -3737,26 +3885,141 @@ pub fn reverse_geocode_regions(
 
 /// Forward-geocode a batch of place names to region codes (see [`GeoRegion`]) via the same fuzzy
 /// `suggest` engine the `geocode suggest` subcommand uses, loading the engine ONCE. Returns one
-/// `Option<GeoRegion>` per input name (in order); `None` where no city matched or the match lacks
-/// a country. `Err` only on a hard setup failure. `lang` selects the localized-name language.
+/// [`ForwardMatch`] per input name, in order.
+///
+/// `hints` is either EMPTY (filter nothing — a bare name then matches every populated place on
+/// Earth, which is how this behaved before issue #4427) or exactly one [`RegionHint`] per name.
+///
+/// A hinted lookup is STRICT: when the hint excludes every candidate the result is
+/// [`ForwardMatch::HintRejected`], never a silent fallback to the top hit. That is the one place
+/// this diverges from `geocode suggest`, whose `--admin1` filter is advisory by design
+/// (`search_index_uncached`'s `unwrap_or(first_result)`) and stays that way.
+///
+/// `lang` selects the localized-name language. `Err` only on a hard setup failure, or on a hint the
+/// engine cannot honor.
 pub fn forward_geocode_regions(
     names: &[&str],
+    hints: &[RegionHint],
     lang: Option<&str>,
-) -> CliResult<Vec<Option<GeoRegion>>> {
+) -> CliResult<Vec<ForwardMatch>> {
+    if !hints.is_empty() && hints.len() != names.len() {
+        return fail_clierror!(
+            "internal error: {} region hints for {} place names.",
+            hints.len(),
+            names.len()
+        );
+    }
     let lang_lookup = lang.unwrap_or("en");
-    with_geocode_engine(|engine| {
-        names
+    let empty_hint = RegionHint::default();
+
+    // Dedupe the hints. Each lookup is a full parallel index scan, so both the hint table and the
+    // result memo are keyed by DISTINCT (name, hint) — a large dataset typically carries only a
+    // handful of distinct hints, and repeated place names are common.
+    let mut distinct: Vec<&RegionHint> = Vec::new();
+    let mut seen_hints: HashMap<&RegionHint, usize> = HashMap::new();
+    let row_hints: Vec<usize> = if hints.is_empty() {
+        distinct.push(&empty_hint);
+        vec![0; names.len()]
+    } else {
+        hints
             .iter()
-            .map(|name| {
-                // turbofish pins the unused `countries` filter's element type.
-                let cityrecord = engine
-                    .suggest::<String>(name, 1, None, None)
-                    .into_iter()
-                    .next()?;
-                cityrecord_to_region(engine, cityrecord, lang_lookup)
+            .map(|h| {
+                *seen_hints.entry(h).or_insert_with(|| {
+                    distinct.push(h);
+                    distinct.len() - 1
+                })
             })
             .collect()
-    })
+    };
+
+    with_geocode_engine(|engine| -> CliResult<Vec<ForwardMatch>> {
+        // The engine's country prefilter SILENTLY DROPS a code it doesn't know, leaving an empty
+        // country set that matches nothing at all — so a typo like "UK" (for "GB") would resolve
+        // zero rows and read as "none of your places exist". Validate up front and name the code.
+        for hint in &distinct {
+            if let Some(countries) = hint.countries.as_ref() {
+                for code in countries {
+                    if engine.country_info(code).is_none() {
+                        return fail_incorrectusage_clierror!(
+                            "Unknown country hint '{code}'. It must be an ISO-3166-1 alpha-2 code \
+                             known to the Geonames index (e.g. GB, not UK)."
+                        );
+                    }
+                }
+            }
+        }
+
+        let mut memo: HashMap<(&str, usize), ForwardMatch> = HashMap::new();
+        let mut resolved = Vec::with_capacity(names.len());
+        for (name, &hint_id) in names.iter().zip(row_hints.iter()) {
+            if let Some(hit) = memo.get(&(*name, hint_id)) {
+                resolved.push(hit.clone());
+                continue;
+            }
+            let found = resolve_hinted_name(engine, name, distinct[hint_id], lang_lookup);
+            memo.insert((*name, hint_id), found.clone());
+            resolved.push(found);
+        }
+        Ok(resolved)
+    })?
+}
+
+/// Resolve ONE place name under ONE hint, strictly.
+///
+/// Mirrors `search_index_uncached`'s admin1 scan (which is a `starts_with` over admin1 codes and
+/// names) with two deliberate differences: hint codes are compared for EQUALITY, since
+/// [`RegionHint::parse`] has already qualified them, and there is no `unwrap_or(first_result)` —
+/// an excluded candidate is reported, not substituted.
+fn resolve_hinted_name(
+    engine: &Engine,
+    name: &str,
+    hint: &RegionHint,
+    lang_lookup: &str,
+) -> ForwardMatch {
+    // An admin1 hint needs a deep candidate list (see SUGGEST_HINT_LIMIT); without one, the top
+    // match is all that is ever inspected, exactly as before.
+    let limit = if hint.admin1.is_some() {
+        SUGGEST_HINT_LIMIT
+    } else {
+        1
+    };
+    let candidates = engine.suggest(name, limit, None, hint.countries.as_deref());
+
+    let Some(first) = candidates.first().copied() else {
+        // Under a country prefilter an empty result cannot distinguish "no such place anywhere"
+        // from "none in the hinted country". Probe unfiltered so the caller can report which —
+        // a place that exists elsewhere is a rejected hint, not a missing name.
+        if hint.countries.is_some()
+            && let Some(elsewhere) = engine
+                .suggest::<String>(name, 1, None, None)
+                .into_iter()
+                .next()
+                .and_then(|cr| cityrecord_to_region(engine, cr, lang_lookup))
+        {
+            return ForwardMatch::HintRejected(elsewhere);
+        }
+        return ForwardMatch::NoMatch;
+    };
+
+    if let Some(filters) = hint.admin1.as_ref() {
+        let in_admin1 = candidates.iter().copied().find(|cr| {
+            cr.admin_division.as_ref().is_some_and(|ad| {
+                filters
+                    .iter()
+                    .any(|f| ad.code.as_str() == f.admin1_string.as_str())
+            })
+        });
+        return match in_admin1 {
+            Some(cr) => cityrecord_to_region(engine, cr, lang_lookup)
+                .map_or(ForwardMatch::NoMatch, ForwardMatch::Matched),
+            // the name resolves in this country, just not in the hinted subdivision
+            None => cityrecord_to_region(engine, first, lang_lookup)
+                .map_or(ForwardMatch::NoMatch, ForwardMatch::HintRejected),
+        };
+    }
+
+    cityrecord_to_region(engine, first, lang_lookup)
+        .map_or(ForwardMatch::NoMatch, ForwardMatch::Matched)
 }
 
 /// Per-country context for a batch of ISO-3166-1 alpha-2 codes, used by `viz smart` to annotate a

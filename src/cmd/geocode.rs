@@ -2278,7 +2278,7 @@ async fn load_engine_data_resolved(
     // default cities index file
     static DEFAULT_GEONAMES_CITIES_INDEX: u16 = 15000;
 
-    let index_file = std::path::Path::new(&geocode_index_file);
+    let index_file_exists = geocode_index_file.exists();
 
     // the file stem is used to detect the numeric shortcut (e.g. `index-load 15000`)
     let geocode_index_file_stem = geocode_index_file
@@ -2299,7 +2299,13 @@ async fn load_engine_data_resolved(
         None
     };
 
+    // a numeric shortcut names a prebuilt to FETCH, not a path, so the payload is staged in the
+    // geocode cache dir. Downloading to the argument as given wrote `1000` and `1000.rkyv` into
+    // whatever directory the command happened to run in.
+    let mut geocode_index_file = geocode_index_file;
     if let Some(shortcut) = numeric_shortcut {
+        geocode_index_file =
+            resolve_geocode_cache_dir("~/.qsv-cache")?.join(format!("cities{shortcut}.rkyv.sz"));
         if !PREBUILT_CITIES_INDEXES.contains(&shortcut) {
             return fail_incorrectusage_clierror!(
                 "Only the prebuilt cities indexes qsv publishes are supported via the numeric \
@@ -2352,11 +2358,11 @@ async fn load_engine_data_resolved(
                  Build it locally instead with `qsv geocode index-update --cities-url {shortcut}`."
             );
         }
-    } else if index_file.exists() {
+    } else if index_file_exists {
         // load existing local index
         progressbar.println(format!(
             "Loading existing Geonames index from {}",
-            index_file.display()
+            geocode_index_file.display()
         ));
     } else {
         // initial load or index-reset, download index file from qsv releases

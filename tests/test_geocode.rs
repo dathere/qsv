@@ -2275,6 +2275,45 @@ fn geocode_cache_roundtrip() {
 
 #[test]
 #[serial]
+fn geocode_index_load_accepts_a_valid_index() {
+    // issue #4431: index-load rejected EVERY index, including qsv's own published prebuilt,
+    // because it gated on `EngineData::metadata` from `Storage::load_from`, which never populates
+    // it. There was no success-path test, which is why it survived 37 releases. Covers both forms:
+    // the numeric shortcut, and an explicit .rkyv path.
+    let wrk = Workdir::new("geocode_index_load_accepts_a_valid_index");
+
+    let mut cmd = wrk.command("geocode");
+    cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd.arg("index-load").arg("15000");
+    let out = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "the prebuilt cities15000 index must load: {stderr}"
+    );
+    assert!(
+        !stderr.contains("is invalid"),
+        "a valid index must not be called invalid: {stderr}"
+    );
+
+    // the shortcut decompresses the payload beside itself, so the .rkyv it produced is a
+    // ready-made valid index to exercise the explicit-path form with - no second download
+    let decompressed = wrk.path("15000.rkyv");
+    if decompressed.exists() {
+        let mut cmd2 = wrk.command("geocode");
+        cmd2.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+        cmd2.arg("index-load").arg(decompressed);
+        let out2 = wrk.output(&mut cmd2);
+        let stderr2 = String::from_utf8_lossy(&out2.stderr);
+        assert!(
+            out2.status.success(),
+            "an explicit .rkyv index path must load: {stderr2}"
+        );
+    }
+}
+
+#[test]
+#[serial]
 fn geocode_index_load_invalid_shortcut() {
     // the index-load numeric shortcut only accepts 15000 (the prebuilt cities15000
     // index); any other number fails fast with an actionable error - no download

@@ -515,6 +515,23 @@ choropleth options:
                            column. Only valid with location modes iso3 or usa-states.
                            `viz choropleth` also reuses --value, --agg, --style and the
                            lat/lon options.
+    --geocode-country <col>
+                           Column holding each row's expected country, as an ISO-3166-1 alpha-2
+                           code (e.g. US, GB, BR). Without it a place-name search spans every
+                           country, so US city names have resolved to Pakistan and the UK, and a
+                           point near a border takes the nearest FOREIGN place. Rows whose match
+                           falls outside the hint are counted and reported, never silently
+                           dropped. Country NAMES are not accepted, only codes. With
+                           location-mode usa-states the country defaults to `us`, so no hint is
+                           needed there. Applies to both geocode sources.
+    --geocode-admin1 <col>
+                           Column holding each row's expected admin1 (state/province), either as
+                           a qualified Geonames code (US.AL) or a bare subdivision code (AL)
+                           qualified by the country. Narrows a place-name search within a
+                           country, for names that are ambiguous on their own (there are dozens
+                           of US Springfields). Spelled-out names are rejected: admin1 names are
+                           matched by prefix, so `AL` would silently accept Alaska. Valid only
+                           with a locations name column, not with lat/lon points.
     --no-snap              For point-in-polygon binning (lat/lon points binned into a
                            custom GeoJSON without geocoding): do not snap at all — drop
                            every point that falls outside every region. By default an
@@ -1814,6 +1831,8 @@ struct Args {
     flag_denominator:        Option<SelectColumns>,
     flag_denominator_unit:   Option<String>,
     flag_geocode:            bool,
+    flag_geocode_country:    Option<SelectColumns>,
+    flag_geocode_admin1:     Option<SelectColumns>,
     flag_no_snap:            bool,
     flag_snap_max_dist:      Option<f64>,
     flag_bins:               Option<usize>,
@@ -2037,6 +2056,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
              denominator column in the data dictionary via x-qsv.denominator, or read it from the \
              boundary file with --denominator-key."
         );
+    }
+
+    // The geocode hints only mean anything to the geocode engine on a choropleth. Rejecting them
+    // elsewhere follows the --denominator rule above: a flag that validates and is then silently
+    // ignored is worse than an error naming the mistake (issue #4427).
+    if let Some(hint_flag) = if args.flag_geocode_country.is_some() {
+        Some("--geocode-country")
+    } else if args.flag_geocode_admin1.is_some() {
+        Some("--geocode-admin1")
+    } else {
+        None
+    } {
+        if !args.cmd_choropleth {
+            return fail_incorrectusage_clierror!(
+                "{hint_flag} only applies to `viz choropleth --geocode`."
+            );
+        }
+        if !args.flag_geocode {
+            return fail_incorrectusage_clierror!(
+                "{hint_flag} constrains the geocode engine, so it needs --geocode. Without it, \
+                 --locations values are matched against the boundary features directly and no \
+                 geocoding happens."
+            );
+        }
     }
 
     // The parsed+sanitized --geojson document, loaded ONCE here and threaded into whichever
@@ -8405,12 +8448,20 @@ fn choropleth_pip_locations(
 /// reverse-geocode `--lat`/`--lon` points, or forward-geocode a `--locations` name column, into
 /// ISO-3 / US-state codes per `--location-mode`, then aggregate the `--value` measure (or row
 /// counts) per region.
+///
+/// Both sources are constrained by optional per-row hints (`--geocode-country`,
+/// `--geocode-admin1`), and a `usa-states` map defaults its country to `us`. Without that, the
+/// engine searches every populated place on Earth: US city names resolved abroad (Montgomery ->
+/// Pakistan) and a border point took the nearest FOREIGN place (San Ysidro CA -> Tijuana MX) —
+/// drawn as real data under `iso3`, silently dropped under `usa-states` (issue #4427).
 #[cfg(feature = "geocode")]
 fn choropleth_geocoded_locations(
     args: &Args,
     mode: LocationMode,
     agg: Agg,
 ) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
+    use crate::cmd::geocode::{ForwardMatch, RegionHint};
+
     if !matches!(mode, LocationMode::Iso3 | LocationMode::UsaStates) {
         return fail_incorrectusage_clierror!(
             "--geocode only resolves --location-mode iso3 or usa-states (the codes geocode can \
@@ -8425,6 +8476,15 @@ fn choropleth_geocoded_locations(
              name column (forward)."
         );
     }
+    // An admin1 hint only constrains a NAME search. The nearest populated place to a point near a
+    // state line may legitimately sit in the neighboring subdivision, so filtering points on it
+    // would discard good rows.
+    if has_latlon && args.flag_geocode_admin1.is_some() {
+        return fail_incorrectusage_clierror!(
+            "--geocode-admin1 only applies to a --locations name column. For --lat/--lon points \
+             use --geocode-country, which keeps a border point in the intended country."
+        );
+    }
 
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let value_idx = match args.flag_value.as_ref() {
@@ -8435,15 +8495,33 @@ fn choropleth_geocoded_locations(
         Some(i) => col_label(&headers, i, nh),
         None => t!("viz.chart.count").into_owned(),
     };
+    let country_idx = match args.flag_geocode_country.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "geocode-country")?),
+        None => None,
+    };
+    let admin1_idx = match args.flag_geocode_admin1.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "geocode-admin1")?),
+        None => None,
+    };
+    // A US-states choropleth already knows its country, so default it: unambiguous, and on its own
+    // it stops rows resolving abroad and then vanishing uncounted.
+    let usa_states = matches!(mode, LocationMode::UsaStates);
+    let default_country = if usa_states { Some("us") } else { None };
 
-    // Collect the per-row geocode query + aligned measure, skipping rows missing inputs.
+    // Collect the per-row geocode query + aligned measure + aligned hint, skipping rows missing
+    // inputs. Distinct hint-cell pairs are parsed once (see `geocoded_row_hint`).
+    let mut hint_cache: std::collections::HashMap<(String, String), RegionHint> =
+        std::collections::HashMap::new();
     let mut values: Vec<f64> = Vec::new();
+    let mut hints: Vec<RegionHint> = Vec::new();
     let mut record = csv::ByteRecord::new();
+    let mut row = 0_u64;
     let regions = if has_latlon {
         let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
         let lon_idx = resolve_one(args.flag_lon.as_ref(), &headers, nh, "lon")?;
         let mut points: Vec<(f64, f64)> = Vec::new();
         while rdr.read_byte_record(&mut record)? {
+            row += 1;
             let (Some(lat), Some(lon)) = (
                 parse_f64(record.get(lat_idx)),
                 parse_f64(record.get(lon_idx)),
@@ -8457,14 +8535,27 @@ fn choropleth_geocoded_locations(
                 },
                 None => 1.0,
             };
+            hints.push(geocoded_row_hint(
+                &mut hint_cache,
+                &record,
+                country_idx,
+                None,
+                default_country,
+                usa_states,
+                row,
+            )?);
             points.push((lat, lon));
             values.push(value);
         }
-        crate::cmd::geocode::reverse_geocode_regions(&points, None)?
+        crate::cmd::geocode::reverse_geocode_regions(&points, &hints, None)?
+            .into_iter()
+            .map(|r| r.map_or(ForwardMatch::NoMatch, ForwardMatch::Matched))
+            .collect()
     } else {
         let name_idx = resolve_one(args.flag_locations.as_ref(), &headers, nh, "locations")?;
         let mut names: Vec<String> = Vec::new();
         while rdr.read_byte_record(&mut record)? {
+            row += 1;
             let name = cell_to_string(record.get(name_idx));
             if name.is_empty() {
                 continue;
@@ -8476,31 +8567,171 @@ fn choropleth_geocoded_locations(
                 },
                 None => 1.0,
             };
+            hints.push(geocoded_row_hint(
+                &mut hint_cache,
+                &record,
+                country_idx,
+                admin1_idx,
+                default_country,
+                usa_states,
+                row,
+            )?);
             names.push(name);
             values.push(value);
         }
         let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
-        crate::cmd::geocode::forward_geocode_regions(&name_refs, None)?
+        crate::cmd::geocode::forward_geocode_regions(&name_refs, &hints, None)?
     };
 
-    // Map each resolved region to the code for the requested mode; drop rows that didn't resolve.
+    // Map each resolved region to the code for the requested mode, COUNTING what falls out rather
+    // than dropping it silently. Units matter as much as rows: an unreported drop understates the
+    // measure, which is what made #4427 invisible.
     let mut locations: Vec<String> = Vec::with_capacity(regions.len());
     let mut kept_values: Vec<f64> = Vec::with_capacity(regions.len());
-    for (region, value) in regions.into_iter().zip(values) {
-        let code = region.and_then(|r| match mode {
-            LocationMode::Iso3 => (!r.iso3.is_empty()).then_some(r.iso3),
-            LocationMode::UsaStates => r.us_state_code,
-            _ => None,
-        });
-        if let Some(code) = code {
-            locations.push(code);
-            kept_values.push(value);
+    let (mut no_match, mut no_match_units) = (0_u64, 0.0_f64);
+    let (mut rejected, mut rejected_units) = (0_u64, 0.0_f64);
+    let (mut unmapped, mut unmapped_units) = (0_u64, 0.0_f64);
+    let mut exemplars: Vec<String> = Vec::new();
+    for (found, value) in regions.into_iter().zip(values) {
+        match found {
+            ForwardMatch::Matched(r) => {
+                let code = match mode {
+                    LocationMode::Iso3 => (!r.iso3.is_empty()).then_some(r.iso3),
+                    LocationMode::UsaStates => r.us_state_code,
+                    _ => None,
+                };
+                if let Some(code) = code {
+                    locations.push(code);
+                    kept_values.push(value);
+                } else {
+                    unmapped += 1;
+                    unmapped_units += value;
+                }
+            },
+            ForwardMatch::NoMatch => {
+                no_match += 1;
+                no_match_units += value;
+            },
+            ForwardMatch::HintRejected(r) => {
+                rejected += 1;
+                rejected_units += value;
+                if exemplars.len() < 3 {
+                    let where_found = if r.admin1_name.is_empty() {
+                        r.country_name.clone()
+                    } else {
+                        format!("{}, {}", r.admin1_name, r.iso2)
+                    };
+                    if !exemplars.contains(&where_found) {
+                        exemplars.push(where_found);
+                    }
+                }
+            },
         }
     }
+
+    let dropped = no_match + rejected + unmapped;
+    if dropped > 0 {
+        // `[f64].iter().sum()` over an EMPTY slice yields negative zero, which Display renders as
+        // "-0" - so a run that resolved nothing reported "-0 of 1 count". Normalize every total.
+        let unsign = |x: f64| if x == 0.0 { 0.0 } else { x };
+        let kept_units = unsign(kept_values.iter().sum());
+        let (no_match_units, rejected_units, unmapped_units) = (
+            unsign(no_match_units),
+            unsign(rejected_units),
+            unsign(unmapped_units),
+        );
+        let total_units = kept_units + no_match_units + rejected_units + unmapped_units;
+        let mut note = format!(
+            "viz: --geocode resolved {kept} of {total} rows ({kept_units} of {total_units} \
+             {measure_label}). Unresolved rows are not charted.",
+            kept = locations.len(),
+            total = locations.len() as u64 + dropped,
+        );
+        let plural = |n: u64| if n == 1 { "row" } else { "rows" };
+        if no_match > 0 {
+            note.push_str(&format!(
+                "\n  {no_match} {} ({no_match_units}) matched no known place.",
+                plural(no_match)
+            ));
+        }
+        if rejected > 0 {
+            note.push_str(&format!(
+                "\n  {rejected} {} ({rejected_units}) matched a place outside the hint{}.",
+                plural(rejected),
+                if exemplars.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (e.g. {})", exemplars.join("; "))
+                }
+            ));
+        }
+        if unmapped > 0 {
+            note.push_str(&format!(
+                "\n  {unmapped} {} ({unmapped_units}) resolved outside --location-mode {}.",
+                plural(unmapped),
+                if usa_states { "usa-states" } else { "iso3" }
+            ));
+        }
+        viz_note(&note);
+    }
+    if locations.is_empty() && dropped > 0 {
+        return fail_incorrectusage_clierror!(
+            "--geocode resolved none of {dropped} rows. Check the --locations place names (or \
+             --lat/--lon), and any --geocode-country / --geocode-admin1 hint - a hint that no \
+             candidate satisfies rejects every row."
+        );
+    }
+
     let (locs, z) = aggregate(locations, kept_values, agg);
     let include_pct = matches!(agg, Agg::Count | Agg::Sum);
     let hover_text = choropleth_hover_text(&locs, &z, None, &measure_label, include_pct);
     Ok((locs, z, measure_label, hover_text))
+}
+
+/// Build one row's [`RegionHint`] from the optional hint columns, memoizing DISTINCT cell pairs so
+/// a 50k-row file parses a handful of hints rather than 50k. Errors name the row, since an invalid
+/// hint cell is otherwise hard to find in a large file.
+#[cfg(feature = "geocode")]
+#[allow(clippy::too_many_arguments)]
+fn geocoded_row_hint(
+    cache: &mut std::collections::HashMap<(String, String), crate::cmd::geocode::RegionHint>,
+    record: &csv::ByteRecord,
+    country_idx: Option<usize>,
+    admin1_idx: Option<usize>,
+    default_country: Option<&str>,
+    usa_states: bool,
+    row: u64,
+) -> CliResult<crate::cmd::geocode::RegionHint> {
+    let country = country_idx.map(|i| cell_to_string(record.get(i)));
+    let admin1 = admin1_idx.map(|i| cell_to_string(record.get(i)));
+    let key = (
+        country.clone().unwrap_or_default(),
+        admin1.clone().unwrap_or_default(),
+    );
+    if let Some(hit) = cache.get(&key) {
+        return Ok(hit.clone());
+    }
+    // a US-states map with a non-US country hint is self-contradictory: nothing it resolves could
+    // ever be charted, so say so instead of reporting every row unresolved
+    if usa_states
+        && let Some(c) = country.as_deref().map(str::trim).filter(|c| !c.is_empty())
+        && !c.eq_ignore_ascii_case("us")
+    {
+        return fail_incorrectusage_clierror!(
+            "--geocode-country is '{c}' on row {row}, but --location-mode usa-states can only \
+             chart US regions."
+        );
+    }
+    let hint = match crate::cmd::geocode::RegionHint::parse(
+        country.as_deref(),
+        admin1.as_deref(),
+        default_country,
+    ) {
+        Ok(hint) => hint,
+        Err(e) => return fail_incorrectusage_clierror!("{e} (row {row})"),
+    };
+    cache.insert(key, hint.clone());
+    Ok(hint)
 }
 
 /// Non-geocode build: `--geocode` is unsupported, so reject it with an actionable message.
@@ -24198,7 +24429,9 @@ fn tally(keys: impl Iterator<Item = String>) -> (Vec<String>, HashMap<String, f6
 fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
     let points: Vec<(f64, f64)> = lats.iter().copied().zip(lons.iter().copied()).collect();
     let regions: Vec<crate::cmd::geocode::GeoRegion> =
-        crate::cmd::geocode::reverse_geocode_regions(&points, None)
+        // deliberately UNhinted: this panel picks per-state vs per-country from what actually
+        // resolves, so constraining the country up front would prejudge that decision
+        crate::cmd::geocode::reverse_geocode_regions(&points, &[], None)
             .ok()?
             .into_iter()
             .flatten()

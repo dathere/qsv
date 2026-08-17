@@ -11488,6 +11488,386 @@ fn viz_choropleth_geocode_source_conflict_errors() {
     wrk.assert_err(&mut cmd);
 }
 
+// ---------------------------------------------------------------------------------------------
+// #4427: the geocode engine was searching every populated place on Earth. The scope/shape gates
+// below are index-free — they fire in `run` or in the read pass, before the engine is loaded.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn viz_choropleth_geocode_hint_requires_geocode() {
+    let wrk = Workdir::new("viz_choropleth_geocode_hint_requires_geocode");
+    wrk.create_from_string("c.csv", "city,cc\nMontgomery,US\n");
+
+    let mut cmd = wrk.command("viz");
+    // a hint constrains the geocode engine, so without --geocode it would be silently ignored
+    cmd.args([
+        "choropleth",
+        "c.csv",
+        "--locations",
+        "city",
+        "--geocode-country",
+        "cc",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--geocode"),
+        "the error should name the flag it needs"
+    );
+}
+
+#[test]
+fn viz_choropleth_geocode_hint_wrong_subcommand_errors() {
+    let wrk = Workdir::new("viz_choropleth_geocode_hint_wrong_subcommand_errors");
+    wrk.create_from_string("c.csv", "city,cc,n\nMontgomery,US,1\n");
+
+    let mut cmd = wrk.command("viz");
+    // same rule as --denominator: a flag that validates and is then ignored is worse than an error
+    cmd.args([
+        "bar",
+        "c.csv",
+        "--x",
+        "city",
+        "--y",
+        "n",
+        "--geocode-country",
+        "cc",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_admin1_hint_rejects_latlon() {
+    let wrk = Workdir::new("viz_choropleth_geocode_admin1_hint_rejects_latlon");
+    wrk.create_from_string("pts.csv", "lat,lon,st\n40.71,-74.01,US.NY\n");
+
+    let mut cmd = wrk.command("viz");
+    // an admin1 hint is forward-only: the nearest place to a point near a state line may
+    // legitimately sit in the neighboring state
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--geocode",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geocode-admin1",
+        "st",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_country_hint_rejects_country_name() {
+    let wrk = Workdir::new("viz_choropleth_geocode_country_hint_rejects_country_name");
+    // there is no name->ISO2 table, and the engine filters on codes: a name must not be ignored
+    wrk.create_from_string("c.csv", "city,cc\nSao Paulo,Brazil\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "c.csv",
+        "--geocode",
+        "--locations",
+        "city",
+        "--geocode-country",
+        "cc",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("alpha-2"));
+}
+
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_admin1_hint_rejects_spelled_out_name() {
+    let wrk = Workdir::new("viz_choropleth_geocode_admin1_hint_rejects_spelled_out_name");
+    // admin1 NAMES are matched by prefix, so "AL" would silently accept Alaska - reject names
+    wrk.create_from_string("c.csv", "city,st\nBirmingham,Alabama\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "c.csv",
+        "--geocode",
+        "--locations",
+        "city",
+        "--location-mode",
+        "usa-states",
+        "--geocode-admin1",
+        "st",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_usa_states_rejects_foreign_country_hint() {
+    let wrk = Workdir::new("viz_choropleth_geocode_usa_states_rejects_foreign_country_hint");
+    wrk.create_from_string("c.csv", "city,cc\nBirmingham,GB\n");
+
+    let mut cmd = wrk.command("viz");
+    // a US-states map hinted to another country could never chart anything it resolves
+    cmd.args([
+        "choropleth",
+        "c.csv",
+        "--geocode",
+        "--locations",
+        "city",
+        "--location-mode",
+        "usa-states",
+        "--geocode-country",
+        "cc",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+// ---------------------------------------------------------------------------------------------
+// #4427 regression set. These DO use the Geonames index, which mainline CI already downloads for
+// the (non-ignored) tests/test_geocode.rs suite in the same job.
+// ---------------------------------------------------------------------------------------------
+
+/// The choropleth trace's own `"locations":[…]` array.
+///
+/// Assertions MUST be scoped to it: the embedded plotly bundle carries every ISO country code, so
+/// `html.contains("PAK")` is true of any choropleth page whatsoever.
+#[cfg(feature = "geocode")]
+fn first_locations_array(html: &str) -> String {
+    let start = html
+        .find(r#""locations":["#)
+        .expect("no locations array in the rendered choropleth");
+    let end = html[start..]
+        .find(']')
+        .expect("unterminated locations array")
+        + start
+        + 1;
+    html[start..end].to_string()
+}
+
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_usa_states_defaults_country_to_us() {
+    let wrk = Workdir::new("viz_choropleth_geocode_usa_states_defaults_country_to_us");
+    // Montgomery matched Sahiwal District PK and Birmingham matched the UK, and because
+    // us_state_code is None off-US, BOTH rows were dropped silently - 30 of 210 units vanished
+    wrk.create_from_string(
+        "c.csv",
+        // concat! per row: rustfmt's format_strings splits a long literal ON AN ESCAPE, turning
+        // `\n` into a continuation plus a bare `n` that lands in the data (see #4399)
+        concat!(
+            "city,cases\n",
+            "Montgomery,10\n",
+            "Birmingham,20\n",
+            "Huntsville,30\n",
+            "Springfield,40\n",
+            "Richmond,50\n",
+            "Albany,60\n",
+        ),
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "c.csv",
+        "--geocode",
+        "--locations",
+        "city",
+        "--value",
+        "cases",
+        "--location-mode",
+        "usa-states",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // all six rows resolve, and the three Alabama cities aggregate to 60
+    let locations = first_locations_array(&html);
+    assert_eq!(
+        locations, r#""locations":["AL","MO","VA","NY"]"#,
+        "stderr: {stderr}"
+    );
+    assert!(!locations.contains("PAK"), "no row may resolve to Pakistan");
+    assert!(
+        !stderr.contains("Unresolved rows"),
+        "nothing should be dropped: {stderr}"
+    );
+}
+
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_country_hint_constrains_iso3() {
+    let wrk = Workdir::new("viz_choropleth_geocode_country_hint_constrains_iso3");
+    // a world map has no single country to default to, so the per-row hint is the remedy
+    wrk.create_from_string(
+        "c.csv",
+        "city,iso2,cases\nMontgomery,US,10\nBirmingham,GB,20\nHuntsville,US,30\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "c.csv",
+        "--geocode",
+        "--locations",
+        "city",
+        "--value",
+        "cases",
+        "--location-mode",
+        "iso3",
+        "--geocode-country",
+        "iso2",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    let locations = first_locations_array(&html);
+    assert_eq!(locations, r#""locations":["USA","GBR"]"#);
+    assert!(!locations.contains("PAK"));
+}
+
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_admin1_hint_is_strict() {
+    let wrk = Workdir::new("viz_choropleth_geocode_admin1_hint_is_strict");
+    // `geocode suggest --admin1` falls back to the top hit when nothing matches the filter; the
+    // viz path must NOT - Seattle hinted to Alabama is a reported miss, not Washington
+    wrk.create_from_string("c.csv", "city,st,n\nSeattle,US.AL,5\nBirmingham,US.AL,10\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "c.csv",
+        "--geocode",
+        "--locations",
+        "city",
+        "--value",
+        "n",
+        "--location-mode",
+        "usa-states",
+        "--geocode-admin1",
+        "st",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(first_locations_array(&html), r#""locations":["AL"]"#);
+    assert!(
+        stderr.contains("outside the hint"),
+        "the rejected row must be reported: {stderr}"
+    );
+}
+
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_admin1_hint_promotes_bare_state_code() {
+    let wrk = Workdir::new("viz_choropleth_geocode_admin1_hint_promotes_bare_state_code");
+    // a bare 2-letter state code is the common shape in US data. It must be promoted to US.AL and
+    // compared as a CODE: as a NAME prefix, "AL" also matches Alaska (Anchorage)
+    wrk.create_from_string("c.csv", "city,st,n\nBirmingham,AL,10\nAnchorage,AL,20\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "c.csv",
+        "--geocode",
+        "--locations",
+        "city",
+        "--value",
+        "n",
+        "--location-mode",
+        "usa-states",
+        "--geocode-admin1",
+        "st",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    let locations = first_locations_array(&html);
+    assert_eq!(locations, r#""locations":["AL"]"#);
+    assert!(
+        !locations.contains("AK"),
+        "an Alaska match must not satisfy an Alabama hint"
+    );
+}
+
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_reverse_border_points_stay_in_us() {
+    let wrk = Workdir::new("viz_choropleth_geocode_reverse_border_points_stay_in_us");
+    // reverse geocoding returns the NEAREST POPULATED PLACE, so these US points resolved abroad
+    // (San Ysidro -> Tijuana MX, Point Roberts -> Delta BC) and were dropped under usa-states
+    wrk.create_from_string(
+        "pts.csv",
+        // concat! per row - see the #4399 note above on rustfmt splitting escapes
+        concat!(
+            "place,lat,lon,n\n",
+            "San_Ysidro,32.5500,-117.0400,5\n",
+            "Point_Roberts,48.9800,-123.0700,7\n",
+            "Detroit,42.3200,-83.0400,9\n",
+        ),
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--geocode",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--value",
+        "n",
+        "--location-mode",
+        "usa-states",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        first_locations_array(&html),
+        r#""locations":["CA","WA","MI"]"#
+    );
+}
+
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_reverse_rejects_unknown_country_hint() {
+    let wrk = Workdir::new("viz_choropleth_geocode_reverse_rejects_unknown_country_hint");
+    // roborev #4291: the forward path validated hinted codes, the reverse path did not - so `UK`
+    // (for `GB`) reached the engine, which silently drops an unknown code and matches nothing,
+    // reporting "matched no known place" for a point that plainly resolves
+    wrk.create_from_string("pts.csv", "place,lat,lon,cc\nDetroit,42.3200,-83.0400,UK\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--geocode",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--location-mode",
+        "iso3",
+        "--geocode-country",
+        "cc",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Unknown country hint 'UK'"),
+        "the bad code must be named: {stderr}"
+    );
+}
+
 // actual reverse-geocoding needs the Geonames index (downloaded on first use); skipped in CI like
 // the webdriver-dependent static-export tests.
 #[cfg(feature = "geocode")]

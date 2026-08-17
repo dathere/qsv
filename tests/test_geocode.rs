@@ -2300,10 +2300,10 @@ fn geocode_index_load_accepts_a_valid_index() {
     // ready-made valid index to exercise the explicit-path form with - no second download
     let decompressed = wrk.path("15000.rkyv");
     if decompressed.exists() {
-        let mut cmd2 = wrk.command("geocode");
-        cmd2.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
-        cmd2.arg("index-load").arg(&decompressed);
-        let out2 = wrk.output(&mut cmd2);
+        let mut cmd_2 = wrk.command("geocode");
+        cmd_2.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+        cmd_2.arg("index-load").arg(&decompressed);
+        let out2 = wrk.output(&mut cmd_2);
         let stderr2 = String::from_utf8_lossy(&out2.stderr);
         assert!(
             out2.status.success(),

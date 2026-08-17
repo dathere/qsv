@@ -227,8 +227,10 @@ It has four operations:
  * reset  - resets the local Geonames index to the default prebuilt, English-only Geonames cities
             index (cities15000) - downloading it from the qsv GitHub repo for the current qsv version.
  * load   - load a Geonames cities index from a file, making it the default index going forward.
-            If set to 15000, it will download the prebuilt English-only cities15000 Geonames
-            index rkyv file from the qsv GitHub repo for the current qsv version.
+            If set to a published population floor (15000 or 1000), it will download that
+            prebuilt English-only Geonames index rkyv file from the qsv GitHub repo for the
+            current qsv version. cities1000 (~140k cities) resolves small towns the default
+            cities15000 (~26k) omits, at ~4x the index size.
 
 Update the Geonames cities index with the latest changes.
 
@@ -332,9 +334,10 @@ geocode arguments:
                                   For opencagenow, it must be an address OR a WGS 84 coordinate.
 
     <index-file>                The alternate geonames index file to use. It must be a .rkyv file.
-                                For convenience, if this is set to 15000, it will download the prebuilt
-                                English-only cities15000 Geonames index rkyv file from the qsv GitHub repo
-                                for the current qsv version and use it. Only used by the index-load subcommand.
+                                For convenience, if this is set to a published population floor
+                                (15000 or 1000), it will download that prebuilt English-only Geonames
+                                index rkyv file from the qsv GitHub repo for the current qsv version and
+                                use it. Only used by the index-load subcommand.
 
 geocode options:
     -c, --new-column <name>     Put the transformed values in a new column instead. Not valid when
@@ -2194,18 +2197,36 @@ cargo run -p geosuggest-utils --bin geosuggest-build-index --release --features=
     );
 }
 
+/// Geonames population floors for which qsv publishes a prebuilt index as a release asset, and
+/// which `index-load` therefore accepts as a numeric shortcut.
+///
+/// The download URL is already parameterized by floor (`…rkyv.cities{N}.sz`), so adding a floor
+/// here is only half the job: **the matching asset must be uploaded for every release**, or
+/// `index-load <N>` 404s. `cities15000` (~26k cities, 22.6 MiB) is the default; `cities1000`
+/// (~140k, 82.7 MiB) exists for datasets of small towns that the default floor omits.
+static PREBUILT_CITIES_INDEXES: &[u16] = &[15000, 1000];
+
+/// The accepted numeric shortcuts, for error messages.
+fn prebuilt_shortcut_list() -> String {
+    PREBUILT_CITIES_INDEXES
+        .iter()
+        .map(u16::to_string)
+        .collect::<Vec<_>>()
+        .join(" or ")
+}
+
 /// check if `index_file` exists and ends with a .rkyv extension
 fn check_index_file(index_file: &str) -> CliResult<()> {
-    // the only prebuilt index published to the qsv GitHub repo is cities15000,
-    // so 15000 is the sole numeric shortcut accepted by the index-load subcommand
+    // a bare number is the index-load shortcut for a prebuilt index published by qsv
     if let Ok(i) = index_file.parse::<u16>() {
-        if i == 15000 {
+        if PREBUILT_CITIES_INDEXES.contains(&i) {
             return Ok(());
         }
         return fail_incorrectusage_clierror!(
-            "Invalid index shortcut {index_file} - only 15000 is supported (the prebuilt \
-             cities15000 index). To use a different city set, rebuild the index with \
-             `index-update --cities-url`."
+            "Invalid index shortcut {index_file} - only {} is supported (the prebuilt cities \
+             indexes qsv publishes). To use a different city set, rebuild the index with \
+             `index-update --cities-url`.",
+            prebuilt_shortcut_list()
         );
     }
 
@@ -2279,20 +2300,21 @@ async fn load_engine_data_resolved(
     };
 
     if let Some(shortcut) = numeric_shortcut {
-        // the only prebuilt index in the qsv GitHub repo is cities15000
-        if shortcut != DEFAULT_GEONAMES_CITIES_INDEX {
+        if !PREBUILT_CITIES_INDEXES.contains(&shortcut) {
             return fail_incorrectusage_clierror!(
-                "Only the prebuilt cities15000 index is supported via the numeric shortcut (use \
-                 15000). To use a different city set, rebuild the index with `index-update \
-                 --cities-url`."
+                "Only the prebuilt cities indexes qsv publishes are supported via the numeric \
+                 shortcut (use {}). To use a different city set, rebuild the index with \
+                 `index-update --cities-url`.",
+                prebuilt_shortcut_list()
             );
         }
 
         progressbar.println(format!(
-            "Downloading the prebuilt cities15000 Geonames index for qsv {QSV_VERSION} release..."
+            "Downloading the prebuilt cities{shortcut} Geonames index for qsv {QSV_VERSION} \
+             release..."
         ));
 
-        util::download_file(
+        if let Err(e) = util::download_file(
             &format!("{download_url}{shortcut}.sz"),
             geocode_index_file.clone(),
             !progressbar.is_hidden(),
@@ -2300,7 +2322,36 @@ async fn load_engine_data_resolved(
             Some(60),
             None,
         )
-        .await?;
+        .await
+        {
+            return fail_clierror!(
+                "Could not download the prebuilt cities{shortcut} index for the qsv {QSV_VERSION} \
+                 release ({e}). If that release does not carry it, build it locally with `qsv \
+                 geocode index-update --cities-url {shortcut}`."
+            );
+        }
+
+        // `util::download_file` streams whatever the server returns and never calls
+        // `error_for_status`, so a release that does NOT carry this prebuilt leaves a few bytes of
+        // "Not Found" on disk and returns Ok - which surfaced much later, and much less usefully,
+        // as "Alternate Geonames index file <n> is invalid". The prebuilts are uploaded per
+        // release, so a floor THIS binary knows about can still be missing from the release it was
+        // built from. Check the Snappy framing magic and say what actually happened.
+        let downloaded_snappy_index = {
+            let mut header = [0_u8; 10];
+            fs::File::open(&geocode_index_file)
+                .and_then(|mut file| std::io::Read::read_exact(&mut file, &mut header))
+                .is_ok_and(|()| header == *b"\xff\x06\x00\x00sNaPpY")
+        };
+        if !downloaded_snappy_index {
+            // don't leave the bogus payload behind to be mistaken for an index
+            let _ = fs::remove_file(&geocode_index_file);
+            return fail_clierror!(
+                "The qsv {QSV_VERSION} release does not appear to carry the prebuilt \
+                 cities{shortcut} index - what downloaded is not a Snappy-framed Geonames index. \
+                 Build it locally instead with `qsv geocode index-update --cities-url {shortcut}`."
+            );
+        }
     } else if index_file.exists() {
         // load existing local index
         progressbar.println(format!(

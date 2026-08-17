@@ -2361,8 +2361,8 @@ fn geocode_index_load_accepts_a_valid_index() {
 #[test]
 #[serial]
 fn geocode_index_load_invalid_shortcut() {
-    // the index-load numeric shortcut only accepts 15000 (the prebuilt cities15000
-    // index); any other number fails fast with an actionable error - no download
+    // the index-load numeric shortcut only accepts a population floor qsv publishes a prebuilt
+    // index for; any other number fails fast with an actionable error - no download
     let wrk = Workdir::new("geocode_index_load_invalid_shortcut");
     let mut cmd = wrk.command("geocode");
     cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
@@ -2372,8 +2372,10 @@ fn geocode_index_load_invalid_shortcut() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Invalid index shortcut") && stderr.contains("only 15000 is supported"),
-        "expected an actionable 'only 15000' error, got: {stderr}"
+        stderr.contains("Invalid index shortcut")
+            && stderr.contains("15000")
+            && stderr.contains("1000"),
+        "the error should name every supported shortcut, got: {stderr}"
     );
 }
 

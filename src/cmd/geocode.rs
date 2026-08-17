@@ -1278,12 +1278,25 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     winfo!("Validating alternate Geonames index: {index_file}...");
                     check_index_file(&index_file)?;
 
-                    let engine_data =
-                        load_engine_data(index_file.clone().into(), &progress).await?;
+                    let (engine_data, loaded_index_file) =
+                        load_engine_data_resolved(index_file.clone().into(), &progress).await?;
+
+                    // Validate through the SAME API `index-check` uses. `Storage::load_from` does
+                    // not populate `EngineData::metadata`, so the old `engine_data.metadata`
+                    // gate rejected every index - including qsv's own published prebuilt - while
+                    // `read_metadata` read that very file's metadata happily (issue #4431).
+                    //
+                    // The resolved path matters: a numeric shortcut is downloaded under the bare
+                    // number and decompressed to a sibling `.rkyv`, so `index_file` as passed is
+                    // not what was loaded.
+                    let metadata = index_storage
+                        .read_metadata(loaded_index_file.clone())
+                        .map_err(|e| format!("index-load error: {e}"))?;
+
                     // we successfully loaded the alternate geocode index file, so its valid
                     // copy it to the default geocode index file
 
-                    if engine_data.metadata.is_some() {
+                    if metadata.is_some() {
                         let _ =
                             index_storage.dump_to(active_geocode_index_file.clone(), &engine_data);
                         winfo!(
@@ -2165,7 +2178,10 @@ fn check_index_file(index_file: &str) -> CliResult<()> {
         );
     }
 
-    winfo!("Valid: {index_file}");
+    // NOT "Valid" - all this function checked is the extension and that the file exists. Claiming
+    // validity here produced `Valid: X` immediately followed by `X is invalid` in the same run
+    // (issue #4431); whether the index is usable is decided by the caller, after loading it.
+    winfo!("Found index file: {index_file}");
     Ok(())
 }
 
@@ -2177,6 +2193,21 @@ async fn load_engine_data(
     geocode_index_file: PathBuf,
     progressbar: &ProgressBar,
 ) -> CliResult<EngineData> {
+    Ok(load_engine_data_resolved(geocode_index_file, progressbar)
+        .await?
+        .0)
+}
+
+/// [`load_engine_data`], additionally returning the path the index was actually loaded FROM.
+///
+/// The caller cannot compute that path itself: a numeric shortcut is downloaded under the bare
+/// number and a Snappy payload is decompressed to a sibling `.rkyv`, both resolved in here. A
+/// caller that needs to ask the storage layer anything further about the index - `index-load`
+/// validating it via `read_metadata` - needs the resolved path, not the argument it passed in.
+async fn load_engine_data_resolved(
+    geocode_index_file: PathBuf,
+    progressbar: &ProgressBar,
+) -> CliResult<(EngineData, PathBuf)> {
     // default cities index file
     static DEFAULT_GEONAMES_CITIES_INDEX: u16 = 15000;
 
@@ -2292,7 +2323,7 @@ async fn load_engine_data(
     let storage = storage::Storage::new();
 
     let engine = storage
-        .load_from(geocode_index_file)
+        .load_from(geocode_index_file.clone())
         .map_err(|e| format!("On load index file: {e}"))?;
 
     if let Some(metadata) = &engine.metadata {
@@ -2306,7 +2337,7 @@ async fn load_engine_data(
         ));
     }
 
-    Ok(engine)
+    Ok((engine, geocode_index_file))
 }
 
 /// `search_index` returns a geocode result for a given cell value, used by the

@@ -6022,18 +6022,17 @@ impl TypedMinMax {
                     });
 
                     let (min_str, max_str) = if let Some(max_len) = *max_length {
-                        (
-                            if min_str.len() > max_len {
-                                format!("{}...", &min_str[..max_len])
-                            } else {
-                                min_str
-                            },
-                            if max_str.len() > max_len {
-                                format!("{}...", &max_str[..max_len])
-                            } else {
-                                max_str
-                            },
-                        )
+                        // Truncate on a char boundary at or below max_len. Slicing at a raw
+                        // byte index panics when the min/max value is multibyte UTF-8.
+                        let truncate_at_boundary = |mut s: String| -> String {
+                            if s.len() > max_len {
+                                let boundary = s.floor_char_boundary(max_len);
+                                s.truncate(boundary);
+                                s.push_str("...");
+                            }
+                            s
+                        };
+                        (truncate_at_boundary(min_str), truncate_at_boundary(max_str))
                     } else {
                         (min_str, max_str)
                     };
@@ -6067,7 +6066,12 @@ impl TypedMinMax {
                     Some((
                         itoa::Buffer::new().format(*min).to_owned(),
                         itoa::Buffer::new().format(*max).to_owned(),
-                        itoa::Buffer::new().format(*max - *min).to_owned(),
+                        // subtract in i128: a column spanning more than i64::MAX
+                        // (e.g. i64::MIN..=i64::MAX) overflows a raw i64 subtraction,
+                        // which panics under overflow-checks and wraps to -1 in release
+                        itoa::Buffer::new()
+                            .format(i128::from(*max) - i128::from(*min))
+                            .to_owned(),
                         sort_order.to_string(),
                         util::round_num(sortiness, round_places),
                     ))

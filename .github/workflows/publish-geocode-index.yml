@@ -1,0 +1,223 @@
+name: Publish Geonames index assets
+
+# Builds the prebuilt Geonames indexes for a release and attaches them to it.
+#
+# WHY THIS EXISTS
+# qsv downloads a prebuilt index rather than making every user rebuild one from Geonames
+# (~200 MB and several minutes). Those assets are version-pinned - `geocode` fetches
+# `qsv-<version>-geocode-index.rkyv.cities<floor>[.sz]` from the release matching its OWN version -
+# so every release needs its own copy, and until now they were produced by hand. A release that
+# ships none of them leaves `geocode` unable to bootstrap at all.
+#
+# There are TWO floors to publish, not one (issue #4433 / PR #4435):
+#   cities15000 - the default (~26k cities, ~23 MiB). Fetched on first use of any geocode command.
+#   cities1000  - the denser opt-in (~140k cities, ~83 MiB) reached via `geocode index-load 1000`,
+#                 for datasets full of small towns the default floor omits.
+#
+# WHICH FILE NAMES MATTER (they are not interchangeable):
+#   ...rkyv.cities<floor>      - UNcompressed. What the first-use/index-reset path downloads.
+#   ...rkyv.cities<floor>.sz   - Snappy-framed. What the `index-load <floor>` shortcut downloads.
+#   ...rkyv                    - bare name, kept for compatibility with older qsv versions; current
+#                                code always appends `.cities<floor>`.
+#
+# Run it AFTER the release exists (it uploads to that tag), and re-run with the same tag to
+# replace assets - uploads use --clobber.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to build for and attach to (e.g. 22.1.0)'
+        required: true
+        type: string
+      floors:
+        description: 'Which population floors to build'
+        required: true
+        default: 'both'
+        type: choice
+        options: [both, '15000', '1000']
+      languages:
+        description: 'Geonames languages to index (comma-separated ISO 639-2)'
+        required: true
+        default: 'en'
+        type: string
+      upload:
+        description: 'Upload to the release. Uncheck to build and verify only (assets are still attached to this run).'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write # required to upload release assets
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+    # a cities1000 build pulls ~200 MB from Geonames and indexes ~140k records; the release build
+    # of qsv itself is the other long pole
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag }}
+
+      - name: Verify the tag's version matches the asset names
+        # The asset name embeds CARGO_PKG_VERSION, and a qsv binary only ever asks for its own
+        # version. Building 22.1.0's index from a checkout that says 22.0.1 produces assets no
+        # binary will ever request, so fail loudly rather than publish something unreachable.
+        run: |
+          set -euo pipefail
+          CARGO_VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "Cargo.toml version: $CARGO_VERSION"
+          echo "requested tag:      ${{ inputs.release_tag }}"
+          if [ "$CARGO_VERSION" != "${{ inputs.release_tag }}" ]; then
+            echo "::error::Cargo.toml says $CARGO_VERSION but the tag is ${{ inputs.release_tag }}."
+            echo "::error::The assets embed the Cargo version, so they would be unreachable."
+            exit 1
+          fi
+          echo "QSV_VERSION=$CARGO_VERSION" >> "$GITHUB_ENV"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build qsv (geocode only)
+        # qsv is needed to VERIFY and compress the indexes, not to build them; skipping the rest of
+        # the feature set keeps the build short
+        run: cargo build --release --locked --bin qsv --features feature_capable,geocode
+
+      - name: Install the Geonames index builder
+        # `qsv geocode index-update` does NOT build an index - it prints instructions telling you
+        # to run geosuggest's builder yourself (see display_rebuild_instructions in
+        # src/cmd/geocode.rs), and on a fresh cache dir it fails outright because the index it
+        # would "update" does not exist. The builder is a bin target of the geosuggest-utils crate
+        # qsv already depends on.
+        #
+        # The geosuggest-utils version is read from Cargo.lock rather than hardcoded here, so it
+        # cannot drift from what qsv links against on the next dependency bump.
+        #
+        # That pins geosuggest-utils and geosuggest-core; it canNOT pin rkyv, which `cargo install`
+        # resolves independently of this repo's lockfile. `--locked` is deliberately NOT used and
+        # would make this worse today, not better: the version bundled in the published crate pins
+        # rkyv 0.8.17 while qsv links 0.8.18, so `--locked` buys a DETERMINISTIC mismatch, whereas
+        # plain resolution takes the newest 0.8.x (0.8.18) and matches. Neither is a guarantee.
+        #
+        # The guarantee comes from the verification below instead: every index is loaded and
+        # exercised by the qsv binary built from THIS checkout before anything is uploaded. A
+        # serializer mismatch that actually matters fails the run rather than publishing an asset
+        # nobody can read - which is exactly the failure #4433 shipped.
+        run: |
+          set -euo pipefail
+          GEOSUGGEST_VERSION=$(awk '/^name = "geosuggest-utils"$/{getline; gsub(/[",]/,"",$3); print $3; exit}' Cargo.lock)
+          echo "geosuggest-utils per Cargo.lock: $GEOSUGGEST_VERSION"
+          test -n "$GEOSUGGEST_VERSION" || { echo "::error::could not read geosuggest-utils version from Cargo.lock"; exit 1; }
+          cargo install geosuggest-utils \
+            --version "$GEOSUGGEST_VERSION" \
+            --features cli,tracing \
+            --bin geosuggest-build-index
+
+      - name: Build, verify and package each index
+        env:
+          QSV: ${{ github.workspace }}/target/release/qsv
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          case "${{ inputs.floors }}" in
+            both) FLOORS="15000 1000" ;;
+            *)    FLOORS="${{ inputs.floors }}" ;;
+          esac
+          echo "building floors: $FLOORS"
+
+          for FLOOR in $FLOORS; do
+            echo "::group::cities$FLOOR"
+            WORK="$PWD/idx-$FLOOR"
+            rm -rf "$WORK" && mkdir -p "$WORK"
+
+            # Build under the name qsv expects for an ACTIVE index, so `index-check` and the
+            # smoke test below can use it as-is (they require a .rkyv extension); the asset name
+            # is a copy made afterwards.
+            BUILT="$WORK/qsv-$QSV_VERSION-geocode-index.rkyv"
+
+            # --cities-filename is REQUIRED whenever --cities-url is given (the builder errors
+            # without it), and the builder's own default is cities5000 - so both are always
+            # explicit here. Countries, alternate names, admin1 AND admin2 codes come from the
+            # builder's defaults; admin2 is what carries county data, which qsv's %admin2 and
+            # us_county_fips_code depend on (verified below).
+            geosuggest-build-index from-urls \
+              --cities-url "https://download.geonames.org/export/dump/cities$FLOOR.zip" \
+              --cities-filename "cities$FLOOR.txt" \
+              --languages "${{ inputs.languages }}" \
+              --output "$BUILT"
+
+            test -f "$BUILT" || { echo "::error::the builder produced no index at $BUILT"; exit 1; }
+
+            # 1. the index carries readable metadata (this is what `index-load` validates against)
+            QSV_CACHE_DIR="$WORK" "$QSV" geocode index-check
+
+            # 2. and it actually resolves - an index that loads but geocodes nothing is worse than
+            #    no index, because it fails silently at the point of use
+            printf 'city\nParis\nPittsburgh\n' > "$WORK/smoke.csv"
+            SMOKE=$(QSV_CACHE_DIR="$WORK" "$QSV" geocode suggest city --country us,fr \
+                      --formatstr '%dyncols: {c:name},{a1:admin1},{a2:admin2}' "$WORK/smoke.csv")
+            echo "$SMOKE"
+            echo "$SMOKE" | grep -q 'Paris' || { echo "::error::cities$FLOOR index did not resolve Paris"; exit 1; }
+
+            # county (admin2) data is a SEPARATE source the builder pulls from its defaults, and
+            # nothing above would notice its absence - but qsv's %admin2, us_county_fips_code and
+            # the whole county-FIPS path depend on it, so assert Pittsburgh reports Allegheny
+            echo "$SMOKE" | grep -q 'Allegheny' || {
+              echo "::error::cities$FLOOR index has no admin2/county data (Pittsburgh did not resolve to Allegheny)"
+              exit 1
+            }
+
+            ASSET="dist/qsv-$QSV_VERSION-geocode-index.rkyv.cities$FLOOR"
+            cp "$BUILT" "$ASSET"
+            "$QSV" snappy compress "$ASSET" -o "$ASSET.sz"
+
+            # 3. the compressed asset must round-trip byte-for-byte - it is what `index-load
+            #    <floor>` installs, and a corrupt index is not detected until it is loaded
+            "$QSV" snappy decompress "$ASSET.sz" -o "$WORK/roundtrip.rkyv"
+            if ! cmp -s "$ASSET" "$WORK/roundtrip.rkyv"; then
+              echo "::error::cities$FLOOR .sz did not round-trip to an identical file"
+              exit 1
+            fi
+
+            # the bare name is what older qsv versions fetch; it mirrors the default floor
+            if [ "$FLOOR" = "15000" ]; then
+              cp "$ASSET" "dist/qsv-$QSV_VERSION-geocode-index.rkyv"
+            fi
+
+            rm -rf "$WORK"
+            echo "::endgroup::"
+          done
+
+          echo "### Geonames index assets" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          ls -lh dist | tail -n +2 | awk '{print $5"\t"$9}' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach to the workflow run
+        # kept whether or not the release upload runs, so a dry run still produces something
+        # inspectable and a failed upload does not throw away an hour of indexing
+        uses: actions/upload-artifact@v7
+        with:
+          name: geocode-index-${{ inputs.release_tag }}
+          path: dist/
+          retention-days: 7
+
+      - name: Upload to the release
+        if: ${{ inputs.upload }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "${{ inputs.release_tag }}" dist/* --clobber
+          echo "uploaded to ${{ inputs.release_tag }}:"
+          gh release view "${{ inputs.release_tag }}" \
+            --json assets --jq '.assets[] | select(.name|test("rkyv")) | "\(.name)  \(.size) bytes"'

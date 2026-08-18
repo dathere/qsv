@@ -3851,13 +3851,22 @@ pub fn get_stats_records_readonly(
     // The input must be the same SIZE, not merely older. mtime alone is defeated by any
     // mtime-preserving replacement (cp -p, tar -x, git checkout, rsync -t), and this cache
     // carries sort_order: consuming a stale one lets `extsort` skip a sort it still needs and
-    // `sortcheck` report replaced, unsorted input as sorted. Unlike get_stats_records, no
-    // sidecar-less allowance is needed here - this path already fails closed without metadata.
-    if metadata
-        .get("filesize_bytes")
-        .and_then(serde_json::Value::as_u64)
-        .is_some_and(|recorded| recorded != 0 && recorded != input_metadata.len())
-    {
+    // `sortcheck` report replaced, unsorted input as sorted.
+    //
+    // FAIL CLOSED, unlike the same check in `get_stats_records`. That asymmetry is deliberate:
+    // there, absent metadata must mean "no opinion" so the sidecar-less cache `moarstats`
+    // writes from its extended stats is not discarded. No such case reaches here - this path
+    // already returns None when the sidecar is missing or unreadable, and requires a full-file
+    // (`<All>`) cache - so a sidecar that is present but cannot substantiate the size is simply
+    // unverifiable, and an unverifiable cache must not prove a file sorted. This also refuses a
+    // recorded 0, which is never written (the real size is stored unconditionally before the
+    // sidecar is), and so would only ever be a bypass.
+    if !matches!(
+        metadata
+            .get("filesize_bytes")
+            .and_then(serde_json::Value::as_u64),
+        Some(recorded) if recorded == input_metadata.len()
+    ) {
         return None;
     }
     // --no-headers and the effective delimiter must match the consuming command; shared with

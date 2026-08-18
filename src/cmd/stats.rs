@@ -1410,7 +1410,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // infer delimiter when we're getting input from stdin
     // as the stats engine needs to know the delimiter or it will panic
     let mut stdin_tempfile_guard: Option<StdinTempFile> = None;
-    if rconfig.is_stdin() {
+    // rconfig.path is repointed at the stdin spill temp file below, after which
+    // rconfig.is_stdin() is false for the remainder of run(). Capture the true origin
+    // now: the cache-install stage needs it to know the input has no stable path to
+    // key a cache on.
+    let input_was_stdin = rconfig.is_stdin();
+    if input_was_stdin {
         // read from stdin and write to a temp file
         log::info!("Reading from stdin");
 
@@ -1520,7 +1525,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if let Some(path) = rconfig.path.clone() {
         //safety: we know the path is a valid PathBuf, so we can use unwrap
         let path_file_stem = path.file_stem().unwrap().to_str().unwrap();
-        let stats_file = stats_path(&path, false, args.flag_weight.is_some())?;
+        let stats_file = stats_path(&path, args.flag_weight.is_some())?;
         // check if <FILESTEM>.stats.csv file already exists.
         // If it does, check if it was compiled using the same args.
         // However, if the --force flag is set,
@@ -1535,8 +1540,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             "Could not read {path_file_stem}.stats.csv.json: {e:?}, recomputing..."
                         );
                         // remove stats cache files silently even if they don't exists
-                        let _ = fs::remove_file(&stats_file);
-                        let _ = fs::remove_file(&stats_args_json_file);
+                        remove_stats_cache_pair(&stats_file);
                         String::new()
                     },
                 };
@@ -1554,8 +1558,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                     "Could not deserialize {path_file_stem}.stats.csv.json: \
                                      {e:?}, recomputing..."
                                 );
-                                let _ = fs::remove_file(&stats_file);
-                                let _ = fs::remove_file(&stats_args_json_file);
+                                remove_stats_cache_pair(&stats_file);
                                 StatsArgs::default()
                             },
                         };
@@ -1570,8 +1573,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                         "Could not deserialize {path_file_stem}.stats.csv.json: \
                                          {e:?}, recomputing..."
                                     );
-                                    let _ = fs::remove_file(&stats_file);
-                                    let _ = fs::remove_file(&stats_args_json_file);
+                                    remove_stats_cache_pair(&stats_file);
                                     StatsArgs::default()
                                 },
                             },
@@ -1580,8 +1582,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                     "Could not parse {path_file_stem}.stats.csv.json: {e:?}, \
                                      recomputing..."
                                 );
-                                let _ = fs::remove_file(&stats_file);
-                                let _ = fs::remove_file(&stats_args_json_file);
+                                remove_stats_cache_pair(&stats_file);
                                 StatsArgs::default()
                             },
                         }
@@ -1665,9 +1666,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         "{path_file_stem}.stats.csv already exists, but is older than the input \
                          file or the args have changed, recomputing...",
                     );
-                    let _ = fs::remove_file(&stats_file);
+                    // remove the sidecar TOGETHER with the stats CSV. Removing only the
+                    // CSV leaves behind a sidecar describing the OLD args, which the next
+                    // run validates against and trusts - serving stats computed with
+                    // entirely different args as if they matched.
+                    remove_stats_cache_pair(&stats_file);
                 }
             }
+        } else if stats_file.exists() {
+            // --force: recompute unconditionally. Drop the stale pair FIRST - otherwise
+            // the fresh stats.csv installed below ends up standing behind the previous
+            // run's sidecar, which the next run then validates and trusts. That is the
+            // same poisoning mechanism the args-changed path above guards against.
+            remove_stats_cache_pair(&stats_file);
         }
         if compute_stats {
             let start_time = std::time::Instant::now();
@@ -1899,37 +1910,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else {
         // we didn't compute the stats, re-use the existing stats file
         // safety: we know the path is a valid PathBuf, so we can use unwrap
-        stats_path(
-            rconfig.path.as_ref().unwrap(),
-            false,
-            args.flag_weight.is_some(),
-        )?
-        .to_str()
-        .unwrap()
-        .to_owned()
+        stats_path(rconfig.path.as_ref().unwrap(), args.flag_weight.is_some())?
+            .to_str()
+            .unwrap()
+            .to_owned()
     };
 
-    if rconfig.is_stdin() {
-        // if we read from stdin, copy the temp stats file to "stdin.stats.csv" or
-        // "stdin.stats.weighted.csv" safety: we know the path is a valid PathBuf, so we can
-        // use unwrap
-        let mut stats_pathbuf = stats_path(
-            rconfig.path.as_ref().unwrap(),
-            true,
-            args.flag_weight.is_some(),
-        )?;
-        fs::copy(currstats_filename.clone(), stats_pathbuf.clone())?;
-
-        // save the stats args to "stdin.stats.csv.json"
-        stats_pathbuf.set_extension("csv.json");
-        // Use platform-appropriate JSON serialization
-        let json_string =
-            cfg_select! {
-                target_endian = "little" => simd_json::to_string_pretty(&current_stats_args)?,
-                _ => serde_json::to_string_pretty(&current_stats_args)?,
-            };
-        std::fs::write(stats_pathbuf, json_string)?;
-    } else if let Some(path) = rconfig.path {
+    // A stdin input has no stable path to key a cache on: the spill temp file gets a
+    // fresh random name every run, so a cache written beside it can never be located
+    // again, let alone reused. Writing one only orphans a <tempname>.stats.csv pair in
+    // the temp dir - permanently so on builds without polars, which is where that dir
+    // gets reaped.
+    //
+    // NOTE: the branch that used to stand here, keyed on rconfig.is_stdin(), was
+    // unreachable - rconfig.path is repointed at the spill temp file far above this
+    // point, so is_stdin() is always false by the time we get here.
+    if let Some(path) = rconfig.path
+        && !input_was_stdin
+    {
         // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv" or
         // "<FILESTEM>.stats.weighted.csv"
         let mut stats_pathbuf = path.clone();
@@ -1938,6 +1936,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         } else {
             stats_pathbuf.set_extension("stats.csv");
         }
+        // <FILESTEM>.stats.csv is installed unconditionally, by design: the usage text
+        // documents `qsv stats nyc311.csv` as CREATING nyc311.stats.csv, and `moarstats`
+        // reads that file directly rather than through the sidecar. --cache-threshold
+        // governs the SIDECAR (the validity metadata), not this artifact.
+        //
+        // Installing it without a sidecar is safe only because every path that reaches
+        // here with a fresh recompute has already removed any stale sidecar via
+        // remove_stats_cache_pair() - so a fresh stats.csv can never end up standing
+        // behind a PREVIOUS run's sidecar. Do not install without preserving that.
+        //
         // safety: we know the path is a valid PathBuf, so we can use unwrap
         if currstats_filename != stats_pathbuf.to_str().unwrap() {
             // if the stats file is not the same as the input file, copy it
@@ -1968,23 +1976,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 currstats_filename = stats_csv_tempfile_fname;
             }
 
-            // remove the stats cache file
-            if fs::remove_file(stats_pathbuf.clone()).is_err() {
-                // fails silently if it can't remove the stats file
-                log::warn!(
-                    "Could not remove stats cache file: {}",
-                    stats_pathbuf.display()
-                );
-            }
-            // remove the stats cache JSON sidecar too, to avoid leaving an
-            // orphaned sidecar from a prior run.
-            let stats_json_pathbuf = stats_pathbuf.with_extension("csv.json");
-            if stats_json_pathbuf.exists() && fs::remove_file(&stats_json_pathbuf).is_err() {
-                log::warn!(
-                    "Could not remove stats cache JSON sidecar: {}",
-                    stats_json_pathbuf.display()
-                );
-            }
+            // remove the stats cache file AND its sidecar, so no orphan of either is
+            // left behind from a prior run
+            remove_stats_cache_pair(&stats_pathbuf);
             create_cache = false;
         }
 
@@ -3139,28 +3133,44 @@ fn calculate_memory_aware_chunk_size(
     }
 }
 
-/// Determines the path for the statistics output file.
+/// Removes a stats cache pair - the `<FILESTEM>.stats.csv` file and its
+/// `<FILESTEM>.stats.csv.json` sidecar - as a unit.
 ///
-/// This function constructs the appropriate file path for the statistics output
-/// based on the input file path and whether the input is from stdin. It handles
-/// both regular file inputs and stdin input cases.
+/// The two MUST be removed together. Deleting the stats CSV while leaving the sidecar
+/// behind lets a later run pass the sidecar's args comparison and be served stats that
+/// were computed with entirely different args - e.g. `--typesonly` output returned as
+/// if it were `--everything`.
+///
+/// Best-effort: a cache file we cannot delete is logged, never fatal, since the current
+/// run's own stats are unaffected.
+fn remove_stats_cache_pair(stats_file: &Path) {
+    for f in [
+        stats_file.to_path_buf(),
+        stats_file.with_extension("csv.json"),
+    ] {
+        if f.exists()
+            && let Err(e) = fs::remove_file(&f)
+        {
+            log::warn!("Could not remove stats cache file {}: {e:?}", f.display());
+        }
+    }
+}
+
+/// Determines the path for the stats cache file.
 ///
 /// # Arguments
 ///
 /// * `stats_csv_path` - The path to the input CSV file
-/// * `stdin_flag` - Whether the input is from stdin
+/// * `weighted` - Whether the stats were computed with `--weight`
 ///
 /// # Returns
 ///
-/// * `Ok(PathBuf)` - The path where statistics should be written
-/// * `Err(io::Error)` - If the path construction fails
+/// * `Ok(PathBuf)` - `<FILESTEM>.stats.csv` (or `<FILESTEM>.stats.weighted.csv`) beside the input
+/// * `Err(io::Error)` - If the input path has no parent directory or file name
 ///
-/// # Behavior
-///
-/// * **Regular Files**: Creates a `.stats.csv` file in the same directory as the input
-/// * **Stdin Input**: Creates a `stdin.stats.csv` file in the current directory
-/// * **Path Validation**: Validates that the input path has a parent directory and filename
-fn stats_path(stats_csv_path: &Path, stdin_flag: bool, weighted: bool) -> io::Result<PathBuf> {
+/// NOTE: there is deliberately no stdin variant. A stdin input is spilled to a randomly
+/// named temp file, so any cache keyed on that path is unfindable on the next run.
+fn stats_path(stats_csv_path: &Path, weighted: bool) -> io::Result<PathBuf> {
     let parent = stats_csv_path
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid path"))?;
@@ -3168,13 +3178,7 @@ fn stats_path(stats_csv_path: &Path, stdin_flag: bool, weighted: bool) -> io::Re
         .file_stem()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid file name"))?;
 
-    let new_fname = if stdin_flag {
-        if weighted {
-            "stdin.stats.weighted.csv".to_string()
-        } else {
-            "stdin.stats.csv".to_string()
-        }
-    } else if weighted {
+    let new_fname = if weighted {
         format!("{}.stats.weighted.csv", fstem.to_string_lossy())
     } else {
         format!("{}.stats.csv", fstem.to_string_lossy())
@@ -3277,7 +3281,7 @@ fn resolve_sniff_whitelist_cached(input_path: &std::path::Path, args: &Args) -> 
 /// built), and its whitelist was itself derived from "sniff" (recorded in
 /// `flag_dates_whitelist_raw`). Returns `None` otherwise, signalling that a fresh sniff is needed.
 fn read_current_sniff_whitelist(input_path: &std::path::Path, args: &Args) -> Option<String> {
-    let stats_file = stats_path(input_path, false, args.flag_weight.is_some()).ok()?;
+    let stats_file = stats_path(input_path, args.flag_weight.is_some()).ok()?;
     if !stats_file.exists() {
         return None;
     }

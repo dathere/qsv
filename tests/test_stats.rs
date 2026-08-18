@@ -8034,3 +8034,45 @@ fn stats_date_blind_frequency_cache_not_reused_by_schema() {
         "schema reused frequency's date-blind stats cache:\n{after}"
     );
 }
+
+// Regression: `stats_headers()` re-derived the MAD column as `flag_mad || everything`, while
+// which_stats() turns MAD off for --quantile-method approx (a t-digest cannot compute
+// median(|x - median|)). The header therefore advertised a "mad" column that records did not
+// carry, and the csv writer rejects the arity change -- so
+// `qsv stats --everything --quantile-method approx` died with
+// "found record with 48 fields, but the previous record has 49 fields", exit 1 and no output.
+//
+// Needs enough rows to reach the write; a handful of rows does not trip it.
+#[test]
+fn stats_everything_approx_quantiles_header_matches_records() {
+    let wrk = Workdir::new("stats_everything_approx_quantiles_header_matches_records");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string(), "v".to_string()]];
+    for i in 0..5000 {
+        rows.push(vec![i.to_string(), ((i * 7919) % 9973).to_string()]);
+    }
+    wrk.create("aq.csv", rows);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--quantile-method", "approx"])
+        .arg("aq.csv");
+    // read_stdout_on_success asserts a clean exit, which is most of the point here
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+
+    assert!(
+        got.len() > 1,
+        "expected a header and at least one stats row"
+    );
+    let header = &got[0];
+    for (i, row) in got.iter().enumerate().skip(1) {
+        assert_eq!(
+            header.len(),
+            row.len(),
+            "header/record arity mismatch on row {i}"
+        );
+    }
+    assert!(
+        !header.iter().any(|h| h == "mad"),
+        "approx quantiles cannot compute MAD, so no mad column should be advertised"
+    );
+}

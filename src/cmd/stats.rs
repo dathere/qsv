@@ -2961,7 +2961,15 @@ impl Args {
         if self.flag_median && !self.flag_quartiles && !everything {
             fields.push("median");
         }
-        if self.flag_mad || everything {
+        // Ask which_stats() rather than re-deriving the condition here. which_stats() turns
+        // MAD off for --quantile-method approx (a t-digest cannot do median(|x - median|),
+        // which needs a second pass over the deviations), while this site re-derived it as
+        // `flag_mad || everything` and so emitted a "mad" HEADER for records that carry no
+        // mad FIELD. The csv writer rejects that arity change, making
+        // `qsv stats --everything --quantile-method approx` fail outright with
+        // "found record with 48 fields, but the previous record has 49 fields" - exit 1, no
+        // output at all, once the input is large enough to reach the write.
+        if self.which_stats().mad {
             fields.push("mad");
         }
         if self.flag_quartiles || everything {

@@ -663,6 +663,11 @@ pub struct StatsData {
     pub max: Option<String>,
     pub range: Option<f64>,
     pub sort_order: Option<String>,
+    // emitted by stats_headers() and typed in STATSDATA_TYPES_MAP, but was missing from this
+    // struct - so serde silently dropped it on every get_stats_records() deserialize and the
+    // value, though present in the .data.jsonl cache, was unreachable to every consumer.
+    #[serde(default)]
+    pub sortiness: Option<f64>,
     pub min_length: Option<usize>,
     pub max_length: Option<usize>,
     pub sum_length: Option<usize>,
@@ -672,6 +677,11 @@ pub struct StatsData {
     pub cv_length: Option<f64>,
     pub mean: Option<f64>,
     pub sem: Option<f64>,
+    // same drift as `sortiness` above: emitted and typed, but absent here
+    #[serde(default)]
+    pub geometric_mean: Option<f64>,
+    #[serde(default)]
+    pub harmonic_mean: Option<f64>,
     pub stddev: Option<f64>,
     pub variance: Option<f64>,
     pub cv: Option<f64>,
@@ -699,6 +709,12 @@ pub struct StatsData {
     pub antimode: Option<String>,
     pub antimode_count: Option<u64>,
     pub antimode_occurrences: Option<u64>,
+    // `percentiles` was absent from BOTH this struct and STATSDATA_TYPES_MAP. It is a
+    // pipe-separated rendering (e.g. "5: 249|10: 499|..."), so String is the correct type -
+    // which is also what the map's unmapped-column fallback already produced, making the map
+    // entry a no-op for serialization and this a read-side fix only.
+    #[serde(default)]
+    pub percentiles: Option<String>,
     // `Some(true)` when the column is a zero-padded numeric code (zip/FIPS/ICD-9 style — see
     // the `--zero-padded-numeric` flag); `None` otherwise (the stats CSV emits an empty cell
     // for non-flagged columns, which the jsonl conversion drops entirely, and older caches
@@ -786,6 +802,7 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
     "antimode" => JsonTypes::String,
     "antimode_count" => JsonTypes::Int,
     "antimode_occurrences" => JsonTypes::Int,
+    "percentiles" => JsonTypes::String,
     "zero_padded_numeric" => JsonTypes::Bool,
     // moarstats fields
     "kurtosis" => JsonTypes::Float,

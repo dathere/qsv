@@ -7234,3 +7234,46 @@ fn frequency_from_zip_parallel_autoindexed() {
     );
     assert!(got[1..].iter().all(|r| r[0] == "source"));
 }
+
+// Regression (R11): frequency detects all-unique (ID) columns by comparing the CACHED cardinality
+// for EQUALITY against the exact row count, then collapses them to one <ALL_UNIQUE> sentinel. That
+// test is invalid against a HyperLogLog estimate (`stats --cardinality-method approx`, a
+// documented speed-up): a merely near-unique column whose estimate happens to land on the row
+// count is wrongly collapsed, DROPPING real frequency rows.
+//
+// Deliberate trade: on small inputs HLL is exact, so the sentinel this now declines to emit would
+// have been correct here. We cannot tell that apart from the wrong case without counting, and
+// under-collapsing only costs verbosity while over-collapsing loses data. Exact cardinality (the
+// default) still gets the sentinel.
+#[test]
+fn frequency_all_unique_shortcut_skipped_on_approx_cardinality_cache() {
+    let wrk = Workdir::new("frequency_all_unique_shortcut_skipped_on_approx_cardinality_cache");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string(), "grp".to_string()]];
+    for i in 0..200 {
+        rows.push(vec![i.to_string(), (i % 3).to_string()]);
+    }
+    wrk.create("ids.csv", rows);
+
+    // pre-build the cache with APPROX cardinality
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .args(["--cardinality-method", "approx"])
+        .arg("--stats-jsonl")
+        .args(["-c", "1"])
+        .arg("ids.csv");
+    wrk.assert_success(&mut cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("ids.csv");
+    let got: String = wrk.stdout_on_success(&mut cmd);
+
+    assert!(
+        !got.contains("<ALL_UNIQUE>"),
+        "the <ALL_UNIQUE> shortcut was taken from an approximate (HLL) cardinality:\n{got}"
+    );
+    // the column is still reported, just enumerated rather than collapsed
+    assert!(
+        got.lines().any(|l| l.starts_with("id,")),
+        "the id column disappeared entirely:\n{got}"
+    );
+}

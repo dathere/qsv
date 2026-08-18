@@ -3232,6 +3232,43 @@ fn stats_cache_filesize_conflict(input_path: &str, bases: [&Path; 2]) -> bool {
     })
 }
 
+/// Was the stats cache beside `input_path` built with APPROXIMATE cardinality
+/// (`--cardinality-method approx`, i.e. `HyperLogLog`)?
+///
+/// HLL carries roughly +/-1.5% error, so a cached cardinality must not be compared for EQUALITY
+/// against an exact row count. `frequency` does exactly that to detect all-unique (ID) columns and
+/// collapse them to a single `<ALL_UNIQUE>` sentinel. Against an approximate cardinality that
+/// comparison fails both ways: a genuine ID column almost never lands exactly on the row count, so
+/// the short-circuit is lost and a full per-column hashmap is built (a performance cliff on the
+/// very columns the short-circuit exists for); and a merely near-unique column whose estimate
+/// happens to land on the row count is wrongly collapsed, **dropping real frequency rows**.
+///
+/// Same convention as the sibling sidecar checks: only a positive, readable `"approx"` counts. A
+/// missing or unparseable sidecar means "no opinion", so a cache without provenance is treated as
+/// exact - which is what it was before `--cardinality-method` existed.
+pub fn stats_cache_cardinality_is_approx(input_path: Option<&str>) -> bool {
+    let Some(raw) = input_path else {
+        // stdin has no stable path to key a cache on
+        return false;
+    };
+    let path = Path::new(raw);
+    let canonical = path.canonicalize().ok();
+
+    [Some(path), canonical.as_deref()]
+        .into_iter()
+        .flatten()
+        .any(|base| {
+            std::fs::read_to_string(base.with_extension("stats.csv.json"))
+                .ok()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                .and_then(|m| {
+                    m.get("flag_cardinality_method")
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                })
+                .is_some_and(|m| m.eq_ignore_ascii_case("approx"))
+        })
+}
+
 /// Does the stats cache's metadata sidecar POSTDATE the `.stats.csv.data.jsonl` beside it?
 ///
 /// If it does, the JSONL was produced by an earlier stats run and no longer describes the stats
@@ -5476,6 +5513,35 @@ mod tests {
         // behind. This is the case that silently poisoned consumers.
         filetime::set_file_mtime(&sidecar, FileTime::from_unix_time(3_000, 0)).unwrap();
         assert!(stats_jsonl_predates_stats_cache(&jsonl, [&input, &input]));
+    }
+
+    #[test]
+    fn statsdata_carries_every_column_stats_emits() {
+        // StatsData has no deny_unknown_fields, so a column present in the cache but missing
+        // from the struct is SILENTLY DROPPED on deserialize rather than erroring. That is how
+        // sortiness, geometric_mean, harmonic_mean and percentiles stayed unreachable to every
+        // consumer (schema, frequency, tojsonl, viz smart, describegpt) despite `stats` writing
+        // them into every .stats.csv.data.jsonl. Shapes and values below are taken from a real
+        // `stats --everything --stats-jsonl` line.
+        let line = r#"{"field":"id","type":"Integer","nullcount":0,"cardinality":5,
+            "sortiness":1.0,"geometric_mean":2.6052,"harmonic_mean":2.1898,
+            "percentiles":"5: 1|10: 1|40: 2|60: 3|90: 5|95: 5"}"#;
+
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(line).unwrap();
+
+        assert_eq!(s.sortiness, Some(1.0));
+        assert_eq!(s.geometric_mean, Some(2.6052));
+        assert_eq!(s.harmonic_mean, Some(2.1898));
+        assert_eq!(
+            s.percentiles.as_deref(),
+            Some("5: 1|10: 1|40: 2|60: 3|90: 5|95: 5")
+        );
+
+        // and a cache written before these columns existed must still deserialize
+        let legacy = r#"{"field":"id","type":"Integer","nullcount":0,"cardinality":5}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(legacy).unwrap();
+        assert_eq!(s.sortiness, None);
+        assert_eq!(s.percentiles, None);
     }
 
     #[cfg(test)]

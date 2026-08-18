@@ -2299,16 +2299,15 @@ impl Args {
             let (send, args, sel) = (send.clone(), Arc::clone(&args), sel.clone());
             let weight_idx: Option<usize> = weight_col_idx;
             pool.execute(move || {
-                // safety: indexed() is safe as we know we have an index file
-                // and we know it will return an Ok
-                // arguably, there is still a very small risk of a TOCTOU here,
-                // but it's unlikely
-                let mut idx = unsafe {
-                    args.rconfig()
-                        .indexed()
-                        .unwrap_unchecked()
-                        .unwrap_unchecked()
-                };
+                // The parent verified the index exists before chunking, but it can be
+                // deleted or invalidated in between (TOCTOU) - notably by a concurrent
+                // run cleaning up its autoindex. Fail loudly with actionable info like
+                // the seek() below, rather than hitting undefined behavior.
+                let mut idx = args
+                    .rconfig()
+                    .indexed()
+                    .expect("Failed to re-open index for parallel stats.")
+                    .expect("Index is no longer available for parallel stats.");
                 // safety: seek() is safe as we know we have an index file
                 // we do an expect() here so that it triggers a human-panic
                 // with some actionable info if the index is corrupted
@@ -2319,14 +2318,13 @@ impl Args {
                 // chunk_size doubles as the capacity hint: each worker only ever
                 // accumulates one chunk's worth of values, so hinting the full
                 // file row count here would balloon RSS x nchunks.
-                // safety: send will only return an Error if the channel has been disconnected
-                unsafe {
-                    send.send((
-                        i,
-                        args.compute(&sel, &mut idx, chunk_size, chunk_size, weight_idx),
-                    ))
-                    .unwrap_unchecked();
-                }
+                // send only fails if the receiver is already gone, in which case the
+                // merge loop has ended and there is nobody left to hand this chunk to.
+                // Drop it deliberately instead of relying on an unchecked unwrap.
+                let _ = send.send((
+                    i,
+                    args.compute(&sel, &mut idx, chunk_size, chunk_size, weight_idx),
+                ));
             });
         }
         drop(send);

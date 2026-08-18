@@ -1427,6 +1427,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .keep()
             .or(Err("Cannot keep temporary file".to_string()))?;
 
+        // Take ownership of cleanup the instant keep() disables the tempfile's own
+        // auto-delete. The delimiter sniffing below seeks and reads the file, and an
+        // error from either would otherwise return before the guard existed - leaking
+        // the very spill this guard is here to reap.
+        stdin_tempfile_guard = Some(StdinTempFile(tempfile_path.clone()));
+
         // Only infer delimiter if QSV_DEFAULT_DELIMITER is not set
         if std::env::var("QSV_DEFAULT_DELIMITER").is_err() {
             // Seek to start of file before reading
@@ -1471,7 +1477,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         }
 
-        stdin_tempfile_guard = Some(StdinTempFile(tempfile_path.clone()));
         args.arg_input = Some(tempfile_path.to_string_lossy().to_string());
         rconfig.path = Some(tempfile_path);
     } else {

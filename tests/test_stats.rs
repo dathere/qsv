@@ -7647,3 +7647,68 @@ fn stats_invalid_zip_with_skip_format_check_does_not_error() {
     cmd.env("QSV_SKIP_FORMAT_CHECK", "1").arg("bad.zip");
     wrk.assert_success(&mut cmd);
 }
+
+#[test]
+fn stats_string_max_length_multibyte_utf8() {
+    // Regression: QSV_STATS_STRING_MAX_LENGTH truncated min/max by slicing at a raw byte
+    // index, which panics when that index lands inside a multibyte character.
+    let wrk = Workdir::new("stats_string_max_length_multibyte_utf8");
+    wrk.create(
+        "data.csv",
+        vec![svec!["jp"], svec!["日本語テキスト"], svec!["zzz"]],
+    );
+
+    // 4 falls inside the 3-byte "日" / "本" boundary - the panic case
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv").env("QSV_STATS_STRING_MAX_LENGTH", "4");
+
+    // on_success: the regression being guarded is a panic, so a clean exit is as much
+    // the assertion as the truncated value itself
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+
+    // field,type,is_ascii,sum,min,max -> max is index 5
+    let mut max_value = String::new();
+    for row in &got {
+        if !row.is_empty() && row[0] == "jp" && row.len() > 5 {
+            max_value = row[5].clone();
+            break;
+        }
+    }
+
+    // truncated on a char boundary at or below 4 bytes, not mid-character
+    assert_eq!(max_value, "日...");
+}
+
+#[test]
+fn stats_integer_range_no_i64_overflow() {
+    // Regression: range was computed as max - min in i64, which overflows for a column
+    // spanning more than i64::MAX - panicking under overflow-checks and wrapping to -1
+    // in release builds. It is now computed in i128.
+    let wrk = Workdir::new("stats_integer_range_no_i64_overflow");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n"],
+            svec!["-9223372036854775808"],
+            svec!["9223372036854775807"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv");
+
+    // on_success: the regression being guarded is an overflow panic, so a clean exit is
+    // as much the assertion as the range value itself
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+
+    // field,type,is_ascii,sum,min,max,range -> range is index 6
+    let mut range_value = String::new();
+    for row in &got {
+        if !row.is_empty() && row[0] == "n" && row.len() > 6 {
+            range_value = row[6].clone();
+            break;
+        }
+    }
+
+    assert_eq!(range_value, "18446744073709551615");
+}

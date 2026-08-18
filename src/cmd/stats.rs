@@ -1154,6 +1154,26 @@ fn try_enable_approx_sketches(
 /// * Handles CSV parsing errors gracefully
 /// * Manages temporary file creation and cleanup
 /// * Provides detailed error messages for configuration issues
+/// RAII guard for the temp file that stdin is spilled to.
+///
+/// Removing the file on Drop guarantees cleanup on *every* exit path from `run()`.
+/// There are a dozen fallible operations between the spill and the end of the run
+/// (sniffing, compute, flush, cache install); an early return from any of them used
+/// to leak a full copy of stdin - which for a piped multi-GB input filled the disk.
+///
+/// Only the path is held, deliberately: the write handle must still be dropped before
+/// any reader re-opens the path by name (Windows/ARM64 deadlocks otherwise).
+struct StdinTempFile(PathBuf);
+
+impl Drop for StdinTempFile {
+    fn drop(&mut self) {
+        if std::fs::remove_file(&self.0).is_err() {
+            // fails silently if it can't remove the temp file
+            log::warn!("Could not remove stdin temp file: {}", self.0.display());
+        }
+    }
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
@@ -1389,7 +1409,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // infer delimiter when we're getting input from stdin
     // as the stats engine needs to know the delimiter or it will panic
-    let mut stdin_tempfile_path = None;
+    let mut stdin_tempfile_guard: Option<StdinTempFile> = None;
     if rconfig.is_stdin() {
         // read from stdin and write to a temp file
         log::info!("Reading from stdin");
@@ -1406,6 +1426,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let (mut preview_file, tempfile_path) = stdin_file
             .keep()
             .or(Err("Cannot keep temporary file".to_string()))?;
+
+        // Take ownership of cleanup the instant keep() disables the tempfile's own
+        // auto-delete. The delimiter sniffing below seeks and reads the file, and an
+        // error from either would otherwise return before the guard existed - leaking
+        // the very spill this guard is here to reap.
+        stdin_tempfile_guard = Some(StdinTempFile(tempfile_path.clone()));
 
         // Only infer delimiter if QSV_DEFAULT_DELIMITER is not set
         if std::env::var("QSV_DEFAULT_DELIMITER").is_err() {
@@ -1433,21 +1459,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let inferred = if tab_count > 0
                 || (space_groups > 2 && comma_count == 0 && semicolon_count == 0)
             {
-                "\t"
+                b'\t'
             } else if semicolon_count > 0 && semicolon_count >= comma_count {
-                ";"
+                b';'
             } else {
-                ","
+                b','
             };
 
-            // Set QSV_DEFAULT_DELIMITER environment variable
-            // this is only for the current process. When qsv exits, it will not persist
-            // safety: we wrap the set_var in an unsafe block because it's an unsafe function,
-            // as it assumes a single-threaded environment, which we still are at this point
-            unsafe { std::env::set_var("QSV_DEFAULT_DELIMITER", inferred) };
+            // Thread the inferred delimiter through args rather than mutating the
+            // process environment. rconfig() applies flag_delimiter to every Config
+            // it builds, so this reaches the stats engine exactly the way the
+            // QSV_DEFAULT_DELIMITER env var did - without an unsafe global mutation
+            // that is UB if any other thread reads the environment concurrently.
+            // An explicit --delimiter always wins.
+            if args.flag_delimiter.is_none() {
+                args.flag_delimiter = Some(Delimiter(inferred));
+            }
         }
 
-        stdin_tempfile_path = Some(tempfile_path.clone());
         args.arg_input = Some(tempfile_path.to_string_lossy().to_string());
         rconfig.path = Some(tempfile_path);
     } else {
@@ -1858,10 +1887,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .flag_dates_whitelist_raw
         .clone_from(&args.flag_dates_whitelist);
 
-    if let Some(pb) = stdin_tempfile_path {
-        // remove the temp file we created to store stdin
-        std::fs::remove_file(pb)?;
-    }
+    // remove the temp file we created to store stdin. Dropping the guard here keeps
+    // the removal at exactly the same point as before on the success path, while the
+    // guard itself still cleans up on any early return above. Removal is best-effort:
+    // an externally-reaped temp file must not fail a run whose stats already succeeded.
+    drop(stdin_tempfile_guard);
 
     let mut currstats_filename = if compute_stats {
         // we computed the stats, use the stats temp file
@@ -2299,16 +2329,15 @@ impl Args {
             let (send, args, sel) = (send.clone(), Arc::clone(&args), sel.clone());
             let weight_idx: Option<usize> = weight_col_idx;
             pool.execute(move || {
-                // safety: indexed() is safe as we know we have an index file
-                // and we know it will return an Ok
-                // arguably, there is still a very small risk of a TOCTOU here,
-                // but it's unlikely
-                let mut idx = unsafe {
-                    args.rconfig()
-                        .indexed()
-                        .unwrap_unchecked()
-                        .unwrap_unchecked()
-                };
+                // The parent verified the index exists before chunking, but it can be
+                // deleted or invalidated in between (TOCTOU) - notably by a concurrent
+                // run cleaning up its autoindex. Fail loudly with actionable info like
+                // the seek() below, rather than hitting undefined behavior.
+                let mut idx = args
+                    .rconfig()
+                    .indexed()
+                    .expect("Failed to re-open index for parallel stats.")
+                    .expect("Index is no longer available for parallel stats.");
                 // safety: seek() is safe as we know we have an index file
                 // we do an expect() here so that it triggers a human-panic
                 // with some actionable info if the index is corrupted
@@ -2319,14 +2348,13 @@ impl Args {
                 // chunk_size doubles as the capacity hint: each worker only ever
                 // accumulates one chunk's worth of values, so hinting the full
                 // file row count here would balloon RSS x nchunks.
-                // safety: send will only return an Error if the channel has been disconnected
-                unsafe {
-                    send.send((
-                        i,
-                        args.compute(&sel, &mut idx, chunk_size, chunk_size, weight_idx),
-                    ))
-                    .unwrap_unchecked();
-                }
+                // send only fails if the receiver is already gone, in which case the
+                // merge loop has ended and there is nobody left to hand this chunk to.
+                // Drop it deliberately instead of relying on an unchecked unwrap.
+                let _ = send.send((
+                    i,
+                    args.compute(&sel, &mut idx, chunk_size, chunk_size, weight_idx),
+                ));
             });
         }
         drop(send);
@@ -6022,18 +6050,17 @@ impl TypedMinMax {
                     });
 
                     let (min_str, max_str) = if let Some(max_len) = *max_length {
-                        (
-                            if min_str.len() > max_len {
-                                format!("{}...", &min_str[..max_len])
-                            } else {
-                                min_str
-                            },
-                            if max_str.len() > max_len {
-                                format!("{}...", &max_str[..max_len])
-                            } else {
-                                max_str
-                            },
-                        )
+                        // Truncate on a char boundary at or below max_len. Slicing at a raw
+                        // byte index panics when the min/max value is multibyte UTF-8.
+                        let truncate_at_boundary = |mut s: String| -> String {
+                            if s.len() > max_len {
+                                let boundary = s.floor_char_boundary(max_len);
+                                s.truncate(boundary);
+                                s.push_str("...");
+                            }
+                            s
+                        };
+                        (truncate_at_boundary(min_str), truncate_at_boundary(max_str))
                     } else {
                         (min_str, max_str)
                     };
@@ -6067,7 +6094,12 @@ impl TypedMinMax {
                     Some((
                         itoa::Buffer::new().format(*min).to_owned(),
                         itoa::Buffer::new().format(*max).to_owned(),
-                        itoa::Buffer::new().format(*max - *min).to_owned(),
+                        // subtract in i128: a column spanning more than i64::MAX
+                        // (e.g. i64::MIN..=i64::MAX) overflows a raw i64 subtraction,
+                        // which panics under overflow-checks and wraps to -1 in release
+                        itoa::Buffer::new()
+                            .format(i128::from(*max) - i128::from(*min))
+                            .to_owned(),
                         sort_order.to_string(),
                         util::round_num(sortiness, round_places),
                     ))

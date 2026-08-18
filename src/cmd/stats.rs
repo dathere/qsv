@@ -1154,6 +1154,26 @@ fn try_enable_approx_sketches(
 /// * Handles CSV parsing errors gracefully
 /// * Manages temporary file creation and cleanup
 /// * Provides detailed error messages for configuration issues
+/// RAII guard for the temp file that stdin is spilled to.
+///
+/// Removing the file on Drop guarantees cleanup on *every* exit path from `run()`.
+/// There are a dozen fallible operations between the spill and the end of the run
+/// (sniffing, compute, flush, cache install); an early return from any of them used
+/// to leak a full copy of stdin - which for a piped multi-GB input filled the disk.
+///
+/// Only the path is held, deliberately: the write handle must still be dropped before
+/// any reader re-opens the path by name (Windows/ARM64 deadlocks otherwise).
+struct StdinTempFile(PathBuf);
+
+impl Drop for StdinTempFile {
+    fn drop(&mut self) {
+        if std::fs::remove_file(&self.0).is_err() {
+            // fails silently if it can't remove the temp file
+            log::warn!("Could not remove stdin temp file: {}", self.0.display());
+        }
+    }
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
@@ -1389,7 +1409,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // infer delimiter when we're getting input from stdin
     // as the stats engine needs to know the delimiter or it will panic
-    let mut stdin_tempfile_path = None;
+    let mut stdin_tempfile_guard: Option<StdinTempFile> = None;
     if rconfig.is_stdin() {
         // read from stdin and write to a temp file
         log::info!("Reading from stdin");
@@ -1433,21 +1453,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let inferred = if tab_count > 0
                 || (space_groups > 2 && comma_count == 0 && semicolon_count == 0)
             {
-                "\t"
+                b'\t'
             } else if semicolon_count > 0 && semicolon_count >= comma_count {
-                ";"
+                b';'
             } else {
-                ","
+                b','
             };
 
-            // Set QSV_DEFAULT_DELIMITER environment variable
-            // this is only for the current process. When qsv exits, it will not persist
-            // safety: we wrap the set_var in an unsafe block because it's an unsafe function,
-            // as it assumes a single-threaded environment, which we still are at this point
-            unsafe { std::env::set_var("QSV_DEFAULT_DELIMITER", inferred) };
+            // Thread the inferred delimiter through args rather than mutating the
+            // process environment. rconfig() applies flag_delimiter to every Config
+            // it builds, so this reaches the stats engine exactly the way the
+            // QSV_DEFAULT_DELIMITER env var did - without an unsafe global mutation
+            // that is UB if any other thread reads the environment concurrently.
+            // An explicit --delimiter always wins.
+            if args.flag_delimiter.is_none() {
+                args.flag_delimiter = Some(Delimiter(inferred));
+            }
         }
 
-        stdin_tempfile_path = Some(tempfile_path.clone());
+        stdin_tempfile_guard = Some(StdinTempFile(tempfile_path.clone()));
         args.arg_input = Some(tempfile_path.to_string_lossy().to_string());
         rconfig.path = Some(tempfile_path);
     } else {
@@ -1858,10 +1882,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .flag_dates_whitelist_raw
         .clone_from(&args.flag_dates_whitelist);
 
-    if let Some(pb) = stdin_tempfile_path {
-        // remove the temp file we created to store stdin
-        std::fs::remove_file(pb)?;
-    }
+    // remove the temp file we created to store stdin. Dropping the guard here keeps
+    // the removal at exactly the same point as before on the success path, while the
+    // guard itself still cleans up on any early return above. Removal is best-effort:
+    // an externally-reaped temp file must not fail a run whose stats already succeeded.
+    drop(stdin_tempfile_guard);
 
     let mut currstats_filename = if compute_stats {
         // we computed the stats, use the stats temp file

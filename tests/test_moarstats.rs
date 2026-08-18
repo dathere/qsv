@@ -6582,3 +6582,69 @@ fn moarstats_outlier_counts_populated() {
         "Did not find 'value' field in moarstats output"
     );
 }
+
+// INVARIANT LOCK (not a reproduction of a past failure -- it passes on the code that had the
+// bug, see below). `moarstats` writes <FILESTEM>.stats.csv.data.jsonl from its EXTENDED stats
+// and writes no .stats.csv.json sidecar of its own, and util.rs deliberately trusts sidecar-less
+// jsonl so that richer cache is not discarded. Every stats-cache check added to the consumer
+// read path must preserve that.
+//
+// A date-blind-cache guard added to that path did regenerate this file and silently downgrade it
+// to the lean column set, costing `viz smart` its moarstats hints -- but only when the BASE stats
+// were themselves date-blind. Standalone `qsv moarstats` passes --infer-dates in its own default
+// --stats-options, so this path was never affected and this test would NOT have caught it.
+// It is here to stop a future check from ignoring the sidecar-less/enriched case wholesale.
+#[test]
+fn moarstats_rich_jsonl_survives_a_schema_run() {
+    let wrk = Workdir::new("moarstats_rich_jsonl_survives_a_schema_run");
+    let mut rows: Vec<Vec<String>> =
+        vec![vec!["id".to_string(), "v".to_string(), "cat".to_string()]];
+    for i in 0..300 {
+        rows.push(vec![
+            i.to_string(),
+            ((i * 7919) % 997).to_string(),
+            ((b'a' + (i % 5) as u8) as char).to_string(),
+        ]);
+    }
+    wrk.create("m.csv", rows);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("m.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = wrk.path("m.stats.csv.data.jsonl");
+    let cols_after_moarstats = serde_json::from_str::<serde_json::Value>(
+        std::fs::read_to_string(&jsonl)
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap()
+    .as_object()
+    .unwrap()
+    .len();
+
+    // a consumer that reads the stats cache must not downgrade it
+    let mut cmd = wrk.command("schema");
+    cmd.arg("m.csv");
+    wrk.assert_success(&mut cmd);
+
+    let cols_after_schema = serde_json::from_str::<serde_json::Value>(
+        std::fs::read_to_string(&jsonl)
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap()
+    .as_object()
+    .unwrap()
+    .len();
+
+    assert_eq!(
+        cols_after_moarstats, cols_after_schema,
+        "schema downgraded moarstats' extended stats jsonl from {cols_after_moarstats} columns to \
+         {cols_after_schema}"
+    );
+}

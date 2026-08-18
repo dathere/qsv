@@ -8076,3 +8076,98 @@ fn stats_everything_approx_quantiles_header_matches_records() {
         "approx quantiles cannot compute MAD, so no mad column should be advertised"
     );
 }
+
+// Regression: the stats subprocess folds QSV_PREFER_DMY into flag_prefer_dmy (stats.rs), so a
+// sidecar written under that env var records prefer_dmy=true -- while consumers that build
+// SchemaArgs literally (frequency, joinp, pivotp, sample) hardcode flag_prefer_dmy: false.
+// Comparing the raw flag made every such run mismatch its own freshly written cache and
+// regenerate it, on every invocation, forever.
+#[test]
+fn stats_cache_no_dmy_churn_under_prefer_dmy_envvar() {
+    let wrk = Workdir::new("stats_cache_no_dmy_churn_under_prefer_dmy_envvar");
+    wrk.create(
+        "dmy.csv",
+        vec![
+            svec!["id", "open_dt"],
+            svec!["1", "2020-01-15"],
+            svec!["2", "2021-06-30"],
+            svec!["3", "2019-03-04"],
+        ],
+    );
+
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_PREFER_DMY", "1").arg("dmy.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = wrk.path("dmy.stats.csv.data.jsonl");
+    let first = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
+
+    // a second identical run must REUSE the cache it just wrote
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_PREFER_DMY", "1").arg("dmy.csv");
+    wrk.assert_success(&mut cmd);
+
+    let second = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
+    assert_eq!(
+        first, second,
+        "the stats cache was regenerated on an identical second run - QSV_PREFER_DMY makes the \
+         cache permanently self-conflicting"
+    );
+}
+
+// Regression: `stats` compares the recorded filesize before reusing its CSV cache, but cache
+// CONSUMERS read the .stats.csv.data.jsonl through get_stats_records, which judged it by mtime
+// and parsing options only. The same mtime-preserving replacement that `stats` correctly rejects
+// therefore still served consumers the PREVIOUS file's statistics.
+#[test]
+fn stats_jsonl_cache_rejected_after_same_mtime_content_swap() {
+    let wrk = Workdir::new("stats_jsonl_cache_rejected_after_same_mtime_content_swap");
+    wrk.create(
+        "sz.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "100"],
+            svec!["2", "200"],
+            svec!["3", "300"],
+        ],
+    );
+    let input = wrk.path("sz.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-dates")
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .args(["-c", "1"])
+        .arg("sz.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = wrk.path("sz.stats.csv.data.jsonl");
+    assert!(
+        std::fs::read_to_string(&jsonl).unwrap().contains("600"),
+        "setup: sum of v should be 600"
+    );
+
+    // replace the content but keep the original mtime, exactly as `cp -p` would
+    let meta = std::fs::metadata(&input).unwrap();
+    let times = std::fs::FileTimes::new()
+        .set_accessed(meta.accessed().unwrap())
+        .set_modified(meta.modified().unwrap());
+    std::fs::write(&input, "id,v\n9,7\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&input)
+        .unwrap()
+        .set_times(times)
+        .unwrap();
+
+    // a consumer must not be served the pre-swap stats
+    let mut cmd = wrk.command("schema");
+    cmd.arg("sz.csv");
+    wrk.assert_success(&mut cmd);
+
+    let after = std::fs::read_to_string(&jsonl).unwrap();
+    assert!(
+        !after.contains("600"),
+        "consumer was served pre-swap stats after an mtime-preserving replacement:\n{after}"
+    );
+}

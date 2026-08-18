@@ -3371,6 +3371,16 @@ fn read_current_sniff_whitelist(input_path: &std::path::Path, args: &Args) -> Op
     #[cfg(target_endian = "big")]
     let cached: StatsArgs = serde_json::from_str(&json_str).ok()?;
 
+    // The input must also be the same SIZE, not merely older. mtime alone is defeated by any
+    // mtime-preserving replacement (cp -p, tar -x, git checkout, rsync -t): the main stats cache
+    // is correctly invalidated by its own size check, but reusing this sniff-resolved whitelist
+    // would still apply the PREVIOUS file's date-inference choices to the new content.
+    if cached.filesize_bytes != 0
+        && fs::metadata(input_path).map(|m| m.len()).ok()? != cached.filesize_bytes
+    {
+        return None;
+    }
+
     // Only reuse when the cache actually performed sniff-based date inference. A cache built
     // WITHOUT --infer-dates stores the unresolved literal "sniff" keyword in flag_dates_whitelist
     // (resolution is gated on --infer-dates), and reusing that would skip sniffing and leave the

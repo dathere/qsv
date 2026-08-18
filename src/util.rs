@@ -3206,6 +3206,32 @@ fn stats_cache_lacks_infer_dates(bases: [&Path; 2]) -> bool {
     })
 }
 
+/// Does the stats cache's metadata sidecar record an input SIZE that disagrees with the input
+/// on disk right now?
+///
+/// `stats` itself compares this before reusing its CSV cache, because mtime alone is defeated by
+/// any mtime-preserving replacement (`cp -p`, `tar -x`, `git checkout`, `rsync -t`). Cache
+/// CONSUMERS read the `.stats.csv.data.jsonl` through `get_stats_records`, which judged it by
+/// mtime and parsing options only - so the same swap that `stats` now rejects still served
+/// consumers the previous file's statistics.
+///
+/// Same convention as its siblings: only a positive, readable disagreement counts. A missing or
+/// unparseable sidecar, or one without `filesize_bytes`, means "no opinion", so the deliberate
+/// sidecar-less `moarstats` cache is never discarded on these grounds.
+fn stats_cache_filesize_conflict(input_path: &str, bases: [&Path; 2]) -> bool {
+    let Ok(input_len) = std::fs::metadata(input_path).map(|m| m.len()) else {
+        return false;
+    };
+
+    bases.iter().any(|base| {
+        std::fs::read_to_string(base.with_extension("stats.csv.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|m| m.get("filesize_bytes").and_then(serde_json::Value::as_u64))
+            .is_some_and(|recorded| recorded != 0 && recorded != input_len)
+    })
+}
+
 /// Does the stats cache's metadata sidecar POSTDATE the `.stats.csv.data.jsonl` beside it?
 ///
 /// If it does, the JSONL was produced by an earlier stats run and no longer describes the stats
@@ -3334,6 +3360,32 @@ pub fn get_stats_records(
 
         let statsdata_mtime = FileTime::from_last_modification_time(&statsdata_metadata);
         let input_mtime = FileTime::from_last_modification_time(&input_metadata);
+        // Does THIS mode actually infer dates? Mirrors the per-mode argv built below: Schema
+        // and ProfileSchema always pass --infer-dates, PolarsSchema only when it has a
+        // whitelist (i.e. sniff found date columns), and the Frequency modes never do.
+        //
+        // Used for both date-sensitive checks below. A mode that does not infer dates cannot
+        // be affected by --prefer-dmy or by a date-blind cache, so neither may force it to
+        // regenerate.
+        let mode_infers_dates = match requested_mode {
+            StatsMode::Schema | StatsMode::ProfileSchema => true,
+            #[cfg(feature = "polars")]
+            StatsMode::PolarsSchema => !args.flag_dates_whitelist.is_empty(),
+            _ => false,
+        };
+
+        // Compare the EFFECTIVE dmy preference. The stats subprocess folds QSV_PREFER_DMY in
+        // (stats.rs does `flag_prefer_dmy || get_envvar_flag("QSV_PREFER_DMY")`), so a sidecar
+        // written under that env var records `true` -- while consumers that build SchemaArgs
+        // literally (frequency, joinp, pivotp, sample) hardcode `flag_prefer_dmy: false`.
+        // Comparing the raw flag made every one of those runs mismatch its own cache and
+        // regenerate it, on every invocation, forever.
+        let effective_prefer_dmy = if mode_infers_dates {
+            Some(args.flag_prefer_dmy || get_envvar_flag("QSV_PREFER_DMY"))
+        } else {
+            None
+        };
+
         if statsdata_mtime > input_mtime {
             // mtime alone is not sufficient: the cache is NOT keyed by parsing options, so a
             // cache written by an earlier run with a different --no-headers/--delimiter would
@@ -3343,7 +3395,7 @@ pub fn get_stats_records(
                 &canonical_input_path,
                 args.flag_no_headers,
                 args.flag_delimiter,
-                Some(args.flag_prefer_dmy),
+                effective_prefer_dmy,
             ) {
                 info!(
                     "stats.csv.data.jsonl file was built with different parsing options \
@@ -3359,7 +3411,20 @@ pub fn get_stats_records(
                      stats jsonl."
                 );
                 false
-            } else if matches!(requested_mode, StatsMode::Schema | StatsMode::ProfileSchema)
+            } else if stats_cache_filesize_conflict(
+                input_path,
+                [Path::new(input_path), &canonical_input_path],
+            ) {
+                // the input was replaced by content of a DIFFERENT size while keeping its
+                // mtime (cp -p, tar -x, git checkout, rsync -t). `qsv stats` itself now
+                // rejects its CSV cache on this, but consumers read the jsonl through this
+                // path and would otherwise still be served the pre-swap statistics.
+                info!(
+                    "stats.csv.data.jsonl file describes an input of a different size. \
+                     Regenerating stats jsonl."
+                );
+                false
+            } else if mode_infers_dates
                 && stats_cache_lacks_infer_dates([Path::new(input_path), &canonical_input_path])
             {
                 info!(

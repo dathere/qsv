@@ -2565,6 +2565,23 @@ pub async fn download_file(
 
     let res = client.get(url).send().await?;
 
+    // A non-2xx response still HAS a body, and streaming it to disk as if it were the payload is
+    // how a "Not Found" page ends up mistaken for the file that was asked for - a Geonames index,
+    // a JSON Schema, a CSV. Every caller here downloads something it will then parse, so there is
+    // no caller for which an error body is useful. Fail here, naming the status, instead of
+    // failing much later and much less usefully on the contents.
+    // `is_success()` rather than `error_for_status`, which only rejects 4xx/5xx: a FINAL 3xx that
+    // was not followed (a 304, or a redirect the client stopped at) would otherwise be streamed to
+    // disk as the payload, which is the same defect wearing a different status code.
+    if !res.status().is_success() {
+        let status = res.status();
+        let reason = status.canonical_reason().unwrap_or("unexpected status");
+        return fail_clierror!(
+            "Download failed for {url} - the server returned {} {reason}.",
+            status.as_u16()
+        );
+    }
+
     // if we can't get the content length, set it to sentinel value
     let total_size = res.content_length().unwrap_or(u64::MAX);
 
@@ -5002,6 +5019,92 @@ mod tests {
     // only used by the hash_blake3_file tests, which are gated out of qsvlite
     #[cfg(not(feature = "lite"))]
     use std::io::Write;
+
+    /// A non-2xx response must be an ERROR, never a file.
+    ///
+    /// `download_file` streamed whatever came back, so a "Not Found" page was written to disk as
+    /// if it were the payload and only failed later, when something tried to parse it - as a
+    /// Geonames index, a JSON Schema, a CSV. Served from a local socket so this is deterministic
+    /// and offline.
+    #[test]
+    fn download_file_rejects_non_success_status() {
+        use std::io::{Read, Write as _};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            if let Ok((mut sock, _)) = listener.accept() {
+                // drain the request so the client isn't left waiting on us
+                let _ = sock.read(&mut [0_u8; 1024]);
+                let _ = sock.write_all(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nNot \
+                      Found",
+                );
+            }
+        });
+
+        let dest =
+            std::env::temp_dir().join(format!("qsv_download_404_{}.bin", std::process::id()));
+        let _ = std::fs::remove_file(&dest);
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(super::download_file(
+            &format!("http://{addr}/missing.sz"),
+            dest.clone(),
+            false,
+            None,
+            Some(10),
+            None,
+        ));
+        let _ = server.join();
+
+        assert!(result.is_err(), "a 404 response must not be a success");
+        assert!(
+            !dest.exists(),
+            "the error body must not be left behind as the payload"
+        );
+        let _ = std::fs::remove_file(&dest);
+    }
+
+    /// A FINAL 3xx must be refused too.
+    ///
+    /// The guard is `!status.is_success()` rather than `error_for_status`, which only rejects
+    /// 4xx/5xx - so a 304, or a redirect the client stopped at, would otherwise be streamed to
+    /// disk as if it were the payload. Same defect, different status code.
+    #[test]
+    fn download_file_rejects_final_3xx() {
+        use std::io::{Read, Write as _};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            if let Ok((mut sock, _)) = listener.accept() {
+                let _ = sock.read(&mut [0_u8; 1024]);
+                let _ = sock.write_all(
+                    b"HTTP/1.1 304 Not Modified\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+            }
+        });
+
+        let dest =
+            std::env::temp_dir().join(format!("qsv_download_304_{}.bin", std::process::id()));
+        let _ = std::fs::remove_file(&dest);
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(super::download_file(
+            &format!("http://{addr}/unchanged.sz"),
+            dest.clone(),
+            false,
+            None,
+            Some(10),
+            None,
+        ));
+        let _ = server.join();
+
+        assert!(result.is_err(), "a 304 response must not be a success");
+        assert!(!dest.exists(), "a 304 must not leave a file behind");
+        let _ = std::fs::remove_file(&dest);
+    }
 
     #[cfg(not(feature = "lite"))]
     use tempfile::NamedTempFile;

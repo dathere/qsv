@@ -2282,8 +2282,14 @@ fn geocode_index_load_accepts_a_valid_index() {
     // the numeric shortcut, and an explicit .rkyv path.
     let wrk = Workdir::new("geocode_index_load_accepts_a_valid_index");
 
+    // cache dir deliberately SEPARATE from the working dir, so the working dir doubles as the
+    // check that a shortcut download stages nothing next to wherever the command was run
+    let cache_dir = wrk.path("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+    let cache = cache_dir.to_string_lossy().to_string();
+
     let mut cmd = wrk.command("geocode");
-    cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd.env("QSV_CACHE_DIR", &cache);
     cmd.arg("index-load").arg("15000");
     let out = wrk.output(&mut cmd);
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -2296,12 +2302,22 @@ fn geocode_index_load_accepts_a_valid_index() {
         "a valid index must not be called invalid: {stderr}"
     );
 
-    // the shortcut decompresses the payload beside itself, so the .rkyv it produced is a
-    // ready-made valid index to exercise the explicit-path form with - no second download
-    let decompressed = wrk.path("15000.rkyv");
-    if decompressed.exists() {
+    // the shortcut stages its payload in the CACHE dir - never beside the command's working
+    // directory, which used to collect a bare `15000` and `15000.rkyv`
+    for stray in ["15000", "15000.rkyv"] {
+        assert!(
+            !wrk.path(stray).exists(),
+            "index-load must not write {stray} into the working directory"
+        );
+    }
+    let decompressed = cache_dir.join("cities15000.rkyv");
+    assert!(
+        decompressed.exists(),
+        "the shortcut must stage its index in the cache dir"
+    );
+    {
         let mut cmd_2 = wrk.command("geocode");
-        cmd_2.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+        cmd_2.env("QSV_CACHE_DIR", &cache);
         cmd_2.arg("index-load").arg(&decompressed);
         let out2 = wrk.output(&mut cmd_2);
         let stderr2 = String::from_utf8_lossy(&out2.stderr);
@@ -2314,7 +2330,7 @@ fn geocode_index_load_accepts_a_valid_index() {
         // engine instead of copying the file produced an index 696 bytes shorter that could not
         // be loaded at all, while index-load still reported success - so asserting only on the
         // exit status let a corrupt install pass.
-        let installed = wrk.path(&format!(
+        let installed = cache_dir.join(format!(
             "qsv-{}-geocode-index.rkyv",
             env!("CARGO_PKG_VERSION")
         ));
@@ -2338,7 +2354,7 @@ fn geocode_index_load_accepts_a_valid_index() {
     // and the end that actually matters: the installed index must WORK
     wrk.create_from_string("city.csv", "city\nParis\n");
     let mut cmd_3 = wrk.command("geocode");
-    cmd_3.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd_3.env("QSV_CACHE_DIR", &cache);
     cmd_3.args([
         "suggest",
         "city",

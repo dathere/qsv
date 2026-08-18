@@ -2278,7 +2278,7 @@ async fn load_engine_data_resolved(
     // default cities index file
     static DEFAULT_GEONAMES_CITIES_INDEX: u16 = 15000;
 
-    let index_file = std::path::Path::new(&geocode_index_file);
+    let index_file_exists = geocode_index_file.exists();
 
     // the file stem is used to detect the numeric shortcut (e.g. `index-load 15000`)
     let geocode_index_file_stem = geocode_index_file
@@ -2299,7 +2299,19 @@ async fn load_engine_data_resolved(
         None
     };
 
+    // a numeric shortcut names a prebuilt to FETCH, not a path, so the payload is staged in the
+    // geocode cache dir. Downloading to the argument as given wrote `1000` and `1000.rkyv` into
+    // whatever directory the command happened to run in.
+    //
+    // The `~/.qsv-cache` here is the FALLBACK, not the answer: `resolve_geocode_cache_dir` reads
+    // QSV_CACHE_DIR first, which is the only way to relocate the cache for this subcommand -
+    // `qsv geocode index-load <index-file>` takes no `[options]` in the USAGE pattern, so
+    // `--cache-dir` cannot be passed to it and cannot disagree with this. If index-load ever gains
+    // options, thread the caller's already-resolved cache dir in rather than widening this.
+    let mut geocode_index_file = geocode_index_file;
     if let Some(shortcut) = numeric_shortcut {
+        geocode_index_file =
+            resolve_geocode_cache_dir("~/.qsv-cache")?.join(format!("cities{shortcut}.rkyv.sz"));
         if !PREBUILT_CITIES_INDEXES.contains(&shortcut) {
             return fail_incorrectusage_clierror!(
                 "Only the prebuilt cities indexes qsv publishes are supported via the numeric \
@@ -2352,11 +2364,11 @@ async fn load_engine_data_resolved(
                  Build it locally instead with `qsv geocode index-update --cities-url {shortcut}`."
             );
         }
-    } else if index_file.exists() {
+    } else if index_file_exists {
         // load existing local index
         progressbar.println(format!(
             "Loading existing Geonames index from {}",
-            index_file.display()
+            geocode_index_file.display()
         ));
     } else {
         // initial load or index-reset, download index file from qsv releases

@@ -8219,29 +8219,48 @@ fn stats_median_column_is_typed_and_not_dropped() {
     wrk.create(
         "med.csv",
         vec![
-            svec!["id", "v"],
-            svec!["1", "10"],
-            svec!["2", "20"],
-            svec!["3", "30"],
+            svec!["id", "open_dt"],
+            svec!["1", "2020-01-15"],
+            svec!["2", "2021-06-30"],
+            svec!["3", "2019-03-04"],
         ],
     );
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--median")
+    cmd.arg("--infer-dates")
+        .arg("--median")
         .arg("--stats-jsonl")
         .args(["-c", "1"])
         .arg("med.csv");
     wrk.assert_success(&mut cmd);
 
     let jsonl = std::fs::read_to_string(wrk.path("med.stats.csv.data.jsonl")).unwrap();
-    let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+    let rows: Vec<serde_json::Value> = jsonl
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
 
-    let median = first
+    // present at all - it used to be dropped entirely
+    let numeric = rows[0]
         .get("median")
-        .expect("no median key in the stats jsonl");
-    assert!(
-        median.is_number(),
-        "median should be a number, not the String fallback: {median}"
+        .expect("no median key for the id column");
+    assert_eq!(
+        numeric.as_str(),
+        Some("2"),
+        "numeric median was not preserved"
+    );
+
+    // and LOSSLESS for a Date column. median is a type-dependent RENDERING, like min/max:
+    // typing it Float made the JSON conversion coerce the RFC3339 string to 0.0, silently
+    // corrupting date medians.
+    let date = rows[1]
+        .get("median")
+        .expect("no median key for the date column");
+    assert_eq!(
+        date.as_str(),
+        Some("2020-01-15"),
+        "date median was corrupted in the stats jsonl: {date}"
     );
 }
 
@@ -8276,11 +8295,26 @@ fn stats_jsonl_flag_refreshes_a_jsonl_older_than_the_sidecar() {
     cmd.args(["-c", "1"]).arg("stale.csv");
     wrk.assert_success(&mut cmd);
 
-    let before = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
+    // Force the jsonl clearly OLDER than the sidecar rather than relying on two real writes
+    // landing in strict order - a filesystem with coarse timestamp resolution can give them the
+    // same mtime and fail this test even when the implementation is correct.
     let sidecar_mtime = std::fs::metadata(wrk.path("stale.stats.csv.json"))
         .unwrap()
         .modified()
         .unwrap();
+    let forced = sidecar_mtime - std::time::Duration::from_secs(10);
+    std::fs::File::options()
+        .write(true)
+        .open(&jsonl)
+        .unwrap()
+        .set_times(
+            std::fs::FileTimes::new()
+                .set_accessed(forced)
+                .set_modified(forced),
+        )
+        .unwrap();
+
+    let before = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
     assert!(
         sidecar_mtime > before,
         "setup: the sidecar should now be newer than the jsonl"

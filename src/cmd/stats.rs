@@ -700,7 +700,7 @@ pub struct StatsData {
     // stats_satisfy_mode() infers quartile availability from `q2_median.is_some()`, so
     // aliasing would make a --median-only cache (no q1/q3) falsely satisfy ProfileSchema.
     #[serde(default)]
-    pub median: Option<f64>,
+    pub median: Option<String>,
     pub mad: Option<f64>,
     pub lower_outer_fence: Option<f64>,
     pub lower_inner_fence: Option<f64>,
@@ -794,7 +794,12 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
     "n_positive" => JsonTypes::Int,
     "max_precision" => JsonTypes::Int,
     "sparsity" => JsonTypes::Float,
-    "median" => JsonTypes::Float,
+    // String, like `min`/`max` and NOT like `q1`/`q3`: the median cell is a
+    // type-dependent RENDERING. For a Date/DateTime column stats_to_records() emits an
+    // RFC3339 string, and typing this Float makes the JSON conversion coerce that to 0.0 -
+    // silently corrupting date medians. String is lossless for both cases; a consumer that
+    // wants a number parses it, using the row's `type` to know that is meaningful.
+    "median" => JsonTypes::String,
     "mad" => JsonTypes::Float,
     "lower_outer_fence" => JsonTypes::Float,
     "lower_inner_fence" => JsonTypes::Float,

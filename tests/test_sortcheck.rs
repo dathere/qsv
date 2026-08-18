@@ -595,3 +595,52 @@ fn sortcheck_statscache_missing_metadata_no_shortcircuit() {
     cmd.args(["--select", "name"]).arg("in.csv");
     wrk.assert_err(&mut cmd);
 }
+
+// Regression: sortcheck's stats-cache short-circuit reads the cache through
+// get_stats_records_readonly(), which validated mtime, --select, --no-headers and the delimiter
+// but NOT the recorded input size. An mtime-preserving replacement (cp -p, tar -x, git checkout,
+// rsync -t) therefore let a cached "Ascending" sort_order prove an entirely different file
+// sorted: sortcheck exited 0 on descending input.
+#[test]
+fn sortcheck_rejects_stale_cache_after_same_mtime_content_swap() {
+    let wrk = Workdir::new("sortcheck_rejects_stale_cache_after_same_mtime_content_swap");
+    wrk.create(
+        "sc.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+            svec!["4", "40"],
+            svec!["5", "50"],
+        ],
+    );
+    let input = wrk.path("sc.csv");
+
+    // build the stats cache while the file really is ascending
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--stats-jsonl")
+        .args(["-c", "1"])
+        .arg("sc.csv");
+    wrk.assert_success(&mut cmd);
+
+    // replace with UNSORTED content of a different size, preserving the original mtime
+    let meta = std::fs::metadata(&input).unwrap();
+    let times = std::fs::FileTimes::new()
+        .set_accessed(meta.accessed().unwrap())
+        .set_modified(meta.modified().unwrap());
+    std::fs::write(&input, "id,v\n9,1\n3,2\n7,3\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&input)
+        .unwrap()
+        .set_times(times)
+        .unwrap();
+
+    // --numeric so the cache's Integer sort_order matches the comparator, which is what makes
+    // the short-circuit eligible in the first place
+    let mut cmd = wrk.command("sortcheck");
+    cmd.args(["--select", "id"]).arg("--numeric").arg("sc.csv");
+    wrk.assert_err(&mut cmd);
+}

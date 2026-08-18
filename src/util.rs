@@ -3848,6 +3848,18 @@ pub fn get_stats_records_readonly(
     if metadata.get("flag_select").and_then(|v| v.as_str()) != Some("<All>") {
         return None;
     }
+    // The input must be the same SIZE, not merely older. mtime alone is defeated by any
+    // mtime-preserving replacement (cp -p, tar -x, git checkout, rsync -t), and this cache
+    // carries sort_order: consuming a stale one lets `extsort` skip a sort it still needs and
+    // `sortcheck` report replaced, unsorted input as sorted. Unlike get_stats_records, no
+    // sidecar-less allowance is needed here - this path already fails closed without metadata.
+    if metadata
+        .get("filesize_bytes")
+        .and_then(serde_json::Value::as_u64)
+        .is_some_and(|recorded| recorded != 0 && recorded != input_metadata.len())
+    {
+        return None;
+    }
     // --no-headers and the effective delimiter must match the consuming command; shared with
     // `get_stats_records` so the two cannot drift apart again.
     if !stats_cache_parsing_opts_match(

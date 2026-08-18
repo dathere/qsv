@@ -2570,7 +2570,10 @@ pub async fn download_file(
     // a JSON Schema, a CSV. Every caller here downloads something it will then parse, so there is
     // no caller for which an error body is useful. Fail here, naming the status, instead of
     // failing much later and much less usefully on the contents.
-    if res.error_for_status_ref().is_err() {
+    // `is_success()` rather than `error_for_status`, which only rejects 4xx/5xx: a FINAL 3xx that
+    // was not followed (a 304, or a redirect the client stopped at) would otherwise be streamed to
+    // disk as the payload, which is the same defect wearing a different status code.
+    if !res.status().is_success() {
         let status = res.status();
         let reason = status.canonical_reason().unwrap_or("unexpected status");
         return fail_clierror!(
@@ -5060,6 +5063,46 @@ mod tests {
             !dest.exists(),
             "the error body must not be left behind as the payload"
         );
+        let _ = std::fs::remove_file(&dest);
+    }
+
+    /// A FINAL 3xx must be refused too.
+    ///
+    /// The guard is `!status.is_success()` rather than `error_for_status`, which only rejects
+    /// 4xx/5xx - so a 304, or a redirect the client stopped at, would otherwise be streamed to
+    /// disk as if it were the payload. Same defect, different status code.
+    #[test]
+    fn download_file_rejects_final_3xx() {
+        use std::io::{Read, Write as _};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            if let Ok((mut sock, _)) = listener.accept() {
+                let _ = sock.read(&mut [0_u8; 1024]);
+                let _ = sock.write_all(
+                    b"HTTP/1.1 304 Not Modified\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+            }
+        });
+
+        let dest =
+            std::env::temp_dir().join(format!("qsv_download_304_{}.bin", std::process::id()));
+        let _ = std::fs::remove_file(&dest);
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(super::download_file(
+            &format!("http://{addr}/unchanged.sz"),
+            dest.clone(),
+            false,
+            None,
+            Some(10),
+            None,
+        ));
+        let _ = server.join();
+
+        assert!(result.is_err(), "a 304 response must not be a success");
+        assert!(!dest.exists(), "a 304 must not leave a file behind");
         let _ = std::fs::remove_file(&dest);
     }
 

@@ -2302,6 +2302,12 @@ async fn load_engine_data_resolved(
     // a numeric shortcut names a prebuilt to FETCH, not a path, so the payload is staged in the
     // geocode cache dir. Downloading to the argument as given wrote `1000` and `1000.rkyv` into
     // whatever directory the command happened to run in.
+    //
+    // The `~/.qsv-cache` here is the FALLBACK, not the answer: `resolve_geocode_cache_dir` reads
+    // QSV_CACHE_DIR first, which is the only way to relocate the cache for this subcommand -
+    // `qsv geocode index-load <index-file>` takes no `[options]` in the USAGE pattern, so
+    // `--cache-dir` cannot be passed to it and cannot disagree with this. If index-load ever gains
+    // options, thread the caller's already-resolved cache dir in rather than widening this.
     let mut geocode_index_file = geocode_index_file;
     if let Some(shortcut) = numeric_shortcut {
         geocode_index_file =

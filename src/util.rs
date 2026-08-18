@@ -3269,6 +3269,30 @@ pub fn stats_cache_cardinality_is_approx(input_path: Option<&str>) -> bool {
         })
 }
 
+/// Is a `<FILESTEM>.stats.csv` present AND newer than the input it describes?
+///
+/// `moarstats` and `pragmastat` locate the baseline stats CSV by path and regenerate it when
+/// absent - but they checked EXISTENCE only. A stats CSV left over from an earlier version of the
+/// input was therefore accepted as the baseline for every statistic they derive, silently
+/// describing data that is no longer there. This is the same first gate `stats` applies to its
+/// own cache.
+///
+/// mtime only: the recorded-size cross-check lives in the `.stats.csv.json` sidecar, which these
+/// callers do not require (`moarstats` deliberately writes none).
+///
+/// A stats CSV we cannot stat is "not current" - regenerate rather than trust it. An INPUT we
+/// cannot stat leaves the prior behavior alone, so a transient failure cannot trigger an
+/// expensive rebuild.
+pub fn stats_csv_is_current(stats_csv_path: &Path, input_path: &Path) -> bool {
+    let Ok(stats_modified) = std::fs::metadata(stats_csv_path).and_then(|m| m.modified()) else {
+        return false;
+    };
+    let Ok(input_modified) = std::fs::metadata(input_path).and_then(|m| m.modified()) else {
+        return true;
+    };
+    stats_modified > input_modified
+}
+
 /// Does the stats cache's metadata sidecar POSTDATE the `.stats.csv.data.jsonl` beside it?
 ///
 /// If it does, the JSONL was produced by an earlier stats run and no longer describes the stats
@@ -3485,12 +3509,15 @@ pub fn get_stats_records(
         false
     };
 
-    if requested_mode == StatsMode::Frequency && env_mode != "auto" && !stats_data_current {
-        // if the stats.data file is not current,
-        // we're also doing frequency old school w/o cardinality
-        // unless env_mode auto overrides
-        return Ok((ByteRecord::new(), Vec::new()));
-    }
+    // NOTE: Frequency mode used to bail out here with empty stats when the cache was not
+    // current and `env_mode != "auto"`. env_mode is validated to auto/force/none and "none"
+    // already returned above, so that condition meant exactly "force" - making
+    // QSV_STATSCACHE_MODE=force STRICTLY WEAKER than the default: it skipped regeneration,
+    // returned no cardinality (losing frequency's <ALL_UNIQUE> short-circuit) and created no
+    // cache, while plain auto-mode regenerated and cached. That inverts the documented
+    // contract ("force - if the cache does not exist, create it by running stats").
+    // Both auto and force now fall through to the regeneration block below, which already
+    // adds --force to the stats args for force mode. Only "none" skips the cache.
 
     // Use qsv's Config system to properly detect delimiter based on file extension
     let rconfig = Config::new(Some(input_path))

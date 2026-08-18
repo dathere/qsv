@@ -2089,6 +2089,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     orphaned_sidecar.display()
                 );
             }
+        } else if write_stats_jsonl && create_cache {
+            // Cache HIT with --stats-jsonl. The jsonl is written only inside the
+            // compute-and-cache branch above, and StatsArgs has no flag_stats_jsonl field, so
+            // the args comparison passes and compute_stats stays false. That made the flag a
+            // silent no-op on a warm cache:
+            //
+            //   qsv stats -c 1 foo.csv                 # builds a valid cache
+            //   qsv stats -c 1 --stats-jsonl foo.csv   # cache hit -> no .data.jsonl at all
+            //
+            // despite the flag documenting that it preemptively creates that file for the
+            // "smart" commands (schema, frequency, tojsonl).
+            //
+            // Create it ONLY when absent. An existing one must never be rebuilt from the
+            // cached stats CSV here: `moarstats` rewrites this file from its EXTENDED stats,
+            // and regenerating it would silently downgrade that richer cache.
+            let stats_jsonl_pathbuf = stats_pathbuf.with_extension("csv.data.jsonl");
+            if !stats_jsonl_pathbuf.exists() {
+                util::csv_to_jsonl(
+                    &currstats_filename,
+                    &STATSDATA_TYPES_MAP,
+                    &stats_jsonl_pathbuf,
+                    b',', // cache is always CSV (comma-delimited)
+                )?;
+            }
         }
     }
 

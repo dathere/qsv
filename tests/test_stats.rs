@@ -8171,3 +8171,40 @@ fn stats_jsonl_cache_rejected_after_same_mtime_content_swap() {
         "consumer was served pre-swap stats after an mtime-preserving replacement:\n{after}"
     );
 }
+
+// Regression (R1): --stats-jsonl was a silent no-op on a warm cache hit. The .data.jsonl is
+// written only inside the compute-and-cache branch, and StatsArgs has no flag_stats_jsonl field,
+// so the args comparison passes and compute_stats stays false -- meaning the flag documented as
+// preemptively creating that file for the "smart" commands created nothing at all.
+#[test]
+fn stats_jsonl_flag_creates_the_sidecar_on_a_cache_hit() {
+    let wrk = Workdir::new("stats_jsonl_flag_creates_the_sidecar_on_a_cache_hit");
+    wrk.create(
+        "warm.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+        ],
+    );
+
+    // build a valid cache WITHOUT --stats-jsonl
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("warm.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(
+        !wrk.path("warm.stats.csv.data.jsonl").exists(),
+        "setup: no jsonl should exist yet"
+    );
+
+    // same args plus --stats-jsonl: a cache hit, but the file must still be produced
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("--stats-jsonl").arg("warm.csv");
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        wrk.path("warm.stats.csv.data.jsonl").exists(),
+        "--stats-jsonl produced no .data.jsonl on a warm cache hit"
+    );
+}

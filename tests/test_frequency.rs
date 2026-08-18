@@ -7277,3 +7277,47 @@ fn frequency_all_unique_shortcut_skipped_on_approx_cardinality_cache() {
         "the id column disappeared entirely:\n{got}"
     );
 }
+
+// Regression (R10): QSV_STATSCACHE_MODE=force was STRICTLY WEAKER than the default. env_mode is
+// validated to auto/force/none and "none" returns earlier, so a `env_mode != "auto"` guard meant
+// exactly "force" -- and it made force skip regeneration, return no cardinality and create no
+// cache, while plain auto-mode regenerated and cached. The documented contract is the opposite:
+// "force - if the cache does not exist, create it by running stats".
+#[test]
+fn frequency_statscache_mode_force_creates_the_cache() {
+    let wrk = Workdir::new("frequency_statscache_mode_force_creates_the_cache");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string(), "grp".to_string()]];
+    for i in 0..200 {
+        rows.push(vec![i.to_string(), (i % 3).to_string()]);
+    }
+    wrk.create("ids.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_STATSCACHE_MODE", "force").arg("ids.csv");
+    let got: String = wrk.stdout_on_success(&mut cmd);
+
+    assert!(
+        wrk.path("ids.stats.csv.data.jsonl").exists(),
+        "force mode did not create the stats cache"
+    );
+    // with cardinality available, the all-unique id column collapses to one sentinel
+    assert!(
+        got.contains("<ALL_UNIQUE>"),
+        "force mode produced no cardinality, losing the <ALL_UNIQUE> short-circuit:\n{got}"
+    );
+
+    // "none" must still skip the cache entirely
+    let wrk2 = Workdir::new("frequency_statscache_mode_none_skips_the_cache");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string(), "grp".to_string()]];
+    for i in 0..200 {
+        rows.push(vec![i.to_string(), (i % 3).to_string()]);
+    }
+    wrk2.create("ids.csv", rows);
+    let mut cmd = wrk2.command("frequency");
+    cmd.env("QSV_STATSCACHE_MODE", "none").arg("ids.csv");
+    wrk2.assert_success(&mut cmd);
+    assert!(
+        !wrk2.path("ids.stats.csv.data.jsonl").exists(),
+        "none mode created a stats cache"
+    );
+}

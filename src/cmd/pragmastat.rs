@@ -395,11 +395,20 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
 
     // Auto-generate stats if missing (--force only recomputes ps_* columns,
     // it does NOT regenerate the baseline stats to avoid clobbering moarstats columns).
-    if !stats_csv_path.exists() {
-        wwarn!(
-            "Stats CSV file not found: {}\nComputing baseline stats...",
-            stats_csv_path.display()
-        );
+    // existence alone is not enough - a stats CSV older than the input describes data that
+    // is no longer there, and every ps_* statistic derived from it would inherit that
+    if !util::stats_csv_is_current(&stats_csv_path, input_path) {
+        if stats_csv_path.exists() {
+            wwarn!(
+                "Stats CSV file is older than the input: {}\nRecomputing baseline stats...",
+                stats_csv_path.display()
+            );
+        } else {
+            wwarn!(
+                "Stats CSV file not found: {}\nComputing baseline stats...",
+                stats_csv_path.display()
+            );
+        }
         let mut stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
         // Pass through input-shaping flags so the stats command matches the input format
         let delim_str;

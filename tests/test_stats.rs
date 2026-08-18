@@ -7933,3 +7933,104 @@ fn stats_cache_invalidated_by_same_mtime_content_swap() {
         "stale pre-swap stats were served after an mtime-preserving replacement:\n{second}"
     );
 }
+
+// Regression: `.stats.csv.data.jsonl` is a THIRD cache file that no invalidation path touches,
+// and get_stats_records judges it current by mtime against the INPUT -- which a recompute never
+// modifies. So a recompute that refreshes stats.csv and its sidecar but does not pass
+// --stats-jsonl left the JSONL describing the PREVIOUS run's args, and consumers ate it.
+//
+// It is deliberately NOT deleted: `moarstats` writes this file from its extended stats and
+// writes no sidecar, so deleting (or blindly regenerating) it would discard a richer cache.
+// Instead, a JSONL older than the sidecar beside it is treated as stale.
+//
+// NOTE: the column is named "when" on purpose -- it matches none of schema's --dates-whitelist
+// patterns (date,time,due,open,close,created), so schema's own regeneration types it String.
+// That is what makes the Date -> String transition observable.
+#[test]
+fn stats_jsonl_cache_not_served_after_recompute() {
+    let wrk = Workdir::new("stats_jsonl_cache_not_served_after_recompute");
+    wrk.create(
+        "jl.csv",
+        vec![
+            svec!["id", "when"],
+            svec!["1", "2020-01-15"],
+            svec!["2", "2021-06-30"],
+            svec!["3", "2019-03-04"],
+        ],
+    );
+
+    // 1. build a date-inferred JSONL cache
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-dates")
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .args(["-c", "1"])
+        .arg("jl.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = wrk.path("jl.stats.csv.data.jsonl");
+    let before = std::fs::read_to_string(&jsonl).unwrap();
+    assert!(
+        before.contains("\"Date\""),
+        "setup: jsonl should infer dates"
+    );
+
+    // 2. recompute WITHOUT --infer-dates and WITHOUT --stats-jsonl: stats.csv and the sidecar are
+    //    refreshed, the JSONL is left untouched and now contradicts them
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality").args(["-c", "1"]).arg("jl.csv");
+    wrk.assert_success(&mut cmd);
+
+    // 3. a consumer must not be served the stale JSONL
+    let mut cmd = wrk.command("schema");
+    cmd.arg("jl.csv");
+    wrk.assert_success(&mut cmd);
+
+    let after = std::fs::read_to_string(&jsonl).unwrap();
+    assert!(
+        !after.contains("\"Date\""),
+        "consumer was served the stale date-inferred stats jsonl:\n{after}"
+    );
+}
+
+// Regression (F8): `frequency` auto-builds its stats cache with `stats --cardinality
+// --stats-jsonl` and NO --infer-dates, so every date column is typed String. That cache is
+// keyed only by input path and mtime, so a later `qsv schema` on the same unchanged file reused
+// it and emitted `string` for genuine date columns -- disagreeing with what schema produces on a
+// cold cache, and contradicting tojsonl's usage text, which promises reuse only of caches built
+// with --cardinality AND --infer-dates.
+#[test]
+fn stats_date_blind_frequency_cache_not_reused_by_schema() {
+    let wrk = Workdir::new("stats_date_blind_frequency_cache_not_reused_by_schema");
+    wrk.create(
+        "fd.csv",
+        vec![
+            svec!["id", "open_dt"],
+            svec!["1", "2020-01-15"],
+            svec!["2", "2021-06-30"],
+            svec!["3", "2019-03-04"],
+        ],
+    );
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("fd.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = wrk.path("fd.stats.csv.data.jsonl");
+    let before = std::fs::read_to_string(&jsonl).unwrap();
+    assert!(
+        !before.contains("\"Date\""),
+        "setup: frequency's cache should be date-blind:\n{before}"
+    );
+
+    // schema infers dates; it must not be served frequency's date-blind cache
+    let mut cmd = wrk.command("schema");
+    cmd.arg("fd.csv");
+    wrk.assert_success(&mut cmd);
+
+    let after = std::fs::read_to_string(&jsonl).unwrap();
+    assert!(
+        after.contains("\"Date\""),
+        "schema reused frequency's date-blind stats cache:\n{after}"
+    );
+}

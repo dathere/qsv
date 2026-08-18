@@ -7662,7 +7662,9 @@ fn stats_string_max_length_multibyte_utf8() {
     let mut cmd = wrk.command("stats");
     cmd.arg("data.csv").env("QSV_STATS_STRING_MAX_LENGTH", "4");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // on_success: the regression being guarded is a panic, so a clean exit is as much
+    // the assertion as the truncated value itself
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // field,type,is_ascii,sum,min,max -> max is index 5
     let mut max_value = String::new();
@@ -7695,7 +7697,9 @@ fn stats_integer_range_no_i64_overflow() {
     let mut cmd = wrk.command("stats");
     cmd.arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // on_success: the regression being guarded is an overflow panic, so a clean exit is
+    // as much the assertion as the range value itself
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     // field,type,is_ascii,sum,min,max,range -> range is index 6
     let mut range_value = String::new();

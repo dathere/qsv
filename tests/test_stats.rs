@@ -7712,3 +7712,131 @@ fn stats_integer_range_no_i64_overflow() {
 
     assert_eq!(range_value, "18446744073709551615");
 }
+
+// Regression (F4): an args-changed recompute must delete the stats cache SIDECAR along
+// with the stats CSV. Leaving the sidecar behind let the next run validate against it and
+// trust it, serving stats computed with entirely different args as if they matched.
+#[test]
+fn stats_cache_sidecar_deleted_with_stats_csv() {
+    let wrk = Workdir::new("stats_cache_sidecar_deleted_with_stats_csv");
+    wrk.create(
+        "poison.csv",
+        vec![
+            svec!["id", "name", "when"],
+            svec!["1", "alpha", "2020-01-15"],
+            svec!["2", "beta", "2021-06-30"],
+            svec!["3", "gamma", "2019-03-04"],
+        ],
+    );
+
+    // 1. cache an --everything run (-c 1 forces cache creation)
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").args(["-c", "1"]).arg("poison.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(
+        wrk.path("poison.stats.csv.json").exists(),
+        "setup failed: --everything sidecar was not created"
+    );
+
+    // 2. recompute with DIFFERENT args, below the cache threshold. The stale --everything sidecar
+    //    must not survive the recompute.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--typesonly").arg("poison.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(
+        !wrk.path("poison.stats.csv.json").exists(),
+        "stale --everything sidecar survived an args-changed recompute"
+    );
+
+    // 3. --everything must be genuinely recomputed, NOT served from the typesonly cache
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").arg("poison.csv");
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    let header = got.lines().next().unwrap_or_default();
+    assert!(
+        header.contains("cardinality") && header.contains("percentiles"),
+        "--typesonly output was served as --everything; header was: {header}"
+    );
+}
+
+// Regression (F4, lone-sidecar variant): every recompute path that drops the cache pair is
+// gated on the stats CSV existing, so a sidecar whose CSV was removed externally (or by an
+// interrupted run) was never inspected and never cleaned - and still poisoned the next run.
+#[test]
+fn stats_cache_lone_sidecar_not_trusted() {
+    let wrk = Workdir::new("stats_cache_lone_sidecar_not_trusted");
+    wrk.create(
+        "lone.csv",
+        vec![
+            svec!["id", "name", "when"],
+            svec!["1", "alpha", "2020-01-15"],
+            svec!["2", "beta", "2021-06-30"],
+            svec!["3", "gamma", "2019-03-04"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").args(["-c", "1"]).arg("lone.csv");
+    wrk.assert_success(&mut cmd);
+
+    // remove ONLY the stats CSV, leaving the --everything sidecar orphaned
+    std::fs::remove_file(wrk.path("lone.stats.csv")).unwrap();
+    assert!(wrk.path("lone.stats.csv.json").exists());
+
+    // a --typesonly recompute installs a new stats CSV; the orphaned sidecar describes
+    // --everything and must not be left standing in front of it
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--typesonly").arg("lone.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(
+        !wrk.path("lone.stats.csv.json").exists(),
+        "orphaned --everything sidecar survived in front of freshly installed stats"
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").arg("lone.csv");
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    let header = got.lines().next().unwrap_or_default();
+    assert!(
+        header.contains("cardinality") && header.contains("percentiles"),
+        "--typesonly output was served as --everything; header was: {header}"
+    );
+}
+
+// Regression (F4, --force variant): --force skips cache validation entirely, so it used to
+// reinstall a freshly computed stats CSV while the previous run's sidecar stayed put.
+#[test]
+fn stats_cache_force_drops_stale_sidecar() {
+    let wrk = Workdir::new("stats_cache_force_drops_stale_sidecar");
+    wrk.create(
+        "forced.csv",
+        vec![
+            svec!["id", "name", "when"],
+            svec!["1", "alpha", "2020-01-15"],
+            svec!["2", "beta", "2021-06-30"],
+            svec!["3", "gamma", "2019-03-04"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").args(["-c", "1"]).arg("forced.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(wrk.path("forced.stats.csv.json").exists());
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--typesonly").arg("--force").arg("forced.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(
+        !wrk.path("forced.stats.csv.json").exists(),
+        "--force recomputed but left the previous run's sidecar in place"
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").arg("forced.csv");
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    let header = got.lines().next().unwrap_or_default();
+    assert!(
+        header.contains("cardinality") && header.contains("percentiles"),
+        "--typesonly output was served as --everything; header was: {header}"
+    );
+}

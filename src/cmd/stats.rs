@@ -2014,6 +2014,35 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     b',', // cache is always CSV (comma-delimited)
                 )?;
             }
+        } else if compute_stats {
+            // We just recomputed and installed a stats.csv but are NOT writing a sidecar
+            // for it. Any sidecar still on disk describes a DIFFERENT run's args, and the
+            // next run would validate against it and trust it - serving these stats as if
+            // they had been computed with those args.
+            //
+            // The upstream recompute paths already drop the pair, but they are all gated
+            // on `stats_file.exists()`, so a LONE sidecar (its CSV removed externally, or
+            // by an interrupted run) is never inspected and never cleaned:
+            //
+            //   qsv stats f.csv -E -c 1      # pair written
+            //   rm f.stats.csv               # lone sidecar survives
+            //   qsv stats f.csv --typesonly  # validation skipped, sidecar untouched
+            //   qsv stats f.csv -E           # sidecar validates -> typesonly served as -E
+            //
+            // Enforcing the invariant HERE, where the two files are actually written,
+            // closes that hole and keeps it closed for any recompute path added later.
+            //
+            // Guarded on compute_stats: when the cache was reused (compute_stats false)
+            // the sidecar is the one we just validated, and must survive.
+            let orphaned_sidecar = stats_pathbuf.with_extension("csv.json");
+            if orphaned_sidecar.exists()
+                && let Err(e) = fs::remove_file(&orphaned_sidecar)
+            {
+                log::warn!(
+                    "Could not remove orphaned stats cache sidecar {}: {e:?}",
+                    orphaned_sidecar.display()
+                );
+            }
         }
     }
 

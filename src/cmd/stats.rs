@@ -691,6 +691,16 @@ pub struct StatsData {
     pub n_positive: Option<u64>,
     pub max_precision: Option<u32>,
     pub sparsity: Option<f64>,
+    // `stats --median` (without --quartiles/--everything) emits a `median` column that is
+    // NOT the same key as `q2_median`. It was absent from both this struct and
+    // STATSDATA_TYPES_MAP, so serde silently dropped it - the same drift that hid
+    // sortiness/geometric_mean/harmonic_mean/percentiles.
+    //
+    // Deliberately its OWN field rather than a serde alias onto q2_median:
+    // stats_satisfy_mode() infers quartile availability from `q2_median.is_some()`, so
+    // aliasing would make a --median-only cache (no q1/q3) falsely satisfy ProfileSchema.
+    #[serde(default)]
+    pub median: Option<f64>,
     pub mad: Option<f64>,
     pub lower_outer_fence: Option<f64>,
     pub lower_inner_fence: Option<f64>,
@@ -784,6 +794,7 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
     "n_positive" => JsonTypes::Int,
     "max_precision" => JsonTypes::Int,
     "sparsity" => JsonTypes::Float,
+    "median" => JsonTypes::Float,
     "mad" => JsonTypes::Float,
     "lower_outer_fence" => JsonTypes::Float,
     "lower_inner_fence" => JsonTypes::Float,
@@ -2101,11 +2112,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // despite the flag documenting that it preemptively creates that file for the
             // "smart" commands (schema, frequency, tojsonl).
             //
-            // Create it ONLY when absent. An existing one must never be rebuilt from the
-            // cached stats CSV here: `moarstats` rewrites this file from its EXTENDED stats,
-            // and regenerating it would silently downgrade that richer cache.
+            // Regenerate when the jsonl is ABSENT, or when it PREDATES the sidecar beside it -
+            // an earlier run can refresh <FILESTEM>.stats.csv and its sidecar without
+            // --stats-jsonl, leaving a jsonl that no longer describes them. Keeping that one
+            // would hand back a stale cache from a flag whose whole purpose is to produce a
+            // current one.
+            //
+            // A jsonl NEWER than the sidecar is preserved, as is one with no sidecar at all:
+            // that is the stats-then-moarstats ordering, where `moarstats` has rewritten this
+            // file from its EXTENDED stats and rebuilding it would silently downgrade the
+            // richer cache. Same rule as util::stats_jsonl_predates_stats_cache applies on the
+            // read side, so the two cannot disagree about what "stale" means.
             let stats_jsonl_pathbuf = stats_pathbuf.with_extension("csv.data.jsonl");
-            if !stats_jsonl_pathbuf.exists() {
+            let sidecar_pathbuf = stats_pathbuf.with_extension("csv.json");
+            let mtime_of = |p: &std::path::Path| fs::metadata(p).and_then(|m| m.modified()).ok();
+            let regenerate_jsonl =
+                match (mtime_of(&stats_jsonl_pathbuf), mtime_of(&sidecar_pathbuf)) {
+                    // absent - the R1 case the flag exists for
+                    (None, _) => true,
+                    // predates the cache it claims to describe
+                    (Some(jsonl), Some(sidecar)) => sidecar > jsonl,
+                    // no sidecar provenance - decline to judge, preserve (moarstats)
+                    (Some(_), None) => false,
+                };
+            if regenerate_jsonl {
                 util::csv_to_jsonl(
                     &currstats_filename,
                     &STATSDATA_TYPES_MAP,

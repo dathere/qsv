@@ -3251,7 +3251,25 @@ pub fn stats_cache_cardinality_is_approx(input_path: Option<&str>) -> bool {
         // stdin has no stable path to key a cache on
         return false;
     };
-    let path = Path::new(raw);
+
+    // Resolve a `dc:<name>` disk-cache handle to its materialized CSV path, exactly as
+    // get_stats_records does before loading the cache. Without this the caller looks beside the
+    // literal "dc:name" string, finds no sidecar, and concludes the cardinality is exact - so a
+    // `dc:` input silently kept the invalid shortcut this check exists to suppress.
+    #[cfg(feature = "get")]
+    let resolved: String = if let Some(dc_name) = raw.strip_prefix("dc:") {
+        match crate::diskcache::resolve_dc_path(dc_name) {
+            Ok(p) => p.to_string_lossy().into_owned(),
+            // unresolvable handle: no cache to judge
+            Err(_) => return false,
+        }
+    } else {
+        raw.to_string()
+    };
+    #[cfg(not(feature = "get"))]
+    let resolved: String = raw.to_string();
+
+    let path = Path::new(&resolved);
     let canonical = path.canonicalize().ok();
 
     [Some(path), canonical.as_deref()]

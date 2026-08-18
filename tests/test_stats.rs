@@ -8208,3 +8208,92 @@ fn stats_jsonl_flag_creates_the_sidecar_on_a_cache_hit() {
         "--stats-jsonl produced no .data.jsonl on a warm cache hit"
     );
 }
+
+// Regression: `stats --median` (without --quartiles/--everything) emits a `median` column that is
+// a DIFFERENT key from `q2_median`. It was absent from both StatsData and STATSDATA_TYPES_MAP, so
+// it serialized via the map's String fallback ("2") and was then silently dropped on deserialize
+// -- the same drift that hid sortiness/geometric_mean/harmonic_mean/percentiles.
+#[test]
+fn stats_median_column_is_typed_and_not_dropped() {
+    let wrk = Workdir::new("stats_median_column_is_typed_and_not_dropped");
+    wrk.create(
+        "med.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--median")
+        .arg("--stats-jsonl")
+        .args(["-c", "1"])
+        .arg("med.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = std::fs::read_to_string(wrk.path("med.stats.csv.data.jsonl")).unwrap();
+    let first: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+
+    let median = first
+        .get("median")
+        .expect("no median key in the stats jsonl");
+    assert!(
+        median.is_number(),
+        "median should be a number, not the String fallback: {median}"
+    );
+}
+
+// Regression: on a warm cache hit, --stats-jsonl only created the jsonl when ABSENT, so a jsonl
+// left behind by an earlier run -- one that PREDATES the sidecar beside it, because a later run
+// refreshed stats.csv/.json without --stats-jsonl -- was preserved rather than refreshed. A flag
+// whose whole purpose is to produce a current cache handed back a stale one.
+#[test]
+fn stats_jsonl_flag_refreshes_a_jsonl_older_than_the_sidecar() {
+    let wrk = Workdir::new("stats_jsonl_flag_refreshes_a_jsonl_older_than_the_sidecar");
+    wrk.create(
+        "stale.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+        ],
+    );
+
+    // 1. cache WITH a jsonl
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"])
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .arg("stale.csv");
+    wrk.assert_success(&mut cmd);
+    let jsonl = wrk.path("stale.stats.csv.data.jsonl");
+
+    // 2. different args, no --stats-jsonl: refreshes stats.csv + sidecar, leaves the jsonl behind
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("stale.csv");
+    wrk.assert_success(&mut cmd);
+
+    let before = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
+    let sidecar_mtime = std::fs::metadata(wrk.path("stale.stats.csv.json"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    assert!(
+        sidecar_mtime > before,
+        "setup: the sidecar should now be newer than the jsonl"
+    );
+
+    // 3. asking for a current jsonl must refresh the stale one
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("--stats-jsonl").arg("stale.csv");
+    wrk.assert_success(&mut cmd);
+
+    let after = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
+    assert!(
+        after > before,
+        "--stats-jsonl preserved a jsonl that predates the stats cache beside it"
+    );
+}

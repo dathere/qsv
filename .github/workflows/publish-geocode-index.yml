@@ -98,9 +98,19 @@ jobs:
         # would "update" does not exist. The builder is a bin target of the geosuggest-utils crate
         # qsv already depends on.
         #
-        # The version is read from Cargo.lock rather than pinned here: the index is an rkyv
-        # artifact, so it must be produced by the same geosuggest version qsv links against, and a
-        # hardcoded version would silently drift on the next dependency bump.
+        # The geosuggest-utils version is read from Cargo.lock rather than hardcoded here, so it
+        # cannot drift from what qsv links against on the next dependency bump.
+        #
+        # That pins geosuggest-utils and geosuggest-core; it canNOT pin rkyv, which `cargo install`
+        # resolves independently of this repo's lockfile. `--locked` is deliberately NOT used and
+        # would make this worse today, not better: the version bundled in the published crate pins
+        # rkyv 0.8.17 while qsv links 0.8.18, so `--locked` buys a DETERMINISTIC mismatch, whereas
+        # plain resolution takes the newest 0.8.x (0.8.18) and matches. Neither is a guarantee.
+        #
+        # The guarantee comes from the verification below instead: every index is loaded and
+        # exercised by the qsv binary built from THIS checkout before anything is uploaded. A
+        # serializer mismatch that actually matters fails the run rather than publishing an asset
+        # nobody can read - which is exactly the failure #4433 shipped.
         run: |
           set -euo pipefail
           GEOSUGGEST_VERSION=$(awk '/^name = "geosuggest-utils"$/{getline; gsub(/[",]/,"",$3); print $3; exit}' Cargo.lock)

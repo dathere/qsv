@@ -1599,7 +1599,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     time_saved = stat_args.compute_duration_ms;
                     stat_args.compute_duration_ms = 0;
                     stat_args.field_count = 0;
-                    stat_args.filesize_bytes = 0;
+                    // filesize_bytes is deliberately NOT zeroed - it is compared below.
+                    //
+                    // `hash` is zeroed because it CANNOT be validated here: it fingerprints
+                    // the stats OUTPUT (see the stats_hash block further down), not the input
+                    // file, so checking it would mean recomputing the very stats we are
+                    // trying to reuse.
                     stat_args.hash = FileHash::default();
                     stat_args
                 };
@@ -1618,7 +1623,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // added can still be served without it. The package version MUST therefore be
                 // bumped on any release that changes the --everything column set, so old caches
                 // are recomputed.
-                let input_file_modified = fs::metadata(&path)?.modified()?;
+                let input_metadata = fs::metadata(&path)?;
+                let input_file_modified = input_metadata.modified()?;
+                // Validate SIZE as well as mtime. mtime alone is defeated by any
+                // mtime-preserving content replacement - cp -p, tar -x, git checkout,
+                // rsync -t, mv from an archive - each of which would otherwise serve the
+                // PREVIOUS file's statistics as current, to stats and to every cache
+                // consumer. Comparing the recorded size costs one stat() call we have
+                // already made.
+                current_stats_args.filesize_bytes = input_metadata.len();
                 let stats_file_modified = fs::metadata(&stats_file)
                     .and_then(|m| m.modified())
                     .unwrap_or(input_file_modified);
@@ -1641,6 +1654,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 == current_stats_args.flag_weight
                             && existing_stats_args_json.flag_percentile_list
                                 == current_stats_args.flag_percentile_list
+                            // the three method flags below change the VALUES --everything
+                            // produces, not just which columns appear, so a cache built
+                            // with approximations must not be served to an exact run:
+                            //   --quantile-method approx    -> t-digest quartiles/percentiles
+                            //   --cardinality-method approx -> HLL cardinality, MAD disabled
+                            //   --mode-cardinality-cap      -> mode/antimode suppressed above
+                            //                                  the cap
+                            && existing_stats_args_json.flag_quantile_method
+                                == current_stats_args.flag_quantile_method
+                            && existing_stats_args_json.flag_cardinality_method
+                                == current_stats_args.flag_cardinality_method
+                            && existing_stats_args_json.flag_mode_cardinality_cap
+                                == current_stats_args.flag_mode_cardinality_cap
+                            // the input must be the same SIZE, not merely older (see above)
+                            && existing_stats_args_json.filesize_bytes
+                                == current_stats_args.filesize_bytes
                             && existing_stats_args_json.flag_select
                                 == current_stats_args.flag_select
                             && existing_stats_args_json.flag_round == current_stats_args.flag_round

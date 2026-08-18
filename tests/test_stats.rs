@@ -7840,3 +7840,96 @@ fn stats_cache_force_drops_stale_sidecar() {
         "--typesonly output was served as --everything; header was: {header}"
     );
 }
+
+// Regression (F6): the --everything cache-reuse arm compares an itemized list of flags and
+// omitted the three METHOD flags, which change the VALUES produced (approx quantiles via
+// t-digest, approx cardinality via HLL, mode/antimode suppressed above the cap). An exact
+// run could therefore be served an approximate cache.
+#[test]
+fn stats_cache_not_reused_when_cardinality_method_differs() {
+    use serde_json::Value;
+
+    let wrk = Workdir::new("stats_cache_not_reused_when_cardinality_method_differs");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string(), "v".to_string()]];
+    for i in 0..500 {
+        rows.push(vec![i.to_string(), (i % 97).to_string()]);
+    }
+    wrk.create("cm.csv", rows);
+
+    // build an --everything cache with APPROX cardinality
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--cardinality-method", "approx"])
+        .args(["-c", "1"])
+        .arg("cm.csv");
+    wrk.assert_success(&mut cmd);
+
+    let sidecar = wrk.path("cm.stats.csv.json");
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+    assert_eq!(json["flag_cardinality_method"], "approx", "setup failed");
+
+    // an EXACT --everything run must not reuse it. If it recomputes, the sidecar is
+    // rewritten and records the exact method; if it wrongly reuses, the sidecar is
+    // untouched and still says "approx".
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").args(["-c", "1"]).arg("cm.csv");
+    wrk.assert_success(&mut cmd);
+
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+    assert_eq!(
+        json["flag_cardinality_method"], "exact",
+        "an exact --everything run was served the approx-cardinality cache"
+    );
+}
+
+// Regression (F5): cache validity was effectively mtime-only, so any mtime-preserving
+// content replacement (cp -p, tar -x, git checkout, rsync -t) silently served the PREVIOUS
+// file's statistics. The recorded filesize is now compared too.
+//
+// NOTE: the sidecar's blake3 `hash` cannot close this - it fingerprints the stats OUTPUT,
+// not the input file, so verifying it would require recomputing the stats being reused.
+#[test]
+fn stats_cache_invalidated_by_same_mtime_content_swap() {
+    let wrk = Workdir::new("stats_cache_invalidated_by_same_mtime_content_swap");
+    wrk.create(
+        "swap.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "100"],
+            svec!["2", "200"],
+            svec!["3", "300"],
+        ],
+    );
+    let input = wrk.path("swap.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("swap.csv");
+    let first: String = wrk.stdout_on_success(&mut cmd);
+    assert!(first.contains("600"), "setup: sum of v should be 600");
+
+    // preserve the ORIGINAL mtime across a content change, exactly as `cp -p` would
+    let meta = std::fs::metadata(&input).unwrap();
+    let times = std::fs::FileTimes::new()
+        .set_accessed(meta.accessed().unwrap())
+        .set_modified(meta.modified().unwrap());
+    std::fs::write(&input, "id,v\n9,7\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&input)
+        .unwrap()
+        .set_times(times)
+        .unwrap();
+
+    // the cached stats describe the OLD content; they must not be served
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("swap.csv");
+    let second: String = wrk.stdout_on_success(&mut cmd);
+    assert!(
+        second.contains(",7,") || second.contains(",7\n") || second.ends_with(",7"),
+        "stale pre-swap stats were served after an mtime-preserving replacement:\n{second}"
+    );
+    assert!(
+        !second.contains("600"),
+        "stale pre-swap stats were served after an mtime-preserving replacement:\n{second}"
+    );
+}

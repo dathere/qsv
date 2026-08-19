@@ -4272,7 +4272,9 @@ fn weighted_percentiles(
 ///
 /// # Behavior
 ///
-/// * **`TDate`**: Returns only the date component (YYYY-MM-DD)
+/// * **`TDate`**: Returns only the date component - normally `YYYY-MM-DD`, but chrono renders a
+///   year outside `0..=9999` in expanded signed form (`+12000-01-01`, `-10000-01-01`), which the
+///   Tukey fences of a wide-spread date column can reach
 /// * **`TDateTime`**: Returns full RFC3339 format with time and timezone
 /// * **Invalid Timestamps**: Returns default RFC3339 format for invalid timestamps
 #[inline]
@@ -5661,7 +5663,9 @@ impl Stats {
         if self.which.percentiles {
             match typ {
                 TInteger | TFloat | TDate | TDateTime => {
-                    // Parse percentile list, preserving both original labels and u8 values
+                    // Parse the percentile list into the u8 percentiles to compute and the
+                    // labels to emit. The label is DERIVED from the truncated percentile, not
+                    // from the token as typed, so the two can never disagree.
                     let (percentile_labels, percentile_list): (Vec<String>, Vec<u8>) = self
                         .which
                         .percentile_list
@@ -5907,6 +5911,11 @@ enum FieldType {
 /// tolerated, though codes are typically unsigned. Pure trailing-zero codes (`7.10`) are out of
 /// scope by design — they're indistinguishable from rounded measurements without the original
 /// string.
+///
+/// A decimal point is NOT required: `+007` is as padded as `007.1`. It reaches this function
+/// because `atoi_simd` rejects a leading `+` (`SKIP_PLUS` is false) so the integer path - and its
+/// leading-zero check - never sees it. When a dot IS present it must still have digits after it,
+/// so `007.` stays rejected.
 #[inline]
 fn is_zero_padded_number(sample: &[u8]) -> bool {
     let b = match sample.first() {

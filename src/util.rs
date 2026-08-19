@@ -5570,6 +5570,7 @@ mod tests {
         // `stats --everything --stats-jsonl` line.
         let line = r#"{"field":"id","type":"Integer","nullcount":0,"cardinality":5,
             "sortiness":1.0,"geometric_mean":2.6052,"harmonic_mean":2.1898,
+            "median":"2",
             "percentiles":"5: 1|10: 1|40: 2|60: 3|90: 5|95: 5"}"#;
 
         let s: crate::cmd::stats::StatsData = serde_json::from_str(line).unwrap();
@@ -5577,16 +5578,26 @@ mod tests {
         assert_eq!(s.sortiness, Some(1.0));
         assert_eq!(s.geometric_mean, Some(2.6052));
         assert_eq!(s.harmonic_mean, Some(2.1898));
+        assert_eq!(s.median.as_deref(), Some("2"));
         assert_eq!(
             s.percentiles.as_deref(),
             Some("5: 1|10: 1|40: 2|60: 3|90: 5|95: 5")
         );
+
+        // `median` is a type-dependent RENDERING (like min/max), so a Date column carries an
+        // RFC3339 string in the same key. It must survive deserialization verbatim - typing it
+        // as a float coerced this to 0.0 and silently corrupted date medians.
+        let date_line = r#"{"field":"open_dt","type":"Date","nullcount":0,"cardinality":3,
+            "median":"2020-01-15"}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(date_line).unwrap();
+        assert_eq!(s.median.as_deref(), Some("2020-01-15"));
 
         // and a cache written before these columns existed must still deserialize
         let legacy = r#"{"field":"id","type":"Integer","nullcount":0,"cardinality":5}"#;
         let s: crate::cmd::stats::StatsData = serde_json::from_str(legacy).unwrap();
         assert_eq!(s.sortiness, None);
         assert_eq!(s.percentiles, None);
+        assert_eq!(s.median, None);
     }
 
     #[cfg(test)]

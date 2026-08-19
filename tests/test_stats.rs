@@ -8209,13 +8209,18 @@ fn stats_jsonl_flag_creates_the_sidecar_on_a_cache_hit() {
     );
 }
 
-// Regression: `stats --median` (without --quartiles/--everything) emits a `median` column that is
-// a DIFFERENT key from `q2_median`. It was absent from both StatsData and STATSDATA_TYPES_MAP, so
-// it serialized via the map's String fallback ("2") and was then silently dropped on deserialize
-// -- the same drift that hid sortiness/geometric_mean/harmonic_mean/percentiles.
+// Regression: `median` is a type-dependent RENDERING -- numeric for a numeric column, an RFC3339
+// string for a Date one -- so typing it JsonTypes::Float made the CSV-to-JSON conversion coerce
+// date medians to 0.0, silently corrupting them in the stats cache.
+//
+// This asserts the SERIALIZATION half only. That `median` survives DESERIALIZATION into
+// StatsData (the R12 drop it was added for) is covered by the in-crate unit test
+// util::tests::statsdata_carries_every_column_stats_emits -- tests/ is a separate binary and
+// cannot reach StatsData. Verified the split is needed: with StatsData::median deleted, this
+// test still passes.
 #[test]
-fn stats_median_column_is_typed_and_not_dropped() {
-    let wrk = Workdir::new("stats_median_column_is_typed_and_not_dropped");
+fn stats_median_column_not_coerced_for_date_columns() {
+    let wrk = Workdir::new("stats_median_column_not_coerced_for_date_columns");
     wrk.create(
         "med.csv",
         vec![

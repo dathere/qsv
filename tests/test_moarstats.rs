@@ -6594,6 +6594,7 @@ fn moarstats_outlier_counts_populated() {
 // were themselves date-blind. Standalone `qsv moarstats` passes --infer-dates in its own default
 // --stats-options, so this path was never affected and this test would NOT have caught it.
 // It is here to stop a future check from ignoring the sidecar-less/enriched case wholesale.
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
 #[test]
 fn moarstats_rich_jsonl_survives_a_schema_run() {
     let wrk = Workdir::new("moarstats_rich_jsonl_survives_a_schema_run");

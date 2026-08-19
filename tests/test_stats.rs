@@ -7946,6 +7946,7 @@ fn stats_cache_invalidated_by_same_mtime_content_swap() {
 // NOTE: the column is named "when" on purpose -- it matches none of schema's --dates-whitelist
 // patterns (date,time,due,open,close,created), so schema's own regeneration types it String.
 // That is what makes the Date -> String transition observable.
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
 #[test]
 fn stats_jsonl_cache_not_served_after_recompute() {
     let wrk = Workdir::new("stats_jsonl_cache_not_served_after_recompute");
@@ -7999,6 +8000,7 @@ fn stats_jsonl_cache_not_served_after_recompute() {
 // it and emitted `string` for genuine date columns -- disagreeing with what schema produces on a
 // cold cache, and contradicting tojsonl's usage text, which promises reuse only of caches built
 // with --cardinality AND --infer-dates.
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
 #[test]
 fn stats_date_blind_frequency_cache_not_reused_by_schema() {
     let wrk = Workdir::new("stats_date_blind_frequency_cache_not_reused_by_schema");
@@ -8119,6 +8121,7 @@ fn stats_cache_no_dmy_churn_under_prefer_dmy_envvar() {
 // CONSUMERS read the .stats.csv.data.jsonl through get_stats_records, which judged it by mtime
 // and parsing options only. The same mtime-preserving replacement that `stats` correctly rejects
 // therefore still served consumers the PREVIOUS file's statistics.
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
 #[test]
 fn stats_jsonl_cache_rejected_after_same_mtime_content_swap() {
     let wrk = Workdir::new("stats_jsonl_cache_rejected_after_same_mtime_content_swap");

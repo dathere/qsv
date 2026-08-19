@@ -4333,10 +4333,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // For single dataset, use normal stats CSV path
         let path = get_stats_csv_path(input_path)?;
 
-        // Check if stats CSV exists, if not, run stats command
-        if args.flag_force || !path.exists() {
+        // Check if the stats CSV exists AND is newer than the input; if not, run stats.
+        // Existence alone is not enough: a stats CSV left over from an earlier version of
+        // the input would otherwise be used as the baseline for every derived statistic.
+        if args.flag_force || !util::stats_csv_is_current(&path, input_path) {
             if args.flag_force {
                 winfo!("Force flag set: recomputing stats...");
+            } else if path.exists() {
+                wwarn!(
+                    "Stats CSV file is older than the input: {}\nRecomputing baseline stats...",
+                    path.display()
+                );
             } else {
                 wwarn!(
                     "Stats CSV file not found: {}\nComputing baseline stats...",

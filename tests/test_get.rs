@@ -2121,3 +2121,46 @@ fn get_literal_filename_with_glob_metachars() {
         "a real file with glob chars in its name should fetch as one file"
     );
 }
+
+// Regression: frequency's guard against taking the <ALL_UNIQUE> shortcut from an APPROXIMATE
+// (HyperLogLog) cardinality looked beside the raw input string, while get_stats_records resolves
+// a `dc:` handle to its materialized CSV first. So for a `dc:` input the guard found no sidecar,
+// concluded the cardinality was exact, and let the invalid equality shortcut run anyway.
+#[test]
+fn get_dc_approx_cardinality_does_not_take_all_unique_shortcut() {
+    let wrk = Workdir::new("get_dc_approx_cardinality_does_not_take_all_unique_shortcut");
+    let cache_dir = wrk.path("qsvcache");
+    let src = wrk.path("ids.csv");
+
+    let mut body = String::from("id,grp\n");
+    for i in 0..200 {
+        body.push_str(&format!("{i},{}\n", i % 3));
+    }
+    std::fs::write(&src, body).unwrap();
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "ids.csv"])
+        .arg(src.to_str().unwrap());
+    wrk.assert_success(&mut g);
+
+    // build the stats cache for the dc: handle with APPROX cardinality
+    let mut s = wrk.command("stats");
+    s.env("QSV_CACHE_DIR", &cache_dir)
+        .arg("--cardinality")
+        .args(["--cardinality-method", "approx"])
+        .arg("--stats-jsonl")
+        .args(["-c", "1"])
+        .arg("dc:ids.csv");
+    wrk.assert_success(&mut s);
+
+    let mut f = wrk.command("frequency");
+    f.env("QSV_CACHE_DIR", &cache_dir).arg("dc:ids.csv");
+    let got = wrk.stdout::<String>(&mut f);
+
+    assert!(
+        !got.contains("<ALL_UNIQUE>"),
+        "the <ALL_UNIQUE> shortcut was taken from an approximate cardinality for a dc: \
+         input:\n{got}"
+    );
+}

@@ -3705,10 +3705,23 @@ impl Args {
         // Most datasets have relatively few all-unique columns (e.g. ID columns), so
         // pre-allocate space for 5 as a reasonable default capacity.
         let mut all_unique_headers_vec: Vec<usize> = Vec::with_capacity(5);
-        for &orig_idx in sel.iter() {
-            let cardinality = col_cardinality_by_pos.get(orig_idx).copied().unwrap_or(0);
-            if cardinality == row_count {
-                all_unique_headers_vec.push(orig_idx);
+        // An APPROXIMATE (HyperLogLog) cardinality must never be compared for equality against
+        // an exact row count - the estimate carries ~1.5% error, so the test fails both ways: a
+        // genuine ID column almost never lands exactly on the row count (losing the very
+        // short-circuit this exists for), and a merely near-unique column whose estimate happens
+        // to land on it is wrongly collapsed to one sentinel, DROPPING real frequency rows.
+        // Fall back to counting such columns normally, which is correct, just slower.
+        if util::stats_cache_cardinality_is_approx(self.arg_input.as_deref()) {
+            log::info!(
+                "stats cache was built with --cardinality-method approx; skipping the \
+                 <ALL_UNIQUE> shortcut, whose equality test is invalid for an estimate."
+            );
+        } else {
+            for &orig_idx in sel.iter() {
+                let cardinality = col_cardinality_by_pos.get(orig_idx).copied().unwrap_or(0);
+                if cardinality == row_count {
+                    all_unique_headers_vec.push(orig_idx);
+                }
             }
         }
 

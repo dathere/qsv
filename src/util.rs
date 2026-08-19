@@ -3134,6 +3134,7 @@ fn stats_cache_parsing_opts_match(
     input_path: &Path,
     no_headers: bool,
     delimiter: Option<Delimiter>,
+    prefer_dmy: Option<bool>,
 ) -> bool {
     // --no-headers determines whether the header row is part of the data (and therefore whether
     // field names are real or positional), so it must match the consuming command.
@@ -3142,6 +3143,24 @@ fn stats_cache_parsing_opts_match(
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
         != no_headers
+    {
+        return false;
+    }
+
+    // --prefer-dmy decides how AMBIGUOUS dates are parsed: 01/02/2020 is Jan 2 under mdy and
+    // Feb 1 under dmy. A cache built under one must not be served to a command using the
+    // other, or its date min/max (and everything derived from them) describes different
+    // instants than the consumer believes. stats.rs's own reuse path already compares this;
+    // this check exists because get_stats_records short-circuits before that path ever runs.
+    //
+    // `None` means the consumer does no date inference (extsort, sortcheck), so the flag is
+    // irrelevant to it and must not force needless cache regeneration.
+    if let Some(prefer_dmy) = prefer_dmy
+        && metadata
+            .get("flag_prefer_dmy")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+            != prefer_dmy
     {
         return false;
     }
@@ -3159,6 +3178,167 @@ fn stats_cache_parsing_opts_match(
     };
     let cmd_delim = delimiter.map_or(ext_delim, |d| d.as_byte());
     cache_delim == cmd_delim
+}
+
+/// Was the stats cache beside `bases` built WITHOUT `--infer-dates`?
+///
+/// The `Frequency` and `FrequencyForceStats` modes run `stats --cardinality --stats-jsonl` with
+/// no `--infer-dates`, so the cache they leave behind types every date column as `String`. That
+/// cache is keyed only by input path and mtime, so a later `qsv schema` / `qsv tojsonl` on the
+/// same unchanged file reused it and emitted `string` with no format for genuine date columns -
+/// silently disagreeing with what those commands produce on a cold cache, and contradicting
+/// tojsonl's own usage text, which promises reuse only of caches built with `--cardinality` AND
+/// `--infer-dates`.
+///
+/// Consistent with `stats_cache_parsing_opts_conflict`: only a positive, readable
+/// `"flag_infer_dates": false` counts. A missing or unparseable sidecar means "no opinion", so a
+/// sidecar-less `moarstats`-built cache is never discarded on these grounds.
+fn stats_cache_lacks_infer_dates(bases: [&Path; 2]) -> bool {
+    bases.iter().any(|base| {
+        std::fs::read_to_string(base.with_extension("stats.csv.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|m| {
+                m.get("flag_infer_dates")
+                    .and_then(serde_json::Value::as_bool)
+            })
+            == Some(false)
+    })
+}
+
+/// Does the stats cache's metadata sidecar record an input SIZE that disagrees with the input
+/// on disk right now?
+///
+/// `stats` itself compares this before reusing its CSV cache, because mtime alone is defeated by
+/// any mtime-preserving replacement (`cp -p`, `tar -x`, `git checkout`, `rsync -t`). Cache
+/// CONSUMERS read the `.stats.csv.data.jsonl` through `get_stats_records`, which judged it by
+/// mtime and parsing options only - so the same swap that `stats` now rejects still served
+/// consumers the previous file's statistics.
+///
+/// Same convention as its siblings: only a positive, readable disagreement counts. A missing or
+/// unparseable sidecar, or one without `filesize_bytes`, means "no opinion", so the deliberate
+/// sidecar-less `moarstats` cache is never discarded on these grounds.
+fn stats_cache_filesize_conflict(input_path: &str, bases: [&Path; 2]) -> bool {
+    let Ok(input_len) = std::fs::metadata(input_path).map(|m| m.len()) else {
+        return false;
+    };
+
+    bases.iter().any(|base| {
+        std::fs::read_to_string(base.with_extension("stats.csv.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|m| m.get("filesize_bytes").and_then(serde_json::Value::as_u64))
+            .is_some_and(|recorded| recorded != 0 && recorded != input_len)
+    })
+}
+
+/// Was the stats cache beside `input_path` built with APPROXIMATE cardinality
+/// (`--cardinality-method approx`, i.e. `HyperLogLog`)?
+///
+/// HLL carries roughly +/-1.5% error, so a cached cardinality must not be compared for EQUALITY
+/// against an exact row count. `frequency` does exactly that to detect all-unique (ID) columns and
+/// collapse them to a single `<ALL_UNIQUE>` sentinel. Against an approximate cardinality that
+/// comparison fails both ways: a genuine ID column almost never lands exactly on the row count, so
+/// the short-circuit is lost and a full per-column hashmap is built (a performance cliff on the
+/// very columns the short-circuit exists for); and a merely near-unique column whose estimate
+/// happens to land on the row count is wrongly collapsed, **dropping real frequency rows**.
+///
+/// Same convention as the sibling sidecar checks: only a positive, readable `"approx"` counts. A
+/// missing or unparseable sidecar means "no opinion", so a cache without provenance is treated as
+/// exact - which is what it was before `--cardinality-method` existed.
+pub fn stats_cache_cardinality_is_approx(input_path: Option<&str>) -> bool {
+    let Some(raw) = input_path else {
+        // stdin has no stable path to key a cache on
+        return false;
+    };
+
+    // Resolve a `dc:<name>` disk-cache handle to its materialized CSV path, exactly as
+    // get_stats_records does before loading the cache. Without this the caller looks beside the
+    // literal "dc:name" string, finds no sidecar, and concludes the cardinality is exact - so a
+    // `dc:` input silently kept the invalid shortcut this check exists to suppress.
+    #[cfg(feature = "get")]
+    let resolved: String = if let Some(dc_name) = raw.strip_prefix("dc:") {
+        match crate::diskcache::resolve_dc_path(dc_name) {
+            Ok(p) => p.to_string_lossy().into_owned(),
+            // unresolvable handle: no cache to judge
+            Err(_) => return false,
+        }
+    } else {
+        raw.to_string()
+    };
+    #[cfg(not(feature = "get"))]
+    let resolved: String = raw.to_string();
+
+    let path = Path::new(&resolved);
+    let canonical = path.canonicalize().ok();
+
+    [Some(path), canonical.as_deref()]
+        .into_iter()
+        .flatten()
+        .any(|base| {
+            std::fs::read_to_string(base.with_extension("stats.csv.json"))
+                .ok()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                .and_then(|m| {
+                    m.get("flag_cardinality_method")
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                })
+                .is_some_and(|m| m.eq_ignore_ascii_case("approx"))
+        })
+}
+
+/// Is a `<FILESTEM>.stats.csv` present AND newer than the input it describes?
+///
+/// `moarstats` and `pragmastat` locate the baseline stats CSV by path and regenerate it when
+/// absent - but they checked EXISTENCE only. A stats CSV left over from an earlier version of the
+/// input was therefore accepted as the baseline for every statistic they derive, silently
+/// describing data that is no longer there. This is the same first gate `stats` applies to its
+/// own cache.
+///
+/// mtime only: the recorded-size cross-check lives in the `.stats.csv.json` sidecar, which these
+/// callers do not require (`moarstats` deliberately writes none).
+///
+/// A stats CSV we cannot stat is "not current" - regenerate rather than trust it. An INPUT we
+/// cannot stat leaves the prior behavior alone, so a transient failure cannot trigger an
+/// expensive rebuild.
+pub fn stats_csv_is_current(stats_csv_path: &Path, input_path: &Path) -> bool {
+    let Ok(stats_modified) = std::fs::metadata(stats_csv_path).and_then(|m| m.modified()) else {
+        return false;
+    };
+    let Ok(input_modified) = std::fs::metadata(input_path).and_then(|m| m.modified()) else {
+        return true;
+    };
+    stats_modified > input_modified
+}
+
+/// Does the stats cache's metadata sidecar POSTDATE the `.stats.csv.data.jsonl` beside it?
+///
+/// If it does, the JSONL was produced by an earlier stats run and no longer describes the stats
+/// now on disk. A recompute that does not pass `--stats-jsonl` refreshes `<stem>.stats.csv` and
+/// `<stem>.stats.csv.json` but leaves the JSONL untouched - and since the JSONL is judged current
+/// by mtime against the INPUT, which a recompute never touches, it would otherwise be served
+/// indefinitely. Observed: an `--infer-dates` JSONL saying `when=Date` surviving beside a freshly
+/// computed `stats.csv` saying `when=String`, and being consumed by `schema`.
+///
+/// Two cases deliberately do NOT count as stale, both for the same reason `moarstats` writes the
+/// JSONL from its EXTENDED stats and writes no sidecar of its own:
+///   * **no sidecar at all** - no opinion, never "stale". Treating a sidecar-less JSONL as unusable
+///     would discard that richer externally-built cache and regenerate a leaner one.
+///   * **JSONL newer than the sidecar** - that is exactly the `stats` then `moarstats` ordering,
+///     where the JSONL is the later and richer artifact.
+///
+/// Both locations are checked for the same reason `stats_cache_parsing_opts_conflict` checks
+/// both: for a symlinked input they differ.
+fn stats_jsonl_predates_stats_cache(statsdata_path: &Path, bases: [&Path; 2]) -> bool {
+    let Ok(jsonl_meta) = std::fs::metadata(statsdata_path) else {
+        return false;
+    };
+    let jsonl_mtime = FileTime::from_last_modification_time(&jsonl_meta);
+
+    bases.iter().any(|base| {
+        std::fs::metadata(base.with_extension("stats.csv.json"))
+            .is_ok_and(|m| FileTime::from_last_modification_time(&m) > jsonl_mtime)
+    })
 }
 
 /// Does a stats cache's metadata sidecar record parsing options that CONFLICT with the consuming
@@ -3179,6 +3359,7 @@ fn stats_cache_parsing_opts_conflict(
     canonical_input_path: &Path,
     no_headers: bool,
     delimiter: Option<Delimiter>,
+    prefer_dmy: Option<bool>,
 ) -> bool {
     // Both locations must be checked, because for a SYMLINKED input they differ: the JSONL cache
     // is looked up beside the canonicalized target, but the `stats` subprocess is invoked with the
@@ -3197,7 +3378,8 @@ fn stats_cache_parsing_opts_conflict(
         let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&text) else {
             continue;
         };
-        if !stats_cache_parsing_opts_match(&metadata, input_path, no_headers, delimiter) {
+        if !stats_cache_parsing_opts_match(&metadata, input_path, no_headers, delimiter, prefer_dmy)
+        {
             return true;
         }
     }
@@ -3257,6 +3439,32 @@ pub fn get_stats_records(
 
         let statsdata_mtime = FileTime::from_last_modification_time(&statsdata_metadata);
         let input_mtime = FileTime::from_last_modification_time(&input_metadata);
+        // Does THIS mode actually infer dates? Mirrors the per-mode argv built below: Schema
+        // and ProfileSchema always pass --infer-dates, PolarsSchema only when it has a
+        // whitelist (i.e. sniff found date columns), and the Frequency modes never do.
+        //
+        // Used for both date-sensitive checks below. A mode that does not infer dates cannot
+        // be affected by --prefer-dmy or by a date-blind cache, so neither may force it to
+        // regenerate.
+        let mode_infers_dates = match requested_mode {
+            StatsMode::Schema | StatsMode::ProfileSchema => true,
+            #[cfg(feature = "polars")]
+            StatsMode::PolarsSchema => !args.flag_dates_whitelist.is_empty(),
+            _ => false,
+        };
+
+        // Compare the EFFECTIVE dmy preference. The stats subprocess folds QSV_PREFER_DMY in
+        // (stats.rs does `flag_prefer_dmy || get_envvar_flag("QSV_PREFER_DMY")`), so a sidecar
+        // written under that env var records `true` -- while consumers that build SchemaArgs
+        // literally (frequency, joinp, pivotp, sample) hardcode `flag_prefer_dmy: false`.
+        // Comparing the raw flag made every one of those runs mismatch its own cache and
+        // regenerate it, on every invocation, forever.
+        let effective_prefer_dmy = if mode_infers_dates {
+            Some(args.flag_prefer_dmy || get_envvar_flag("QSV_PREFER_DMY"))
+        } else {
+            None
+        };
+
         if statsdata_mtime > input_mtime {
             // mtime alone is not sufficient: the cache is NOT keyed by parsing options, so a
             // cache written by an earlier run with a different --no-headers/--delimiter would
@@ -3266,10 +3474,41 @@ pub fn get_stats_records(
                 &canonical_input_path,
                 args.flag_no_headers,
                 args.flag_delimiter,
+                effective_prefer_dmy,
             ) {
                 info!(
                     "stats.csv.data.jsonl file was built with different parsing options \
-                     (--no-headers/--delimiter). Regenerating stats jsonl."
+                     (--no-headers/--delimiter/--prefer-dmy). Regenerating stats jsonl."
+                );
+                false
+            } else if stats_jsonl_predates_stats_cache(
+                &statsdata_path,
+                [Path::new(input_path), &canonical_input_path],
+            ) {
+                info!(
+                    "stats.csv.data.jsonl file predates the stats cache beside it. Regenerating \
+                     stats jsonl."
+                );
+                false
+            } else if stats_cache_filesize_conflict(
+                input_path,
+                [Path::new(input_path), &canonical_input_path],
+            ) {
+                // the input was replaced by content of a DIFFERENT size while keeping its
+                // mtime (cp -p, tar -x, git checkout, rsync -t). `qsv stats` itself now
+                // rejects its CSV cache on this, but consumers read the jsonl through this
+                // path and would otherwise still be served the pre-swap statistics.
+                info!(
+                    "stats.csv.data.jsonl file describes an input of a different size. \
+                     Regenerating stats jsonl."
+                );
+                false
+            } else if mode_infers_dates
+                && stats_cache_lacks_infer_dates([Path::new(input_path), &canonical_input_path])
+            {
+                info!(
+                    "stats.csv.data.jsonl file was built without --infer-dates, so date columns \
+                     are typed as strings. Regenerating stats jsonl."
                 );
                 false
             } else {
@@ -3288,12 +3527,15 @@ pub fn get_stats_records(
         false
     };
 
-    if requested_mode == StatsMode::Frequency && env_mode != "auto" && !stats_data_current {
-        // if the stats.data file is not current,
-        // we're also doing frequency old school w/o cardinality
-        // unless env_mode auto overrides
-        return Ok((ByteRecord::new(), Vec::new()));
-    }
+    // NOTE: Frequency mode used to bail out here with empty stats when the cache was not
+    // current and `env_mode != "auto"`. env_mode is validated to auto/force/none and "none"
+    // already returned above, so that condition meant exactly "force" - making
+    // QSV_STATSCACHE_MODE=force STRICTLY WEAKER than the default: it skipped regeneration,
+    // returned no cardinality (losing frequency's <ALL_UNIQUE> short-circuit) and created no
+    // cache, while plain auto-mode regenerated and cached. That inverts the documented
+    // contract ("force - if the cache does not exist, create it by running stats").
+    // Both auto and force now fall through to the regeneration block below, which already
+    // adds --force to the stats args for force mode. Only "none" skips the cache.
 
     // Use qsv's Config system to properly detect delimiter based on file extension
     let rconfig = Config::new(Some(input_path))
@@ -3688,6 +3930,27 @@ pub fn get_stats_records_readonly(
     if metadata.get("flag_select").and_then(|v| v.as_str()) != Some("<All>") {
         return None;
     }
+    // The input must be the same SIZE, not merely older. mtime alone is defeated by any
+    // mtime-preserving replacement (cp -p, tar -x, git checkout, rsync -t), and this cache
+    // carries sort_order: consuming a stale one lets `extsort` skip a sort it still needs and
+    // `sortcheck` report replaced, unsorted input as sorted.
+    //
+    // FAIL CLOSED, unlike the same check in `get_stats_records`. That asymmetry is deliberate:
+    // there, absent metadata must mean "no opinion" so the sidecar-less cache `moarstats`
+    // writes from its extended stats is not discarded. No such case reaches here - this path
+    // already returns None when the sidecar is missing or unreadable, and requires a full-file
+    // (`<All>`) cache - so a sidecar that is present but cannot substantiate the size is simply
+    // unverifiable, and an unverifiable cache must not prove a file sorted. This also refuses a
+    // recorded 0, which is never written (the real size is stored unconditionally before the
+    // sidecar is), and so would only ever be a bypass.
+    if !matches!(
+        metadata
+            .get("filesize_bytes")
+            .and_then(serde_json::Value::as_u64),
+        Some(recorded) if recorded == input_metadata.len()
+    ) {
+        return None;
+    }
     // --no-headers and the effective delimiter must match the consuming command; shared with
     // `get_stats_records` so the two cannot drift apart again.
     if !stats_cache_parsing_opts_match(
@@ -3695,6 +3958,9 @@ pub fn get_stats_records_readonly(
         Path::new(&input_path_owned),
         no_headers,
         delimiter,
+        // extsort/sortcheck do no date inference, so --prefer-dmy cannot affect what they
+        // read out of the cache
+        None,
     ) {
         return None;
     }
@@ -5119,9 +5385,13 @@ mod tests {
         let input = Path::new("data.csv");
         let meta = serde_json::json!({"flag_no_headers": true, "flag_delimiter": ","});
         // cache built headerless, consumer wants headers -> reject
-        assert!(!stats_cache_parsing_opts_match(&meta, input, false, None));
+        assert!(!stats_cache_parsing_opts_match(
+            &meta, input, false, None, None
+        ));
         // same setting on both sides -> accept
-        assert!(stats_cache_parsing_opts_match(&meta, input, true, None));
+        assert!(stats_cache_parsing_opts_match(
+            &meta, input, true, None, None
+        ));
     }
 
     #[test]
@@ -5129,12 +5399,15 @@ mod tests {
         let input = Path::new("data.csv");
         let meta = serde_json::json!({"flag_no_headers": false, "flag_delimiter": ";"});
         // cache built semicolon-delimited, consumer resolves ',' from the .csv extension
-        assert!(!stats_cache_parsing_opts_match(&meta, input, false, None));
+        assert!(!stats_cache_parsing_opts_match(
+            &meta, input, false, None, None
+        ));
         assert!(stats_cache_parsing_opts_match(
             &meta,
             input,
             false,
-            Some(Delimiter(b';'))
+            Some(Delimiter(b';')),
+            None
         ));
     }
 
@@ -5147,6 +5420,7 @@ mod tests {
             &meta,
             Path::new("data.csv"),
             false,
+            None,
             None
         ));
         // ... and a .tsv input resolves to tab on both sides
@@ -5154,6 +5428,7 @@ mod tests {
             &meta,
             Path::new("data.tsv"),
             false,
+            None,
             None
         ));
         // but an explicit comma against a .tsv input is a genuine mismatch
@@ -5161,7 +5436,8 @@ mod tests {
             &meta,
             Path::new("data.tsv"),
             false,
-            Some(Delimiter(b','))
+            Some(Delimiter(b',')),
+            None
         ));
     }
 
@@ -5172,12 +5448,12 @@ mod tests {
         // No sidecar at all: NOT a conflict. `moarstats` writes the JSONL cache without one, and
         // rejecting those would discard a rich cache and regenerate a leaner one.
         assert!(!stats_cache_parsing_opts_conflict(
-            &input, &input, false, None
+            &input, &input, false, None, None
         ));
         // Present but unparseable: same — decline to judge rather than discard.
         std::fs::write(dir.path().join("data.stats.csv.json"), b"{not json").unwrap();
         assert!(!stats_cache_parsing_opts_conflict(
-            &input, &input, false, None
+            &input, &input, false, None, None
         ));
         // Readable and matching: no conflict.
         std::fs::write(
@@ -5186,7 +5462,7 @@ mod tests {
         )
         .unwrap();
         assert!(!stats_cache_parsing_opts_conflict(
-            &input, &input, false, None
+            &input, &input, false, None, None
         ));
         // Readable and mismatched: the case this exists to catch.
         std::fs::write(
@@ -5195,7 +5471,7 @@ mod tests {
         )
         .unwrap();
         assert!(stats_cache_parsing_opts_conflict(
-            &input, &input, false, None
+            &input, &input, false, None, None
         ));
     }
 
@@ -5214,7 +5490,7 @@ mod tests {
         )
         .unwrap();
         assert!(stats_cache_parsing_opts_conflict(
-            &link, &canonical, false, None
+            &link, &canonical, false, None, None
         ));
         // and the agreeing case is still not a conflict
         std::fs::write(
@@ -5223,8 +5499,105 @@ mod tests {
         )
         .unwrap();
         assert!(!stats_cache_parsing_opts_conflict(
-            &link, &canonical, false, None
+            &link, &canonical, false, None, None
         ));
+    }
+
+    #[test]
+    fn stats_cache_parsing_opts_match_rejects_mismatched_prefer_dmy() {
+        let input = Path::new("data.csv");
+        let meta = serde_json::json!({
+            "flag_no_headers": false, "flag_delimiter": ",", "flag_prefer_dmy": true
+        });
+        // cache built dmy, consumer parses mdy -> reject: 01/02/2020 is a different instant
+        assert!(!stats_cache_parsing_opts_match(
+            &meta,
+            input,
+            false,
+            None,
+            Some(false)
+        ));
+        // same setting on both sides -> accept
+        assert!(stats_cache_parsing_opts_match(
+            &meta,
+            input,
+            false,
+            None,
+            Some(true)
+        ));
+        // a consumer that does no date inference (extsort, sortcheck) opts out entirely, so
+        // the flag must not force it to regenerate
+        assert!(stats_cache_parsing_opts_match(
+            &meta, input, false, None, None
+        ));
+    }
+
+    #[test]
+    fn stats_jsonl_predates_stats_cache_only_when_the_sidecar_is_newer() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("data.csv");
+        let jsonl = dir.path().join("data.stats.csv.data.jsonl");
+        let sidecar = dir.path().join("data.stats.csv.json");
+
+        // no JSONL at all: nothing to judge
+        assert!(!stats_jsonl_predates_stats_cache(&jsonl, [&input, &input]));
+
+        std::fs::write(&jsonl, b"{}\n").unwrap();
+        // JSONL but NO sidecar: deliberately NOT stale. `moarstats` writes the JSONL from its
+        // extended stats and writes no sidecar; discarding that would downgrade consumers.
+        assert!(!stats_jsonl_predates_stats_cache(&jsonl, [&input, &input]));
+
+        // sidecar OLDER than the JSONL: exactly the `stats` then `moarstats` ordering, where
+        // the JSONL is the later and richer artifact. Still not stale.
+        std::fs::write(&sidecar, b"{}").unwrap();
+        filetime::set_file_mtime(&sidecar, FileTime::from_unix_time(1_000, 0)).unwrap();
+        filetime::set_file_mtime(&jsonl, FileTime::from_unix_time(2_000, 0)).unwrap();
+        assert!(!stats_jsonl_predates_stats_cache(&jsonl, [&input, &input]));
+
+        // sidecar NEWER than the JSONL: a recompute refreshed the stats and left the JSONL
+        // behind. This is the case that silently poisoned consumers.
+        filetime::set_file_mtime(&sidecar, FileTime::from_unix_time(3_000, 0)).unwrap();
+        assert!(stats_jsonl_predates_stats_cache(&jsonl, [&input, &input]));
+    }
+
+    #[test]
+    fn statsdata_carries_every_column_stats_emits() {
+        // StatsData has no deny_unknown_fields, so a column present in the cache but missing
+        // from the struct is SILENTLY DROPPED on deserialize rather than erroring. That is how
+        // sortiness, geometric_mean, harmonic_mean and percentiles stayed unreachable to every
+        // consumer (schema, frequency, tojsonl, viz smart, describegpt) despite `stats` writing
+        // them into every .stats.csv.data.jsonl. Shapes and values below are taken from a real
+        // `stats --everything --stats-jsonl` line.
+        let line = r#"{"field":"id","type":"Integer","nullcount":0,"cardinality":5,
+            "sortiness":1.0,"geometric_mean":2.6052,"harmonic_mean":2.1898,
+            "median":"2",
+            "percentiles":"5: 1|10: 1|40: 2|60: 3|90: 5|95: 5"}"#;
+
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(line).unwrap();
+
+        assert_eq!(s.sortiness, Some(1.0));
+        assert_eq!(s.geometric_mean, Some(2.6052));
+        assert_eq!(s.harmonic_mean, Some(2.1898));
+        assert_eq!(s.median.as_deref(), Some("2"));
+        assert_eq!(
+            s.percentiles.as_deref(),
+            Some("5: 1|10: 1|40: 2|60: 3|90: 5|95: 5")
+        );
+
+        // `median` is a type-dependent RENDERING (like min/max), so a Date column carries an
+        // RFC3339 string in the same key. It must survive deserialization verbatim - typing it
+        // as a float coerced this to 0.0 and silently corrupted date medians.
+        let date_line = r#"{"field":"open_dt","type":"Date","nullcount":0,"cardinality":3,
+            "median":"2020-01-15"}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(date_line).unwrap();
+        assert_eq!(s.median.as_deref(), Some("2020-01-15"));
+
+        // and a cache written before these columns existed must still deserialize
+        let legacy = r#"{"field":"id","type":"Integer","nullcount":0,"cardinality":5}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(legacy).unwrap();
+        assert_eq!(s.sortiness, None);
+        assert_eq!(s.percentiles, None);
+        assert_eq!(s.median, None);
     }
 
     #[cfg(test)]

@@ -7712,3 +7712,630 @@ fn stats_integer_range_no_i64_overflow() {
 
     assert_eq!(range_value, "18446744073709551615");
 }
+
+// Regression (F4): an args-changed recompute must delete the stats cache SIDECAR along
+// with the stats CSV. Leaving the sidecar behind let the next run validate against it and
+// trust it, serving stats computed with entirely different args as if they matched.
+#[test]
+fn stats_cache_sidecar_deleted_with_stats_csv() {
+    let wrk = Workdir::new("stats_cache_sidecar_deleted_with_stats_csv");
+    wrk.create(
+        "poison.csv",
+        vec![
+            svec!["id", "name", "when"],
+            svec!["1", "alpha", "2020-01-15"],
+            svec!["2", "beta", "2021-06-30"],
+            svec!["3", "gamma", "2019-03-04"],
+        ],
+    );
+
+    // 1. cache an --everything run (-c 1 forces cache creation)
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").args(["-c", "1"]).arg("poison.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(
+        wrk.path("poison.stats.csv.json").exists(),
+        "setup failed: --everything sidecar was not created"
+    );
+
+    // 2. recompute with DIFFERENT args, below the cache threshold. The stale --everything sidecar
+    //    must not survive the recompute.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--typesonly").arg("poison.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(
+        !wrk.path("poison.stats.csv.json").exists(),
+        "stale --everything sidecar survived an args-changed recompute"
+    );
+
+    // 3. --everything must be genuinely recomputed, NOT served from the typesonly cache
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").arg("poison.csv");
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    let header = got.lines().next().unwrap_or_default();
+    assert!(
+        header.contains("cardinality") && header.contains("percentiles"),
+        "--typesonly output was served as --everything; header was: {header}"
+    );
+}
+
+// Regression (F4, lone-sidecar variant): every recompute path that drops the cache pair is
+// gated on the stats CSV existing, so a sidecar whose CSV was removed externally (or by an
+// interrupted run) was never inspected and never cleaned - and still poisoned the next run.
+#[test]
+fn stats_cache_lone_sidecar_not_trusted() {
+    let wrk = Workdir::new("stats_cache_lone_sidecar_not_trusted");
+    wrk.create(
+        "lone.csv",
+        vec![
+            svec!["id", "name", "when"],
+            svec!["1", "alpha", "2020-01-15"],
+            svec!["2", "beta", "2021-06-30"],
+            svec!["3", "gamma", "2019-03-04"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").args(["-c", "1"]).arg("lone.csv");
+    wrk.assert_success(&mut cmd);
+
+    // remove ONLY the stats CSV, leaving the --everything sidecar orphaned
+    std::fs::remove_file(wrk.path("lone.stats.csv")).unwrap();
+    assert!(wrk.path("lone.stats.csv.json").exists());
+
+    // a --typesonly recompute installs a new stats CSV; the orphaned sidecar describes
+    // --everything and must not be left standing in front of it
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--typesonly").arg("lone.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(
+        !wrk.path("lone.stats.csv.json").exists(),
+        "orphaned --everything sidecar survived in front of freshly installed stats"
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").arg("lone.csv");
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    let header = got.lines().next().unwrap_or_default();
+    assert!(
+        header.contains("cardinality") && header.contains("percentiles"),
+        "--typesonly output was served as --everything; header was: {header}"
+    );
+}
+
+// Regression (F4, --force variant): --force skips cache validation entirely, so it used to
+// reinstall a freshly computed stats CSV while the previous run's sidecar stayed put.
+#[test]
+fn stats_cache_force_drops_stale_sidecar() {
+    let wrk = Workdir::new("stats_cache_force_drops_stale_sidecar");
+    wrk.create(
+        "forced.csv",
+        vec![
+            svec!["id", "name", "when"],
+            svec!["1", "alpha", "2020-01-15"],
+            svec!["2", "beta", "2021-06-30"],
+            svec!["3", "gamma", "2019-03-04"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").args(["-c", "1"]).arg("forced.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(wrk.path("forced.stats.csv.json").exists());
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--typesonly").arg("--force").arg("forced.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(
+        !wrk.path("forced.stats.csv.json").exists(),
+        "--force recomputed but left the previous run's sidecar in place"
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").arg("forced.csv");
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    let header = got.lines().next().unwrap_or_default();
+    assert!(
+        header.contains("cardinality") && header.contains("percentiles"),
+        "--typesonly output was served as --everything; header was: {header}"
+    );
+}
+
+// Regression (F6): the --everything cache-reuse arm compares an itemized list of flags and
+// omitted the three METHOD flags, which change the VALUES produced (approx quantiles via
+// t-digest, approx cardinality via HLL, mode/antimode suppressed above the cap). An exact
+// run could therefore be served an approximate cache.
+#[test]
+fn stats_cache_not_reused_when_cardinality_method_differs() {
+    use serde_json::Value;
+
+    let wrk = Workdir::new("stats_cache_not_reused_when_cardinality_method_differs");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string(), "v".to_string()]];
+    for i in 0..500 {
+        rows.push(vec![i.to_string(), (i % 97).to_string()]);
+    }
+    wrk.create("cm.csv", rows);
+
+    // build an --everything cache with APPROX cardinality
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--cardinality-method", "approx"])
+        .args(["-c", "1"])
+        .arg("cm.csv");
+    wrk.assert_success(&mut cmd);
+
+    let sidecar = wrk.path("cm.stats.csv.json");
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+    assert_eq!(json["flag_cardinality_method"], "approx", "setup failed");
+
+    // an EXACT --everything run must not reuse it. If it recomputes, the sidecar is
+    // rewritten and records the exact method; if it wrongly reuses, the sidecar is
+    // untouched and still says "approx".
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").args(["-c", "1"]).arg("cm.csv");
+    wrk.assert_success(&mut cmd);
+
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+    assert_eq!(
+        json["flag_cardinality_method"], "exact",
+        "an exact --everything run was served the approx-cardinality cache"
+    );
+}
+
+// Regression (F5): cache validity was effectively mtime-only, so any mtime-preserving
+// content replacement (cp -p, tar -x, git checkout, rsync -t) silently served the PREVIOUS
+// file's statistics. The recorded filesize is now compared too.
+//
+// NOTE: the sidecar's blake3 `hash` cannot close this - it fingerprints the stats OUTPUT,
+// not the input file, so verifying it would require recomputing the stats being reused.
+#[test]
+fn stats_cache_invalidated_by_same_mtime_content_swap() {
+    let wrk = Workdir::new("stats_cache_invalidated_by_same_mtime_content_swap");
+    wrk.create(
+        "swap.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "100"],
+            svec!["2", "200"],
+            svec!["3", "300"],
+        ],
+    );
+    let input = wrk.path("swap.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("swap.csv");
+    let first: String = wrk.stdout_on_success(&mut cmd);
+    assert!(first.contains("600"), "setup: sum of v should be 600");
+
+    // preserve the ORIGINAL mtime across a content change, exactly as `cp -p` would
+    let meta = std::fs::metadata(&input).unwrap();
+    let times = std::fs::FileTimes::new()
+        .set_accessed(meta.accessed().unwrap())
+        .set_modified(meta.modified().unwrap());
+    std::fs::write(&input, "id,v\n9,7\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&input)
+        .unwrap()
+        .set_times(times)
+        .unwrap();
+
+    // the cached stats describe the OLD content; they must not be served
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("swap.csv");
+    let second: String = wrk.stdout_on_success(&mut cmd);
+    assert!(
+        second.contains(",7,") || second.contains(",7\n") || second.ends_with(",7"),
+        "stale pre-swap stats were served after an mtime-preserving replacement:\n{second}"
+    );
+    assert!(
+        !second.contains("600"),
+        "stale pre-swap stats were served after an mtime-preserving replacement:\n{second}"
+    );
+}
+
+// Regression: `.stats.csv.data.jsonl` is a THIRD cache file that no invalidation path touches,
+// and get_stats_records judges it current by mtime against the INPUT -- which a recompute never
+// modifies. So a recompute that refreshes stats.csv and its sidecar but does not pass
+// --stats-jsonl left the JSONL describing the PREVIOUS run's args, and consumers ate it.
+//
+// It is deliberately NOT deleted: `moarstats` writes this file from its extended stats and
+// writes no sidecar, so deleting (or blindly regenerating) it would discard a richer cache.
+// Instead, a JSONL older than the sidecar beside it is treated as stale.
+//
+// NOTE: the column is named "when" on purpose -- it matches none of schema's --dates-whitelist
+// patterns (date,time,due,open,close,created), so schema's own regeneration types it String.
+// That is what makes the Date -> String transition observable.
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
+#[test]
+fn stats_jsonl_cache_not_served_after_recompute() {
+    let wrk = Workdir::new("stats_jsonl_cache_not_served_after_recompute");
+    wrk.create(
+        "jl.csv",
+        vec![
+            svec!["id", "when"],
+            svec!["1", "2020-01-15"],
+            svec!["2", "2021-06-30"],
+            svec!["3", "2019-03-04"],
+        ],
+    );
+
+    // 1. build a date-inferred JSONL cache
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-dates")
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .args(["-c", "1"])
+        .arg("jl.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = wrk.path("jl.stats.csv.data.jsonl");
+    let before = std::fs::read_to_string(&jsonl).unwrap();
+    assert!(
+        before.contains("\"Date\""),
+        "setup: jsonl should infer dates"
+    );
+
+    // 2. recompute WITHOUT --infer-dates and WITHOUT --stats-jsonl: stats.csv and the sidecar are
+    //    refreshed, the JSONL is left untouched and now contradicts them
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality").args(["-c", "1"]).arg("jl.csv");
+    wrk.assert_success(&mut cmd);
+
+    // 3. a consumer must not be served the stale JSONL
+    let mut cmd = wrk.command("schema");
+    cmd.arg("jl.csv");
+    wrk.assert_success(&mut cmd);
+
+    let after = std::fs::read_to_string(&jsonl).unwrap();
+    assert!(
+        !after.contains("\"Date\""),
+        "consumer was served the stale date-inferred stats jsonl:\n{after}"
+    );
+}
+
+// Regression (F8): `frequency` auto-builds its stats cache with `stats --cardinality
+// --stats-jsonl` and NO --infer-dates, so every date column is typed String. That cache is
+// keyed only by input path and mtime, so a later `qsv schema` on the same unchanged file reused
+// it and emitted `string` for genuine date columns -- disagreeing with what schema produces on a
+// cold cache, and contradicting tojsonl's usage text, which promises reuse only of caches built
+// with --cardinality AND --infer-dates.
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
+#[test]
+fn stats_date_blind_frequency_cache_not_reused_by_schema() {
+    let wrk = Workdir::new("stats_date_blind_frequency_cache_not_reused_by_schema");
+    wrk.create(
+        "fd.csv",
+        vec![
+            svec!["id", "open_dt"],
+            svec!["1", "2020-01-15"],
+            svec!["2", "2021-06-30"],
+            svec!["3", "2019-03-04"],
+        ],
+    );
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("fd.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = wrk.path("fd.stats.csv.data.jsonl");
+    let before = std::fs::read_to_string(&jsonl).unwrap();
+    assert!(
+        !before.contains("\"Date\""),
+        "setup: frequency's cache should be date-blind:\n{before}"
+    );
+
+    // schema infers dates; it must not be served frequency's date-blind cache
+    let mut cmd = wrk.command("schema");
+    cmd.arg("fd.csv");
+    wrk.assert_success(&mut cmd);
+
+    let after = std::fs::read_to_string(&jsonl).unwrap();
+    assert!(
+        after.contains("\"Date\""),
+        "schema reused frequency's date-blind stats cache:\n{after}"
+    );
+}
+
+// Regression: `stats_headers()` re-derived the MAD column as `flag_mad || everything`, while
+// which_stats() turns MAD off for --quantile-method approx (a t-digest cannot compute
+// median(|x - median|)). The header therefore advertised a "mad" column that records did not
+// carry, and the csv writer rejects the arity change -- so
+// `qsv stats --everything --quantile-method approx` died with
+// "found record with 48 fields, but the previous record has 49 fields", exit 1 and no output.
+//
+// Needs enough rows to reach the write; a handful of rows does not trip it.
+#[test]
+fn stats_everything_approx_quantiles_header_matches_records() {
+    let wrk = Workdir::new("stats_everything_approx_quantiles_header_matches_records");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string(), "v".to_string()]];
+    for i in 0..5000 {
+        rows.push(vec![i.to_string(), ((i * 7919) % 9973).to_string()]);
+    }
+    wrk.create("aq.csv", rows);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--quantile-method", "approx"])
+        .arg("aq.csv");
+    // read_stdout_on_success asserts a clean exit, which is most of the point here
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+
+    assert!(
+        got.len() > 1,
+        "expected a header and at least one stats row"
+    );
+    let header = &got[0];
+    for (i, row) in got.iter().enumerate().skip(1) {
+        assert_eq!(
+            header.len(),
+            row.len(),
+            "header/record arity mismatch on row {i}"
+        );
+    }
+    assert!(
+        !header.iter().any(|h| h == "mad"),
+        "approx quantiles cannot compute MAD, so no mad column should be advertised"
+    );
+}
+
+// Regression: the stats subprocess folds QSV_PREFER_DMY into flag_prefer_dmy (stats.rs), so a
+// sidecar written under that env var records prefer_dmy=true -- while consumers that build
+// SchemaArgs literally (frequency, joinp, pivotp, sample) hardcode flag_prefer_dmy: false.
+// Comparing the raw flag made every such run mismatch its own freshly written cache and
+// regenerate it, on every invocation, forever.
+#[test]
+fn stats_cache_no_dmy_churn_under_prefer_dmy_envvar() {
+    let wrk = Workdir::new("stats_cache_no_dmy_churn_under_prefer_dmy_envvar");
+    wrk.create(
+        "dmy.csv",
+        vec![
+            svec!["id", "open_dt"],
+            svec!["1", "2020-01-15"],
+            svec!["2", "2021-06-30"],
+            svec!["3", "2019-03-04"],
+        ],
+    );
+
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_PREFER_DMY", "1").arg("dmy.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = wrk.path("dmy.stats.csv.data.jsonl");
+    let first = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
+
+    // a second identical run must REUSE the cache it just wrote
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_PREFER_DMY", "1").arg("dmy.csv");
+    wrk.assert_success(&mut cmd);
+
+    let second = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
+    assert_eq!(
+        first, second,
+        "the stats cache was regenerated on an identical second run - QSV_PREFER_DMY makes the \
+         cache permanently self-conflicting"
+    );
+}
+
+// Regression: `stats` compares the recorded filesize before reusing its CSV cache, but cache
+// CONSUMERS read the .stats.csv.data.jsonl through get_stats_records, which judged it by mtime
+// and parsing options only. The same mtime-preserving replacement that `stats` correctly rejects
+// therefore still served consumers the PREVIOUS file's statistics.
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
+#[test]
+fn stats_jsonl_cache_rejected_after_same_mtime_content_swap() {
+    let wrk = Workdir::new("stats_jsonl_cache_rejected_after_same_mtime_content_swap");
+    wrk.create(
+        "sz.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "100"],
+            svec!["2", "200"],
+            svec!["3", "300"],
+        ],
+    );
+    let input = wrk.path("sz.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-dates")
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .args(["-c", "1"])
+        .arg("sz.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = wrk.path("sz.stats.csv.data.jsonl");
+    assert!(
+        std::fs::read_to_string(&jsonl).unwrap().contains("600"),
+        "setup: sum of v should be 600"
+    );
+
+    // replace the content but keep the original mtime, exactly as `cp -p` would
+    let meta = std::fs::metadata(&input).unwrap();
+    let times = std::fs::FileTimes::new()
+        .set_accessed(meta.accessed().unwrap())
+        .set_modified(meta.modified().unwrap());
+    std::fs::write(&input, "id,v\n9,7\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&input)
+        .unwrap()
+        .set_times(times)
+        .unwrap();
+
+    // a consumer must not be served the pre-swap stats
+    let mut cmd = wrk.command("schema");
+    cmd.arg("sz.csv");
+    wrk.assert_success(&mut cmd);
+
+    let after = std::fs::read_to_string(&jsonl).unwrap();
+    assert!(
+        !after.contains("600"),
+        "consumer was served pre-swap stats after an mtime-preserving replacement:\n{after}"
+    );
+}
+
+// Regression (R1): --stats-jsonl was a silent no-op on a warm cache hit. The .data.jsonl is
+// written only inside the compute-and-cache branch, and StatsArgs has no flag_stats_jsonl field,
+// so the args comparison passes and compute_stats stays false -- meaning the flag documented as
+// preemptively creating that file for the "smart" commands created nothing at all.
+#[test]
+fn stats_jsonl_flag_creates_the_sidecar_on_a_cache_hit() {
+    let wrk = Workdir::new("stats_jsonl_flag_creates_the_sidecar_on_a_cache_hit");
+    wrk.create(
+        "warm.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+        ],
+    );
+
+    // build a valid cache WITHOUT --stats-jsonl
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("warm.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(
+        !wrk.path("warm.stats.csv.data.jsonl").exists(),
+        "setup: no jsonl should exist yet"
+    );
+
+    // same args plus --stats-jsonl: a cache hit, but the file must still be produced
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("--stats-jsonl").arg("warm.csv");
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        wrk.path("warm.stats.csv.data.jsonl").exists(),
+        "--stats-jsonl produced no .data.jsonl on a warm cache hit"
+    );
+}
+
+// Regression: `median` is a type-dependent RENDERING -- numeric for a numeric column, an RFC3339
+// string for a Date one -- so typing it JsonTypes::Float made the CSV-to-JSON conversion coerce
+// date medians to 0.0, silently corrupting them in the stats cache.
+//
+// This asserts the SERIALIZATION half only. That `median` survives DESERIALIZATION into
+// StatsData (the R12 drop it was added for) is covered by the in-crate unit test
+// util::tests::statsdata_carries_every_column_stats_emits -- tests/ is a separate binary and
+// cannot reach StatsData. Verified the split is needed: with StatsData::median deleted, this
+// test still passes.
+#[test]
+fn stats_median_column_not_coerced_for_date_columns() {
+    let wrk = Workdir::new("stats_median_column_not_coerced_for_date_columns");
+    wrk.create(
+        "med.csv",
+        vec![
+            svec!["id", "open_dt"],
+            svec!["1", "2020-01-15"],
+            svec!["2", "2021-06-30"],
+            svec!["3", "2019-03-04"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-dates")
+        .arg("--median")
+        .arg("--stats-jsonl")
+        .args(["-c", "1"])
+        .arg("med.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = std::fs::read_to_string(wrk.path("med.stats.csv.data.jsonl")).unwrap();
+    let rows: Vec<serde_json::Value> = jsonl
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+
+    // present at all - it used to be dropped entirely
+    let numeric = rows[0]
+        .get("median")
+        .expect("no median key for the id column");
+    assert_eq!(
+        numeric.as_str(),
+        Some("2"),
+        "numeric median was not preserved"
+    );
+
+    // and LOSSLESS for a Date column. median is a type-dependent RENDERING, like min/max:
+    // typing it Float made the JSON conversion coerce the RFC3339 string to 0.0, silently
+    // corrupting date medians.
+    let date = rows[1]
+        .get("median")
+        .expect("no median key for the date column");
+    assert_eq!(
+        date.as_str(),
+        Some("2020-01-15"),
+        "date median was corrupted in the stats jsonl: {date}"
+    );
+}
+
+// Regression: on a warm cache hit, --stats-jsonl only created the jsonl when ABSENT, so a jsonl
+// left behind by an earlier run -- one that PREDATES the sidecar beside it, because a later run
+// refreshed stats.csv/.json without --stats-jsonl -- was preserved rather than refreshed. A flag
+// whose whole purpose is to produce a current cache handed back a stale one.
+#[test]
+fn stats_jsonl_flag_refreshes_a_jsonl_older_than_the_sidecar() {
+    let wrk = Workdir::new("stats_jsonl_flag_refreshes_a_jsonl_older_than_the_sidecar");
+    wrk.create(
+        "stale.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+        ],
+    );
+
+    // 1. cache WITH a jsonl
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"])
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .arg("stale.csv");
+    wrk.assert_success(&mut cmd);
+    let jsonl = wrk.path("stale.stats.csv.data.jsonl");
+
+    // 2. different args, no --stats-jsonl: refreshes stats.csv + sidecar, leaves the jsonl behind
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("stale.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Force the jsonl clearly OLDER than the sidecar rather than relying on two real writes
+    // landing in strict order - a filesystem with coarse timestamp resolution can give them the
+    // same mtime and fail this test even when the implementation is correct.
+    let sidecar_mtime = std::fs::metadata(wrk.path("stale.stats.csv.json"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    let forced = sidecar_mtime - std::time::Duration::from_secs(10);
+    std::fs::File::options()
+        .write(true)
+        .open(&jsonl)
+        .unwrap()
+        .set_times(
+            std::fs::FileTimes::new()
+                .set_accessed(forced)
+                .set_modified(forced),
+        )
+        .unwrap();
+
+    let before = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
+    assert!(
+        sidecar_mtime > before,
+        "setup: the sidecar should now be newer than the jsonl"
+    );
+
+    // 3. asking for a current jsonl must refresh the stale one
+    let mut cmd = wrk.command("stats");
+    cmd.args(["-c", "1"]).arg("--stats-jsonl").arg("stale.csv");
+    wrk.assert_success(&mut cmd);
+
+    let after = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
+    assert!(
+        after > before,
+        "--stats-jsonl preserved a jsonl that predates the stats cache beside it"
+    );
+}

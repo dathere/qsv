@@ -595,3 +595,107 @@ fn sortcheck_statscache_missing_metadata_no_shortcircuit() {
     cmd.args(["--select", "name"]).arg("in.csv");
     wrk.assert_err(&mut cmd);
 }
+
+// Regression: sortcheck's stats-cache short-circuit reads the cache through
+// get_stats_records_readonly(), which validated mtime, --select, --no-headers and the delimiter
+// but NOT the recorded input size. An mtime-preserving replacement (cp -p, tar -x, git checkout,
+// rsync -t) therefore let a cached "Ascending" sort_order prove an entirely different file
+// sorted: sortcheck exited 0 on descending input.
+#[test]
+fn sortcheck_rejects_stale_cache_after_same_mtime_content_swap() {
+    let wrk = Workdir::new("sortcheck_rejects_stale_cache_after_same_mtime_content_swap");
+    wrk.create(
+        "sc.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+            svec!["4", "40"],
+            svec!["5", "50"],
+        ],
+    );
+    let input = wrk.path("sc.csv");
+
+    // build the stats cache while the file really is ascending
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--stats-jsonl")
+        .args(["-c", "1"])
+        .arg("sc.csv");
+    wrk.assert_success(&mut cmd);
+
+    // replace with UNSORTED content of a different size, preserving the original mtime
+    let meta = std::fs::metadata(&input).unwrap();
+    let times = std::fs::FileTimes::new()
+        .set_accessed(meta.accessed().unwrap())
+        .set_modified(meta.modified().unwrap());
+    std::fs::write(&input, "id,v\n9,1\n3,2\n7,3\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&input)
+        .unwrap()
+        .set_times(times)
+        .unwrap();
+
+    // --numeric so the cache's Integer sort_order matches the comparator, which is what makes
+    // the short-circuit eligible in the first place
+    let mut cmd = wrk.command("sortcheck");
+    cmd.args(["--select", "id"]).arg("--numeric").arg("sc.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+// Regression: the readonly stats-cache path's filesize check originally failed OPEN when
+// `filesize_bytes` was absent from the sidecar, so a sidecar written by a qsv predating that
+// field (or a truncated one) still let a cached "Ascending" prove a replaced file sorted. The
+// fail-open convention was borrowed from get_stats_records, where absent metadata must mean
+// "no opinion" so moarstats' sidecar-less cache survives -- a case that cannot reach this path,
+// which already refuses a missing sidecar outright.
+#[test]
+fn sortcheck_rejects_cache_whose_sidecar_cannot_prove_input_size() {
+    let wrk = Workdir::new("sortcheck_rejects_cache_whose_sidecar_cannot_prove_input_size");
+    wrk.create(
+        "sc2.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+            svec!["4", "40"],
+            svec!["5", "50"],
+        ],
+    );
+    let input = wrk.path("sc2.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--stats-jsonl")
+        .args(["-c", "1"])
+        .arg("sc2.csv");
+    wrk.assert_success(&mut cmd);
+
+    // simulate a sidecar from before filesize_bytes was recorded
+    let sidecar = wrk.path("sc2.stats.csv.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+    meta.as_object_mut().unwrap().remove("filesize_bytes");
+    std::fs::write(&sidecar, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
+    // replace with unsorted content, preserving the original mtime
+    let fmeta = std::fs::metadata(&input).unwrap();
+    let times = std::fs::FileTimes::new()
+        .set_accessed(fmeta.accessed().unwrap())
+        .set_modified(fmeta.modified().unwrap());
+    std::fs::write(&input, "id,v\n5,10\n4,20\n3,30\n2,40\n1,50\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&input)
+        .unwrap()
+        .set_times(times)
+        .unwrap();
+
+    // the cache cannot substantiate the input size, so it must not prove the file sorted
+    let mut cmd = wrk.command("sortcheck");
+    cmd.args(["--select", "id"]).arg("--numeric").arg("sc2.csv");
+    wrk.assert_err(&mut cmd);
+}

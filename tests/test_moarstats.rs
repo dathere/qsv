@@ -6582,3 +6582,116 @@ fn moarstats_outlier_counts_populated() {
         "Did not find 'value' field in moarstats output"
     );
 }
+
+// INVARIANT LOCK (not a reproduction of a past failure -- it passes on the code that had the
+// bug, see below). `moarstats` writes <FILESTEM>.stats.csv.data.jsonl from its EXTENDED stats
+// and writes no .stats.csv.json sidecar of its own, and util.rs deliberately trusts sidecar-less
+// jsonl so that richer cache is not discarded. Every stats-cache check added to the consumer
+// read path must preserve that.
+//
+// A date-blind-cache guard added to that path did regenerate this file and silently downgrade it
+// to the lean column set, costing `viz smart` its moarstats hints -- but only when the BASE stats
+// were themselves date-blind. Standalone `qsv moarstats` passes --infer-dates in its own default
+// --stats-options, so this path was never affected and this test would NOT have caught it.
+// It is here to stop a future check from ignoring the sidecar-less/enriched case wholesale.
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
+#[test]
+fn moarstats_rich_jsonl_survives_a_schema_run() {
+    let wrk = Workdir::new("moarstats_rich_jsonl_survives_a_schema_run");
+    let mut rows: Vec<Vec<String>> =
+        vec![vec!["id".to_string(), "v".to_string(), "cat".to_string()]];
+    for i in 0..300 {
+        rows.push(vec![
+            i.to_string(),
+            ((i * 7919) % 997).to_string(),
+            ((b'a' + (i % 5) as u8) as char).to_string(),
+        ]);
+    }
+    wrk.create("m.csv", rows);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("m.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = wrk.path("m.stats.csv.data.jsonl");
+    let cols_after_moarstats = serde_json::from_str::<serde_json::Value>(
+        std::fs::read_to_string(&jsonl)
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap()
+    .as_object()
+    .unwrap()
+    .len();
+
+    // a consumer that reads the stats cache must not downgrade it
+    let mut cmd = wrk.command("schema");
+    cmd.arg("m.csv");
+    wrk.assert_success(&mut cmd);
+
+    let cols_after_schema = serde_json::from_str::<serde_json::Value>(
+        std::fs::read_to_string(&jsonl)
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap()
+    .as_object()
+    .unwrap()
+    .len();
+
+    assert_eq!(
+        cols_after_moarstats, cols_after_schema,
+        "schema downgraded moarstats' extended stats jsonl from {cols_after_moarstats} columns to \
+         {cols_after_schema}"
+    );
+}
+
+// Regression: moarstats located the baseline <FILESTEM>.stats.csv by path and regenerated it only
+// when ABSENT -- existence alone, never compared against the input. A stats CSV left over from an
+// earlier version of the input was therefore used as the baseline for every statistic moarstats
+// derives, silently describing data that is no longer there.
+#[test]
+fn moarstats_regenerates_a_stale_baseline_stats_csv() {
+    let wrk = Workdir::new("moarstats_regenerates_a_stale_baseline_stats_csv");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string(), "v".to_string()]];
+    for i in 0..200 {
+        rows.push(vec![i.to_string(), "1".to_string()]);
+    }
+    wrk.create("st.csv", rows);
+
+    // baseline stats over v = all 1s  -> sum 200
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").arg("st.csv");
+    wrk.assert_success(&mut cmd);
+    let baseline = std::fs::read_to_string(wrk.path("st.stats.csv")).unwrap();
+    assert!(
+        baseline.lines().any(|l| l.starts_with("v,")),
+        "setup: expected a v row in the baseline stats"
+    );
+
+    // now change the input so the cached baseline no longer describes it
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string(), "v".to_string()]];
+    for i in 0..200 {
+        rows.push(vec![i.to_string(), "1000".to_string()]);
+    }
+    wrk.create("st.csv", rows);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("st.csv");
+    wrk.assert_success(&mut cmd);
+
+    // the baseline must have been recomputed against the NEW data (sum 200000, not 200)
+    let after = std::fs::read_to_string(wrk.path("st.stats.csv")).unwrap();
+    let v_row = after
+        .lines()
+        .find(|l| l.starts_with("v,"))
+        .expect("no v row in regenerated stats");
+    assert!(
+        v_row.contains("200000"),
+        "moarstats used a stale baseline stats CSV; v row was: {v_row}"
+    );
+}

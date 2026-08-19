@@ -8509,3 +8509,40 @@ fn stats_nan_weight_defaults_to_one_instead_of_poisoning() {
         "an infinite weight must also fall back to 1.0"
     );
 }
+
+#[test]
+fn stats_percentile_list_rejects_out_of_range_and_non_numeric() {
+    // `to_record` casts each token `as u8` (SATURATING) while the output label keeps the
+    // original string, so out-of-range and non-numeric tokens produced nonsense with exit 0:
+    //   150 -> rank exceeds total weight, emitting the pre-filled default as "150: 0"
+    //   nan -> saturating cast to 0, emitting p0 under a "nan" label
+    //   -5  -> likewise
+    //   0   -> p0 is not a percentile
+    // Only `fast_float2::parse().is_ok()` was checked, which accepts every one of them.
+    let wrk = Workdir::new("stats_percentile_list_range");
+    let mut rows = vec![svec!["n"]];
+    for i in 1..=100 {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("pct.csv", rows);
+
+    for bad in ["150", "nan", "inf", "-5", "0", "101", "5,,10", "5,abc"] {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .arg("--percentiles")
+            .args(["--percentile-list", bad])
+            .arg("pct.csv");
+        wrk.assert_err(&mut cmd);
+    }
+
+    // in-range values keep working, including the boundaries and `deciles`/`quintiles`, which
+    // are expanded BEFORE validation
+    for good in ["1", "100", "5,10,95", "deciles", "quintiles", "50.0"] {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .arg("--percentiles")
+            .args(["--percentile-list", good])
+            .arg("pct.csv");
+        wrk.assert_success(&mut cmd);
+    }
+}

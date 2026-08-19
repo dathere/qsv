@@ -1250,12 +1250,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_percentile_list = "20,40,60,80".to_string();
     }
 
-    // validate percentile list
-    let percentile_list = args.flag_percentile_list.split(',').collect::<Vec<&str>>();
-    for p in percentile_list {
-        if fast_float2::parse::<f64, &[u8]>(p.trim().as_bytes()).is_err() {
+    // Validate the percentile list: every token must be an INTEGER in 1..=100.
+    //
+    // Accepting any parseable f64 was not permissive, it was silently WRONG: `to_record` casts
+    // each token `as u8` (saturating) while the output LABEL keeps the original string, so the
+    // two disagreed and every case exited 0.
+    //   --percentile-list 99.9  -> computed p99, emitted "99.9: <p99 value>" (a label that lies)
+    //   --percentile-list 150   -> rank exceeds total weight, emitted the pre-filled "150: 0"
+    //   --percentile-list nan   -> saturating cast to 0, emitted "nan: <p0>"
+    //   --percentile-list -5    -> likewise "−5: <p0>"
+    // Erroring is the right outcome rather than supporting fractional percentiles end-to-end:
+    // that is a feature, and nobody is relying on today's mislabeled output.
+    //
+    // NOTE: `deciles`/`quintiles` are expanded ABOVE, so they reach this loop already spelled
+    // out as integer lists and keep working.
+    for p in args.flag_percentile_list.split(',') {
+        let token = p.trim();
+        let valid = matches!(
+            fast_float2::parse::<f64, &[u8]>(token.as_bytes()),
+            Ok(pct) if pct.is_finite() && (1.0..=100.0).contains(&pct)
+        );
+        if !valid {
             return fail_incorrectusage_clierror!(
-                "Invalid percentile list: {}: {}",
+                "Invalid percentile list: {}: `{}` is not a percentile between 1 and 100.",
                 args.flag_percentile_list,
                 p
             );

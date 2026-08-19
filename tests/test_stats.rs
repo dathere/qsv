@@ -8371,3 +8371,49 @@ fn stats_autoindex_cleanup_removes_a_non_csv_index() {
         );
     }
 }
+
+#[test]
+fn stats_dates_whitelist_ignores_empty_tokens() {
+    // `"".contains("")` is always true, so a single stray empty token in --dates-whitelist made
+    // EVERY column match and silently turned the whitelist into "all" - the exact false positive
+    // the docs warn about for "all". A trailing comma is the easy way to get one.
+    let wrk = Workdir::new("stats_dates_whitelist_empty_token");
+    wrk.create(
+        "wl.csv",
+        vec![
+            svec!["date_col", "note"],
+            svec!["2020-01-15", "2019-05-05"],
+            svec!["2021-03-01", "2018-07-07"],
+        ],
+    );
+
+    let typ = |whitelist: &str, run: &str| -> Vec<String> {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .arg("--infer-dates")
+            .args(["--dates-whitelist", whitelist])
+            .args(["--output", wrk.path(run).to_str().unwrap()])
+            .arg("wl.csv");
+        wrk.assert_success(&mut cmd);
+        let out = std::fs::read_to_string(wrk.path(run)).unwrap();
+        let mut hdrs = out.lines().next().unwrap().split(',');
+        let type_idx = hdrs.position(|h| h == "type").unwrap();
+        out.lines()
+            .skip(1)
+            .map(|l| l.split(',').nth(type_idx).unwrap_or_default().to_string())
+            .collect()
+    };
+
+    // `note` holds date-like strings but is NOT whitelisted, so it must stay a String
+    assert_eq!(typ("date", "a.csv"), vec!["Date", "String"]);
+
+    // the trailing comma must not change that
+    assert_eq!(
+        typ("date,", "b.csv"),
+        vec!["Date", "String"],
+        "an empty --dates-whitelist token silently enabled date inference on every column"
+    );
+
+    // and "all" must still mean all
+    assert_eq!(typ("all", "c.csv"), vec!["Date", "Date"]);
+}

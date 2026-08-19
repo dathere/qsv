@@ -3378,7 +3378,18 @@ fn init_date_inference(
         let whitelist_lower = flag_whitelist.to_lowercase();
         log::info!("inferring dates with date-whitelist: {whitelist_lower}");
 
-        let whitelist: SmallVec<[&str; 8]> = whitelist_lower.split(',').map(str::trim).collect();
+        // Empty tokens are DROPPED, not matched: `"".contains("")` is always true, so a single
+        // stray empty token - `--dates-whitelist "date,"`, a trailing comma being the easy way to
+        // get one - made every column match and silently turned the whitelist into "all". That is
+        // the exact false positive the docs warn about for "all": a `note` column holding
+        // date-like strings gets typed Date even though the user restricted the whitelist to
+        // `date`. The sniff sentinel below already documents this `contains("")` trap; user-
+        // supplied empties were simply never filtered.
+        let whitelist: SmallVec<[&str; 8]> = whitelist_lower
+            .split(',')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .collect();
         headers
             .iter()
             .map(|header| {

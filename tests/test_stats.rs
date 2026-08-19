@@ -8596,3 +8596,60 @@ fn stats_percentile_list_label_matches_the_percentile_computed() {
     assert_eq!(pctiles("50.0", "c.csv"), "50: 500");
     assert_eq!(pctiles("010", "d.csv"), "10: 100");
 }
+
+#[test]
+fn stats_sign_prefixed_zero_padded_codes_stay_strings() {
+    // A leading zero marks a padded CODE (zip, FIPS, ICD-9, part number), which must stay a
+    // String so the padding survives. The integer path tested byte 0 directly, so a sign made
+    // it conclude "not padded": `-007` was typed as the integer -7. `+007` was worse - atoi
+    // rejects a leading '+' (SKIP_PLUS is false) so it never reached that check at all, while
+    // fast_float2 parsed it, and the float branch's padding check required a decimal point.
+    // Either way the padding was silently dropped from min/max and --zero-padded-numeric.
+    let wrk = Workdir::new("stats_signed_zero_padded");
+
+    let probe = |file: &str, values: &[&str], out: &str| -> (String, String, String) {
+        let mut rows = vec![svec!["code"]];
+        for v in values {
+            rows.push(vec![(*v).to_string()]);
+        }
+        wrk.create(file, rows);
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .arg("--everything")
+            .arg("--zero-padded-numeric")
+            .args(["--output", wrk.path(out).to_str().unwrap()])
+            .arg(file);
+        wrk.assert_success(&mut cmd);
+        let text = std::fs::read_to_string(wrk.path(out)).unwrap();
+        let hdrs: Vec<&str> = text.lines().next().unwrap().split(',').collect();
+        let row: Vec<&str> = text.lines().nth(1).unwrap().split(',').collect();
+        let get = |k: &str| {
+            let i = hdrs.iter().position(|h| *h == k).unwrap();
+            row.get(i).unwrap_or(&"").to_string()
+        };
+        (get("type"), get("min"), get("zero_padded_numeric"))
+    };
+
+    // unsigned padded codes were always handled correctly - the baseline
+    assert_eq!(
+        probe("plain.csv", &["007", "008", "009"], "a.csv"),
+        ("String".into(), "007".into(), "true".into())
+    );
+    // ...and a sign must not change that
+    assert_eq!(
+        probe("neg.csv", &["-007", "-008", "-009"], "b.csv"),
+        ("String".into(), "-007".into(), "true".into()),
+        "`-007` was typed as the integer -7, dropping the padding"
+    );
+    assert_eq!(
+        probe("pos.csv", &["+007", "+008", "+009"], "c.csv"),
+        ("String".into(), "+007".into(), "true".into()),
+        "`+007` was typed as the float 7.0, dropping the padding"
+    );
+
+    // regression guards: genuine numbers must NOT become padded strings
+    let (plain_type, ..) = probe("real.csv", &["0.5", "7.1"], "d.csv");
+    assert_eq!(plain_type, "Float", "0.5 / 7.1 are real numbers, not codes");
+    let (signed_type, ..) = probe("signed.csv", &["+7", "-7"], "e.csv");
+    assert_eq!(signed_type, "Float", "+7 / -7 carry no padding");
+}

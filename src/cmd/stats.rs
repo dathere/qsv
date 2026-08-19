@@ -4596,7 +4596,7 @@ impl Stats {
         if self.which.zero_padded_numeric && !self.zpn_disqualified && b"" != sample {
             if sample_type == TFloat
                 || sample.iter().all(u8::is_ascii_digit)
-                || is_zero_padded_float(sample)
+                || is_zero_padded_number(sample)
                 || fast_float2::parse::<f64, &[u8]>(sample).is_ok()
             {
                 // numeric-shaped: a freshly-parsed plain float (sample_type == TFloat — the common
@@ -5902,7 +5902,7 @@ enum FieldType {
 /// scope by design — they're indistinguishable from rounded measurements without the original
 /// string.
 #[inline]
-fn is_zero_padded_float(sample: &[u8]) -> bool {
+fn is_zero_padded_number(sample: &[u8]) -> bool {
     let b = match sample.first() {
         Some(b'+' | b'-') => &sample[1..],
         _ => sample,
@@ -5926,7 +5926,12 @@ fn is_zero_padded_float(sample: &[u8]) -> bool {
             _ => return false, // any other byte disqualifies
         }
     }
-    seen_dot && frac_len > 0
+    // A dot is not required. `+007` reaches this function because atoi_simd rejects a leading
+    // '+' (SKIP_PLUS is false) while fast_float2 accepts it, so the integer path above - and its
+    // padding check - never sees it. Requiring a fraction here let `+007` fall through as the
+    // float 7.0, silently numeric-izing a padded code. When a dot IS present it must still have
+    // fraction digits, so `007.` stays disqualified.
+    !seen_dot || frac_len > 0
 }
 
 impl FieldType {
@@ -5958,9 +5963,17 @@ impl FieldType {
         if current_type != FieldType::TFloat
             && let Ok(samp_int) = atoi_simd::parse::<i64, false, false>(sample)
         {
-            // Check for integer, with leading zero check for strings like zip codes
-            // safety: we know sample is not null as we checked earlier
-            if samp_int == 0 || unsafe { *sample.get_unchecked(0) != b'0' } {
+            // Check for integer, with leading zero check for strings like zip codes.
+            //
+            // The sign is stripped first, mirroring `is_zero_padded_number`'s prefix handling: a
+            // sign is not part of the padding, so `-007` is as zero-padded as `007`. Testing
+            // byte 0 directly saw `b'-'`, concluded "not padded", and typed `-007` as the
+            // integer -7 - dropping the padding from min/max and from --zero-padded-numeric.
+            let unsigned = match sample.first() {
+                Some(b'+' | b'-') => &sample[1..],
+                _ => sample,
+            };
+            if samp_int == 0 || unsigned.first().is_none_or(|&b| b != b'0') {
                 // note that we still return samp_int as f64 even if it's an integer
                 // as the qsv-stats crate expects a float value for integer fields
                 #[allow(clippy::cast_precision_loss)]
@@ -5976,9 +5989,9 @@ impl FieldType {
             // Zero-padded floats (007.1, 05.10 — ICD-9 / Dewey / HS codes) are kept as String
             // to preserve their leading zeros, mirroring the zero-padded-integer rule above (a
             // 0-then-digit integer part is padding; a plain 0.5 / 7.1 is a real number). The
-            // first-byte check inside is_zero_padded_float() makes the common (non-padded) case
+            // first-byte check inside is_zero_padded_number() makes the common (non-padded) case
             // a couple of byte comparisons.
-            if is_zero_padded_float(sample) {
+            if is_zero_padded_number(sample) {
                 return (FieldType::TString, 0, 0.0);
             }
             return (FieldType::TFloat, 0, float_sample);

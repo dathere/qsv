@@ -6160,9 +6160,20 @@ impl TypedMinMax {
             // we use "_" here instead of "TDate | TDateTime" for the match to avoid
             // the overhead of matching on the OR value, however minor
             _ => {
-                if int_val != 0 {
-                    self.dates.add(int_val);
-                }
+                // No `int_val != 0` guard: timestamp 0 is 1970-01-01T00:00:00Z, a real date and
+                // a common placeholder in real data. Skipping it dropped the epoch from date
+                // min/max/range and from the sort_order/sortiness sample, so a column holding
+                // ["1970-01-01", "2020-06-15"] reported min=2020-06-15 with range 0.
+                //
+                // 0 cannot mean "no value" HERE, which is what made the guard look necessary:
+                //   - an empty sample returns above, before this match
+                //   - `from_sample` only reports TDate/TDateTime when a date actually parsed, and
+                //     only ever pairs them with that date's timestamp
+                //   - any non-date sample merges the column type OUT of this arm - both (TDate,
+                //     TInteger) and (TDate, TString) fall through to TString - and TNull leaves the
+                //     type alone but is unreachable here per the first point
+                // so reaching this arm means a date parsed, and 0 means exactly the epoch.
+                self.dates.add(int_val);
             },
         }
     }

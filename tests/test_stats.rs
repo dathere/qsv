@@ -8339,3 +8339,84 @@ fn stats_jsonl_flag_refreshes_a_jsonl_older_than_the_sidecar() {
         "--stats-jsonl preserved a jsonl that predates the stats cache beside it"
     );
 }
+
+#[test]
+fn stats_epoch_date_is_included_in_date_minmax() {
+    // Timestamp 0 is 1970-01-01T00:00:00Z - a real date, and a common placeholder/default in
+    // real data. The date min/max accumulator skipped it behind an `int_val != 0` guard, so a
+    // column holding the epoch reported the WRONG minimum, a short range, and computed
+    // sort_order/sortiness over the wrong sample set.
+    let wrk = Workdir::new("stats_epoch_date");
+
+    let probe =
+        |file: &str, rows: Vec<Vec<String>>, out: &str| -> (String, String, String, String) {
+            wrk.create(file, rows);
+            let mut cmd = wrk.command("stats");
+            cmd.arg("--force")
+                .arg("--infer-dates")
+                .arg("--everything")
+                .args(["--output", wrk.path(out).to_str().unwrap()])
+                .arg(file);
+            wrk.assert_success(&mut cmd);
+            let text = std::fs::read_to_string(wrk.path(out)).unwrap();
+            let hdrs: Vec<&str> = text.lines().next().unwrap().split(',').collect();
+            let row: Vec<&str> = text.lines().nth(1).unwrap().split(',').collect();
+            let get = |k: &str| {
+                let i = hdrs.iter().position(|h| *h == k).unwrap();
+                row.get(i).copied().unwrap_or_default().to_string()
+            };
+            (get("type"), get("min"), get("max"), get("nullcount"))
+        };
+
+    let (typ, min, max, _) = probe(
+        "epoch.csv",
+        vec![
+            svec!["d"],
+            svec!["1970-01-01"],
+            svec!["2020-01-15"],
+            svec!["2020-06-15"],
+            svec!["2022-12-31"],
+        ],
+        "a.csv",
+    );
+    assert_eq!(typ, "Date");
+    assert_eq!(
+        min, "1970-01-01",
+        "the epoch is a real date and must be the minimum here"
+    );
+    assert_eq!(max, "2022-12-31");
+
+    // SAFETY PROPERTY: dropping the guard must not make a genuine NULL register as the epoch.
+    // It cannot - an empty sample returns before the date arm, and any non-date sample merges
+    // the column type out of it - but this is the assertion that pins that reasoning.
+    let (typ, min, max, nulls) = probe(
+        "nulls.csv",
+        vec![
+            svec!["d", "x"],
+            svec!["2020-01-15", "a"],
+            svec!["", "b"],
+            svec!["2020-06-15", "c"],
+        ],
+        "b.csv",
+    );
+    assert_eq!(typ, "Date");
+    assert_eq!(nulls, "1", "the empty cell must still count as a null");
+    assert_eq!(
+        min, "2020-01-15",
+        "an empty cell must NOT be recorded as a 1970-01-01 date"
+    );
+    assert_eq!(max, "2020-06-15");
+
+    // a non-date value widens the column to String, so no date min/max is claimed at all
+    let (typ, ..) = probe(
+        "mixed.csv",
+        vec![
+            svec!["d"],
+            svec!["1970-01-01"],
+            svec!["2020-06-15"],
+            svec!["notadate"],
+        ],
+        "c.csv",
+    );
+    assert_eq!(typ, "String");
+}

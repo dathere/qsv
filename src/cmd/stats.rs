@@ -1440,6 +1440,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!("{format_error}");
     }
 
+    // NEVER autoindex a special-format input (.gz/.zip/.parquet/.jsonl/...) in `stats`.
+    //
+    // Such an input is read through a CONVERTED temp file, and every Config converts to its OWN
+    // temp path. `parallel_stats`' workers each build a FRESH Config (`args.rconfig()`), so they
+    // resolve a DIFFERENT temp file, find no index beside it, and panic in the `.expect()` on
+    // `indexed()`. Every chunk dies; because a panicking pool worker only unwinds its own thread,
+    // the run still exited 0 and wrote a stats file with headers and ZERO data rows. Reproducible
+    // on master with `qsv stats -E --cache-threshold -105 data.csv.gz`.
+    //
+    // This lives HERE rather than in `Config::index_files` on purpose: commands that hand their
+    // workers the already-RESOLVED Config - `frequency` does exactly that, deliberately - keep a
+    // consistent temp path across threads, so their special-format autoindexed parallel path is
+    // safe and must not be disabled. `stats` is the caller that reconstructs Configs, so `stats`
+    // is where the skip belongs.
+    //
+    // Zeroed here so BOTH routes are covered: QSV_AUTOINDEX_SIZE (applied in Config::new) and
+    // the negative --cache-threshold below.
+    if rconfig.is_special_format() {
+        rconfig.autoindex_size = 0;
+    }
+
     // infer delimiter when we're getting input from stdin
     // as the stats engine needs to know the delimiter or it will panic
     let mut stdin_tempfile_guard: Option<StdinTempFile> = None;
@@ -1747,7 +1768,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // check if flag_cache_threshold is a negative number,
             // if so, set the autoindex_size to absolute of the number
-            if args.flag_cache_threshold.is_negative() {
+            if args.flag_cache_threshold.is_negative() && !rconfig.is_special_format() {
                 rconfig.autoindex_size = args.flag_cache_threshold.unsigned_abs() as u64;
                 autoindex_set = true;
             }

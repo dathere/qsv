@@ -653,6 +653,17 @@ impl Config {
     /// (with that temp's delimiter) and whose `special_format` is `Unknown`, so the
     /// read methods treat it as an ordinary delimited file (no re-entry). Only
     /// called from the read entry points when `special_format != Unknown`.
+    /// Whether this input is a special format (`.gz`/`.zip`/`.parquet`/`.jsonl`/...) that is read
+    /// through a CONVERTED temp file rather than directly.
+    ///
+    /// Callers that reconstruct a fresh `Config` per worker need this: each `Config` converts to
+    /// its OWN temp path, so anything keyed to that path - an autoindex, most notably - is
+    /// invisible to every other `Config` built from the same input.
+    #[inline]
+    pub const fn is_special_format(&self) -> bool {
+        !matches!(self.special_format, SpecialFormat::Unknown)
+    }
+
     pub(crate) fn prepared_for_read(&self) -> io::Result<Config> {
         if self.special_format == SpecialFormat::Unknown {
             return Ok(self.clone());
@@ -778,22 +789,7 @@ impl Config {
     /// `auto_indexed` and explicit-`(path, idx_path)` branches skip the staleness recheck.
     pub fn index_files(&self) -> io::Result<Option<(csv::Reader<fs::File>, fs::File)>> {
         if self.special_format != SpecialFormat::Unknown {
-            // A special-format input (.gz/.zip/.parquet/.jsonl/...) is read through a CONVERTED
-            // temp file, and every Config instance converts to its OWN temp path. Autoindexing
-            // that temp file would therefore create an index only THIS Config can find.
-            //
-            // `qsv stats`' parallel workers each build a fresh Config (`args.rconfig()`), so
-            // they resolve a DIFFERENT temp path, find no index beside it, and every worker
-            // panics - which, before the chunk-completeness check, produced a stats file with
-            // headers and zero rows at exit code 0. Reproducible on master with
-            // `qsv stats -E --cache-threshold -105 data.csv.gz`.
-            //
-            // So an autoindex is never created for a converted temp file. An index that
-            // somehow already exists beside one is still honored. This mirrors the snappy
-            // guard below, and `qsv index`, which refuses a compressed input outright.
-            let mut prepared = self.prepared_for_read()?;
-            prepared.autoindex_size = 0;
-            return prepared.index_files();
+            return self.prepared_for_read()?.index_files();
         }
         // Track the data file's mtime and the resolved index path *only* on the
         // path that may need a staleness recheck. For the auto_indexed and
@@ -1113,6 +1109,52 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+
+    /// A special-format input must remain AUTOINDEXABLE at the Config level.
+    ///
+    /// The `stats` parallel path cannot use such an index - it rebuilds a fresh Config per
+    /// worker, so each resolves a different converted temp file - and `stats` therefore skips
+    /// autoindexing these inputs itself. That skip must NOT live here: `frequency` deliberately
+    /// hands its workers the already-resolved Config (see the comments at its `indexed()` call
+    /// and in `parallel_ftables`), so its temp path is consistent across threads and its
+    /// special-format autoindexed parallel path is safe. Disabling autoindex in `index_files`
+    /// silently dropped `frequency` back to sequential processing on large compressed inputs.
+    #[test]
+    fn special_format_input_is_still_autoindexable() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("ai.zip");
+
+        let mut csv = String::from("a,b\n");
+        for i in 0..200 {
+            csv.push_str(&format!("{i},{}\n", i * 2));
+        }
+
+        let zf = std::fs::File::create(&zip_path).unwrap();
+        let mut zw = zip::ZipWriter::new(zf);
+        zw.start_file("ai.csv", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zw.write_all(csv.as_bytes()).unwrap();
+        zw.finish().unwrap();
+
+        let mut config = Config::new(Some(&zip_path.to_string_lossy().to_string()));
+        assert!(
+            config.is_special_format(),
+            "a .zip input should be detected as a special format"
+        );
+
+        // an autoindex size below the fixture size asks for an index to be built
+        config.autoindex_size = 100;
+        let indexed = config
+            .index_files()
+            .expect("index_files should not error for a special-format input");
+        assert!(
+            indexed.is_some(),
+            "a special-format input must still autoindex its converted temp file - `frequency` \
+             shares the resolved Config with its workers and depends on this"
+        );
+    }
 
     #[test]
     fn test_csv_extension() {

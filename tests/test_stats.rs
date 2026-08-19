@@ -2420,7 +2420,7 @@ fn stats_percentiles_floats() {
             "15",
             "",
             "0",
-            "10.5: 2|25.25: 4|50.75: 8|75.6: 12|90.1: 14"
+            "10: 2|25: 4|50: 8|75: 12|90: 14"
         ],
     ];
 
@@ -2870,7 +2870,7 @@ fn stats_percentiles_custom_list() {
             "10",
             "",
             "0",
-            "1: 1|5: 1|33.3: 4|66.6: 7|95: 10|99: 10",
+            "1: 1|5: 1|33: 4|66: 7|95: 10|99: 10",
         ],
     ];
 
@@ -8545,4 +8545,54 @@ fn stats_percentile_list_rejects_out_of_range_and_non_numeric() {
             .arg("pct.csv");
         wrk.assert_success(&mut cmd);
     }
+}
+
+#[test]
+fn stats_percentile_list_label_matches_the_percentile_computed() {
+    // The percentile VALUE is selected by an `as u8` truncation, but the output LABEL used to
+    // keep the token exactly as typed - so `--percentile-list 99.9` on a 1000-row file emitted
+    // the p99 value (990) under a "99.9" label, claiming a p99.9 it never computed. The label
+    // now reports the percentile actually computed, so a fractional token and its truncation
+    // produce identical output.
+    let wrk = Workdir::new("stats_percentile_label");
+    let mut rows = vec![svec!["n"]];
+    for i in 1..=1000 {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("lbl.csv", rows);
+
+    let pctiles = |list: &str, out: &str| -> String {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .arg("--percentiles")
+            .args(["--percentile-list", list])
+            .args(["--output", wrk.path(out).to_str().unwrap()])
+            .arg("lbl.csv");
+        wrk.assert_success(&mut cmd);
+        let text = std::fs::read_to_string(wrk.path(out)).unwrap();
+        let hdrs: Vec<&str> = text.lines().next().unwrap().split(',').collect();
+        let i = hdrs.iter().position(|h| *h == "percentiles").unwrap();
+        text.lines()
+            .nth(1)
+            .unwrap()
+            .split(',')
+            .nth(i)
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    let fractional = pctiles("99.9", "a.csv");
+    assert_eq!(
+        fractional, "99: 990",
+        "a fractional percentile must be labeled with the percentile actually computed"
+    );
+    assert_eq!(
+        fractional,
+        pctiles("99", "b.csv"),
+        "99.9 truncates to 99, so it must produce output identical to asking for 99"
+    );
+
+    // an integral value written with a decimal point, and a zero-padded one, normalize too
+    assert_eq!(pctiles("50.0", "c.csv"), "50: 500");
+    assert_eq!(pctiles("010", "d.csv"), "10: 100");
 }

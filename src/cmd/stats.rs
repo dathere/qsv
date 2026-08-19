@@ -1250,17 +1250,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_percentile_list = "20,40,60,80".to_string();
     }
 
-    // Validate the percentile list: every token must be an INTEGER in 1..=100.
+    // Validate the percentile list: every token must be a FINITE number in 1..=100.
     //
     // Accepting any parseable f64 was not permissive, it was silently WRONG: `to_record` casts
-    // each token `as u8` (saturating) while the output LABEL keeps the original string, so the
+    // each token `as u8` (saturating) while the output LABEL kept the original string, so the
     // two disagreed and every case exited 0.
-    //   --percentile-list 99.9  -> computed p99, emitted "99.9: <p99 value>" (a label that lies)
     //   --percentile-list 150   -> rank exceeds total weight, emitted the pre-filled "150: 0"
     //   --percentile-list nan   -> saturating cast to 0, emitted "nan: <p0>"
-    //   --percentile-list -5    -> likewise "−5: <p0>"
-    // Erroring is the right outcome rather than supporting fractional percentiles end-to-end:
-    // that is a feature, and nobody is relying on today's mislabeled output.
+    //   --percentile-list -5    -> likewise "-5: <p0>"
+    //   --percentile-list 0     -> p0 is not a percentile
+    //
+    // A FRACTIONAL value in range stays accepted (`99.9`, `50.0`): it is truncated to the
+    // percentile actually computed, and `to_record` now labels it with that percentile instead
+    // of the token as typed, so the label can no longer disagree with the value.
     //
     // NOTE: `deciles`/`quintiles` are expanded ABOVE, so they reach this loop already spelled
     // out as integer lists and keep working.
@@ -5659,9 +5661,17 @@ impl Stats {
                         .percentile_list
                         .split(',')
                         .filter_map(|p: &str| {
-                            fast_float2::parse(p.trim())
-                                .ok()
-                                .map(|p_val: f64| (p.trim().to_string(), p_val as u8))
+                            fast_float2::parse(p.trim()).ok().map(|p_val: f64| {
+                                // Label the percentile ACTUALLY computed, not the token as
+                                // typed. The value is selected by this truncating cast, so
+                                // keeping the original string made the label disagree with it:
+                                // `--percentile-list 99.9` on 1000 rows emitted the p99 value
+                                // (990) under a "99.9" label, and `010` under an "010" label.
+                                // run() has already rejected anything outside 1..=100, so this
+                                // cast cannot saturate.
+                                let pct = p_val as u8;
+                                (pct.to_string(), pct)
+                            })
                         })
                         .unzip();
 

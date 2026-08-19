@@ -5682,6 +5682,85 @@ mod tests {
         assert_eq!(s.mean_f64(), None);
     }
 
+    #[test]
+    fn statsdata_renderings_serialize_back_as_numbers() {
+        // StatsData is NOT deserialize-only: `profile`'s build_dpps serializes it straight back
+        // out with serde_json::to_value, and those values reach the published DCAT-US v3 /
+        // Croissant / csvw projections. Storing the renderings as Option<String> made the DERIVED
+        // Serialize emit a numeric column's mean as "42.5" instead of 42.5 - a silent change to
+        // profile output that the whole test suite went green through (roborev 4326).
+        let line = r#"{"field":"amt","type":"Float","nullcount":0,"cardinality":9,
+            "mean":42.5,"q1":10,"q2_median":40.0,"q3":75.25,
+            "lower_outer_fence":-185.0,"lower_inner_fence":-87.5,
+            "upper_inner_fence":172.5,"upper_outer_fence":270.0}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(line).unwrap();
+        let v = serde_json::to_value(&s).unwrap();
+
+        for key in [
+            "mean",
+            "q1",
+            "q2_median",
+            "q3",
+            "lower_outer_fence",
+            "lower_inner_fence",
+            "upper_inner_fence",
+            "upper_outer_fence",
+        ] {
+            assert!(
+                v[key].is_number(),
+                "a numeric column's `{key}` must serialize back as a JSON NUMBER (profile's dpps \
+                 feeds it to the published projections), got {}",
+                v[key]
+            );
+        }
+        assert_eq!(v["mean"], serde_json::json!(42.5));
+        assert_eq!(v["q1"], serde_json::json!(10.0));
+
+        // a Date column's rendering has no numeric reading, so it goes out as a string
+        let date_line = r#"{"field":"open_dt","type":"Date","nullcount":0,"cardinality":5,
+            "mean":"2010-12-06","q2_median":"2020-06-15"}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(date_line).unwrap();
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["mean"], serde_json::json!("2010-12-06"));
+        assert_eq!(v["q2_median"], serde_json::json!("2020-06-15"));
+    }
+
+    #[test]
+    fn statsdata_stale_precoercion_date_cache_yields_no_fabricated_zero() {
+        // A `.data.jsonl` written BEFORE the rendering fix stores the coerced 0.0 for a
+        // Date/DateTime column. Those caches stay on disk and still pass mtime validation after
+        // an upgrade, so the 0.0 would deserialize as "0" and the accessors would hand consumers
+        // the very fabricated zero this fix removes (roborev 4327). The row's `type` is the
+        // tell-tale: a date column has no numeric quartile, whatever the cache claims.
+        let stale = r#"{"field":"open_dt","type":"Date","nullcount":0,"cardinality":5,
+            "mean":0.0,"q1":0.0,"q2_median":0.0,"q3":0.0,
+            "lower_outer_fence":0.0,"lower_inner_fence":0.0,
+            "upper_inner_fence":0.0,"upper_outer_fence":0.0,"iqr":9884.0}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(stale).unwrap();
+
+        assert_eq!(s.mean_f64(), None, "stale date cache must not yield 0.0");
+        assert_eq!(s.q1_f64(), None);
+        assert_eq!(s.q2_median_f64(), None);
+        assert_eq!(s.q3_f64(), None);
+        assert_eq!(s.lower_outer_fence_f64(), None);
+        assert_eq!(s.lower_inner_fence_f64(), None);
+        assert_eq!(s.upper_inner_fence_f64(), None);
+        assert_eq!(s.upper_outer_fence_f64(), None);
+
+        // the availability probes still see a present value, so this does NOT push consumers
+        // into regenerating the cache on every run
+        assert!(s.q2_median.is_some());
+        // and `iqr`, a day-count, is untouched by the type gate
+        assert_eq!(s.iqr, Some(9884.0));
+
+        // the gate is keyed on the column TYPE, so numeric columns are unaffected
+        let numeric = r#"{"field":"amt","type":"Float","nullcount":0,"cardinality":9,
+            "mean":0.0,"q1":0.0}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(numeric).unwrap();
+        assert_eq!(s.mean_f64(), Some(0.0), "a numeric 0.0 is a real value");
+        assert_eq!(s.q1_f64(), Some(0.0));
+    }
+
     #[cfg(test)]
     fn write_test_zip(path: &Path, entries: &[(&str, &[u8])]) {
         use std::io::Write as _;

@@ -702,11 +702,45 @@ where
     deserializer.deserialize_any(StatRenderingVisitor)
 }
 
+/// Serialize a stat RENDERING as a JSON NUMBER when it reads as one, and as a string otherwise.
+///
+/// `StatsData` is not only deserialized from the cache - `profile`'s `build_dpps` serializes it
+/// straight back out with `serde_json::to_value`, and those values reach the DCAT-US v3 /
+/// Croissant / csvw projections. The derived `Serialize` for an `Option<String>` field would emit
+/// a numeric column's mean as `"42.5"` instead of `42.5`, changing published profile output. This
+/// keeps the numeric case byte-identical to when these fields were `Option<f64>`, while a Date /
+/// `DateTime` column's RFC3339 rendering (which cannot parse as f64) still goes out as a string.
+///
+/// Non-finite is deliberately serialized as a STRING rather than a number: JSON has no NaN or
+/// infinity literal, and `serialize_f64` would emit bare `NaN`, which is invalid JSON.
+fn ser_stat_rendering<S>(rendering: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match rendering {
+        None => serializer.serialize_none(),
+        Some(r) => match r.parse::<f64>() {
+            Ok(n) if n.is_finite() => serializer.serialize_f64(n),
+            _ => serializer.serialize_str(r),
+        },
+    }
+}
+
 /// Parse a stat RENDERING as an f64, or `None` when it is not a number (a Date/DateTime
 /// column's `mean`/quartiles/fences render as RFC3339 strings). Uses `str::parse` rather than
 /// a partial parser on purpose: a prefix parse would turn "2020-01-15" into 2020.
+///
+/// `field_type` gates the whole thing: a cache written BEFORE the rendering fix stores the
+/// coerced `0.0` for a Date/DateTime column, which would otherwise parse cleanly and hand a
+/// consumer the same fabricated zero this fix exists to remove. Such caches stay on disk and
+/// still pass mtime validation after an upgrade, so the read side has to refuse them rather than
+/// wait for a regeneration that may never come. A date column has no numeric quartile, whatever
+/// the cache claims.
 #[inline]
-fn stat_rendering_f64(rendering: Option<&String>) -> Option<f64> {
+fn stat_rendering_f64(rendering: Option<&String>, field_type: &str) -> Option<f64> {
+    if matches!(field_type, "Date" | "DateTime") {
+        return None;
+    }
     rendering.and_then(|s| s.parse::<f64>().ok())
 }
 
@@ -746,7 +780,11 @@ pub struct StatsData {
     // String, like `min`/`max`/`median`: for a Date/DateTime column stats_to_records() emits
     // an RFC3339 rendering here (e.g. "2010-12-06"), and typing it Float made the JSON
     // conversion coerce that to 0.0. Read it as a number via `mean_f64()`.
-    #[serde(default, deserialize_with = "de_stat_rendering")]
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
     pub mean: Option<String>,
     pub sem: Option<f64>,
     // same drift as `sortiness` above: emitted and typed, but absent here
@@ -781,20 +819,48 @@ pub struct StatsData {
     // The four fences and the three quartiles are POSITIONAL, so they render in the column's
     // own units: a number for a numeric column, RFC3339 for a Date/DateTime one. Same treatment
     // as `mean` above; read them as numbers via the `*_f64()` accessors.
-    #[serde(default, deserialize_with = "de_stat_rendering")]
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
     pub lower_outer_fence: Option<String>,
-    #[serde(default, deserialize_with = "de_stat_rendering")]
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
     pub lower_inner_fence: Option<String>,
-    #[serde(default, deserialize_with = "de_stat_rendering")]
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
     pub q1: Option<String>,
-    #[serde(default, deserialize_with = "de_stat_rendering")]
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
     pub q2_median: Option<String>,
-    #[serde(default, deserialize_with = "de_stat_rendering")]
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
     pub q3: Option<String>,
     pub iqr: Option<f64>,
-    #[serde(default, deserialize_with = "de_stat_rendering")]
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
     pub upper_inner_fence: Option<String>,
-    #[serde(default, deserialize_with = "de_stat_rendering")]
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
     pub upper_outer_fence: Option<String>,
     pub skewness: Option<f64>,
     pub cardinality: u64,
@@ -844,49 +910,49 @@ impl StatsData {
     /// The numeric value of `mean`, or `None` when the column's mean is a date rendering.
     #[inline]
     pub fn mean_f64(&self) -> Option<f64> {
-        stat_rendering_f64(self.mean.as_ref())
+        stat_rendering_f64(self.mean.as_ref(), &self.r#type)
     }
 
     /// The numeric value of `q1`, or `None` when it is a date rendering.
     #[inline]
     pub fn q1_f64(&self) -> Option<f64> {
-        stat_rendering_f64(self.q1.as_ref())
+        stat_rendering_f64(self.q1.as_ref(), &self.r#type)
     }
 
     /// The numeric value of `q2_median`, or `None` when it is a date rendering.
     #[inline]
     pub fn q2_median_f64(&self) -> Option<f64> {
-        stat_rendering_f64(self.q2_median.as_ref())
+        stat_rendering_f64(self.q2_median.as_ref(), &self.r#type)
     }
 
     /// The numeric value of `q3`, or `None` when it is a date rendering.
     #[inline]
     pub fn q3_f64(&self) -> Option<f64> {
-        stat_rendering_f64(self.q3.as_ref())
+        stat_rendering_f64(self.q3.as_ref(), &self.r#type)
     }
 
     /// The numeric value of `lower_outer_fence`, or `None` when it is a date rendering.
     #[inline]
     pub fn lower_outer_fence_f64(&self) -> Option<f64> {
-        stat_rendering_f64(self.lower_outer_fence.as_ref())
+        stat_rendering_f64(self.lower_outer_fence.as_ref(), &self.r#type)
     }
 
     /// The numeric value of `lower_inner_fence`, or `None` when it is a date rendering.
     #[inline]
     pub fn lower_inner_fence_f64(&self) -> Option<f64> {
-        stat_rendering_f64(self.lower_inner_fence.as_ref())
+        stat_rendering_f64(self.lower_inner_fence.as_ref(), &self.r#type)
     }
 
     /// The numeric value of `upper_inner_fence`, or `None` when it is a date rendering.
     #[inline]
     pub fn upper_inner_fence_f64(&self) -> Option<f64> {
-        stat_rendering_f64(self.upper_inner_fence.as_ref())
+        stat_rendering_f64(self.upper_inner_fence.as_ref(), &self.r#type)
     }
 
     /// The numeric value of `upper_outer_fence`, or `None` when it is a date rendering.
     #[inline]
     pub fn upper_outer_fence_f64(&self) -> Option<f64> {
-        stat_rendering_f64(self.upper_outer_fence.as_ref())
+        stat_rendering_f64(self.upper_outer_fence.as_ref(), &self.r#type)
     }
 }
 

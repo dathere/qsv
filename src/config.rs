@@ -778,7 +778,22 @@ impl Config {
     /// `auto_indexed` and explicit-`(path, idx_path)` branches skip the staleness recheck.
     pub fn index_files(&self) -> io::Result<Option<(csv::Reader<fs::File>, fs::File)>> {
         if self.special_format != SpecialFormat::Unknown {
-            return self.prepared_for_read()?.index_files();
+            // A special-format input (.gz/.zip/.parquet/.jsonl/...) is read through a CONVERTED
+            // temp file, and every Config instance converts to its OWN temp path. Autoindexing
+            // that temp file would therefore create an index only THIS Config can find.
+            //
+            // `qsv stats`' parallel workers each build a fresh Config (`args.rconfig()`), so
+            // they resolve a DIFFERENT temp path, find no index beside it, and every worker
+            // panics - which, before the chunk-completeness check, produced a stats file with
+            // headers and zero rows at exit code 0. Reproducible on master with
+            // `qsv stats -E --cache-threshold -105 data.csv.gz`.
+            //
+            // So an autoindex is never created for a converted temp file. An index that
+            // somehow already exists beside one is still honored. This mirrors the snappy
+            // guard below, and `qsv index`, which refuses a compressed input outright.
+            let mut prepared = self.prepared_for_read()?;
+            prepared.autoindex_size = 0;
+            return prepared.index_files();
         }
         // Track the data file's mtime and the resolved index path *only* on the
         // path that may need a staleness recheck. For the auto_indexed and

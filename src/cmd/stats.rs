@@ -1815,7 +1815,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         //      per-column memory regardless of sequential vs. parallel
                         // Only propagate the original OOM error if NEITHER fallback engages.
                         let mut index_succeeded = false;
-                        if indexed_result.is_none() && !rconfig.is_stdin() {
+                        // `!rconfig.is_special_format()` for the same reason the autoindex is
+                        // skipped above, and it matters MORE here: this fallback fires precisely
+                        // when the file is too large for sequential processing. It creates an
+                        // index beside the RESOLVED TEMP file and then selects `parallel_stats`,
+                        // whose workers rebuild a fresh Config, resolve a DIFFERENT temp, find no
+                        // index, and panic - turning an out-of-memory condition into a
+                        // headers-only stats file at exit 0. The DataSketches fallback below
+                        // still engages for these inputs, so a large compressed file keeps a
+                        // memory mitigation; it just stays sequential.
+                        if indexed_result.is_none()
+                            && !rconfig.is_stdin()
+                            && !rconfig.is_special_format()
+                        {
                             log::info!(
                                 "File too large for sequential processing. Auto-creating index to \
                                  enable parallel processing..."

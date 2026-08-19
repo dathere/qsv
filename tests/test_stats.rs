@@ -8417,3 +8417,95 @@ fn stats_dates_whitelist_ignores_empty_tokens() {
     // and "all" must still mean all
     assert_eq!(typ("all", "c.csv"), vec!["Date", "Date"]);
 }
+
+#[test]
+fn stats_nan_weight_defaults_to_one_instead_of_poisoning() {
+    // fast_float2 parses "NaN" and "inf" SUCCESSFULLY, so the `unwrap_or(1.0)` fallback never
+    // fired for them. NaN then slipped past add_weighted's `w <= 0.0` guard (every NaN
+    // comparison is false) and poisoned sum_weights/weighted_mean permanently, so the whole
+    // column's weighted mean/sem/stddev/variance/cv came out NaN - while the sibling guards
+    // (`weight > 0.0`) silently DROPPED the same row from total_weight and the weighted
+    // quantiles. One cell made the moments and the quantiles disagree.
+    //
+    // The documented contract is "missing or non-numeric weights default to 1.0", so the fix is
+    // pinned against a reference file with an explicit 1.0 in place of the bad cell.
+    let wrk = Workdir::new("stats_nan_weight");
+
+    let run = |file: &str, rows: Vec<Vec<String>>, out: &str| -> Vec<String> {
+        wrk.create(file, rows);
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .args(["--weight", "w"])
+            .arg("--everything")
+            .args(["--output", wrk.path(out).to_str().unwrap()])
+            .arg(file);
+        wrk.assert_success(&mut cmd);
+        let text = std::fs::read_to_string(wrk.path(out)).unwrap();
+        let hdrs: Vec<&str> = text.lines().next().unwrap().split(',').collect();
+        let row: Vec<&str> = text.lines().nth(1).unwrap().split(',').collect();
+        [
+            "mean",
+            "stddev",
+            "variance",
+            "cv",
+            "sem",
+            "q1",
+            "q2_median",
+            "q3",
+        ]
+        .iter()
+        .map(|k| {
+            let i = hdrs.iter().position(|h| h == k).unwrap();
+            row.get(i).unwrap_or(&"").to_string()
+        })
+        .collect()
+    };
+
+    let nan_weighted = run(
+        "nanw.csv",
+        vec![
+            svec!["v", "w"],
+            svec!["10", "1"],
+            svec!["20", "NaN"],
+            svec!["30", "2"],
+        ],
+        "nan.csv",
+    );
+    let reference = run(
+        "refw.csv",
+        vec![
+            svec!["v", "w"],
+            svec!["10", "1"],
+            svec!["20", "1"],
+            svec!["30", "2"],
+        ],
+        "ref.csv",
+    );
+
+    assert_eq!(
+        nan_weighted, reference,
+        "a NaN weight must behave exactly like the documented 1.0 default, for the moments AND \
+         the quantiles"
+    );
+    assert!(
+        !nan_weighted[0].is_empty() && nan_weighted[0] != "NaN",
+        "the weighted mean must be a real number, got {:?}",
+        nan_weighted[0]
+    );
+
+    // "inf" is non-finite too and must take the same path
+    let inf_weighted = run(
+        "infw.csv",
+        vec![
+            svec!["v", "w"],
+            svec!["10", "1"],
+            svec!["20", "inf"],
+            svec!["30", "2"],
+        ],
+        "inf.csv",
+    );
+    assert_eq!(
+        inf_weighted, reference,
+        "an infinite weight must also fall back to 1.0"
+    );
+}

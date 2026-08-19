@@ -2701,11 +2701,23 @@ impl Args {
         infer_boolean: bool,
         prefer_dmy: bool,
     ) {
-        // Extract weight value if weight column is specified
-        // in case of a parse error, invalid weight defaults to 1.0
+        // Extract weight value if weight column is specified.
+        // Per the --weight docs, a missing or non-numeric weight defaults to 1.0.
+        //
+        // NON-FINITE counts as non-numeric here. fast_float2 parses "NaN" and "inf"
+        // SUCCESSFULLY, so `unwrap_or(1.0)` never fired for them and the value flowed into the
+        // accumulators: NaN then slipped past `add_weighted`'s `w <= 0.0` guard (every NaN
+        // comparison is false) and permanently poisoned sum_weights and weighted_mean, so
+        // weighted mean/sem/stddev/variance/cv for the ENTIRE column came out NaN. The sibling
+        // guards (`total_weight` and the weighted-quantile buffer) use `weight > 0.0`, which
+        // NaN fails, so they silently dropped the row instead - the same cell making the
+        // moments disagree with the quantiles.
         let weight = if let Some(widx) = weight_col_idx {
             if widx < row.len() {
-                fast_float2::parse::<f64, &[u8]>(row.get(widx).unwrap_or(b"1.0")).unwrap_or(1.0)
+                match fast_float2::parse::<f64, &[u8]>(row.get(widx).unwrap_or(b"1.0")) {
+                    Ok(w) if w.is_finite() => w,
+                    _ => 1.0,
+                }
             } else {
                 1.0
             }
@@ -3859,7 +3871,13 @@ impl WeightedOnlineStats {
     /// - For harmonic mean: accumulate `w_i` / `x_i` (only if `x_i` != 0)
     #[inline]
     fn add_weighted(&mut self, x: f64, w: f64) {
-        if w <= 0.0 {
+        // `!(w > 0.0)` rather than `w <= 0.0` so a non-finite weight is EXCLUDED like the
+        // sibling sites (`total_weight` and the weighted-quantile buffer both gate on
+        // `weight > 0.0`). NaN fails every comparison, so `w <= 0.0` let it through and one
+        // NaN cell poisoned the column's weighted moments forever. add_row now normalizes
+        // non-finite weights to 1.0 before they get here, so this is the belt to that braces -
+        // but all three guards now read alike, which is what stops them drifting apart again.
+        if !(w > 0.0) {
             return;
         }
 

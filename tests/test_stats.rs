@@ -8653,3 +8653,62 @@ fn stats_sign_prefixed_zero_padded_codes_stay_strings() {
     let (signed_type, ..) = probe("signed.csv", &["+7", "-7"], "e.csv");
     assert_eq!(signed_type, "Float", "+7 / -7 carry no padding");
 }
+
+#[test]
+fn stats_date_fences_beyond_year_9999_are_not_truncated() {
+    // The date component was taken as a fixed 10-byte slice, which assumes a 4-digit year.
+    // chrono renders a year outside 0..=9999 in EXPANDED form (`+12000-01-01T…`), so the slice
+    // cut it mid-token and emitted `+12000-01-` as if it were a date. This is reachable from
+    // ordinary data: a Date column with a wide spread pushes the Tukey fences (q3 + 3*IQR)
+    // past year 9999.
+    let wrk = Workdir::new("stats_date_fence_overflow");
+    let mut rows = vec![svec!["d"]];
+    for y in [1000, 1500, 2000, 2500, 3000, 3500, 4000, 6000, 8000, 9999] {
+        rows.push(vec![format!("{y:04}-01-01")]);
+    }
+    wrk.create("wide.csv", rows);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--force")
+        .arg("--infer-dates")
+        .arg("--everything")
+        .args(["--output", wrk.path("out.csv").to_str().unwrap()])
+        .arg("wide.csv");
+    wrk.assert_success(&mut cmd);
+
+    let text = std::fs::read_to_string(wrk.path("out.csv")).unwrap();
+    let hdrs: Vec<&str> = text.lines().next().unwrap().split(',').collect();
+    let row: Vec<&str> = text.lines().nth(1).unwrap().split(',').collect();
+    let get = |k: &str| {
+        let i = hdrs.iter().position(|h| *h == k).unwrap();
+        row.get(i).copied().unwrap_or_default()
+    };
+
+    for key in [
+        "lower_outer_fence",
+        "lower_inner_fence",
+        "upper_inner_fence",
+        "upper_outer_fence",
+    ] {
+        let v = get(key);
+        assert!(
+            !v.is_empty(),
+            "{key} should be rendered for this fixture, got empty"
+        );
+        // a truncated expanded year ends mid-token, e.g. "+12000-01-" or "-10000-01-"
+        assert!(
+            !v.ends_with('-'),
+            "{key} was truncated mid-token by the fixed 10-byte slice: {v:?}"
+        );
+        // every rendered date must have a full YYYY-MM-DD tail
+        let parts: Vec<&str> = v.rsplit('-').collect();
+        assert!(
+            parts[0].len() == 2 && parts[1].len() == 2,
+            "{key} should end in -MM-DD, got {v:?}"
+        );
+    }
+
+    // an ordinary 4-digit-year column is unaffected
+    assert_eq!(get("min"), "1000-01-01");
+    assert_eq!(get("q1"), "2000-01-01");
+}

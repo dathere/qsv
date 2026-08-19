@@ -3890,13 +3890,14 @@ impl WeightedOnlineStats {
     /// - For harmonic mean: accumulate `w_i` / `x_i` (only if `x_i` != 0)
     #[inline]
     fn add_weighted(&mut self, x: f64, w: f64) {
-        // `!(w > 0.0)` rather than `w <= 0.0` so a non-finite weight is EXCLUDED like the
-        // sibling sites (`total_weight` and the weighted-quantile buffer both gate on
-        // `weight > 0.0`). NaN fails every comparison, so `w <= 0.0` let it through and one
-        // NaN cell poisoned the column's weighted moments forever. add_row now normalizes
-        // non-finite weights to 1.0 before they get here, so this is the belt to that braces -
-        // but all three guards now read alike, which is what stops them drifting apart again.
-        if !(w > 0.0) {
+        // The explicit NaN test is the point: a bare `w <= 0.0` is FALSE for NaN, so one NaN
+        // weight slipped into the accumulator and poisoned the column's weighted moments
+        // forever. This is exactly equivalent to the sibling sites' `weight > 0.0` gate
+        // (`total_weight` and the weighted-quantile buffer), spelled out rather than written
+        // as `!(w > 0.0)` so the NaN case is visible instead of implied. add_row now
+        // normalizes non-finite weights to 1.0 before they reach here, so this is the belt to
+        // that braces - but all three sites now agree, which is what stops them drifting.
+        if w.is_nan() || w <= 0.0 {
             return;
         }
 
@@ -4283,7 +4284,12 @@ fn timestamp_ms_to_rfc3339(timestamp: i64, typ: FieldType) -> String {
     // if type = Date, only return the date component
     // do not return the time component
     if typ == TDate {
-        return date_val[..10].to_string();
+        // Split at the RFC3339 'T' separator rather than slicing a fixed 10 bytes: chrono
+        // renders a year outside 0..=9999 in EXPANDED form (`+12000-01-01T…`, `-10000-01-01T…`),
+        // which is more than 10 bytes before the 'T', so the fixed slice cut it mid-token and
+        // emitted `+12000-01-` as if it were a date. Reachable from ordinary data - a Date
+        // column with a wide spread pushes the Tukey fences (`q3 + 3*IQR`) past year 9999.
+        return date_val.split('T').next().unwrap_or(&date_val).to_string();
     }
     date_val
 }

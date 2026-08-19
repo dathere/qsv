@@ -2224,6 +2224,75 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(())
 }
 
+/// Merge per-chunk results in CHUNK order, failing if any chunk never arrives.
+///
+/// Merging in chunk order rather than completion order is required, not stylistic: the
+/// order-dependent stats (`sortiness` / `sort_order` pair counts at chunk boundaries) are only
+/// deterministic - and only equal to the sequential result - when chunks are folded in file
+/// order. Completion-order merging made `sortiness` vary from run to run.
+///
+/// Merging happens INCREMENTALLY as results arrive: each chunk is folded in (and freed) as soon
+/// as every earlier chunk has been merged. Workers start in chunk order, so results arrive
+/// roughly in order and the out-of-order buffer stays small - collecting everything first would
+/// hold all `nchunks` results resident simultaneously.
+///
+/// # The chunk-count check
+///
+/// A worker that panics - a corrupt, stale or concurrently-deleted index is the realistic cause,
+/// and the worker's `expect()`s anticipate exactly that - never sends its chunk. The receive loop
+/// then simply ends when the last sender drops. Without this check that is SILENT: every later
+/// chunk stays stranded in `pending`, `next_chunk` stops at the gap, and the caller gets a prefix
+/// of the file's statistics - or, when chunk 0 is the one that died, an EMPTY result. `run()` then
+/// wrote, printed and CACHED that partial answer with exit code 0, so a subsequent run would reuse
+/// statistics computed from a fraction of the file.
+///
+/// This is live in shipped binaries, not a debug-only artifact: the release profiles build with
+/// `panic = "unwind"`, so a panicking pool worker unwinds its own thread and leaves the process
+/// running.
+fn merge_chunks_in_order<T: Commute + Send>(
+    recv: &crossbeam_channel::Receiver<(usize, Vec<T>)>,
+    nchunks: usize,
+) -> CliResult<Vec<T>> {
+    let mut pending: HashMap<usize, Vec<T>> = HashMap::default();
+    let mut next_chunk = 0_usize;
+    let mut merged: Option<Vec<T>> = None;
+
+    for (i, chunk_stats) in recv {
+        pending.insert(i, chunk_stats);
+        while let Some(chunk_stats) = pending.remove(&next_chunk) {
+            match merged {
+                // Merge column-by-column in parallel: columns are independent, and each
+                // column still sees chunks in file order, so results are identical to a
+                // serial merge. This keeps the merge from becoming a serial tail - merging
+                // a high-cardinality column's Frequencies map hash-inserts every unique
+                // value of the incoming chunk.
+                Some(ref mut m) => m
+                    .par_iter_mut()
+                    .zip(chunk_stats)
+                    .for_each(|(acc, chunk_col)| acc.merge(chunk_col)),
+                None => merged = Some(chunk_stats),
+            }
+            next_chunk += 1;
+        }
+    }
+
+    if next_chunk != nchunks {
+        return fail_clierror!(
+            "Parallel stats is incomplete - only {next_chunk} of {nchunks} chunks were merged \
+             ({stranded} arrived but could not be merged in order). A worker failed, most likely \
+             because the index is corrupt, stale, or was deleted while stats was running. \
+             Refusing to write partial statistics. Re-create the index with `qsv index` or re-run \
+             with --jobs 1.",
+            stranded = pending.len()
+        );
+    }
+
+    // unreachable while nchunks >= 1 (the caller routes idx_count == 0 to sequential_stats), but
+    // returning an error beats the `unwrap_or_default()` this replaced, which turned "no chunks
+    // at all" into a silently empty - and cacheable - result.
+    merged.ok_or_else(|| CliError::Other("Parallel stats produced no chunks to merge.".to_string()))
+}
+
 impl Args {
     /// Computes statistics for CSV data using a single-threaded sequential approach.
     ///
@@ -2497,30 +2566,7 @@ impl Args {
         // Workers start in chunk order, so results arrive roughly in order and
         // the out-of-order buffer stays small - collecting everything before
         // merging would hold all nchunks results resident simultaneously.
-        let mut pending: HashMap<usize, Vec<Stats>> = HashMap::default();
-        let mut next_chunk = 0_usize;
-        let mut merged: Option<Vec<Stats>> = None;
-        for (i, chunk_stats) in &recv {
-            pending.insert(i, chunk_stats);
-            while let Some(chunk_stats) = pending.remove(&next_chunk) {
-                match merged {
-                    // Merge column-by-column in parallel: columns are
-                    // independent, and each column still sees chunks in file
-                    // order, so results are identical to a serial merge. This
-                    // keeps the merge from becoming a serial tail - merging a
-                    // high-cardinality column's Frequencies map hash-inserts
-                    // every unique value of the incoming chunk.
-                    Some(ref mut m) => m
-                        .par_iter_mut()
-                        .zip(chunk_stats)
-                        .for_each(|(acc, chunk_col)| acc.merge(chunk_col)),
-                    None => merged = Some(chunk_stats),
-                }
-                next_chunk += 1;
-            }
-        }
-        // in the event of a channel error, we will return an empty vector
-        Ok((headers, merged.unwrap_or_default()))
+        Ok((headers, merge_chunks_in_order(&recv, nchunks)?))
     }
 
     /// Converts a vector of `Stats` objects into CSV records for output.
@@ -6316,5 +6362,91 @@ impl Commute for TypedMinMax {
         self.dates.merge(other.dates);
         self.strings.merge(other.strings);
         self.str_len.merge(other.str_len);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use stats::Commute;
+
+    use super::merge_chunks_in_order;
+
+    /// Minimal `Commute` stand-in: merging sums, so the merged total tells us exactly which
+    /// chunks were folded in. Using a toy type rather than `Stats` keeps the test about the
+    /// merge loop's completeness accounting, which is what F3 is about.
+    #[derive(Debug, PartialEq)]
+    struct Count(u64);
+
+    impl Commute for Count {
+        fn merge(&mut self, other: Self) {
+            self.0 += other.0;
+        }
+    }
+
+    /// Send `chunks` as (index, one-column vec) pairs, then close the channel.
+    fn chunks_channel(chunks: &[(usize, u64)]) -> crossbeam_channel::Receiver<(usize, Vec<Count>)> {
+        let (send, recv) = crossbeam_channel::bounded(chunks.len().max(1));
+        for &(i, v) in chunks {
+            send.send((i, vec![Count(v)])).unwrap();
+        }
+        drop(send);
+        recv
+    }
+
+    #[test]
+    fn merge_chunks_in_order_merges_every_chunk() {
+        // all 4 chunks present, delivered OUT of order - the merge must still be in chunk order
+        // and must fold in all of them
+        let recv = chunks_channel(&[(2, 4), (0, 1), (3, 8), (1, 2)]);
+        let merged = merge_chunks_in_order(&recv, 4).unwrap();
+        assert_eq!(merged, vec![Count(15)], "1+2+4+8: every chunk merged");
+    }
+
+    #[test]
+    fn merge_chunks_in_order_rejects_a_missing_middle_chunk() {
+        // chunk 2 never arrives - the worker panicked. Chunk 3 is stranded in `pending`, and
+        // the old code returned the 0..=1 PREFIX with exit 0, which run() then cached.
+        let recv = chunks_channel(&[(0, 1), (1, 2), (3, 8)]);
+        let err = merge_chunks_in_order(&recv, 4)
+            .expect_err("a missing chunk must not yield a partial result");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("only 2 of 4 chunks"),
+            "the error should say how much of the file was actually merged, got: {msg}"
+        );
+        assert!(
+            msg.contains("1 arrived but could not be merged"),
+            "the error should account for stranded chunks, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn merge_chunks_in_order_rejects_a_missing_first_chunk() {
+        // the worst case: chunk 0 died, so `merged` stays None and the old
+        // `merged.unwrap_or_default()` returned an EMPTY Vec<Stats> - statistics for zero rows,
+        // written and cached with exit code 0.
+        let recv = chunks_channel(&[(1, 2), (2, 4)]);
+        let err = merge_chunks_in_order(&recv, 3)
+            .expect_err("a missing first chunk must not yield an empty result");
+        assert!(err.to_string().contains("only 0 of 3 chunks"), "got: {err}");
+    }
+
+    #[test]
+    fn merge_chunks_in_order_rejects_a_missing_last_chunk() {
+        // the subtlest case: every chunk that arrives merges cleanly and `pending` is EMPTY at
+        // the end, so nothing looks wrong locally - only the count reveals the truncation.
+        let recv = chunks_channel(&[(0, 1), (1, 2)]);
+        let err = merge_chunks_in_order(&recv, 3).expect_err("a truncated tail must be caught");
+        assert!(err.to_string().contains("only 2 of 3 chunks"), "got: {err}");
+    }
+
+    #[test]
+    fn merge_chunks_in_order_accepts_a_single_chunk() {
+        let recv = chunks_channel(&[(0, 42)]);
+        assert_eq!(
+            merge_chunks_in_order(&recv, 1).unwrap(),
+            vec![Count(42)],
+            "the common small-file case must not trip the completeness check"
+        );
     }
 }

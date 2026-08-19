@@ -8339,3 +8339,35 @@ fn stats_jsonl_flag_refreshes_a_jsonl_older_than_the_sidecar() {
         "--stats-jsonl preserved a jsonl that predates the stats cache beside it"
     );
 }
+
+#[test]
+fn stats_autoindex_cleanup_removes_a_non_csv_index() {
+    // A negative --cache-threshold sets the autoindex size; one ending in 5 also asks for the
+    // autoindex and the stats cache to be deleted afterwards. The cleanup built the path with
+    // `with_extension("csv.idx")`, which REPLACES the input's extension, so a `.tsv` input's
+    // autoindex (written by util::idx_path as `data.tsv.idx`) was looked for at `data.csv.idx`
+    // and survived. remove_file only log::warn!s on failure, so the leak was silent - which is
+    // why this asserts on the FILESYSTEM rather than on output or exit code.
+    let wrk = Workdir::new("stats_autoindex_cleanup_tsv");
+
+    // must exceed the autoindex size below (105 bytes) for an index to be created at all
+    let mut rows = vec![svec!["a", "b"]];
+    for i in 0..200 {
+        rows.push(vec![i.to_string(), (i * 2).to_string()]);
+    }
+    wrk.create_with_delim("idxclean.tsv", rows.clone(), b'\t');
+    wrk.create("idxclean.csv", rows);
+
+    for input in ["idxclean.tsv", "idxclean.csv"] {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("-E").args(["--cache-threshold", "-105"]).arg(input);
+        wrk.assert_success(&mut cmd);
+
+        let leaked = wrk.path(&format!("{input}.idx"));
+        assert!(
+            !leaked.exists(),
+            "the autoindex for `{input}` survived the cleanup that --cache-threshold -105 asked \
+             for: {leaked:?}"
+        );
+    }
+}

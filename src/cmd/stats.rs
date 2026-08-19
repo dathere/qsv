@@ -2020,7 +2020,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // if the cache threshold zero or is a negative number ending in 5,
             // delete both the index file and the stats cache file
             if autoindex_set {
-                let index_file = path.with_extension("csv.idx");
+                // `util::idx_path` APPENDS ".idx"; `with_extension("csv.idx")` REPLACED the
+                // input's extension, so a `data.tsv` autoindex (written as `data.tsv.idx`) was
+                // looked for at `data.csv.idx` and survived the cleanup it asked for. The
+                // removal only log::warn!s on failure, so the leak was silent. It happened to
+                // work for `.csv` inputs by coincidence.
+                let index_file = util::idx_path(&path);
                 log::debug!("deleting index file: {}", index_file.display());
                 if std::fs::remove_file(index_file.clone()).is_err() {
                     // fails silently if it can't remove the index file

@@ -8339,3 +8339,136 @@ fn stats_jsonl_flag_refreshes_a_jsonl_older_than_the_sidecar() {
         "--stats-jsonl preserved a jsonl that predates the stats cache beside it"
     );
 }
+
+#[test]
+fn stats_jsonl_date_renderings_are_not_coerced_to_zero() {
+    // Every stat whose cell is a type-dependent RENDERING must survive the JSONL
+    // conversion verbatim. For a Date/DateTime column `stats` emits RFC3339 for
+    // `mean`, `q1`, `q2_median`, `q3` and the four fences; typing them Float made
+    // csv_to_jsonl coerce each to 0.0, silently corrupting every cache consumer
+    // (viz smart, schema, pivotp, tojsonl, describegpt) while the stats CSV beside
+    // it held the correct date.
+    //
+    // Own workdir AND own fixture filename: cache sidecars are written next to the
+    // input, so a shared fixture name lets two cache tests poison each other.
+    use serde_json::Value;
+
+    let wrk = Workdir::new("stats_jsonl_date_renderings");
+    wrk.create(
+        "datecoerce.csv",
+        vec![
+            svec!["d"],
+            svec!["2020-01-15"],
+            svec!["2020-06-15"],
+            svec!["2021-03-01"],
+            svec!["2022-12-31"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--force")
+        .arg("--infer-dates")
+        .arg("--everything")
+        .arg("--stats-jsonl")
+        .args(["--output", wrk.path("out.csv").to_str().unwrap()])
+        .arg("datecoerce.csv");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = std::fs::read_to_string(wrk.path("datecoerce.stats.csv.data.jsonl")).unwrap();
+    let line = jsonl.lines().next().expect("jsonl sidecar is empty");
+    let json: Value = serde_json::from_str(line).unwrap();
+
+    assert_eq!(
+        json["type"], "Date",
+        "fixture should infer as a Date column"
+    );
+
+    // the 8 date-rendered stats: a JSON string that starts with the year, never 0.0
+    for key in [
+        "mean",
+        "q1",
+        "q2_median",
+        "q3",
+        "lower_outer_fence",
+        "lower_inner_fence",
+        "upper_inner_fence",
+        "upper_outer_fence",
+    ] {
+        let val = &json[key];
+        let s = val.as_str().unwrap_or_else(|| {
+            panic!("{key} should be an RFC3339 string for a Date column, got {val}")
+        });
+        assert!(
+            s.starts_with("19") || s.starts_with("20") || s.starts_with("21"),
+            "{key} should be a date rendering, got {s:?}"
+        );
+    }
+
+    // ...while the day-count stats stay NUMBERS. `iqr` and `mad` are a COUNT OF DAYS
+    // for a date column, not a date - retyping them would corrupt them in the other
+    // direction. This half of the assertion exists to stop that over-fix.
+    for key in ["iqr", "mad", "range"] {
+        assert!(
+            json[key].is_number(),
+            "{key} is a day-count for a Date column and must stay a JSON number, got {}",
+            json[key]
+        );
+    }
+}
+
+#[test]
+fn stats_jsonl_stdout_matches_sidecar_for_date_renderings() {
+    // `stats_jsonl_matches_stats_jsonl_sidecar` proves --jsonl and the --stats-jsonl sidecar
+    // agree, but its fixture is all-numeric. The three JSON output paths (the sidecar via
+    // csv_to_jsonl, --jsonl via csv_to_jsonl_writer, --pretty-json via csv_to_json_array_writer)
+    // share csv_record_to_json_map, so a DATE column - the case where that function's Float
+    // fallback actually fires - needs its own equality check, or the shared behavior is only
+    // covered on the branch that never changed.
+    let wrk = Workdir::new("stats_jsonl_date_stdout_parity");
+    wrk.create(
+        "dateparity.csv",
+        vec![
+            svec!["d"],
+            svec!["2020-01-15"],
+            svec!["2020-06-15"],
+            svec!["2021-03-01"],
+            svec!["2022-12-31"],
+        ],
+    );
+
+    // 1. the sidecar
+    let mut sidecar_cmd = wrk.command("stats");
+    sidecar_cmd
+        .arg("--force")
+        .arg("--infer-dates")
+        .arg("--everything")
+        .arg("--stats-jsonl")
+        .args(["--output", wrk.path("out.csv").to_str().unwrap()])
+        .arg("dateparity.csv");
+    wrk.assert_success(&mut sidecar_cmd);
+    let sidecar = std::fs::read_to_string(wrk.path("dateparity.stats.csv.data.jsonl")).unwrap();
+
+    // 2. --jsonl on stdout
+    let mut jsonl_cmd = wrk.command("stats");
+    jsonl_cmd
+        .arg("--force")
+        .arg("--cache-threshold")
+        .arg("0")
+        .arg("--infer-dates")
+        .arg("--everything")
+        .arg("--jsonl")
+        .arg("dateparity.csv");
+    let stdout: String = wrk.stdout(&mut jsonl_cmd);
+
+    assert_eq!(
+        sidecar.lines().collect::<Vec<_>>(),
+        stdout.lines().collect::<Vec<_>>(),
+        "--jsonl and the --stats-jsonl sidecar disagree on a date column"
+    );
+
+    // and the shared value really is the date rendering, on both paths
+    assert!(
+        stdout.contains(r#""q2_median":"20"#),
+        "the date median should reach stdout as an RFC3339 string, got: {stdout}"
+    );
+}

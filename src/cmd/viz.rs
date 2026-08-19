@@ -14571,7 +14571,7 @@ fn box_log_skew_fallback(mode: LogScale, s: &crate::cmd::stats::StatsData) -> bo
     if nonpos_share > BOX_LOG_NONPOS_MAX {
         return false;
     }
-    let (Some(q1), Some(hi)) = (s.q1, parse_stat_f64(s.max.as_deref())) else {
+    let (Some(q1), Some(hi)) = (s.q1_f64(), parse_stat_f64(s.max.as_deref())) else {
         return false;
     };
     if q1 <= 0.0 || !hi.is_finite() || hi < q1 {
@@ -17178,13 +17178,13 @@ enum PanelKind {
 /// unavailable or the IQR is non-positive (a constant / near-constant column, where every value
 /// would falsely flag as an outlier).
 fn box_fences(s: &crate::cmd::stats::StatsData) -> Option<(f64, f64)> {
-    let (q1, q3) = (s.q1?, s.q3?);
+    let (q1, q3) = (s.q1_f64()?, s.q3_f64()?);
     let iqr = s.iqr.unwrap_or(q3 - q1);
     if iqr <= 0.0 {
         return None;
     }
-    let lo = s.lower_inner_fence.unwrap_or(q1 - 1.5 * iqr);
-    let hi = s.upper_inner_fence.unwrap_or(q3 + 1.5 * iqr);
+    let lo = s.lower_inner_fence_f64().unwrap_or(q1 - 1.5 * iqr);
+    let hi = s.upper_inner_fence_f64().unwrap_or(q3 + 1.5 * iqr);
     Some((lo, hi))
 }
 
@@ -18018,7 +18018,7 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
 /// `classify_with_semantics` (a dictionary `measure` verdict) so a measure is charted the same way
 /// however it was identified. Returns `Err` with the reason when the column cannot be charted.
 fn classify_measure(idx: usize, s: &crate::cmd::stats::StatsData) -> Result<PanelKind, SkipReason> {
-    let (Some(q1), Some(median), Some(q3)) = (s.q1, s.q2_median, s.q3) else {
+    let (Some(q1), Some(median), Some(q3)) = (s.q1_f64(), s.q2_median_f64(), s.q3_f64()) else {
         return Err(SkipReason::MeasureWithoutQuartiles);
     };
     if s.cardinality <= 1 {
@@ -18048,7 +18048,7 @@ fn classify_measure(idx: usize, s: &crate::cmd::stats::StatsData) -> Result<Pane
         q3,
         lower,
         upper,
-        mean: s.mean,
+        mean: s.mean_f64(),
     })
 }
 
@@ -18094,7 +18094,7 @@ fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) ->
 
     let means: Vec<f64> = candidates
         .iter()
-        .map(|&i| stats[i].mean.unwrap_or_default())
+        .map(|&i| stats[i].mean_f64().unwrap_or_default())
         .collect();
     let mut counts = vec![0_u64; candidates.len()];
     let mut sum4 = vec![0.0_f64; candidates.len()]; // Σ(x - mean)⁴ per candidate column
@@ -21541,7 +21541,8 @@ fn parse_stat_f64(v: Option<&str>) -> Option<f64> {
 /// `3 * (mean - median) / stddev` — so plain `viz smart` gets the same signal with no extra pass.
 fn pearson_skewness_stat(s: &crate::cmd::stats::StatsData) -> Option<f64> {
     s.pearson_skewness.or_else(|| {
-        let (Some(mean), Some(median), Some(stddev)) = (s.mean, s.q2_median, s.stddev) else {
+        let (Some(mean), Some(median), Some(stddev)) = (s.mean_f64(), s.q2_median_f64(), s.stddev)
+        else {
             return None;
         };
         (stddev > 0.0).then(|| 3.0 * (mean - median) / stddev)
@@ -21587,7 +21588,7 @@ fn mean_is_outlier_driven(s: &crate::cmd::stats::StatsData) -> bool {
     /// at most this share of a column's values may be negative
     const MEAN_OUTLIER_MAX_NEG_SHARE: f64 = 0.05;
 
-    let (Some(mean), Some(median)) = (s.mean, s.q2_median) else {
+    let (Some(mean), Some(median)) = (s.mean_f64(), s.q2_median_f64()) else {
         return false;
     };
     if !mean.is_finite() || mean <= 0.0 {
@@ -27449,7 +27450,8 @@ fn build_kpi_row(
             Some(_) => true,
             None => has_range || is_intensive_measure(&label, &s.field),
         };
-        let Some(value) = (if intensive { s.mean } else { s.sum }).filter(|v| v.is_finite()) else {
+        let Some(value) = (if intensive { s.mean_f64() } else { s.sum }).filter(|v| v.is_finite())
+        else {
             continue;
         };
         // gauge only when a range is supplied AND actually contains the value (guardrail against a
@@ -36649,9 +36651,9 @@ mod tests {
     fn classify_low_card_numeric_is_bar_not_box() {
         // a 1-5 rating has quartiles but should be a frequency bar, not a box plot
         let mut s = stat("Integer", 5, Some(0.05));
-        s.q1 = Some(2.0);
-        s.q2_median = Some(3.0);
-        s.q3 = Some(4.0);
+        s.q1 = Some("2.0".to_string());
+        s.q2_median = Some("3.0".to_string());
+        s.q3 = Some("4.0".to_string());
         assert!(matches!(
             classify_opt(2, &s),
             Some(PanelKind::FreqBar { idx: 2 })
@@ -36662,9 +36664,9 @@ mod tests {
     fn classify_continuous_float_is_box() {
         // a near-unique continuous float (e.g. measurements) is a box plot, not skipped
         let mut s = stat("Float", 500, Some(0.99));
-        s.q1 = Some(1.0);
-        s.q2_median = Some(2.0);
-        s.q3 = Some(3.0);
+        s.q1 = Some("1.0".to_string());
+        s.q2_median = Some("2.0".to_string());
+        s.q3 = Some("3.0".to_string());
         s.min = Some("0.5".to_string());
         s.max = Some("3.5".to_string());
         assert!(matches!(
@@ -37696,9 +37698,9 @@ mod tests {
         ));
         // Measure -> box plot from quartiles (via classify_measure)
         let mut m = stat("Integer", 500, Some(0.4));
-        m.q1 = Some(10.0);
-        m.q2_median = Some(20.0);
-        m.q3 = Some(30.0);
+        m.q1 = Some("10.0".to_string());
+        m.q2_median = Some("20.0".to_string());
+        m.q3 = Some("30.0".to_string());
         let sem_meas = ColSemantics {
             route: Route::Measure,
             ..Default::default()
@@ -37722,9 +37724,9 @@ mod tests {
         // skips consumed ones via is_map_col) must still be charted, not vanish. A near-unique
         // float with quartiles -> box.
         let mut coord = stat("Float", 5000, Some(0.99));
-        coord.q1 = Some(1.0);
-        coord.q2_median = Some(2.0);
-        coord.q3 = Some(3.0);
+        coord.q1 = Some("1.0".to_string());
+        coord.q2_median = Some("2.0".to_string());
+        coord.q3 = Some("3.0".to_string());
         let sem_coord = ColSemantics {
             route: Route::MapCoord,
             ..Default::default()
@@ -37741,9 +37743,9 @@ mod tests {
             ..Default::default()
         };
         let mut planar = stat("Integer", 8130, Some(0.81));
-        planar.q1 = Some(993_041.5);
-        planar.q2_median = Some(1_005_000.0);
-        planar.q3 = Some(1_018_194.0);
+        planar.q1 = Some("993041.5".to_string());
+        planar.q2_median = Some("1005000.0".to_string());
+        planar.q3 = Some("1018194.0".to_string());
         assert!(classify_with_semantics_opt(8, &planar, &sem_planar, true).is_none());
         assert!(matches!(
             classify_with_semantics_opt(8, &planar, &sem_planar, false),
@@ -37754,9 +37756,9 @@ mod tests {
         // finely-spread dataset uniqueness_ratio clears 0.95 — the regression this route exists to
         // prevent. (Regression test for roborev 3536.)
         let mut planar_uniq = stat("Integer", 2000, Some(1.0));
-        planar_uniq.q1 = Some(947_825.0);
-        planar_uniq.q2_median = Some(982_500.0);
-        planar_uniq.q3 = Some(1_017_175.0);
+        planar_uniq.q1 = Some("947825.0".to_string());
+        planar_uniq.q2_median = Some("982500.0".to_string());
+        planar_uniq.q3 = Some("1017175.0".to_string());
         assert!(
             classify_opt(9, &planar_uniq).is_none(),
             "classify drops it as ID-like"
@@ -37776,9 +37778,9 @@ mod tests {
     fn classify_measure_box_histogram_none() {
         // quartiles present -> box plot
         let mut s = stat("Float", 500, Some(0.9));
-        s.q1 = Some(1.0);
-        s.q2_median = Some(2.0);
-        s.q3 = Some(3.0);
+        s.q1 = Some("1.0".to_string());
+        s.q2_median = Some("2.0".to_string());
+        s.q3 = Some("3.0".to_string());
         assert!(matches!(
             classify_measure_opt(1, &s),
             Some(PanelKind::BoxStats { .. })
@@ -39948,11 +39950,11 @@ mod tests {
         // Whiskers must be the observed min/max, never the Tukey fences - even when a fence
         // falls INSIDE the data range (a fence value need not exist in the dataset).
         let mut s = stat("Float", 100, Some(0.8));
-        s.q1 = Some(10.0);
-        s.q2_median = Some(15.0);
-        s.q3 = Some(20.0);
-        s.lower_inner_fence = Some(12.0); // inside [8, 25] - must be ignored
-        s.upper_inner_fence = Some(22.0); // inside [8, 25] - must be ignored
+        s.q1 = Some("10.0".to_string());
+        s.q2_median = Some("15.0".to_string());
+        s.q3 = Some("20.0".to_string());
+        s.lower_inner_fence = Some("12.0".to_string()); // inside [8, 25] - must be ignored
+        s.upper_inner_fence = Some("22.0".to_string()); // inside [8, 25] - must be ignored
         s.min = Some("8.0".to_string());
         s.max = Some("25.0".to_string());
         match classify_opt(0, &s) {
@@ -39969,9 +39971,9 @@ mod tests {
         // a continuous column flagged bimodal (BC >= 0.555) AND platykurtic (excess kurtosis < 0)
         // should become a histogram (which shows the two peaks), not a box plot (which hides them).
         let mut s = stat("Float", 500, Some(0.9));
-        s.q1 = Some(1.0);
-        s.q2_median = Some(2.0);
-        s.q3 = Some(3.0);
+        s.q1 = Some("1.0".to_string());
+        s.q2_median = Some("2.0".to_string());
+        s.q3 = Some("3.0".to_string());
         s.min = Some("0.0".to_string());
         s.max = Some("4.0".to_string());
         s.bimodality_coefficient = Some(0.7); // >= 0.555 threshold
@@ -39988,9 +39990,9 @@ mod tests {
         // skewness, but it's leptokurtic — the platykurtic guard keeps it a box (with outlier
         // points) rather than a misleading one-tall-bar histogram.
         let mut s = stat("Float", 500, Some(0.9));
-        s.q1 = Some(1.0);
-        s.q2_median = Some(2.0);
-        s.q3 = Some(3.0);
+        s.q1 = Some("1.0".to_string());
+        s.q2_median = Some("2.0".to_string());
+        s.q3 = Some("3.0".to_string());
         s.min = Some("0.0".to_string());
         s.max = Some("9999.0".to_string());
         s.bimodality_coefficient = Some(0.98); // high, but driven by skew
@@ -40005,9 +40007,9 @@ mod tests {
     fn classify_unimodal_continuous_stays_box() {
         // bimodality below the threshold (or absent) keeps the cache-only box plot.
         let mut s = stat("Float", 500, Some(0.9));
-        s.q1 = Some(1.0);
-        s.q2_median = Some(2.0);
-        s.q3 = Some(3.0);
+        s.q1 = Some("1.0".to_string());
+        s.q2_median = Some("2.0".to_string());
+        s.q3 = Some("3.0".to_string());
         s.min = Some("0.0".to_string());
         s.max = Some("4.0".to_string());
         s.bimodality_coefficient = Some(0.40); // unimodal
@@ -40283,13 +40285,13 @@ mod tests {
         let _locale = english_locale();
         // no moarstats pearson_skewness: derived from the base cache as 3*(mean-median)/stddev
         let mut s = stat("Float", 100, Some(0.8));
-        s.mean = Some(100.0);
-        s.q2_median = Some(50.0);
+        s.mean = Some("100.0".to_string());
+        s.q2_median = Some("50.0".to_string());
         s.stddev = Some(100.0); // -> +1.5
         assert_eq!(box_shape_hint(&s).as_deref(), Some("(right-skewed)"));
 
-        s.mean = Some(50.0);
-        s.q2_median = Some(100.0); // -> -1.5
+        s.mean = Some("50.0".to_string());
+        s.q2_median = Some("100.0".to_string()); // -> -1.5
         assert_eq!(box_shape_hint(&s).as_deref(), Some("(left-skewed)"));
 
         // an explicit moarstats value wins over the derived one
@@ -40298,8 +40300,8 @@ mod tests {
 
         // zero spread -> no derived skew, no hint
         let mut flat = stat("Float", 1, Some(0.01));
-        flat.mean = Some(5.0);
-        flat.q2_median = Some(5.0);
+        flat.mean = Some("5.0".to_string());
+        flat.q2_median = Some("5.0".to_string());
         flat.stddev = Some(0.0);
         assert_eq!(box_shape_hint(&flat), None);
     }
@@ -40441,7 +40443,7 @@ mod tests {
             n_negative: Some(0),
             n_zero: Some(7),
             n_positive: Some(1_235_750),
-            q1: Some(10_000.0),
+            q1: Some("10000.0".to_string()),
             max: Some("76000000".to_string()),
             pearson_skewness: Some(3.0),
             ..Default::default()
@@ -40481,7 +40483,7 @@ mod tests {
 
         // negative control 3 — box body not positive (q1 == 0) can't render on log
         let q1_zero = crate::cmd::stats::StatsData {
-            q1: Some(0.0),
+            q1: Some("0.0".to_string()),
             ..skewed.clone()
         };
         assert!(!box_panel_logs(
@@ -40493,7 +40495,7 @@ mod tests {
 
         // negative control 4 — narrow positive range: Auto declines (max/q1 = 38 < 50), On forces
         let narrow = crate::cmd::stats::StatsData {
-            q1: Some(2_000_000.0),
+            q1: Some("2000000.0".to_string()),
             ..skewed.clone()
         };
         assert!(!box_panel_logs(
@@ -40994,8 +40996,8 @@ mod tests {
         // `neg` out of 1000 values; the rest split zero/positive around the median
         let col = |mean: f64, median: f64, stddev: f64, neg: u64| crate::cmd::stats::StatsData {
             r#type: "Float".to_string(),
-            mean: Some(mean),
-            q2_median: Some(median),
+            mean: Some(mean.to_string()),
+            q2_median: Some(median.to_string()),
             stddev: Some(stddev),
             n_negative: Some(neg),
             n_zero: Some(0),
@@ -41054,8 +41056,8 @@ mod tests {
         // sign counts missing entirely -> cannot judge -> prior default
         assert!(!mean_is_outlier_driven(&crate::cmd::stats::StatsData {
             r#type: "Float".to_string(),
-            mean: Some(100.0),
-            q2_median: Some(1.0),
+            mean: Some("100.0".to_string()),
+            q2_median: Some("1.0".to_string()),
             ..Default::default()
         }));
     }
@@ -41064,8 +41066,8 @@ mod tests {
     fn corr_prefers_spearman_needs_a_majority_of_outlier_driven_columns() {
         let col = |mean: f64, median: f64| crate::cmd::stats::StatsData {
             r#type: "Float".to_string(),
-            mean: Some(mean),
-            q2_median: Some(median),
+            mean: Some(mean.to_string()),
+            q2_median: Some(median.to_string()),
             stddev: Some(1.0),
             n_negative: Some(0),
             n_zero: Some(0),
@@ -41801,7 +41803,7 @@ mod tests {
             field: "amount".to_string(),
             r#type: "Float".to_string(),
             sum: Some(5000.0),
-            mean: Some(10.0),
+            mean: Some("10.0".to_string()),
             ..Default::default()
         }];
         let kind = || PanelKind::BoxStats {
@@ -41855,7 +41857,7 @@ mod tests {
             field: "spent".to_string(),
             r#type: "Float".to_string(),
             sum: Some(sum),
-            mean: Some(sum / 100.0),
+            mean: Some((sum / 100.0).to_string()),
             ..Default::default()
         }];
         let panels = vec![

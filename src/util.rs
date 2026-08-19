@@ -4154,22 +4154,34 @@ fn csv_record_to_json_map(
                 },
                 JsonTypes::Float => {
                     if let Ok(num) = val.parse::<f64>() {
-                        if let Some(n) = serde_json::Number::from_f64(num) {
-                            serde_json::Value::Number(n)
-                        } else {
-                            serde_json::Value::Number(
-                                serde_json::Number::from_f64(0.0).unwrap_or_else(|| {
-                                    // safety: we know that 0.0 is a valid f64
-                                    serde_json::Number::from_f64(0.0).unwrap()
-                                }),
-                            )
-                        }
-                    } else {
-                        serde_json::Value::Number(
-                            serde_json::Number::from_f64(0.0)
-                                // safety: we know that 0.0 is a valid f64
-                                .unwrap_or_else(|| serde_json::Number::from_f64(0.0).unwrap()),
+                        serde_json::Number::from_f64(num).map_or_else(
+                            // NaN/infinity have no JSON representation. Keep the historical
+                            // 0.0 here: unlike the rendering case below, this cell IS a
+                            // number, and emitting "NaN" as a string would make every
+                            // Option<f64> field reject the line and discard the whole cache.
+                            // safety: 0.0 is a valid f64
+                            || {
+                                serde_json::Value::Number(
+                                    serde_json::Number::from_f64(0.0).unwrap(),
+                                )
+                            },
+                            serde_json::Value::Number,
                         )
+                    } else {
+                        // A Float-typed cell that does NOT parse is a type-dependent
+                        // RENDERING, not a number: for a Date/DateTime column stats_to_records()
+                        // emits RFC3339 for `mean`, `q1`, `q2_median`, `q3` and the four fences.
+                        // Coercing those to 0.0 silently corrupted every stats-cache consumer
+                        // (viz smart, schema, pivotp, tojsonl, describegpt) while the stats CSV
+                        // beside it held the correct date. Emitting the cell verbatim is lossless
+                        // for both cases - the row's `type` tells a consumer which one it is.
+                        //
+                        // Deliberately general rather than keyed to those 8 columns: the map is
+                        // per-COLUMN but a rendering is per-ROW, so the map cannot express this.
+                        // Verified across String/Boolean/NULL/Integer/Float/Date/DateTime columns
+                        // that those 8 are the complete set of Float-typed cells that can be
+                        // non-numeric, so no other field's Option<f64> can start rejecting lines.
+                        serde_json::Value::String(val.to_owned())
                     }
                 },
                 JsonTypes::Bool => serde_json::Value::Bool(val.parse::<bool>().unwrap_or(false)),
@@ -5598,6 +5610,76 @@ mod tests {
         assert_eq!(s.sortiness, None);
         assert_eq!(s.percentiles, None);
         assert_eq!(s.median, None);
+    }
+
+    #[test]
+    fn statsdata_date_renderings_survive_and_numeric_caches_still_load() {
+        // `mean`, the three quartiles and the four fences are type-dependent RENDERINGS, exactly
+        // like min/max/median/percentiles: a numeric column carries a number, a Date/DateTime
+        // column carries RFC3339. Typing them Float made csv_to_jsonl coerce every date one to
+        // 0.0 - the stats CSV held "2020-06-15" while the cache every consumer reads said 0.0.
+        //
+        // This assertion has to live IN-CRATE: tests/ is a separate binary and cannot name
+        // StatsData, so a test over the jsonl file's bytes proves nothing about what consumers
+        // actually deserialize.
+        let date_line = r#"{"field":"open_dt","type":"Date","nullcount":0,"cardinality":5,
+            "mean":"2010-12-06","q1":"1995-01-08","q2_median":"2020-06-15","q3":"2022-01-30",
+            "lower_outer_fence":"1913-11-02","lower_inner_fence":"1954-06-06",
+            "upper_inner_fence":"2062-09-03","upper_outer_fence":"2103-04-08",
+            "iqr":9884.0,"mad":259.0}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(date_line).unwrap();
+
+        assert_eq!(s.mean.as_deref(), Some("2010-12-06"));
+        assert_eq!(s.q1.as_deref(), Some("1995-01-08"));
+        assert_eq!(s.q2_median.as_deref(), Some("2020-06-15"));
+        assert_eq!(s.q3.as_deref(), Some("2022-01-30"));
+        assert_eq!(s.lower_outer_fence.as_deref(), Some("1913-11-02"));
+        assert_eq!(s.lower_inner_fence.as_deref(), Some("1954-06-06"));
+        assert_eq!(s.upper_inner_fence.as_deref(), Some("2062-09-03"));
+        assert_eq!(s.upper_outer_fence.as_deref(), Some("2103-04-08"));
+
+        // a date rendering has no numeric reading - `None`, never a fabricated 0.0
+        assert_eq!(s.mean_f64(), None);
+        assert_eq!(s.q2_median_f64(), None);
+        assert_eq!(s.upper_outer_fence_f64(), None);
+
+        // `iqr`/`mad` are a COUNT OF DAYS for a date column, not a date. They stay f64; retyping
+        // them would corrupt them in the opposite direction.
+        assert_eq!(s.iqr, Some(9884.0));
+        assert_eq!(s.mad, Some(259.0));
+
+        // A NUMERIC column carries these as JSON NUMBERS - and so does every cache written
+        // before this fix, which stays on disk and still passes mtime validation after an
+        // upgrade. Rejecting a number here would silently discard those caches on first read.
+        let numeric_line = r#"{"field":"amt","type":"Float","nullcount":0,"cardinality":9,
+            "mean":42.5,"q1":10,"q2_median":40.0,"q3":75.25,
+            "lower_outer_fence":-185.0,"lower_inner_fence":-87.5,
+            "upper_inner_fence":172.5,"upper_outer_fence":270.0}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(numeric_line).unwrap();
+
+        assert_eq!(s.mean_f64(), Some(42.5));
+        assert_eq!(s.q1_f64(), Some(10.0));
+        assert_eq!(s.q2_median_f64(), Some(40.0));
+        assert_eq!(s.q3_f64(), Some(75.25));
+        assert_eq!(s.lower_outer_fence_f64(), Some(-185.0));
+        assert_eq!(s.lower_inner_fence_f64(), Some(-87.5));
+        assert_eq!(s.upper_inner_fence_f64(), Some(172.5));
+        assert_eq!(s.upper_outer_fence_f64(), Some(270.0));
+
+        // the availability probes these back (has_quartiles in stats_satisfy_mode, the box-panel
+        // gate in viz) must keep seeing a PRESENT value for a date column. Representing a date
+        // quartile as None would make `qsv schema` judge the cache insufficient and regenerate
+        // it on every run.
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(date_line).unwrap();
+        assert!(s.q2_median.is_some(), "a date quartile still EXISTS");
+        assert!(s.mean.is_some());
+
+        // absent keys stay absent
+        let bare = r#"{"field":"id","type":"Integer","nullcount":0,"cardinality":5}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(bare).unwrap();
+        assert_eq!(s.mean, None);
+        assert_eq!(s.q2_median, None);
+        assert_eq!(s.mean_f64(), None);
     }
 
     #[cfg(test)]

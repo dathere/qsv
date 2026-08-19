@@ -3577,7 +3577,10 @@ pub fn get_stats_records(
                     _ => serde_json::from_slice::<StatsData>(&s_slice),
                 };
 
-            if let Ok(stats) = parse_result {
+            if let Ok(mut stats) = parse_result {
+                // a pre-fix cache carries fabricated 0.0 renderings on a date row; drop them
+                // once here so accessors and re-serialization (profile's dpps) agree
+                stats.normalize_stale_date_renderings();
                 csv_stats.push(stats);
             } else {
                 // if we encounter a parsing error, clear csv_stats and break
@@ -3845,7 +3848,10 @@ pub fn get_stats_records(
                 };
 
             match parse_result {
-                Ok(stats) => csv_stats.push(stats),
+                Ok(mut stats) => {
+                    stats.normalize_stale_date_renderings();
+                    csv_stats.push(stats);
+                },
                 Err(e) => return Err(CliError::Other(format!("error parsing stats: {e}"))),
             }
         }
@@ -5759,6 +5765,58 @@ mod tests {
         let s: crate::cmd::stats::StatsData = serde_json::from_str(numeric).unwrap();
         assert_eq!(s.mean_f64(), Some(0.0), "a numeric 0.0 is a real value");
         assert_eq!(s.q1_f64(), Some(0.0));
+    }
+
+    #[test]
+    fn normalize_stale_date_renderings_keeps_accessors_and_serialization_agreeing() {
+        // The accessors refuse a stale date zero, but `profile`'s build_dpps serializes StatsData
+        // straight back out, and ser_stat_rendering sees only the field - not the row's type - so
+        // "0" went back out as JSON 0 into published projections (roborev 4328). Normalizing once
+        // at load is what makes the two paths agree. NOT a manual Serialize impl: a third
+        // hand-maintained field list beside the struct and STATSDATA_TYPES_MAP is exactly the
+        // drift that silently dropped sortiness/geometric_mean/harmonic_mean/percentiles/median.
+        let stale = r#"{"field":"open_dt","type":"Date","nullcount":0,"cardinality":5,
+            "mean":0.0,"q1":0.0,"q2_median":0.0,"q3":0.0,
+            "lower_outer_fence":0.0,"lower_inner_fence":0.0,
+            "upper_inner_fence":0.0,"upper_outer_fence":0.0,"iqr":9884.0}"#;
+        let mut s: crate::cmd::stats::StatsData = serde_json::from_str(stale).unwrap();
+        s.normalize_stale_date_renderings();
+
+        let v = serde_json::to_value(&s).unwrap();
+        for key in [
+            "mean",
+            "q1",
+            "q2_median",
+            "q3",
+            "lower_outer_fence",
+            "lower_inner_fence",
+            "upper_inner_fence",
+            "upper_outer_fence",
+        ] {
+            assert!(
+                v[key].is_null(),
+                "a stale date {key} must not re-serialize as a number, got {}",
+                v[key]
+            );
+        }
+        // day-counts are not renderings and survive
+        assert_eq!(v["iqr"], serde_json::json!(9884.0));
+
+        // a POST-fix date cache holds real RFC3339 renderings - untouched, so this is a no-op
+        let fresh = r#"{"field":"open_dt","type":"Date","nullcount":0,"cardinality":5,
+            "mean":"2010-12-06","q2_median":"2020-06-15"}"#;
+        let mut s: crate::cmd::stats::StatsData = serde_json::from_str(fresh).unwrap();
+        s.normalize_stale_date_renderings();
+        assert_eq!(s.mean.as_deref(), Some("2010-12-06"));
+        assert_eq!(s.q2_median.as_deref(), Some("2020-06-15"));
+
+        // and a NUMERIC column is never touched, whatever the values
+        let numeric = r#"{"field":"amt","type":"Float","nullcount":0,"cardinality":9,
+            "mean":0.0,"q2_median":42.5}"#;
+        let mut s: crate::cmd::stats::StatsData = serde_json::from_str(numeric).unwrap();
+        s.normalize_stale_date_renderings();
+        assert_eq!(s.mean_f64(), Some(0.0));
+        assert_eq!(s.q2_median_f64(), Some(42.5));
     }
 
     #[cfg(test)]

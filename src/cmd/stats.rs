@@ -907,6 +907,37 @@ pub struct StatsData {
 }
 
 impl StatsData {
+    /// Drop the fabricated zeros a PRE-FIX cache carries for a Date/DateTime column.
+    ///
+    /// Caches written before date renderings stopped being coerced store `0.0` for `mean`, the
+    /// quartiles and the fences on a date row. They stay on disk and still pass mtime validation
+    /// after an upgrade, so every consumer has to defend against them. `*_f64()` does that on the
+    /// read side, but `StatsData` is also serialized straight back out by `profile`'s
+    /// `build_dpps`, which would re-emit the zero into published DCAT-US v3 / Croissant output
+    /// (roborev 4328). Normalizing once at load makes every consumer agree.
+    ///
+    /// Only a rendering that reads as a NUMBER on a date row is dropped - a genuine RFC3339
+    /// rendering is untouched, so this is a no-op for any cache written after the fix.
+    pub fn normalize_stale_date_renderings(&mut self) {
+        if !matches!(self.r#type.as_str(), "Date" | "DateTime") {
+            return;
+        }
+        for rendering in [
+            &mut self.mean,
+            &mut self.q1,
+            &mut self.q2_median,
+            &mut self.q3,
+            &mut self.lower_outer_fence,
+            &mut self.lower_inner_fence,
+            &mut self.upper_inner_fence,
+            &mut self.upper_outer_fence,
+        ] {
+            if rendering.as_ref().is_some_and(|r| r.parse::<f64>().is_ok()) {
+                *rendering = None;
+            }
+        }
+    }
+
     /// The numeric value of `mean`, or `None` when the column's mean is a date rendering.
     #[inline]
     pub fn mean_f64(&self) -> Option<f64> {

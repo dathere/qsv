@@ -851,8 +851,14 @@ const MS_IN_DAY_INT: i64 = 86_400_000;
 // 5 decimal places give us sub-second precision
 const DAY_DECIMAL_PLACES: u32 = 5;
 
-// maximum number of output columns
-const MAX_STAT_COLUMNS: usize = 48;
+// maximum number of output columns, i.e. the width of `stats_headers()` under
+// --everything: 29 always-on + mad + 9 quartile + 2 cardinality + 6 mode +
+// percentiles + zero_padded_numeric. Used only as a capacity hint, so a
+// mismatch costs a reallocation rather than correctness. `stats_headers()`
+// debug_asserts that it never emits MORE than this; the other direction (a
+// constant left too large) is deliberately not asserted, because --everything
+// is not a fixed width - `--quantile-method approx` drops `mad` and yields 48.
+const MAX_STAT_COLUMNS: usize = 49;
 
 // HyperLogLog precision parameter for `--cardinality-method approx`. lg_k=12
 // gives ~1.5% relative standard error and ~5KB per column at the dense Hll8
@@ -3080,6 +3086,19 @@ impl Args {
         if self.flag_zero_padded_numeric || everything {
             fields.push("zero_padded_numeric");
         }
+
+        // MAX_STAT_COLUMNS is the capacity hint for `fields` here and for the
+        // per-column StringRecord in `to_record()`. Adding a stats column without
+        // bumping it silently costs a reallocation on every --everything row, so
+        // pin the undercount direction here: any debug-build run of
+        // `stats --everything` checks it. An over-large constant is NOT caught -
+        // it cannot be, since --everything's width varies (48 under
+        // `--quantile-method approx`, which turns `mad` off).
+        debug_assert!(
+            fields.len() <= MAX_STAT_COLUMNS,
+            "stats_headers() emitted {} columns, exceeding MAX_STAT_COLUMNS ({MAX_STAT_COLUMNS})",
+            fields.len()
+        );
 
         csv::StringRecord::from(fields)
     }

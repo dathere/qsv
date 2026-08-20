@@ -696,3 +696,43 @@ fn searchset_comment_lines() {
     ];
     assert_eq!(got, expected);
 }
+
+// issue #4446: with an autoindex on a special-format input, `parallel_search`'s workers
+// rebuilt `args.rconfig()` and resolved a DIFFERENT converted temp file than the one the
+// parent indexed, so `indexed()` hit an absent sibling `.idx` and the run failed with
+// "io error: No such file or directory" after emitting only the header. Workers now clone
+// the already-resolved Config that `parallel_search` was handed all along.
+//
+// QSV_AUTOINDEX_SIZE=1 forces the autoindex; --jobs 4 is required because the parallel path
+// is gated on njobs > 1.
+#[test]
+fn searchset_from_zip_parallel_autoindexed() {
+    let wrk = Workdir::new("searchset_from_zip_parallel_autoindexed");
+    let zip_file = wrk.load_test_file("boston311-100.csv.zip");
+    let csv_file = wrk.load_test_file("boston311-100.csv");
+    wrk.create_from_string("patterns.txt", "(?i)roxbury\n(?i)dorchester\n");
+
+    let searchset_in = |input: &str| -> String {
+        let mut cmd = wrk.command("searchset");
+        cmd.env("QSV_AUTOINDEX_SIZE", "1")
+            .args(["--jobs", "4"])
+            .args(["--select", "neighborhood"])
+            .arg("patterns.txt")
+            .arg(input);
+        wrk.stdout_on_success::<String>(&mut cmd)
+    };
+
+    let from_zip = searchset_in(&zip_file);
+    let from_csv = searchset_in(&csv_file);
+
+    // matched rows, not just the header - a fix that silently produced nothing would
+    // otherwise satisfy the equality check below
+    assert!(
+        from_zip.lines().count() > 1,
+        "searchset over a .zip input returned no matching rows"
+    );
+    assert_eq!(
+        from_zip, from_csv,
+        "searchset over a .zip input must equal searchset over the same data uncompressed"
+    );
+}

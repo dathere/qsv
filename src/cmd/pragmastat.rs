@@ -1060,21 +1060,18 @@ fn collect_numeric_values_parallel(
     let pool = ThreadPool::new(njobs);
     let (send, recv) = crossbeam_channel::bounded(nchunks);
 
-    let input_path_string = rconfig
-        .path
-        .as_ref()
-        .unwrap()
-        .to_str()
-        .unwrap_or("")
-        .to_string();
     let selected_vec = selected.to_vec();
     let col_types_vec = col_types.clone();
-    let delimiter = Delimiter(rconfig.get_delimiter());
-    let no_headers = rconfig.no_headers;
 
     for chunk_idx in 0..nchunks {
         let send = send.clone();
-        let input_path_string = input_path_string.clone();
+        // CLONE the already-resolved `rconfig`; never rebuild a Config from the input
+        // path here. A special-format input (.gz/.zip/.parquet/...) is read through a
+        // converted temp file, and each freshly-built Config resolves its OWN temp - so
+        // a worker would look for the index beside a different temp than the one the
+        // parent indexed. Cloning shares the `Arc<OnceLock>` holding that temp path (and
+        // with it the temp's real delimiter). See `frequency::parallel_ftables`.
+        let rconfig_chunk = rconfig.clone();
         let selected = selected_vec.clone();
         let col_types = col_types_vec.clone();
         let num_cols = selected.len();
@@ -1085,9 +1082,6 @@ fn collect_numeric_values_parallel(
         };
 
         pool.execute(move || {
-            let rconfig_chunk = Config::new(Some(&input_path_string))
-                .delimiter(Some(delimiter))
-                .no_headers_flag(no_headers);
             let Ok(Some(mut idx)) = rconfig_chunk.indexed() else {
                 let _ = send.send(Err(CliError::Other(
                     "Failed to open index for parallel reading".to_string(),

@@ -945,3 +945,42 @@ fn search_no_headers_envvar_issue_3437() {
     let expected = vec![svec!["@", "bar"], svec!["@", "bar"], svec!["@", "bar"]];
     assert_eq!(got, expected);
 }
+
+// issue #4446: with an autoindex on a special-format input, `parallel_search`'s workers
+// rebuilt `args.rconfig()` and resolved a DIFFERENT converted temp file than the one the
+// parent indexed, so `indexed()` hit an absent sibling `.idx` and the run failed with
+// "io error: No such file or directory" after emitting only the header. Workers now clone
+// the already-resolved Config that `parallel_search` was handed all along.
+//
+// QSV_AUTOINDEX_SIZE=1 forces the autoindex; --jobs 4 is required because the parallel path
+// is gated on njobs > 1. --preview-match is deliberately NOT set: it disables parallelism.
+#[test]
+fn search_from_zip_parallel_autoindexed() {
+    let wrk = Workdir::new("search_from_zip_parallel_autoindexed");
+    let zip_file = wrk.load_test_file("boston311-100.csv.zip");
+    let csv_file = wrk.load_test_file("boston311-100.csv");
+
+    let search_in = |input: &str| -> String {
+        let mut cmd = wrk.command("search");
+        cmd.env("QSV_AUTOINDEX_SIZE", "1")
+            .args(["--jobs", "4"])
+            .args(["--select", "neighborhood"])
+            .arg("(?i)roxbury")
+            .arg(input);
+        wrk.stdout_on_success::<String>(&mut cmd)
+    };
+
+    let from_zip = search_in(&zip_file);
+    let from_csv = search_in(&csv_file);
+
+    // matched rows, not just the header - a fix that silently produced nothing would
+    // otherwise satisfy the equality check below
+    assert!(
+        from_zip.lines().count() > 1,
+        "search over a .zip input returned no matching rows"
+    );
+    assert_eq!(
+        from_zip, from_csv,
+        "search over a .zip input must equal search over the same data uncompressed"
+    );
+}

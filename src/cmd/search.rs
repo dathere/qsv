@@ -226,10 +226,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .dfa_size_limit(args.flag_dfa_size_limit * (1 << 20))
         .build()?;
 
-    let rconfig = Config::new(args.arg_input.as_ref())
-        .delimiter(args.flag_delimiter)
-        .no_headers_flag(args.flag_no_headers)
-        .select(args.flag_select.clone());
+    // BIND the Config here and hand it to both routes. For special-format inputs
+    // (.gz/.zip/.parquet/...) it lazily resolves a converted temp file, and the parallel
+    // workers must share that same temp - and the index built beside it.
+    let rconfig = args.rconfig();
 
     // Route to parallel or sequential search
     // based on index availability, number of jobs, and --preview-match option
@@ -620,23 +620,24 @@ impl Args {
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded::<CliResult<ChunkOutput>>(nchunks);
 
-        // Share Args across workers via Arc to avoid a per-worker clone
-        // of SelectColumns and other inner allocations.
-        let args = Arc::new(self.clone());
-
         // Spawn search jobs
         for chunk_index in 0..nchunks {
-            let (send, args, sel, pattern, lowest_match) = (
+            // CLONE the already-resolved `rconfig`; never rebuild `self.rconfig()` here.
+            // A special-format input (.gz/.zip/.parquet/...) is read through a converted
+            // temp file, and each freshly-built Config resolves its OWN temp - so a worker
+            // would look for the index beside a different temp than the one the parent
+            // indexed. Cloning shares the `Arc<OnceLock>` holding that temp path.
+            // See `frequency::parallel_ftables` for the same invariant.
+            let (send, rconf, sel, pattern, lowest_match) = (
                 send.clone(),
-                Arc::clone(&args),
+                rconfig.clone(),
                 sel.clone(),
                 Arc::clone(&pattern),
                 Arc::clone(&lowest_match_chunk),
             );
             pool.execute(move || {
                 let result: CliResult<ChunkOutput> = (|| {
-                    let mut idx = args
-                        .rconfig()
+                    let mut idx = rconf
                         .indexed()?
                         .ok_or_else(|| CliError::Other("CSV index unavailable".to_string()))?;
                     idx.seek((chunk_index * chunk_size) as u64)?;

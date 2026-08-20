@@ -1632,3 +1632,73 @@ fn pragmastat_subsample_cache_incompatible() {
 
     wrk.assert_err(&mut cmd);
 }
+
+// issue #4446: `collect_numeric_values_parallel` rebuilt a Config per worker from the input
+// PATH STRING (`Config::new(Some(&input_path_string))`). For a special-format input
+// (.gz/.zip/.parquet/...) each Config resolves its OWN converted temp file, so with an
+// autoindex in play every worker looked for the index beside a different temp and the run
+// died with "Failed to open index for parallel reading". Workers now clone the
+// already-resolved Config the function was handed all along.
+//
+// The fixture must have >= 10_000 rows: the parallel path is gated on that row count, so the
+// 100-row boston311 fixture never reaches it. A .zip rather than .gz on purpose - zip support
+// is non-optional in every build, so this also runs under `-F lite`.
+#[test]
+fn pragmastat_from_zip_parallel_autoindexed() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("pragmastat_from_zip_parallel_autoindexed");
+
+    let mut plain = String::from("a,b\n");
+    for i in 0..12_000 {
+        plain.push_str(&format!("{i},{}\n", i % 97));
+    }
+    wrk.create_from_string("pg.csv", &plain);
+
+    let zip_path = wrk.path("pg.zip");
+    let zf = std::fs::File::create(&zip_path).unwrap();
+    let mut zw = zip::ZipWriter::new(zf);
+    zw.start_file("pg.csv", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zw.write_all(plain.as_bytes()).unwrap();
+    zw.finish().unwrap();
+
+    // --standalone writes to stdout; without it pragmastat appends to a stats sidecar keyed
+    // to the input path, so the .zip and .csv runs would write to DIFFERENT files and this
+    // comparison would have nothing to compare.
+    let pragmastat_of = |input: &str| -> Vec<Vec<String>> {
+        let mut cmd = wrk.command("pragmastat");
+        cmd.env("QSV_AUTOINDEX_SIZE", "1")
+            .env("QSV_STATSCACHE_MODE", "none")
+            .arg("--standalone")
+            .args(["--jobs", "4"])
+            .arg(input);
+        wrk.read_stdout_on_success(&mut cmd)
+    };
+
+    let from_zip = pragmastat_of(zip_path.to_str().unwrap());
+    let from_csv = pragmastat_of(wrk.path("pg.csv").to_str().unwrap());
+
+    assert!(
+        from_zip.len() > 1,
+        "pragmastat over a .zip input produced no data rows"
+    );
+    assert_eq!(
+        from_zip.len(),
+        from_csv.len(),
+        "pragmastat over a .zip input must cover the same columns as the uncompressed input"
+    );
+
+    // Compare only field/n/center/spread/center_lower/center_upper. spread_lower and
+    // spread_upper (the last two) are order statistics of a RANDOM disjoint pairing under a
+    // time-seeded RNG - they legitimately differ between two runs of the same input, so
+    // asserting on them would make this test flaky. See pragmastat_onesample_basic.
+    const DETERMINISTIC_COLS: usize = 6;
+    for (zip_row, csv_row) in from_zip.iter().zip(from_csv.iter()) {
+        assert_eq!(
+            &zip_row[..DETERMINISTIC_COLS],
+            &csv_row[..DETERMINISTIC_COLS],
+            "pragmastat for a .zip input must equal the same data uncompressed"
+        );
+    }
+}

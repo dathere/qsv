@@ -1256,12 +1256,31 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_percentile_list = "20,40,60,80".to_string();
     }
 
-    // validate percentile list
-    let percentile_list = args.flag_percentile_list.split(',').collect::<Vec<&str>>();
-    for p in percentile_list {
-        if fast_float2::parse::<f64, &[u8]>(p.trim().as_bytes()).is_err() {
+    // Validate the percentile list: every token must be a FINITE number in 1..=100.
+    //
+    // Accepting any parseable f64 was not permissive, it was silently WRONG: `to_record` casts
+    // each token `as u8` (saturating) while the output LABEL kept the original string, so the
+    // two disagreed and every case exited 0.
+    //   --percentile-list 150   -> rank exceeds total weight, emitted the pre-filled "150: 0"
+    //   --percentile-list nan   -> saturating cast to 0, emitted "nan: <p0>"
+    //   --percentile-list -5    -> likewise "-5: <p0>"
+    //   --percentile-list 0     -> p0 is not a percentile
+    //
+    // A FRACTIONAL value in range stays accepted (`99.9`, `50.0`): it is truncated to the
+    // percentile actually computed, and `to_record` now labels it with that percentile instead
+    // of the token as typed, so the label can no longer disagree with the value.
+    //
+    // NOTE: `deciles`/`quintiles` are expanded ABOVE, so they reach this loop already spelled
+    // out as integer lists and keep working.
+    for p in args.flag_percentile_list.split(',') {
+        let token = p.trim();
+        let valid = matches!(
+            fast_float2::parse::<f64, &[u8]>(token.as_bytes()),
+            Ok(pct) if pct.is_finite() && (1.0..=100.0).contains(&pct)
+        );
+        if !valid {
             return fail_incorrectusage_clierror!(
-                "Invalid percentile list: {}: {}",
+                "Invalid percentile list: {}: `{}` is not a percentile between 1 and 100.",
                 args.flag_percentile_list,
                 p
             );
@@ -2026,7 +2045,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // if the cache threshold zero or is a negative number ending in 5,
             // delete both the index file and the stats cache file
             if autoindex_set {
-                let index_file = path.with_extension("csv.idx");
+                // `util::idx_path` APPENDS ".idx"; `with_extension("csv.idx")` REPLACED the
+                // input's extension, so a `data.tsv` autoindex (written as `data.tsv.idx`) was
+                // looked for at `data.csv.idx` and survived the cleanup it asked for. The
+                // removal only log::warn!s on failure, so the leak was silent. It happened to
+                // work for `.csv` inputs by coincidence.
+                let index_file = util::idx_path(&path);
                 log::debug!("deleting index file: {}", index_file.display());
                 if std::fs::remove_file(index_file.clone()).is_err() {
                     // fails silently if it can't remove the index file
@@ -2748,11 +2772,23 @@ impl Args {
         infer_boolean: bool,
         prefer_dmy: bool,
     ) {
-        // Extract weight value if weight column is specified
-        // in case of a parse error, invalid weight defaults to 1.0
+        // Extract weight value if weight column is specified.
+        // Per the --weight docs, a missing or non-numeric weight defaults to 1.0.
+        //
+        // NON-FINITE counts as non-numeric here. fast_float2 parses "NaN" and "inf"
+        // SUCCESSFULLY, so `unwrap_or(1.0)` never fired for them and the value flowed into the
+        // accumulators: NaN then slipped past `add_weighted`'s `w <= 0.0` guard (every NaN
+        // comparison is false) and permanently poisoned sum_weights and weighted_mean, so
+        // weighted mean/sem/stddev/variance/cv for the ENTIRE column came out NaN. The sibling
+        // guards (`total_weight` and the weighted-quantile buffer) use `weight > 0.0`, which
+        // NaN fails, so they silently dropped the row instead - the same cell making the
+        // moments disagree with the quantiles.
         let weight = if let Some(widx) = weight_col_idx {
             if widx < row.len() {
-                fast_float2::parse::<f64, &[u8]>(row.get(widx).unwrap_or(b"1.0")).unwrap_or(1.0)
+                match fast_float2::parse::<f64, &[u8]>(row.get(widx).unwrap_or(b"1.0")) {
+                    Ok(w) if w.is_finite() => w,
+                    _ => 1.0,
+                }
             } else {
                 1.0
             }
@@ -3438,7 +3474,18 @@ fn init_date_inference(
         let whitelist_lower = flag_whitelist.to_lowercase();
         log::info!("inferring dates with date-whitelist: {whitelist_lower}");
 
-        let whitelist: SmallVec<[&str; 8]> = whitelist_lower.split(',').map(str::trim).collect();
+        // Empty tokens are DROPPED, not matched: `"".contains("")` is always true, so a single
+        // stray empty token - `--dates-whitelist "date,"`, a trailing comma being the easy way to
+        // get one - made every column match and silently turned the whitelist into "all". That is
+        // the exact false positive the docs warn about for "all": a `note` column holding
+        // date-like strings gets typed Date even though the user restricted the whitelist to
+        // `date`. The sniff sentinel below already documents this `contains("")` trap; user-
+        // supplied empties were simply never filtered.
+        let whitelist: SmallVec<[&str; 8]> = whitelist_lower
+            .split(',')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .collect();
         headers
             .iter()
             .map(|header| {
@@ -3907,7 +3954,14 @@ impl WeightedOnlineStats {
     /// - For harmonic mean: accumulate `w_i` / `x_i` (only if `x_i` != 0)
     #[inline]
     fn add_weighted(&mut self, x: f64, w: f64) {
-        if w <= 0.0 {
+        // The explicit NaN test is the point: a bare `w <= 0.0` is FALSE for NaN, so one NaN
+        // weight slipped into the accumulator and poisoned the column's weighted moments
+        // forever. This is exactly equivalent to the sibling sites' `weight > 0.0` gate
+        // (`total_weight` and the weighted-quantile buffer), spelled out rather than written
+        // as `!(w > 0.0)` so the NaN case is visible instead of implied. add_row now
+        // normalizes non-finite weights to 1.0 before they reach here, so this is the belt to
+        // that braces - but all three sites now agree, which is what stops them drifting.
+        if w.is_nan() || w <= 0.0 {
             return;
         }
 
@@ -4282,7 +4336,9 @@ fn weighted_percentiles(
 ///
 /// # Behavior
 ///
-/// * **`TDate`**: Returns only the date component (YYYY-MM-DD)
+/// * **`TDate`**: Returns only the date component - normally `YYYY-MM-DD`, but chrono renders a
+///   year outside `0..=9999` in expanded signed form (`+12000-01-01`, `-10000-01-01`), which the
+///   Tukey fences of a wide-spread date column can reach
 /// * **`TDateTime`**: Returns full RFC3339 format with time and timezone
 /// * **Invalid Timestamps**: Returns default RFC3339 format for invalid timestamps
 #[inline]
@@ -4294,7 +4350,12 @@ fn timestamp_ms_to_rfc3339(timestamp: i64, typ: FieldType) -> String {
     // if type = Date, only return the date component
     // do not return the time component
     if typ == TDate {
-        return date_val[..10].to_string();
+        // Split at the RFC3339 'T' separator rather than slicing a fixed 10 bytes: chrono
+        // renders a year outside 0..=9999 in EXPANDED form (`+12000-01-01T…`, `-10000-01-01T…`),
+        // which is more than 10 bytes before the 'T', so the fixed slice cut it mid-token and
+        // emitted `+12000-01-` as if it were a date. Reachable from ordinary data - a Date
+        // column with a wide spread pushes the Tukey fences (`q3 + 3*IQR`) past year 9999.
+        return date_val.split('T').next().unwrap_or(&date_val).to_string();
     }
     date_val
 }
@@ -4606,7 +4667,7 @@ impl Stats {
         if self.which.zero_padded_numeric && !self.zpn_disqualified && b"" != sample {
             if sample_type == TFloat
                 || sample.iter().all(u8::is_ascii_digit)
-                || is_zero_padded_float(sample)
+                || is_zero_padded_number(sample)
                 || fast_float2::parse::<f64, &[u8]>(sample).is_ok()
             {
                 // numeric-shaped: a freshly-parsed plain float (sample_type == TFloat — the common
@@ -5665,15 +5726,25 @@ impl Stats {
         if self.which.percentiles {
             match typ {
                 TInteger | TFloat | TDate | TDateTime => {
-                    // Parse percentile list, preserving both original labels and u8 values
+                    // Parse the percentile list into the u8 percentiles to compute and the
+                    // labels to emit. The label is DERIVED from the truncated percentile, not
+                    // from the token as typed, so the two can never disagree.
                     let (percentile_labels, percentile_list): (Vec<String>, Vec<u8>) = self
                         .which
                         .percentile_list
                         .split(',')
                         .filter_map(|p: &str| {
-                            fast_float2::parse(p.trim())
-                                .ok()
-                                .map(|p_val: f64| (p.trim().to_string(), p_val as u8))
+                            fast_float2::parse(p.trim()).ok().map(|p_val: f64| {
+                                // Label the percentile ACTUALLY computed, not the token as
+                                // typed. The value is selected by this truncating cast, so
+                                // keeping the original string made the label disagree with it:
+                                // `--percentile-list 99.9` on 1000 rows emitted the p99 value
+                                // (990) under a "99.9" label, and `010` under an "010" label.
+                                // run() has already rejected anything outside 1..=100, so this
+                                // cast cannot saturate.
+                                let pct = p_val as u8;
+                                (pct.to_string(), pct)
+                            })
                         })
                         .unzip();
 
@@ -5902,8 +5973,13 @@ enum FieldType {
 /// tolerated, though codes are typically unsigned. Pure trailing-zero codes (`7.10`) are out of
 /// scope by design — they're indistinguishable from rounded measurements without the original
 /// string.
+///
+/// A decimal point is NOT required: `+007` is as padded as `007.1`. It reaches this function
+/// because `atoi_simd` rejects a leading `+` (`SKIP_PLUS` is false) so the integer path - and its
+/// leading-zero check - never sees it. When a dot IS present it must still have digits after it,
+/// so `007.` stays rejected.
 #[inline]
-fn is_zero_padded_float(sample: &[u8]) -> bool {
+fn is_zero_padded_number(sample: &[u8]) -> bool {
     let b = match sample.first() {
         Some(b'+' | b'-') => &sample[1..],
         _ => sample,
@@ -5927,7 +6003,12 @@ fn is_zero_padded_float(sample: &[u8]) -> bool {
             _ => return false, // any other byte disqualifies
         }
     }
-    seen_dot && frac_len > 0
+    // A dot is not required. `+007` reaches this function because atoi_simd rejects a leading
+    // '+' (SKIP_PLUS is false) while fast_float2 accepts it, so the integer path above - and its
+    // padding check - never sees it. Requiring a fraction here let `+007` fall through as the
+    // float 7.0, silently numeric-izing a padded code. When a dot IS present it must still have
+    // fraction digits, so `007.` stays disqualified.
+    !seen_dot || frac_len > 0
 }
 
 impl FieldType {
@@ -5959,9 +6040,17 @@ impl FieldType {
         if current_type != FieldType::TFloat
             && let Ok(samp_int) = atoi_simd::parse::<i64, false, false>(sample)
         {
-            // Check for integer, with leading zero check for strings like zip codes
-            // safety: we know sample is not null as we checked earlier
-            if samp_int == 0 || unsafe { *sample.get_unchecked(0) != b'0' } {
+            // Check for integer, with leading zero check for strings like zip codes.
+            //
+            // The sign is stripped first, mirroring `is_zero_padded_number`'s prefix handling: a
+            // sign is not part of the padding, so `-007` is as zero-padded as `007`. Testing
+            // byte 0 directly saw `b'-'`, concluded "not padded", and typed `-007` as the
+            // integer -7 - dropping the padding from min/max and from --zero-padded-numeric.
+            let unsigned = match sample.first() {
+                Some(b'+' | b'-') => &sample[1..],
+                _ => sample,
+            };
+            if samp_int == 0 || unsigned.first().is_none_or(|&b| b != b'0') {
                 // note that we still return samp_int as f64 even if it's an integer
                 // as the qsv-stats crate expects a float value for integer fields
                 #[allow(clippy::cast_precision_loss)]
@@ -5977,9 +6066,9 @@ impl FieldType {
             // Zero-padded floats (007.1, 05.10 — ICD-9 / Dewey / HS codes) are kept as String
             // to preserve their leading zeros, mirroring the zero-padded-integer rule above (a
             // 0-then-digit integer part is padding; a plain 0.5 / 7.1 is a real number). The
-            // first-byte check inside is_zero_padded_float() makes the common (non-padded) case
+            // first-byte check inside is_zero_padded_number() makes the common (non-padded) case
             // a couple of byte comparisons.
-            if is_zero_padded_float(sample) {
+            if is_zero_padded_number(sample) {
                 return (FieldType::TString, 0, 0.0);
             }
             return (FieldType::TFloat, 0, float_sample);

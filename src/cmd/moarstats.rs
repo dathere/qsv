@@ -4466,6 +4466,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             );
         }
 
+        // Truncate to the INTEGER percentile, matching what `stats` actually computes.
+        // `stats --percentile-list` casts each entry `as u8`, so asking it for 33.3 yields p33
+        // and (since the label reports the percentile computed) writes the key "33". These
+        // values are used ONLY to build that lookup key and the winsorized_/trimmed_ column
+        // names - never in a numeric computation - so truncating here keeps both in step.
+        // Without it, `--pct-thresholds 33.3,66.6` searched the percentiles cell for "33.3",
+        // found nothing, and silently emitted 0/empty winsorized and trimmed statistics.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let (lower, upper) = (lower.trunc(), upper.trunc());
+
+        // truncation can collapse a valid-looking pair (e.g. "33.3,33.6" -> 33, 33), so the
+        // ordering has to be re-checked against the percentiles actually used
+        if lower >= upper {
+            return fail_clierror!(
+                "Percentile thresholds {thresholds_str} both truncate to the same percentile \
+                 ({lower}). `stats` computes whole percentiles, so give thresholds that differ by \
+                 at least 1."
+            );
+        }
+
         (Some(lower), Some(upper))
     } else {
         (None, None)

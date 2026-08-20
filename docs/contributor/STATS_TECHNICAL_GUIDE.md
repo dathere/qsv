@@ -377,7 +377,7 @@ struct Stats {
     is_ascii: bool,           // 1 byte
     max_precision: u16,       // 2 bytes
     nullcount: u64,           // 8 bytes
-    sum_stotlen: u64,         // 8 bytes
+    total_weight: f64,        // 8 bytes
     
     // CONFIGURATION
     which: WhichStats,        // Flags for what to compute

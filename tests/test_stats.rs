@@ -2420,7 +2420,7 @@ fn stats_percentiles_floats() {
             "15",
             "",
             "0",
-            "10.5: 2|25.25: 4|50.75: 8|75.6: 12|90.1: 14"
+            "10: 2|25: 4|50: 8|75: 12|90: 14"
         ],
     ];
 
@@ -2870,7 +2870,7 @@ fn stats_percentiles_custom_list() {
             "10",
             "",
             "0",
-            "1: 1|5: 1|33.3: 4|66.6: 7|95: 10|99: 10",
+            "1: 1|5: 1|33: 4|66: 7|95: 10|99: 10",
         ],
     ];
 
@@ -8338,6 +8338,379 @@ fn stats_jsonl_flag_refreshes_a_jsonl_older_than_the_sidecar() {
         after > before,
         "--stats-jsonl preserved a jsonl that predates the stats cache beside it"
     );
+}
+
+#[test]
+fn stats_autoindex_cleanup_removes_a_non_csv_index() {
+    // A negative --cache-threshold sets the autoindex size; one ending in 5 also asks for the
+    // autoindex and the stats cache to be deleted afterwards. The cleanup built the path with
+    // `with_extension("csv.idx")`, which REPLACES the input's extension, so a `.tsv` input's
+    // autoindex (written by util::idx_path as `data.tsv.idx`) was looked for at `data.csv.idx`
+    // and survived. remove_file only log::warn!s on failure, so the leak was silent - which is
+    // why this asserts on the FILESYSTEM rather than on output or exit code.
+    let wrk = Workdir::new("stats_autoindex_cleanup_tsv");
+
+    // must exceed the autoindex size below (105 bytes) for an index to be created at all
+    let mut rows = vec![svec!["a", "b"]];
+    for i in 0..200 {
+        rows.push(vec![i.to_string(), (i * 2).to_string()]);
+    }
+    wrk.create_with_delim("idxclean.tsv", rows.clone(), b'\t');
+    wrk.create("idxclean.csv", rows);
+
+    for input in ["idxclean.tsv", "idxclean.csv"] {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("-E").args(["--cache-threshold", "-105"]).arg(input);
+        wrk.assert_success(&mut cmd);
+
+        let leaked = wrk.path(&format!("{input}.idx"));
+        assert!(
+            !leaked.exists(),
+            "the autoindex for `{input}` survived the cleanup that --cache-threshold -105 asked \
+             for: {leaked:?}"
+        );
+    }
+}
+
+#[test]
+fn stats_dates_whitelist_ignores_empty_tokens() {
+    // `"".contains("")` is always true, so a single stray empty token in --dates-whitelist made
+    // EVERY column match and silently turned the whitelist into "all" - the exact false positive
+    // the docs warn about for "all". A trailing comma is the easy way to get one.
+    let wrk = Workdir::new("stats_dates_whitelist_empty_token");
+    wrk.create(
+        "wl.csv",
+        vec![
+            svec!["date_col", "note"],
+            svec!["2020-01-15", "2019-05-05"],
+            svec!["2021-03-01", "2018-07-07"],
+        ],
+    );
+
+    let typ = |whitelist: &str, run: &str| -> Vec<String> {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .arg("--infer-dates")
+            .args(["--dates-whitelist", whitelist])
+            .args(["--output", wrk.path(run).to_str().unwrap()])
+            .arg("wl.csv");
+        wrk.assert_success(&mut cmd);
+        let out = std::fs::read_to_string(wrk.path(run)).unwrap();
+        let mut hdrs = out.lines().next().unwrap().split(',');
+        let type_idx = hdrs.position(|h| h == "type").unwrap();
+        out.lines()
+            .skip(1)
+            .map(|l| l.split(',').nth(type_idx).unwrap_or_default().to_string())
+            .collect()
+    };
+
+    // `note` holds date-like strings but is NOT whitelisted, so it must stay a String
+    assert_eq!(typ("date", "a.csv"), vec!["Date", "String"]);
+
+    // the trailing comma must not change that
+    assert_eq!(
+        typ("date,", "b.csv"),
+        vec!["Date", "String"],
+        "an empty --dates-whitelist token silently enabled date inference on every column"
+    );
+
+    // and "all" must still mean all
+    assert_eq!(typ("all", "c.csv"), vec!["Date", "Date"]);
+}
+
+#[test]
+fn stats_nan_weight_defaults_to_one_instead_of_poisoning() {
+    // fast_float2 parses "NaN" and "inf" SUCCESSFULLY, so the `unwrap_or(1.0)` fallback never
+    // fired for them. NaN then slipped past add_weighted's `w <= 0.0` guard (every NaN
+    // comparison is false) and poisoned sum_weights/weighted_mean permanently, so the whole
+    // column's weighted mean/sem/stddev/variance/cv came out NaN - while the sibling guards
+    // (`weight > 0.0`) silently DROPPED the same row from total_weight and the weighted
+    // quantiles. One cell made the moments and the quantiles disagree.
+    //
+    // The documented contract is "missing or non-numeric weights default to 1.0", so the fix is
+    // pinned against a reference file with an explicit 1.0 in place of the bad cell.
+    let wrk = Workdir::new("stats_nan_weight");
+
+    let run = |file: &str, rows: Vec<Vec<String>>, out: &str| -> Vec<String> {
+        wrk.create(file, rows);
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .args(["--weight", "w"])
+            .arg("--everything")
+            .args(["--output", wrk.path(out).to_str().unwrap()])
+            .arg(file);
+        wrk.assert_success(&mut cmd);
+        let text = std::fs::read_to_string(wrk.path(out)).unwrap();
+        let hdrs: Vec<&str> = text.lines().next().unwrap().split(',').collect();
+        let row: Vec<&str> = text.lines().nth(1).unwrap().split(',').collect();
+        [
+            "mean",
+            "stddev",
+            "variance",
+            "cv",
+            "sem",
+            "q1",
+            "q2_median",
+            "q3",
+        ]
+        .iter()
+        .map(|k| {
+            let i = hdrs.iter().position(|h| h == k).unwrap();
+            row.get(i).unwrap_or(&"").to_string()
+        })
+        .collect()
+    };
+
+    let nan_weighted = run(
+        "nanw.csv",
+        vec![
+            svec!["v", "w"],
+            svec!["10", "1"],
+            svec!["20", "NaN"],
+            svec!["30", "2"],
+        ],
+        "nan.csv",
+    );
+    let reference = run(
+        "refw.csv",
+        vec![
+            svec!["v", "w"],
+            svec!["10", "1"],
+            svec!["20", "1"],
+            svec!["30", "2"],
+        ],
+        "ref.csv",
+    );
+
+    assert_eq!(
+        nan_weighted, reference,
+        "a NaN weight must behave exactly like the documented 1.0 default, for the moments AND \
+         the quantiles"
+    );
+    assert!(
+        !nan_weighted[0].is_empty() && nan_weighted[0] != "NaN",
+        "the weighted mean must be a real number, got {:?}",
+        nan_weighted[0]
+    );
+
+    // "inf" is non-finite too and must take the same path
+    let inf_weighted = run(
+        "infw.csv",
+        vec![
+            svec!["v", "w"],
+            svec!["10", "1"],
+            svec!["20", "inf"],
+            svec!["30", "2"],
+        ],
+        "inf.csv",
+    );
+    assert_eq!(
+        inf_weighted, reference,
+        "an infinite weight must also fall back to 1.0"
+    );
+}
+
+#[test]
+fn stats_percentile_list_rejects_out_of_range_and_non_numeric() {
+    // `to_record` casts each token `as u8` (SATURATING) while the output label keeps the
+    // original string, so out-of-range and non-numeric tokens produced nonsense with exit 0:
+    //   150 -> rank exceeds total weight, emitting the pre-filled default as "150: 0"
+    //   nan -> saturating cast to 0, emitting p0 under a "nan" label
+    //   -5  -> likewise
+    //   0   -> p0 is not a percentile
+    // Only `fast_float2::parse().is_ok()` was checked, which accepts every one of them.
+    let wrk = Workdir::new("stats_percentile_list_range");
+    let mut rows = vec![svec!["n"]];
+    for i in 1..=100 {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("pct.csv", rows);
+
+    for bad in ["150", "nan", "inf", "-5", "0", "101", "5,,10", "5,abc"] {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .arg("--percentiles")
+            .args(["--percentile-list", bad])
+            .arg("pct.csv");
+        wrk.assert_err(&mut cmd);
+    }
+
+    // in-range values keep working, including the boundaries and `deciles`/`quintiles`, which
+    // are expanded BEFORE validation
+    for good in ["1", "100", "5,10,95", "deciles", "quintiles", "50.0"] {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .arg("--percentiles")
+            .args(["--percentile-list", good])
+            .arg("pct.csv");
+        wrk.assert_success(&mut cmd);
+    }
+}
+
+#[test]
+fn stats_percentile_list_label_matches_the_percentile_computed() {
+    // The percentile VALUE is selected by an `as u8` truncation, but the output LABEL used to
+    // keep the token exactly as typed - so `--percentile-list 99.9` on a 1000-row file emitted
+    // the p99 value (990) under a "99.9" label, claiming a p99.9 it never computed. The label
+    // now reports the percentile actually computed, so a fractional token and its truncation
+    // produce identical output.
+    let wrk = Workdir::new("stats_percentile_label");
+    let mut rows = vec![svec!["n"]];
+    for i in 1..=1000 {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("lbl.csv", rows);
+
+    let pctiles = |list: &str, out: &str| -> String {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .arg("--percentiles")
+            .args(["--percentile-list", list])
+            .args(["--output", wrk.path(out).to_str().unwrap()])
+            .arg("lbl.csv");
+        wrk.assert_success(&mut cmd);
+        let text = std::fs::read_to_string(wrk.path(out)).unwrap();
+        let hdrs: Vec<&str> = text.lines().next().unwrap().split(',').collect();
+        let i = hdrs.iter().position(|h| *h == "percentiles").unwrap();
+        text.lines()
+            .nth(1)
+            .unwrap()
+            .split(',')
+            .nth(i)
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    let fractional = pctiles("99.9", "a.csv");
+    assert_eq!(
+        fractional, "99: 990",
+        "a fractional percentile must be labeled with the percentile actually computed"
+    );
+    assert_eq!(
+        fractional,
+        pctiles("99", "b.csv"),
+        "99.9 truncates to 99, so it must produce output identical to asking for 99"
+    );
+
+    // an integral value written with a decimal point, and a zero-padded one, normalize too
+    assert_eq!(pctiles("50.0", "c.csv"), "50: 500");
+    assert_eq!(pctiles("010", "d.csv"), "10: 100");
+}
+
+#[test]
+fn stats_sign_prefixed_zero_padded_codes_stay_strings() {
+    // A leading zero marks a padded CODE (zip, FIPS, ICD-9, part number), which must stay a
+    // String so the padding survives. The integer path tested byte 0 directly, so a sign made
+    // it conclude "not padded": `-007` was typed as the integer -7. `+007` was worse - atoi
+    // rejects a leading '+' (SKIP_PLUS is false) so it never reached that check at all, while
+    // fast_float2 parsed it, and the float branch's padding check required a decimal point.
+    // Either way the padding was silently dropped from min/max and --zero-padded-numeric.
+    let wrk = Workdir::new("stats_signed_zero_padded");
+
+    let probe = |file: &str, values: &[&str], out: &str| -> (String, String, String) {
+        let mut rows = vec![svec!["code"]];
+        for v in values {
+            rows.push(vec![(*v).to_string()]);
+        }
+        wrk.create(file, rows);
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .arg("--everything")
+            .arg("--zero-padded-numeric")
+            .args(["--output", wrk.path(out).to_str().unwrap()])
+            .arg(file);
+        wrk.assert_success(&mut cmd);
+        let text = std::fs::read_to_string(wrk.path(out)).unwrap();
+        let hdrs: Vec<&str> = text.lines().next().unwrap().split(',').collect();
+        let row: Vec<&str> = text.lines().nth(1).unwrap().split(',').collect();
+        let get = |k: &str| {
+            let i = hdrs.iter().position(|h| *h == k).unwrap();
+            row.get(i).unwrap_or(&"").to_string()
+        };
+        (get("type"), get("min"), get("zero_padded_numeric"))
+    };
+
+    // unsigned padded codes were always handled correctly - the baseline
+    assert_eq!(
+        probe("plain.csv", &["007", "008", "009"], "a.csv"),
+        ("String".into(), "007".into(), "true".into())
+    );
+    // ...and a sign must not change that
+    assert_eq!(
+        probe("neg.csv", &["-007", "-008", "-009"], "b.csv"),
+        ("String".into(), "-007".into(), "true".into()),
+        "`-007` was typed as the integer -7, dropping the padding"
+    );
+    assert_eq!(
+        probe("pos.csv", &["+007", "+008", "+009"], "c.csv"),
+        ("String".into(), "+007".into(), "true".into()),
+        "`+007` was typed as the float 7.0, dropping the padding"
+    );
+
+    // regression guards: genuine numbers must NOT become padded strings
+    let (plain_type, ..) = probe("real.csv", &["0.5", "7.1"], "d.csv");
+    assert_eq!(plain_type, "Float", "0.5 / 7.1 are real numbers, not codes");
+    let (signed_type, ..) = probe("signed.csv", &["+7", "-7"], "e.csv");
+    assert_eq!(signed_type, "Float", "+7 / -7 carry no padding");
+}
+
+#[test]
+fn stats_date_fences_beyond_year_9999_are_not_truncated() {
+    // The date component was taken as a fixed 10-byte slice, which assumes a 4-digit year.
+    // chrono renders a year outside 0..=9999 in EXPANDED form (`+12000-01-01T…`), so the slice
+    // cut it mid-token and emitted `+12000-01-` as if it were a date. This is reachable from
+    // ordinary data: a Date column with a wide spread pushes the Tukey fences (q3 + 3*IQR)
+    // past year 9999.
+    let wrk = Workdir::new("stats_date_fence_overflow");
+    let mut rows = vec![svec!["d"]];
+    for y in [1000, 1500, 2000, 2500, 3000, 3500, 4000, 6000, 8000, 9999] {
+        rows.push(vec![format!("{y:04}-01-01")]);
+    }
+    wrk.create("wide.csv", rows);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--force")
+        .arg("--infer-dates")
+        .arg("--everything")
+        .args(["--output", wrk.path("out.csv").to_str().unwrap()])
+        .arg("wide.csv");
+    wrk.assert_success(&mut cmd);
+
+    let text = std::fs::read_to_string(wrk.path("out.csv")).unwrap();
+    let hdrs: Vec<&str> = text.lines().next().unwrap().split(',').collect();
+    let row: Vec<&str> = text.lines().nth(1).unwrap().split(',').collect();
+    let get = |k: &str| {
+        let i = hdrs.iter().position(|h| *h == k).unwrap();
+        row.get(i).copied().unwrap_or_default()
+    };
+
+    for key in [
+        "lower_outer_fence",
+        "lower_inner_fence",
+        "upper_inner_fence",
+        "upper_outer_fence",
+    ] {
+        let v = get(key);
+        assert!(
+            !v.is_empty(),
+            "{key} should be rendered for this fixture, got empty"
+        );
+        // a truncated expanded year ends mid-token, e.g. "+12000-01-" or "-10000-01-"
+        assert!(
+            !v.ends_with('-'),
+            "{key} was truncated mid-token by the fixed 10-byte slice: {v:?}"
+        );
+        // every rendered date must have a full YYYY-MM-DD tail
+        let parts: Vec<&str> = v.rsplit('-').collect();
+        assert!(
+            parts[0].len() == 2 && parts[1].len() == 2,
+            "{key} should end in -MM-DD, got {v:?}"
+        );
+    }
+
+    // an ordinary 4-digit-year column is unaffected
+    assert_eq!(get("min"), "1000-01-01");
+    assert_eq!(get("q1"), "2000-01-01");
 }
 
 #[test]

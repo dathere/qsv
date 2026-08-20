@@ -6695,3 +6695,88 @@ fn moarstats_regenerates_a_stale_baseline_stats_csv() {
         "moarstats used a stale baseline stats CSV; v row was: {v_row}"
     );
 }
+
+#[test]
+fn moarstats_fractional_pct_thresholds_find_their_percentiles() {
+    // `stats --percentile-list` casts each entry `as u8`, so asking for 33.3 computes p33 and
+    // labels it "33". moarstats built its lookup key with fmt_pct, which PRESERVES fractions,
+    // so it searched the percentiles cell for "33.3", found nothing, and silently emitted 0 /
+    // empty winsorized and trimmed statistics - a cross-command break that no test covered.
+    let wrk = Workdir::new("moarstats_fractional_pct");
+
+    let mut rows = vec![svec!["v"]];
+    for i in 1..=200 {
+        rows.push(vec![(i * 7 % 1000).to_string()]);
+    }
+    wrk.create("frac.csv", rows);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--force")
+        .arg("--everything")
+        .arg("--percentiles")
+        .args(["--percentile-list", "33.3,66.6"])
+        .arg("frac.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("frac.csv")
+        .arg("--use-percentiles")
+        .args(["--pct-thresholds", "33.3,66.6"]);
+    wrk.assert_success(&mut cmd);
+
+    let stats_content = wrk.read_to_string("frac.stats.csv").unwrap();
+    let hdrs: Vec<&str> = stats_content.lines().next().unwrap().split(',').collect();
+    let row: Vec<&str> = stats_content.lines().nth(1).unwrap().split(',').collect();
+
+    // the threshold truncates to the percentile stats actually computed, so the column is
+    // named for that percentile
+    let idx = hdrs
+        .iter()
+        .position(|h| *h == "winsorized_mean_33pct")
+        .unwrap_or_else(|| {
+            panic!("no winsorized_mean_33pct column; headers: {hdrs:?}");
+        });
+    let winsorized = row.get(idx).copied().unwrap_or_default();
+    assert!(
+        !winsorized.is_empty() && winsorized != "0",
+        "winsorized mean should be a real value - an unresolved percentile lookup yields 0 or \
+         empty. got {winsorized:?}"
+    );
+
+    let idx = hdrs
+        .iter()
+        .position(|h| *h == "trimmed_mean_33pct")
+        .expect("no trimmed_mean_33pct column");
+    let trimmed = row.get(idx).copied().unwrap_or_default();
+    assert!(
+        !trimmed.is_empty() && trimmed != "0",
+        "trimmed mean should be a real value, got {trimmed:?}"
+    );
+}
+
+#[test]
+fn moarstats_pct_thresholds_collapsing_to_one_percentile_errors() {
+    // Truncating to whole percentiles can collapse a pair that looked valid: 33.3 and 33.6 both
+    // become 33, which would silently winsorize between a percentile and itself.
+    let wrk = Workdir::new("moarstats_collapsing_pct");
+    let mut rows = vec![svec!["v"]];
+    for i in 1..=50 {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("coll.csv", rows);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--force")
+        .arg("--everything")
+        .arg("--percentiles")
+        .arg("coll.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("coll.csv")
+        .arg("--use-percentiles")
+        .args(["--pct-thresholds", "33.3,33.6"]);
+    wrk.assert_err(&mut cmd);
+}

@@ -648,11 +648,6 @@ impl Config {
         Ok(Some(self.resolve_converted()?.0))
     }
 
-    /// Returns a Config ready to *read* this input. For a `special_format` input,
-    /// it is a clone whose `path` points at the lazily-converted delimited temp
-    /// (with that temp's delimiter) and whose `special_format` is `Unknown`, so the
-    /// read methods treat it as an ordinary delimited file (no re-entry). Only
-    /// called from the read entry points when `special_format != Unknown`.
     /// Whether this input is a special format (`.gz`/`.zip`/`.parquet`/`.jsonl`/...) that is read
     /// through a CONVERTED temp file rather than directly.
     ///
@@ -664,6 +659,11 @@ impl Config {
         !matches!(self.special_format, SpecialFormat::Unknown)
     }
 
+    /// Returns a Config ready to *read* this input. For a `special_format` input,
+    /// it is a clone whose `path` points at the lazily-converted delimited temp
+    /// (with that temp's delimiter) and whose `special_format` is `Unknown`, so the
+    /// read methods treat it as an ordinary delimited file (no re-entry). Only
+    /// called from the read entry points when `special_format != Unknown`.
     pub(crate) fn prepared_for_read(&self) -> io::Result<Config> {
         if self.special_format == SpecialFormat::Unknown {
             return Ok(self.clone());

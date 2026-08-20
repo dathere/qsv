@@ -8999,3 +8999,87 @@ fn stats_autoindex_is_skipped_for_special_format_inputs() {
         "autoindexing must still work for ordinary CSV inputs"
     );
 }
+
+// A blank line is counted by polars (util::count_rows) but SKIPPED by the csv reader that
+// actually feeds the compute pass. Seeding RECORD_COUNT from a separate pre-pass therefore
+// inflated every per-record denominator in to_record() - uniqueness_ratio, and the
+// cardinality == record_count test behind the <ALL_UNIQUE> antimode sentinel - so the SAME
+// file produced different statistics depending only on whether an index happened to exist.
+// The record count now comes from the compute pass itself, which makes the denominator
+// self-consistent by construction.
+//
+// The fixture ends in a blank line ("...\n\n"), which is ordinary real-world data.
+#[test]
+fn stats_trailing_blank_line_denominator() {
+    // the named stat for EVERY data row - the fixture's two columns are both affected
+    fn stats_of(out: &str, col: &str) -> Vec<String> {
+        let mut lines = out.lines();
+        let hdr: Vec<&str> = lines.next().unwrap().split(',').collect();
+        let idx = hdr
+            .iter()
+            .position(|h| *h == col)
+            .unwrap_or_else(|| panic!("no {col} column in stats output"));
+        lines
+            .map(|l| l.split(',').nth(idx).unwrap().to_string())
+            .collect()
+    }
+
+    let wrk = Workdir::new("stats_trailing_blank_line_denominator");
+    // every run gets its OWN fixture filename - stats sidecars are written next to the input
+    for name in ["blankline_par.csv", "blankline_j1.csv", "blankline_idx.csv"] {
+        wrk.create_from_string(name, "a,b\n1,2\n3,4\n\n");
+    }
+
+    let run = |input: &str, jobs: Option<&str>| -> String {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--everything").args(["--cache-threshold", "0"]);
+        if let Some(j) = jobs {
+            cmd.args(["--jobs", j]);
+        }
+        cmd.arg(input);
+        wrk.stdout_on_success::<String>(&mut cmd)
+    };
+
+    // the indexed path takes its count from the index, which is built by qsv's own csv
+    // reader - it has always been right, so it is the reference the other two must match.
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("blankline_idx.csv");
+    wrk.assert_success(&mut idx_cmd);
+    let indexed = run("blankline_idx.csv", None);
+
+    // the two unindexed paths: pipelined (default --jobs) and single-threaded (--jobs 1).
+    // The pipelined one is the default, so a fix that only corrected compute() would leave
+    // the bug in place for nearly every real invocation.
+    let pipelined = run("blankline_par.csv", None);
+    let single = run("blankline_j1.csv", Some("1"));
+
+    for (label, out) in [
+        ("indexed", &indexed),
+        ("unindexed/pipelined", &pipelined),
+        ("unindexed/--jobs 1", &single),
+    ] {
+        // only 2 records are actually read, and every value in BOTH columns is distinct,
+        // so the ratio is 2/2 and the <ALL_UNIQUE> sentinel applies to each.
+        assert_eq!(
+            stats_of(out, "cardinality"),
+            ["2", "2"],
+            "{label}: the blank line must not be counted as a record"
+        );
+        assert_eq!(
+            stats_of(out, "uniqueness_ratio"),
+            ["1", "1"],
+            "{label}: uniqueness_ratio must be cardinality/records-actually-read (2/2), not 2/3 - \
+             a blank line inflating the denominator"
+        );
+        assert_eq!(
+            stats_of(out, "antimode"),
+            ["*ALL", "*ALL"],
+            "{label}: with every value unique, the <ALL_UNIQUE> antimode sentinel must apply"
+        );
+        assert_eq!(
+            stats_of(out, "antimode_count"),
+            ["0", "0"],
+            "{label}: antimode_count must be 0 under the <ALL_UNIQUE> sentinel"
+        );
+    }
+}

@@ -2134,27 +2134,38 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // we need to count the number of records in the file to calculate sparsity and
             // cardinality
-            let record_count: u64;
-
-            let (headers, stats) = match indexed_result {
+            //
+            // NOTE: the count obtained here is only a CAPACITY HINT for the per-column
+            // accumulators. The authoritative record_count - the one that seeds
+            // RECORD_COUNT and therefore every per-record denominator in to_record()
+            // (sparsity, uniqueness_ratio, the <ALL_UNIQUE> antimode sentinel) - is the
+            // count RETURNED by the compute pass, i.e. the number of records actually
+            // accumulated. Deriving it from a separate pre-pass was a live wrong-results
+            // bug: util::count_rows() may use polars, which counts blank lines that the
+            // csv reader skips, so a file ending in a blank line inflated the denominator
+            // and made the SAME file produce different stats depending only on whether an
+            // index existed. Taking the count from the pass itself makes the denominator
+            // self-consistent by construction, for any counter disagreement, not just
+            // blank lines.
+            let (headers, stats, record_count) = match indexed_result {
                 None => {
                     // without an index, we need to count the number of records in the file
                     // safety: we know util::count_rows() will not return an Err
-                    record_count = util::count_rows(&rconfig).unwrap();
-                    args.sequential_stats(&resolved_whitelist, record_count)
+                    let capacity_hint = util::count_rows(&rconfig).unwrap();
+                    args.sequential_stats(&resolved_whitelist, capacity_hint)
                 },
                 Some(idx) => {
                     // with an index, we get the rowcount instantaneously from the index
-                    record_count = idx.count();
+                    let idx_count = idx.count();
                     match args.flag_jobs {
                         Some(num_jobs) => {
                             if num_jobs == 1 {
-                                args.sequential_stats(&resolved_whitelist, record_count)
+                                args.sequential_stats(&resolved_whitelist, idx_count)
                             } else {
-                                args.parallel_stats(&resolved_whitelist, record_count)
+                                args.parallel_stats(&resolved_whitelist, idx_count)
                             }
                         },
-                        _ => args.parallel_stats(&resolved_whitelist, record_count),
+                        _ => args.parallel_stats(&resolved_whitelist, idx_count),
                     }
                 },
             }?;
@@ -2613,7 +2624,13 @@ impl Args {
     /// 2. **Headers**: Reads and processes the CSV headers, applying column selection
     /// 3. **Date Inference**: Initializes date inference flags based on the whitelist
     /// 4. **Computation**: Processes all records sequentially to compute statistics
-    /// 5. **Return**: Returns headers and computed statistics
+    /// 5. **Return**: Returns headers, computed statistics, and the number of records read
+    ///
+    /// `capacity_hint` is ONLY a preallocation hint for the per-column accumulators; it is
+    /// never a read limit and is deliberately NOT the value reported back. The returned
+    /// count comes from the compute pass itself, so the caller's record_count always
+    /// matches the records actually accumulated even when the hint was obtained from a
+    /// counter with different blank-line semantics (see the note in `run()`).
     ///
     /// # Performance Characteristics
     ///
@@ -2630,8 +2647,8 @@ impl Args {
     fn sequential_stats(
         &self,
         whitelist: &str,
-        record_count: u64,
-    ) -> CliResult<(csv::ByteRecord, Vec<Stats>)> {
+        capacity_hint: u64,
+    ) -> CliResult<(csv::ByteRecord, Vec<Stats>, u64)> {
         let mut rdr = self.rconfig().reader()?;
         let full_headers = rdr.byte_headers()?.clone();
 
@@ -2641,24 +2658,25 @@ impl Args {
 
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
-        // record_count is only a capacity hint for the per-column accumulators;
+        // capacity_hint is only a capacity hint for the per-column accumulators;
         // the read limit stays usize::MAX so we always process the whole file.
+        // The count we RETURN comes from the pass itself, never from the hint.
         // With more than one job available, overlap CSV parsing with stats
         // accumulation via a two-thread pipeline - records are processed in
         // arrival order, so results are bit-identical to the single-threaded
         // path. --jobs 1 keeps everything on one thread.
-        let stats = if util::njobs(self.flag_jobs) > 1 {
-            self.compute_pipelined(&sel, rdr, record_count as usize, weight_col_idx)
+        let (stats, records_read) = if util::njobs(self.flag_jobs) > 1 {
+            self.compute_pipelined(&sel, rdr, capacity_hint as usize, weight_col_idx)
         } else {
             self.compute(
                 &sel,
                 &mut rdr,
                 usize::MAX,
-                record_count as usize,
+                capacity_hint as usize,
                 weight_col_idx,
             )
         };
-        Ok((headers, stats))
+        Ok((headers, stats, records_read as u64))
     }
 
     /// Computes statistics for CSV data using a multi-threaded parallel approach.
@@ -2719,7 +2737,7 @@ impl Args {
         &self,
         whitelist: &str,
         idx_count: u64,
-    ) -> CliResult<(csv::ByteRecord, Vec<Stats>)> {
+    ) -> CliResult<(csv::ByteRecord, Vec<Stats>, u64)> {
         // N.B. This method doesn't handle the case when the number of records
         // is zero correctly. So we use `sequential_stats` instead.
         if idx_count == 0 {
@@ -2846,7 +2864,10 @@ impl Args {
                 // Drop it deliberately instead of relying on an unchecked unwrap.
                 let _ = send.send((
                     i,
-                    args.compute(&sel, &mut idx, chunk_size, chunk_size, weight_idx),
+                    // .0 = the chunk's Stats; the per-chunk record count is not
+                    // needed here - the index count is authoritative for this path
+                    args.compute(&sel, &mut idx, chunk_size, chunk_size, weight_idx)
+                        .0,
                 ));
             });
         }
@@ -2862,7 +2883,9 @@ impl Args {
         // Workers start in chunk order, so results arrive roughly in order and
         // the out-of-order buffer stays small - collecting everything before
         // merging would hold all nchunks results resident simultaneously.
-        Ok((headers, merge_chunks_in_order(&recv, nchunks)?))
+        // idx_count is authoritative here: the chunks partition exactly that many
+        // records, so it already equals the number of records accumulated.
+        Ok((headers, merge_chunks_in_order(&recv, nchunks)?, idx_count))
     }
 
     /// Converts a vector of `Stats` objects into CSV records for output.
@@ -2949,7 +2972,9 @@ impl Args {
     ///
     /// # Returns
     ///
-    /// A vector of `Stats` objects, one for each selected column
+    /// A tuple of (a vector of `Stats` objects, one for each selected column; the number of
+    /// records actually read). The count is the authoritative record count for the
+    /// unindexed path - see the note in `run()`.
     ///
     /// # Process
     ///
@@ -2983,7 +3008,7 @@ impl Args {
         limit: usize,
         expected_rows: usize,
         weight_col_idx: Option<usize>,
-    ) -> Vec<Stats> {
+    ) -> (Vec<Stats>, usize) {
         let sel_len = sel.len();
         let mut stats = self.new_stats(sel_len, expected_rows);
 
@@ -3018,7 +3043,7 @@ impl Args {
                 prefer_dmy,
             );
         }
-        stats
+        (stats, records_read)
     }
 
     /// Processes one CSV record: extracts the optional weight and feeds every
@@ -3090,13 +3115,16 @@ impl Args {
     /// sortiness and t-digest state - is bit-identical to the single-threaded
     /// `compute`. Batches are recycled through a return channel, so
     /// steady-state processing does no per-record or per-batch allocation.
+    ///
+    /// Returns the accumulated `Stats` together with the number of records read,
+    /// counted on the consumer side so it matches `compute`'s count exactly.
     fn compute_pipelined(
         &self,
         sel: &Selection,
         rdr: csv::Reader<Box<dyn std::io::Read + Send + 'static>>,
         expected_rows: usize,
         weight_col_idx: Option<usize>,
-    ) -> Vec<Stats> {
+    ) -> (Vec<Stats>, usize) {
         const BATCH_SIZE: usize = 1024;
         // one being filled + one being drained + two in flight
         const NBATCHES: usize = 4;
@@ -3121,6 +3149,10 @@ impl Args {
                     .unwrap_unchecked();
             }
         }
+
+        // counted on the CONSUMER side: this sums exactly the rows fed to add_row,
+        // so the count cannot drift from what was actually accumulated.
+        let mut records_read = 0_usize;
 
         std::thread::scope(|s| {
             // reader thread: fills recycled batches in place
@@ -3149,6 +3181,7 @@ impl Args {
 
             // consumer (this thread): the same per-row hot loop as compute()
             for (batch, n) in &full_rx {
+                records_read += n;
                 for row in &batch[..n] {
                     Self::add_row(
                         &mut stats,
@@ -3164,7 +3197,7 @@ impl Args {
                 let _ = empty_tx.send(batch);
             }
         });
-        stats
+        (stats, records_read)
     }
 
     /// Processes headers and handles weight column exclusion if needed.

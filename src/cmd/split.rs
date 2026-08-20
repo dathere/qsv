@@ -214,9 +214,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if let Some(kb_size) = args.flag_kb_size {
         args.split_by_kb_size(kb_size)
     } else {
-        // we're splitting by rowcount or by number of chunks
-        match args.rconfig().indexed()? {
-            Some(idx) => args.parallel_split(&idx),
+        // we're splitting by rowcount or by number of chunks.
+        // BIND the Config rather than using a temporary: for special-format inputs
+        // (.gz/.zip/.parquet/...) it lazily resolves a converted temp file, and
+        // `parallel_split`'s workers must share that same temp - and the index built
+        // beside it - rather than each resolving one of their own.
+        let rconfig = args.rconfig();
+        match rconfig.indexed()? {
+            Some(idx) => args.parallel_split(&idx, &rconfig),
             None => args.sequential_split(),
         }
     }
@@ -404,7 +409,13 @@ impl Args {
         Ok(())
     }
 
-    fn parallel_split(&self, idx: &Indexed<fs::File, fs::File>) -> CliResult<()> {
+    // `rconfig` must be the SAME (already-resolved) Config that produced `idx`.
+    // For special-format inputs (e.g. `.zip`) each `Config` lazily resolves to its
+    // own temp path; sharing this one means every worker re-opens the index next to
+    // the same temp - and decompresses the input once, not once per chunk. Rebuilding
+    // `self.rconfig()` inside a worker resolves a different temp with no sibling
+    // `.idx`. See `frequency::parallel_ftables` for the same invariant.
+    fn parallel_split(&self, idx: &Indexed<fs::File, fs::File>, rconfig: &Config) -> CliResult<()> {
         let chunk_size;
         let idx_count = idx.count();
 
@@ -429,12 +440,13 @@ impl Args {
         (0..nchunks)
             .into_par_iter()
             .try_for_each(|i| -> CliResult<()> {
-                let conf = self.rconfig();
+                // Only the Config is shared - each worker still opens its OWN
+                // Indexed handle here, because each seeks to a different offset.
                 // safety: indexed() returned Some at the call site; the index is
                 // guaranteed to exist because parallel_split is only entered when
                 // the caller observed a valid index. A failed re-open here is a
                 // genuine I/O error and should propagate.
-                let mut idx = conf.indexed()?.ok_or_else(|| {
+                let mut idx = rconfig.indexed()?.ok_or_else(|| {
                     crate::CliError::Other("indexed CSV vanished during parallel split".to_string())
                 })?;
                 let headers = idx.byte_headers()?;

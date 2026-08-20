@@ -1852,3 +1852,48 @@ fn split_filter_multiword_command_windows() {
     wrk.assert_success(&mut cmd);
     assert!(wrk.path("name with space.bak").exists());
 }
+
+// issue #4446: a special-format input (.gz/.zip/.parquet/...) is read through a CONVERTED
+// temp file, and every Config instance converts to its OWN temp path. When an autoindex is
+// created, `parallel_split`'s workers used to rebuild `self.rconfig()`, resolve a DIFFERENT
+// temp, and find no index beside it - failing with "io error: No such file or directory" and
+// writing zero chunk files. Workers now share the parent's already-resolved Config.
+//
+// QSV_AUTOINDEX_SIZE=1 forces the autoindex, and `--size 10` on the 100-row fixture yields
+// 10 chunks: `parallel_split` short-circuits to `sequential_split` when nchunks == 1, which
+// would exercise nothing.
+#[test]
+fn split_from_zip_parallel_autoindexed() {
+    let wrk = Workdir::new("split_from_zip_parallel_autoindexed");
+    let zip_file = wrk.load_test_file("boston311-100.csv.zip");
+    let csv_file = wrk.load_test_file("boston311-100.csv");
+
+    let split_into = |input: &str, outdir: &str| {
+        wrk.create_subdir(outdir).unwrap();
+        let mut cmd = wrk.command("split");
+        cmd.env("QSV_AUTOINDEX_SIZE", "1")
+            .args(["--size", "10"])
+            .arg(wrk.path(outdir))
+            .arg(input);
+        wrk.assert_success(&mut cmd);
+    };
+
+    split_into(&zip_file, "zipout");
+    split_into(&csv_file, "csvout");
+
+    // every chunk must exist and be byte-identical to the same split of the uncompressed
+    // input. Asserting only exit 0 would also pass if the fix silently went sequential.
+    for start in (0..100).step_by(10) {
+        let from_zip = wrk
+            .read_to_string(&format!("zipout/{start}.csv"))
+            .unwrap_or_else(|e| panic!("missing chunk zipout/{start}.csv: {e}"));
+        let from_csv = wrk
+            .read_to_string(&format!("csvout/{start}.csv"))
+            .unwrap_or_else(|e| panic!("missing chunk csvout/{start}.csv: {e}"));
+        assert_eq!(
+            from_zip, from_csv,
+            "chunk {start}.csv from a .zip input must equal the same chunk from the uncompressed \
+             input"
+        );
+    }
+}

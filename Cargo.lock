@@ -6234,7 +6234,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "simd-json",
+ "simd-json 0.17.3",
  "simdutf8",
  "tokio",
  "zmij",
@@ -6258,7 +6258,7 @@ dependencies = [
  "polars-compute",
  "polars-error",
  "polars-utils",
- "simd-json",
+ "simd-json 0.17.3",
  "streaming-iterator",
  "zmij",
 ]
@@ -6992,7 +6992,7 @@ dependencies = [
  "serde_urlencoded",
  "serial_test",
  "sha2 0.11.0",
- "simd-json",
+ "simd-json 0.18.0",
  "simdutf8",
  "smallvec",
  "snap",
@@ -8642,6 +8642,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e32d7ab2678282d21e53374fbead7119b7eacbede73685dcaac472870a29a11c"
 dependencies = [
  "ahash 0.8.12",
+ "halfbrown",
+ "ref-cast",
+ "serde",
+ "serde_json",
+ "simdutf8",
+ "value-trait",
+]
+
+[[package]]
+name = "simd-json"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b4c2bab24c48682e93509b5afc39f1f6ef2fbc1ebccab917c8b0534b3007ae4"
+dependencies = [
  "halfbrown",
  "ref-cast",
  "serde",

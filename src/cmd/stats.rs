@@ -851,8 +851,14 @@ const MS_IN_DAY_INT: i64 = 86_400_000;
 // 5 decimal places give us sub-second precision
 const DAY_DECIMAL_PLACES: u32 = 5;
 
-// maximum number of output columns
-const MAX_STAT_COLUMNS: usize = 48;
+// maximum number of output columns, i.e. the width of `stats_headers()` under
+// --everything: 29 always-on + mad + 9 quartile + 2 cardinality + 6 mode +
+// percentiles + zero_padded_numeric. Used only as a capacity hint, so a
+// mismatch costs a reallocation rather than correctness. `stats_headers()`
+// debug_asserts that it never emits MORE than this; the other direction (a
+// constant left too large) is deliberately not asserted, because --everything
+// is not a fixed width - `--quantile-method approx` drops `mad` and yields 48.
+const MAX_STAT_COLUMNS: usize = 49;
 
 // HyperLogLog precision parameter for `--cardinality-method approx`. lg_k=12
 // gives ~1.5% relative standard error and ~5KB per column at the dense Hll8
@@ -3127,6 +3133,19 @@ impl Args {
             fields.push("zero_padded_numeric");
         }
 
+        // MAX_STAT_COLUMNS is the capacity hint for `fields` here and for the
+        // per-column StringRecord in `to_record()`. Adding a stats column without
+        // bumping it silently costs a reallocation on every --everything row, so
+        // pin the undercount direction here: any debug-build run of
+        // `stats --everything` checks it. An over-large constant is NOT caught -
+        // it cannot be, since --everything's width varies (48 under
+        // `--quantile-method approx`, which turns `mad` off).
+        debug_assert!(
+            fields.len() <= MAX_STAT_COLUMNS,
+            "stats_headers() emitted {} columns, exceeding MAX_STAT_COLUMNS ({MAX_STAT_COLUMNS})",
+            fields.len()
+        );
+
         csv::StringRecord::from(fields)
     }
 }
@@ -3784,7 +3803,6 @@ struct Stats {
 
     // Hot counters - all 8-byte aligned, accessed frequently
     nullcount:    u64, // 8 bytes - frequently updated counter
-    sum_stotlen:  u64, // 8 bytes - frequently updated counter
     total_weight: f64, // 8 bytes - frequently updated for weighted stats
 
     // Configuration flags (accessed once during initialization, cold after init)
@@ -4427,7 +4445,6 @@ impl Stats {
             zpn_has_value: false,
             max_precision: 0,
             nullcount: 0,
-            sum_stotlen: 0,
             total_weight: 0.0,
             which,
             sum,
@@ -5757,7 +5774,6 @@ impl Commute for Stats {
         self.max_precision = self.max_precision.max(other.max_precision);
         self.which.merge(other.which);
         self.nullcount += other.nullcount;
-        self.sum_stotlen = self.sum_stotlen.saturating_add(other.sum_stotlen);
         self.sum.merge(other.sum);
         self.modes.merge(other.modes);
         self.unsorted_stats.merge(other.unsorted_stats);
@@ -6341,7 +6357,7 @@ impl TypedMinMax {
                         #[allow(clippy::cast_precision_loss)]
                         util::round_num(
                             (*max - *min) as f64 / MS_IN_DAY,
-                            u32::max(round_places, 5),
+                            u32::max(round_places, DAY_DECIMAL_PLACES),
                         ),
                         sort_order.to_string(),
                         util::round_num(sortiness, round_places),

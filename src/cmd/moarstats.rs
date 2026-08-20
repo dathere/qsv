@@ -754,9 +754,14 @@ fn join_datasets_internal(
             .collect();
         drop(joined_rdr);
 
-        let mut additional_rdr = csv::ReaderBuilder::new()
-            .has_headers(true)
-            .from_path(Path::new(additional_input))
+        // Read through `Config`, not a raw `from_path`: a special-format secondary
+        // (.gz/.zip/.parquet/...) is only decompressed on Config's read path, so a raw
+        // open would parse the compressed container and fail with "invalid utf-8 near
+        // byte index 0". Config also picks up the inner file's real delimiter (e.g. a
+        // .tsv inside a .zip). The `qsv join` subprocess above already handles these.
+        let additional_input_owned = additional_input.to_string();
+        let mut additional_rdr = Config::new(Some(&additional_input_owned))
+            .reader()
             .map_err(|e| {
                 CliError::Other(format!(
                     "Failed to open secondary input to validate header ({additional_input}): {e}"
@@ -4164,13 +4169,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         input_path
     };
 
+    // A special-format input (.gz/.zip/.parquet/.jsonl/...) is only decompressed when it is
+    // read through `Config`. Several passes below hand a path straight to
+    // `csv::ReaderBuilder::from_path` (and to Configs built inside worker threads), which
+    // would parse the COMPRESSED CONTAINER as CSV - erroring with "invalid utf-8 near byte
+    // index 0", or worse, silently yielding empty headers where the error is swallowed.
+    //
+    // Bind ONE Config and resolve through it. `resolved_path()` caches in that Config's
+    // `Arc<OnceLock>`, so every call returns the SAME converted temp; two throwaway
+    // `Config::new(..).resolved_path()` calls would each convert to a temp of their own.
+    // For an ordinary input this is just `path` unchanged and nothing is converted.
+    let actual_input_path_str = actual_input_path
+        .to_str()
+        .ok_or_else(|| CliError::Other("Invalid input path".to_string()))?
+        .to_string();
+    let read_conf = Config::new(Some(&actual_input_path_str));
+    let resolved_input = read_conf.resolved_path()?;
+    // The path to READ DATA from. `actual_input_path` is deliberately left alone: the
+    // `qsv stats` subprocess below must still receive the ORIGINAL path, both because
+    // `stats` does its own conversion and because the stats cache is keyed on it.
+    let read_input_path: &Path = resolved_input.as_deref().unwrap_or(actual_input_path);
+
     // Auto-create index if --advanced or --bivariate is set and index doesn't exist
     if args.flag_advanced || args.flag_bivariate {
-        let actual_input_path_str = actual_input_path
-            .to_str()
-            .ok_or_else(|| CliError::Other("Invalid input path".to_string()))?
-            .to_string();
-        let rconfig = Config::new(Some(&actual_input_path_str));
+        // index the RESOLVED path - an index beside the compressed source is useless,
+        // since the data actually read is the converted temp
+        let rconfig = read_conf.clone();
         let indexed_result = rconfig.indexed()?;
 
         if indexed_result.is_none() && !rconfig.is_stdin() {
@@ -4184,7 +4208,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                  to enable parallel processing..."
             );
 
-            match util::create_index_for_file(actual_input_path, &rconfig) {
+            match util::create_index_for_file(read_input_path, &rconfig) {
                 Ok(()) => {
                     log::info!("Index created successfully for statistics computation.");
                 },
@@ -5098,7 +5122,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let (outlier_fields, outlier_names, kga_fields, kga_names) = {
         let mut csv_rdr = ReaderBuilder::new()
             .has_headers(true)
-            .from_path(actual_input_path)?;
+            .from_path(read_input_path)?;
         let csv_headers = csv_rdr.headers()?.clone();
         // First occurrence wins for duplicate header names, matching the prior
         // `csv_headers.iter().position(|h| h == field_name)` (first-match) semantics
@@ -5141,7 +5165,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             outlier_names,
             kga_fields,
             kga_names,
-            actual_input_path,
+            read_input_path,
             args.flag_jobs,
             args.flag_epsilon,
         )?
@@ -5149,7 +5173,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Compute Shannon Entropy for all fields
     let entropy_stats = if new_column_indices.contains_key("shannon_entropy") {
-        compute_all_entropy(actual_input_path)?
+        compute_all_entropy(read_input_path)?
     } else {
         HashMap::new()
     };
@@ -5164,11 +5188,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Get record count to check for all-unique fields (cardinality == rowcount)
         let record_count: Option<u64> = {
-            let actual_input_path_str = actual_input_path
-                .to_str()
-                .ok_or_else(|| CliError::Other("Invalid input path".to_string()))?
-                .to_string();
-            let rconfig = Config::new(Some(&actual_input_path_str));
+            // the resolved Config, so the count is of the DATA, not the compressed container
+            let rconfig = read_conf.clone();
             if let Ok(Some(idx)) = rconfig.indexed() {
                 Some(idx.count())
             } else if !rconfig.is_stdin() {
@@ -5198,7 +5219,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let read_csv_headers = || -> CliResult<StringRecord> {
             let mut csv_rdr = ReaderBuilder::new()
                 .has_headers(true)
-                .from_path(actual_input_path)?;
+                .from_path(read_input_path)?;
             Ok(csv_rdr.headers()?.clone())
         };
 
@@ -5213,7 +5234,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // than silently dropping bivariate pairs (lines below `continue`
             // on a header miss) and emitting "primary-only" join-corrupt
             // output.
-            util::sync_subprocess_output(actual_input_path)?;
+            util::sync_subprocess_output(read_input_path)?;
             let missing_cols = |hdrs: &StringRecord| -> Vec<String> {
                 let header_set: std::collections::HashSet<&str> = hdrs.iter().collect();
                 stats_field_names
@@ -5229,7 +5250,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     "Joined CSV header missing columns {missing:?} present in the stats output; \
                      re-syncing joined CSV and re-reading its header once"
                 );
-                util::sync_subprocess_output(actual_input_path)?;
+                util::sync_subprocess_output(read_input_path)?;
                 headers = read_csv_headers()?;
                 missing = missing_cols(&headers);
                 if !missing.is_empty() {
@@ -5525,7 +5546,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // earlier revision opened input_path twice.
             let primary_headers: Vec<String> = csv::ReaderBuilder::new()
                 .has_headers(true)
-                .from_path(input_path)
+                .from_path(read_input_path)
                 .ok()
                 .and_then(|mut r| r.headers().ok().cloned())
                 .map(|h| h.iter().map(std::string::ToString::to_string).collect())
@@ -5676,10 +5697,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .unwrap_or_default();
             let mut pairable_secondary_only: Vec<(String, String, usize)> = Vec::new();
             for add_path in &additional_inputs_for_guard {
-                let Ok(mut add_rdr) = csv::ReaderBuilder::new()
-                    .has_headers(true)
-                    .from_path(add_path)
-                else {
+                // via `Config` so a special-format secondary is decompressed first; a raw
+                // open would fail here and be SWALLOWED by the `else { continue }`,
+                // silently dropping that input's pairable columns from the guard.
+                let Ok(mut add_rdr) = Config::new(Some(add_path)).reader() else {
                     continue;
                 };
                 let Ok(add_hdrs) = add_rdr.headers() else {
@@ -5735,11 +5756,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             HashMap::new()
         } else {
             // Setup progress bar if requested and not reading from stdin
-            let actual_input_path_str = actual_input_path
-                .to_str()
-                .ok_or_else(|| CliError::Other("Invalid input path".to_string()))?
-                .to_string();
-            let rconfig_bivariate = Config::new(Some(&actual_input_path_str));
+            let rconfig_bivariate = read_conf.clone();
             let show_progress = (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR"))
                 && !rconfig_bivariate.is_stdin();
             let progress = if show_progress {
@@ -5789,7 +5806,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let result = compute_all_bivariatestats(
                 field_pairs,
                 &field_names,
-                actual_input_path,
+                read_input_path,
                 progress.as_ref(),
                 cardinality_threshold,
                 stats_config,

@@ -6292,7 +6292,7 @@ impl TypedMinMax {
                         #[allow(clippy::cast_precision_loss)]
                         util::round_num(
                             (*max - *min) as f64 / MS_IN_DAY,
-                            u32::max(round_places, 5),
+                            u32::max(round_places, DAY_DECIMAL_PLACES),
                         ),
                         sort_order.to_string(),
                         util::round_num(sortiness, round_places),

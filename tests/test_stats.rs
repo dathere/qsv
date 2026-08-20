@@ -8926,3 +8926,76 @@ fn stats_epoch_date_is_included_in_date_minmax() {
     );
     assert_eq!(typ, "String");
 }
+
+#[test]
+fn stats_autoindex_is_skipped_for_special_format_inputs() {
+    // A special-format input (.gz/.zip/.parquet/.jsonl/...) is read through a CONVERTED temp
+    // file, and every Config instance converts to its OWN temp path. Autoindexing that temp
+    // file created an index only the parent Config could find: `stats`' parallel workers each
+    // build a fresh Config, resolved a DIFFERENT temp path, found no index beside it, and every
+    // worker panicked - yielding a stats file with headers and ZERO rows at exit code 0.
+    // A .zip fixture rather than .gz on purpose: zip support is non-optional in every build,
+    // so this test also runs under `-F lite`, where the flate2 codec is absent.
+    use std::io::Write;
+
+    let wrk = Workdir::new("stats_autoindex_special_format");
+
+    let mut plain = String::from("a,b\n");
+    for i in 0..300 {
+        plain.push_str(&format!("{i},{}\n", i * 2));
+    }
+    wrk.create_from_string("sf.csv", &plain);
+
+    let zip_path = wrk.path("sf.zip");
+    let zf = std::fs::File::create(&zip_path).unwrap();
+    let mut zw = zip::ZipWriter::new(zf);
+    zw.start_file("sf.csv", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zw.write_all(plain.as_bytes()).unwrap();
+    zw.finish().unwrap();
+
+    // -105 is negative (so |it| becomes the autoindex size, and 105 bytes is far below the
+    // fixture) and ends in 5 (so the autoindex is cleaned up afterwards)
+    let stats_of = |input: &str, out: &str| -> String {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("-E")
+            .args(["--cache-threshold", "-105"])
+            .args(["--output", wrk.path(out).to_str().unwrap()])
+            .arg(input);
+        wrk.assert_success(&mut cmd);
+        std::fs::read_to_string(wrk.path(out)).unwrap()
+    };
+
+    let zip_stats = stats_of("sf.zip", "zip.csv");
+    assert!(
+        zip_stats.lines().count() > 1,
+        "a compressed input produced a stats file with no data rows - every parallel worker \
+         failed to find the autoindex built against a different temp file"
+    );
+
+    // and the numbers must match the identical uncompressed input exactly
+    let plain_stats = stats_of("sf.csv", "plain.csv");
+    assert_eq!(
+        zip_stats, plain_stats,
+        "stats for a .zip input must equal stats for the same data uncompressed"
+    );
+
+    // no autoindex is created beside a special-format input...
+    assert!(
+        !wrk.path("sf.zip.idx").exists(),
+        "a converted temp file must never be autoindexed"
+    );
+
+    // ...while ordinary inputs still autoindex. -104 is negative (autoindex) but does not end
+    // in 5, so the index is left in place for this assertion.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("-E")
+        .args(["--cache-threshold", "-104"])
+        .args(["--output", wrk.path("plain2.csv").to_str().unwrap()])
+        .arg("sf.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(
+        wrk.path("sf.csv.idx").exists(),
+        "autoindexing must still work for ordinary CSV inputs"
+    );
+}

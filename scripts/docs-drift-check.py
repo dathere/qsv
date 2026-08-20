@@ -9,8 +9,10 @@ flags any documentation file that contradicts them:
      `all_features`, and `qsvmcp` (source: Cargo.toml).
   2. Source-file line counts referenced in contributor docs as
      "~NNN lines" (source: wc -l on the named .rs file).
-  3. The MAX_STAT_COLUMNS constant referenced as "up to N (summary) statistics"
-     (source: src/cmd/stats.rs).
+  3. The documented stat-column total, referenced as "up to N (summary)
+     statistics", derived from the MAX_STAT_COLUMNS constant
+     (source: src/cmd/stats.rs). See STAT_COLUMN_* below - the constant and the
+     documented total are NOT the same number.
   4. The 🤯 "loads entire CSV into memory" command set duplicated between
      docs/PERFORMANCE.md (prose) and docs/PERFORMANCE_TLDR.md (bullets);
      both docs must list the same commands.
@@ -134,6 +136,32 @@ MAX_STAT_COLUMNS_RE = re.compile(
     r"^\s*(?:pub\s+)?const\s+MAX_STAT_COLUMNS\s*:\s*\w+\s*=\s*(\d+)\s*;",
     re.MULTILINE,
 )
+
+
+# MAX_STAT_COLUMNS and the number the docs quote are two DIFFERENT quantities,
+# and conflating them is a live trap - they were equal only while the constant
+# was wrong (it read 48; `stats --everything` emits 49 columns).
+#
+#   MAX_STAT_COLUMNS is the width of the WIDEST SINGLE stats record. It
+#   INCLUDES the two leading `field`/`type` identifier columns, and it counts
+#   only one of `median` / `q2_median`, which are mutually exclusive: `median`
+#   is emitted under --median alone, `q2_median` replaces it under --quartiles
+#   or --everything.
+#
+#   The docs quote the UNION of stat names across all flag combinations,
+#   explicitly "beyond the `field`/`type` identifiers" - so they exclude both
+#   identifiers and include BOTH members of that mutually exclusive pair.
+#
+# Hence: documented_total = MAX_STAT_COLUMNS - IDENTIFIER_COLUMNS + MEDIAN_PAIR_EXTRA
+# Today: 49 - 2 + 1 = 48. Verified against the binary:
+#   `stats --everything` -> 49 columns (no `median`, has `q2_median`)
+#   union with `stats --median`, minus field/type -> 48 stat names.
+IDENTIFIER_COLUMNS = 2  # `field`, `type` - always emitted, never counted as stats
+MEDIAN_PAIR_EXTRA = 1  # `median` XOR `q2_median`: the union has both, a record has one
+
+
+def documented_stat_total(max_stat_columns: int) -> int:
+    return max_stat_columns - IDENTIFIER_COLUMNS + MEDIAN_PAIR_EXTRA
 
 
 def get_max_stat_columns() -> int:
@@ -380,7 +408,8 @@ STAT_COLUMN_CHECKS: list[tuple[str, re.Pattern[str]]] = [
 
 
 def check_stat_columns(report: Report) -> None:
-    truth = get_max_stat_columns()
+    max_stat_columns = get_max_stat_columns()
+    truth = documented_stat_total(max_stat_columns)
     for doc_rel, pattern in STAT_COLUMN_CHECKS:
         doc = REPO_ROOT / doc_rel
         if not doc.exists():
@@ -406,7 +435,11 @@ def check_stat_columns(report: Report) -> None:
                 line=lineno,
                 category="stat-columns",
                 message=(
-                    f"MAX_STAT_COLUMNS is {truth}; doc still says {n}"
+                    f"documented stat total should be {truth} "
+                    f"(MAX_STAT_COLUMNS is {max_stat_columns}, minus "
+                    f"{IDENTIFIER_COLUMNS} identifier columns, plus "
+                    f"{MEDIAN_PAIR_EXTRA} for median/q2_median); "
+                    f"doc says {n}"
                 ),
             )
 

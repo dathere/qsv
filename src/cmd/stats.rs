@@ -642,6 +642,108 @@ impl StatsArgs {
     }
 }
 
+/// Deserialize a stat cell that is a JSON number in some caches and a JSON string in others.
+///
+/// `mean`, `q1`, `q2_median`, `q3` and the four fences are type-dependent RENDERINGS, exactly
+/// like `min`/`max`/`median`/`percentiles`: a numeric column carries a number, a Date/DateTime
+/// column carries an RFC3339 string. They are stored as the verbatim rendering and read as a
+/// number through the `*_f64()` accessors.
+///
+/// Accepting BOTH shapes is what keeps this from discarding caches: every `.data.jsonl` written
+/// before this fix carries a JSON number for these keys (the corrupt `0.0` for date columns), and
+/// those files stay on disk and still pass mtime validation after an upgrade. Rejecting them would
+/// silently regenerate every stats cache once - or forever, for a consumer that regenerates on a
+/// failed deserialize.
+fn de_stat_rendering<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct StatRenderingVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for StatRenderingVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a number, a string, or null")
+        }
+
+        fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            Ok(Some(v.to_owned()))
+        }
+
+        fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Self::Value, E> {
+            Ok(Some(v.to_string()))
+        }
+
+        fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
+            Ok(Some(v.to_string()))
+        }
+
+        fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(Some(v.to_string()))
+        }
+
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D2>(self, deserializer: D2) -> Result<Self::Value, D2::Error>
+        where
+            D2: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_any(StatRenderingVisitor)
+        }
+    }
+
+    deserializer.deserialize_any(StatRenderingVisitor)
+}
+
+/// Serialize a stat RENDERING as a JSON NUMBER when it reads as one, and as a string otherwise.
+///
+/// `StatsData` is not only deserialized from the cache - `profile`'s `build_dpps` serializes it
+/// straight back out with `serde_json::to_value`, and those values reach the DCAT-US v3 /
+/// Croissant / csvw projections. The derived `Serialize` for an `Option<String>` field would emit
+/// a numeric column's mean as `"42.5"` instead of `42.5`, changing published profile output. This
+/// keeps the numeric case byte-identical to when these fields were `Option<f64>`, while a Date /
+/// `DateTime` column's RFC3339 rendering (which cannot parse as f64) still goes out as a string.
+///
+/// Non-finite is deliberately serialized as a STRING rather than a number: JSON has no NaN or
+/// infinity literal, and `serialize_f64` would emit bare `NaN`, which is invalid JSON.
+fn ser_stat_rendering<S>(rendering: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match rendering {
+        None => serializer.serialize_none(),
+        Some(r) => match r.parse::<f64>() {
+            Ok(n) if n.is_finite() => serializer.serialize_f64(n),
+            _ => serializer.serialize_str(r),
+        },
+    }
+}
+
+/// Parse a stat RENDERING as an f64, or `None` when it is not a number (a Date/DateTime
+/// column's `mean`/quartiles/fences render as RFC3339 strings). Uses `str::parse` rather than
+/// a partial parser on purpose: a prefix parse would turn "2020-01-15" into 2020.
+///
+/// `field_type` gates the whole thing: a cache written BEFORE the rendering fix stores the
+/// coerced `0.0` for a Date/DateTime column, which would otherwise parse cleanly and hand a
+/// consumer the same fabricated zero this fix exists to remove. Such caches stay on disk and
+/// still pass mtime validation after an upgrade, so the read side has to refuse them rather than
+/// wait for a regeneration that may never come. A date column has no numeric quartile, whatever
+/// the cache claims.
+#[inline]
+fn stat_rendering_f64(rendering: Option<&String>, field_type: &str) -> Option<f64> {
+    if matches!(field_type, "Date" | "DateTime") {
+        return None;
+    }
+    rendering.and_then(|s| s.parse::<f64>().ok())
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Default, Debug)]
 pub struct StatsData {
     // NOT dead code, even though the writer now always emits `field`: stats caches
@@ -675,7 +777,15 @@ pub struct StatsData {
     pub stddev_length: Option<f64>,
     pub variance_length: Option<f64>,
     pub cv_length: Option<f64>,
-    pub mean: Option<f64>,
+    // String, like `min`/`max`/`median`: for a Date/DateTime column stats_to_records() emits
+    // an RFC3339 rendering here (e.g. "2010-12-06"), and typing it Float made the JSON
+    // conversion coerce that to 0.0. Read it as a number via `mean_f64()`.
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
+    pub mean: Option<String>,
     pub sem: Option<f64>,
     // same drift as `sortiness` above: emitted and typed, but absent here
     #[serde(default)]
@@ -701,15 +811,57 @@ pub struct StatsData {
     // aliasing would make a --median-only cache (no q1/q3) falsely satisfy ProfileSchema.
     #[serde(default)]
     pub median: Option<String>,
+    // `mad` and `iqr` are NOT renderings and deliberately stay f64: for a Date/DateTime column
+    // they are a COUNT OF DAYS (e.g. 259, 9884), not a date. Retyping them as String would
+    // corrupt them in the opposite direction - verified empirically across
+    // String/Boolean/NULL/Integer/Float/Date/DateTime columns.
     pub mad: Option<f64>,
-    pub lower_outer_fence: Option<f64>,
-    pub lower_inner_fence: Option<f64>,
-    pub q1: Option<f64>,
-    pub q2_median: Option<f64>,
-    pub q3: Option<f64>,
+    // The four fences and the three quartiles are POSITIONAL, so they render in the column's
+    // own units: a number for a numeric column, RFC3339 for a Date/DateTime one. Same treatment
+    // as `mean` above; read them as numbers via the `*_f64()` accessors.
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
+    pub lower_outer_fence: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
+    pub lower_inner_fence: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
+    pub q1: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
+    pub q2_median: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
+    pub q3: Option<String>,
     pub iqr: Option<f64>,
-    pub upper_inner_fence: Option<f64>,
-    pub upper_outer_fence: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
+    pub upper_inner_fence: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "de_stat_rendering",
+        serialize_with = "ser_stat_rendering"
+    )]
+    pub upper_outer_fence: Option<String>,
     pub skewness: Option<f64>,
     pub cardinality: u64,
     pub uniqueness_ratio: Option<f64>,
@@ -752,6 +904,87 @@ pub struct StatsData {
     pub median_mean_ratio: Option<f64>,
     #[serde(default)]
     pub normalized_entropy: Option<f64>,
+}
+
+impl StatsData {
+    /// Drop the fabricated zeros a PRE-FIX cache carries for a Date/DateTime column.
+    ///
+    /// Caches written before date renderings stopped being coerced store `0.0` for `mean`, the
+    /// quartiles and the fences on a date row. They stay on disk and still pass mtime validation
+    /// after an upgrade, so every consumer has to defend against them. `*_f64()` does that on the
+    /// read side, but `StatsData` is also serialized straight back out by `profile`'s
+    /// `build_dpps`, which would re-emit the zero into published DCAT-US v3 / Croissant output
+    /// (roborev 4328). Normalizing once at load makes every consumer agree.
+    ///
+    /// Only a rendering that reads as a NUMBER on a date row is dropped - a genuine RFC3339
+    /// rendering is untouched, so this is a no-op for any cache written after the fix.
+    pub fn normalize_stale_date_renderings(&mut self) {
+        if !matches!(self.r#type.as_str(), "Date" | "DateTime") {
+            return;
+        }
+        for rendering in [
+            &mut self.mean,
+            &mut self.q1,
+            &mut self.q2_median,
+            &mut self.q3,
+            &mut self.lower_outer_fence,
+            &mut self.lower_inner_fence,
+            &mut self.upper_inner_fence,
+            &mut self.upper_outer_fence,
+        ] {
+            if rendering.as_ref().is_some_and(|r| r.parse::<f64>().is_ok()) {
+                *rendering = None;
+            }
+        }
+    }
+
+    /// The numeric value of `mean`, or `None` when the column's mean is a date rendering.
+    #[inline]
+    pub fn mean_f64(&self) -> Option<f64> {
+        stat_rendering_f64(self.mean.as_ref(), &self.r#type)
+    }
+
+    /// The numeric value of `q1`, or `None` when it is a date rendering.
+    #[inline]
+    pub fn q1_f64(&self) -> Option<f64> {
+        stat_rendering_f64(self.q1.as_ref(), &self.r#type)
+    }
+
+    /// The numeric value of `q2_median`, or `None` when it is a date rendering.
+    #[inline]
+    pub fn q2_median_f64(&self) -> Option<f64> {
+        stat_rendering_f64(self.q2_median.as_ref(), &self.r#type)
+    }
+
+    /// The numeric value of `q3`, or `None` when it is a date rendering.
+    #[inline]
+    pub fn q3_f64(&self) -> Option<f64> {
+        stat_rendering_f64(self.q3.as_ref(), &self.r#type)
+    }
+
+    /// The numeric value of `lower_outer_fence`, or `None` when it is a date rendering.
+    #[inline]
+    pub fn lower_outer_fence_f64(&self) -> Option<f64> {
+        stat_rendering_f64(self.lower_outer_fence.as_ref(), &self.r#type)
+    }
+
+    /// The numeric value of `lower_inner_fence`, or `None` when it is a date rendering.
+    #[inline]
+    pub fn lower_inner_fence_f64(&self) -> Option<f64> {
+        stat_rendering_f64(self.lower_inner_fence.as_ref(), &self.r#type)
+    }
+
+    /// The numeric value of `upper_inner_fence`, or `None` when it is a date rendering.
+    #[inline]
+    pub fn upper_inner_fence_f64(&self) -> Option<f64> {
+        stat_rendering_f64(self.upper_inner_fence.as_ref(), &self.r#type)
+    }
+
+    /// The numeric value of `upper_outer_fence`, or `None` when it is a date rendering.
+    #[inline]
+    pub fn upper_outer_fence_f64(&self) -> Option<f64> {
+        stat_rendering_f64(self.upper_outer_fence.as_ref(), &self.r#type)
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -851,8 +1084,14 @@ const MS_IN_DAY_INT: i64 = 86_400_000;
 // 5 decimal places give us sub-second precision
 const DAY_DECIMAL_PLACES: u32 = 5;
 
-// maximum number of output columns
-const MAX_STAT_COLUMNS: usize = 48;
+// maximum number of output columns, i.e. the width of `stats_headers()` under
+// --everything: 29 always-on + mad + 9 quartile + 2 cardinality + 6 mode +
+// percentiles + zero_padded_numeric. Used only as a capacity hint, so a
+// mismatch costs a reallocation rather than correctness. `stats_headers()`
+// debug_asserts that it never emits MORE than this; the other direction (a
+// constant left too large) is deliberately not asserted, because --everything
+// is not a fixed width - `--quantile-method approx` drops `mad` and yields 48.
+const MAX_STAT_COLUMNS: usize = 49;
 
 // HyperLogLog precision parameter for `--cardinality-method approx`. lg_k=12
 // gives ~1.5% relative standard error and ~5KB per column at the dense Hll8
@@ -1250,12 +1489,31 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_percentile_list = "20,40,60,80".to_string();
     }
 
-    // validate percentile list
-    let percentile_list = args.flag_percentile_list.split(',').collect::<Vec<&str>>();
-    for p in percentile_list {
-        if fast_float2::parse::<f64, &[u8]>(p.trim().as_bytes()).is_err() {
+    // Validate the percentile list: every token must be a FINITE number in 1..=100.
+    //
+    // Accepting any parseable f64 was not permissive, it was silently WRONG: `to_record` casts
+    // each token `as u8` (saturating) while the output LABEL kept the original string, so the
+    // two disagreed and every case exited 0.
+    //   --percentile-list 150   -> rank exceeds total weight, emitted the pre-filled "150: 0"
+    //   --percentile-list nan   -> saturating cast to 0, emitted "nan: <p0>"
+    //   --percentile-list -5    -> likewise "-5: <p0>"
+    //   --percentile-list 0     -> p0 is not a percentile
+    //
+    // A FRACTIONAL value in range stays accepted (`99.9`, `50.0`): it is truncated to the
+    // percentile actually computed, and `to_record` now labels it with that percentile instead
+    // of the token as typed, so the label can no longer disagree with the value.
+    //
+    // NOTE: `deciles`/`quintiles` are expanded ABOVE, so they reach this loop already spelled
+    // out as integer lists and keep working.
+    for p in args.flag_percentile_list.split(',') {
+        let token = p.trim();
+        let valid = matches!(
+            fast_float2::parse::<f64, &[u8]>(token.as_bytes()),
+            Ok(pct) if pct.is_finite() && (1.0..=100.0).contains(&pct)
+        );
+        if !valid {
             return fail_incorrectusage_clierror!(
-                "Invalid percentile list: {}: {}",
+                "Invalid percentile list: {}: `{}` is not a percentile between 1 and 100.",
                 args.flag_percentile_list,
                 p
             );
@@ -2053,7 +2311,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // if the cache threshold zero or is a negative number ending in 5,
             // delete both the index file and the stats cache file
             if autoindex_set {
-                let index_file = path.with_extension("csv.idx");
+                // `util::idx_path` APPENDS ".idx"; `with_extension("csv.idx")` REPLACED the
+                // input's extension, so a `data.tsv` autoindex (written as `data.tsv.idx`) was
+                // looked for at `data.csv.idx` and survived the cleanup it asked for. The
+                // removal only log::warn!s on failure, so the leak was silent. It happened to
+                // work for `.csv` inputs by coincidence.
+                let index_file = util::idx_path(&path);
                 log::debug!("deleting index file: {}", index_file.display());
                 if std::fs::remove_file(index_file.clone()).is_err() {
                     // fails silently if it can't remove the index file
@@ -2255,6 +2518,75 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     Ok(())
+}
+
+/// Merge per-chunk results in CHUNK order, failing if any chunk never arrives.
+///
+/// Merging in chunk order rather than completion order is required, not stylistic: the
+/// order-dependent stats (`sortiness` / `sort_order` pair counts at chunk boundaries) are only
+/// deterministic - and only equal to the sequential result - when chunks are folded in file
+/// order. Completion-order merging made `sortiness` vary from run to run.
+///
+/// Merging happens INCREMENTALLY as results arrive: each chunk is folded in (and freed) as soon
+/// as every earlier chunk has been merged. Workers start in chunk order, so results arrive
+/// roughly in order and the out-of-order buffer stays small - collecting everything first would
+/// hold all `nchunks` results resident simultaneously.
+///
+/// # The chunk-count check
+///
+/// A worker that panics - a corrupt, stale or concurrently-deleted index is the realistic cause,
+/// and the worker's `expect()`s anticipate exactly that - never sends its chunk. The receive loop
+/// then simply ends when the last sender drops. Without this check that is SILENT: every later
+/// chunk stays stranded in `pending`, `next_chunk` stops at the gap, and the caller gets a prefix
+/// of the file's statistics - or, when chunk 0 is the one that died, an EMPTY result. `run()` then
+/// wrote, printed and CACHED that partial answer with exit code 0, so a subsequent run would reuse
+/// statistics computed from a fraction of the file.
+///
+/// This is live in shipped binaries, not a debug-only artifact: the release profiles build with
+/// `panic = "unwind"`, so a panicking pool worker unwinds its own thread and leaves the process
+/// running.
+fn merge_chunks_in_order<T: Commute + Send>(
+    recv: &crossbeam_channel::Receiver<(usize, Vec<T>)>,
+    nchunks: usize,
+) -> CliResult<Vec<T>> {
+    let mut pending: HashMap<usize, Vec<T>> = HashMap::default();
+    let mut next_chunk = 0_usize;
+    let mut merged: Option<Vec<T>> = None;
+
+    for (i, chunk_stats) in recv {
+        pending.insert(i, chunk_stats);
+        while let Some(chunk_stats) = pending.remove(&next_chunk) {
+            match merged {
+                // Merge column-by-column in parallel: columns are independent, and each
+                // column still sees chunks in file order, so results are identical to a
+                // serial merge. This keeps the merge from becoming a serial tail - merging
+                // a high-cardinality column's Frequencies map hash-inserts every unique
+                // value of the incoming chunk.
+                Some(ref mut m) => m
+                    .par_iter_mut()
+                    .zip(chunk_stats)
+                    .for_each(|(acc, chunk_col)| acc.merge(chunk_col)),
+                None => merged = Some(chunk_stats),
+            }
+            next_chunk += 1;
+        }
+    }
+
+    if next_chunk != nchunks {
+        return fail_clierror!(
+            "Parallel stats is incomplete - only {next_chunk} of {nchunks} chunks were merged \
+             ({stranded} arrived but could not be merged in order). A worker failed, most likely \
+             because the index is corrupt, stale, or was deleted while stats was running. \
+             Refusing to write partial statistics. Re-create the index with `qsv index` or re-run \
+             with --jobs 1.",
+            stranded = pending.len()
+        );
+    }
+
+    // unreachable while nchunks >= 1 (the caller routes idx_count == 0 to sequential_stats), but
+    // returning an error beats the `unwrap_or_default()` this replaced, which turned "no chunks
+    // at all" into a silently empty - and cacheable - result.
+    merged.ok_or_else(|| CliError::Other("Parallel stats produced no chunks to merge.".to_string()))
 }
 
 impl Args {
@@ -2530,30 +2862,7 @@ impl Args {
         // Workers start in chunk order, so results arrive roughly in order and
         // the out-of-order buffer stays small - collecting everything before
         // merging would hold all nchunks results resident simultaneously.
-        let mut pending: HashMap<usize, Vec<Stats>> = HashMap::default();
-        let mut next_chunk = 0_usize;
-        let mut merged: Option<Vec<Stats>> = None;
-        for (i, chunk_stats) in &recv {
-            pending.insert(i, chunk_stats);
-            while let Some(chunk_stats) = pending.remove(&next_chunk) {
-                match merged {
-                    // Merge column-by-column in parallel: columns are
-                    // independent, and each column still sees chunks in file
-                    // order, so results are identical to a serial merge. This
-                    // keeps the merge from becoming a serial tail - merging a
-                    // high-cardinality column's Frequencies map hash-inserts
-                    // every unique value of the incoming chunk.
-                    Some(ref mut m) => m
-                        .par_iter_mut()
-                        .zip(chunk_stats)
-                        .for_each(|(acc, chunk_col)| acc.merge(chunk_col)),
-                    None => merged = Some(chunk_stats),
-                }
-                next_chunk += 1;
-            }
-        }
-        // in the event of a channel error, we will return an empty vector
-        Ok((headers, merged.unwrap_or_default()))
+        Ok((headers, merge_chunks_in_order(&recv, nchunks)?))
     }
 
     /// Converts a vector of `Stats` objects into CSV records for output.
@@ -2729,11 +3038,23 @@ impl Args {
         infer_boolean: bool,
         prefer_dmy: bool,
     ) {
-        // Extract weight value if weight column is specified
-        // in case of a parse error, invalid weight defaults to 1.0
+        // Extract weight value if weight column is specified.
+        // Per the --weight docs, a missing or non-numeric weight defaults to 1.0.
+        //
+        // NON-FINITE counts as non-numeric here. fast_float2 parses "NaN" and "inf"
+        // SUCCESSFULLY, so `unwrap_or(1.0)` never fired for them and the value flowed into the
+        // accumulators: NaN then slipped past `add_weighted`'s `w <= 0.0` guard (every NaN
+        // comparison is false) and permanently poisoned sum_weights and weighted_mean, so
+        // weighted mean/sem/stddev/variance/cv for the ENTIRE column came out NaN. The sibling
+        // guards (`total_weight` and the weighted-quantile buffer) use `weight > 0.0`, which
+        // NaN fails, so they silently dropped the row instead - the same cell making the
+        // moments disagree with the quantiles.
         let weight = if let Some(widx) = weight_col_idx {
             if widx < row.len() {
-                fast_float2::parse::<f64, &[u8]>(row.get(widx).unwrap_or(b"1.0")).unwrap_or(1.0)
+                match fast_float2::parse::<f64, &[u8]>(row.get(widx).unwrap_or(b"1.0")) {
+                    Ok(w) if w.is_finite() => w,
+                    _ => 1.0,
+                }
             } else {
                 1.0
             }
@@ -3114,6 +3435,19 @@ impl Args {
             fields.push("zero_padded_numeric");
         }
 
+        // MAX_STAT_COLUMNS is the capacity hint for `fields` here and for the
+        // per-column StringRecord in `to_record()`. Adding a stats column without
+        // bumping it silently costs a reallocation on every --everything row, so
+        // pin the undercount direction here: any debug-build run of
+        // `stats --everything` checks it. An over-large constant is NOT caught -
+        // it cannot be, since --everything's width varies (48 under
+        // `--quantile-method approx`, which turns `mad` off).
+        debug_assert!(
+            fields.len() <= MAX_STAT_COLUMNS,
+            "stats_headers() emitted {} columns, exceeding MAX_STAT_COLUMNS ({MAX_STAT_COLUMNS})",
+            fields.len()
+        );
+
         csv::StringRecord::from(fields)
     }
 }
@@ -3406,7 +3740,18 @@ fn init_date_inference(
         let whitelist_lower = flag_whitelist.to_lowercase();
         log::info!("inferring dates with date-whitelist: {whitelist_lower}");
 
-        let whitelist: SmallVec<[&str; 8]> = whitelist_lower.split(',').map(str::trim).collect();
+        // Empty tokens are DROPPED, not matched: `"".contains("")` is always true, so a single
+        // stray empty token - `--dates-whitelist "date,"`, a trailing comma being the easy way to
+        // get one - made every column match and silently turned the whitelist into "all". That is
+        // the exact false positive the docs warn about for "all": a `note` column holding
+        // date-like strings gets typed Date even though the user restricted the whitelist to
+        // `date`. The sniff sentinel below already documents this `contains("")` trap; user-
+        // supplied empties were simply never filtered.
+        let whitelist: SmallVec<[&str; 8]> = whitelist_lower
+            .split(',')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .collect();
         headers
             .iter()
             .map(|header| {
@@ -3771,7 +4116,6 @@ struct Stats {
 
     // Hot counters - all 8-byte aligned, accessed frequently
     nullcount:    u64, // 8 bytes - frequently updated counter
-    sum_stotlen:  u64, // 8 bytes - frequently updated counter
     total_weight: f64, // 8 bytes - frequently updated for weighted stats
 
     // Configuration flags (accessed once during initialization, cold after init)
@@ -3876,7 +4220,14 @@ impl WeightedOnlineStats {
     /// - For harmonic mean: accumulate `w_i` / `x_i` (only if `x_i` != 0)
     #[inline]
     fn add_weighted(&mut self, x: f64, w: f64) {
-        if w <= 0.0 {
+        // The explicit NaN test is the point: a bare `w <= 0.0` is FALSE for NaN, so one NaN
+        // weight slipped into the accumulator and poisoned the column's weighted moments
+        // forever. This is exactly equivalent to the sibling sites' `weight > 0.0` gate
+        // (`total_weight` and the weighted-quantile buffer), spelled out rather than written
+        // as `!(w > 0.0)` so the NaN case is visible instead of implied. add_row now
+        // normalizes non-finite weights to 1.0 before they reach here, so this is the belt to
+        // that braces - but all three sites now agree, which is what stops them drifting.
+        if w.is_nan() || w <= 0.0 {
             return;
         }
 
@@ -4251,7 +4602,9 @@ fn weighted_percentiles(
 ///
 /// # Behavior
 ///
-/// * **`TDate`**: Returns only the date component (YYYY-MM-DD)
+/// * **`TDate`**: Returns only the date component - normally `YYYY-MM-DD`, but chrono renders a
+///   year outside `0..=9999` in expanded signed form (`+12000-01-01`, `-10000-01-01`), which the
+///   Tukey fences of a wide-spread date column can reach
 /// * **`TDateTime`**: Returns full RFC3339 format with time and timezone
 /// * **Invalid Timestamps**: Returns default RFC3339 format for invalid timestamps
 #[inline]
@@ -4263,7 +4616,12 @@ fn timestamp_ms_to_rfc3339(timestamp: i64, typ: FieldType) -> String {
     // if type = Date, only return the date component
     // do not return the time component
     if typ == TDate {
-        return date_val[..10].to_string();
+        // Split at the RFC3339 'T' separator rather than slicing a fixed 10 bytes: chrono
+        // renders a year outside 0..=9999 in EXPANDED form (`+12000-01-01T…`, `-10000-01-01T…`),
+        // which is more than 10 bytes before the 'T', so the fixed slice cut it mid-token and
+        // emitted `+12000-01-` as if it were a date. Reachable from ordinary data - a Date
+        // column with a wide spread pushes the Tukey fences (`q3 + 3*IQR`) past year 9999.
+        return date_val.split('T').next().unwrap_or(&date_val).to_string();
     }
     date_val
 }
@@ -4414,7 +4772,6 @@ impl Stats {
             zpn_has_value: false,
             max_precision: 0,
             nullcount: 0,
-            sum_stotlen: 0,
             total_weight: 0.0,
             which,
             sum,
@@ -4576,7 +4933,7 @@ impl Stats {
         if self.which.zero_padded_numeric && !self.zpn_disqualified && b"" != sample {
             if sample_type == TFloat
                 || sample.iter().all(u8::is_ascii_digit)
-                || is_zero_padded_float(sample)
+                || is_zero_padded_number(sample)
                 || fast_float2::parse::<f64, &[u8]>(sample).is_ok()
             {
                 // numeric-shaped: a freshly-parsed plain float (sample_type == TFloat — the common
@@ -5635,15 +5992,25 @@ impl Stats {
         if self.which.percentiles {
             match typ {
                 TInteger | TFloat | TDate | TDateTime => {
-                    // Parse percentile list, preserving both original labels and u8 values
+                    // Parse the percentile list into the u8 percentiles to compute and the
+                    // labels to emit. The label is DERIVED from the truncated percentile, not
+                    // from the token as typed, so the two can never disagree.
                     let (percentile_labels, percentile_list): (Vec<String>, Vec<u8>) = self
                         .which
                         .percentile_list
                         .split(',')
                         .filter_map(|p: &str| {
-                            fast_float2::parse(p.trim())
-                                .ok()
-                                .map(|p_val: f64| (p.trim().to_string(), p_val as u8))
+                            fast_float2::parse(p.trim()).ok().map(|p_val: f64| {
+                                // Label the percentile ACTUALLY computed, not the token as
+                                // typed. The value is selected by this truncating cast, so
+                                // keeping the original string made the label disagree with it:
+                                // `--percentile-list 99.9` on 1000 rows emitted the p99 value
+                                // (990) under a "99.9" label, and `010` under an "010" label.
+                                // run() has already rejected anything outside 1..=100, so this
+                                // cast cannot saturate.
+                                let pct = p_val as u8;
+                                (pct.to_string(), pct)
+                            })
                         })
                         .unzip();
 
@@ -5744,7 +6111,6 @@ impl Commute for Stats {
         self.max_precision = self.max_precision.max(other.max_precision);
         self.which.merge(other.which);
         self.nullcount += other.nullcount;
-        self.sum_stotlen = self.sum_stotlen.saturating_add(other.sum_stotlen);
         self.sum.merge(other.sum);
         self.modes.merge(other.modes);
         self.unsorted_stats.merge(other.unsorted_stats);
@@ -5873,8 +6239,13 @@ enum FieldType {
 /// tolerated, though codes are typically unsigned. Pure trailing-zero codes (`7.10`) are out of
 /// scope by design — they're indistinguishable from rounded measurements without the original
 /// string.
+///
+/// A decimal point is NOT required: `+007` is as padded as `007.1`. It reaches this function
+/// because `atoi_simd` rejects a leading `+` (`SKIP_PLUS` is false) so the integer path - and its
+/// leading-zero check - never sees it. When a dot IS present it must still have digits after it,
+/// so `007.` stays rejected.
 #[inline]
-fn is_zero_padded_float(sample: &[u8]) -> bool {
+fn is_zero_padded_number(sample: &[u8]) -> bool {
     let b = match sample.first() {
         Some(b'+' | b'-') => &sample[1..],
         _ => sample,
@@ -5898,7 +6269,12 @@ fn is_zero_padded_float(sample: &[u8]) -> bool {
             _ => return false, // any other byte disqualifies
         }
     }
-    seen_dot && frac_len > 0
+    // A dot is not required. `+007` reaches this function because atoi_simd rejects a leading
+    // '+' (SKIP_PLUS is false) while fast_float2 accepts it, so the integer path above - and its
+    // padding check - never sees it. Requiring a fraction here let `+007` fall through as the
+    // float 7.0, silently numeric-izing a padded code. When a dot IS present it must still have
+    // fraction digits, so `007.` stays disqualified.
+    !seen_dot || frac_len > 0
 }
 
 impl FieldType {
@@ -5930,9 +6306,17 @@ impl FieldType {
         if current_type != FieldType::TFloat
             && let Ok(samp_int) = atoi_simd::parse::<i64, false, false>(sample)
         {
-            // Check for integer, with leading zero check for strings like zip codes
-            // safety: we know sample is not null as we checked earlier
-            if samp_int == 0 || unsafe { *sample.get_unchecked(0) != b'0' } {
+            // Check for integer, with leading zero check for strings like zip codes.
+            //
+            // The sign is stripped first, mirroring `is_zero_padded_number`'s prefix handling: a
+            // sign is not part of the padding, so `-007` is as zero-padded as `007`. Testing
+            // byte 0 directly saw `b'-'`, concluded "not padded", and typed `-007` as the
+            // integer -7 - dropping the padding from min/max and from --zero-padded-numeric.
+            let unsigned = match sample.first() {
+                Some(b'+' | b'-') => &sample[1..],
+                _ => sample,
+            };
+            if samp_int == 0 || unsigned.first().is_none_or(|&b| b != b'0') {
                 // note that we still return samp_int as f64 even if it's an integer
                 // as the qsv-stats crate expects a float value for integer fields
                 #[allow(clippy::cast_precision_loss)]
@@ -5948,9 +6332,9 @@ impl FieldType {
             // Zero-padded floats (007.1, 05.10 — ICD-9 / Dewey / HS codes) are kept as String
             // to preserve their leading zeros, mirroring the zero-padded-integer rule above (a
             // 0-then-digit integer part is padding; a plain 0.5 / 7.1 is a real number). The
-            // first-byte check inside is_zero_padded_float() makes the common (non-padded) case
+            // first-byte check inside is_zero_padded_number() makes the common (non-padded) case
             // a couple of byte comparisons.
-            if is_zero_padded_float(sample) {
+            if is_zero_padded_number(sample) {
                 return (FieldType::TString, 0, 0.0);
             }
             return (FieldType::TFloat, 0, float_sample);
@@ -6193,9 +6577,20 @@ impl TypedMinMax {
             // we use "_" here instead of "TDate | TDateTime" for the match to avoid
             // the overhead of matching on the OR value, however minor
             _ => {
-                if int_val != 0 {
-                    self.dates.add(int_val);
-                }
+                // No `int_val != 0` guard: timestamp 0 is 1970-01-01T00:00:00Z, a real date and
+                // a common placeholder in real data. Skipping it dropped the epoch from date
+                // min/max/range and from the sort_order/sortiness sample, so a column holding
+                // ["1970-01-01", "2020-06-15"] reported min=2020-06-15 with range 0.
+                //
+                // 0 cannot mean "no value" HERE, which is what made the guard look necessary:
+                //   - an empty sample returns above, before this match
+                //   - `from_sample` only reports TDate/TDateTime when a date actually parsed, and
+                //     only ever pairs them with that date's timestamp
+                //   - any non-date sample merges the column type OUT of this arm - both (TDate,
+                //     TInteger) and (TDate, TString) fall through to TString - and TNull leaves the
+                //     type alone but is unreachable here per the first point
+                // so reaching this arm means a date parsed, and 0 means exactly the epoch.
+                self.dates.add(int_val);
             },
         }
     }
@@ -6328,7 +6723,7 @@ impl TypedMinMax {
                         #[allow(clippy::cast_precision_loss)]
                         util::round_num(
                             (*max - *min) as f64 / MS_IN_DAY,
-                            u32::max(round_places, 5),
+                            u32::max(round_places, DAY_DECIMAL_PLACES),
                         ),
                         sort_order.to_string(),
                         util::round_num(sortiness, round_places),
@@ -6349,5 +6744,91 @@ impl Commute for TypedMinMax {
         self.dates.merge(other.dates);
         self.strings.merge(other.strings);
         self.str_len.merge(other.str_len);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use stats::Commute;
+
+    use super::merge_chunks_in_order;
+
+    /// Minimal `Commute` stand-in: merging sums, so the merged total tells us exactly which
+    /// chunks were folded in. Using a toy type rather than `Stats` keeps the test about the
+    /// merge loop's completeness accounting, which is what F3 is about.
+    #[derive(Debug, PartialEq)]
+    struct Count(u64);
+
+    impl Commute for Count {
+        fn merge(&mut self, other: Self) {
+            self.0 += other.0;
+        }
+    }
+
+    /// Send `chunks` as (index, one-column vec) pairs, then close the channel.
+    fn chunks_channel(chunks: &[(usize, u64)]) -> crossbeam_channel::Receiver<(usize, Vec<Count>)> {
+        let (send, recv) = crossbeam_channel::bounded(chunks.len().max(1));
+        for &(i, v) in chunks {
+            send.send((i, vec![Count(v)])).unwrap();
+        }
+        drop(send);
+        recv
+    }
+
+    #[test]
+    fn merge_chunks_in_order_merges_every_chunk() {
+        // all 4 chunks present, delivered OUT of order - the merge must still be in chunk order
+        // and must fold in all of them
+        let recv = chunks_channel(&[(2, 4), (0, 1), (3, 8), (1, 2)]);
+        let merged = merge_chunks_in_order(&recv, 4).unwrap();
+        assert_eq!(merged, vec![Count(15)], "1+2+4+8: every chunk merged");
+    }
+
+    #[test]
+    fn merge_chunks_in_order_rejects_a_missing_middle_chunk() {
+        // chunk 2 never arrives - the worker panicked. Chunk 3 is stranded in `pending`, and
+        // the old code returned the 0..=1 PREFIX with exit 0, which run() then cached.
+        let recv = chunks_channel(&[(0, 1), (1, 2), (3, 8)]);
+        let err = merge_chunks_in_order(&recv, 4)
+            .expect_err("a missing chunk must not yield a partial result");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("only 2 of 4 chunks"),
+            "the error should say how much of the file was actually merged, got: {msg}"
+        );
+        assert!(
+            msg.contains("1 arrived but could not be merged"),
+            "the error should account for stranded chunks, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn merge_chunks_in_order_rejects_a_missing_first_chunk() {
+        // the worst case: chunk 0 died, so `merged` stays None and the old
+        // `merged.unwrap_or_default()` returned an EMPTY Vec<Stats> - statistics for zero rows,
+        // written and cached with exit code 0.
+        let recv = chunks_channel(&[(1, 2), (2, 4)]);
+        let err = merge_chunks_in_order(&recv, 3)
+            .expect_err("a missing first chunk must not yield an empty result");
+        assert!(err.to_string().contains("only 0 of 3 chunks"), "got: {err}");
+    }
+
+    #[test]
+    fn merge_chunks_in_order_rejects_a_missing_last_chunk() {
+        // the subtlest case: every chunk that arrives merges cleanly and `pending` is EMPTY at
+        // the end, so nothing looks wrong locally - only the count reveals the truncation.
+        let recv = chunks_channel(&[(0, 1), (1, 2)]);
+        let err = merge_chunks_in_order(&recv, 3).expect_err("a truncated tail must be caught");
+        assert!(err.to_string().contains("only 2 of 3 chunks"), "got: {err}");
+    }
+
+    #[test]
+    fn merge_chunks_in_order_accepts_a_single_chunk() {
+        let recv = chunks_channel(&[(0, 42)]);
+        assert_eq!(
+            merge_chunks_in_order(&recv, 1).unwrap(),
+            vec![Count(42)],
+            "the common small-file case must not trip the completeness check"
+        );
     }
 }

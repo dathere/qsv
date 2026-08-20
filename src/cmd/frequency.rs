@@ -2683,7 +2683,7 @@ impl Args {
                     stats
                         .stddev
                         .or(stats.range)
-                        .or(stats.mean)
+                        .or(stats.mean_f64())
                         .filter(|&s| s > 0.0)
                 })
                 // Use a scale-aware tolerance with a minimum absolute epsilon to handle
@@ -3858,7 +3858,7 @@ impl Args {
                 add_stat(field_stats, "cv_length", sr.cv_length);
 
                 // Numeric-specific stats
-                add_stat(field_stats, "mean", sr.mean);
+                add_stat(field_stats, "mean", sr.mean.as_deref());
                 add_stat(field_stats, "sem", sr.sem);
                 add_stat(field_stats, "stddev", sr.stddev);
                 add_stat(field_stats, "variance", sr.variance);
@@ -4594,6 +4594,22 @@ fn evaluate_stats_filter(
             )?
         };
     }
+    // The eight type-dependent RENDERINGS (`mean`, the three quartiles, the four fences) are
+    // STORED as strings so a Date/DateTime column's RFC3339 value survives the stats cache, but
+    // they are BOUND here as numbers via their `*_f64()` accessors: an existing `--stats-filter`
+    // expression like `q1 > 100` must keep working. A date column now binds nil rather than the
+    // 0.0 the JSONL conversion used to fabricate for it.
+    macro_rules! bind_rendering {
+        ($name:ident, $accessor:ident) => {
+            set(
+                stringify!($name),
+                stats_data
+                    .$accessor()
+                    .into_lua(lua)
+                    .map_err(|e| format!("Failed to convert {}: {e}", stringify!($name)))?,
+            )?
+        };
+    }
 
     // Basic fields
     bind_str!(field);
@@ -4629,7 +4645,7 @@ fn evaluate_stats_filter(
     bind!(cv_length);
 
     // Numeric stats
-    bind!(mean);
+    bind_rendering!(mean, mean_f64);
     bind!(sem);
     bind!(stddev);
     bind!(variance);
@@ -4649,14 +4665,14 @@ fn evaluate_stats_filter(
 
     // Distribution stats
     bind!(mad);
-    bind!(lower_outer_fence);
-    bind!(lower_inner_fence);
-    bind!(q1);
-    bind!(q2_median);
-    bind!(q3);
+    bind_rendering!(lower_outer_fence, lower_outer_fence_f64);
+    bind_rendering!(lower_inner_fence, lower_inner_fence_f64);
+    bind_rendering!(q1, q1_f64);
+    bind_rendering!(q2_median, q2_median_f64);
+    bind_rendering!(q3, q3_f64);
     bind!(iqr);
-    bind!(upper_inner_fence);
-    bind!(upper_outer_fence);
+    bind_rendering!(upper_inner_fence, upper_inner_fence_f64);
+    bind_rendering!(upper_outer_fence, upper_outer_fence_f64);
     bind!(skewness);
 
     // Mode / Antimode

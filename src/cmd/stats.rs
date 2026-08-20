@@ -3738,7 +3738,6 @@ struct Stats {
 
     // Hot counters - all 8-byte aligned, accessed frequently
     nullcount:    u64, // 8 bytes - frequently updated counter
-    sum_stotlen:  u64, // 8 bytes - frequently updated counter
     total_weight: f64, // 8 bytes - frequently updated for weighted stats
 
     // Configuration flags (accessed once during initialization, cold after init)
@@ -4381,7 +4380,6 @@ impl Stats {
             zpn_has_value: false,
             max_precision: 0,
             nullcount: 0,
-            sum_stotlen: 0,
             total_weight: 0.0,
             which,
             sum,
@@ -5711,7 +5709,6 @@ impl Commute for Stats {
         self.max_precision = self.max_precision.max(other.max_precision);
         self.which.merge(other.which);
         self.nullcount += other.nullcount;
-        self.sum_stotlen = self.sum_stotlen.saturating_add(other.sum_stotlen);
         self.sum.merge(other.sum);
         self.modes.merge(other.modes);
         self.unsorted_stats.merge(other.unsorted_stats);

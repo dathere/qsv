@@ -778,9 +778,10 @@ impl Config {
     /// Check if the index file exists and is newer than the CSV file.
     /// If so, return the CSV file handle and the index file handle. If not, return None.
     /// Unless the CSV's file size >= `QSV_AUTOINDEX_SIZE`, then we'll create an index
-    /// automatically. Stale indices (CSV newer than index) are rebuilt automatically, but only
-    /// on the `(Some(path), None)` branch that resolves the index path internally; the
-    /// `auto_indexed` and explicit-`(path, idx_path)` branches skip the staleness recheck.
+    /// automatically. Stale indices (CSV newer than index) are rebuilt automatically on the
+    /// `(Some(path), None)` branch that resolves the index path internally; only the
+    /// explicit-`(path, idx_path)` branch skips the staleness recheck, since the caller
+    /// supplied both paths and is trusted.
     pub fn index_files(&self) -> io::Result<Option<(csv::Reader<fs::File>, fs::File)>> {
         if self.special_format != SpecialFormat::Unknown {
             return self.prepared_for_read()?.index_files();

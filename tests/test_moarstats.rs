@@ -6882,3 +6882,91 @@ fn moarstats_join_inputs_from_zip_secondary() {
         wrk.assert_success(&mut cmd);
     }
 }
+
+// roborev 4361 (Medium), on top of #4460: the direct header reads used a bare
+// `csv::ReaderBuilder`, which defaults to a COMMA delimiter. A tab-delimited input - including
+// a `.tsv` extracted from a `.zip`, which #4460 made readable for the first time - had its
+// whole header parsed as ONE field, so no field name matched and every outlier/KGA field was
+// SILENTLY dropped: empty gini/atkinson/outlier columns, exit 0, no warning.
+//
+// Reading through the bound `Config` picks up the resolved temp's real delimiter. Note this
+// was ALSO broken for a plain `.tsv` (no compression involved), so both are asserted here.
+#[test]
+fn moarstats_advanced_tsv_delimiter_is_honored() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("moarstats_advanced_tsv_delimiter_is_honored");
+
+    let mut tsv = String::from("id\tcat\tval\n");
+    let mut csv = String::from("id,cat,val\n");
+    for i in 0..200 {
+        let val = (i * 37) % 999 + 1;
+        tsv.push_str(&format!("{i}\tc{}\t{val}\n", i % 7));
+        csv.push_str(&format!("{i},c{},{val}\n", i % 7));
+    }
+    wrk.create_from_string("t.tsv", &tsv);
+    wrk.create_from_string("plain.csv", &csv);
+
+    let zip_path = wrk.path("tz.zip");
+    let zf = std::fs::File::create(&zip_path).unwrap();
+    let mut zw = zip::ZipWriter::new(zf);
+    zw.start_file("t.tsv", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zw.write_all(tsv.as_bytes()).unwrap();
+    zw.finish().unwrap();
+
+    let advanced_stats_of = |input: &str, sidecar: &str| -> String {
+        let mut cmd = wrk.command("moarstats");
+        cmd.arg("--advanced").arg(input);
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string(sidecar).unwrap()
+    };
+
+    // the sidecar is named from the input's file STEM, so `tz.zip` -> `tz.stats.csv` and
+    // `t.tsv` -> `t.stats.csv`. Deliberately distinct basenames: naming the zip `t.zip` would
+    // make both runs write `t.stats.csv` and clobber each other.
+    let from_zip = advanced_stats_of("tz.zip", "tz.stats.csv");
+    let from_tsv = advanced_stats_of("t.tsv", "t.stats.csv");
+    let from_csv = advanced_stats_of("plain.csv", "plain.stats.csv");
+
+    // the delimiter-sensitive columns must actually be POPULATED - the bug left them empty
+    // while still exiting 0, so an equality-only assertion between two broken runs would pass
+    let gini_of = |content: &str| -> String {
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(content.as_bytes());
+        let headers = rdr.headers().unwrap().clone();
+        let idx = get_column_index(&headers, "gini_coefficient")
+            .expect("gini_coefficient column missing");
+        for rec in rdr.records() {
+            let rec = rec.unwrap();
+            if rec.get(0) == Some("val") {
+                return get_field_value(&rec, idx).unwrap_or_default();
+            }
+        }
+        String::new()
+    };
+
+    let gini = gini_of(&from_csv);
+    assert!(
+        !gini.is_empty(),
+        "the CSV control produced no gini_coefficient - fixture no longer exercises the advanced \
+         stats"
+    );
+    assert_eq!(
+        gini_of(&from_zip),
+        gini,
+        "a .tsv inside a .zip must yield the same gini_coefficient as the same data as CSV; empty \
+         here means the header was parsed with the wrong delimiter"
+    );
+    assert_eq!(
+        gini_of(&from_tsv),
+        gini,
+        "a plain .tsv must yield the same gini_coefficient as the same data as CSV"
+    );
+
+    assert_eq!(
+        from_zip, from_tsv,
+        "a .tsv in a .zip must equal the bare .tsv"
+    );
+}

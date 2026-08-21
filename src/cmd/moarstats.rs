@@ -4190,6 +4190,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // `stats` does its own conversion and because the stats cache is keyed on it.
     let read_input_path: &Path = resolved_input.as_deref().unwrap_or(actual_input_path);
 
+    // The PRIMARY input's own Config. Differs from `read_conf` only under --join-inputs, where
+    // `actual_input_path` is the JOINED temp: the bivariate guard below needs the primary's own
+    // header to tell which joined columns are exclusively SECONDARY. Reading the joined header
+    // there would mark every column "primary", leaving `pairable_secondary_only` empty and
+    // silently disabling that guard.
+    //
+    // When not joining this IS the same input, so `read_conf` is reused rather than built afresh -
+    // a second Config would resolve a SECOND converted temp (its own `Arc<OnceLock>`).
+    let primary_conf = if temp_joined_path.is_some() {
+        Config::new(Some(&input_path_str))
+    } else {
+        read_conf.clone()
+    };
+
     // Auto-create index if --advanced or --bivariate is set and index doesn't exist
     if args.flag_advanced || args.flag_bivariate {
         // index the RESOLVED path - an index beside the compressed source is useless,
@@ -5120,9 +5134,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // instead of two independent full-file reads. A single header read maps each
     // field name to its column index (dropping fields not present in the CSV).
     let (outlier_fields, outlier_names, kga_fields, kga_names) = {
-        let mut csv_rdr = ReaderBuilder::new()
-            .has_headers(true)
-            .from_path(read_input_path)?;
+        // through `read_conf`, NOT a bare `ReaderBuilder`: a raw builder defaults to a COMMA
+        // delimiter, so a tab/semicolon-delimited input (including a `.tsv` extracted from a
+        // `.zip`) parses its whole header as ONE field. No field name then matches, and every
+        // outlier/KGA field is SILENTLY dropped - empty gini/atkinson/outlier columns with no
+        // error. `read_conf` carries the resolved temp's real delimiter.
+        let mut csv_rdr = read_conf.reader()?;
         let csv_headers = csv_rdr.headers()?.clone();
         // First occurrence wins for duplicate header names, matching the prior
         // `csv_headers.iter().position(|h| h == field_name)` (first-match) semantics
@@ -5216,10 +5233,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Read the input/joined CSV header to map field names to column
         // indices. Wrapped in a closure so the joined-input path can retry
         // the read after an fsync.
+        // via `read_conf` so the resolved temp's real delimiter is used (see the outlier/KGA
+        // header read above); a bare ReaderBuilder would assume a comma.
         let read_csv_headers = || -> CliResult<StringRecord> {
-            let mut csv_rdr = ReaderBuilder::new()
-                .has_headers(true)
-                .from_path(read_input_path)?;
+            let mut csv_rdr = read_conf.reader()?;
             Ok(csv_rdr.headers()?.clone())
         };
 
@@ -5544,9 +5561,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Read the primary's header ONCE. Used to compute both
             // primary_positions and primary_has_pairable below; the
             // earlier revision opened input_path twice.
-            let primary_headers: Vec<String> = csv::ReaderBuilder::new()
-                .has_headers(true)
-                .from_path(read_input_path)
+            let primary_headers: Vec<String> = primary_conf
+                .reader()
                 .ok()
                 .and_then(|mut r| r.headers().ok().cloned())
                 .map(|h| h.iter().map(std::string::ToString::to_string).collect())

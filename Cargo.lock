@@ -6949,6 +6949,7 @@ dependencies = [
  "libc",
  "log",
  "magika",
+ "memchr",
  "memmap2",
  "mimalloc",
  "minijinja",

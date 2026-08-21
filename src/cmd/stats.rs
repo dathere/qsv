@@ -2133,11 +2133,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
             }
 
-            // we need to count the number of records in the file to calculate sparsity and
-            // cardinality
-            //
             // NOTE: the count obtained here is only a CAPACITY HINT for the per-column
-            // accumulators. The authoritative record_count - the one that seeds
+            // accumulators - on the unindexed path it is an ESTIMATE (or 0 when unused).
+            // The authoritative record_count - the one that seeds
             // RECORD_COUNT and therefore every per-record denominator in to_record()
             // (sparsity, uniqueness_ratio, the <ALL_UNIQUE> antimode sentinel) - is the
             // count RETURNED by the compute pass, i.e. the number of records actually
@@ -2150,9 +2148,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // blank lines.
             let (headers, stats, record_count) = match indexed_result {
                 None => {
-                    // without an index, we need to count the number of records in the file
-                    // safety: we know util::count_rows() will not return an Err
-                    let capacity_hint = util::count_rows(&rconfig).unwrap();
+                    // Without an index, the hint used to come from a full
+                    // util::count_rows() pre-pass, reading the file twice just for a
+                    // preallocation size (issue #4457; the wasted scan was ~30% of a
+                    // plain qsvlite run). Instead: skip it entirely when Stats::new
+                    // doesn't consume the hint (the plain-stats default), otherwise
+                    // estimate the row count from the file size and the average
+                    // on-disk size of the first sampled records.
+                    let capacity_hint = if args.which_stats().uses_capacity_hint() {
+                        estimate_record_count(&rconfig)
+                    } else {
+                        0
+                    };
                     args.sequential_stats(&resolved_whitelist, capacity_hint, &rconfig)
                 },
                 Some(idx) => {
@@ -3528,6 +3535,75 @@ impl Args {
     }
 }
 
+/// Estimates the number of records in an unindexed input WITHOUT scanning the
+/// whole file, for use as the accumulator capacity hint (issue #4457).
+///
+/// Reads up to `RECORD_COUNT_SAMPLE_SIZE` records, tracking the reader's byte
+/// position so the average record size is the exact on-disk size (delimiters,
+/// quotes and line terminators included) of the sampled records. If EOF arrives
+/// first, the count read so far IS the exact record count. Otherwise the
+/// estimate is `data_bytes / avg_record_size`.
+///
+/// The estimate is a HINT ONLY - it is never a read limit (`Stats::new`
+/// accumulators grow organically past it). The final estimate is padded up 5%
+/// because the cost asymmetry favors mild overshoot: `Vec::with_capacity`
+/// reserves without touching pages (an unfilled tail costs virtual space, not
+/// RSS), while even a 1% undershoot makes every dense column's `Unsorted` Vec
+/// realloc-DOUBLE at the estimate - a copy plus ~2x capacity (measured +12MB
+/// RSS on a 1M-row `-E` run from a 0.6% undershoot; the pad removed it). Any
+/// error degrades to the records counted so far (or 0): a genuinely unreadable
+/// input fails moments later in the compute pass with the real error.
+///
+/// NOT related to `calculate_avg_record_size`/`estimate_record_memory` below:
+/// those estimate the in-MEMORY footprint per record for chunk sizing, not
+/// on-disk bytes.
+fn estimate_record_count(rconfig: &Config) -> u64 {
+    const RECORD_COUNT_SAMPLE_SIZE: u64 = 1_000;
+
+    // resolve special-format inputs to the converted temp so the file size
+    // measures the delimited DATA, not the compressed container. The temp is
+    // lazily created once and cached in the Config, so the sampling reader
+    // below and the compute pass reuse it.
+    let Ok(prepared) = rconfig.prepared_for_read() else {
+        return 0;
+    };
+    let Some(path) = &prepared.path else {
+        return 0;
+    };
+    let Ok(file_size) = std::fs::metadata(path).map(|m| m.len()) else {
+        return 0;
+    };
+    let Ok(mut rdr) = prepared.reader() else {
+        return 0;
+    };
+
+    let data_start = if prepared.no_headers {
+        0
+    } else {
+        if rdr.byte_headers().is_err() {
+            return 0;
+        }
+        rdr.position().byte()
+    };
+
+    let mut record = csv::ByteRecord::new();
+    let mut n: u64 = 0;
+    while n < RECORD_COUNT_SAMPLE_SIZE {
+        match rdr.read_byte_record(&mut record) {
+            Ok(true) => n += 1,
+            // EOF before the sample filled: n is the exact record count
+            Ok(false) => return n,
+            // partial sample; a hint from what we did read beats 0
+            Err(_) => return n,
+        }
+    }
+
+    let avg_record_size = ((rdr.position().byte() - data_start) / n).max(1);
+    let estimate = file_size.saturating_sub(data_start) / avg_record_size;
+    // 5% overshoot pad - see the doc comment for the cost asymmetry
+    estimate + estimate / 20
+}
+
 /// Helper function to calculate average record size from samples
 fn calculate_avg_record_size(samples: &[csv::ByteRecord], which_stats: &WhichStats) -> usize {
     if samples.is_empty() {
@@ -3999,6 +4075,21 @@ impl WhichStats {
             || self.percentiles
             || self.mode
             || self.cardinality
+    }
+
+    /// Whether `Stats::new` actually consumes the `expected_rows` capacity hint.
+    /// Mirrors the allocation conditions there: the exact modes/cardinality
+    /// tracker (`Frequencies`/weighted `HashMap`) and the exact quantile
+    /// accumulator (`Unsorted`/weighted `Vec`). When this is false, computing a
+    /// row count for the hint is pure waste (issue #4457). On big-endian the
+    /// t-digest engine is compiled out, so quantiles always take the exact path
+    /// there regardless of `approx_quantiles`.
+    fn uses_capacity_hint(&self) -> bool {
+        let exact_modes_tracker = self.mode || (self.cardinality && !self.approx_cardinality);
+        let needs_quantiles = self.quartiles || self.median || self.mad || self.percentiles;
+        let exact_quantiles =
+            needs_quantiles && (cfg!(target_endian = "big") || !self.approx_quantiles);
+        exact_modes_tracker || exact_quantiles
     }
 }
 
@@ -4754,13 +4845,14 @@ impl Stats {
         }
 
         // preallocate memory for the unsorted stats structs.
-        // expected_rows is the actual row count (sequential) or chunk size
-        // (parallel worker), used directly: every caller passes a real value,
-        // so 0 means a genuinely empty input - reserving anything for it would
-        // be waste. Vec::with_capacity(0) doesn't allocate, and the frequency
-        // map capacities below clamp to a small minimum. If a row count was
-        // ever underestimated (e.g. a partial count after a CSV read error),
-        // the accumulators simply grow organically - capacity is never a limit.
+        // expected_rows is the index row count (indexed sequential), the chunk
+        // size (parallel worker), or on the unindexed path an ESTIMATE from
+        // estimate_record_count - or 0 when no allocation below consumes it
+        // (see WhichStats::uses_capacity_hint). Vec::with_capacity(0) doesn't
+        // allocate, and the frequency map capacities below clamp to a small
+        // minimum. If the row count is underestimated (an estimate, or a
+        // partial count after a CSV read error), the accumulators simply grow
+        // organically - capacity is never a limit.
         // NOTE: this was previously read from RECORD_COUNT, which is only set
         // AFTER the compute pass, so a 10,000 fallback was always used (and
         // the repeat_n clone in new_stats discarded the reservation anyway).

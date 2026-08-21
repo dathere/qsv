@@ -9083,3 +9083,77 @@ fn stats_trailing_blank_line_denominator() {
         );
     }
 }
+
+// issue #4463: `Config::index_files` had an `AUTO_INDEXED` global fast path that skipped the
+// index-existence check whenever ANY file had been autoindexed in this process. The flag
+// carried no path, so it also fired for a DIFFERENT input whose sibling `.idx` did not exist -
+// and its `fs::File::open` was unconditional, so the result was a hard ENOENT rather than a
+// graceful "no index".
+//
+// `stats --infer-dates` is the reachable trigger: with the default `--dates-whitelist sniff`
+// it calls `sniff`, which builds its OWN Config. For a special-format input that Config
+// resolves its own converted temp and autoindexes it, setting the flag; `stats` then resolves
+// a SECOND temp whose sibling `.idx` does not exist, and the run died with
+// "io error: No such file or directory (os error 2)" at exit 1.
+//
+// `--jobs 1` on both sides: `stats` keeps its #4445 guard, so the .zip stays sequential while
+// an ordinary CSV autoindexes and goes parallel, and merging chunk variances is not bit-identical
+// to a single pass. That last-ulp difference is a pre-existing property of the parallel path,
+// not what this test is about.
+#[test]
+fn stats_infer_dates_autoindex_does_not_leak_across_configs() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("stats_infer_dates_autoindex_leak");
+
+    let mut plain = String::from("id,d,val\n");
+    for i in 0..400 {
+        plain.push_str(&format!(
+            "{i},2020-{:02}-{:02},{}\n",
+            (i % 12) + 1,
+            (i % 28) + 1,
+            (i * 7) % 500 + 1
+        ));
+    }
+    wrk.create_from_string("s.csv", &plain);
+
+    let zip_path = wrk.path("s.zip");
+    let zf = std::fs::File::create(&zip_path).unwrap();
+    let mut zw = zip::ZipWriter::new(zf);
+    zw.start_file("s.csv", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zw.write_all(plain.as_bytes()).unwrap();
+    zw.finish().unwrap();
+
+    // QSV_AUTOINDEX_SIZE=1 makes sniff's own Config autoindex its temp, which is what set the
+    // global flag. Without it the bug does not fire at all.
+    let stats_of = |input: &str, out: &str| -> String {
+        let mut cmd = wrk.command("stats");
+        cmd.env("QSV_AUTOINDEX_SIZE", "1")
+            .arg("--infer-dates")
+            .args(["--jobs", "1"])
+            .args(["--output", wrk.path(out).to_str().unwrap()])
+            .arg(input);
+        wrk.assert_success(&mut cmd);
+        std::fs::read_to_string(wrk.path(out)).unwrap()
+    };
+
+    let zip_stats = stats_of("s.zip", "zip.csv");
+    assert!(
+        zip_stats.lines().count() > 1,
+        "stats over a .zip produced no data rows"
+    );
+
+    // the date column must actually be inferred, otherwise the sniff pass this test depends on
+    // is not doing anything
+    assert!(
+        zip_stats.lines().any(|l| l.starts_with("d,Date,")),
+        "expected the `d` column to be inferred as Date; got:\n{zip_stats}"
+    );
+
+    let plain_stats = stats_of("s.csv", "plain.csv");
+    assert_eq!(
+        zip_stats, plain_stats,
+        "stats --infer-dates for a .zip input must equal the same data uncompressed"
+    );
+}

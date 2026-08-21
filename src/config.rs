@@ -2,10 +2,7 @@ use std::{
     env, fs,
     io::{self, Read},
     path::{Path, PathBuf},
-    sync::{
-        Arc, OnceLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, OnceLock},
 };
 
 use csv_nose::{SampleSize, Sniffer};
@@ -29,9 +26,6 @@ const DEFAULT_SNIFFER_SAMPLE: usize = 100;
 
 // file size at which we warn user that a large file has not been indexed
 const NO_INDEX_WARNING_FILESIZE: u64 = 100 * (1 << 20); // 100MB
-
-// so we don't have to keep checking if the index has been created
-static AUTO_INDEXED: AtomicBool = AtomicBool::new(false);
 
 pub static SPONSOR_MESSAGE: &str = r"sponsored by datHere - Data Infrastructure Engineering (https://qsv.datHere.com)
 Need a UI & more advanced data-wrangling? Upgrade to qsv pro (https://qsvpro.datHere.com)
@@ -748,7 +742,8 @@ impl Config {
     /// - If `self.path` is `None`, the function returns without action.
     /// - The function creates an index file using `util::idx_path()` to determine index file path.
     /// - It uses `csv_index::RandomAccessSimple::create()` to generate the index.
-    /// - If index creation is successful, it sets the `AUTO_INDEXED` atomic flag to `true`.
+    /// - Success is only logged; no process-global state is set. A subsequent `index_files()`
+    ///   discovers the new index by looking for it beside `self.path`, like any other index.
     ///
     /// # Errors
     ///
@@ -775,7 +770,6 @@ impl Config {
                     return;
                 };
                 debug!("autoindex of {} successful.", path_buf.display());
-                AUTO_INDEXED.store(true, Ordering::Relaxed);
             },
             Err(e) => debug!("autoindex of {} failed: {e}", path_buf.display()),
         }
@@ -792,77 +786,75 @@ impl Config {
             return self.prepared_for_read()?.index_files();
         }
         // Track the data file's mtime and the resolved index path *only* on the
-        // path that may need a staleness recheck. For the auto_indexed and
-        // explicit-(path, idx_path) branches, staleness is not re-checked, so
-        // these stay at their default values.
+        // path that may need a staleness recheck. For the explicit-(path, idx_path)
+        // branch, staleness is not re-checked, so these stay at their default values.
         let mut data_modified = 0_u64;
         let data_fsize;
         let mut idx_path_work: Option<PathBuf> = None;
 
-        // the auto_indexed flag is set when an index is created automatically with
-        // autoindex_file(). We use this flag to avoid checking if the index exists every
-        // time this function is called. If the index was already auto-indexed, we can just
-        // use it & return immediately.
-        let auto_indexed = AUTO_INDEXED.load(Ordering::Relaxed);
+        // NOTE: there was once an `AUTO_INDEXED` global fast path here, skipping the
+        // existence check whenever ANY file had been autoindexed in this process. It was
+        // unsound: the flag carried no path, so it also fired for a DIFFERENT input, whose
+        // sibling `.idx` then did not exist - and its `fs::File::open` was unconditional, so
+        // the result was a hard ENOENT instead of a graceful "no index" (issue #4463).
+        //
+        // It bit whenever one command resolved one input through two `Config`s - each
+        // converting a special-format input to its OWN temp - which is exactly what
+        // `stats --infer-dates` does via `sniff`. The branch below already handles both
+        // "index present" and "index absent" correctly, and unlike the fast path it performs
+        // the staleness recheck. It costs two `metadata()` calls per `indexed()`, which
+        // happens at setup and once per parallel worker - never per record.
+        let (csv_file, mut idx_file) = match (&self.path, &self.idx_path) {
+            (&None, &None) => return Ok(None),
+            (&None, &Some(_)) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Cannot use <stdin> with indexes",
+                ));
+            },
+            // When the caller supplies both paths explicitly, trust them and skip
+            // the staleness recheck below (idx_path_work stays None).
+            (Some(p), Some(ip)) => (fs::File::open(p)?, fs::File::open(ip)?),
+            (Some(p), &None) => {
+                // We generally don't want to report an error here, since we're
+                // passively trying to find an index.
 
-        let (csv_file, mut idx_file) = if auto_indexed {
-            (
-                fs::File::open(self.path.clone().unwrap())?,
-                fs::File::open(util::idx_path(&self.path.clone().unwrap()))?,
-            )
-        } else {
-            match (&self.path, &self.idx_path) {
-                (&None, &None) => return Ok(None),
-                (&None, &Some(_)) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "Cannot use <stdin> with indexes",
-                    ));
-                },
-                // When the caller supplies both paths explicitly, trust them and skip
-                // the staleness recheck below (idx_path_work stays None).
-                (Some(p), Some(ip)) => (fs::File::open(p)?, fs::File::open(ip)?),
-                (Some(p), &None) => {
-                    // We generally don't want to report an error here, since we're
-                    // passively trying to find an index.
+                (data_modified, data_fsize) = util::file_metadata(&p.metadata()?);
+                let idx_path = util::idx_path(p);
+                let idx_file = match fs::File::open(&idx_path) {
+                    Err(_) => {
+                        // the index file doesn't exist
+                        if self.snappy {
+                            // cannot index snappy compressed files
+                            return Ok(None);
+                        } else if self.autoindex_size > 0 && data_fsize >= self.autoindex_size {
+                            // if CSV file size >= QSV_AUTOINDEX_SIZE, and
+                            // its not a snappy file, create an index automatically
+                            self.autoindex_file();
+                            fs::File::open(&idx_path)?
+                        } else if data_fsize >= NO_INDEX_WARNING_FILESIZE {
+                            // warn user that the CSV file is large and not indexed
+                            use indicatif::HumanBytes;
 
-                    (data_modified, data_fsize) = util::file_metadata(&p.metadata()?);
-                    let idx_path = util::idx_path(p);
-                    let idx_file = match fs::File::open(&idx_path) {
-                        Err(_) => {
-                            // the index file doesn't exist
-                            if self.snappy {
-                                // cannot index snappy compressed files
-                                return Ok(None);
-                            } else if self.autoindex_size > 0 && data_fsize >= self.autoindex_size {
-                                // if CSV file size >= QSV_AUTOINDEX_SIZE, and
-                                // its not a snappy file, create an index automatically
-                                self.autoindex_file();
-                                fs::File::open(&idx_path)?
-                            } else if data_fsize >= NO_INDEX_WARNING_FILESIZE {
-                                // warn user that the CSV file is large and not indexed
-                                use indicatif::HumanBytes;
-
-                                warn!(
-                                    "The {} CSV file is larger than the {} \
-                                     NO_INDEX_WARNING_FILESIZE threshold. Consider creating an \
-                                     index file as it will make qsv commands much faster.",
-                                    HumanBytes(data_fsize),
-                                    HumanBytes(NO_INDEX_WARNING_FILESIZE)
-                                );
-                                return Ok(None);
-                            } else {
-                                // CSV not greater than QSV_AUTOINDEX_SIZE, and not greater than
-                                // NO_INDEX_WARNING_FILESIZE, so we don't create an index
-                                return Ok(None);
-                            }
-                        },
-                        Ok(f) => f,
-                    };
-                    idx_path_work = Some(idx_path);
-                    (fs::File::open(p)?, idx_file)
-                },
-            }
+                            warn!(
+                                "The {} CSV file is larger than the {} NO_INDEX_WARNING_FILESIZE \
+                                 threshold. Consider creating an index file as it will make qsv \
+                                 commands much faster.",
+                                HumanBytes(data_fsize),
+                                HumanBytes(NO_INDEX_WARNING_FILESIZE)
+                            );
+                            return Ok(None);
+                        } else {
+                            // CSV not greater than QSV_AUTOINDEX_SIZE, and not greater than
+                            // NO_INDEX_WARNING_FILESIZE, so we don't create an index
+                            return Ok(None);
+                        }
+                    },
+                    Ok(f) => f,
+                };
+                idx_path_work = Some(idx_path);
+                (fs::File::open(p)?, idx_file)
+            },
         };
         // If the CSV data was last modified after the index file was last
         // modified, recreate the stale index automatically. Only checked when

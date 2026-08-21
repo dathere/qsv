@@ -323,7 +323,7 @@ qsv moarstats --help
 | &nbsp;`‑‑stats‑options`&nbsp; | string | Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. | `--infer-dates --infer-boolean --cardinality --mode --mad --quartiles --percentiles --force --stats-jsonl` |
 | &nbsp;`‑‑round`&nbsp; | integer | Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. | `4` |
 | &nbsp;`‑‑use‑percentiles`&nbsp; | flag | Use percentiles instead of Q1/Q3 for winsorization/trimming. Requires percentiles to be computed in the stats CSV. |  |
-| &nbsp;`‑‑pct‑thresholds`&nbsp; | string | Comma-separated percentile pair (e.g., "10,90") to use for winsorization/trimming when --use-percentiles is set. Both values must be between 0 and 100, and lower < upper. | `5,95` |
+| &nbsp;`‑‑pct‑thresholds`&nbsp; | string | Comma-separated percentile pair (e.g., "10,90") to use for winsorization/trimming when --use-percentiles is set. Both values must truncate to whole percentiles between 1 and 100, and lower < upper. The thresholds are automatically merged into the --percentile-list of the stats run, and an existing stats CSV computed with a percentile list that lacks them is recomputed. | `5,95` |
 | &nbsp;`‑‑xsd‑gdate‑scan`&nbsp; | string | Gregorian XSD date type detection mode. "quick": Fast detection using min/max values. Produces types with ?? suffix (less confident). "thorough": Comprehensive detection checking all percentile values. Slower but ensures all values match the pattern. Produces types with ? suffix (more confident). | `quick` |
 
 <a name="bivariate-statistics-options"></a>

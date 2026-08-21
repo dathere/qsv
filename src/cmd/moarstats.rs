@@ -298,7 +298,11 @@ moarstats options:
                            Requires percentiles to be computed in the stats CSV.
    --pct-thresholds <arg>  Comma-separated percentile pair (e.g., "10,90") to use
                            for winsorization/trimming when --use-percentiles is set.
-                           Both values must be between 0 and 100, and lower < upper.
+                           Both values must truncate to whole percentiles between
+                           1 and 100, and lower < upper. The thresholds are
+                           automatically merged into the --percentile-list of the
+                           stats run, and an existing stats CSV computed with a
+                           percentile list that lacks them is recomputed.
                            [default: 5,95]
  --xsd-gdate-scan <mode>   Gregorian XSD date type detection mode.
                            "quick": Fast detection using min/max values.
@@ -841,6 +845,159 @@ fn stats_options_redirect_output(stats_options: &str) -> bool {
         }
         false
     })
+}
+
+/// Merges the required winsorization/trimming percentiles into an existing
+/// `--percentile-list` value. Returns `Some(merged)` when the list had to be
+/// extended, `None` when both percentiles are already covered (so a
+/// caller-supplied list is left byte-for-byte untouched).
+///
+/// Membership is tested on the truncated integer percentile, matching what
+/// `stats` actually computes and labels. The special values
+/// `deciles`/`quintiles` are expanded exactly as `stats` expands them.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn merge_percentile_list(existing: &str, lower: u32, upper: u32) -> Option<String> {
+    let expanded = match existing.to_lowercase().as_str() {
+        "deciles" => "10,20,30,40,50,60,70,80,90",
+        "quintiles" => "20,40,60,80",
+        _ => existing,
+    };
+
+    let entries: Vec<&str> = expanded
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    let covered = |pct: u32| {
+        entries.iter().any(|e| {
+            matches!(
+                fast_float2::parse::<f64, &[u8]>(e.as_bytes()),
+                Ok(v) if v.is_finite() && v >= 0.0 && v.trunc() as u32 == pct
+            )
+        })
+    };
+
+    let mut additions: Vec<u32> = Vec::with_capacity(2);
+    if !covered(lower) {
+        additions.push(lower);
+    }
+    if !covered(upper) {
+        additions.push(upper);
+    }
+    if additions.is_empty() {
+        return None;
+    }
+
+    let mut merged: Vec<String> = entries.iter().map(ToString::to_string).collect();
+    merged.extend(additions.iter().map(ToString::to_string));
+    // sort numerically so the percentiles cell reads in order; entries that
+    // don't parse (which `stats` will reject anyway) sort last
+    merged.sort_by(|a, b| {
+        let pa = fast_float2::parse::<f64, &[u8]>(a.as_bytes()).unwrap_or(f64::MAX);
+        let pb = fast_float2::parse::<f64, &[u8]>(b.as_bytes()).unwrap_or(f64::MAX);
+        pa.partial_cmp(&pb).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Some(merged.join(","))
+}
+
+/// Builds the argument vector for the `qsv stats` subprocess from
+/// `--stats-options`, ensuring that when `--use-percentiles` is active the
+/// percentile list `stats` computes includes the requested `--pct-thresholds`.
+///
+/// Without this, `stats` computed only its default percentile list
+/// (5,10,40,60,90,95) and any requested threshold outside it was simply absent
+/// from the `percentiles` cell - the winsorized/trimmed lookups then silently
+/// came back 0/partial at exit 0 (issue #4455).
+fn build_stats_args(stats_options: &str, pct_thresholds: Option<(f64, f64)>) -> Vec<String> {
+    let mut tokens: Vec<String> = stats_options
+        .split_whitespace()
+        .map(ToString::to_string)
+        .collect();
+
+    let Some((lower, upper)) = pct_thresholds else {
+        return tokens;
+    };
+    // thresholds reach here already validated and truncated to whole
+    // percentiles in 1..=100
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let (lower, upper) = (lower as u32, upper as u32);
+
+    // Merge into a caller-supplied --percentile-list (either
+    // `--percentile-list <arg>` or `--percentile-list=<arg>`); otherwise merge
+    // into the `stats` default list so the default percentiles stay available.
+    for i in 0..tokens.len() {
+        if tokens[i] == "--percentile-list" {
+            if let Some(value) = tokens.get(i + 1).cloned()
+                && let Some(merged) = merge_percentile_list(&value, lower, upper)
+            {
+                tokens[i + 1] = merged;
+            }
+            // a trailing `--percentile-list` with no value is left for
+            // `stats` to reject with its own usage error
+            return tokens;
+        }
+        if let Some(value) = tokens[i].strip_prefix("--percentile-list=") {
+            if let Some(merged) = merge_percentile_list(value, lower, upper) {
+                tokens[i] = format!("--percentile-list={merged}");
+            }
+            return tokens;
+        }
+    }
+
+    // `stats`' default --percentile-list (src/cmd/stats.rs USAGE)
+    const STATS_DEFAULT_PERCENTILE_LIST: &str = "5,10,40,60,90,95";
+    if let Some(merged) = merge_percentile_list(STATS_DEFAULT_PERCENTILE_LIST, lower, upper) {
+        tokens.push("--percentile-list".to_string());
+        tokens.push(merged);
+    }
+    tokens
+}
+
+/// Returns true when the percentiles cell contains an entry whose label
+/// matches `percentile_label` (regardless of whether its value parses).
+fn percentile_entry_present(percentile_str: &str, percentile_label: &str, separator: &str) -> bool {
+    percentile_str.split(separator).any(|entry| {
+        entry
+            .trim()
+            .split_once(':')
+            .is_some_and(|(label, _)| label.trim() == percentile_label)
+    })
+}
+
+/// Returns true when the existing stats CSV at `path` can serve the
+/// `--use-percentiles` thresholds: it has a `percentiles` column and every
+/// non-empty percentiles cell contains entries for both threshold labels.
+/// Any read/parse problem returns false so the caller recomputes.
+fn stats_csv_covers_percentiles(
+    path: &Path,
+    lower_label: &str,
+    upper_label: &str,
+    separator: &str,
+) -> bool {
+    let Ok(mut rdr) = csv::ReaderBuilder::new().has_headers(true).from_path(path) else {
+        return false;
+    };
+    let Ok(headers) = rdr.headers() else {
+        return false;
+    };
+    let Some(pct_idx) = headers.iter().position(|h| h == "percentiles") else {
+        return false;
+    };
+    for rec in rdr.records() {
+        let Ok(rec) = rec else {
+            return false;
+        };
+        let cell = rec.get(pct_idx).unwrap_or("");
+        if cell.is_empty() {
+            continue;
+        }
+        if !percentile_entry_present(cell, lower_label, separator)
+            || !percentile_entry_present(cell, upper_label, separator)
+        {
+            return false;
+        }
+    }
+    true
 }
 
 /// Compute Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
@@ -4115,6 +4272,85 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    // Parse and validate percentile thresholds if --use-percentiles is set.
+    // This is done BEFORE the `qsv stats` subprocess runs below, so the
+    // thresholds can be forwarded into the percentile list `stats` computes -
+    // otherwise `stats` computes only its default list (5,10,40,60,90,95) and
+    // any threshold outside it is absent from the `percentiles` cell, which
+    // used to silently degrade the winsorized/trimmed stats to 0/partial
+    // values (issue #4455).
+    let (lower_percentile, upper_percentile) = if args.flag_use_percentiles {
+        let thresholds_str = args
+            .flag_pct_thresholds
+            .as_ref()
+            .map_or("5,95", std::string::String::as_str);
+
+        let parts: Vec<&str> = thresholds_str.split(',').map(str::trim).collect();
+        if parts.len() != 2 {
+            return fail_clierror!(
+                "Invalid percentile thresholds: {}. Expected format: 'lower,upper' (e.g., '5,95')",
+                thresholds_str
+            );
+        }
+
+        let lower = fast_float2::parse::<f64, &[u8]>(parts[0].as_bytes()).map_err(|_| {
+            CliError::IncorrectUsage(format!("Invalid lower percentile: {}", parts[0]))
+        })?;
+        let upper = fast_float2::parse::<f64, &[u8]>(parts[1].as_bytes()).map_err(|_| {
+            CliError::IncorrectUsage(format!("Invalid upper percentile: {}", parts[1]))
+        })?;
+
+        if !(0.0..=100.0).contains(&lower) || !(0.0..=100.0).contains(&upper) {
+            return fail_clierror!(
+                "Percentile thresholds must be between 0 and 100. Got: {}, {}",
+                lower,
+                upper
+            );
+        }
+
+        if lower >= upper {
+            return fail_clierror!(
+                "Lower percentile must be less than upper percentile. Got: {}, {}",
+                lower,
+                upper
+            );
+        }
+
+        // Truncate to the INTEGER percentile, matching what `stats` actually computes.
+        // `stats --percentile-list` casts each entry `as u8`, so asking it for 33.3 yields p33
+        // and (since the label reports the percentile computed) writes the key "33". These
+        // values are used ONLY to build that lookup key and the winsorized_/trimmed_ column
+        // names - never in a numeric computation - so truncating here keeps both in step.
+        // Without it, `--pct-thresholds 33.3,66.6` searched the percentiles cell for "33.3",
+        // found nothing, and silently emitted 0/empty winsorized and trimmed statistics.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let (lower, upper) = (lower.trunc(), upper.trunc());
+
+        // truncation can collapse a valid-looking pair (e.g. "33.3,33.6" -> 33, 33), so the
+        // ordering has to be re-checked against the percentiles actually used
+        if lower >= upper {
+            return fail_clierror!(
+                "Percentile thresholds {thresholds_str} both truncate to the same percentile \
+                 ({lower}). `stats` computes whole percentiles, so give thresholds that differ by \
+                 at least 1."
+            );
+        }
+
+        // `stats` only accepts percentiles in 1..=100, so a lower bound that
+        // truncates to 0 (e.g. "0.5") can never be computed or looked up.
+        if lower < 1.0 {
+            return fail_clierror!(
+                "Lower percentile threshold {} truncates to {lower}. `stats` computes whole \
+                 percentiles between 1 and 100, so the lower threshold must be at least 1.",
+                parts[0]
+            );
+        }
+
+        (Some(lower), Some(upper))
+    } else {
+        (None, None)
+    };
+
     // Handle multi-dataset join if requested
     let temp_joined_path: Option<PathBuf>;
     // Header of the joined CSV (empty when not joining). Used to validate that
@@ -4263,7 +4499,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // given; capture it in memory. A caller-supplied -o/--output in
         // --stats-options was already rejected up front (see the
         // --join-inputs guard above), so stdout is the stats CSV here.
-        let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
+        let stats_args_vec = build_stats_args(
+            &args.flag_stats_options,
+            lower_percentile.zip(upper_percentile),
+        );
         let mut cmd = Command::new(&qsv_path);
         cmd.arg("stats")
             .args(&stats_args_vec)
@@ -4374,26 +4613,54 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Check if the stats CSV exists AND is newer than the input; if not, run stats.
         // Existence alone is not enough: a stats CSV left over from an earlier version of
         // the input would otherwise be used as the baseline for every derived statistic.
-        if args.flag_force || !util::stats_csv_is_current(&path, input_path) {
+        let stats_current = !args.flag_force && util::stats_csv_is_current(&path, input_path);
+        // A current stats CSV can still be unusable for --use-percentiles: it
+        // may have been computed with a --percentile-list that lacks the
+        // requested --pct-thresholds (issue #4455). Treat that as stale so the
+        // percentile labels the winsorized/trimmed lookups need are present.
+        let covers_thresholds = !stats_current
+            || if let (Some(lower), Some(upper)) = (lower_percentile, upper_percentile) {
+                stats_csv_covers_percentiles(
+                    &path,
+                    &fmt_pct(lower),
+                    &fmt_pct(upper),
+                    &stats_separator,
+                )
+            } else {
+                true
+            };
+        if !stats_current || !covers_thresholds {
             if args.flag_force {
                 winfo!("Force flag set: recomputing stats...");
-            } else if path.exists() {
-                wwarn!(
-                    "Stats CSV file is older than the input: {}\nRecomputing baseline stats...",
-                    path.display()
-                );
+            } else if !stats_current {
+                if path.exists() {
+                    wwarn!(
+                        "Stats CSV file is older than the input: {}\nRecomputing baseline stats...",
+                        path.display()
+                    );
+                } else {
+                    wwarn!(
+                        "Stats CSV file not found: {}\nComputing baseline stats...",
+                        path.display()
+                    );
+                }
             } else {
                 wwarn!(
-                    "Stats CSV file not found: {}\nComputing baseline stats...",
+                    "Stats CSV file was computed with a --percentile-list that does not include \
+                     the requested --pct-thresholds: {}\nRecomputing baseline stats...",
                     path.display()
                 );
             }
 
-            // Parse stats options
-            let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
+            // Parse stats options, forwarding the --pct-thresholds percentiles
+            let stats_args_vec = build_stats_args(
+                &args.flag_stats_options,
+                lower_percentile.zip(upper_percentile),
+            );
+            let stats_args_refs: Vec<&str> = stats_args_vec.iter().map(String::as_str).collect();
             let _ = util::run_qsv_cmd(
                 "stats",
-                &stats_args_vec,
+                &stats_args_refs,
                 &input_path_str,
                 "Ran stats command to generate baseline stats...",
             )?;
@@ -4465,69 +4732,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             scan_mode
         );
     }
-
-    // Parse and validate percentile thresholds if --use-percentiles is set
-    let (lower_percentile, upper_percentile) = if args.flag_use_percentiles {
-        let thresholds_str = args
-            .flag_pct_thresholds
-            .as_ref()
-            .map_or("5,95", std::string::String::as_str);
-
-        let parts: Vec<&str> = thresholds_str.split(',').map(str::trim).collect();
-        if parts.len() != 2 {
-            return fail_clierror!(
-                "Invalid percentile thresholds: {}. Expected format: 'lower,upper' (e.g., '5,95')",
-                thresholds_str
-            );
-        }
-
-        let lower = fast_float2::parse::<f64, &[u8]>(parts[0].as_bytes()).map_err(|_| {
-            CliError::IncorrectUsage(format!("Invalid lower percentile: {}", parts[0]))
-        })?;
-        let upper = fast_float2::parse::<f64, &[u8]>(parts[1].as_bytes()).map_err(|_| {
-            CliError::IncorrectUsage(format!("Invalid upper percentile: {}", parts[1]))
-        })?;
-
-        if !(0.0..=100.0).contains(&lower) || !(0.0..=100.0).contains(&upper) {
-            return fail_clierror!(
-                "Percentile thresholds must be between 0 and 100. Got: {}, {}",
-                lower,
-                upper
-            );
-        }
-
-        if lower >= upper {
-            return fail_clierror!(
-                "Lower percentile must be less than upper percentile. Got: {}, {}",
-                lower,
-                upper
-            );
-        }
-
-        // Truncate to the INTEGER percentile, matching what `stats` actually computes.
-        // `stats --percentile-list` casts each entry `as u8`, so asking it for 33.3 yields p33
-        // and (since the label reports the percentile computed) writes the key "33". These
-        // values are used ONLY to build that lookup key and the winsorized_/trimmed_ column
-        // names - never in a numeric computation - so truncating here keeps both in step.
-        // Without it, `--pct-thresholds 33.3,66.6` searched the percentiles cell for "33.3",
-        // found nothing, and silently emitted 0/empty winsorized and trimmed statistics.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let (lower, upper) = (lower.trunc(), upper.trunc());
-
-        // truncation can collapse a valid-looking pair (e.g. "33.3,33.6" -> 33, 33), so the
-        // ordering has to be re-checked against the percentiles actually used
-        if lower >= upper {
-            return fail_clierror!(
-                "Percentile thresholds {thresholds_str} both truncate to the same percentile \
-                 ({lower}). `stats` computes whole percentiles, so give thresholds that differ by \
-                 at least 1."
-            );
-        }
-
-        (Some(lower), Some(upper))
-    } else {
-        (None, None)
-    };
 
     // Helper function to check if a column already exists in headers
     let column_exists = |col_name: &str| headers.iter().any(|h| h == col_name);
@@ -5022,6 +5226,40 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         &stats_separator,
                         prefer_dmy,
                     );
+
+                    // Backstop for issue #4455: a label missing from a
+                    // non-empty percentiles cell means the stats CSV was
+                    // computed with a --percentile-list lacking the requested
+                    // thresholds. This used to fall through silently - the
+                    // field was still counted (its fences were present) but
+                    // with 0.0 thresholds, so winsorized/trimmed statistics
+                    // came out 0 or partially winsorized at exit 0. The
+                    // percentile list is now forwarded to the stats run, so
+                    // this should be unreachable; fail loudly if it isn't.
+                    if needs_winsorized_trimmed && !percentiles_str.is_empty() {
+                        for (bound, label, val) in [
+                            ("lower", &lower_pct_str, lower_val),
+                            ("upper", &upper_pct_str, upper_val),
+                        ] {
+                            if val.is_none()
+                                && !percentile_entry_present(
+                                    percentiles_str,
+                                    label,
+                                    &stats_separator,
+                                )
+                            {
+                                return fail_clierror!(
+                                    "Percentile {label} (the {bound} --pct-thresholds bound) is \
+                                     not among the percentiles computed for field {field_name:?}: \
+                                     {percentiles_str:?}. The stats CSV was computed with a \
+                                     --percentile-list that does not include it. Re-run with \
+                                     --force, or align --percentile-list in --stats-options with \
+                                     --pct-thresholds."
+                                );
+                            }
+                        }
+                    }
+
                     (lower_val, upper_val)
                 } else {
                     (None, None)
@@ -7243,6 +7481,86 @@ mod tests {
         assert!(!stats_options_redirect_output("-so"));
         assert!(!stats_options_redirect_output("-Eso"));
         assert!(!stats_options_redirect_output("--select output"));
+    }
+
+    #[test]
+    fn merge_percentile_list_covers_and_extends() {
+        // Already covered — untouched (returns None).
+        assert_eq!(merge_percentile_list("5,10,40,60,90,95", 5, 95), None);
+        assert_eq!(merge_percentile_list("5,10,40,60,90,95", 10, 90), None);
+        // Fractional entries cover their truncated integer percentile.
+        assert_eq!(merge_percentile_list("7.5,93.9", 7, 93), None);
+
+        // Extensions come back sorted numerically.
+        assert_eq!(
+            merge_percentile_list("5,10,40,60,90,95", 7, 93).as_deref(),
+            Some("5,7,10,40,60,90,93,95")
+        );
+        // One bound present, the other appended.
+        assert_eq!(
+            merge_percentile_list("5,10,40,60,90,95", 5, 93).as_deref(),
+            Some("5,10,40,60,90,93,95")
+        );
+
+        // deciles/quintiles expand as `stats` expands them.
+        assert_eq!(merge_percentile_list("deciles", 10, 90), None);
+        assert_eq!(
+            merge_percentile_list("quintiles", 7, 93).as_deref(),
+            Some("7,20,40,60,80,93")
+        );
+    }
+
+    #[test]
+    fn build_stats_args_forwards_pct_thresholds() {
+        // No thresholds: tokens pass through untouched.
+        assert_eq!(
+            build_stats_args("-E --infer-dates", None),
+            vec!["-E", "--infer-dates"]
+        );
+
+        // Thresholds outside the stats default list get a merged
+        // --percentile-list appended.
+        assert_eq!(
+            build_stats_args("--percentiles --force", Some((7.0, 93.0))),
+            vec![
+                "--percentiles",
+                "--force",
+                "--percentile-list",
+                "5,7,10,40,60,90,93,95"
+            ]
+        );
+        // Thresholds inside the default list: nothing to add.
+        assert_eq!(
+            build_stats_args("--percentiles", Some((5.0, 95.0))),
+            vec!["--percentiles"]
+        );
+
+        // A caller-supplied --percentile-list is merged into, not replaced.
+        assert_eq!(
+            build_stats_args("--percentile-list 10,90 --force", Some((7.0, 93.0))),
+            vec!["--percentile-list", "7,10,90,93", "--force"]
+        );
+        assert_eq!(
+            build_stats_args("--percentile-list=10,90", Some((7.0, 93.0))),
+            vec!["--percentile-list=7,10,90,93"]
+        );
+        // ...and left byte-for-byte alone when it already covers both bounds.
+        assert_eq!(
+            build_stats_args("--percentile-list 93,7", Some((7.0, 93.0))),
+            vec!["--percentile-list", "93,7"]
+        );
+    }
+
+    #[test]
+    fn percentile_entry_present_matches_labels_only() {
+        let cell = "5: 5|10: 10|93: 2026-08-21T00:00:00+00:00";
+        assert!(percentile_entry_present(cell, "5", "|"));
+        assert!(percentile_entry_present(cell, "10", "|"));
+        // Date values contain colons; only the label before the FIRST colon
+        // of an entry counts.
+        assert!(percentile_entry_present(cell, "93", "|"));
+        assert!(!percentile_entry_present(cell, "7", "|"));
+        assert!(!percentile_entry_present("", "5", "|"));
     }
 
     /// Build a `field_pairs` map over four columns at `col_idx` 10/20/30/40, with every

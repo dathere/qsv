@@ -6970,3 +6970,71 @@ fn moarstats_advanced_tsv_delimiter_is_honored() {
         "a .tsv in a .zip must equal the bare .tsv"
     );
 }
+
+// roborev 4362 (Low): the delimiter fix also routes the BIVARIATE header read
+// (`read_csv_headers`) through `Config`, but the --advanced test above does not cover that
+// path. Verified to be a real gap rather than a tautological one: with the fix reverted, a
+// tab-delimited input - bare or zipped - produces NO bivariate sidecar at all, while the CSV
+// control still does. The header parsed as one field, so no stats field mapped to a column
+// and no pair was ever built.
+#[test]
+fn moarstats_bivariate_tsv_delimiter_is_honored() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("moarstats_bivariate_tsv_delimiter_is_honored");
+
+    // `alpha`/`beta` are strongly correlated and `gamma` is independent, so real pairs are
+    // built; all three are non-unique numerics, hence pairable.
+    let mut tsv = String::from("id\talpha\tbeta\tgamma\n");
+    let mut csv = String::from("id,alpha,beta,gamma\n");
+    // deliberately LOW cardinality: a column whose cardinality equals the row count is
+    // treated as an all-unique ID column and excluded from pairing, which would leave the
+    // CSV control with no pairs and make this test vacuous
+    for i in 0..300u32 {
+        let a = i % 50 + 1;
+        let b = a * 2 + (i % 7);
+        let g = (i * 13) % 37 + 1;
+        tsv.push_str(&format!("{i}\t{a}\t{b}\t{g}\n"));
+        csv.push_str(&format!("{i},{a},{b},{g}\n"));
+    }
+    wrk.create_from_string("bt.tsv", &tsv);
+    wrk.create_from_string("bc.csv", &csv);
+
+    let zip_path = wrk.path("bz.zip");
+    let zf = std::fs::File::create(&zip_path).unwrap();
+    let mut zw = zip::ZipWriter::new(zf);
+    zw.start_file("bt.tsv", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zw.write_all(tsv.as_bytes()).unwrap();
+    zw.finish().unwrap();
+
+    // distinct stems: the sidecar is named from the file stem, so `bt.tsv` and a `bt.csv`
+    // would collide on `bt.stats.bivariate.csv`
+    let bivariate_of = |input: &str, sidecar: &str| -> String {
+        let mut cmd = wrk.command("moarstats");
+        cmd.arg("--bivariate").arg(input);
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string(sidecar)
+            .unwrap_or_else(|e| panic!("no bivariate sidecar {sidecar} for {input}: {e}"))
+    };
+
+    let from_csv = bivariate_of("bc.csv", "bc.stats.bivariate.csv");
+    let from_tsv = bivariate_of("bt.tsv", "bt.stats.bivariate.csv");
+    let from_zip = bivariate_of("bz.zip", "bz.stats.bivariate.csv");
+
+    // real field pairs, not just a header - the pre-fix failure produced no file at all, so
+    // the read_to_string above already catches it, but a partially-populated regression would
+    // slip past that
+    assert!(
+        from_csv.lines().count() > 1,
+        "the CSV control produced no bivariate pairs - fixture no longer exercises --bivariate"
+    );
+    assert_eq!(
+        from_tsv, from_csv,
+        "bivariate stats for a tab-delimited input must equal the same data as CSV"
+    );
+    assert_eq!(
+        from_zip, from_csv,
+        "bivariate stats for a .tsv inside a .zip must equal the same data as CSV"
+    );
+}

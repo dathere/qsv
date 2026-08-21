@@ -2053,12 +2053,13 @@ fn is_conditionally_safe(header_name: &str, collapse: bool, unicode: bool) -> bo
 
 /// Whether `dir` is safe for `log_end` to delete WHOLESALE.
 ///
-/// `TEMP_FILE_DIR` is meant to hold only a directory qsv itself created, but `Config::new`
-/// once fell back to `env::temp_dir()` when `TempDir::new()` failed - and the cleanup below
-/// would then have removed the SYSTEM temp root, taking every other process's files with it.
-/// That fallback now creates a qsv-owned subdirectory instead; this is the second line of
-/// defense, enforced at the point of deletion so a future init site cannot quietly
-/// reintroduce the hazard.
+/// Every site that initializes `TEMP_FILE_DIR` does so with a `tempfile::TempDir` qsv created,
+/// so in practice this always answers true. It exists because the cost of being wrong is
+/// severe and asymmetric: `Config::new` once fell back to `env::temp_dir()` itself when
+/// `TempDir::new()` failed, and the cleanup would then have removed the SYSTEM temp root along
+/// with every other process's files (roborev 4366). That site no longer initializes the lock at
+/// all - it only reads it - but this check lives at the point of DELETION so a future init site
+/// cannot quietly reintroduce the hazard.
 pub(crate) fn temp_dir_is_removable(dir: &std::path::Path) -> bool {
     // a filesystem root has no parent
     if dir.parent().is_none() {

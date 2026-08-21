@@ -267,31 +267,23 @@ impl Config {
             Some(s) => {
                 let path = PathBuf::from(s);
 
-                // if QSV_SKIP_FORMAT_CHECK is set or path is a temp file, we skip format check
-                let temp_dir = crate::config::TEMP_FILE_DIR.get_or_init(|| {
-                    tempfile::TempDir::new().map_or_else(
-                        |e| {
-                            // Fall back to a qsv-OWNED subdirectory of the system temp dir -
-                            // NEVER `env::temp_dir()` itself. `util::log_end` removes
-                            // `TEMP_FILE_DIR` wholesale at exit, so storing the system temp
-                            // root here would delete every other process's temp files too.
-                            // This is the only init site that can produce a directory qsv did
-                            // not create; the others `unwrap()` a `TempDir`.
-                            let fallback =
-                                env::temp_dir().join(format!("qsv-{}", std::process::id()));
-                            warn!(
-                                "failed to create temp dir: {e}; falling back to {}",
-                                fallback.display()
-                            );
-                            fs::create_dir_all(&fallback).unwrap_or_default();
-                            fallback
-                        },
-                        tempfile::TempDir::keep,
-                    )
-                });
+                // if QSV_SKIP_FORMAT_CHECK is set or path is a temp file, we skip format check.
+                //
+                // `get()`, NOT `get_or_init()`. The temp dir is only ever READ here, to answer
+                // a path comparison - yet initializing eagerly meant every `Config::new`
+                // CREATED a temp directory just to ask that question, and needed a fallback
+                // when creation failed. That fallback is what could put a directory qsv does
+                // not own into `TEMP_FILE_DIR`, which `util::log_end` then deletes wholesale
+                // (roborev 4366, 4367). There is no fallback to get wrong now.
+                //
+                // Behavior is unchanged: if this process has not created a temp dir yet, no
+                // path can be inside one. Previously `get_or_init` would mint a FRESH
+                // randomly-named dir here, which `starts_with` could never match either.
                 skip_format_check = sniff
                     || util::get_envvar_flag("QSV_SKIP_FORMAT_CHECK")
-                    || path.starts_with(temp_dir);
+                    || crate::config::TEMP_FILE_DIR
+                        .get()
+                        .is_some_and(|temp_dir| path.starts_with(temp_dir));
 
                 // Detect special formats. The actual conversion to a delimited temp
                 // file is DEFERRED to the read path (see `prepared_for_read`), so a

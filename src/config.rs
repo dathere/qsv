@@ -788,49 +788,86 @@ impl Config {
         // partial index behind, and a concurrent reader can open one mid-write. `rename` on
         // the same directory is atomic: readers see either the old complete index or the new
         // one, never a torn file.
-        // `tempfile` picks a UNIQUE name and creates it exclusively (O_EXCL), so two
-        // concurrent builds - which the `autoindex_size` path below does not serialize -
-        // cannot land on the same file, and a pre-existing file or symlink at a guessable
-        // name cannot be written through. A deterministic `<idx>.tmp<pid>` had both problems:
-        // same-process builds share a pid.
+        // Build into a UNIQUE sibling temp, then rename into place. `create_new` is
+        // O_CREAT|O_EXCL, so two concurrent builds - which the `autoindex_size` path below
+        // does NOT serialize - cannot land on the same file, and a pre-existing file or
+        // symlink at a guessable name cannot be written through. A deterministic
+        // `<idx>.tmp<pid>` had both problems, since same-process builds share a pid.
+        //
+        // `create_new` rather than `tempfile`: it applies the process umask exactly like the
+        // `fs::File::create` that `qsv index` uses, whereas `tempfile` creates 0600 and would
+        // carry that onto the `.idx` through the rename - silently turning auto-created and
+        // rebuilt indexes into owner-only files (roborev 4371).
         let idx_dir = pidx.parent().unwrap_or_else(|| Path::new("."));
-        let Ok(mut tmp) = tempfile::Builder::new()
-            .prefix(".qsv-idx")
-            .tempfile_in(idx_dir)
-        else {
+        // Uniqueness does not need randomness here: `create_new` fails with AlreadyExists,
+        // so the loop simply advances the counter until it wins. pid separates processes, the
+        // counter separates threads and repeat calls within one.
+        static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+        let pid = std::process::id();
+        let mut tmp_path = None;
+        let mut tmp_file = None;
+        for _ in 0..16 {
+            let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let candidate = idx_dir.join(format!(".qsv-autoindex-{pid}-{seq}.tmp"));
+            if let Ok(f) = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&candidate)
+            {
+                tmp_path = Some(candidate);
+                tmp_file = Some(f);
+                break;
+            }
+        }
+        let (Some(tmp_path), Some(idxfile)) = (tmp_path, tmp_file) else {
+            debug!(
+                "autoindex of {}: could not create a temp index file",
+                path_buf.display()
+            );
             return false;
         };
+
+        // any early return from here on must not leave the temp behind
+        let cleanup = |tmp: &Path| {
+            let _ = fs::remove_file(tmp);
+        };
+
         let Ok(mut rdr) = self.reader_file() else {
-            // `tmp` removes itself on drop
+            cleanup(&tmp_path);
             return false;
         };
 
         let build = {
-            let mut wtr =
-                io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, tmp.as_file_mut());
+            let mut wtr = io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, idxfile);
             csv_index::RandomAccessSimple::create(&mut rdr, &mut wtr)
                 .and_then(|()| io::Write::flush(&mut wtr).map_err(Into::into))
         };
         if let Err(e) = build {
+            cleanup(&tmp_path);
             debug!("autoindex of {} failed: {e}", path_buf.display());
             return false;
         }
 
-        // persist() renames into place, which is atomic on the same filesystem: readers see
-        // either the old complete index or the new one, never a torn file
-        match tmp.persist(&pidx) {
-            Ok(_) => {
-                debug!("autoindex of {} successful.", path_buf.display());
-                true
-            },
-            Err(e) => {
-                debug!(
-                    "autoindex of {} could not be put in place: {e}",
-                    path_buf.display()
-                );
-                false
-            },
+        // On a REBUILD, carry over the existing index's permissions, so an index someone
+        // deliberately chmod'd keeps that mode instead of reverting to the umask default.
+        #[cfg(unix)]
+        if let Ok(existing) = fs::metadata(&pidx) {
+            let _ = fs::set_permissions(&tmp_path, existing.permissions());
         }
+
+        // rename is atomic on the same filesystem: readers see either the old complete index
+        // or the new one, never a torn file
+        if let Err(e) = fs::rename(&tmp_path, &pidx) {
+            cleanup(&tmp_path);
+            debug!(
+                "autoindex of {} could not be put in place: {e}",
+                path_buf.display()
+            );
+            return false;
+        }
+        debug!("autoindex of {} successful.", path_buf.display());
+        true
     }
 
     /// Check if the index file exists and is newer than the CSV file.
@@ -1522,6 +1559,75 @@ mod tests {
         assert_ne!(
             after, marker,
             "a failed rebuild poisoned the memo: the retry skipped the repair"
+        );
+    }
+
+    /// An auto-created index must get the same permissions as one built by `qsv index`, and a
+    /// REBUILD must preserve whatever mode the existing index had.
+    ///
+    /// `qsv index` uses `fs::File::create`, which applies the process umask. Building the
+    /// index through `tempfile` instead created it 0600 and carried that onto the `.idx` via
+    /// the rename - silently turning auto-created and rebuilt indexes owner-only and breaking
+    /// group/shared-readable workflows. roborev 4371.
+    ///
+    /// The expected mode is taken from a probe file created the same way `qsv index` does,
+    /// rather than hardcoding 0644, so this holds under any umask.
+    #[cfg(unix)]
+    #[test]
+    fn autoindex_permissions_match_a_normally_created_file() {
+        use std::{io::Write, os::unix::fs::PermissionsExt};
+
+        let dir = tempfile::tempdir().unwrap();
+        let csv_path = dir.path().join("perm.csv");
+
+        let mut f = std::fs::File::create(&csv_path).unwrap();
+        writeln!(f, "a,b").unwrap();
+        for i in 0..2_000 {
+            writeln!(f, "{i},{}", i * 2).unwrap();
+        }
+        f.sync_all().unwrap();
+        drop(f);
+
+        // what the umask yields for a plainly-created file - what `qsv index` would produce
+        let probe_path = dir.path().join("probe");
+        std::fs::File::create(&probe_path).unwrap();
+        let expected = std::fs::metadata(&probe_path).unwrap().permissions().mode() & 0o777;
+
+        let path_str = csv_path.to_string_lossy().to_string();
+        let mut config = Config::new(Some(&path_str));
+        config.autoindex_size = 100;
+        assert!(
+            config.indexed().unwrap().is_some(),
+            "the fixture should have been autoindexed"
+        );
+
+        let idx_path = crate::util::idx_path(&csv_path);
+        let actual = std::fs::metadata(&idx_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            actual, expected,
+            "an auto-created index must have the same permissions as a normally created file (got \
+             {actual:o}, expected {expected:o})"
+        );
+
+        // a REBUILD must not revert a deliberately-set mode
+        let restrictive = 0o640;
+        std::fs::set_permissions(&idx_path, std::fs::Permissions::from_mode(restrictive)).unwrap();
+        let future = filetime::FileTime::from_unix_time(
+            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&csv_path).unwrap())
+                .unix_seconds()
+                + 86_400,
+            0,
+        );
+        filetime::set_file_mtime(&csv_path, future).unwrap();
+
+        assert!(
+            Config::new(Some(&path_str)).indexed().unwrap().is_some(),
+            "the stale index should have been rebuilt"
+        );
+        let after = std::fs::metadata(&idx_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            after, restrictive,
+            "a rebuild must preserve the existing index's permissions (got {after:o})"
         );
     }
 }

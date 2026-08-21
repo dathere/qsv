@@ -8928,17 +8928,23 @@ fn stats_epoch_date_is_included_in_date_minmax() {
 }
 
 #[test]
-fn stats_autoindex_is_skipped_for_special_format_inputs() {
-    // A special-format input (.gz/.zip/.parquet/.jsonl/...) is read through a CONVERTED temp
-    // file, and every Config instance converts to its OWN temp path. Autoindexing that temp
-    // file created an index only the parent Config could find: `stats`' parallel workers each
-    // build a fresh Config, resolved a DIFFERENT temp path, found no index beside it, and every
-    // worker panicked - yielding a stats file with headers and ZERO rows at exit code 0.
+fn stats_parallelizes_special_format_inputs() {
+    // Issue #4462. A special-format input (.gz/.zip/.parquet/.jsonl/...) is read through a
+    // CONVERTED temp file, and every Config resolves its OWN temp. #4445 responded by refusing
+    // to autoindex these inputs at all, which cost them the parallel path entirely.
+    //
+    // #4462 shares ONE resolved Config across every stats path instead (clones share the
+    // `Arc<OnceLock>` holding the resolution), so the parallel path is back: all workers see the
+    // same temp and the same sibling index.
+    //
     // A .zip fixture rather than .gz on purpose: zip support is non-optional in every build,
     // so this test also runs under `-F lite`, where the flate2 codec is absent.
+    //
+    // NOTE: results alone CANNOT distinguish sequential from parallel - they are identical by
+    // design, which is the whole point. The discriminating evidence is in the log.
     use std::io::Write;
 
-    let wrk = Workdir::new("stats_autoindex_special_format");
+    let wrk = Workdir::new("stats_special_format_parallel");
 
     let mut plain = String::from("a,b\n");
     for i in 0..300 {
@@ -8954,36 +8960,152 @@ fn stats_autoindex_is_skipped_for_special_format_inputs() {
     zw.write_all(plain.as_bytes()).unwrap();
     zw.finish().unwrap();
 
+    let log_name = format!(
+        "{}_rCURRENT.log",
+        wrk.qsv_bin().file_stem().unwrap().to_string_lossy()
+    );
+
     // -105 is negative (so |it| becomes the autoindex size, and 105 bytes is far below the
-    // fixture) and ends in 5 (so the autoindex is cleaned up afterwards)
-    let stats_of = |input: &str, out: &str| -> String {
+    // fixture) and ends in 5 (so the autoindex is cleaned up afterwards).
+    // Each run gets its OWN log dir - qsv appends to a single rCURRENT.log per directory, so a
+    // shared one would mix the two runs' lines and make the counts below meaningless.
+    let stats_of = |input: &str, out: &str, logdir: &str| -> (String, String) {
+        let log_dir = wrk.path(logdir);
+        std::fs::create_dir_all(&log_dir).unwrap();
         let mut cmd = wrk.command("stats");
-        cmd.arg("-E")
+        cmd.env("QSV_LOG_LEVEL", "info")
+            .env("QSV_LOG_DIR", &log_dir)
+            .arg("-E")
             .args(["--cache-threshold", "-105"])
             .args(["--output", wrk.path(out).to_str().unwrap()])
             .arg(input);
         wrk.assert_success(&mut cmd);
-        std::fs::read_to_string(wrk.path(out)).unwrap()
+        (
+            std::fs::read_to_string(wrk.path(out)).unwrap(),
+            std::fs::read_to_string(log_dir.join(&log_name)).unwrap_or_default(),
+        )
     };
 
-    let zip_stats = stats_of("sf.zip", "zip.csv");
+    let (zip_stats, zip_log) = stats_of("sf.zip", "zip.csv", "ziplog");
     assert!(
         zip_stats.lines().count() > 1,
-        "a compressed input produced a stats file with no data rows - every parallel worker \
-         failed to find the autoindex built against a different temp file"
+        "a compressed input produced a stats file with no data rows - the parallel workers failed \
+         to find the autoindex"
     );
 
+    // THE assertion for #4462: the parallel path actually ran. `parallel_stats` is the only
+    // producer of an "nchunks=" line; `sequential_stats` logs nothing of the sort. Verified by
+    // mutation - on master (which zeroes autoindex_size for special-format inputs) this run
+    // emits ZERO such lines.
+    assert!(
+        zip_log.contains("nchunks="),
+        "a special-format input must now use the parallel path; log had no nchunks= \
+         line:\n{zip_log}"
+    );
+
+    // ...and it must convert the input EXACTLY ONCE. Each Config resolves its own temp, so a
+    // second line here means some stats path rebuilt `args.rconfig()` instead of sharing the
+    // resolved Config - which silently doubles the conversion cost AND puts the autoindex
+    // beside a temp the other threads cannot see. That is the #4446 crash shape.
+    let conversions = zip_log
+        .lines()
+        .filter(|l| l.contains("converted special-format input"))
+        .count();
+    assert_eq!(
+        conversions, 1,
+        "the input must be converted exactly once, but was converted {conversions} \
+         times:\n{zip_log}"
+    );
+
+    // The compressed run must not leave a warning behind either - notably the autoindex
+    // cleanup looking for `sf.zip.idx` (which never exists; the index lives beside the temp).
+    assert!(
+        !zip_log.contains("Could not remove index file"),
+        "autoindex cleanup looked for the index beside the compressed source, not the converted \
+         temp:\n{zip_log}"
+    );
+
+    // The SEQUENTIAL path shares the resolved Config too. Without --cache-threshold or
+    // QSV_AUTOINDEX_SIZE there is no index, so this run goes through `sequential_stats` - and
+    // must still convert the input exactly once, not once for the setup Config and again for
+    // the one `sequential_stats` used to build its own reader.
+    {
+        std::fs::copy(wrk.path("sf.zip"), wrk.path("sf3.zip")).unwrap();
+        let log_dir = wrk.path("seqlog");
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let mut cmd = wrk.command("stats");
+        cmd.env("QSV_LOG_LEVEL", "info")
+            .env("QSV_LOG_DIR", &log_dir)
+            // pinned, not inherited: this run's whole point is that NO index exists, and
+            // Workdir::command passes the ambient environment through. A QSV_AUTOINDEX_SIZE
+            // set on the CI runner would autoindex and silently make this the parallel path.
+            .env("QSV_AUTOINDEX_SIZE", "0")
+            .arg("-E")
+            .args(["--output", wrk.path("seq.csv").to_str().unwrap()])
+            .arg("sf3.zip");
+        wrk.assert_success(&mut cmd);
+        let seq_log = std::fs::read_to_string(log_dir.join(&log_name)).unwrap_or_default();
+        assert!(
+            !seq_log.contains("nchunks="),
+            "with no index this run should NOT be parallel - the assertion below would then be \
+             testing the wrong path:\n{seq_log}"
+        );
+        let seq_conversions = seq_log
+            .lines()
+            .filter(|l| l.contains("converted special-format input"))
+            .count();
+        assert_eq!(
+            seq_conversions, 1,
+            "the sequential path must reuse the resolved Config, converting exactly once, but \
+             converted {seq_conversions} times:\n{seq_log}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(wrk.path("seq.csv")).unwrap(),
+            zip_stats,
+            "the sequential path must produce the same stats as the parallel one"
+        );
+    }
+
+    // The SECOND route into the autoindex - the QSV_AUTOINDEX_SIZE env var, applied in
+    // Config::new - was zeroed by a separate guard, so it needs its own run. Without
+    // --cache-threshold the index is left in place, hence a throwaway copy of the fixture.
+    {
+        std::fs::copy(wrk.path("sf.zip"), wrk.path("sf2.zip")).unwrap();
+        let log_dir = wrk.path("envlog");
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let mut cmd = wrk.command("stats");
+        cmd.env("QSV_LOG_LEVEL", "info")
+            .env("QSV_LOG_DIR", &log_dir)
+            .env("QSV_AUTOINDEX_SIZE", "105")
+            .arg("-E")
+            .args(["--output", wrk.path("env.csv").to_str().unwrap()])
+            .arg("sf2.zip");
+        wrk.assert_success(&mut cmd);
+        let env_log = std::fs::read_to_string(log_dir.join(&log_name)).unwrap_or_default();
+        assert!(
+            env_log.contains("nchunks="),
+            "QSV_AUTOINDEX_SIZE must also reach a special-format input's parallel path; log had \
+             no nchunks= line:\n{env_log}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(wrk.path("env.csv")).unwrap(),
+            zip_stats,
+            "the QSV_AUTOINDEX_SIZE route must produce the same stats"
+        );
+    }
+
     // and the numbers must match the identical uncompressed input exactly
-    let plain_stats = stats_of("sf.csv", "plain.csv");
+    let (plain_stats, _) = stats_of("sf.csv", "plain.csv", "plainlog");
     assert_eq!(
         zip_stats, plain_stats,
         "stats for a .zip input must equal stats for the same data uncompressed"
     );
 
-    // no autoindex is created beside a special-format input...
+    // The autoindex is built beside the CONVERTED TEMP, never beside the compressed source,
+    // so nothing is left in the work dir.
     assert!(
         !wrk.path("sf.zip.idx").exists(),
-        "a converted temp file must never be autoindexed"
+        "an index must never be written beside the compressed source"
     );
 
     // ...while ordinary inputs still autoindex. -104 is negative (autoindex) but does not end
@@ -8997,6 +9119,44 @@ fn stats_autoindex_is_skipped_for_special_format_inputs() {
     assert!(
         wrk.path("sf.csv.idx").exists(),
         "autoindexing must still work for ordinary CSV inputs"
+    );
+}
+
+// `stats` infers the delimiter of a stdin input by peeking at its spill temp file, and stores
+// the result in `args.flag_delimiter`. That used to reach the stats engine only because
+// `sequential_stats`/`parallel_stats` rebuilt their own Config from `args`. #4462 made them
+// share the ALREADY-BUILT `rconfig` instead - which was constructed BEFORE the inference - so
+// the delimiter now has to be re-applied to it explicitly. Getting this wrong parses a TSV as
+// a single comma-delimited column: wrong stats, exit code 0, no warning.
+#[test]
+fn stats_infers_stdin_delimiter() {
+    let wrk = Workdir::new("stats_stdin_delim");
+    let mut tsv = String::from("a\tb\tc\n");
+    for i in 0..50 {
+        tsv.push_str(&format!("{i}\t{}\tx\n", i * 2));
+    }
+    wrk.create_from_string("in.tsv", &tsv);
+
+    let mut cmd = wrk.command("stats");
+    // QSV_DEFAULT_DELIMITER short-circuits the inference this test exists to cover, and
+    // Workdir::command inherits the ambient environment - so remove it explicitly.
+    cmd.env_remove("QSV_DEFAULT_DELIMITER").arg("-E").arg("-");
+    cmd.stdin(std::process::Stdio::from(
+        std::fs::File::open(wrk.path("in.tsv")).unwrap(),
+    ));
+    let got: String = wrk.stdout(&mut cmd);
+
+    // three data rows (one per column) means the tab delimiter was honored; a single row
+    // means the whole line was read as one comma-delimited field.
+    let fields: Vec<&str> = got
+        .lines()
+        .skip(1)
+        .map(|l| l.split(',').next().unwrap())
+        .collect();
+    assert_eq!(
+        fields,
+        vec!["a", "b", "c"],
+        "the tab delimiter inferred from stdin must reach the stats engine; got:\n{got}"
     );
 }
 

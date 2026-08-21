@@ -1698,26 +1698,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!("{format_error}");
     }
 
-    // NEVER autoindex a special-format input (.gz/.zip/.parquet/.jsonl/...) in `stats`.
+    // INVARIANT (issue #4462): `rconfig` below is the one and only resolved Config for this
+    // run's input, and every stats path SHARES it - `sequential_stats` and `parallel_stats`
+    // both take it by reference, and each parallel worker gets a CLONE.
     //
-    // Such an input is read through a CONVERTED temp file, and every Config converts to its OWN
-    // temp path. `parallel_stats`' workers each build a FRESH Config (`args.rconfig()`), so they
-    // resolve a DIFFERENT temp file, find no index beside it, and panic in the `.expect()` on
-    // `indexed()`. Every chunk dies; because a panicking pool worker only unwinds its own thread,
-    // the run still exited 0 and wrote a stats file with headers and ZERO data rows. Reproducible
-    // on master with `qsv stats -E --cache-threshold -105 data.csv.gz`.
+    // This matters for special-format inputs (.gz/.zip/.parquet/.jsonl/...), which are read
+    // through a CONVERTED temp file: each Config resolves its own temp, but clones share the
+    // `Arc<OnceLock>` holding that resolution, so all of them see the SAME temp - and therefore
+    // the same sibling autoindex. Rebuilding `args.rconfig()` anywhere downstream breaks this:
+    // it resolves a DIFFERENT temp with no index beside it, and the worker panics in the
+    // `.expect()` on `indexed()`. Because a panicking pool worker only unwinds its own thread,
+    // that failed silently - the run exited 0 with a headers-only, ZERO-row stats file
+    // (`qsv stats -E --cache-threshold -105 data.csv.gz`, issue #4446).
     //
-    // This lives HERE rather than in `Config::index_files` on purpose: commands that hand their
-    // workers the already-RESOLVED Config - `frequency` does exactly that, deliberately - keep a
-    // consistent temp path across threads, so their special-format autoindexed parallel path is
-    // safe and must not be disabled. `stats` is the caller that reconstructs Configs, so `stats`
-    // is where the skip belongs.
+    // #4445 papered over this by refusing to autoindex special-format inputs at all, which cost
+    // them the parallel path entirely. Sharing the Config is the real fix, and it restores the
+    // memcheck index fallback below - the one that fires precisely when the input is too large
+    // to process sequentially.
     //
-    // Zeroed here so BOTH routes are covered: QSV_AUTOINDEX_SIZE (applied in Config::new) and
-    // the negative --cache-threshold below.
-    if rconfig.is_special_format() {
-        rconfig.autoindex_size = 0;
-    }
+    // Grep guard: there must be NO `self.rconfig()` / `args.rconfig()` call downstream of this
+    // point on a compute path. `Config::resolve_converted` logs one line per conversion; more
+    // than one per input means this invariant was broken.
 
     // infer delimiter when we're getting input from stdin
     // as the stats engine needs to know the delimiter or it will panic
@@ -1784,10 +1785,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             };
 
             // Thread the inferred delimiter through args rather than mutating the
-            // process environment. rconfig() applies flag_delimiter to every Config
-            // it builds, so this reaches the stats engine exactly the way the
-            // QSV_DEFAULT_DELIMITER env var did - without an unsafe global mutation
-            // that is UB if any other thread reads the environment concurrently.
+            // process environment - an unsafe global mutation that is UB if any other
+            // thread reads the environment concurrently.
             // An explicit --delimiter always wins.
             if args.flag_delimiter.is_none() {
                 args.flag_delimiter = Some(Delimiter(inferred));
@@ -1796,6 +1795,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         args.arg_input = Some(tempfile_path.to_string_lossy().to_string());
         rconfig.path = Some(tempfile_path);
+        // `rconfig` was built from `args` BEFORE the delimiter was inferred, and it is now
+        // the single Config every compute path reads through (see the invariant above).
+        // Re-apply the delimiter here or a tab/semicolon-delimited stdin input is parsed as
+        // comma-delimited - silently wrong stats, not an error. This used to be carried by
+        // the compute paths rebuilding `args.rconfig()` themselves; they no longer do.
+        // `Config::delimiter(None)` is a no-op, so an unset --delimiter changes nothing.
+        rconfig = rconfig.delimiter(args.flag_delimiter);
     } else {
         // check if the input file exists
         if let Some(path) = rconfig.path.clone()
@@ -2026,7 +2032,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // check if flag_cache_threshold is a negative number,
             // if so, set the autoindex_size to absolute of the number
-            if args.flag_cache_threshold.is_negative() && !rconfig.is_special_format() {
+            if args.flag_cache_threshold.is_negative() {
                 rconfig.autoindex_size = args.flag_cache_threshold.unsigned_abs() as u64;
                 autoindex_set = true;
             }
@@ -2073,19 +2079,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         //      per-column memory regardless of sequential vs. parallel
                         // Only propagate the original OOM error if NEITHER fallback engages.
                         let mut index_succeeded = false;
-                        // `!rconfig.is_special_format()` for the same reason the autoindex is
-                        // skipped above, and it matters MORE here: this fallback fires precisely
-                        // when the file is too large for sequential processing. It creates an
-                        // index beside the RESOLVED TEMP file and then selects `parallel_stats`,
-                        // whose workers rebuild a fresh Config, resolve a DIFFERENT temp, find no
-                        // index, and panic - turning an out-of-memory condition into a
-                        // headers-only stats file at exit 0. The DataSketches fallback below
-                        // still engages for these inputs, so a large compressed file keeps a
-                        // memory mitigation; it just stays sequential.
-                        if indexed_result.is_none()
-                            && !rconfig.is_stdin()
-                            && !rconfig.is_special_format()
-                        {
+                        // Special-format inputs take this path too (issue #4462). The index is
+                        // built beside the RESOLVED TEMP (`mem_path`), and `parallel_stats`'
+                        // workers clone this very `rconfig`, so they resolve to that same temp
+                        // and find the index. #4445 excluded them here - which was backwards,
+                        // since this fallback fires precisely when the input is too large to
+                        // process sequentially, leaving a large compressed file with no index
+                        // escape hatch at all.
+                        if indexed_result.is_none() && !rconfig.is_stdin() {
                             log::info!(
                                 "File too large for sequential processing. Auto-creating index to \
                                  enable parallel processing..."
@@ -2152,7 +2153,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // without an index, we need to count the number of records in the file
                     // safety: we know util::count_rows() will not return an Err
                     let capacity_hint = util::count_rows(&rconfig).unwrap();
-                    args.sequential_stats(&resolved_whitelist, capacity_hint)
+                    args.sequential_stats(&resolved_whitelist, capacity_hint, &rconfig)
                 },
                 Some(idx) => {
                     // with an index, we get the rowcount instantaneously from the index
@@ -2160,12 +2161,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     match args.flag_jobs {
                         Some(num_jobs) => {
                             if num_jobs == 1 {
-                                args.sequential_stats(&resolved_whitelist, idx_count)
+                                args.sequential_stats(&resolved_whitelist, idx_count, &rconfig)
                             } else {
-                                args.parallel_stats(&resolved_whitelist, idx_count)
+                                args.parallel_stats(&resolved_whitelist, idx_count, &rconfig)
                             }
                         },
-                        _ => args.parallel_stats(&resolved_whitelist, idx_count),
+                        _ => args.parallel_stats(&resolved_whitelist, idx_count, &rconfig),
                     }
                 },
             }?;
@@ -2289,7 +2290,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // NOTE: the branch that used to stand here, keyed on rconfig.is_stdin(), was
     // unreachable - rconfig.path is repointed at the spill temp file far above this
     // point, so is_stdin() is always false by the time we get here.
-    if let Some(path) = rconfig.path
+    // `path` is cloned rather than moved out: `rconfig` is still needed inside this block to
+    // resolve the autoindex's real (possibly converted-temp) location.
+    if let Some(path) = rconfig.path.clone()
         && !input_was_stdin
     {
         // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv" or
@@ -2327,7 +2330,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // looked for at `data.csv.idx` and survived the cleanup it asked for. The
                 // removal only log::warn!s on failure, so the leak was silent. It happened to
                 // work for `.csv` inputs by coincidence.
-                let index_file = util::idx_path(&path);
+                //
+                // The index lives beside the path that was actually INDEXED, which for a
+                // special-format input is the converted temp, not `path` (kept for stats-cache
+                // naming). Before #4462 these inputs never autoindexed, so `path` was always
+                // right; now they do, and using `path` would look for `data.csv.gz.idx`,
+                // never find it, and log a spurious "Could not remove index file" warning on
+                // every such run.
+                let index_file = util::idx_path(
+                    &rconfig
+                        .resolved_path()
+                        .ok()
+                        .flatten()
+                        .unwrap_or_else(|| path.clone()),
+                );
                 log::debug!("deleting index file: {}", index_file.display());
                 if std::fs::remove_file(index_file.clone()).is_err() {
                     // fails silently if it can't remove the index file
@@ -2644,17 +2660,25 @@ impl Args {
     /// * CSV parsing errors are propagated as `CliError`
     /// * Date inference initialization errors are handled
     /// * File I/O errors are wrapped in appropriate error types
+    ///
+    /// # `rconfig`
+    ///
+    /// MUST be the caller's already-resolved Config, never a fresh `self.rconfig()`. A
+    /// special-format input converts to a temp file on first read and each Config resolves its
+    /// OWN temp, so rebuilding one here would convert the input a second time. See the
+    /// invariant comment in `run()`.
     fn sequential_stats(
         &self,
         whitelist: &str,
         capacity_hint: u64,
+        rconfig: &Config,
     ) -> CliResult<(csv::ByteRecord, Vec<Stats>, u64)> {
-        let mut rdr = self.rconfig().reader()?;
+        let mut rdr = rconfig.reader()?;
         let full_headers = rdr.byte_headers()?.clone();
 
         // Find weight column index and exclude it from selection
         let (weight_col_idx, sel, headers) =
-            self.process_headers_with_weight_exclusion(&full_headers)?;
+            self.process_headers_with_weight_exclusion(&full_headers, rconfig)?;
 
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
@@ -2737,11 +2761,12 @@ impl Args {
         &self,
         whitelist: &str,
         idx_count: u64,
+        rconfig: &Config,
     ) -> CliResult<(csv::ByteRecord, Vec<Stats>, u64)> {
         // N.B. This method doesn't handle the case when the number of records
         // is zero correctly. So we use `sequential_stats` instead.
         if idx_count == 0 {
-            return self.sequential_stats(whitelist, 0);
+            return self.sequential_stats(whitelist, 0, rconfig);
         }
 
         // Retain freed jemalloc pages for the duration of this parallel run when it
@@ -2752,12 +2777,12 @@ impl Args {
             util::retain_alloc_pages_for_aggregation();
         }
 
-        let mut rdr = self.rconfig().reader()?;
+        let mut rdr = rconfig.reader()?;
         let full_headers = rdr.byte_headers()?.clone();
 
         // Find weight column index and exclude it from selection
         let (weight_col_idx, sel, headers) =
-            self.process_headers_with_weight_exclusion(&full_headers)?;
+            self.process_headers_with_weight_exclusion(&full_headers, rconfig)?;
 
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
@@ -2785,7 +2810,7 @@ impl Args {
 
         let (chunking_mode_info, chunk_size) = if needs_memory_aware_chunking {
             // Sample records for memory estimation
-            let sample_records = util::sample_records(&self.rconfig(), 1000);
+            let sample_records = util::sample_records(rconfig, 1000);
 
             // Calculate memory-aware chunk size
             let chunk_size = calculate_memory_aware_chunk_size(
@@ -2838,14 +2863,19 @@ impl Args {
         let args = Arc::new(self.clone());
         for i in 0..nchunks {
             let (send, args, sel) = (send.clone(), Arc::clone(&args), sel.clone());
+            // CLONE the resolved Config - never rebuild it with `args.rconfig()`. The clone
+            // shares the `Arc<OnceLock>` holding a special-format input's converted temp, so
+            // every worker re-opens the index next to the SAME temp the parent indexed. A
+            // fresh Config would resolve a different temp with no index beside it and panic
+            // in the expect() below (issues #4446 / #4462).
+            let rconf = rconfig.clone();
             let weight_idx: Option<usize> = weight_col_idx;
             pool.execute(move || {
                 // The parent verified the index exists before chunking, but it can be
                 // deleted or invalidated in between (TOCTOU) - notably by a concurrent
                 // run cleaning up its autoindex. Fail loudly with actionable info like
                 // the seek() below, rather than hitting undefined behavior.
-                let mut idx = args
-                    .rconfig()
+                let mut idx = rconf
                     .indexed()
                     .expect("Failed to re-open index for parallel stats.")
                     .expect("Index is no longer available for parallel stats.");
@@ -3209,6 +3239,8 @@ impl Args {
     /// # Arguments
     ///
     /// * `full_headers` - The full CSV headers as a `ByteRecord`
+    /// * `rconfig` - the caller's already-resolved Config (see the invariant in `run()`); never
+    ///   build a fresh one here
     ///
     /// # Returns
     ///
@@ -3228,6 +3260,7 @@ impl Args {
     fn process_headers_with_weight_exclusion(
         &self,
         full_headers: &csv::ByteRecord,
+        rconfig: &Config,
     ) -> CliResult<(Option<usize>, Selection, csv::ByteRecord)> {
         if let Some(ref weight_col) = self.flag_weight {
             // Find weight column index in full headers
@@ -3244,7 +3277,7 @@ impl Args {
                 })?;
 
             // Create selection excluding weight column
-            let sel = self.rconfig().selection(full_headers)?;
+            let sel = rconfig.selection(full_headers)?;
             // Remove weight column index from selection if present
             let sel_vec: Vec<usize> = sel
                 .iter()
@@ -3268,7 +3301,7 @@ impl Args {
             Ok((Some(weight_idx), modified_sel, selected_headers))
         } else {
             // No weight column specified, use normal selection
-            let sel = self.rconfig().selection(full_headers)?;
+            let sel = rconfig.selection(full_headers)?;
             let headers: csv::ByteRecord = sel.select(full_headers).collect();
             Ok((None, sel, headers))
         }

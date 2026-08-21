@@ -33,6 +33,23 @@ Need a UI & more advanced data-wrangling? Upgrade to qsv pro (https://qsvpro.dat
 
 pub static TEMP_FILE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+// Index paths this process has already rebuilt because they looked stale.
+//
+// Several parallel workers call `index_files()` on the same input and can all observe the
+// same stale index. Worse, a data file whose mtime is in the FUTURE never stops looking
+// stale, so the condition does not clear after a rebuild. Without this, every worker
+// rebuilds - each `File::create`ing (truncating) the very index the others are reading,
+// which corrupts it and fails the run with a bare "Invalid argument".
+//
+// The lock is held ACROSS the rebuild, so late arrivals block until it is complete and then
+// simply re-open the finished file.
+static AUTOINDEXED_STALE: OnceLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> =
+    OnceLock::new();
+
+fn autoindexed_stale() -> &'static std::sync::Mutex<std::collections::HashSet<PathBuf>> {
+    AUTOINDEXED_STALE.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
 #[cfg(feature = "polars")]
 pub static POLARS_FLOAT_PRECISION: OnceLock<Option<usize>> = OnceLock::new();
 
@@ -865,8 +882,18 @@ impl Config {
         if let Some(idx_path) = &idx_path_work {
             let (idx_modified, _) = util::file_metadata(&idx_file.metadata()?);
             if data_modified > idx_modified {
-                info!("index stale... autoindexing...");
-                self.autoindex_file();
+                // Rebuild AT MOST ONCE per path per process, and never concurrently - see
+                // `AUTOINDEXED_STALE`. Late arrivals block here until the rebuild finishes,
+                // then fall through and re-open the completed index.
+                {
+                    let mut rebuilt = autoindexed_stale()
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if rebuilt.insert(idx_path.clone()) {
+                        info!("index stale... autoindexing...");
+                        self.autoindex_file();
+                    }
+                }
                 idx_file = fs::File::open(idx_path)?;
             }
         }
@@ -1269,5 +1296,75 @@ mod tests {
         assert_eq!(ext, "tsv");
         assert_eq!(delim, b'\t');
         assert!(snappy);
+    }
+
+    /// A STALE index must be rebuilt AT MOST ONCE per process, and never concurrently.
+    ///
+    /// Several parallel workers call `index_files()` on the same input and all observe the
+    /// same stale index; a data file whose mtime is in the FUTURE never stops looking stale,
+    /// so the condition does not clear after a rebuild either. Before the fix every caller
+    /// rebuilt - each truncating the index the others were mid-read of - corrupting it and
+    /// failing the run with a bare "Invalid argument" from `Indexed::open`. That is what broke
+    /// `stats` on a stale index (test_index::index_outdated_stats) on macOS CI.
+    ///
+    /// The assertion is on the rebuild COUNT, not on the crash: the corruption is a race that
+    /// a fast machine reliably wins, so a concurrency-only test passes even with the fix
+    /// removed (verified). Watching the index's mtime instead is deterministic - a second
+    /// rebuild necessarily rewrites the file.
+    #[test]
+    fn stale_index_is_rebuilt_once_not_once_per_caller() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let csv_path = dir.path().join("stale.csv");
+
+        let mut f = std::fs::File::create(&csv_path).unwrap();
+        writeln!(f, "letter,number").unwrap();
+        for i in 0..2_000 {
+            writeln!(f, "{},{i}", char::from(b'a' + (i % 26) as u8)).unwrap();
+        }
+        f.sync_all().unwrap();
+        drop(f);
+
+        let path_str = csv_path.to_string_lossy().to_string();
+        let config = Config::new(Some(&path_str));
+        crate::util::create_index_for_file(&csv_path, &config).unwrap();
+        let idx_path = crate::util::idx_path(&csv_path);
+
+        // push the DATA mtime into the future so the index looks stale to EVERY caller and
+        // STAYS stale after a rebuild - the exact shape of test_index::index_outdated_stats
+        let future = filetime::FileTime::from_unix_time(
+            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&csv_path).unwrap())
+                .unix_seconds()
+                + 86_400,
+            0,
+        );
+        filetime::set_file_mtime(&csv_path, future).unwrap();
+
+        // first call: sees the stale index and rebuilds it
+        assert!(
+            config.indexed().unwrap().is_some(),
+            "the first caller must get a usable index"
+        );
+
+        // stamp the index with a distinctive mtime; any FURTHER rebuild overwrites it
+        let marker = filetime::FileTime::from_unix_time(1_000_000, 0);
+        filetime::set_file_mtime(&idx_path, marker).unwrap();
+
+        // later callers - the parallel workers - must reuse it rather than rebuild
+        for i in 0..8 {
+            assert!(
+                Config::new(Some(&path_str)).indexed().unwrap().is_some(),
+                "caller {i} must get a usable index"
+            );
+        }
+
+        let after =
+            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&idx_path).unwrap());
+        assert_eq!(
+            after, marker,
+            "the stale index was rebuilt again by a later caller; with parallel workers those \
+             rebuilds race and truncate the index the others are reading"
+        );
     }
 }

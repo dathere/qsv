@@ -6780,3 +6780,105 @@ fn moarstats_pct_thresholds_collapsing_to_one_percentile_errors() {
         .args(["--pct-thresholds", "33.3,33.6"]);
     wrk.assert_err(&mut cmd);
 }
+
+// issue #4460: a special-format input (.gz/.zip/.parquet/...) is only decompressed when it
+// is read through `Config`. Several moarstats passes handed the ORIGINAL path straight to
+// `csv::ReaderBuilder::from_path`, so a `.zip` was parsed as the compressed container:
+// `csv error: ... invalid utf-8: invalid UTF-8 in field 0 near byte index 0`. Where the
+// error was swallowed (`.ok()` / `else { continue }`) it silently yielded empty headers
+// instead. The input is now resolved once through a bound `Config` and every data read uses
+// that resolved path.
+//
+// The two inputs deliberately produce DIFFERENT sidecar names - `boston311-100.csv.zip`
+// yields `boston311-100.csv.stats.csv` while `boston311-100.csv` yields
+// `boston311-100.stats.csv` - so both runs can share one Workdir without clobbering each
+// other's baseline stats.
+#[test]
+fn moarstats_from_zip_matches_uncompressed() {
+    let wrk = Workdir::new("moarstats_from_zip_matches_uncompressed");
+    let zip_file = wrk.load_test_file("boston311-100.csv.zip");
+    let csv_file = wrk.load_test_file("boston311-100.csv");
+
+    for input in [&zip_file, &csv_file] {
+        let mut cmd = wrk.command("moarstats");
+        cmd.arg(input);
+        wrk.assert_success(&mut cmd);
+    }
+
+    let from_zip = wrk.read_to_string("boston311-100.csv.stats.csv").unwrap();
+    let from_csv = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+
+    assert!(
+        from_zip.lines().count() > 1,
+        "moarstats over a .zip input produced no data rows"
+    );
+    assert_eq!(
+        from_zip, from_csv,
+        "moarstats over a .zip input must equal moarstats over the same data uncompressed"
+    );
+}
+
+// issue #4460, the --bivariate branch: it reaches sites the bare command does not - the
+// auto-created index (which must be built beside the RESOLVED temp, not the .zip), the
+// record-count probe, and the primary-header read whose error was swallowed into an empty
+// header vector.
+#[test]
+fn moarstats_bivariate_from_zip_matches_uncompressed() {
+    let wrk = Workdir::new("moarstats_bivariate_from_zip_matches_uncompressed");
+    let zip_file = wrk.load_test_file("boston311-100.csv.zip");
+    let csv_file = wrk.load_test_file("boston311-100.csv");
+
+    for input in [&zip_file, &csv_file] {
+        let mut cmd = wrk.command("moarstats");
+        cmd.arg("--bivariate").arg(input);
+        wrk.assert_success(&mut cmd);
+    }
+
+    let from_zip = wrk
+        .read_to_string("boston311-100.csv.stats.bivariate.csv")
+        .unwrap();
+    let from_csv = wrk
+        .read_to_string("boston311-100.stats.bivariate.csv")
+        .unwrap();
+
+    // real field pairs, not just a header - an empty-header read would produce none
+    assert!(
+        from_zip.lines().count() > 1,
+        "bivariate stats over a .zip input produced no field pairs"
+    );
+    assert_eq!(
+        from_zip, from_csv,
+        "bivariate stats for a .zip input must equal the same data uncompressed"
+    );
+}
+
+// issue #4460, the --join-inputs branch: the `qsv join` subprocess handles a compressed
+// secondary fine, but moarstats then re-opened that secondary RAW to validate the joined
+// header and died with "Failed to read secondary header: ... invalid utf-8".
+#[test]
+fn moarstats_join_inputs_from_zip_secondary() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("moarstats_join_inputs_from_zip_secondary");
+
+    wrk.create_from_string("a.csv", "id,x\n1,10\n2,20\n3,30\n4,40\n5,50\n");
+    let secondary = "id,y\n1,7\n2,8\n3,9\n4,11\n5,13\n";
+    wrk.create_from_string("b.csv", secondary);
+
+    let zip_path = wrk.path("b.zip");
+    let zf = std::fs::File::create(&zip_path).unwrap();
+    let mut zw = zip::ZipWriter::new(zf);
+    zw.start_file("b.csv", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zw.write_all(secondary.as_bytes()).unwrap();
+    zw.finish().unwrap();
+
+    // a compressed secondary must be accepted exactly like the plain one
+    for secondary_input in ["b.csv", "b.zip"] {
+        let mut cmd = wrk.command("moarstats");
+        cmd.args(["--join-inputs", secondary_input])
+            .args(["--join-keys", "id,id"])
+            .arg("a.csv");
+        wrk.assert_success(&mut cmd);
+    }
+}

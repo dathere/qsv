@@ -678,10 +678,12 @@ impl Config {
     ///
     /// No production caller remains: it existed so `stats` could refuse to autoindex these
     /// inputs (#4445), and #4462 removed that refusal by having `stats` share one resolved
-    /// Config instead. Kept because the hazard it names is still real - a command that builds
-    /// a fresh `Config` per worker resolves a DIFFERENT temp, so anything keyed to that path
-    /// (an autoindex, most notably) is invisible to every other worker. `moarstats` still
-    /// rebuilds Configs that way. Prefer sharing the resolved Config over branching on this.
+    /// Config instead. Kept because the hazard it names is structural - a command that builds
+    /// a fresh `Config` per worker from a SPECIAL-FORMAT path resolves a DIFFERENT temp, so
+    /// anything keyed to that path (an autoindex, most notably) is invisible to every other
+    /// worker. Prefer one of the two fixes over branching on this: share the resolved `Config`
+    /// (`stats`, `frequency`), or resolve once and hand workers the RESOLVED PATH so the
+    /// Configs they build are never special-format (`moarstats`, since #4464).
     #[inline]
     #[allow(dead_code)]
     pub const fn is_special_format(&self) -> bool {
@@ -1265,11 +1267,17 @@ mod tests {
     /// workers a CLONE of the resolved Config - clones share the `Arc<OnceLock>` holding the
     /// resolution, so every thread sees one temp and one index.
     ///
-    /// A caller that instead REBUILDS a Config per worker resolves a different temp with no
-    /// index beside it. `moarstats` still does this (`src/cmd/moarstats.rs:2807`, `:3681`), so
-    /// this is not a hypothetical. The remedy is to fix such a caller - NOT to disable
-    /// autoindexing here, which would silently drop every well-behaved caller back to
-    /// sequential processing on large compressed inputs.
+    /// A caller that instead REBUILDS a Config per worker from the ORIGINAL path resolves a
+    /// different temp with no index beside it. No caller does that today: `moarstats` does
+    /// rebuild a Config per worker (`compute_outliers_and_kga`, `compute_all_bivariatestats`),
+    /// but both are handed `read_input_path` - already resolved by #4464 - so the Configs they
+    /// build are ordinary, not special-format. That is the second valid shape, and it is worth
+    /// preserving: passing either the resolved Config or the resolved path is fine, passing the
+    /// original path to a worker that rebuilds is not.
+    ///
+    /// The remedy for a future offender is to fix that caller - NOT to disable autoindexing
+    /// here, which would silently drop every well-behaved caller back to sequential processing
+    /// on large compressed inputs.
     #[test]
     fn special_format_input_is_still_autoindexable() {
         use std::io::Write;

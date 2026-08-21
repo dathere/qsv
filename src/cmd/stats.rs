@@ -2337,6 +2337,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // right; now they do, and using `path` would look for `data.csv.gz.idx`,
                 // never find it, and log a spurious "Could not remove index file" warning on
                 // every such run.
+                //
+                // `resolved_path()` is a cached read here, never a conversion: it is inside
+                // `if autoindex_set`, which is only ever set on the compute path, after
+                // `rconfig.indexed()` has already populated the OnceLock. A cache-hit run
+                // (compute skipped) leaves `autoindex_set` false and never reaches this,
+                // so the run that exists to skip work does not decompress anything.
                 let index_file = util::idx_path(
                     &rconfig
                         .resolved_path()

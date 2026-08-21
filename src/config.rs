@@ -788,38 +788,46 @@ impl Config {
         // partial index behind, and a concurrent reader can open one mid-write. `rename` on
         // the same directory is atomic: readers see either the old complete index or the new
         // one, never a torn file.
-        let mut tmp = pidx.clone().into_os_string();
-        tmp.push(format!(".tmp{}", std::process::id()));
-        let tmp = PathBuf::from(tmp);
-
-        let Ok(idxfile) = fs::File::create(&tmp) else {
+        // `tempfile` picks a UNIQUE name and creates it exclusively (O_EXCL), so two
+        // concurrent builds - which the `autoindex_size` path below does not serialize -
+        // cannot land on the same file, and a pre-existing file or symlink at a guessable
+        // name cannot be written through. A deterministic `<idx>.tmp<pid>` had both problems:
+        // same-process builds share a pid.
+        let idx_dir = pidx.parent().unwrap_or_else(|| Path::new("."));
+        let Ok(mut tmp) = tempfile::Builder::new()
+            .prefix(".qsv-idx")
+            .tempfile_in(idx_dir)
+        else {
             return false;
         };
         let Ok(mut rdr) = self.reader_file() else {
-            let _ = fs::remove_file(&tmp);
+            // `tmp` removes itself on drop
             return false;
         };
-        let mut wtr = io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, idxfile);
-        match csv_index::RandomAccessSimple::create(&mut rdr, &mut wtr) {
-            Ok(()) => {
-                if io::Write::flush(&mut wtr).is_err() {
-                    drop(wtr);
-                    let _ = fs::remove_file(&tmp);
-                    return false;
-                }
-                // drop the writer before renaming so every buffered byte is in the file
-                drop(wtr);
-                if fs::rename(&tmp, &pidx).is_err() {
-                    let _ = fs::remove_file(&tmp);
-                    return false;
-                }
+
+        let build = {
+            let mut wtr =
+                io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, tmp.as_file_mut());
+            csv_index::RandomAccessSimple::create(&mut rdr, &mut wtr)
+                .and_then(|()| io::Write::flush(&mut wtr).map_err(Into::into))
+        };
+        if let Err(e) = build {
+            debug!("autoindex of {} failed: {e}", path_buf.display());
+            return false;
+        }
+
+        // persist() renames into place, which is atomic on the same filesystem: readers see
+        // either the old complete index or the new one, never a torn file
+        match tmp.persist(&pidx) {
+            Ok(_) => {
                 debug!("autoindex of {} successful.", path_buf.display());
                 true
             },
             Err(e) => {
-                drop(wtr);
-                let _ = fs::remove_file(&tmp);
-                debug!("autoindex of {} failed: {e}", path_buf.display());
+                debug!(
+                    "autoindex of {} could not be put in place: {e}",
+                    path_buf.display()
+                );
                 false
             },
         }
@@ -923,20 +931,40 @@ impl Config {
                 // Rebuild AT MOST ONCE per path per process, and never concurrently - see
                 // `AUTOINDEXED_STALE`. Late arrivals block here until the rebuild finishes,
                 // then fall through and re-open the completed index.
-                {
+                let usable = {
                     let mut rebuilt = autoindexed_stale()
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    if !rebuilt.contains(idx_path) {
+                    if rebuilt.contains(idx_path) {
+                        // an earlier caller in this process already rebuilt it successfully
+                        true
+                    } else {
                         info!("index stale... autoindexing...");
                         // record ONLY on success: `autoindex_file` reports failure quietly,
                         // and memoizing a failed rebuild would poison this path for the rest
                         // of the process - every later caller skipping the repair and reusing
                         // the stale index.
-                        if self.autoindex_file() {
+                        let ok = self.autoindex_file();
+                        if ok {
                             rebuilt.insert(idx_path.clone());
                         }
+                        ok
                     }
+                };
+                if !usable {
+                    // The index is stale and could not be refreshed. Do NOT hand back the
+                    // stale one: we just determined its offsets no longer describe the data,
+                    // so a caller seeking with it can read the wrong rows or miss rows
+                    // entirely while believing the index is valid. Reporting "no index" sends
+                    // the caller down its sequential path, which is slower but correct.
+                    warn!(
+                        "index for {} is stale and could not be rebuilt; proceeding without an \
+                         index",
+                        self.path
+                            .as_ref()
+                            .map_or_else(String::new, |p| p.display().to_string())
+                    );
+                    return Ok(None);
                 }
                 idx_file = fs::File::open(idx_path)?;
             }
@@ -1465,11 +1493,17 @@ mod tests {
 
         std::fs::set_permissions(dir.path(), original_perms).unwrap();
 
-        // the EXISTING index must have survived intact - the rebuild never touched it
+        // A stale index that could not be refreshed must NOT be handed back: its offsets no
+        // longer describe the data, so seeking with it can read the wrong rows. "No index"
+        // sends the caller down its sequential path, which is slower but correct.
+        // (roborev 4370 - an earlier revision of this test asserted the opposite.)
         assert!(
-            during_failure.is_ok_and(|i| i.is_some()),
-            "a failed rebuild must leave the existing index usable"
+            during_failure.is_ok_and(|i| i.is_none()),
+            "a stale index that could not be rebuilt must be reported as absent, not returned"
         );
+
+        // ...but the existing index file must still be INTACT on disk - the failed rebuild
+        // never touched it, so a later successful rebuild is not starting from wreckage
         assert_eq!(
             std::fs::metadata(&idx_path).unwrap().len(),
             good_len,

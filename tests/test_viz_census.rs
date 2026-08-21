@@ -863,7 +863,8 @@ fn viz_smart_accepts_the_census_denominator() {
 // A denominator column NAMED "census" is not a way to opt out: the value is reserved, and the help
 // text says so. This pins the reservation rather than leaving it to prose.
 #[test]
-#[ignore = "Census API is down so this test fails with a network error. Re-enable when the API is back up."]
+#[ignore = "Census API is down so this test fails with a network error. Re-enable when the API is \
+            back up."]
 fn viz_denominator_census_is_reserved() {
     let wrk = Workdir::new("viz_denominator_census_is_reserved");
     wrk.create_from_string("rg.csv", "region,census,val\nAB,100,10\nCD,200,20\n");

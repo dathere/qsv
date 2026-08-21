@@ -2338,11 +2338,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // never find it, and log a spurious "Could not remove index file" warning on
                 // every such run.
                 //
-                // `resolved_path()` is a cached read here, never a conversion: it is inside
-                // `if autoindex_set`, which is only ever set on the compute path, after
-                // `rconfig.indexed()` has already populated the OnceLock. A cache-hit run
-                // (compute skipped) leaves `autoindex_set` false and never reaches this,
-                // so the run that exists to skip work does not decompress anything.
+                // `resolved_path()` is a cached read here, never a conversion. Two facts,
+                // in this order: `autoindex_set` is only ever set on the compute path (inside
+                // `if compute_stats`), and this cleanup block runs far BELOW the
+                // `rconfig.indexed()` call on that path - which has already populated the
+                // OnceLock by the time we get here. (The flag itself is set just BEFORE
+                // `indexed()`, not after; it is the cleanup block's position that guarantees
+                // the resolution, not the assignment's.) A cache-hit run leaves
+                // `autoindex_set` false and never reaches this, so the run whose whole purpose
+                // is to skip work does not decompress anything.
                 let index_file = util::idx_path(
                     &rconfig
                         .resolved_path()

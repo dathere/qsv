@@ -573,3 +573,45 @@ fn count_file_schema_inference_issue_3103() {
         "Count should be 3050, not 0, even with schema inference issues"
     );
 }
+
+// issue #4461: `util::log_end` deletes `TEMP_FILE_DIR`, but that cleanup was gated on the
+// `polars` feature while the directory is populated in EVERY build - `extract_zip_to_temp` is
+// always compiled (it needs only the non-optional `zip` crate). So a non-polars build such as
+// qsvlite left a full decompressed copy of every `.zip` input on disk, once per invocation,
+// until the OS reclaimed the temp dir.
+//
+// The child's temp root is redirected into the Workdir so the assertion is hermetic and does
+// not depend on the state of the real system temp dir. TMPDIR covers Unix; TMP/TEMP cover
+// Windows (`std::env::temp_dir` reads different vars per platform).
+//
+// Under `-F all_features` this passes either way, since the polars-gated cleanup was already
+// running. It has teeth under `-F lite`, which CI runs (rust-qsvlite, rust-musl,
+// rust-windows-lite).
+#[test]
+fn count_from_zip_leaves_no_temp_behind() {
+    let wrk = Workdir::new("count_from_zip_leaves_no_temp_behind");
+    let test_file = wrk.load_test_file("boston311-100.csv.zip");
+
+    wrk.create_subdir("tmproot").unwrap();
+    let tmproot = wrk.path("tmproot");
+
+    let mut cmd = wrk.command("count");
+    cmd.env("TMPDIR", &tmproot)
+        .env("TMP", &tmproot)
+        .env("TEMP", &tmproot)
+        .arg(&test_file);
+
+    // the command must still work - the temp is removed only AFTER the run finishes
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    assert_eq!(got, "100".to_string());
+
+    let leftovers: Vec<String> = std::fs::read_dir(&tmproot)
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "the converted temp was not cleaned up; {} left in the temp root: {leftovers:?}",
+        leftovers.len()
+    );
+}

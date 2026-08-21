@@ -33,6 +33,23 @@ Need a UI & more advanced data-wrangling? Upgrade to qsv pro (https://qsvpro.dat
 
 pub static TEMP_FILE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+// Index paths this process has already rebuilt because they looked stale.
+//
+// Several parallel workers call `index_files()` on the same input and can all observe the
+// same stale index. Worse, a data file whose mtime is in the FUTURE never stops looking
+// stale, so the condition does not clear after a rebuild. Without this, every worker
+// rebuilds - each `File::create`ing (truncating) the very index the others are reading,
+// which corrupts it and fails the run with a bare "Invalid argument".
+//
+// The lock is held ACROSS the rebuild, so late arrivals block until it is complete and then
+// simply re-open the finished file.
+static AUTOINDEXED_STALE: OnceLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> =
+    OnceLock::new();
+
+fn autoindexed_stale() -> &'static std::sync::Mutex<std::collections::HashSet<PathBuf>> {
+    AUTOINDEXED_STALE.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
 #[cfg(feature = "polars")]
 pub static POLARS_FLOAT_PRECISION: OnceLock<Option<usize>> = OnceLock::new();
 
@@ -267,21 +284,23 @@ impl Config {
             Some(s) => {
                 let path = PathBuf::from(s);
 
-                // if QSV_SKIP_FORMAT_CHECK is set or path is a temp file, we skip format check
-                let temp_dir = crate::config::TEMP_FILE_DIR.get_or_init(|| {
-                    tempfile::TempDir::new().map_or_else(
-                        |e| {
-                            warn!(
-                                "failed to create temp dir: {e}; falling back to system temp dir"
-                            );
-                            env::temp_dir()
-                        },
-                        tempfile::TempDir::keep,
-                    )
-                });
+                // if QSV_SKIP_FORMAT_CHECK is set or path is a temp file, we skip format check.
+                //
+                // `get()`, NOT `get_or_init()`. The temp dir is only ever READ here, to answer
+                // a path comparison - yet initializing eagerly meant every `Config::new`
+                // CREATED a temp directory just to ask that question, and needed a fallback
+                // when creation failed. That fallback is what could put a directory qsv does
+                // not own into `TEMP_FILE_DIR`, which `util::log_end` then deletes wholesale
+                // (roborev 4366, 4367). There is no fallback to get wrong now.
+                //
+                // Behavior is unchanged: if this process has not created a temp dir yet, no
+                // path can be inside one. Previously `get_or_init` would mint a FRESH
+                // randomly-named dir here, which `starts_with` could never match either.
                 skip_format_check = sniff
                     || util::get_envvar_flag("QSV_SKIP_FORMAT_CHECK")
-                    || path.starts_with(temp_dir);
+                    || crate::config::TEMP_FILE_DIR
+                        .get()
+                        .is_some_and(|temp_dir| path.starts_with(temp_dir));
 
                 // Detect special formats. The actual conversion to a delimited temp
                 // file is DEFERRED to the read path (see `prepared_for_read`), so a
@@ -741,38 +760,114 @@ impl Config {
     /// - If the file is Snappy-compressed, the function returns immediately w/o creating an index.
     /// - If `self.path` is `None`, the function returns without action.
     /// - The function creates an index file using `util::idx_path()` to determine index file path.
-    /// - It uses `csv_index::RandomAccessSimple::create()` to generate the index.
-    /// - Success is only logged; no process-global state is set. A subsequent `index_files()`
-    ///   discovers the new index by looking for it beside `self.path`, like any other index.
+    /// - It builds the index into a sibling temp file and `rename`s it into place, so the existing
+    ///   index is never truncated and readers never observe a partial one.
+    /// - Returns whether an index was successfully put in place. Callers that memoize the rebuild
+    ///   must only record it on `true`.
+    /// - No process-global state is set here. A subsequent `index_files()` discovers the new index
+    ///   by looking for it beside `self.path`, like any other index.
     ///
     /// # Errors
     ///
     /// While this function doesn't return any errors, it logs debug messages for both successful
     /// and failed index creation attempts.
-    fn autoindex_file(&self) {
+    fn autoindex_file(&self) -> bool {
         if self.snappy {
-            return;
+            return false;
         }
 
-        let Some(path_buf) = &self.path else { return };
+        let Some(path_buf) = &self.path else {
+            return false;
+        };
 
         let pidx = util::idx_path(Path::new(path_buf));
-        let Ok(idxfile) = fs::File::create(pidx) else {
-            return;
-        };
-        let Ok(mut rdr) = self.reader_file() else {
-            return;
-        };
-        let mut wtr = io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, idxfile);
-        match csv_index::RandomAccessSimple::create(&mut rdr, &mut wtr) {
-            Ok(()) => {
-                let Ok(()) = io::Write::flush(&mut wtr) else {
-                    return;
-                };
-                debug!("autoindex of {} successful.", path_buf.display());
-            },
-            Err(e) => debug!("autoindex of {} failed: {e}", path_buf.display()),
+
+        // Build into a SIBLING temp file and rename into place only after the index is
+        // complete. Writing straight to `pidx` means `File::create` TRUNCATES it before a
+        // single byte of the new index is written - so any later failure leaves an empty or
+        // partial index behind, and a concurrent reader can open one mid-write. `rename` on
+        // the same directory is atomic: readers see either the old complete index or the new
+        // one, never a torn file.
+        // Build into a UNIQUE sibling temp, then rename into place. `create_new` is
+        // O_CREAT|O_EXCL, so two concurrent builds - which the `autoindex_size` path below
+        // does NOT serialize - cannot land on the same file, and a pre-existing file or
+        // symlink at a guessable name cannot be written through. A deterministic
+        // `<idx>.tmp<pid>` had both problems, since same-process builds share a pid.
+        //
+        // `create_new` rather than `tempfile`: it applies the process umask exactly like the
+        // `fs::File::create` that `qsv index` uses, whereas `tempfile` creates 0600 and would
+        // carry that onto the `.idx` through the rename - silently turning auto-created and
+        // rebuilt indexes into owner-only files (roborev 4371).
+        let idx_dir = pidx.parent().unwrap_or_else(|| Path::new("."));
+        // Uniqueness does not need randomness here: `create_new` fails with AlreadyExists,
+        // so the loop simply advances the counter until it wins. pid separates processes, the
+        // counter separates threads and repeat calls within one.
+        static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+        let pid = std::process::id();
+        let mut tmp_path = None;
+        let mut tmp_file = None;
+        for _ in 0..16 {
+            let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let candidate = idx_dir.join(format!(".qsv-autoindex-{pid}-{seq}.tmp"));
+            if let Ok(f) = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&candidate)
+            {
+                tmp_path = Some(candidate);
+                tmp_file = Some(f);
+                break;
+            }
         }
+        let (Some(tmp_path), Some(idxfile)) = (tmp_path, tmp_file) else {
+            debug!(
+                "autoindex of {}: could not create a temp index file",
+                path_buf.display()
+            );
+            return false;
+        };
+
+        // any early return from here on must not leave the temp behind
+        let cleanup = |tmp: &Path| {
+            let _ = fs::remove_file(tmp);
+        };
+
+        let Ok(mut rdr) = self.reader_file() else {
+            cleanup(&tmp_path);
+            return false;
+        };
+
+        let build = {
+            let mut wtr = io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, idxfile);
+            csv_index::RandomAccessSimple::create(&mut rdr, &mut wtr)
+                .and_then(|()| io::Write::flush(&mut wtr).map_err(Into::into))
+        };
+        if let Err(e) = build {
+            cleanup(&tmp_path);
+            debug!("autoindex of {} failed: {e}", path_buf.display());
+            return false;
+        }
+
+        // On a REBUILD, carry over the existing index's permissions, so an index someone
+        // deliberately chmod'd keeps that mode instead of reverting to the umask default.
+        #[cfg(unix)]
+        if let Ok(existing) = fs::metadata(&pidx) {
+            let _ = fs::set_permissions(&tmp_path, existing.permissions());
+        }
+
+        // rename is atomic on the same filesystem: readers see either the old complete index
+        // or the new one, never a torn file
+        if let Err(e) = fs::rename(&tmp_path, &pidx) {
+            cleanup(&tmp_path);
+            debug!(
+                "autoindex of {} could not be put in place: {e}",
+                path_buf.display()
+            );
+            return false;
+        }
+        debug!("autoindex of {} successful.", path_buf.display());
+        true
     }
 
     /// Check if the index file exists and is newer than the CSV file.
@@ -830,8 +925,15 @@ impl Config {
                             return Ok(None);
                         } else if self.autoindex_size > 0 && data_fsize >= self.autoindex_size {
                             // if CSV file size >= QSV_AUTOINDEX_SIZE, and
-                            // its not a snappy file, create an index automatically
-                            self.autoindex_file();
+                            // its not a snappy file, create an index automatically.
+                            // If that fails, fall back to "no index" rather than erroring -
+                            // this branch is passively LOOKING for an index, and the caller
+                            // can still process the file sequentially. `autoindex_file`
+                            // renames into place only on success, so there is no partial
+                            // index to open here.
+                            if !self.autoindex_file() {
+                                return Ok(None);
+                            }
                             fs::File::open(&idx_path)?
                         } else if data_fsize >= NO_INDEX_WARNING_FILESIZE {
                             // warn user that the CSV file is large and not indexed
@@ -863,8 +965,44 @@ impl Config {
         if let Some(idx_path) = &idx_path_work {
             let (idx_modified, _) = util::file_metadata(&idx_file.metadata()?);
             if data_modified > idx_modified {
-                info!("index stale... autoindexing...");
-                self.autoindex_file();
+                // Rebuild AT MOST ONCE per path per process, and never concurrently - see
+                // `AUTOINDEXED_STALE`. Late arrivals block here until the rebuild finishes,
+                // then fall through and re-open the completed index.
+                let usable = {
+                    let mut rebuilt = autoindexed_stale()
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if rebuilt.contains(idx_path) {
+                        // an earlier caller in this process already rebuilt it successfully
+                        true
+                    } else {
+                        info!("index stale... autoindexing...");
+                        // record ONLY on success: `autoindex_file` reports failure quietly,
+                        // and memoizing a failed rebuild would poison this path for the rest
+                        // of the process - every later caller skipping the repair and reusing
+                        // the stale index.
+                        let ok = self.autoindex_file();
+                        if ok {
+                            rebuilt.insert(idx_path.clone());
+                        }
+                        ok
+                    }
+                };
+                if !usable {
+                    // The index is stale and could not be refreshed. Do NOT hand back the
+                    // stale one: we just determined its offsets no longer describe the data,
+                    // so a caller seeking with it can read the wrong rows or miss rows
+                    // entirely while believing the index is valid. Reporting "no index" sends
+                    // the caller down its sequential path, which is slower but correct.
+                    warn!(
+                        "index for {} is stale and could not be rebuilt; proceeding without an \
+                         index",
+                        self.path
+                            .as_ref()
+                            .map_or_else(String::new, |p| p.display().to_string())
+                    );
+                    return Ok(None);
+                }
                 idx_file = fs::File::open(idx_path)?;
             }
         }
@@ -1267,5 +1405,229 @@ mod tests {
         assert_eq!(ext, "tsv");
         assert_eq!(delim, b'\t');
         assert!(snappy);
+    }
+
+    /// A STALE index must be rebuilt AT MOST ONCE per process, and never concurrently.
+    ///
+    /// Several parallel workers call `index_files()` on the same input and all observe the
+    /// same stale index; a data file whose mtime is in the FUTURE never stops looking stale,
+    /// so the condition does not clear after a rebuild either. Before the fix every caller
+    /// rebuilt - each truncating the index the others were mid-read of - corrupting it and
+    /// failing the run with a bare "Invalid argument" from `Indexed::open`. That is what broke
+    /// `stats` on a stale index (test_index::index_outdated_stats) on macOS CI.
+    ///
+    /// The assertion is on the rebuild COUNT, not on the crash: the corruption is a race that
+    /// a fast machine reliably wins, so a concurrency-only test passes even with the fix
+    /// removed (verified). Watching the index's mtime instead is deterministic - a second
+    /// rebuild necessarily rewrites the file.
+    #[test]
+    fn stale_index_is_rebuilt_once_not_once_per_caller() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let csv_path = dir.path().join("stale.csv");
+
+        let mut f = std::fs::File::create(&csv_path).unwrap();
+        writeln!(f, "letter,number").unwrap();
+        for i in 0..2_000 {
+            writeln!(f, "{},{i}", char::from(b'a' + (i % 26) as u8)).unwrap();
+        }
+        f.sync_all().unwrap();
+        drop(f);
+
+        let path_str = csv_path.to_string_lossy().to_string();
+        let config = Config::new(Some(&path_str));
+        crate::util::create_index_for_file(&csv_path, &config).unwrap();
+        let idx_path = crate::util::idx_path(&csv_path);
+
+        // push the DATA mtime into the future so the index looks stale to EVERY caller and
+        // STAYS stale after a rebuild - the exact shape of test_index::index_outdated_stats
+        let future = filetime::FileTime::from_unix_time(
+            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&csv_path).unwrap())
+                .unix_seconds()
+                + 86_400,
+            0,
+        );
+        filetime::set_file_mtime(&csv_path, future).unwrap();
+
+        // first call: sees the stale index and rebuilds it
+        assert!(
+            config.indexed().unwrap().is_some(),
+            "the first caller must get a usable index"
+        );
+
+        // stamp the index with a distinctive mtime; any FURTHER rebuild overwrites it
+        let marker = filetime::FileTime::from_unix_time(1_000_000, 0);
+        filetime::set_file_mtime(&idx_path, marker).unwrap();
+
+        // later callers - the parallel workers - must reuse it rather than rebuild
+        for i in 0..8 {
+            assert!(
+                Config::new(Some(&path_str)).indexed().unwrap().is_some(),
+                "caller {i} must get a usable index"
+            );
+        }
+
+        let after =
+            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&idx_path).unwrap());
+        assert_eq!(
+            after, marker,
+            "the stale index was rebuilt again by a later caller; with parallel workers those \
+             rebuilds race and truncate the index the others are reading"
+        );
+    }
+
+    /// A FAILED stale-index rebuild must neither destroy the existing index nor poison the
+    /// per-path memo.
+    ///
+    /// `autoindex_file` reports failure quietly. It used to `File::create` the real index
+    /// path first, truncating it before writing a byte - so a failure part-way left an empty
+    /// or partial index behind. Combined with memoizing the path BEFORE knowing the rebuild
+    /// worked, one failure would poison that path for the rest of the process: every later
+    /// caller skipped the repair and reopened the wreckage. roborev 4369.
+    ///
+    /// Failure is induced by making the directory read-only, so the sibling temp index cannot
+    /// be created.
+    #[cfg(unix)]
+    #[test]
+    fn failed_stale_rebuild_preserves_the_index_and_retries() {
+        use std::{io::Write, os::unix::fs::PermissionsExt};
+
+        let dir = tempfile::tempdir().unwrap();
+        let csv_path = dir.path().join("failing.csv");
+
+        let mut f = std::fs::File::create(&csv_path).unwrap();
+        writeln!(f, "letter,number").unwrap();
+        for i in 0..2_000 {
+            writeln!(f, "{},{i}", char::from(b'a' + (i % 26) as u8)).unwrap();
+        }
+        f.sync_all().unwrap();
+        drop(f);
+
+        let path_str = csv_path.to_string_lossy().to_string();
+        let config = Config::new(Some(&path_str));
+        crate::util::create_index_for_file(&csv_path, &config).unwrap();
+        let idx_path = crate::util::idx_path(&csv_path);
+        let good_len = std::fs::metadata(&idx_path).unwrap().len();
+        assert!(good_len > 0, "fixture index should be non-empty");
+
+        // make the index look stale, permanently
+        let future = filetime::FileTime::from_unix_time(
+            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&csv_path).unwrap())
+                .unix_seconds()
+                + 86_400,
+            0,
+        );
+        filetime::set_file_mtime(&csv_path, future).unwrap();
+
+        // read-only directory => the sibling temp index cannot be created => rebuild fails
+        let original_perms = std::fs::metadata(dir.path()).unwrap().permissions();
+        let mut readonly = original_perms.clone();
+        readonly.set_mode(0o555);
+        std::fs::set_permissions(dir.path(), readonly).unwrap();
+
+        let during_failure = Config::new(Some(&path_str)).indexed();
+
+        std::fs::set_permissions(dir.path(), original_perms).unwrap();
+
+        // A stale index that could not be refreshed must NOT be handed back: its offsets no
+        // longer describe the data, so seeking with it can read the wrong rows. "No index"
+        // sends the caller down its sequential path, which is slower but correct.
+        // (roborev 4370 - an earlier revision of this test asserted the opposite.)
+        assert!(
+            during_failure.is_ok_and(|i| i.is_none()),
+            "a stale index that could not be rebuilt must be reported as absent, not returned"
+        );
+
+        // ...but the existing index file must still be INTACT on disk - the failed rebuild
+        // never touched it, so a later successful rebuild is not starting from wreckage
+        assert_eq!(
+            std::fs::metadata(&idx_path).unwrap().len(),
+            good_len,
+            "a failed rebuild must not truncate the existing index"
+        );
+
+        // and the failure must NOT have been memoized - a later caller retries and succeeds
+        let marker = filetime::FileTime::from_unix_time(1_000_000, 0);
+        filetime::set_file_mtime(&idx_path, marker).unwrap();
+        assert!(
+            Config::new(Some(&path_str)).indexed().unwrap().is_some(),
+            "the retry must produce a usable index"
+        );
+        let after =
+            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&idx_path).unwrap());
+        assert_ne!(
+            after, marker,
+            "a failed rebuild poisoned the memo: the retry skipped the repair"
+        );
+    }
+
+    /// An auto-created index must get the same permissions as one built by `qsv index`, and a
+    /// REBUILD must preserve whatever mode the existing index had.
+    ///
+    /// `qsv index` uses `fs::File::create`, which applies the process umask. Building the
+    /// index through `tempfile` instead created it 0600 and carried that onto the `.idx` via
+    /// the rename - silently turning auto-created and rebuilt indexes owner-only and breaking
+    /// group/shared-readable workflows. roborev 4371.
+    ///
+    /// The expected mode is taken from a probe file created the same way `qsv index` does,
+    /// rather than hardcoding 0644, so this holds under any umask.
+    #[cfg(unix)]
+    #[test]
+    fn autoindex_permissions_match_a_normally_created_file() {
+        use std::{io::Write, os::unix::fs::PermissionsExt};
+
+        let dir = tempfile::tempdir().unwrap();
+        let csv_path = dir.path().join("perm.csv");
+
+        let mut f = std::fs::File::create(&csv_path).unwrap();
+        writeln!(f, "a,b").unwrap();
+        for i in 0..2_000 {
+            writeln!(f, "{i},{}", i * 2).unwrap();
+        }
+        f.sync_all().unwrap();
+        drop(f);
+
+        // what the umask yields for a plainly-created file - what `qsv index` would produce
+        let probe_path = dir.path().join("probe");
+        std::fs::File::create(&probe_path).unwrap();
+        let expected = std::fs::metadata(&probe_path).unwrap().permissions().mode() & 0o777;
+
+        let path_str = csv_path.to_string_lossy().to_string();
+        let mut config = Config::new(Some(&path_str));
+        config.autoindex_size = 100;
+        assert!(
+            config.indexed().unwrap().is_some(),
+            "the fixture should have been autoindexed"
+        );
+
+        let idx_path = crate::util::idx_path(&csv_path);
+        let actual = std::fs::metadata(&idx_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            actual, expected,
+            "an auto-created index must have the same permissions as a normally created file (got \
+             {actual:o}, expected {expected:o})"
+        );
+
+        // a REBUILD must not revert a deliberately-set mode
+        let restrictive = 0o640;
+        std::fs::set_permissions(&idx_path, std::fs::Permissions::from_mode(restrictive)).unwrap();
+        let future = filetime::FileTime::from_unix_time(
+            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&csv_path).unwrap())
+                .unix_seconds()
+                + 86_400,
+            0,
+        );
+        filetime::set_file_mtime(&csv_path, future).unwrap();
+
+        assert!(
+            Config::new(Some(&path_str)).indexed().unwrap().is_some(),
+            "the stale index should have been rebuilt"
+        );
+        let after = std::fs::metadata(&idx_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            after, restrictive,
+            "a rebuild must preserve the existing index's permissions (got {after:o})"
+        );
     }
 }

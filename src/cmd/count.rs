@@ -416,6 +416,41 @@ fn count_input(conf: &Config, count_delims_mode: CountDelimsMode) -> CliResult<(
     }
 }
 
+/// Returns true if the file at `path` may contain a literal blank line.
+///
+/// Polars materializes each blank line as an all-null row, while qsv's csv
+/// reader (and the index built with it) skip blank lines entirely (see issue
+/// #4456), so `polars_count_input` must not be used when a blank line may be
+/// present. A blank line requires the file to start with a line terminator or
+/// to contain two consecutive ones, so a fast SIMD byte scan can rule it out.
+/// A terminator pair inside a quoted multi-line field is a false positive,
+/// which only costs speed (we fall back to the regular csv reader), never
+/// correctness.
+#[cfg(feature = "polars")]
+fn may_contain_blank_lines(path: &std::path::Path) -> std::io::Result<bool> {
+    let file = std::fs::File::open(path)?;
+    if file.metadata()?.len() == 0 {
+        return Ok(false);
+    }
+    // safety: safe as we only read the mapped file
+    let mmap = unsafe { memmap2::MmapOptions::new().map(&file)? };
+    let bytes = &mmap[..];
+
+    if matches!(bytes.first(), Some(b'\n' | b'\r')) {
+        return Ok(true);
+    }
+    Ok(memchr::memchr2_iter(b'\n', b'\r', bytes).any(|i| {
+        match (bytes[i], bytes.get(i + 1)) {
+            // "\n\n" (LF blank line) or "\n\r" (start of a CRLF or bare-CR blank line)
+            (b'\n', Some(b'\n' | b'\r')) => true,
+            // "\r\r" (bare-CR blank line)
+            (b'\r', Some(b'\r')) => true,
+            // "\r\n" is a regular CRLF terminator; anything else starts a non-blank line
+            _ => false,
+        }
+    }))
+}
+
 /// Counts the number of records in a CSV file using Polars' optimized CSV reader
 ///
 /// # Arguments
@@ -496,6 +531,17 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
     };
 
     let result = (|| -> CliResult<u64> {
+        // Polars counts literal blank lines as all-null rows; qsv's csv reader
+        // and the index skip them (issue #4456). If the input may contain one,
+        // use the regular csv reader so the count matches what every other
+        // command sees. On scan error, also fall back — polars would likely
+        // fail on such a file anyway.
+        if may_contain_blank_lines(&filepath).unwrap_or(true) {
+            info!("input may contain blank lines, using the regular csv reader count");
+            let (count_regular, _) = count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
+            return Ok(count_regular);
+        }
+
         let mut comment_char = String::new();
         let comment_prefix = if let Some(c) = conf.comment {
             comment_char.push(c as char);

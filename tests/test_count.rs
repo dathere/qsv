@@ -615,3 +615,75 @@ fn count_from_zip_leaves_no_temp_behind() {
         leftovers.len()
     );
 }
+
+// issue #4456: polars materializes literal blank lines as all-null rows, while
+// qsv's csv reader (and the index) skip them — so `count` on a file with a
+// blank line disagreed with itself depending on whether an index existed.
+// These exercise the blank-line guard in `polars_count_input`, which falls
+// back to the regular csv reader whenever a blank line may be present.
+#[test]
+fn count_blank_line_trailing_unindexed_matches_indexed() {
+    let wrk = Workdir::new("count_blank_line_trailing_unindexed_matches_indexed");
+    wrk.create_from_string("in.csv", "a,b\n1,2\n3,4\n\n");
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("in.csv");
+    let unindexed: String = wrk.stdout(&mut cmd);
+    assert_eq!(unindexed, "2");
+
+    let mut cmd = wrk.command("index");
+    cmd.arg("in.csv");
+    wrk.assert_success(&mut cmd);
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("in.csv");
+    let indexed: String = wrk.stdout(&mut cmd);
+    assert_eq!(indexed, "2");
+}
+
+#[test]
+fn count_blank_line_middle() {
+    let wrk = Workdir::new("count_blank_line_middle");
+    wrk.create_from_string("in.csv", "a,b\n1,2\n\n3,4\n");
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("in.csv");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2");
+}
+
+#[test]
+fn count_multiple_trailing_blank_lines() {
+    let wrk = Workdir::new("count_multiple_trailing_blank_lines");
+    wrk.create_from_string("in.csv", "a,b\n1,2\n3,4\n\n\n\n");
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("in.csv");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2");
+}
+
+#[test]
+fn count_crlf_trailing_blank_line() {
+    let wrk = Workdir::new("count_crlf_trailing_blank_line");
+    wrk.create_from_string("in.csv", "a,b\r\n1,2\r\n3,4\r\n\r\n");
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("in.csv");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2");
+}
+
+// A "\n\n" inside a quoted multi-line field is a false positive for the
+// blank-line guard: it triggers the csv-reader fallback, which must still
+// return the correct count.
+#[test]
+fn count_quoted_double_newline_field() {
+    let wrk = Workdir::new("count_quoted_double_newline_field");
+    wrk.create_from_string("in.csv", "a,b\n\"x\n\ny\",2\n3,4\n");
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("in.csv");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2");
+}

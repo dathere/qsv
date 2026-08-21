@@ -2052,14 +2052,19 @@ fn is_conditionally_safe(header_name: &str, collapse: bool, unicode: bool) -> bo
 }
 
 pub fn log_end(mut qsv_args: String, now: std::time::Instant) {
-    #[cfg(feature = "polars")]
     use crate::config::TEMP_FILE_DIR;
 
-    #[cfg(feature = "polars")]
+    // Remove the temp directory this run may have created, now that the command has
+    // finished. `unwrap_or_default()` avoids a panic if it is already gone.
+    //
+    // This is deliberately NOT gated on `polars`. `TEMP_FILE_DIR` is declared
+    // unconditionally and is populated in every build: `extract_zip_to_temp` is always
+    // compiled (it needs only the non-optional `zip` crate), and the stdin spill temps in
+    // `split`, `stats` and `partition` land here too. Gating the cleanup meant a non-polars
+    // build (e.g. qsvlite) left a full decompressed copy of every `.zip` input on disk, once
+    // per invocation, until the OS reclaimed the temp dir - which on many systems is only at
+    // reboot. This is the ONLY cleanup site for `TEMP_FILE_DIR`.
     if let Some(temp_dir) = TEMP_FILE_DIR.get() {
-        // if polars is enabled, we need to remove the temporary directory
-        // after the command finishes. This is using unwrap_or_default()
-        // to avoid panics if the directory is already deleted.
         std::fs::remove_dir_all(temp_dir).unwrap_or_default();
     }
     if log::log_enabled!(log::Level::Info) {

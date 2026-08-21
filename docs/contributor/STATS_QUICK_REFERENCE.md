@@ -200,11 +200,11 @@ cat file.stats.csv.data.jsonl | jq . | head
 
 | File | Purpose |
 |------|---------|
-| `src/cmd/stats.rs` | Main implementation (~6,320 lines) |
+| `src/cmd/stats.rs` | Main implementation (~6,910 lines) |
 | `src/config.rs` | CSV reader configuration |
 | `src/select.rs` | Column selection logic |
 | `src/util.rs` | Utility functions |
-| `tests/test_stats.rs` | Comprehensive test suite (~8,338 lines) |
+| `tests/test_stats.rs` | Comprehensive test suite (~9,319 lines) |
 | `Cargo.toml` | Dependencies (see `stats` and `csv` crates) |
 
 ---

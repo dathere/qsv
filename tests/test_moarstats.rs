@@ -1080,6 +1080,124 @@ fn moarstats_winsorized_trimmed_means_percentiles() {
     }
 }
 
+/// Helper for the #4455 tests: read `data.stats.csv` and return
+/// (percentiles cell, winsorized value, trimmed value) for the `n` column.
+fn read_pct_winsorized_trimmed(wrk: &Workdir, pct_suffix: &str) -> (String, String, String) {
+    let stats_content = wrk.read_to_string("data.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let pct_idx = get_column_index(&headers, "percentiles").unwrap();
+    let winsorized_idx =
+        get_column_index(&headers, &format!("winsorized_mean_{pct_suffix}")).unwrap();
+    let trimmed_idx = get_column_index(&headers, &format!("trimmed_mean_{pct_suffix}")).unwrap();
+
+    for result in rdr.records() {
+        let record = result.unwrap();
+        if get_field_value(&record, field_idx).as_deref() == Some("n") {
+            return (
+                get_field_value(&record, pct_idx).unwrap(),
+                get_field_value(&record, winsorized_idx).unwrap(),
+                get_field_value(&record, trimmed_idx).unwrap(),
+            );
+        }
+    }
+    unreachable!("no stats record for column `n`");
+}
+
+#[test]
+fn moarstats_pct_thresholds_outside_default_percentile_list() {
+    // Issue #4455: thresholds not among stats' default --percentile-list
+    // (5,10,40,60,90,95) were absent from the percentiles cell, silently
+    // collapsing winsorized/trimmed statistics to 0 at exit 0. moarstats now
+    // forwards the thresholds into the stats run's --percentile-list.
+    let wrk = Workdir::new("moarstats_pct_thresholds_forwarded");
+    let mut rows = vec![svec!["n"]];
+    for i in 1..=100 {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("data.csv")
+        .arg("--use-percentiles")
+        .arg("--pct-thresholds")
+        .arg("7,93");
+    wrk.assert_success(&mut cmd);
+
+    let (percentiles, winsorized, trimmed) = read_pct_winsorized_trimmed(&wrk, "7pct");
+    // the requested percentiles were merged into the computed list
+    assert!(
+        percentiles.contains("7: 8") && percentiles.contains("93: 93"),
+        "percentiles cell should contain the forwarded 7th and 93rd percentiles, got: \
+         {percentiles}"
+    );
+    // n is 1..=100: winsorizing at p7=8/p93=93 replaces 1..7 with 8 and
+    // 94..100 with 93 (a symmetric net change of 0), and trimming keeps
+    // 8..=93 - both means are exactly 50.5. Before the fix both came out 0.
+    assert_eq!(winsorized, "50.5");
+    assert_eq!(trimmed, "50.5");
+}
+
+#[test]
+fn moarstats_pct_thresholds_recompute_mismatched_percentile_cache() {
+    // Issue #4455 companion: a CURRENT stats CSV computed with a
+    // --percentile-list that lacks the requested --pct-thresholds must be
+    // treated as stale and recomputed, not looked up (and missed) silently.
+    let wrk = Workdir::new("moarstats_pct_thresholds_stale_cache");
+    let mut rows = vec![svec!["n"]];
+    for i in 1..=100 {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("data.csv", rows);
+
+    // Pre-build a stats cache with the DEFAULT percentile list.
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--percentiles")
+        .arg("data.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("data.csv")
+        .arg("--use-percentiles")
+        .arg("--pct-thresholds")
+        .arg("7,93");
+    wrk.assert_success(&mut cmd);
+
+    let (percentiles, winsorized, trimmed) = read_pct_winsorized_trimmed(&wrk, "7pct");
+    assert!(
+        percentiles.contains("7: 8") && percentiles.contains("93: 93"),
+        "stats cache should have been recomputed with the forwarded percentiles, got: \
+         {percentiles}"
+    );
+    assert_eq!(winsorized, "50.5");
+    assert_eq!(trimmed, "50.5");
+}
+
+#[test]
+fn moarstats_pct_thresholds_lower_truncating_to_zero_errors() {
+    // `stats` only computes whole percentiles in 1..=100, so a lower bound
+    // that truncates to 0 can never be computed - reject it up front instead
+    // of silently skipping the lower winsorization bound (issue #4455).
+    let wrk = Workdir::new("moarstats_pct_thresholds_zero_lower");
+    let mut rows = vec![svec!["n"]];
+    for i in 1..=100 {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("data.csv")
+        .arg("--use-percentiles")
+        .arg("--pct-thresholds")
+        .arg("0.5,95.5");
+    wrk.assert_err(&mut cmd);
+}
+
 #[test]
 fn moarstats_percentile_default_thresholds() {
     let wrk = Workdir::new("moarstats_percentile_default");

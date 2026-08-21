@@ -626,6 +626,18 @@ impl Config {
             match util::convert_special_format(src, self.special_format, self.delimiter) {
                 Ok(temp) => {
                     let (_, delim, _) = get_delim_by_extension(&temp, self.delimiter);
+                    // Logged INSIDE get_or_init, so it fires exactly once per Config
+                    // family (a Config and all its clones share this OnceLock). That
+                    // makes the line countable: more than one per input means some
+                    // caller rebuilt a Config instead of cloning the resolved one,
+                    // which silently doubles the conversion cost and puts any
+                    // path-keyed artifact (an autoindex, most of all) beside a temp
+                    // nobody else can see.
+                    info!(
+                        "converted special-format input {} to {}",
+                        src.display(),
+                        temp.display()
+                    );
                     Ok((temp, delim))
                 },
                 Err(e) => Err(format!("Failed to convert special format: {e}")),
@@ -664,10 +676,16 @@ impl Config {
     /// Whether this input is a special format (`.gz`/`.zip`/`.parquet`/`.jsonl`/...) that is read
     /// through a CONVERTED temp file rather than directly.
     ///
-    /// Callers that reconstruct a fresh `Config` per worker need this: each `Config` converts to
-    /// its OWN temp path, so anything keyed to that path - an autoindex, most notably - is
-    /// invisible to every other `Config` built from the same input.
+    /// No production caller remains: it existed so `stats` could refuse to autoindex these
+    /// inputs (#4445), and #4462 removed that refusal by having `stats` share one resolved
+    /// Config instead. Kept because the hazard it names is structural - a command that builds
+    /// a fresh `Config` per worker from a SPECIAL-FORMAT path resolves a DIFFERENT temp, so
+    /// anything keyed to that path (an autoindex, most notably) is invisible to every other
+    /// worker. Prefer one of the two fixes over branching on this: share the resolved `Config`
+    /// (`stats`, `frequency`), or resolve once and hand workers the RESOLVED PATH so the
+    /// Configs they build are never special-format (`moarstats`, since #4464).
     #[inline]
+    #[allow(dead_code)]
     pub const fn is_special_format(&self) -> bool {
         !matches!(self.special_format, SpecialFormat::Unknown)
     }
@@ -1243,13 +1261,23 @@ mod tests {
 
     /// A special-format input must remain AUTOINDEXABLE at the Config level.
     ///
-    /// The `stats` parallel path cannot use such an index - it rebuilds a fresh Config per
-    /// worker, so each resolves a different converted temp file - and `stats` therefore skips
-    /// autoindexing these inputs itself. That skip must NOT live here: `frequency` deliberately
-    /// hands its workers the already-resolved Config (see the comments at its `indexed()` call
-    /// and in `parallel_ftables`), so its temp path is consistent across threads and its
-    /// special-format autoindexed parallel path is safe. Disabling autoindex in `index_files`
-    /// silently dropped `frequency` back to sequential processing on large compressed inputs.
+    /// Such an index is keyed to the CONVERTED TEMP file, so it is only usable by callers whose
+    /// threads all read through the SAME resolved Config. `frequency` (`parallel_ftables`),
+    /// `stats` (`parallel_stats`, since #4462) and the commands fixed in #4459 all hand their
+    /// workers a CLONE of the resolved Config - clones share the `Arc<OnceLock>` holding the
+    /// resolution, so every thread sees one temp and one index.
+    ///
+    /// A caller that instead REBUILDS a Config per worker from the ORIGINAL path resolves a
+    /// different temp with no index beside it. No caller does that today: `moarstats` does
+    /// rebuild a Config per worker (`compute_outliers_and_kga`, `compute_all_bivariatestats`),
+    /// but both are handed `read_input_path` - already resolved by #4464 - so the Configs they
+    /// build are ordinary, not special-format. That is the second valid shape, and it is worth
+    /// preserving: passing either the resolved Config or the resolved path is fine, passing the
+    /// original path to a worker that rebuilds is not.
+    ///
+    /// The remedy for a future offender is to fix that caller - NOT to disable autoindexing
+    /// here, which would silently drop every well-behaved caller back to sequential processing
+    /// on large compressed inputs.
     #[test]
     fn special_format_input_is_still_autoindexable() {
         use std::io::Write;

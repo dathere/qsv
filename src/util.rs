@@ -2051,6 +2051,33 @@ fn is_conditionally_safe(header_name: &str, collapse: bool, unicode: bool) -> bo
     true
 }
 
+/// Whether `dir` is safe for `log_end` to delete WHOLESALE.
+///
+/// `TEMP_FILE_DIR` is meant to hold only a directory qsv itself created, but `Config::new`
+/// once fell back to `env::temp_dir()` when `TempDir::new()` failed - and the cleanup below
+/// would then have removed the SYSTEM temp root, taking every other process's files with it.
+/// That fallback now creates a qsv-owned subdirectory instead; this is the second line of
+/// defense, enforced at the point of deletion so a future init site cannot quietly
+/// reintroduce the hazard.
+pub(crate) fn temp_dir_is_removable(dir: &std::path::Path) -> bool {
+    // a filesystem root has no parent
+    if dir.parent().is_none() {
+        return false;
+    }
+    let system_temp = std::env::temp_dir();
+    if dir == system_temp {
+        return false;
+    }
+    // compare resolved forms too, so /tmp vs /private/tmp (macOS) or a trailing separator
+    // cannot sneak the system temp root past the check above
+    match (dir.canonicalize(), system_temp.canonicalize()) {
+        (Ok(resolved_dir), Ok(resolved_system)) => resolved_dir != resolved_system,
+        // if either cannot be resolved we cannot prove they differ; the equality checks
+        // above already passed, so allow it
+        _ => true,
+    }
+}
+
 pub fn log_end(mut qsv_args: String, now: std::time::Instant) {
     use crate::config::TEMP_FILE_DIR;
 
@@ -2065,7 +2092,14 @@ pub fn log_end(mut qsv_args: String, now: std::time::Instant) {
     // per invocation, until the OS reclaimed the temp dir - which on many systems is only at
     // reboot. This is the ONLY cleanup site for `TEMP_FILE_DIR`.
     if let Some(temp_dir) = TEMP_FILE_DIR.get() {
-        std::fs::remove_dir_all(temp_dir).unwrap_or_default();
+        if temp_dir_is_removable(temp_dir) {
+            std::fs::remove_dir_all(temp_dir).unwrap_or_default();
+        } else {
+            log::warn!(
+                "refusing to remove {} - it is not a qsv-created temp directory",
+                temp_dir.display()
+            );
+        }
     }
     if log::log_enabled!(log::Level::Info) {
         let ellipsis = if qsv_args.len() > 24 {
@@ -6149,5 +6183,48 @@ mod tests {
         let blob_url = "https://github.com/user/repo/blob/main/file.csv?ref=v1.0#L10";
         let expected = "https://raw.githubusercontent.com/user/repo/main/file.csv";
         assert_eq!(transform_github_url(blob_url), expected);
+    }
+
+    /// The system temp root must NEVER be removable. `Config::new` once fell back to
+    /// `env::temp_dir()` when `TempDir::new()` failed, and `log_end` removes `TEMP_FILE_DIR`
+    /// wholesale - so without this guard a rare temp-dir creation failure would have wiped
+    /// every other process's temp files. roborev 4366.
+    #[test]
+    fn temp_dir_is_removable_refuses_the_system_temp_root() {
+        let system_temp = std::env::temp_dir();
+        assert!(
+            !temp_dir_is_removable(&system_temp),
+            "the system temp root must never be removable"
+        );
+
+        // A SYMLINK to the system temp root must not be removable either. This is the case
+        // that actually exercises the canonicalize branch: `Path` equality normalizes away
+        // `.` and trailing separators, so those variants are already caught by the check
+        // above and would leave that branch untested.
+        #[cfg(unix)]
+        {
+            let holder = tempfile::TempDir::new().unwrap();
+            let link = holder.path().join("link-to-system-temp");
+            std::os::unix::fs::symlink(&system_temp, &link).unwrap();
+            assert_ne!(
+                link, system_temp,
+                "the symlink path must differ textually, or this asserts nothing"
+            );
+            assert!(
+                !temp_dir_is_removable(&link),
+                "a symlink resolving to the system temp root must not be removable"
+            );
+        }
+
+        // a filesystem root is never removable
+        assert!(!temp_dir_is_removable(std::path::Path::new("/")));
+
+        // but a qsv-created subdirectory of it IS - this is the normal case, and a guard
+        // that refused everything would silently reintroduce the leak this all started from
+        let owned = tempfile::TempDir::new().unwrap();
+        assert!(
+            temp_dir_is_removable(owned.path()),
+            "a qsv-created temp directory must remain removable"
+        );
     }
 }

@@ -3778,17 +3778,24 @@ pub fn reverse_geocode_points(
 #[derive(Clone, Debug)]
 pub struct GeoRegion {
     /// ISO-3166-1 alpha-2 country code, e.g. "US".
-    pub iso2:          String,
+    pub iso2:           String,
     /// ISO-3166-1 alpha-3 country code, e.g. "USA". Empty if the country record is unavailable.
-    pub iso3:          String,
+    pub iso3:           String,
     /// Localized country name when available, otherwise the 2-letter code.
-    pub country_name:  String,
+    pub country_name:   String,
     /// Localized admin1 (state/province) name.
-    pub admin1_name:   String,
+    pub admin1_name:    String,
     /// admin1 code in Geonames format, e.g. "US.NY"; `None` if the record has no admin1.
-    pub admin1_code:   Option<String>,
+    pub admin1_code:    Option<String>,
     /// 2-letter US state code (e.g. "NY"), `Some` only when the country is the US.
-    pub us_state_code: Option<String>,
+    pub us_state_code:  Option<String>,
+    /// 2-digit US state FIPS code (e.g. "42"), empty when the match is not in a US state.
+    pub us_state_fips:  String,
+    /// 5-digit combined state+county FIPS code (e.g. "42003" for Allegheny County PA), empty
+    /// when the record carries no valid US county (admin2) code. This is what lets a matched
+    /// CITY name key a COUNTY boundary (issue #4417): Geonames states the containing county
+    /// directly, so this is a lookup, not a spatial approximation.
+    pub us_county_fips: String,
 }
 
 /// How many candidates the HINTED forward path scores before applying an admin1 hint.
@@ -3966,6 +3973,7 @@ fn cityrecord_to_region(
     } else {
         None
     };
+    let (us_state_fips, us_county_fips) = us_fips_strings(cityrecord);
     Some(GeoRegion {
         iso2,
         iso3,
@@ -3973,6 +3981,8 @@ fn cityrecord_to_region(
         admin1_name: nameslang.admin1name,
         admin1_code,
         us_state_code,
+        us_state_fips,
+        us_county_fips,
     })
 }
 

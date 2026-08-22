@@ -1,0 +1,8 @@
+1	6269131	en	England	1					
+2	2635167	en	United Kingdom	1					
+3	6254927	en	Pennsylvania	1					
+4	6254926	en	Massachusetts	1					
+5	4896861	en	Illinois	1					
+6	6252001	en	United States	1					
+7	5178816	en	Allegheny County	1					
+8	4560750	en	Philadelphia County	1					

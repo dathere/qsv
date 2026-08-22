@@ -1,0 +1,5 @@
+5206379	Pittsburgh	Pittsburgh		40.44062	-79.99589	P	PPLA2	US		PA	003			302971		237	America/New_York	2019-09-05
+4560349	Philadelphia	Philadelphia		39.95233	-75.16379	P	PPLA2	US		PA	101			1567442		8	America/New_York	2019-09-05
+4951788	Springfield	Springfield		42.10148	-72.58981	P	PPL	US		MA	013			154341		21	America/New_York	2019-09-05
+4250542	Springfield	Springfield		39.80172	-89.64371	P	PPLA	US		IL	167			208000		180	America/Chicago	2019-09-05
+2643743	London	London		51.50853	-0.12574	P	PPLC	GB		ENG	GLA			8961989		25	Europe/London	2019-09-05

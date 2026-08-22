@@ -9655,27 +9655,35 @@ fn read_numeric_columns(
 
 /// Pearson correlation of two equal-length numeric slices via a numerically stable, centered
 /// two-pass algorithm (raw-sums formulas suffer catastrophic cancellation for large values
-/// with small variance). The denominator is `var_x.sqrt() * var_y.sqrt()` rather than
-/// `(var_x * var_y).sqrt()` so it stays finite for large-but-valid variances (the product
-/// would overflow to infinity and spuriously yield `NaN`). Returns `NaN` when the correlation
-/// is undefined — fewer than two points, or zero variance in either input — so callers can
-/// render it as a gap rather than a fabricated 0.0. The result is clamped to [-1, 1] to absorb
-/// floating-point overshoot.
+/// with small variance). The reductions use `f64::algebraic_*` ops (Rust 1.98) so LLVM can
+/// vectorize the accumulators; results may drift from strict IEEE evaluation by a few ulps
+/// (and across platforms), which the rounding on every consumer absorbs. The denominator is
+/// `var_x.sqrt() * var_y.sqrt()` rather than `(var_x * var_y).sqrt()` so it stays finite for
+/// large-but-valid variances (the product would overflow to infinity and spuriously yield
+/// `NaN`). Returns `NaN` when the correlation is undefined — fewer than two points, or zero
+/// variance in either input — so callers can render it as a gap rather than a fabricated 0.0.
+/// The result is clamped to [-1, 1] to absorb floating-point overshoot.
 fn pearson(x: &[f64], y: &[f64]) -> f64 {
     let len = x.len().min(y.len());
     if len < 2 {
         return f64::NAN;
     }
     let n = len as f64;
-    let mean_x = x[..len].iter().sum::<f64>() / n;
-    let mean_y = y[..len].iter().sum::<f64>() / n;
-    let (mut cov, mut var_x, mut var_y) = (0.0, 0.0, 0.0);
+    let mean_x = x[..len]
+        .iter()
+        .fold(0.0_f64, |acc, &v| acc.algebraic_add(v))
+        / n;
+    let mean_y = y[..len]
+        .iter()
+        .fold(0.0_f64, |acc, &v| acc.algebraic_add(v))
+        / n;
+    let (mut cov, mut var_x, mut var_y) = (0.0_f64, 0.0_f64, 0.0_f64);
     for k in 0..len {
         let dx = x[k] - mean_x;
         let dy = y[k] - mean_y;
-        cov = dx.mul_add(dy, cov);
-        var_x = dx.mul_add(dx, var_x);
-        var_y = dy.mul_add(dy, var_y);
+        cov = cov.algebraic_add(dx.algebraic_mul(dy));
+        var_x = var_x.algebraic_add(dx.algebraic_mul(dx));
+        var_y = var_y.algebraic_add(dy.algebraic_mul(dy));
     }
     let den = var_x.sqrt() * var_y.sqrt();
     if den == 0.0 || !den.is_finite() {
@@ -9783,8 +9791,10 @@ fn pearson_matrix(columns: &[Vec<f64>]) -> Vec<Vec<f64>> {
     }
     // Calling `pearson` per pair re-derived BOTH column means and both variances every time —
     // ~5 passes per pair, with each column's statistics recomputed N times. Centre each column
-    // once (O(N * rows)), after which a pair is a single dot product. The centred values and the
-    // mul_add accumulation order match `pearson` exactly, so results are unchanged.
+    // once (O(N * rows)), after which a pair is a single dot product. Reductions use
+    // `f64::algebraic_*` ops like `pearson` does, so LLVM can vectorize the accumulators; the
+    // two agree to within reassociation drift (~1e-15 relative — the matrix-vs-pairwise test
+    // allows 1e-12), not bit-exactly.
     let len = columns.iter().map(Vec::len).min().unwrap_or(0);
     if len < 2 {
         return m;
@@ -9792,16 +9802,21 @@ fn pearson_matrix(columns: &[Vec<f64>]) -> Vec<Vec<f64>> {
     let centered: Vec<(Vec<f64>, f64)> = columns
         .iter()
         .map(|c| {
-            let mean = c[..len].iter().sum::<f64>() / len as f64;
+            let mean = c[..len]
+                .iter()
+                .fold(0.0_f64, |acc, &v| acc.algebraic_add(v))
+                / len as f64;
             let cv: Vec<f64> = c[..len].iter().map(|v| v - mean).collect();
-            let var = cv.iter().fold(0.0, |acc, d| d.mul_add(*d, acc));
+            let var = cv
+                .iter()
+                .fold(0.0_f64, |acc, &d| acc.algebraic_add(d.algebraic_mul(d)));
             (cv, var.sqrt())
         })
         .collect();
     let dot = |a: &[f64], b: &[f64]| -> f64 {
-        let mut cov = 0.0;
+        let mut cov = 0.0_f64;
         for k in 0..len {
-            cov = a[k].mul_add(b[k], cov);
+            cov = cov.algebraic_add(a[k].algebraic_mul(b[k]));
         }
         cov
     };

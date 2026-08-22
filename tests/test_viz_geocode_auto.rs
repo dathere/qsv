@@ -434,3 +434,194 @@ fn viz_geojson_auto_geocode_rejects_latlon() {
         );
     });
 }
+
+/// Dictionary tagging a lone `geo.city` column — the smart-path acceptance case: nothing
+/// supplied but the CSV and its dictionary.
+const CITY_DICT: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "city": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.city" } },
+    "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+  }
+}"#;
+
+// The issue's acceptance criterion on the smart path: a city-name column resolves to county
+// boundaries with nothing supplied but the CSV (and its dictionary) — forward-geocoded, fetched,
+// and charted keyed by county FIPS.
+#[test]
+#[serial]
+fn viz_smart_geojson_auto_geocode_city_column_resolves() {
+    let wrk = Workdir::new("viz_smart_geojson_auto_geocode_city_column_resolves");
+    wrk.create_from_string(
+        "cities.csv",
+        "city,cases\nPittsburgh,10\nPittsburgh,20\nPhiladelphia,30\nPhiladelphia,40\n",
+    );
+    wrk.create_from_string("dict.schema.json", CITY_DICT);
+    let cache_dir = build_mini_geocode_index(&wrk);
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "cities.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CACHE_DIR", &cache_dir)
+            .env("QSV_GEOCODE_INDEX_FILENAME", MINI_INDEX);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(out.status.success(), "smart geocoded auto failed: {stderr}");
+
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(
+            html.contains(r#""featureidkey":"properties.GEOID""#),
+            "expected the auto-resolved feature-id key"
+        );
+        assert!(
+            html.contains("count by city"),
+            "expected the summary choropleth panel keyed by the city column"
+        );
+        assert!(
+            stderr.contains("forward-geocoded from place names"),
+            "provenance does not carry the geocode lineage: {stderr}"
+        );
+        let clauses = observed.where_clauses.lock().unwrap().clone();
+        assert!(
+            clauses.iter().any(|c| c == "STATE IN ('42')"),
+            "fetch was not scoped to the geocoded counties' state: {clauses:?}"
+        );
+    });
+}
+
+// A real code column must always beat a city column: codes are exact, geocoding is a guess.
+// The city column here would resolve fine — it must simply never be consulted.
+#[test]
+#[serial]
+fn viz_smart_geojson_auto_geocode_code_column_beats_city() {
+    let wrk = Workdir::new("viz_smart_geojson_auto_geocode_code_column_beats_city");
+    wrk.create_from_string(
+        "mixed.csv",
+        "fips,city,cases\n42003,Pittsburgh,10\n42003,Pittsburgh,20\n42101,Philadelphia,30\n42101,\
+         Philadelphia,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "city": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.city" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+    let cache_dir = build_mini_geocode_index(&wrk);
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "mixed.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CACHE_DIR", &cache_dir)
+            .env("QSV_GEOCODE_INDEX_FILENAME", MINI_INDEX);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(out.status.success(), "smart run failed: {stderr}");
+
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(
+            html.contains("count by fips"),
+            "the code column must key the panel"
+        );
+        // no geocoding happened: the provenance carries no geocode lineage
+        assert!(
+            !stderr.contains("forward-geocoded"),
+            "geocoding ran although a code column resolved: {stderr}"
+        );
+    });
+}
+
+// The fall-through inherited from issue #4416, extended across kinds: when every CODE candidate
+// fails (here a decoy of well-formed but nonexistent codes), a city column is the next guess —
+// qsv chose the column, so a bad guess costs another attempt, not the Data Schematic.
+#[test]
+#[serial]
+fn viz_smart_geojson_auto_geocode_falls_through_to_city() {
+    let wrk = Workdir::new("viz_smart_geojson_auto_geocode_falls_through_to_city");
+    wrk.create_from_string(
+        "mixed.csv",
+        "decoy,city,cases\n99998,Pittsburgh,10\n99998,Pittsburgh,20\n99999,Philadelphia,30\n99999,\
+         Philadelphia,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "decoy": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.zip_code" } },
+            "city": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.city" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+    let cache_dir = build_mini_geocode_index(&wrk);
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "mixed.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CACHE_DIR", &cache_dir)
+            .env("QSV_GEOCODE_INDEX_FILENAME", MINI_INDEX);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            out.status.success(),
+            "fall-through to the city column failed: {stderr}"
+        );
+
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(
+            html.contains("count by city"),
+            "the city column must key the panel after the decoy failed"
+        );
+        assert!(
+            stderr.contains("forward-geocoded from place names"),
+            "provenance does not carry the geocode lineage: {stderr}"
+        );
+    });
+}
+
+// The inverse fall-through: a city column whose names geocode to nothing degrades to the
+// existing failure report — never a panic, never a hard geocode error mid-candidate.
+#[test]
+#[serial]
+fn viz_smart_geojson_auto_geocode_unresolvable_city_degrades() {
+    let wrk = Workdir::new("viz_smart_geojson_auto_geocode_unresolvable_city_degrades");
+    wrk.create_from_string(
+        "cities.csv",
+        "city,cases\nErewhon,10\nErewhon,20\nBrigadoon,30\nBrigadoon,40\n",
+    );
+    wrk.create_from_string("dict.schema.json", CITY_DICT);
+    let cache_dir = build_mini_geocode_index(&wrk);
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "cities.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CACHE_DIR", &cache_dir)
+            .env("QSV_GEOCODE_INDEX_FILENAME", MINI_INDEX);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            !out.status.success(),
+            "an unresolvable city column must fail the auto resolve"
+        );
+        assert!(
+            stderr.contains("resolved none of the 2 distinct place names"),
+            "the failure does not carry the geocode diagnosis: {stderr}"
+        );
+    });
+}

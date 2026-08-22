@@ -5027,6 +5027,13 @@ impl RegionMatcher {
     /// Build from a GeoJSON document and the feature-id path in use.
     fn new(geojson: &serde_json::Value, feature_id_key: &str) -> CliResult<Self> {
         let features = build_pip_features(geojson, feature_id_key, None)?;
+        Ok(Self::from_features(&features))
+    }
+
+    /// Build from an already-materialized feature list. The smart panel builder holds one (it
+    /// also feeds region names and centroids); rebuilding it via [`RegionMatcher::new`] would
+    /// parse the boundary document twice.
+    fn from_features(features: &[PipFeature]) -> Self {
         let ids: std::collections::HashSet<String> =
             features.iter().map(|f| f.id.clone()).collect();
         // distinct widths of the all-digit ids, ascending — precomputed so per-cell matching does
@@ -5047,7 +5054,7 @@ impl RegionMatcher {
         let lowercased: std::collections::HashMap<String, String> = {
             let mut m: std::collections::HashMap<String, String> = std::collections::HashMap::new();
             let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
-            for f in &features {
+            for f in features {
                 let folded = f.id.to_ascii_lowercase();
                 match m.get(&folded) {
                     Some(existing) if *existing != f.id => {
@@ -5064,11 +5071,11 @@ impl RegionMatcher {
             }
             m
         };
-        Ok(Self {
+        Self {
             ids,
             numeric_widths,
             lowercased,
-        })
+        }
     }
 
     /// The feature id this cell names, in the BOUNDARY's spelling, or `None` if it names none.
@@ -24987,47 +24994,9 @@ fn build_smart_summary_choropleth_panels(
         feature_id_key,
         args.flag_feature_name_key.as_deref(),
     )?;
-    let feature_ids: std::collections::HashSet<String> =
-        features.iter().map(|f| f.id.clone()).collect();
-    // distinct widths of the all-digit feature ids, ascending — precomputed once so the per-row
-    // `match_region_code` does not rescan every feature id for each unmatched numeric cell (which
-    // would make matching `rows * candidates * features`).
-    let numeric_id_widths: Vec<usize> = {
-        let mut w: Vec<usize> = feature_ids
-            .iter()
-            .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
-            .map(|id| id.len())
-            .collect();
-        w.sort_unstable();
-        w.dedup();
-        w
-    };
-    // lower-cased id -> canonical feature id, for the case-insensitive fallback in
-    // `match_region_code`. Built from the ORDERED feature list, not the HashSet: iterating the set
-    // would pick an arbitrary winner when two ids differ only by case, so the same input could
-    // aggregate under a different region between runs. A folded key that maps to more than one
-    // distinct id is genuinely ambiguous, so it is REMOVED rather than resolved — exact and
-    // zero-padded matching still run first, so this only forfeits the fuzzy fallback.
-    let lowercased_ids: std::collections::HashMap<String, String> = {
-        let mut m: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-        let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for f in &features {
-            let folded = f.id.to_ascii_lowercase();
-            match m.get(&folded) {
-                Some(existing) if *existing != f.id => {
-                    ambiguous.insert(folded);
-                },
-                Some(_) => {},
-                None => {
-                    m.insert(folded, f.id.clone());
-                },
-            }
-        }
-        for k in ambiguous {
-            m.remove(&k);
-        }
-        m
-    };
+    // one matcher for validation and rendering alike (see [`RegionMatcher`]'s drift rationale);
+    // built from the already-materialized feature list, which also feeds region names below.
+    let region_matcher = RegionMatcher::from_features(&features);
 
     // Columns a per-region MEASURE panel must never chart: the region-code candidates themselves,
     // plus any column a candidate declares as its DENOMINATOR (issue #4394). A denominator is
@@ -25121,8 +25090,7 @@ fn build_smart_summary_choropleth_panels(
             total_rows[ci] += 1;
             // key aggregates under the matched geojson feature id; an unmatched value still counts
             // toward total_rows so a poorly-overlapping column scores low.
-            let Some(k) = match_region_code(raw, &feature_ids, &numeric_id_widths, &lowercased_ids)
-            else {
+            let Some(k) = region_matcher.canonicalize(raw) else {
                 continue;
             };
             matched_rows[ci] += 1;
@@ -40899,6 +40867,39 @@ mod tests {
             match_region_code("ny", &ids, &widths, &lower).as_deref(),
             Some("NY")
         );
+    }
+
+    #[test]
+    fn region_matcher_from_features_matches_new() {
+        // `from_features` is `new` minus the document parse; both constructors must yield the
+        // same matcher, including the ambiguous-case-fold removal (CA vs Ca forfeits folding).
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "id": "CA", "properties": {}, "geometry":
+                    {"type": "Polygon", "coordinates": [[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,0.0]]]}},
+                {"type": "Feature", "id": "Ca", "properties": {}, "geometry":
+                    {"type": "Polygon", "coordinates": [[[2.0,0.0],[3.0,0.0],[3.0,1.0],[2.0,0.0]]]}},
+                {"type": "Feature", "id": "NY", "properties": {}, "geometry":
+                    {"type": "Polygon", "coordinates": [[[4.0,0.0],[5.0,0.0],[5.0,1.0],[4.0,0.0]]]}},
+                {"type": "Feature", "id": "06075", "properties": {}, "geometry":
+                    {"type": "Polygon", "coordinates": [[[6.0,0.0],[7.0,0.0],[7.0,1.0],[6.0,0.0]]]}}
+            ]
+        });
+        let via_new = RegionMatcher::new(&geojson, "id").unwrap();
+        let features = build_pip_features(&geojson, "id", None).unwrap();
+        let via_features = RegionMatcher::from_features(&features);
+        for probe in ["CA", "Ca", "ca", "NY", "ny", "06075", "6075", "nope"] {
+            assert_eq!(
+                via_new.canonicalize(probe),
+                via_features.canonicalize(probe),
+                "constructors disagree on {probe:?}"
+            );
+        }
+        // spot-check the behaviors themselves, not just constructor parity
+        assert_eq!(via_features.canonicalize("ny").as_deref(), Some("NY"));
+        assert!(via_features.canonicalize("cA").is_none());
+        assert_eq!(via_features.canonicalize("6075").as_deref(), Some("06075"));
     }
 
     #[test]

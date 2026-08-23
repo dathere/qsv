@@ -451,3 +451,49 @@ fn viz_county_names_two_value_mixed_column_is_county_data() {
         );
     });
 }
+
+/// REGRESSION (roborev 4411): a pinned NON-county layer must not be served county boundaries.
+///
+/// The county-name resolver always fetches counties, so honoring a digitless `geo.county` column
+/// under `--geojson census:zcta` would quietly draw counties instead of the geography the user
+/// pinned. `city_candidates` has always been gated on the layer this way; the county-name slots
+/// introduced by the previous fix were not, which reintroduced the silent-wrong-geography class
+/// this whole feature exists to close.
+#[test]
+#[serial]
+fn viz_smart_county_names_do_not_hijack_a_pinned_layer() {
+    const DICT: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+    "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+  }
+}"#;
+    let wrk = Workdir::new("viz_smart_county_names_do_not_hijack_a_pinned_layer");
+    wrk.create_from_string(
+        "c.csv",
+        "county,cases\nAllegheny County,10\nAllegheny County,12\nPhiladelphia County,20\n",
+    );
+    wrk.create_from_string("dict.schema.json", DICT);
+    let cache_dir = wrk.path("qsv-cache");
+    std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "c.csv", "--geojson", "census:zcta", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CACHE_DIR", &cache_dir);
+        let out = wrk.output(&mut cmd);
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            !html.contains("42003") && !html.contains("42101"),
+            "a ZCTA pin was served county boundaries: {stderr}"
+        );
+        assert!(
+            !out.status.success(),
+            "no ZCTA resolves here, so the run must fail rather than substitute counties: {stderr}"
+        );
+    });
+}

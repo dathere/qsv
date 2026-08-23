@@ -6726,8 +6726,19 @@ fn resolve_smart_auto_geojson(
     // without the name path ever running. So these are excluded from the probe and trialled
     // unranked instead, exactly as city slots are, and AHEAD of them: an exact name lookup beats
     // a fuzzy geocode.
+    //
+    // Gated on the requested layer for the same reason `city_candidates` is: the county-name
+    // resolver ALWAYS fetches county boundaries, so honoring one under `--geojson census:zcta`
+    // would quietly draw counties instead of the geography that was pinned. Under a non-county
+    // pin the column stays in the probe set, where a digitless value set scores `None` and is
+    // dropped — which is the honest answer, since it cannot serve that layer either.
+    let county_layer_ok = matches!(
+        auto_spec.layer,
+        None | Some(crate::cmd::viz_census::Layer::County)
+    );
     let is_county_name_slot = |slot: usize| -> bool {
-        slot < n_code
+        county_layer_ok
+            && slot < n_code
             && county_name_cols.contains(&candidates[slot])
             && !codes[slot].is_empty()
             && codes[slot]
@@ -6852,11 +6863,11 @@ fn resolve_smart_auto_geojson(
         // normalization, so probing them is a foregone conclusion and the Census name table is
         // the only path that can serve them. Deciding here rather than after a failed probe keeps
         // the routing deterministic and costs no extra round trip.
-        if county_name_cols.contains(&candidates[slot])
-            && region_codes
-                .iter()
-                .all(|c| !c.bytes().any(|b| b.is_ascii_digit()))
-        {
+        // ONE predicate decides this, shared with the trial-order split above. Re-deriving the
+        // test here is how a pinned non-county layer slipped through: the split honored the pin
+        // and this branch did not, so a slot the split had sent back to the probe set still took
+        // the county path when its turn came.
+        if is_county_name_slot(slot) {
             match resolve_smart_county_name_candidate(
                 args,
                 candidates[slot],

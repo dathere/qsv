@@ -5877,18 +5877,13 @@ fn resolve_smart_city_candidate(
     let hint = crate::cmd::geocode::RegionHint::parse(None, None, Some("us"))?;
     let hints = vec![hint; names.len()];
     let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    // A geocode SETUP failure — engine init, or the Geonames index download on first use — is a
-    // statement about THIS candidate's resolvability, not about the Census service, so strip the
-    // Network variant here: the caller's transient-abort check must fire only for
-    // `viz_census::resolve` failures below (roborev job 4397).
-    let matches = crate::cmd::geocode::forward_geocode_regions(&name_refs, &hints, None).map_err(
-        |e| match e {
-            crate::CliError::Network(msg) => {
-                crate::CliError::Other(format!("forward geocoding failed: {msg}"))
-            },
-            other => other,
-        },
-    )?;
+    // A NETWORK failure here (the first-use Geonames index download) deliberately propagates as
+    // `Network` and aborts via the caller's transient check: like a Census outage, it is a
+    // statement about shared infrastructure — every other city candidate uses the same engine,
+    // so falling through could only repeat the failure and then misreport it as a usage error
+    // with the wrong exit code (roborev jobs 4397/4399). Non-network setup failures (e.g. a
+    // corrupt local index) fall through like any candidate-specific failure.
+    let matches = crate::cmd::geocode::forward_geocode_regions(&name_refs, &hints, None)?;
     let resolved = build_geocoded_aliases(names, &matches);
     let breakdown = geocode_resolution_breakdown(&resolved);
     if resolved.aliases.is_empty() {
@@ -6122,10 +6117,11 @@ fn resolve_smart_auto_geojson(
             ));
             continue;
         }
-        // A city slot resolves through the geocode engine. Its failures — including a geocode
-        // SETUP failure — fall through like any other candidate's: on this path the column
-        // choice is qsv's, so a bad guess must cost another attempt, never the Data Schematic.
-        // A transient Census failure still aborts, exactly as on the code path below.
+        // A city slot resolves through the geocode engine. Its candidate-specific failures fall
+        // through like any other candidate's: on this path the column choice is qsv's, so a bad
+        // guess must cost another attempt, never the Data Schematic. NETWORK failures abort —
+        // whether the Census fetch (as on the code path below) or the shared Geonames index
+        // download, which no other candidate could survive either (roborev jobs 4397/4399).
         if slot >= n_code {
             #[cfg(feature = "geocode")]
             match resolve_smart_city_candidate(region_codes, auto_spec.vintage) {

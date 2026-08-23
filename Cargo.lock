@@ -4043,17 +4043,6 @@ dependencies = [
 
 [[package]]
 name = "iso_currency"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fed4b3f0921193400b1df556228bfd917c57c7fa38bda904d552653c5c3b641b"
-dependencies = [
- "iso_country",
- "proc-macro2",
- "quote",
-]
-
-[[package]]
-name = "iso_currency"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c64ce7657a0b2e5b242df91e377c928a83a54628b946939d3aa81f57efef99a9"
@@ -6943,7 +6932,7 @@ dependencies = [
  "iana-time-zone",
  "indexmap 2.14.0",
  "indicatif",
- "iso_currency 0.5.3",
+ "iso_currency",
  "itertools 0.15.0",
  "itoa",
  "jaq-core",
@@ -7071,7 +7060,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8437239eab8971bed0416bef2fd7d208e826278fed7d162d2cfc65ca3880b651"
 dependencies = [
  "ahash 0.8.12",
- "iso_currency 0.7.0",
+ "iso_currency",
  "num",
  "serde",
 ]

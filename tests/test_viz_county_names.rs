@@ -335,3 +335,41 @@ fn viz_smart_county_name_column_resolves() {
         );
     });
 }
+
+/// The two multi-state drop causes are reported SEPARATELY, because their remedies differ.
+///
+/// `Washington County` names a different county in each of PA and MD, so it can never be keyed by
+/// bare name — the remedy is a FIPS column. `Hampden County` resolves in MA but does not exist in
+/// PA, so the remedy is fixing that one name/state pairing. Collapsing both into "occurs in more
+/// than one state" would hand the wrong instruction to the second case.
+#[test]
+#[serial]
+fn viz_county_names_separates_divergent_from_mixed() {
+    let wrk = Workdir::new("viz_county_names_separates_divergent_from_mixed");
+    wrk.create_from_string(
+        "c.csv",
+        "county,state,cases\nAllegheny County,PA,10\nPhiladelphia County,PA,15\nBaltimore \
+         County,MD,18\nAllegheny,PA,12\nPhiladelphia,PA,14\nWashington County,PA,20\n\
+         Washington County,MD,30\nHampden County,MA,40\nHampden County,PA,50\n",
+    );
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = county_cmd(&wrk, base, "c.csv");
+        cmd.args(["--region-state", "state"]);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(out.status.success(), "run failed: {stderr}");
+        assert!(
+            stderr.contains("name a DIFFERENT county in each of the states"),
+            "divergent cause not named: {stderr}"
+        );
+        assert!(
+            stderr.contains("resolve under one of the states given for them but not another"),
+            "mixed cause not named: {stderr}"
+        );
+        // reported in the DATA's spelling, not the lowercased match key
+        assert!(
+            stderr.contains("Washington County") && stderr.contains("Hampden County"),
+            "names not quoted as written: {stderr}"
+        );
+    });
+}

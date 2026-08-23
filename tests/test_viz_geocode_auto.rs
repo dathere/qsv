@@ -665,17 +665,20 @@ fn viz_geojson_auto_geocode_rejects_county_names() {
 
 /// The county-name guard must NOT fire on genuine CITY names that merely end in "city".
 ///
-/// `TIGERweb` spells Virginia's independent counties "Richmond city", but so are Kansas City,
-/// Jersey City and Salt Lake City spelled — misrouting those away from --geocode would break the
-/// Part A path this guard sits in front of. Asserted by the ABSENCE of the refusal: the run goes
-/// on to geocode (and fails on the mini index's coverage, which is a different message).
+/// `TIGERweb` spells county-equivalents "Richmond city" and "Petersburg Borough" — but 41 and 17
+/// county-equivalents carry those suffixes against Kansas City, Jersey City and Pennsylvania's
+/// ~950 boroughs, so both are excluded from the routing heuristic. Misrouting a genuine city
+/// column away from --geocode would break the Part A path this guard sits in front of. Asserted
+/// by the ABSENCE of the refusal: the run goes on to geocode (and fails on the mini index's
+/// coverage, which is a different message).
 #[test]
 #[serial]
 fn viz_geojson_auto_geocode_city_suffix_is_not_a_county() {
     let wrk = Workdir::new("viz_geojson_auto_geocode_city_suffix_is_not_a_county");
     wrk.create_from_string(
         "c.csv",
-        "city,cases\nKansas City,10\nJersey City,20\nSalt Lake City,30\n",
+        "city,cases\nKansas City,10\nJersey City,20\nCarlisle Borough,30\nState College \
+         Borough,40\n",
     );
     let cache_dir = build_mini_geocode_index(&wrk);
     with_mock_tigerweb(|base, _observed| {

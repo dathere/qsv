@@ -5923,19 +5923,20 @@ fn geocode_resolution_breakdown(resolved: &GeocodedAliases) -> String {
 const COUNTY_NAME_SUFFIXES: &[&str] = &[
     " county",
     " parish",
-    " borough",
     " census area",
     " municipality",
     " city and borough",
     " planning region",
 ];
 
-// NOTE the absence of " city". `TIGERweb` spells Virginia's independent cities that way
-// ("Richmond city"), but so are Kansas City, Jersey City, Salt Lake City, Sioux City and dozens
-// more ACTUAL cities - including them here would misroute a genuine city-name column away from
-// --geocode, which is the one thing this heuristic must never do. An independent-city column
-// still resolves; it just needs --region-state to say so, or a county-suffixed majority to carry
-// it.
+// NOTE the absence of " city" and " borough", which name county-equivalents but name FAR more
+// actual cities. Measured against the national county table: 41 county-equivalents end in
+// " city" (Virginia's independents) against Kansas City, Jersey City, Salt Lake City and dozens
+// more; 17 end in " borough" (all Alaska) against Pennsylvania's ~950 boroughs and New Jersey's,
+// which are municipalities. Misrouting a genuine city-name column away from --geocode is the one
+// thing this heuristic must never do, so both lose. Such a column still resolves - it just needs
+// --region-state to declare intent, or a county-suffixed majority to carry it. " city and
+// borough" stays: no municipality is spelled that way.
 
 /// Does this value set predominantly name COUNTIES rather than cities?
 ///
@@ -5975,10 +5976,15 @@ struct CountyNameAliases {
     ambiguous:      Vec<(String, String)>,
     /// `(name, the states it DOES exist in)` for names absent from the state given for them.
     state_mismatch: Vec<(String, String)>,
-    /// Names occurring in MORE THAN ONE state within this dataset. Their alias is removed: the
-    /// renderer joins by BARE name and cannot tell which state a row carried, so keeping it would
-    /// chart every `Washington County` row under one arbitrary state's polygon.
+    /// Names occurring in MORE THAN ONE state within this dataset, resolving to different
+    /// counties. Their alias is removed: the renderer joins by BARE name and cannot tell which
+    /// state a row carried, so keeping it would chart every `Washington County` row under one
+    /// arbitrary state's polygon.
     divergent:      Vec<String>,
+    /// Names that resolved under one of their states and did NOT under another. Kept apart from
+    /// [`Self::divergent`] because the remedy differs: this is a name/state pairing that is wrong
+    /// somewhere in the data, not a name that needs a FIPS column to be keyable at all.
+    mixed:          Vec<String>,
     /// Distinct `--region-state` values that name no state.
     bad_state:      Vec<String>,
 }
@@ -5997,8 +6003,12 @@ fn build_county_name_aliases(
     let mut out = CountyNameAliases::default();
     let mut divergent: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut unusable: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // folded key -> the spelling the DATA used, so a report quotes the user's own words rather
+    // than the lowercased match key
+    let mut spelling: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for (name, found) in names.iter().zip(lookups.iter()) {
         let key = name.trim().to_ascii_lowercase();
+        spelling.entry(key.clone()).or_insert_with(|| name.clone());
         match found {
             CountyLookup::Resolved(geoid) => match out.aliases.get(&key) {
                 Some(existing) if existing != geoid => {
@@ -6023,15 +6033,27 @@ fn build_county_name_aliases(
             },
         }
     }
+    let spelt = |key: &str| {
+        spelling
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| key.to_string())
+    };
     for key in divergent {
         out.aliases.remove(&key);
-        out.divergent.push(key);
+        out.divergent.push(spelt(&key));
     }
+    // Mixed outcomes across states: drop the alias rather than resolve it — conservative in the
+    // honest direction (every row of that name is omitted AND counted). Only counted when an
+    // alias actually existed; a name that never resolved anywhere is already fully accounted for
+    // by its own cause.
     for key in unusable {
         if out.aliases.remove(&key).is_some() {
-            out.divergent.push(key);
+            out.mixed.push(spelt(&key));
         }
     }
+    out.divergent.sort_unstable();
+    out.mixed.sort_unstable();
     out
 }
 
@@ -6083,10 +6105,18 @@ fn county_name_resolution_breakdown(resolved: &CountyNameAliases, has_state: boo
     }
     if !resolved.divergent.is_empty() {
         note.push_str(&format!(
-            "\n  {} name(s) occur in more than one state in this data and cannot be keyed by name \
-             alone (e.g. {}); use a county FIPS column instead.",
+            "\n  {} name(s) name a DIFFERENT county in each of the states they appear with here, \
+             so they cannot be keyed by name alone (e.g. {}); use a county FIPS column instead.",
             resolved.divergent.len(),
             sample(&resolved.divergent, Clone::clone)
+        ));
+    }
+    if !resolved.mixed.is_empty() {
+        note.push_str(&format!(
+            "\n  {} name(s) resolve under one of the states given for them but not another, so \
+             every row carrying them was dropped (e.g. {}); check those name/state pairings.",
+            resolved.mixed.len(),
+            sample(&resolved.mixed, Clone::clone)
         ));
     }
     if !resolved.bad_state.is_empty() {

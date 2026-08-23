@@ -1522,18 +1522,6 @@ impl DenominatorGeography {
             Self::County => "county",
         }
     }
-
-    /// Which `--geojson auto` boundary layer this geography pairs with, so a caller can derive one
-    /// from the other rather than asking the user twice.
-    #[must_use]
-    pub const fn from_layer(layer: Layer) -> Option<Self> {
-        match layer {
-            Layer::County => Some(Self::County),
-            // a state-level dataset resolves against the county layer's STATE scoping, so there is
-            // no separate state layer to map from; state denominators are requested directly
-            Layer::Zcta | Layer::Tract | Layer::Place => None,
-        }
-    }
 }
 
 /// A per-region population denominator fetched from the Census Data API.
@@ -1544,8 +1532,6 @@ pub struct PopulationSet {
     /// Human-readable lineage for the panel subtitle, e.g.
     /// "ACS 2019–2023 5-yr (B01003), fetched 2026-08-16".
     pub provenance: String,
-    /// The vintage actually used, so a caller can report it separately from the prose.
-    pub vintage:    u16,
 }
 
 /// Parse a `--denominator` value as a Census request, returning the pinned vintage if one was
@@ -1830,7 +1816,6 @@ pub fn resolve_population(
         return Ok(PopulationSet {
             values,
             provenance: acs_provenance(vintage),
-            vintage,
         });
     }
 
@@ -1854,7 +1839,6 @@ pub fn resolve_population(
             Ok(PopulationSet {
                 values,
                 provenance: acs_provenance(vintage),
-                vintage,
             })
         },
         // only a TRANSIENT failure may be answered from a stale entry — the same rule the boundary
@@ -1866,7 +1850,6 @@ pub fn resolve_population(
                 Ok(PopulationSet {
                     values,
                     provenance: format!("{} (stale cache)", acs_provenance(vintage)),
-                    vintage,
                 })
             },
             None => Err(e),

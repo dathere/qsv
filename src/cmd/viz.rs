@@ -5191,11 +5191,6 @@ impl RegionAliases {
         out.dedup();
         out
     }
-
-    /// Drop every entry for a name, whatever its qualifier. Returns true if anything went.
-    fn remove_name(&mut self, folded_name: &str) -> bool {
-        self.by_name.remove(folded_name).is_some()
-    }
 }
 
 struct RegionMatcher {
@@ -5270,15 +5265,6 @@ impl RegionMatcher {
     fn with_aliases(mut self, aliases: RegionAliases) -> Self {
         self.aliases = aliases;
         self
-    }
-
-    /// The feature id this cell names, in the BOUNDARY's spelling, or `None` if it names none.
-    ///
-    /// For an UNQUALIFIED cell. Callers that have the row in hand should use
-    /// [`Self::canonicalize_qualified`]; this shim keeps every plain code-column caller (and the
-    /// unit tests) unchanged, since a raw region code never needs a qualifier.
-    fn canonicalize(&self, raw: &str) -> Option<String> {
-        self.canonicalize_qualified(raw, "")
     }
 
     /// The feature id this cell names, given the qualifier of the row it came from.
@@ -40008,16 +39994,28 @@ mod tests {
             .with_aliases(aliases);
         // code tiers unchanged: a literal feature id matches ITSELF even when an alias key
         // spells the same string
-        assert_eq!(m.canonicalize("42003").as_deref(), Some("42003"));
+        assert_eq!(
+            m.canonicalize_qualified("42003", "").as_deref(),
+            Some("42003")
+        );
         // alias hit, case-insensitively, trimmed
-        assert_eq!(m.canonicalize("Pittsburgh").as_deref(), Some("42003"));
-        assert_eq!(m.canonicalize(" PITTSBURGH ").as_deref(), Some("42003"));
+        assert_eq!(
+            m.canonicalize_qualified("Pittsburgh", "").as_deref(),
+            Some("42003")
+        );
+        assert_eq!(
+            m.canonicalize_qualified(" PITTSBURGH ", "").as_deref(),
+            Some("42003")
+        );
         // an alias VALUE is re-run through the code tiers (zero-pad) before being returned
-        assert_eq!(m.canonicalize("San Francisco").as_deref(), Some("06075"));
+        assert_eq!(
+            m.canonicalize_qualified("San Francisco", "").as_deref(),
+            Some("06075")
+        );
         // an alias to a non-feature is a miss, never a bare alias value in the trace
-        assert!(m.canonicalize("Nowhere").is_none());
+        assert!(m.canonicalize_qualified("Nowhere", "").is_none());
         // a name with no alias is still a miss
-        assert!(m.canonicalize("Altoona").is_none());
+        assert!(m.canonicalize_qualified("Altoona", "").is_none());
     }
 
     #[cfg(feature = "geocode")]
@@ -42804,15 +42802,21 @@ mod tests {
         let via_features = RegionMatcher::from_features(&features);
         for probe in ["CA", "Ca", "ca", "NY", "ny", "06075", "6075", "nope"] {
             assert_eq!(
-                via_new.canonicalize(probe),
-                via_features.canonicalize(probe),
+                via_new.canonicalize_qualified(probe, ""),
+                via_features.canonicalize_qualified(probe, ""),
                 "constructors disagree on {probe:?}"
             );
         }
         // spot-check the behaviors themselves, not just constructor parity
-        assert_eq!(via_features.canonicalize("ny").as_deref(), Some("NY"));
-        assert!(via_features.canonicalize("cA").is_none());
-        assert_eq!(via_features.canonicalize("6075").as_deref(), Some("06075"));
+        assert_eq!(
+            via_features.canonicalize_qualified("ny", "").as_deref(),
+            Some("NY")
+        );
+        assert!(via_features.canonicalize_qualified("cA", "").is_none());
+        assert_eq!(
+            via_features.canonicalize_qualified("6075", "").as_deref(),
+            Some("06075")
+        );
     }
 
     #[test]

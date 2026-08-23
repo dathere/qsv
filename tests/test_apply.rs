@@ -2146,6 +2146,10 @@ fn apply_ops_currencytonum() {
             svec!["$10.8723"],
             svec!["$10.77777"],
             svec!["$10.777"],
+            // negative amounts with three decimal places - https://github.com/dathere/qsv/issues/4478
+            svec!["-1.234"],
+            svec!["-12.345"],
+            svec!["-0.999"],
         ],
     );
     let mut cmd = wrk.command("apply");
@@ -2196,6 +2200,9 @@ fn apply_ops_currencytonum() {
         svec!["10.87"],
         svec!["10.78"],
         svec!["10.78"],
+        svec!["-1.23"],
+        svec!["-12.35"],
+        svec!["-1.00"],
     ];
     assert_eq!(got, expected);
 }
@@ -2250,6 +2257,10 @@ fn apply_ops_currencytonum_strict() {
             svec!["$10.8723"],
             svec!["$10.77777"],
             svec!["$10.777"],
+            // negative amounts with three decimal places - https://github.com/dathere/qsv/issues/4478
+            svec!["$-1.234"],
+            svec!["$-12.345"],
+            svec!["$-0.999"],
         ],
     );
     let mut cmd = wrk.command("apply");
@@ -2302,6 +2313,9 @@ fn apply_ops_currencytonum_strict() {
         svec!["10.87"],
         svec!["10.78"],
         svec!["10.78"],
+        svec!["-1.23"],
+        svec!["-12.35"],
+        svec!["-1.00"],
     ];
     assert_eq!(got, expected);
 }

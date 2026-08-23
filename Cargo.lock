@@ -6974,6 +6974,7 @@ dependencies = [
  "regex",
  "reqwest 0.13.4",
  "rfd",
+ "rkyv 0.8.18",
  "rmp-serde",
  "rust-i18n",
  "rust_decimal",

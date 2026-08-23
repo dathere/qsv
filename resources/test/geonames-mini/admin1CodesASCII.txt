@@ -1,0 +1,4 @@
+US.PA	Pennsylvania	Pennsylvania	6254927
+US.MA	Massachusetts	Massachusetts	6254926
+US.IL	Illinois	Illinois	4896861
+GB.ENG	England	England	6269131

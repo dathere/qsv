@@ -1,0 +1,3 @@
+# GeoNames countryInfo mini fixture
+US	USA	840	US	United States	Washington	9629091	310232863	NA	.us	USD	Dollar	1	#####-####	^d{5}$	en-US	6252001	CA,MX,CU	
+GB	GBR	826	UK	United Kingdom	London	244820	62348447	EU	.uk	GBP	Pound	44	@@# #@@	^r$	en-GB	2635167	IE	

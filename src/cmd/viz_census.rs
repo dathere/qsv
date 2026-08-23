@@ -1050,6 +1050,17 @@ fn choose_layer(
                 alt_layer.selector()
             )));
         }
+        // `scored` empty means every layer's code normalization emptied — the values are not
+        // numeric codes at all, so name the likely fix instead of interpolating "()"
+        if scored.is_empty() {
+            return Err(crate::CliError::Other(
+                "--geojson auto: none of the --locations values are numeric Census codes (county \
+                 FIPS, ZCTA, tract GEOID). If they are city/place names, add --geocode to \
+                 forward-geocode them to US county FIPS; otherwise supply an explicit --geojson \
+                 file."
+                    .to_string(),
+            ));
+        }
         return Err(crate::CliError::Other(format!(
             "--geojson auto: the --locations values match no Census geography in the {vintage} \
              vintage ({detail}), nor in the vintages before it. They may not be US county FIPS or \

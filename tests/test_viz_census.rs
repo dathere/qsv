@@ -62,9 +62,9 @@ fn query_param(query: &str, want: &str) -> String {
 
 /// What the mock observed: how many requests arrived, and every `where` clause it was asked for.
 #[derive(Clone, Default)]
-struct Observed {
-    requests:      Arc<AtomicUsize>,
-    where_clauses: Arc<Mutex<Vec<String>>>,
+pub(crate) struct Observed {
+    pub(crate) requests:      Arc<AtomicUsize>,
+    pub(crate) where_clauses: Arc<Mutex<Vec<String>>>,
 }
 
 /// The service catalog: one ACS vintage.
@@ -132,7 +132,15 @@ async fn serve_county_query(o: web::Data<Observed>, req: HttpRequest) -> HttpRes
             vec![]
         }
     } else if where_clause.contains("42") {
-        vec![county_feature("42003", 0.0), county_feature("42101", 2.0)]
+        let mut features = vec![county_feature("42003", 0.0), county_feature("42101", 2.0)];
+        // a geocode-hinted Springfield MA resolves to Hampden County; serve it whenever state 25
+        // rides along with 42 (the geocode-auto tests span both states in one fetch)
+        if where_clause.contains("25") {
+            features.push(county_feature("25013", 4.0));
+        }
+        features
+    } else if where_clause.contains("25") {
+        vec![county_feature("25013", 4.0)]
     } else {
         vec![]
     };
@@ -239,7 +247,7 @@ async fn run_webserver(
 }
 
 /// Start the mock, run `f` with its base URL, then shut it down.
-fn with_mock_tigerweb<F: FnOnce(&str, &Observed)>(f: F) {
+pub(crate) fn with_mock_tigerweb<F: FnOnce(&str, &Observed)>(f: F) {
     let observed = Observed::default();
     let server_observed = observed.clone();
     let (tx, rx) = std::sync::mpsc::channel();

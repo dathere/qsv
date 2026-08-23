@@ -432,7 +432,10 @@ choropleth options:
                            column named by --locations, while `viz smart` takes the
                            region column its data dictionary names — so there it needs
                            a --dictionary. An existing local file named `auto` takes
-                           precedence over the keyword.
+                           precedence over the keyword. A locations column holding
+                           city/place NAMES rather than codes can be served by also
+                           passing the geocode flag, which forward-geocodes the names
+                           to US county FIPS first (see --geocode).
                            Boundaries are re-drawn between vintages (Connecticut
                            replaced its 8 counties with 9 planning regions in the 2022
                            vintages, sharing no GEOID), so append @<year> to pin one,
@@ -515,6 +518,18 @@ choropleth options:
                            column. Only valid with location modes iso3 or usa-states.
                            `viz choropleth` also reuses --value, --agg, --style and the
                            lat/lon options.
+                           Combined with `--geojson auto`, forward-geocodes a locations
+                           column of city/place NAMES to their containing US county FIPS
+                           (Geonames states the county directly, so this is a lookup, not
+                           an approximation) and fetches those county boundaries; the
+                           geocode-country/geocode-admin1 hint columns disambiguate
+                           same-named places (the country defaults to `us`). Each distinct
+                           name is a full engine lookup, so a column with thousands of
+                           distinct names resolves slower than one holding codes. Names
+                           the default Geonames index cannot resolve are reported with a
+                           denser-index remedy (`qsv geocode index-load 1000`). Lat/lon is
+                           rejected on this path: reverse geocoding finds the NEAREST
+                           populated place, not the containing county.
     --geocode-country <col>
                            Column holding each row's expected country, as an ISO-3166-1 alpha-2
                            code (e.g. US, GB, BR). Without it a place-name search spans every
@@ -5021,12 +5036,23 @@ struct RegionMatcher {
     ids:            std::collections::HashSet<String>,
     numeric_widths: Vec<usize>,
     lowercased:     std::collections::HashMap<String, String>,
+    /// Trimmed, ASCII-lowercased place name -> region code (e.g. "pittsburgh" -> "42003"), from
+    /// `--geojson auto --geocode` forward geocoding. Empty unless [`RegionMatcher::with_aliases`]
+    /// installed one; an empty map is a no-op tier.
+    aliases:        std::collections::HashMap<String, String>,
 }
 
 impl RegionMatcher {
     /// Build from a GeoJSON document and the feature-id path in use.
     fn new(geojson: &serde_json::Value, feature_id_key: &str) -> CliResult<Self> {
         let features = build_pip_features(geojson, feature_id_key, None)?;
+        Ok(Self::from_features(&features))
+    }
+
+    /// Build from an already-materialized feature list. The smart panel builder holds one (it
+    /// also feeds region names and centroids); rebuilding it via [`RegionMatcher::new`] would
+    /// parse the boundary document twice.
+    fn from_features(features: &[PipFeature]) -> Self {
         let ids: std::collections::HashSet<String> =
             features.iter().map(|f| f.id.clone()).collect();
         // distinct widths of the all-digit ids, ascending — precomputed so per-cell matching does
@@ -5047,7 +5073,7 @@ impl RegionMatcher {
         let lowercased: std::collections::HashMap<String, String> = {
             let mut m: std::collections::HashMap<String, String> = std::collections::HashMap::new();
             let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
-            for f in &features {
+            for f in features {
                 let folded = f.id.to_ascii_lowercase();
                 match m.get(&folded) {
                     Some(existing) if *existing != f.id => {
@@ -5064,27 +5090,50 @@ impl RegionMatcher {
             }
             m
         };
-        Ok(Self {
+        Self {
             ids,
             numeric_widths,
             lowercased,
-        })
+            aliases: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Install a name->code alias map as the LAST matching tier. Last, deliberately: a cell that
+    /// already names a feature id must keep matching it identically whether or not a map is
+    /// present, so aliases only extend the match set, never shadow it.
+    fn with_aliases(mut self, aliases: std::collections::HashMap<String, String>) -> Self {
+        self.aliases = aliases;
+        self
     }
 
     /// The feature id this cell names, in the BOUNDARY's spelling, or `None` if it names none.
     fn canonicalize(&self, raw: &str) -> Option<String> {
-        match_region_code(raw, &self.ids, &self.numeric_widths, &self.lowercased)
+        match_region_code(raw, &self.ids, &self.numeric_widths, &self.lowercased).or_else(|| {
+            // alias hit: re-run the mapped code through the code tiers so the returned string is
+            // guaranteed to be a feature id in the BOUNDARY's spelling (never a bare alias value)
+            let code = self.aliases.get(&raw.trim().to_ascii_lowercase())?;
+            match_region_code(code, &self.ids, &self.numeric_widths, &self.lowercased)
+        })
     }
 }
 
 /// Score `codes` against the fetched boundary set, returning
 /// `(matched_count, total_count, sample_of_unmatched)`.
+///
+/// `aliases` (name -> region code, from forward geocoding) lets the geocoded path score coverage
+/// over the ORIGINAL place names — passed explicitly rather than read from the process global,
+/// because the gate must score BEFORE the alias map is published (a candidate that fails here
+/// never publishes).
 fn score_region_code_coverage(
     geojson: &serde_json::Value,
     feature_id_key: &str,
     codes: &[String],
+    aliases: Option<&std::collections::HashMap<String, String>>,
 ) -> CliResult<(usize, usize, Vec<String>)> {
-    let matcher = RegionMatcher::new(geojson, feature_id_key)?;
+    let mut matcher = RegionMatcher::new(geojson, feature_id_key)?;
+    if let Some(aliases) = aliases {
+        matcher = matcher.with_aliases(aliases.clone());
+    }
     let mut matched = 0usize;
     let mut unmatched: Vec<String> = Vec::new();
     for code in codes {
@@ -5128,6 +5177,22 @@ static AUTO_BOUNDARY_OUTLIERS: std::sync::OnceLock<Vec<String>> = std::sync::Onc
 /// Auto-resolved regions that lie far outside the main cluster, if any.
 fn auto_boundary_outliers() -> &'static [String] {
     AUTO_BOUNDARY_OUTLIERS.get().map_or(&[], Vec::as_slice)
+}
+
+/// Trimmed, ASCII-lowercased place name -> 5-digit county FIPS, set once when `--geojson auto
+/// --geocode` forward-geocoded a place-name `--locations` column (issue #4417 Part A).
+///
+/// Same process-global rationale as [`AUTO_BOUNDARY_PROVENANCE`]: resolved during up-front
+/// validation, consumed deep inside the plot builders whose signatures carry `&Args`, and written
+/// at most once per process — the smart candidate fall-through publishes only the winning
+/// candidate's map, so a rejected candidate never reaches here. Ungated: on builds without the
+/// `geocode` feature nothing ever writes it and the accessor returns `None`.
+static AUTO_GEOCODED_ALIASES: std::sync::OnceLock<std::collections::HashMap<String, String>> =
+    std::sync::OnceLock::new();
+
+/// The name->county-FIPS alias map for this run, if `--geojson auto --geocode` resolved one.
+fn auto_geocoded_aliases() -> Option<&'static std::collections::HashMap<String, String>> {
+    AUTO_GEOCODED_ALIASES.get()
 }
 
 /// Read a feature id out of a RAW `serde_json` feature by dotted path (`id`, `properties.GEOID`).
@@ -5339,6 +5404,23 @@ fn resolve_auto_geojson(
              boundaries for."
         );
     }
+    // safe: the caller only routes here when `parse_auto_spec` already matched
+    let auto_spec = crate::cmd::viz_census::parse_auto_spec(spec).unwrap_or_default();
+
+    // `--geocode` + auto: the --locations column holds place NAMES, not region codes — forward-
+    // geocode them to county FIPS first (issue #4417 Part A).
+    #[cfg(feature = "geocode")]
+    if args.flag_geocode {
+        return resolve_auto_geojson_geocoded(args, spec, auto_spec);
+    }
+    #[cfg(not(feature = "geocode"))]
+    if args.flag_geocode {
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec} with --geocode requires a qsv build with the 'geocode' feature (or \
+             a prebuilt qsv binary). Supply ready-made region codes via --locations instead."
+        );
+    }
+
     let codes = distinct_region_codes(args)?;
     if codes.is_empty() {
         return fail_incorrectusage_clierror!(
@@ -5346,16 +5428,43 @@ fn resolve_auto_geojson(
              regions to fetch boundaries for."
         );
     }
-    // safe: the caller only routes here when `parse_auto_spec` already matched
-    let auto_spec = crate::cmd::viz_census::parse_auto_spec(spec).unwrap_or_default();
+    // A column with NO digit-bearing values cannot survive any layer's code normalization, so
+    // every probe is a foregone conclusion — pre-empt them with the actionable next command
+    // instead. Mixed columns (some digits) still flow to the per-layer diagnostics.
+    if codes.iter().all(|c| !c.bytes().any(|b| b.is_ascii_digit())) {
+        let sample = codes
+            .iter()
+            .take(GEOJSON_AUTO_UNMATCHED_SAMPLE)
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        #[cfg(feature = "geocode")]
+        let remedy = "If these are city/place names, add --geocode to forward-geocode them to US \
+                      county FIPS first (optionally with --geocode-country / --geocode-admin1 \
+                      hint columns)";
+        #[cfg(not(feature = "geocode"))]
+        let remedy = "If these are city/place names, a qsv build with the 'geocode' feature (or a \
+                      prebuilt qsv binary) can forward-geocode them to US county FIPS via \
+                      --geocode";
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec}: none of the {} distinct --locations values look like region codes \
+             (e.g. {sample}) - Census geographies are keyed by numeric codes (county FIPS, ZCTA, \
+             tract GEOID). {remedy}. Otherwise supply an explicit --geojson file.",
+            codes.len()
+        );
+    }
     let boundaries = crate::cmd::viz_census::resolve(&codes, auto_spec)?;
 
     // "auto" is only honest if the guess is testable: score the column against what was actually
     // fetched and refuse to render a mostly-unmatched map. Without this, a --locations column of
     // plausible-but-nonexistent codes (42999, 42998, ...) fetches a state and renders a map that
     // shades nothing, exits 0, and says nothing.
-    let (matched, total, unmatched_sample) =
-        score_region_code_coverage(&boundaries.geojson, &boundaries.feature_id_key, &codes)?;
+    let (matched, total, unmatched_sample) = score_region_code_coverage(
+        &boundaries.geojson,
+        &boundaries.feature_id_key,
+        &codes,
+        None,
+    )?;
     #[allow(clippy::cast_precision_loss)]
     let fraction = if total == 0 {
         0.0
@@ -5402,6 +5511,428 @@ fn resolve_auto_geojson(
         boundaries.path
     );
     Ok((boundaries.path, Some(boundaries.feature_id_key)))
+}
+
+/// The classified outcome of forward-geocoding a distinct place-name set: the usable name->county
+/// FIPS aliases, plus everything that fell out and why — so the resolution report can name causes
+/// instead of a bare count (the same row/unit-accounting philosophy as `--geocode`'s own report).
+#[cfg(feature = "geocode")]
+#[derive(Debug, Default)]
+struct GeocodedAliases {
+    /// Trimmed, ASCII-lowercased name -> 5-digit county FIPS.
+    aliases:       std::collections::HashMap<String, String>,
+    /// Names that matched no known place.
+    no_match:      Vec<String>,
+    /// `(name, where the match actually was)` for matches the hint excluded.
+    hint_rejected: Vec<(String, String)>,
+    /// Names that matched a place with no US county FIPS (foreign, or no admin2).
+    non_county:    Vec<String>,
+    /// Names with CONFLICTING outcomes under different per-row hints — resolved to different
+    /// counties, or resolved under one hint but unusable (no match / hint-rejected / non-county)
+    /// under another. Their alias is removed rather than resolved to whichever won — the same
+    /// policy as [`RegionMatcher`]'s ambiguous case-fold removal, because the renderer joins by
+    /// bare name and cannot honor the distinction per row.
+    ambiguous:     Vec<String>,
+}
+
+/// Classify one [`ForwardMatch`] per distinct place name into a [`GeocodedAliases`].
+///
+/// Pure — unit-testable from hand-built `ForwardMatch` vectors, no engine. `names` and `matches`
+/// are parallel; many names mapping to ONE county is fine (their rows aggregate under it).
+#[cfg(feature = "geocode")]
+fn build_geocoded_aliases(
+    names: &[String],
+    matches: &[crate::cmd::geocode::ForwardMatch],
+) -> GeocodedAliases {
+    use crate::cmd::geocode::ForwardMatch;
+    let mut out = GeocodedAliases::default();
+    let mut divergent: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Names with ANY non-usable outcome (no match / hint-rejected / non-county) under some hint.
+    // The per-row renderer canonicalizes by BARE name — it cannot tell which hint a row carried —
+    // so a name that is usable under one hint and unusable under another must not keep its alias:
+    // the unusable rows would silently chart under the usable hint's county while the report
+    // claims they were dropped.
+    let mut unusable: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (name, found) in names.iter().zip(matches.iter()) {
+        match found {
+            ForwardMatch::Matched(r) if !r.us_county_fips.is_empty() => {
+                let key = name.trim().to_ascii_lowercase();
+                match out.aliases.get(&key) {
+                    Some(existing) if *existing != r.us_county_fips => {
+                        divergent.insert(key);
+                    },
+                    Some(_) => {},
+                    None => {
+                        out.aliases.insert(key, r.us_county_fips.clone());
+                    },
+                }
+            },
+            ForwardMatch::Matched(_) => {
+                unusable.insert(name.trim().to_ascii_lowercase());
+                out.non_county.push(name.clone());
+            },
+            ForwardMatch::NoMatch => {
+                unusable.insert(name.trim().to_ascii_lowercase());
+                out.no_match.push(name.clone());
+            },
+            ForwardMatch::HintRejected(r) => {
+                let where_found = if r.admin1_name.is_empty() {
+                    r.country_name.clone()
+                } else {
+                    format!("{}, {}", r.admin1_name, r.iso2)
+                };
+                unusable.insert(name.trim().to_ascii_lowercase());
+                out.hint_rejected.push((name.clone(), where_found));
+            },
+        }
+    }
+    for key in divergent {
+        out.aliases.remove(&key);
+        out.ambiguous.push(key);
+    }
+    // Mixed outcomes across hints: drop the alias rather than resolve it — conservative in the
+    // honest direction (every row of that name is omitted AND counted), same policy as the
+    // divergent-county removal above. Only counted as ambiguous when an alias actually existed;
+    // a name that never resolved anywhere is already fully accounted for by its own cause.
+    for key in unusable {
+        if out.aliases.remove(&key).is_some() {
+            out.ambiguous.push(key);
+        }
+    }
+    out
+}
+
+/// Collect the distinct `(place name, region hint)` pairs of the `--locations` column, in
+/// first-seen order, honoring the `--geocode-country` / `--geocode-admin1` hint columns.
+///
+/// Sibling of [`distinct_region_codes`], but hint-aware: the same name under two different hints
+/// is two queries (`Springfield` + `US.MA` vs `Springfield` + `US.IL` are different counties).
+/// The default country is always `us` — Census boundaries are US-only, so an unhinted bare name
+/// must not resolve abroad (the very failure issue #4427 fixed).
+#[cfg(feature = "geocode")]
+fn distinct_geocode_queries(
+    args: &Args,
+) -> CliResult<(Vec<String>, Vec<crate::cmd::geocode::RegionHint>)> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let loc_idx = resolve_one(args.flag_locations.as_ref(), &headers, nh, "locations")?;
+    let country_idx = match args.flag_geocode_country.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "geocode-country")?),
+        None => None,
+    };
+    let admin1_idx = match args.flag_geocode_admin1.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "geocode-admin1")?),
+        None => None,
+    };
+    let mut hint_cache: std::collections::HashMap<
+        (String, String),
+        crate::cmd::geocode::RegionHint,
+    > = std::collections::HashMap::new();
+    let mut seen: std::collections::HashSet<(String, String, String)> =
+        std::collections::HashSet::new();
+    let mut names: Vec<String> = Vec::new();
+    let mut hints: Vec<crate::cmd::geocode::RegionHint> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    let mut row = 0_u64;
+    while rdr.read_byte_record(&mut record)? {
+        row += 1;
+        let name = cell_to_string(record.get(loc_idx));
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let country_cell = country_idx
+            .map(|i| cell_to_string(record.get(i)))
+            .unwrap_or_default();
+        let admin1_cell = admin1_idx
+            .map(|i| cell_to_string(record.get(i)))
+            .unwrap_or_default();
+        if !seen.insert((name.to_string(), country_cell, admin1_cell)) {
+            continue;
+        }
+        hints.push(geocoded_row_hint(
+            &mut hint_cache,
+            &record,
+            country_idx,
+            admin1_idx,
+            Some("us"),
+            false,
+            row,
+        )?);
+        names.push(name.to_string());
+    }
+    Ok((names, hints))
+}
+
+/// Resolve `--geojson auto` for a `--locations` column of place NAMES: forward-geocode the
+/// distinct names to US county FIPS via the Geonames engine, fetch the county boundaries those
+/// FIPS name, and publish the name->FIPS alias map so per-row matching (and coverage scoring)
+/// canonicalizes a city cell to its county feature id (issue #4417 Part A).
+///
+/// Forward-only by design: reverse geocoding returns the nearest populated place, not the
+/// containing county, so `--lat`/`--lon` is rejected rather than approximated (see the
+/// `reverse_geocode_regions` doc).
+#[cfg(feature = "geocode")]
+fn resolve_auto_geojson_geocoded(
+    args: &Args,
+    spec: &str,
+    auto_spec: crate::cmd::viz_census::AutoSpec,
+) -> CliResult<(String, Option<String>)> {
+    use crate::cmd::viz_census::{AutoSpec, Layer};
+
+    if !matches!(auto_spec.layer, None | Some(Layer::County)) {
+        return fail_incorrectusage_clierror!(
+            "--geocode derives US county FIPS from place names, so it cannot serve --geojson \
+             {spec}. Use `auto`, `census`, or `census:county` (a vintage suffix is fine)."
+        );
+    }
+    if args.flag_lat.is_some() || args.flag_lon.is_some() {
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec} with --geocode forward-geocodes the --locations place names; it \
+             cannot use --lat/--lon, because reverse geocoding returns the NEAREST populated \
+             place, not the containing county - a rural point would silently key the wrong county."
+        );
+    }
+
+    let (names, hints) = distinct_geocode_queries(args)?;
+    if names.is_empty() {
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec}: the --locations column has no non-empty values, so there are no \
+             regions to fetch boundaries for."
+        );
+    }
+    let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let matches = crate::cmd::geocode::forward_geocode_regions(&name_refs, &hints, None)?;
+    let resolved = build_geocoded_aliases(&names, &matches);
+
+    // Distinct resolved names (alias keys are lowercased, so count them, not raw names) and the
+    // per-cause breakdown, shared by the note and both error shapes below.
+    let dropped = resolved.no_match.len()
+        + resolved.hint_rejected.len()
+        + resolved.non_county.len()
+        + resolved.ambiguous.len();
+    let breakdown = geocode_resolution_breakdown(&resolved);
+    if resolved.aliases.is_empty() {
+        return fail_clierror!(
+            "--geojson {spec}: forward-geocoding resolved none of the {} distinct --locations \
+             place names to a US county, so there are no counties to fetch boundaries \
+             for.{breakdown}",
+            names.len()
+        );
+    }
+
+    // The alias VALUES are the county FIPS set that scopes the fetch. Layer is forced to County:
+    // these codes were synthesized as county FIPS, so probing would only risk a width-5 ZCTA tie.
+    let mut fips: Vec<String> = resolved.aliases.values().cloned().collect();
+    fips.sort_unstable();
+    fips.dedup();
+    let boundaries = crate::cmd::viz_census::resolve(
+        &fips,
+        AutoSpec {
+            layer:   Some(Layer::County),
+            vintage: auto_spec.vintage,
+        },
+    )?;
+
+    // The honesty gate, scored END-TO-END over the original distinct names (via the aliases), so
+    // "matched" means "this place name will actually shade a region".
+    let (matched, total, unmatched_sample) = score_region_code_coverage(
+        &boundaries.geojson,
+        &boundaries.feature_id_key,
+        &names,
+        Some(&resolved.aliases),
+    )?;
+    #[allow(clippy::cast_precision_loss)]
+    let fraction = if total == 0 {
+        0.0
+    } else {
+        matched as f64 / total as f64
+    };
+    if fraction < GEOJSON_AUTO_MIN_MATCH_RATIO {
+        let sample = unmatched_sample.join(", ");
+        return fail_incorrectusage_clierror!(
+            "--geojson {spec}: only {matched} of {total} distinct --locations place names \
+             ({:.0}%) resolve to a boundary in {}. Unmatched examples: {sample}.{breakdown}",
+            fraction * 100.0,
+            boundaries.provenance
+        );
+    }
+    if dropped > 0 || matched < total {
+        winfo!(
+            "--geojson {spec}: forward-geocoded {} of {} distinct --locations place names to {} \
+             US counties; unresolved names are omitted from the map.{breakdown}",
+            resolved.aliases.len(),
+            names.len(),
+            fips.len()
+        );
+    }
+
+    let provenance = format!(
+        "{}, region codes forward-geocoded from --locations place names",
+        boundaries.provenance
+    );
+    let _ = AUTO_GEOCODED_ALIASES.set(resolved.aliases);
+    let _ = AUTO_BOUNDARY_PROVENANCE.set(provenance.clone());
+    let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(
+        &boundaries.geojson,
+        &boundaries.feature_id_key,
+    ));
+    log::info!(
+        "--geojson {spec} resolved via geocode: {provenance} -> {} ({matched}/{total} names \
+         matched)",
+        boundaries.path
+    );
+    winfo!(
+        "--geojson {spec}: {provenance} — boundaries cached at {}",
+        boundaries.path
+    );
+    Ok((boundaries.path, Some(boundaries.feature_id_key)))
+}
+
+/// Render the per-cause lines of the geocode resolution report ("" when nothing fell out), with
+/// exemplars, ending with the denser-index remedy when it can actually help — `index-load 1000`
+/// resolves more small towns, but cannot rescue a hint rejection.
+#[cfg(feature = "geocode")]
+fn geocode_resolution_breakdown(resolved: &GeocodedAliases) -> String {
+    fn sample(names: &[String]) -> String {
+        let s = names
+            .iter()
+            .take(GEOJSON_AUTO_UNMATCHED_SAMPLE)
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        if names.len() > GEOJSON_AUTO_UNMATCHED_SAMPLE {
+            format!("{s}, ...")
+        } else {
+            s
+        }
+    }
+    let mut note = String::new();
+    if !resolved.no_match.is_empty() {
+        note.push_str(&format!(
+            "\n  {} name(s) matched no known place (e.g. {}).",
+            resolved.no_match.len(),
+            sample(&resolved.no_match)
+        ));
+    }
+    if !resolved.hint_rejected.is_empty() {
+        let exemplars = resolved
+            .hint_rejected
+            .iter()
+            .take(GEOJSON_AUTO_UNMATCHED_SAMPLE)
+            .map(|(name, where_found)| format!("{name} matched {where_found}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        note.push_str(&format!(
+            "\n  {} name(s) matched a place outside the hint (e.g. {exemplars}).",
+            resolved.hint_rejected.len()
+        ));
+    }
+    if !resolved.non_county.is_empty() {
+        note.push_str(&format!(
+            "\n  {} name(s) resolved outside a US county (e.g. {}).",
+            resolved.non_county.len(),
+            sample(&resolved.non_county)
+        ));
+    }
+    if !resolved.ambiguous.is_empty() {
+        note.push_str(&format!(
+            "\n  {} name(s) had conflicting outcomes under different hints and were dropped (e.g. \
+             {}).",
+            resolved.ambiguous.len(),
+            sample(&resolved.ambiguous)
+        ));
+    }
+    if !resolved.no_match.is_empty() || !resolved.non_county.is_empty() {
+        note.push_str(
+            "\nThe default Geonames index covers cities with population >= 15,000; a denser index \
+             resolves more small towns: qsv geocode index-load 1000",
+        );
+    }
+    note
+}
+
+/// Resolve ONE `viz smart` city-name candidate column: forward-geocode its distinct names to
+/// county FIPS (implicit `us` hint — the smart path has no hint columns), fetch the county
+/// boundaries, and apply the coverage gate end-to-end over the names.
+///
+/// Returns the boundary set, the coverage numbers, the alias map to publish if this candidate
+/// wins, and the resolution breakdown ("" when everything resolved). Every failure — nothing
+/// geocoded, or the gate refused — is an `Err` the caller records and falls through on, matching
+/// how a code candidate fails.
+#[cfg(feature = "geocode")]
+#[allow(clippy::type_complexity)]
+fn resolve_smart_city_candidate(
+    names: &[String],
+    vintage: Option<u16>,
+) -> CliResult<(
+    crate::cmd::viz_census::BoundarySet,
+    usize,
+    usize,
+    Vec<String>,
+    std::collections::HashMap<String, String>,
+    String,
+)> {
+    use crate::cmd::viz_census::{AutoSpec, Layer};
+
+    let hint = crate::cmd::geocode::RegionHint::parse(None, None, Some("us"))?;
+    let hints = vec![hint; names.len()];
+    let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    // A NETWORK failure here (the first-use Geonames index download) deliberately propagates as
+    // `Network` and aborts via the caller's transient check: like a Census outage, it is a
+    // statement about shared infrastructure — every other city candidate uses the same engine,
+    // so falling through could only repeat the failure and then misreport it as a usage error
+    // with the wrong exit code (roborev jobs 4397/4399). Non-network setup failures (e.g. a
+    // corrupt local index) fall through like any candidate-specific failure.
+    let matches = crate::cmd::geocode::forward_geocode_regions(&name_refs, &hints, None)?;
+    let resolved = build_geocoded_aliases(names, &matches);
+    let breakdown = geocode_resolution_breakdown(&resolved);
+    if resolved.aliases.is_empty() {
+        return Err(crate::CliError::IncorrectUsage(format!(
+            "forward-geocoding resolved none of the {} distinct place names to a US \
+             county{breakdown}",
+            names.len()
+        )));
+    }
+    let mut fips: Vec<String> = resolved.aliases.values().cloned().collect();
+    fips.sort_unstable();
+    fips.dedup();
+    // county FIPS by construction: force the layer, as the explicit path does
+    let boundaries = crate::cmd::viz_census::resolve(
+        &fips,
+        AutoSpec {
+            layer: Some(Layer::County),
+            vintage,
+        },
+    )?;
+    let (matched, total, unmatched_sample) = score_region_code_coverage(
+        &boundaries.geojson,
+        &boundaries.feature_id_key,
+        names,
+        Some(&resolved.aliases),
+    )?;
+    #[allow(clippy::cast_precision_loss)]
+    let fraction = if total == 0 {
+        0.0
+    } else {
+        matched as f64 / total as f64
+    };
+    if fraction < GEOJSON_AUTO_MIN_MATCH_RATIO {
+        let sample = unmatched_sample.join(", ");
+        return Err(crate::CliError::IncorrectUsage(format!(
+            "only {matched} of {total} distinct place names ({:.0}%) resolve to a boundary in {}. \
+             Unmatched examples: {sample}{breakdown}",
+            fraction * 100.0,
+            boundaries.provenance
+        )));
+    }
+    Ok((
+        boundaries,
+        matched,
+        total,
+        unmatched_sample,
+        resolved.aliases,
+        breakdown,
+    ))
 }
 
 /// How many distinct values per candidate column `--geojson auto` probes when it has to CHOOSE
@@ -5458,19 +5989,37 @@ fn resolve_smart_auto_geojson(
         return Ok(None);
     }
 
-    let candidates = region_code_candidates(stats, col_sems);
+    // safe: parse_auto_spec already matched in `is_geojson_auto_spec`
+    let auto_spec = crate::cmd::viz_census::parse_auto_spec(&spec).unwrap_or_default();
+
+    // Region-CODE candidates first; geocodable city-NAME columns (issue #4417 Part A) are
+    // appended strictly after them, so a real code column always wins when it resolves and
+    // geocoding runs only once every code candidate has failed. A pinned non-county layer cannot
+    // be served by geocoding (it synthesizes county FIPS), so city candidates only exist when
+    // the layer is County or unpinned. Same union, same order, as the panel builder's
+    // `summary_choropleth_candidates`.
+    let code_candidates = region_code_candidates(stats, col_sems);
+    let city_candidates = if matches!(
+        auto_spec.layer,
+        None | Some(crate::cmd::viz_census::Layer::County)
+    ) {
+        geocodable_name_candidates(stats, col_sems)
+    } else {
+        Vec::new()
+    };
+    let n_code = code_candidates.len();
+    let candidates: Vec<usize> = code_candidates.into_iter().chain(city_candidates).collect();
     if candidates.is_empty() {
         return fail_incorrectusage_clierror!(
-            "--geojson {spec}: no region-code column to fetch boundaries for. `viz smart` \
-             identifies one from a data dictionary, so it needs --dictionary with a column tagged \
-             as a region concept (e.g. geo.county_fips, geo.zip_code, geo.census_tract). Supply \
-             one, or pass an explicit --geojson file."
+            "--geojson {spec}: no region column to fetch boundaries for. `viz smart` identifies \
+             one from a data dictionary, so it needs --dictionary with a column tagged as a \
+             region concept (e.g. geo.county_fips, geo.zip_code, geo.census_tract - or geo.city \
+             on a geocode-enabled build, resolved by forward geocoding). Supply one, or pass an \
+             explicit --geojson file."
         );
     }
 
     let codes = distinct_column_values(args, &candidates)?;
-    // safe: parse_auto_spec already matched in `is_geojson_auto_spec`
-    let auto_spec = crate::cmd::viz_census::parse_auto_spec(&spec).unwrap_or_default();
     let label_of = |slot: usize| {
         let idx = candidates[slot];
         let s = &col_sems[idx];
@@ -5489,11 +6038,17 @@ fn resolve_smart_auto_geojson(
     // have no STATE field to scope by) the boundary set is derived from the column it is fetched
     // for, so scoring columns against a fetched set would score every column against its own
     // answer. Probing is geometry-free and answers the question without that circularity.
-    let ranked: Vec<usize> = if candidates.len() == 1 {
+    // Only CODE candidates are probed — a city column's values normalize to nothing, so probing
+    // them would only spend requests to learn what is already known. City slots are appended
+    // after the ranked code slots, in column order.
+    let ranked: Vec<usize> = if n_code == 1 {
         vec![0]
+    } else if n_code == 0 {
+        Vec::new()
     } else {
         let samples: Vec<Vec<String>> = codes
             .iter()
+            .take(n_code)
             .map(|c| c.iter().take(SMART_AUTO_PROBE_SAMPLE).cloned().collect())
             .collect();
         let scores = crate::cmd::viz_census::score_candidates(&samples, auto_spec)?;
@@ -5502,7 +6057,9 @@ fn resolve_smart_auto_geojson(
             .enumerate()
             .filter_map(|(slot, score)| score.map(|s| (slot, s)))
             .collect();
-        if ranked.is_empty() {
+        // no code candidate resolves: a hard stop only when there is no city candidate to fall
+        // through to
+        if ranked.is_empty() && n_code == candidates.len() {
             let tried = (0..candidates.len())
                 .map(label_of)
                 .collect::<Vec<_>>()
@@ -5543,7 +6100,11 @@ fn resolve_smart_auto_geojson(
         usize,
         Vec<String>,
     )> = None;
-    for slot in ranked {
+    // `Some` when the winning candidate was a geocoded city column: the alias map to publish,
+    // and the resolution breakdown to report alongside the map.
+    #[cfg(feature = "geocode")]
+    let mut geocoded: Option<(std::collections::HashMap<String, String>, String)> = None;
+    for slot in ranked.into_iter().chain(n_code..candidates.len()) {
         let region_codes = &codes[slot];
         if region_codes.is_empty() {
             failures.push((
@@ -5554,6 +6115,29 @@ fn resolve_smart_auto_geojson(
                         .to_string(),
                 ),
             ));
+            continue;
+        }
+        // A city slot resolves through the geocode engine. Its candidate-specific failures fall
+        // through like any other candidate's: on this path the column choice is qsv's, so a bad
+        // guess must cost another attempt, never the Data Schematic. NETWORK failures abort —
+        // whether the Census fetch (as on the code path below) or the shared Geonames index
+        // download, which no other candidate could survive either (roborev jobs 4397/4399).
+        if slot >= n_code {
+            #[cfg(feature = "geocode")]
+            match resolve_smart_city_candidate(region_codes, auto_spec.vintage) {
+                Ok((boundaries, matched, total, unmatched_sample, aliases, breakdown)) => {
+                    geocoded = Some((aliases, breakdown));
+                    resolved = Some((boundaries, matched, total, unmatched_sample));
+                    break;
+                },
+                Err(e @ crate::CliError::Network(_)) => return Err(e),
+                Err(e) => {
+                    failures.push((label_of(slot), e));
+                    continue;
+                },
+            }
+            // unreachable: `geocodable_name_candidates` is empty on non-geocode builds
+            #[cfg(not(feature = "geocode"))]
             continue;
         }
         let boundaries = match crate::cmd::viz_census::resolve(region_codes, auto_spec) {
@@ -5576,6 +6160,7 @@ fn resolve_smart_auto_geojson(
             &boundaries.geojson,
             &boundaries.feature_id_key,
             region_codes,
+            None,
         )?;
         #[allow(clippy::cast_precision_loss)]
         let fraction = if total == 0 {
@@ -5630,19 +6215,35 @@ fn resolve_smart_auto_geojson(
         );
     }
 
-    let _ = AUTO_BOUNDARY_PROVENANCE.set(boundaries.provenance.clone());
+    // When a geocoded city column won, publish its alias map (the panel builder's matcher reads
+    // it), carry the lineage in the provenance, and report the per-cause resolution breakdown.
+    #[cfg(feature = "geocode")]
+    let provenance = if let Some((aliases, breakdown)) = geocoded {
+        if !breakdown.is_empty() {
+            winfo!("--geojson {spec}: forward-geocoding place names left gaps:{breakdown}");
+        }
+        let _ = AUTO_GEOCODED_ALIASES.set(aliases);
+        format!(
+            "{}, region codes forward-geocoded from place names",
+            boundaries.provenance
+        )
+    } else {
+        boundaries.provenance.clone()
+    };
+    #[cfg(not(feature = "geocode"))]
+    let provenance = boundaries.provenance.clone();
+
+    let _ = AUTO_BOUNDARY_PROVENANCE.set(provenance.clone());
     let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(
         &boundaries.geojson,
         &boundaries.feature_id_key,
     ));
     log::info!(
-        "--geojson {spec} resolved: {} -> {} ({matched}/{total} codes matched)",
-        boundaries.provenance,
+        "--geojson {spec} resolved: {provenance} -> {} ({matched}/{total} codes matched)",
         boundaries.path
     );
     winfo!(
-        "--geojson {spec}: {} — boundaries cached at {}",
-        boundaries.provenance,
+        "--geojson {spec}: {provenance} — boundaries cached at {}",
         boundaries.path
     );
     validate_geojson_source(
@@ -7681,8 +8282,11 @@ fn build_choropleth_plot(
         && args.flag_lat.is_some()
         && args.flag_lon.is_some()
         && !args.flag_geocode;
+    // `--geojson auto --geocode` published a name->county-FIPS alias map during resolution: the
+    // trace keys by GeoJSON feature id, so this path forces geojson-id exactly as pip does.
+    let geocoded_aliases_active = args.flag_geocode && auto_geocoded_aliases().is_some();
     let snap = !args.flag_no_snap;
-    let mode = if pip {
+    let mode = if pip || geocoded_aliases_active {
         LocationMode::GeoJsonId
     } else {
         parse_location_mode(args.flag_location_mode.as_deref().unwrap_or("iso3"))?
@@ -7729,7 +8333,10 @@ fn build_choropleth_plot(
                  --denominator-key to read the denominator from the --geojson features instead."
             );
         }
-        if args.flag_geocode {
+        // with the alias map active, the geocoded run takes the literal path below, which reads
+        // the region key (and thus a same-row denominator) from the column — so the objection
+        // does not apply there
+        if args.flag_geocode && !geocoded_aliases_active {
             return fail_incorrectusage_clierror!(
                 "--denominator cannot be combined with --geocode: the region codes are derived by \
                  the geocode engine, not read from a column. Use --denominator-key to read the \
@@ -7748,7 +8355,10 @@ fn build_choropleth_plot(
             "--location-mode geojson-id requires a --geojson source."
         );
     }
-    if args.flag_map && args.flag_geocode {
+    // with `--geojson auto --geocode` the geocoded codes are county FIPS that DO match the
+    // fetched features' GEOIDs, so --map (MapLibre) works there; the objection only holds for
+    // the geo-basemap geocode path
+    if args.flag_map && args.flag_geocode && !geocoded_aliases_active {
         return fail_incorrectusage_clierror!(
             "--map cannot be combined with --geocode: geocode yields ISO-3/US-state codes, which \
              won't match a GeoJSON feature id. Use the default geo basemap with --geocode."
@@ -7793,9 +8403,11 @@ fn build_choropleth_plot(
         )?;
         below_note = note;
         (locs, z, label, hover)
-    } else if args.flag_geocode {
+    } else if args.flag_geocode && !geocoded_aliases_active {
         choropleth_geocoded_locations(args, mode.clone(), agg)?
     } else {
+        // includes the alias-active geocode path: the literal path's RegionMatcher canonicalizes
+        // each place-name cell to its county feature id via the published alias map
         let (locs, z, label, hover, denom) =
             choropleth_literal_locations(args, agg, loaded_geojson.as_ref(), extras)?;
         column_denominator = denom;
@@ -8170,10 +8782,10 @@ fn choropleth_literal_locations(
     // the coverage check accepted the padded form the renderer never used. One matcher now decides
     // both.
     let region_matcher = match loaded_geojson {
-        Some(geojson) => Some(RegionMatcher::new(
-            geojson,
-            args.flag_feature_id_key.as_deref().unwrap_or("id"),
-        )?),
+        Some(geojson) => Some(
+            RegionMatcher::new(geojson, args.flag_feature_id_key.as_deref().unwrap_or("id"))?
+                .with_aliases(auto_geocoded_aliases().cloned().unwrap_or_default()),
+        ),
         None => None,
     };
     let mut record = csv::ByteRecord::new();
@@ -8465,7 +9077,8 @@ fn choropleth_geocoded_locations(
     if !matches!(mode, LocationMode::Iso3 | LocationMode::UsaStates) {
         return fail_incorrectusage_clierror!(
             "--geocode only resolves --location-mode iso3 or usa-states (the codes geocode can \
-             produce)."
+             produce) - or, combined with --geojson auto, forward-geocodes place names to US \
+             county FIPS boundaries."
         );
     }
     let has_latlon = args.flag_lat.is_some() && args.flag_lon.is_some();
@@ -24885,9 +25498,11 @@ fn match_region_code(
 }
 
 /// Region-code candidate columns: geo dimensions that NAME a boundary region (zip, county, state,
-/// ...), excluding point coordinates and address/city fields that don't key polygons. Canonical
+/// ...), excluding point coordinates and address fields that don't key polygons. Canonical
 /// describegpt geo leaves plus lenient aliases for hand-curated dictionaries (`zip`/`postal_code`
-/// for the canonical `zip_code`, `fips` for a county/tract code).
+/// for the canonical `zip_code`, `fips` for a county/tract code). City columns are no longer
+/// excluded outright — they are GEOCODABLE candidates (see [`CITY_NAME_LEAVES`]), ranked strictly
+/// after every code candidate.
 const REGION_CODE_LEAVES: &[&str] = &[
     "zip_code",
     "zip",
@@ -24901,17 +25516,63 @@ const REGION_CODE_LEAVES: &[&str] = &[
     "fips",
 ];
 
+/// Geo concepts naming a PLACE rather than a region code. Chartable on a county map only by
+/// forward-geocoding the names to county FIPS (issue #4417 Part A), so these rank strictly AFTER
+/// every [`REGION_CODE_LEAVES`] candidate and contribute nothing on builds without the `geocode`
+/// feature. Canonical describegpt leaf is `geo.city`; the aliases follow the lenient precedent
+/// above.
+const CITY_NAME_LEAVES: &[&str] = &["city", "town", "municipality"];
+
 /// The columns `viz smart` will consider as a summary-choropleth region key, in column order.
 ///
-/// Shared by the panel builder and `--geojson auto`'s deferred resolution (issue #4416) so the
-/// boundaries are fetched for exactly the columns the panel builder will later score — a resolver
-/// working from a different candidate set could fetch for a column that never charts.
+/// Shared by the panel builder ([`summary_choropleth_candidates`] unions this with the geocodable
+/// city columns) and `--geojson auto`'s deferred resolution (issue #4416) so the boundaries are
+/// fetched for exactly the columns the panel builder will later score — a resolver working from a
+/// different candidate set could fetch for a column that never charts.
 ///
 /// A concept comes only from a data dictionary (`derive_semantics` returns the default without
 /// one), so a stats-only run has no candidates at all.
 fn region_code_candidates(
     stats: &[crate::cmd::stats::StatsData],
     col_sems: &[ColSemantics],
+) -> Vec<usize> {
+    candidates_by_leaves(stats, col_sems, REGION_CODE_LEAVES)
+}
+
+/// City/place-name columns `viz smart` can serve by forward-geocoding (issue #4417 Part A), in
+/// column order. Empty on builds without the `geocode` feature — which alone reproduces the
+/// smart path's silent-degrade pattern for missing geocode support.
+fn geocodable_name_candidates(
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+) -> Vec<usize> {
+    #[cfg(feature = "geocode")]
+    {
+        candidates_by_leaves(stats, col_sems, CITY_NAME_LEAVES)
+    }
+    #[cfg(not(feature = "geocode"))]
+    {
+        let _ = (stats, col_sems);
+        Vec::new()
+    }
+}
+
+/// The full summary-choropleth candidate set: region-code columns first, then geocodable
+/// city-name columns. The resolver and the panel builder must derive their candidates from THIS
+/// union (in this order) so a fetched boundary set always belongs to a column the panels score.
+fn summary_choropleth_candidates(
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+) -> Vec<usize> {
+    let mut candidates = region_code_candidates(stats, col_sems);
+    candidates.extend(geocodable_name_candidates(stats, col_sems));
+    candidates
+}
+
+fn candidates_by_leaves(
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    leaves: &[&str],
 ) -> Vec<usize> {
     col_sems
         .iter()
@@ -24920,7 +25581,7 @@ fn region_code_candidates(
             stats.get(*i).is_some_and(|st| st.cardinality >= 2)
                 && s.concept
                     .strip_prefix("geo.")
-                    .is_some_and(|leaf| REGION_CODE_LEAVES.contains(&leaf))
+                    .is_some_and(|leaf| leaves.contains(&leaf))
         })
         .map(|(i, _)| i)
         .collect()
@@ -24966,7 +25627,7 @@ fn build_smart_summary_choropleth_panels(
         return Ok(None);
     };
 
-    let candidates = region_code_candidates(stats, col_sems);
+    let candidates = summary_choropleth_candidates(stats, col_sems);
     if candidates.is_empty() {
         return Ok(None);
     }
@@ -24987,47 +25648,12 @@ fn build_smart_summary_choropleth_panels(
         feature_id_key,
         args.flag_feature_name_key.as_deref(),
     )?;
-    let feature_ids: std::collections::HashSet<String> =
-        features.iter().map(|f| f.id.clone()).collect();
-    // distinct widths of the all-digit feature ids, ascending — precomputed once so the per-row
-    // `match_region_code` does not rescan every feature id for each unmatched numeric cell (which
-    // would make matching `rows * candidates * features`).
-    let numeric_id_widths: Vec<usize> = {
-        let mut w: Vec<usize> = feature_ids
-            .iter()
-            .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
-            .map(|id| id.len())
-            .collect();
-        w.sort_unstable();
-        w.dedup();
-        w
-    };
-    // lower-cased id -> canonical feature id, for the case-insensitive fallback in
-    // `match_region_code`. Built from the ORDERED feature list, not the HashSet: iterating the set
-    // would pick an arbitrary winner when two ids differ only by case, so the same input could
-    // aggregate under a different region between runs. A folded key that maps to more than one
-    // distinct id is genuinely ambiguous, so it is REMOVED rather than resolved — exact and
-    // zero-padded matching still run first, so this only forfeits the fuzzy fallback.
-    let lowercased_ids: std::collections::HashMap<String, String> = {
-        let mut m: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-        let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for f in &features {
-            let folded = f.id.to_ascii_lowercase();
-            match m.get(&folded) {
-                Some(existing) if *existing != f.id => {
-                    ambiguous.insert(folded);
-                },
-                Some(_) => {},
-                None => {
-                    m.insert(folded, f.id.clone());
-                },
-            }
-        }
-        for k in ambiguous {
-            m.remove(&k);
-        }
-        m
-    };
+    // one matcher for validation and rendering alike (see [`RegionMatcher`]'s drift rationale);
+    // built from the already-materialized feature list, which also feeds region names below. The
+    // alias tier lets a geocoded city-name column key the county features (issue #4417 Part A);
+    // with no aliases published, a city column simply matches nothing and loses the contest.
+    let region_matcher = RegionMatcher::from_features(&features)
+        .with_aliases(auto_geocoded_aliases().cloned().unwrap_or_default());
 
     // Columns a per-region MEASURE panel must never chart: the region-code candidates themselves,
     // plus any column a candidate declares as its DENOMINATOR (issue #4394). A denominator is
@@ -25121,8 +25747,7 @@ fn build_smart_summary_choropleth_panels(
             total_rows[ci] += 1;
             // key aggregates under the matched geojson feature id; an unmatched value still counts
             // toward total_rows so a poorly-overlapping column scores low.
-            let Some(k) = match_region_code(raw, &feature_ids, &numeric_id_widths, &lowercased_ids)
-            else {
+            let Some(k) = region_matcher.canonicalize(raw) else {
                 continue;
             };
             matched_rows[ci] += 1;
@@ -38223,7 +38848,8 @@ mod tests {
     fn auto_coverage_all_matched() {
         let codes = vec!["01001".to_string(), "42003".to_string()];
         let (matched, total, unmatched) =
-            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes).unwrap();
+            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes, None)
+                .unwrap();
         assert_eq!((matched, total), (2, 2));
         assert!(unmatched.is_empty());
     }
@@ -38233,7 +38859,8 @@ mod tests {
         // a numeric column renders 01001 as 1001; that is a MATCH, not a miss
         let codes = vec!["1001".to_string()];
         let (matched, total, unmatched) =
-            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes).unwrap();
+            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes, None)
+                .unwrap();
         assert_eq!((matched, total), (1, 1));
         assert!(unmatched.is_empty());
     }
@@ -38247,12 +38874,165 @@ mod tests {
             "42003".to_string(),
         ];
         let (matched, total, unmatched) =
-            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes).unwrap();
+            score_region_code_coverage(&coverage_geojson(), "properties.GEOID", &codes, None)
+                .unwrap();
         assert_eq!((matched, total), (1, 3));
         assert_eq!(unmatched, vec!["42999", "42998"]);
         #[allow(clippy::cast_precision_loss)]
         let fraction = matched as f64 / total as f64;
         assert!(fraction < GEOJSON_AUTO_MIN_MATCH_RATIO);
+    }
+
+    #[test]
+    fn auto_coverage_counts_place_names_through_aliases() {
+        // the geocoded path scores coverage over the ORIGINAL place names via the alias map, so
+        // "matched" means "this name will actually shade a region" end-to-end
+        let codes = vec![
+            "Pittsburgh".to_string(),
+            "PHILADELPHIA".to_string(),
+            "Erewhon".to_string(),
+        ];
+        let aliases: std::collections::HashMap<String, String> = [
+            ("pittsburgh", "42003"),
+            // a leading-zero-stripped alias value must still reach the feature via the pad tier
+            ("philadelphia", "1001"),
+            // resolved by the engine, but to a county the fetch did not return
+            ("erewhon", "42999"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let (matched, total, unmatched) = score_region_code_coverage(
+            &coverage_geojson(),
+            "properties.GEOID",
+            &codes,
+            Some(&aliases),
+        )
+        .unwrap();
+        assert_eq!((matched, total), (2, 3));
+        // the unmatched sample names the NAME, not a synthesized code
+        assert_eq!(unmatched, vec!["Erewhon"]);
+    }
+
+    #[test]
+    fn region_matcher_alias_tier_runs_last() {
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "id": "42003", "properties": {}, "geometry":
+                    {"type": "Polygon", "coordinates": [[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,0.0]]]}},
+                {"type": "Feature", "id": "06075", "properties": {}, "geometry":
+                    {"type": "Polygon", "coordinates": [[[2.0,0.0],[3.0,0.0],[3.0,1.0],[2.0,0.0]]]}}
+            ]
+        });
+        let aliases: std::collections::HashMap<String, String> = [
+            ("pittsburgh".to_string(), "42003".to_string()),
+            // alias whose leading-zero-stripped value needs the pad tier to reach the feature
+            ("san francisco".to_string(), "6075".to_string()),
+            // alias pointing at a county the boundary set does not contain
+            ("nowhere".to_string(), "42999".to_string()),
+            // alias key that collides with a literal feature id: the code tiers must win
+            ("42003".to_string(), "06075".to_string()),
+        ]
+        .into_iter()
+        .collect();
+        let m = RegionMatcher::new(&geojson, "id")
+            .unwrap()
+            .with_aliases(aliases);
+        // code tiers unchanged: a literal feature id matches ITSELF even when an alias key
+        // spells the same string
+        assert_eq!(m.canonicalize("42003").as_deref(), Some("42003"));
+        // alias hit, case-insensitively, trimmed
+        assert_eq!(m.canonicalize("Pittsburgh").as_deref(), Some("42003"));
+        assert_eq!(m.canonicalize(" PITTSBURGH ").as_deref(), Some("42003"));
+        // an alias VALUE is re-run through the code tiers (zero-pad) before being returned
+        assert_eq!(m.canonicalize("San Francisco").as_deref(), Some("06075"));
+        // an alias to a non-feature is a miss, never a bare alias value in the trace
+        assert!(m.canonicalize("Nowhere").is_none());
+        // a name with no alias is still a miss
+        assert!(m.canonicalize("Altoona").is_none());
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn build_geocoded_aliases_classifies_outcomes() {
+        use crate::cmd::geocode::{ForwardMatch, GeoRegion};
+        let region = |county: &str, admin1: &str, iso2: &str| GeoRegion {
+            iso2:           iso2.to_string(),
+            iso3:           String::new(),
+            country_name:   if iso2 == "US" {
+                "United States"
+            } else {
+                "Pakistan"
+            }
+            .to_string(),
+            admin1_name:    admin1.to_string(),
+            admin1_code:    None,
+            us_state_code:  None,
+            us_state_fips:  county.get(..2).unwrap_or_default().to_string(),
+            us_county_fips: county.to_string(),
+        };
+        let names: Vec<String> = [
+            "Pittsburgh",
+            "PITTSBURGH", // same alias key as above, same county: aggregates, no ambiguity
+            "Springfield",
+            "Springfield", // same name, DIFFERENT county under a different hint: ambiguous
+            "Montgomery",
+            "Erewhon",
+            "London",
+            "Erie",
+            "Erie", // resolved under one hint, unmatched under another: MIXED outcome
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        let matches = vec![
+            ForwardMatch::Matched(region("42003", "Pennsylvania", "US")),
+            ForwardMatch::Matched(region("42003", "Pennsylvania", "US")),
+            ForwardMatch::Matched(region("25013", "Massachusetts", "US")),
+            ForwardMatch::Matched(region("17167", "Illinois", "US")),
+            ForwardMatch::HintRejected(region("", "Punjab", "PK")),
+            ForwardMatch::NoMatch,
+            // matched, but no US county FIPS (foreign match)
+            ForwardMatch::Matched(region("", "England", "GB")),
+            ForwardMatch::Matched(region("42049", "Pennsylvania", "US")),
+            ForwardMatch::NoMatch,
+        ];
+        let out = build_geocoded_aliases(&names, &matches);
+        assert_eq!(
+            out.aliases.get("pittsburgh").map(String::as_str),
+            Some("42003")
+        );
+        // the divergent name is REMOVED, not resolved to whichever hint came first
+        assert!(!out.aliases.contains_key("springfield"));
+        // so is the MIXED-outcome name: its unmatched rows would otherwise chart under the
+        // matched hint's county while being reported as dropped (roborev job 4396)
+        assert!(!out.aliases.contains_key("erie"));
+        let mut ambiguous = out.ambiguous.clone();
+        ambiguous.sort_unstable();
+        assert_eq!(ambiguous, vec!["erie", "springfield"]);
+        assert_eq!(out.no_match, vec!["Erewhon", "Erie"]);
+        assert_eq!(
+            out.hint_rejected,
+            vec![("Montgomery".to_string(), "Punjab, PK".to_string())]
+        );
+        assert_eq!(out.non_county, vec!["London"]);
+        assert_eq!(out.aliases.len(), 1);
+
+        // the breakdown names every cause and appends the denser-index remedy (no_match present)
+        let note = geocode_resolution_breakdown(&out);
+        assert!(note.contains("matched no known place"));
+        assert!(note.contains("Montgomery matched Punjab, PK"));
+        assert!(note.contains("resolved outside a US county"));
+        assert!(note.contains("conflicting outcomes under different hints"));
+        assert!(note.contains("qsv geocode index-load 1000"));
+
+        // hint rejections alone must NOT advertise the denser index — it cannot help them
+        let only_rejected = GeocodedAliases {
+            hint_rejected: vec![("Montgomery".to_string(), "Punjab, PK".to_string())],
+            ..Default::default()
+        };
+        assert!(!geocode_resolution_breakdown(&only_rejected).contains("index-load"));
     }
 
     // The boundary-provenance note is the only thing distinguishing an auto-fetched boundary set
@@ -40899,6 +41679,39 @@ mod tests {
             match_region_code("ny", &ids, &widths, &lower).as_deref(),
             Some("NY")
         );
+    }
+
+    #[test]
+    fn region_matcher_from_features_matches_new() {
+        // `from_features` is `new` minus the document parse; both constructors must yield the
+        // same matcher, including the ambiguous-case-fold removal (CA vs Ca forfeits folding).
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "id": "CA", "properties": {}, "geometry":
+                    {"type": "Polygon", "coordinates": [[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,0.0]]]}},
+                {"type": "Feature", "id": "Ca", "properties": {}, "geometry":
+                    {"type": "Polygon", "coordinates": [[[2.0,0.0],[3.0,0.0],[3.0,1.0],[2.0,0.0]]]}},
+                {"type": "Feature", "id": "NY", "properties": {}, "geometry":
+                    {"type": "Polygon", "coordinates": [[[4.0,0.0],[5.0,0.0],[5.0,1.0],[4.0,0.0]]]}},
+                {"type": "Feature", "id": "06075", "properties": {}, "geometry":
+                    {"type": "Polygon", "coordinates": [[[6.0,0.0],[7.0,0.0],[7.0,1.0],[6.0,0.0]]]}}
+            ]
+        });
+        let via_new = RegionMatcher::new(&geojson, "id").unwrap();
+        let features = build_pip_features(&geojson, "id", None).unwrap();
+        let via_features = RegionMatcher::from_features(&features);
+        for probe in ["CA", "Ca", "ca", "NY", "ny", "06075", "6075", "nope"] {
+            assert_eq!(
+                via_new.canonicalize(probe),
+                via_features.canonicalize(probe),
+                "constructors disagree on {probe:?}"
+            );
+        }
+        // spot-check the behaviors themselves, not just constructor parity
+        assert_eq!(via_features.canonicalize("ny").as_deref(), Some("NY"));
+        assert!(via_features.canonicalize("cA").is_none());
+        assert_eq!(via_features.canonicalize("6075").as_deref(), Some("06075"));
     }
 
     #[test]

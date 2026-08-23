@@ -9961,7 +9961,7 @@ fn viz_smart_geojson_auto_without_a_region_column_errors() {
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("no region-code column") && stderr.contains("--dictionary"),
+        stderr.contains("no region column") && stderr.contains("--dictionary"),
         "expected the deferred-auto diagnostic naming --dictionary: {stderr}"
     );
 }
@@ -9991,6 +9991,36 @@ fn viz_choropleth_geojson_auto_requires_locations() {
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--locations"));
+}
+
+// A build without the geocode feature must reject `--geojson auto --geocode` with the actionable
+// build-feature message (the explicit path hard-errors; the smart path degrades by having no
+// city candidates at all). No network is involved: the rejection fires during up-front
+// validation.
+#[cfg(not(feature = "geocode"))]
+#[test]
+fn viz_choropleth_geojson_auto_geocode_requires_geocode_feature() {
+    let wrk = Workdir::new("viz_choropleth_geojson_auto_geocode_requires_geocode_feature");
+    wrk.create_from_string("cities.csv", "city,cases\nPittsburgh,10\nPhiladelphia,20\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "cities.csv",
+        "--locations",
+        "city",
+        "--geojson",
+        "auto",
+        "--geocode",
+    ])
+    .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("geocode' feature"),
+        "expected the build-feature message: {stderr}"
+    );
 }
 
 // `auto` is a keyword, but an existing local file of that name must still win — otherwise the

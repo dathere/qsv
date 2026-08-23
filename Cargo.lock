@@ -1040,9 +1040,9 @@ dependencies = [
 
 [[package]]
 name = "blocking"
-version = "1.6.2"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e83f8d02be6967315521be875afa792a316e28d57b5a2d401897e2a7921b7f21"
+checksum = "a70e4329df6cb94385eed412ec92375c3cdd8a6e502493d1229b6414e4036dfa"
 dependencies = [
  "async-channel",
  "async-task",
@@ -1256,9 +1256,9 @@ dependencies = [
 
 [[package]]
 name = "cached"
-version = "3.0.0-rc.10"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffb6433e43854f9522d34e7b02815b55c9843921db318099ef9c44f39f3a5a88"
+checksum = "585e27624275176f4fc72161f2a2d629c2a13fa8dea40df288d59965a0e49ad4"
 dependencies = [
  "ahash 0.8.12",
  "blocking",
@@ -1279,9 +1279,9 @@ dependencies = [
 
 [[package]]
 name = "cached_proc_macro"
-version = "3.0.0-rc.10"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e01293a43798b95910ca6051f3e907a41c20bf1b5a7004333b136cfe77302f8"
+checksum = "da80977bd46ecf98c593b651e393260f852678283989b8b7c4079304fe5e8936"
 dependencies = [
  "darling 0.20.11",
  "proc-macro-crate",
@@ -1292,9 +1292,9 @@ dependencies = [
 
 [[package]]
 name = "cached_proc_macro_types"
-version = "3.0.0-rc.10"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23c7be846c1d739e85fcc6f544377aa603d4e4fdaa8f51119f32a863137f0d5b"
+checksum = "f5813789573ae815c8b4be58c4428e0e7ae05f0227678ba9de332ded585b9159"
 
 [[package]]
 name = "calamine"
@@ -4335,9 +4335,9 @@ dependencies = [
 
 [[package]]
 name = "kiddo"
-version = "6.0.2"
+version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff11c2dae8221153cf5cc18c45f1f4ea0c5fff1b47ab8603f39b2d9202baae12"
+checksum = "99523b54976700ec2674b8b74a8cb2ff32277682cf97545c61338dccdf115865"
 dependencies = [
  "aligned-vec",
  "array-init",

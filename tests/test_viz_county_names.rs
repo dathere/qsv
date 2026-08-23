@@ -341,21 +341,20 @@ fn viz_smart_county_name_column_resolves() {
     });
 }
 
-/// The two multi-state drop causes are reported SEPARATELY, because their remedies differ.
+/// ISSUE #4481: a county name occurring in SEVERAL states now resolves per row, instead of being
+/// dropped because the alias map could only hold one code per bare name.
 ///
-/// `Washington County` names a different county in each of PA and MD, so it can never be keyed by
-/// bare name — the remedy is a FIPS column. `Hampden County` resolves in MA but does not exist in
-/// PA, so the remedy is fixing that one name/state pairing. Collapsing both into "occurs in more
-/// than one state" would hand the wrong instruction to the second case.
+/// This is the case the whole change exists for. `Washington County` is carried by 30 counties;
+/// with a state column, PA's rows must chart under `42125` and MD's under `24043` — and before
+/// #4481 BOTH were dropped, taking the correctly-resolved rows with them.
 #[test]
 #[serial]
-fn viz_county_names_separates_divergent_from_mixed() {
-    let wrk = Workdir::new("viz_county_names_separates_divergent_from_mixed");
+fn viz_county_names_same_name_two_states_both_resolve() {
+    let wrk = Workdir::new("viz_county_names_same_name_two_states_both_resolve");
     wrk.create_from_string(
         "c.csv",
-        "county,state,cases\nAllegheny County,PA,10\nPhiladelphia County,PA,15\nBaltimore \
-         County,MD,18\nAllegheny,PA,12\nPhiladelphia,PA,14\nWashington County,PA,20\nWashington \
-         County,MD,30\nHampden County,MA,40\nHampden County,PA,50\n",
+        "county,state,cases\nAllegheny County,PA,10\nWashington County,PA,20\nWashington \
+         County,MD,30\nBaltimore County,MD,40\n",
     );
     with_mock_tigerweb(|base, _observed| {
         let mut cmd = county_cmd(&wrk, base, "c.csv");
@@ -363,19 +362,47 @@ fn viz_county_names_separates_divergent_from_mixed() {
         let out = wrk.output(&mut cmd);
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
         assert!(out.status.success(), "run failed: {stderr}");
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        for geoid in ["42003", "42125", "24043", "24005"] {
+            assert!(html.contains(geoid), "{geoid} missing from trace: {stderr}");
+        }
+        // nothing was dropped, so no drop report at all
         assert!(
-            stderr.contains("name a DIFFERENT county in each of the states"),
-            "divergent cause not named: {stderr}"
+            !stderr.contains("omitted from the map"),
+            "nothing should have been dropped: {stderr}"
         );
+    });
+}
+
+/// ISSUE #4481, the honesty half: a name that resolves under one of its states and NOT another
+/// costs only the failing PAIR. The resolving rows chart; the failing rows are reported.
+///
+/// Before, the whole name was dropped — so `Hampden County, MA` was collateral damage of a
+/// mistyped `Hampden County, PA`.
+#[test]
+#[serial]
+fn viz_county_names_mixed_outcome_costs_only_the_failing_pair() {
+    let wrk = Workdir::new("viz_county_names_mixed_outcome_costs_only_the_failing_pair");
+    wrk.create_from_string(
+        "c.csv",
+        "county,state,cases\nAllegheny County,PA,10\nPhiladelphia County,PA,20\nHampden \
+         County,MA,40\nHampden County,PA,50\n",
+    );
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = county_cmd(&wrk, base, "c.csv");
+        cmd.args(["--region-state", "state"]);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(out.status.success(), "run failed: {stderr}");
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        // the MA pair charts...
+        assert!(html.contains("25013"), "Hampden MA missing: {stderr}");
+        // ...and the PA pair is reported by its own cause, not swept into a name-level drop
         assert!(
-            stderr.contains("resolve under one of the states given for them but not another"),
-            "mixed cause not named: {stderr}"
+            stderr.contains("do not exist in the state given for them"),
+            "mismatch cause not named: {stderr}"
         );
-        // reported in the DATA's spelling, not the lowercased match key
-        assert!(
-            stderr.contains("Washington County") && stderr.contains("Hampden County"),
-            "names not quoted as written: {stderr}"
-        );
+        assert!(stderr.contains("MA"), "actual state not named: {stderr}");
     });
 }
 
@@ -499,6 +526,98 @@ fn viz_smart_county_names_do_not_hijack_a_pinned_layer() {
         assert!(
             !out.status.success(),
             "no ZCTA resolves here, so the run must fail rather than substitute counties: {stderr}"
+        );
+    });
+}
+
+/// ISSUE #4481: the data-viewer drawer must filter by the qualifier too.
+///
+/// Once two features share a region spelling, a criterion on the region column alone would show
+/// Maryland's rows under Pennsylvania's polygon — the same bare-name confusion one layer up. The
+/// emitted chrome must name the qualifier column and carry its raw spellings.
+#[test]
+#[serial]
+fn viz_smart_county_names_region_filter_is_qualified() {
+    const DICT: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+    "state": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.state" } },
+    "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+  }
+}"#;
+    let wrk = Workdir::new("viz_smart_county_names_region_filter_is_qualified");
+    wrk.create_from_string(
+        "c.csv",
+        "county,state,cases\nWashington County,PA,10\nWashington County,PA,12\nWashington \
+         County,MD,30\nWashington County,MD,32\nAllegheny County,PA,40\nAllegheny County,PA,42\n",
+    );
+    wrk.create_from_string("dict.schema.json", DICT);
+    let cache_dir = wrk.path("qsv-cache");
+    std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "c.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CACHE_DIR", &cache_dir);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(out.status.success(), "smart run failed: {stderr}");
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        // both same-named counties charted
+        assert!(
+            html.contains("42125") && html.contains("24043"),
+            "both Washingtons should chart: {stderr}"
+        );
+        // the drawer filter names the STATE column (index 1), not -1
+        assert!(
+            html.contains("var QUAL_COL = 1;"),
+            "region filter was not qualified: {stderr}"
+        );
+        // and carries each feature's raw qualifier spellings
+        assert!(
+            html.contains(r#""42125":["PA"]"#) || html.contains(r#""42125": ["PA"]"#),
+            "qualifier spellings missing for 42125: {stderr}"
+        );
+    });
+}
+
+/// A region-CODE column publishes no aliases, so the drawer filter must stay unqualified — the
+/// qualified path must not leak into the ordinary case.
+#[test]
+#[serial]
+fn viz_smart_code_column_region_filter_is_unqualified() {
+    const DICT: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+    "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+  }
+}"#;
+    let wrk = Workdir::new("viz_smart_code_column_region_filter_is_unqualified");
+    wrk.create_from_string(
+        "c.csv",
+        "fips,cases\n42003,10\n42003,12\n42101,20\n42101,22\n",
+    );
+    wrk.create_from_string("dict.schema.json", DICT);
+    let cache_dir = wrk.path("qsv-cache");
+    std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "c.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CACHE_DIR", &cache_dir);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(out.status.success(), "smart run failed: {stderr}");
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(
+            html.contains("var QUAL_COL = -1;"),
+            "a code column must not acquire a qualifier: {stderr}"
         );
     });
 }

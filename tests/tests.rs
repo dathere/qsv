@@ -167,6 +167,8 @@ mod test_validate;
 mod test_viz;
 #[cfg(feature = "viz")]
 mod test_viz_census;
+#[cfg(feature = "viz")]
+mod test_viz_county_names;
 #[cfg(all(feature = "viz", feature = "geocode"))]
 mod test_viz_geocode_auto;
 

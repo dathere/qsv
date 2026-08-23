@@ -625,3 +625,66 @@ fn viz_smart_geojson_auto_geocode_unresolvable_city_degrades() {
         );
     });
 }
+
+/// `--geocode` on a COUNTY-name column is refused BEFORE any lookup (issue #4417 Part B).
+///
+/// This is the wrong-answer path the guard exists for: the engine searches CITY names, so
+/// `Litchfield County` fuzzily matches a city and silently returns THAT city's county (Maricopa
+/// County AZ, measured on the live index). Every FIPS it invents is a real county, so the coverage
+/// gate reads 100% and nothing downstream can flag it. Asserting zero requests pins that the
+/// refusal happens before the engine is consulted at all.
+#[test]
+#[serial]
+fn viz_geojson_auto_geocode_rejects_county_names() {
+    let wrk = Workdir::new("viz_geojson_auto_geocode_rejects_county_names");
+    wrk.create_from_string(
+        "c.csv",
+        "city,cases\nAllegheny County,10\nWashington County,20\nLitchfield County,30\n",
+    );
+    let cache_dir = build_mini_geocode_index(&wrk);
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = geocode_auto_cmd(&wrk, base, &cache_dir, "c.csv");
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success(), "county names must not be geocoded");
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            stderr.contains("look like COUNTY names"),
+            "cause not named: {stderr}"
+        );
+        assert!(
+            stderr.contains("Drop --geocode"),
+            "remedy not named: {stderr}"
+        );
+        assert_eq!(
+            observed.requests.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "the refusal must precede every request"
+        );
+    });
+}
+
+/// The county-name guard must NOT fire on genuine CITY names that merely end in "city".
+///
+/// `TIGERweb` spells Virginia's independent counties "Richmond city", but so are Kansas City,
+/// Jersey City and Salt Lake City spelled — misrouting those away from --geocode would break the
+/// Part A path this guard sits in front of. Asserted by the ABSENCE of the refusal: the run goes
+/// on to geocode (and fails on the mini index's coverage, which is a different message).
+#[test]
+#[serial]
+fn viz_geojson_auto_geocode_city_suffix_is_not_a_county() {
+    let wrk = Workdir::new("viz_geojson_auto_geocode_city_suffix_is_not_a_county");
+    wrk.create_from_string(
+        "c.csv",
+        "city,cases\nKansas City,10\nJersey City,20\nSalt Lake City,30\n",
+    );
+    let cache_dir = build_mini_geocode_index(&wrk);
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = geocode_auto_cmd(&wrk, base, &cache_dir, "c.csv");
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            !stderr.contains("look like COUNTY names"),
+            "genuine city names were misrouted as counties: {stderr}"
+        );
+    });
+}

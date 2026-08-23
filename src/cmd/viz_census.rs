@@ -1938,67 +1938,68 @@ struct CachedPopulation {
     fetched_at: u64,
 }
 
-/// USPS two-letter code -> state FIPS, for joining a `--location-mode usa-states` column to Census
-/// data (which is keyed by FIPS).
+/// USPS two-letter code -> (state FIPS, state name), for joining a `--location-mode usa-states`
+/// column to Census data (which is keyed by FIPS), and for resolving `--region-state` from any of
+/// the three spellings a user column may hold.
 ///
 /// Duplicated rather than borrowed from `geocode`'s table because `viz` must not depend on the
 /// `geocode` feature — a Data Schematic builds in a build without it. The data is inert: postal
 /// abbreviations and state FIPS have been stable for decades, and a new entry would be a new
 /// state.
-const USPS_STATE_FIPS: &[(&str, &str)] = &[
-    ("AL", "01"),
-    ("AK", "02"),
-    ("AZ", "04"),
-    ("AR", "05"),
-    ("CA", "06"),
-    ("CO", "08"),
-    ("CT", "09"),
-    ("DE", "10"),
-    ("DC", "11"),
-    ("FL", "12"),
-    ("GA", "13"),
-    ("HI", "15"),
-    ("ID", "16"),
-    ("IL", "17"),
-    ("IN", "18"),
-    ("IA", "19"),
-    ("KS", "20"),
-    ("KY", "21"),
-    ("LA", "22"),
-    ("ME", "23"),
-    ("MD", "24"),
-    ("MA", "25"),
-    ("MI", "26"),
-    ("MN", "27"),
-    ("MS", "28"),
-    ("MO", "29"),
-    ("MT", "30"),
-    ("NE", "31"),
-    ("NV", "32"),
-    ("NH", "33"),
-    ("NJ", "34"),
-    ("NM", "35"),
-    ("NY", "36"),
-    ("NC", "37"),
-    ("ND", "38"),
-    ("OH", "39"),
-    ("OK", "40"),
-    ("OR", "41"),
-    ("PA", "42"),
-    ("RI", "44"),
-    ("SC", "45"),
-    ("SD", "46"),
-    ("TN", "47"),
-    ("TX", "48"),
-    ("UT", "49"),
-    ("VT", "50"),
-    ("VA", "51"),
-    ("WA", "53"),
-    ("WV", "54"),
-    ("WI", "55"),
-    ("WY", "56"),
+const USPS_STATE_FIPS: &[(&str, &str, &str)] = &[
+    ("AL", "01", "Alabama"),
+    ("AK", "02", "Alaska"),
+    ("AZ", "04", "Arizona"),
+    ("AR", "05", "Arkansas"),
+    ("CA", "06", "California"),
+    ("CO", "08", "Colorado"),
+    ("CT", "09", "Connecticut"),
+    ("DE", "10", "Delaware"),
+    ("DC", "11", "District of Columbia"),
+    ("FL", "12", "Florida"),
+    ("GA", "13", "Georgia"),
+    ("HI", "15", "Hawaii"),
+    ("ID", "16", "Idaho"),
+    ("IL", "17", "Illinois"),
+    ("IN", "18", "Indiana"),
+    ("IA", "19", "Iowa"),
+    ("KS", "20", "Kansas"),
+    ("KY", "21", "Kentucky"),
+    ("LA", "22", "Louisiana"),
+    ("ME", "23", "Maine"),
+    ("MD", "24", "Maryland"),
+    ("MA", "25", "Massachusetts"),
+    ("MI", "26", "Michigan"),
+    ("MN", "27", "Minnesota"),
+    ("MS", "28", "Mississippi"),
+    ("MO", "29", "Missouri"),
+    ("MT", "30", "Montana"),
+    ("NE", "31", "Nebraska"),
+    ("NV", "32", "Nevada"),
+    ("NH", "33", "New Hampshire"),
+    ("NJ", "34", "New Jersey"),
+    ("NM", "35", "New Mexico"),
+    ("NY", "36", "New York"),
+    ("NC", "37", "North Carolina"),
+    ("ND", "38", "North Dakota"),
+    ("OH", "39", "Ohio"),
+    ("OK", "40", "Oklahoma"),
+    ("OR", "41", "Oregon"),
+    ("PA", "42", "Pennsylvania"),
+    ("RI", "44", "Rhode Island"),
+    ("SC", "45", "South Carolina"),
+    ("SD", "46", "South Dakota"),
+    ("TN", "47", "Tennessee"),
+    ("TX", "48", "Texas"),
+    ("UT", "49", "Utah"),
+    ("VT", "50", "Vermont"),
+    ("VA", "51", "Virginia"),
+    ("WA", "53", "Washington"),
+    ("WV", "54", "West Virginia"),
+    ("WI", "55", "Wisconsin"),
+    ("WY", "56", "Wyoming"),
     // territories the ACS publishes alongside the states
-    ("PR", "72"),
+    ("PR", "72", "Puerto Rico"),
 ];
 
 /// State FIPS for a USPS code, case-insensitively.
@@ -2007,6 +2008,397 @@ pub fn state_fips_for_usps(code: &str) -> Option<&'static str> {
     let folded = code.trim().to_ascii_uppercase();
     USPS_STATE_FIPS
         .iter()
-        .find(|(usps, _)| *usps == folded)
-        .map(|(_, fips)| *fips)
+        .find(|(usps, ..)| *usps == folded)
+        .map(|(_, fips, _)| *fips)
+}
+
+/// State FIPS from whichever of the three spellings a user column happens to hold: a USPS code
+/// (`PA`), a 2-digit FIPS (`42`, or `9` for a column that dropped a leading zero), or the state's
+/// full name (`Pennsylvania`).
+///
+/// Exists for `--region-state`, which disambiguates county NAMES (issue #4417 Part B). A county
+/// name column is hand-typed data far more often than a FIPS column is, so accepting only one
+/// spelling would reject the majority of real inputs. A FIPS is validated against the table
+/// rather than merely shape-checked: `"99"` is not a state, and silently accepting it would scope
+/// a boundary fetch to nothing and report it as an unresolvable name.
+#[must_use]
+pub fn state_fips_for_any(value: &str) -> Option<&'static str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(fips) = state_fips_for_usps(trimmed) {
+        return Some(fips);
+    }
+    if trimmed.len() <= 2 && trimmed.bytes().all(|b| b.is_ascii_digit()) {
+        let padded = format!("{trimmed:0>2}");
+        return USPS_STATE_FIPS
+            .iter()
+            .find(|(_, fips, _)| *fips == padded)
+            .map(|(_, fips, _)| *fips);
+    }
+    let folded = trimmed.to_ascii_lowercase();
+    USPS_STATE_FIPS
+        .iter()
+        .find(|(.., name)| name.to_ascii_lowercase() == folded)
+        .map(|(_, fips, _)| *fips)
+}
+
+// ---------------------------------------------------------------------------------------------
+// County NAME resolution (issue #4417 Part B)
+// ---------------------------------------------------------------------------------------------
+//
+// `--geojson auto` resolves region CODES. A `--locations` column of county NAMES ("Allegheny
+// County") is served by resolving those names against the SAME layer and vintage that will supply
+// the geometry, via a `returnGeometry=false` attribute query.
+//
+// Two facts decided this design over the Geonames route issue #4417 originally proposed:
+//
+// 1. **Vintage-exactness.** Connecticut replaced its 8 counties with 9 planning regions in the 2022
+//    vintages, sharing no GEOID. A name table read from the service is correct for whichever
+//    vintage is in play by construction — `Litchfield County` resolves under ACS2021 and `Northwest
+//    Hills Planning Region` under ACS2023. An external gazetteer knows only one of those and cannot
+//    honor a pinned or probed-back vintage.
+// 2. **No `geocode` dependency**, per the rule recorded on `USPS_STATE_FIPS`: viz must build
+//    without that feature. The Geonames route also cannot answer the question honestly — its engine
+//    fuzzy-matches a county name against CITY names and returns that city's county, which silently
+//    yields a real-but-wrong FIPS ("Litchfield County" -> Maricopa County AZ) that no downstream
+//    resolution-rate check can detect.
+
+/// Cache subdirectory for the per-vintage county name table.
+const COUNTY_NAME_CACHE_SUBDIR: &str = "~/.qsv-cache/viz-county-names";
+
+/// One county, as the name table sees it.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct CountyNameRow {
+    geoid:    String,
+    name:     String,
+    basename: String,
+    state:    String,
+}
+
+/// A cached name table. Records the vintage it was fetched FOR, because the cache key is built
+/// from the user's spec (`latest`, not a number) so a warm run needs no catalog read — see
+/// [`cache_key`] for the same reasoning on the boundary cache.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedCountyNames {
+    vintage:    u16,
+    rows:       Vec<CountyNameRow>,
+    fetched_at: u64,
+}
+
+/// The outcome of looking one county name up in the table.
+pub enum CountyLookup {
+    /// Exactly one county carries this name (within the supplied state, if one was supplied).
+    Resolved(String),
+    /// No county in this vintage carries this name under either spelling.
+    NoMatch,
+    /// Several counties carry it. Each entry is a rendered `GEOID (ST)` token.
+    Ambiguous(Vec<String>),
+    /// The name exists, but in none of the supplied states. Carries the USPS codes where it does.
+    StateMismatch(Vec<String>),
+}
+
+/// County name -> GEOID for one vintage.
+///
+/// `NAME` ("Allegheny County") and `BASENAME` ("Allegheny") are BOTH keys in ONE map under ONE
+/// resolution rule, deliberately. A two-tier scheme that pre-pruned `BASENAME` by within-state
+/// uniqueness would silently resolve a bare name that is unique in its state but collides across
+/// states — which is the common case, not the exotic one. Folding them together makes every
+/// collision surface through the same ambiguity check.
+pub struct CountyNameTable {
+    /// Folded name -> `(geoid, state_fips)` candidates.
+    by_name:     std::collections::HashMap<String, Vec<(String, String)>>,
+    /// The vintage these names describe. Callers MUST pin their boundary fetch to it, so the
+    /// names and the geometry cannot drift apart when a new vintage publishes mid-TTL.
+    pub vintage: u16,
+}
+
+impl CountyNameTable {
+    fn from_rows(rows: &[CountyNameRow], vintage: u16) -> Self {
+        let mut by_name: std::collections::HashMap<String, Vec<(String, String)>> =
+            std::collections::HashMap::with_capacity(rows.len() * 2);
+        let mut add = |key: &str, row: &CountyNameRow| {
+            let folded = key.trim().to_ascii_lowercase();
+            if folded.is_empty() {
+                return;
+            }
+            let entry = by_name.entry(folded).or_default();
+            // a row whose NAME folds to its BASENAME must not appear twice under the same key
+            if !entry.iter().any(|(g, _)| *g == row.geoid) {
+                entry.push((row.geoid.clone(), row.state.clone()));
+            }
+        };
+        for row in rows {
+            add(&row.name, row);
+            add(&row.basename, row);
+        }
+        Self { by_name, vintage }
+    }
+
+    /// Does the table know no names at all? A service that answers with an empty set must be
+    /// reported as such, not as "none of your values name a county".
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.by_name.is_empty()
+    }
+
+    /// Resolve one name, optionally narrowed to a state FIPS.
+    ///
+    /// Exact case-folded matching only — no fuzzy matching. Jaro-Winkler over county names would
+    /// reintroduce the wrong-state failure class #4430 fixed for city names, and would do it in a
+    /// form no resolution-rate check can see, because every county it could reach is a real one.
+    #[must_use]
+    pub fn resolve(&self, raw: &str, state_fips: Option<&str>) -> CountyLookup {
+        let Some(candidates) = self.by_name.get(&raw.trim().to_ascii_lowercase()) else {
+            return CountyLookup::NoMatch;
+        };
+        let render = |cands: &[(String, String)]| -> Vec<String> {
+            let mut out: Vec<String> = cands
+                .iter()
+                .map(|(geoid, sf)| {
+                    usps_for_state_fips(sf)
+                        .map_or_else(|| geoid.clone(), |usps| format!("{geoid} ({usps})"))
+                })
+                .collect();
+            out.sort_unstable();
+            out.dedup();
+            out
+        };
+        let Some(want) = state_fips else {
+            return match candidates.as_slice() {
+                [(geoid, _)] => CountyLookup::Resolved(geoid.clone()),
+                _ => CountyLookup::Ambiguous(render(candidates)),
+            };
+        };
+        let in_state: Vec<(String, String)> = candidates
+            .iter()
+            .filter(|(_, sf)| sf == want)
+            .cloned()
+            .collect();
+        match in_state.as_slice() {
+            [] => {
+                let mut states: Vec<String> = candidates
+                    .iter()
+                    .filter_map(|(_, sf)| usps_for_state_fips(sf).map(ToString::to_string))
+                    .collect();
+                states.sort_unstable();
+                states.dedup();
+                CountyLookup::StateMismatch(states)
+            },
+            [(geoid, _)] => CountyLookup::Resolved(geoid.clone()),
+            // a within-state collision: Maryland's Baltimore County vs Baltimore city, and
+            // Virginia's Richmond/Roanoke/Fairfax/Franklin county-vs-independent-city pairs. A
+            // state cannot separate these, so they stay ambiguous rather than being guessed.
+            _ => CountyLookup::Ambiguous(render(&in_state)),
+        }
+    }
+}
+
+/// USPS code for a state FIPS, for rendering an ambiguity report.
+fn usps_for_state_fips(fips: &str) -> Option<&'static str> {
+    USPS_STATE_FIPS
+        .iter()
+        .find(|(_, f, _)| *f == fips)
+        .map(|(usps, ..)| *usps)
+}
+
+/// Resolve the county-name cache directory, creating it if absent.
+fn county_name_cache_dir() -> CliResult<std::path::PathBuf> {
+    Ok(std::path::PathBuf::from(
+        crate::diskcache::set_qsv_cache_dir(COUNTY_NAME_CACHE_SUBDIR)?,
+    ))
+}
+
+/// Cache key for a name table, derived only from what the USER supplied.
+///
+/// Keyed on the SPEC vintage (`latest` when unpinned), not the resolved one, so a repeat run hits
+/// without a catalog read and makes zero requests. The resolved vintage travels inside the entry.
+fn county_name_cache_key(vintage: Option<u16>) -> String {
+    let mut hasher = blake3::Hasher::new();
+    // v1: GEOID/NAME/BASENAME/STATE rows. Bump when the STAMPED CONTENT changes, per `cache_key`.
+    hasher.update(b"census-names/v1/");
+    hasher.update(tigerweb_root().as_bytes());
+    hasher.update(b"/county@");
+    hasher.update(
+        vintage
+            .map_or_else(|| "latest".to_string(), |v| v.to_string())
+            .as_bytes(),
+    );
+    hasher.finalize().to_hex()[..32].to_string()
+}
+
+/// Read a cached name table, reporting whether it is still within the TTL. A STALE entry is still
+/// returned — it is the right answer when the service is unreachable.
+fn county_names_cache_get(key: &str) -> Option<(CachedCountyNames, bool)> {
+    let path = county_name_cache_dir().ok()?.join(format!("{key}.json"));
+    let cached: CachedCountyNames = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    let fresh = now_secs().saturating_sub(cached.fetched_at) <= cache_ttl_secs();
+    Some((cached, fresh))
+}
+
+/// Write a name table to the cache. A failure here is non-fatal: the table in hand is still
+/// correct, and the only cost is that the next run re-fetches it.
+fn county_names_cache_put(key: &str, vintage: u16, rows: &[CountyNameRow]) {
+    let Ok(dir) = county_name_cache_dir() else {
+        return;
+    };
+    let cached = CachedCountyNames {
+        vintage,
+        rows: rows.to_vec(),
+        fetched_at: now_secs(),
+    };
+    if let Ok(bytes) = serde_json::to_vec(&cached) {
+        let _ = std::fs::write(dir.join(format!("{key}.json")), bytes);
+    }
+}
+
+/// Fetch every county's `GEOID/NAME/BASENAME/STATE` for one vintage, without geometry.
+///
+/// The whole national table is one small response — measured at 3,233-3,235 rows and ~400 KB
+/// across the ACS2019/2021/2023 vintages, with `exceededTransferLimit` absent every time — so the
+/// common path is a single request. The paged fallback exists anyway because the alternative to
+/// noticing that flag is a SILENTLY TRUNCATED table, which would report real counties as
+/// unresolvable names.
+fn fetch_county_names(
+    client: &reqwest::blocking::Client,
+    vintage: u16,
+    layer_id: u64,
+) -> CliResult<Vec<CountyNameRow>> {
+    const OUT_FIELDS: &str = "GEOID,NAME,BASENAME,STATE";
+    let url = format!(
+        "{}/TIGERweb/tigerWMS_ACS{vintage}/MapServer/{layer_id}/query",
+        tigerweb_root()
+    );
+    let read_page = |params: &[(&str, &str)]| -> CliResult<(Vec<CountyNameRow>, bool)> {
+        let page = get_json(client, &url, params)?;
+        // ArcGIS reports a query-level failure as a 200 with an `error` object, so a body that
+        // isn't a FeatureCollection must be surfaced rather than silently read as zero rows.
+        if let Some(err) = page.get("error") {
+            let msg = err
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown error");
+            return Err(crate::CliError::Other(format!(
+                "--geojson auto: Census rejected the county name query: {msg}"
+            )));
+        }
+        let rows: Vec<CountyNameRow> = page
+            .get("features")
+            .and_then(serde_json::Value::as_array)
+            .map(|features| {
+                features
+                    .iter()
+                    .filter_map(|f| {
+                        let p = f.get("properties")?;
+                        let get = |k: &str| {
+                            p.get(k)
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default()
+                                .to_string()
+                        };
+                        let geoid = get("GEOID");
+                        if geoid.is_empty() {
+                            return None;
+                        }
+                        Some(CountyNameRow {
+                            geoid,
+                            name: get("NAME"),
+                            basename: get("BASENAME"),
+                            state: get("STATE"),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let exceeded = page
+            .get("exceededTransferLimit")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        Ok((rows, exceeded))
+    };
+
+    let (rows, exceeded) = read_page(&[
+        ("where", "1=1"),
+        ("outFields", OUT_FIELDS),
+        ("returnGeometry", "false"),
+        ("f", "geojson"),
+    ])?;
+    if !exceeded {
+        return Ok(rows);
+    }
+    // Truncated: re-read with explicit paging. `orderByFields` is required — without it ArcGIS
+    // does not guarantee a stable order across pages, which would duplicate and drop rows.
+    let mut all: Vec<CountyNameRow> = Vec::with_capacity(rows.len());
+    let mut offset = 0usize;
+    loop {
+        let offset_str = offset.to_string();
+        let page_size_str = PAGE_SIZE.to_string();
+        let (page_rows, more) = read_page(&[
+            ("where", "1=1"),
+            ("outFields", OUT_FIELDS),
+            ("returnGeometry", "false"),
+            ("orderByFields", "GEOID"),
+            ("resultOffset", &offset_str),
+            ("resultRecordCount", &page_size_str),
+            ("f", "geojson"),
+        ])?;
+        let n = page_rows.len();
+        all.extend(page_rows);
+        if !more || n < PAGE_SIZE {
+            break;
+        }
+        offset += n;
+    }
+    Ok(all)
+}
+
+/// The county name table for `vintage` (newest when `None`), from cache when warm.
+///
+/// Cold costs three requests (catalog, layer catalog, the table itself); warm costs zero.
+pub fn county_name_table(vintage: Option<u16>) -> CliResult<CountyNameTable> {
+    let key = county_name_cache_key(vintage);
+    let cached = county_names_cache_get(&key);
+    if let Some((entry, true)) = &cached {
+        log::info!(
+            "--geojson auto: county name table cache hit (ACS{}), no network",
+            entry.vintage
+        );
+        return Ok(CountyNameTable::from_rows(&entry.rows, entry.vintage));
+    }
+
+    let fetched = (|| -> CliResult<(Vec<CountyNameRow>, u16)> {
+        let client = census_client()?;
+        let (_, resolved) = resolve_vintage(
+            &client,
+            AutoSpec {
+                layer: Some(Layer::County),
+                vintage,
+            },
+        )?;
+        let (layer_id, _) = resolve_layer_id(&client, resolved, Layer::County)?;
+        Ok((fetch_county_names(&client, resolved, layer_id)?, resolved))
+    })();
+
+    match fetched {
+        Ok((rows, resolved)) => {
+            county_names_cache_put(&key, resolved, &rows);
+            Ok(CountyNameTable::from_rows(&rows, resolved))
+        },
+        // ONLY a transient failure may be answered from a stale entry — a semantic one must
+        // surface as itself, exactly as in `resolve`.
+        Err(e @ crate::CliError::Network(_)) => {
+            if let Some((entry, _)) = cached {
+                wwarn!(
+                    "--geojson auto: Census unreachable, using the cached ACS{} county name table \
+                     ({e})",
+                    entry.vintage
+                );
+                Ok(CountyNameTable::from_rows(&entry.rows, entry.vintage))
+            } else {
+                Err(e)
+            }
+        },
+        Err(e) => Err(e),
+    }
 }

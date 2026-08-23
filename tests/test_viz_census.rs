@@ -112,6 +112,34 @@ async fn serve_county_query(o: web::Data<Observed>, req: HttpRequest) -> HttpRes
     let where_clause = query_param(req.query_string(), "where");
     o.where_clauses.lock().unwrap().push(where_clause.clone());
 
+    // The county NAME table (issue #4417 Part B): `where=1=1`, no geometry. The fixture carries
+    // the three collision shapes the resolver must handle — a name unique nationally, a name
+    // shared ACROSS states (Washington), and a BASENAME shared WITHIN one state (Baltimore
+    // County vs Baltimore city, which no state hint can separate).
+    if where_clause == "1=1" {
+        let row = |geoid: &str, name: &str, basename: &str, state: &str| {
+            serde_json::json!({
+                "type": "Feature",
+                "geometry": serde_json::Value::Null,
+                "properties": {
+                    "GEOID": geoid, "NAME": name, "BASENAME": basename, "STATE": state
+                }
+            })
+        };
+        return HttpResponse::Ok().json(serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                row("42003", "Allegheny County", "Allegheny", "42"),
+                row("42101", "Philadelphia County", "Philadelphia", "42"),
+                row("42125", "Washington County", "Washington", "42"),
+                row("24043", "Washington County", "Washington", "24"),
+                row("24005", "Baltimore County", "Baltimore", "24"),
+                row("24510", "Baltimore city", "Baltimore", "24"),
+                row("25013", "Hampden County", "Hampden", "25"),
+            ]
+        }));
+    }
+
     // State 06 exists as far as a geometry-free PROBE is concerned, but its geometry fetch comes
     // back empty. That split lets a test drive a candidate column that ranks well and then cannot
     // be fetched — the fall-through case in `resolve_smart_auto_geojson`. Empty rather than a 5xx
@@ -131,8 +159,20 @@ async fn serve_county_query(o: web::Data<Observed>, req: HttpRequest) -> HttpRes
         } else {
             vec![]
         }
+    } else if where_clause.contains("24") {
+        let mut features = vec![county_feature("24005", 16.0), county_feature("24510", 18.0)];
+        if where_clause.contains("42") {
+            features.push(county_feature("42125", 6.0));
+        }
+        features
     } else if where_clause.contains("42") {
         let mut features = vec![county_feature("42003", 0.0), county_feature("42101", 2.0)];
+        // Only a STATE-scoped FETCH gets the extra county. A geometry-free PROBE counts what it
+        // gets back, so answering a two-code `GEOID IN` probe with a third county would score
+        // that candidate above 1.0 and silently re-rank every smart-path candidate test.
+        if where_clause.starts_with("STATE IN") {
+            features.push(county_feature("42125", 6.0));
+        }
         // a geocode-hinted Springfield MA resolves to Hampden County; serve it whenever state 25
         // rides along with 42 (the geocode-auto tests span both states in one fetch)
         if where_clause.contains("25") {

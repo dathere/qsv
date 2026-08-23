@@ -5945,8 +5945,16 @@ const COUNTY_NAME_SUFFIXES: &[&str] = &[
 /// and returns that city's county, so `Litchfield County` resolves to Maricopa County AZ — a real
 /// FIPS, which means no resolution-rate check downstream can flag it.
 ///
-/// A majority rather than all: a real column mixes `Allegheny County` with the odd bare
-/// `Philadelphia`, and one such value must not disable the guard.
+/// HALF rather than all: a real column mixes `Allegheny County` with the odd bare `Philadelphia`,
+/// and one such value must not disable the guard. A strict majority would fail that intent on the
+/// smallest mixed sets — a two-county column of `Allegheny County` + `Philadelphia` is 1 of 2,
+/// which is exactly the shape the guard exists for.
+///
+/// Half is safe here only because the suffix list is county-specific: no actual city is named
+/// `X County` or `X Parish`, and the two suffixes that DO name cities in bulk (" city",
+/// " borough") are deliberately absent. A 50/50 split cannot be served by either path in full, so
+/// naming the county half and letting the report account for the rest beats silently geocoding
+/// county names into whatever city they fuzzily match.
 fn looks_like_county_names(values: &[String]) -> bool {
     if values.is_empty() {
         return false;
@@ -5958,7 +5966,7 @@ fn looks_like_county_names(values: &[String]) -> bool {
             COUNTY_NAME_SUFFIXES.iter().any(|s| folded.ends_with(s))
         })
         .count();
-    hits * 2 > values.len()
+    hits * 2 >= values.len()
 }
 
 /// The classified outcome of resolving a distinct county-name set against the Census name table:
@@ -6704,25 +6712,55 @@ fn resolve_smart_auto_geojson(
     // Only CODE candidates are probed — a city column's values normalize to nothing, so probing
     // them would only spend requests to learn what is already known. City slots are appended
     // after the ranked code slots, in column order.
-    let ranked: Vec<usize> = if n_code == 1 {
-        vec![0]
-    } else if n_code == 0 {
+    // Which candidates are county-tagged, and where a state can come from to disambiguate them.
+    let county_name_cols: std::collections::HashSet<usize> =
+        county_name_candidates(stats, col_sems)
+            .into_iter()
+            .collect();
+    let smart_state_col = smart_state_column(col_sems);
+
+    // A county-tagged code slot whose values carry no digits holds county NAMES, not codes, and
+    // CANNOT be probed: its values normalize to nothing for every layer, so `score_candidates`
+    // returns `None` and `filter_map` would drop the slot from the ranking entirely - never
+    // tried, and (when every code candidate is digitless) reported as "no region column resolved"
+    // without the name path ever running. So these are excluded from the probe and trialled
+    // unranked instead, exactly as city slots are, and AHEAD of them: an exact name lookup beats
+    // a fuzzy geocode.
+    let is_county_name_slot = |slot: usize| -> bool {
+        slot < n_code
+            && county_name_cols.contains(&candidates[slot])
+            && !codes[slot].is_empty()
+            && codes[slot]
+                .iter()
+                .all(|c| !c.bytes().any(|b| b.is_ascii_digit()))
+    };
+    let name_slots: Vec<usize> = (0..n_code).filter(|s| is_county_name_slot(*s)).collect();
+    let probe_slots: Vec<usize> = (0..n_code).filter(|s| !is_county_name_slot(*s)).collect();
+
+    let ranked: Vec<usize> = if probe_slots.len() == 1 {
+        vec![probe_slots[0]]
+    } else if probe_slots.is_empty() {
         Vec::new()
     } else {
-        let samples: Vec<Vec<String>> = codes
+        let samples: Vec<Vec<String>> = probe_slots
             .iter()
-            .take(n_code)
-            .map(|c| c.iter().take(SMART_AUTO_PROBE_SAMPLE).cloned().collect())
+            .map(|&s| {
+                codes[s]
+                    .iter()
+                    .take(SMART_AUTO_PROBE_SAMPLE)
+                    .cloned()
+                    .collect()
+            })
             .collect();
         let scores = crate::cmd::viz_census::score_candidates(&samples, auto_spec)?;
         let mut ranked: Vec<(usize, crate::cmd::viz_census::CandidateScore)> = scores
             .iter()
             .enumerate()
-            .filter_map(|(slot, score)| score.map(|s| (slot, s)))
+            .filter_map(|(i, score)| score.map(|s| (probe_slots[i], s)))
             .collect();
-        // no code candidate resolves: a hard stop only when there is no city candidate to fall
-        // through to
-        if ranked.is_empty() && n_code == candidates.len() {
+        // no code candidate resolves: a hard stop only when there is no county-name or city
+        // candidate to fall through to
+        if ranked.is_empty() && name_slots.is_empty() && n_code == candidates.len() {
             let tried = (0..candidates.len())
                 .map(label_of)
                 .collect::<Vec<_>>()
@@ -6769,13 +6807,11 @@ fn resolve_smart_auto_geojson(
     let mut geocoded: Option<(std::collections::HashMap<String, String>, String)> = None;
     // The same, for a winning county-NAME column (issue #4417 Part B). Needs no `geocode` feature.
     let mut county_named: Option<(std::collections::HashMap<String, String>, String)> = None;
-    // Which candidates are county-tagged, and where a state can come from to disambiguate them.
-    let county_name_slots: std::collections::HashSet<usize> =
-        county_name_candidates(stats, col_sems)
-            .into_iter()
-            .collect();
-    let smart_state_col = smart_state_column(col_sems);
-    for slot in ranked.into_iter().chain(n_code..candidates.len()) {
+    for slot in ranked
+        .into_iter()
+        .chain(name_slots)
+        .chain(n_code..candidates.len())
+    {
         let region_codes = &codes[slot];
         if region_codes.is_empty() {
             failures.push((
@@ -6816,7 +6852,7 @@ fn resolve_smart_auto_geojson(
         // normalization, so probing them is a foregone conclusion and the Census name table is
         // the only path that can serve them. Deciding here rather than after a failed probe keeps
         // the routing deterministic and costs no extra round trip.
-        if county_name_slots.contains(&candidates[slot])
+        if county_name_cols.contains(&candidates[slot])
             && region_codes
                 .iter()
                 .all(|c| !c.bytes().any(|b| b.is_ascii_digit()))

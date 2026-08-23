@@ -349,8 +349,8 @@ fn viz_county_names_separates_divergent_from_mixed() {
     wrk.create_from_string(
         "c.csv",
         "county,state,cases\nAllegheny County,PA,10\nPhiladelphia County,PA,15\nBaltimore \
-         County,MD,18\nAllegheny,PA,12\nPhiladelphia,PA,14\nWashington County,PA,20\n\
-         Washington County,MD,30\nHampden County,MA,40\nHampden County,PA,50\n",
+         County,MD,18\nAllegheny,PA,12\nPhiladelphia,PA,14\nWashington County,PA,20\nWashington \
+         County,MD,30\nHampden County,MA,40\nHampden County,PA,50\n",
     );
     with_mock_tigerweb(|base, _observed| {
         let mut cmd = county_cmd(&wrk, base, "c.csv");
@@ -370,6 +370,84 @@ fn viz_county_names_separates_divergent_from_mixed() {
         assert!(
             stderr.contains("Washington County") && stderr.contains("Hampden County"),
             "names not quoted as written: {stderr}"
+        );
+    });
+}
+
+/// REGRESSION (roborev 4409): a county-NAME column must survive the smart trial order even when
+/// another region-code candidate is present.
+///
+/// County-name slots cannot be probed — their values normalize to nothing, so `score_candidates`
+/// returns `None` and the ranking's `filter_map` used to drop them outright. With two code
+/// candidates (a digitless `geo.county` and a `geo.state`), that meant the county path was never
+/// tried and the run died with "none of this dataset's region columns hold values that resolve".
+/// The earlier smart test could not catch this: its state column was constant, so only ONE code
+/// candidate survived `cardinality >= 2` and the no-probe short-circuit hid the bug.
+#[test]
+#[serial]
+fn viz_smart_county_names_survive_a_competing_code_candidate() {
+    const DICT: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+    "state": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.state" } },
+    "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+  }
+}"#;
+    let wrk = Workdir::new("viz_smart_county_names_survive_a_competing_code_candidate");
+    // the state column VARIES, so it is a second region-code candidate and the probe actually runs
+    wrk.create_from_string(
+        "c.csv",
+        "county,state,cases\nAllegheny County,PA,10\nAllegheny County,PA,12\nPhiladelphia \
+         County,PA,20\nBaltimore County,MD,30\nWashington County,MD,40\nWashington County,MD,42\n",
+    );
+    wrk.create_from_string("dict.schema.json", DICT);
+    let cache_dir = wrk.path("qsv-cache");
+    std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "c.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CACHE_DIR", &cache_dir);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            out.status.success(),
+            "the county-name candidate was dropped from the trial order: {stderr}"
+        );
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(
+            html.contains("42003") && html.contains("24043"),
+            "counties missing from the Data Schematic: {stderr}"
+        );
+    });
+}
+
+/// REGRESSION (roborev 4409): the smallest mixed county column — one suffixed name and one bare —
+/// is still recognized as county data. A strict majority rule failed the guard's own stated
+/// intent ("one bare value must not disable the guard") on exactly this shape.
+#[test]
+#[serial]
+fn viz_county_names_two_value_mixed_column_is_county_data() {
+    let wrk = Workdir::new("viz_county_names_two_value_mixed_column_is_county_data");
+    wrk.create_from_string(
+        "c.csv",
+        "county,cases\nAllegheny County,10\nPhiladelphia,20\n",
+    );
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = county_cmd(&wrk, base, "c.csv");
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            out.status.success(),
+            "half-suffixed column failed: {stderr}"
+        );
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(
+            html.contains("42003") && html.contains("42101"),
+            "both counties should resolve: {stderr}"
         );
     });
 }

@@ -160,7 +160,11 @@ async fn serve_county_query(o: web::Data<Observed>, req: HttpRequest) -> HttpRes
             vec![]
         }
     } else if where_clause.contains("24") {
-        let mut features = vec![county_feature("24005", 16.0), county_feature("24510", 18.0)];
+        let mut features = vec![
+            county_feature("24005", 16.0),
+            county_feature("24510", 18.0),
+            county_feature("24043", 20.0),
+        ];
         // a multi-state fetch must serve BOTH states, or a test's coverage gate fails for a
         // reason that has nothing to do with what it is testing
         if where_clause.contains("42") {

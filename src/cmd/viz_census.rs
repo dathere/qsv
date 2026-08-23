@@ -2163,6 +2163,15 @@ impl CountyNameTable {
                 .collect();
             out.sort_unstable();
             out.dedup();
+            // A shared county name can span 30 states (`Washington County` does), and naming all of
+            // them turns one report line into a wall of text. Enough to recognize the collision,
+            // then a count.
+            const SHOWN: usize = 6;
+            if out.len() > SHOWN {
+                let rest = out.len() - SHOWN;
+                out.truncate(SHOWN);
+                out.push(format!("and {rest} more"));
+            }
             out
         };
         let Some(want) = state_fips else {

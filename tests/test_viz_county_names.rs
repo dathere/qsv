@@ -214,22 +214,27 @@ fn viz_county_names_second_run_makes_no_requests() {
     let wrk = Workdir::new("viz_county_names_second_run_makes_no_requests");
     wrk.create_from_string("c.csv", "county,cases\nAllegheny County,10\n");
     with_mock_tigerweb(|base, observed| {
-        let mut cmd = county_cmd(&wrk, base, "c.csv");
-        let out = wrk.output(&mut cmd);
-        assert!(out.status.success());
-        assert!(
-            observed.requests.load(std::sync::atomic::Ordering::SeqCst) > 0,
-            "the first run should have fetched"
-        );
-        observed
-            .requests
-            .store(0, std::sync::atomic::Ordering::SeqCst);
-        let mut cmd = county_cmd(&wrk, base, "c.csv");
-        let out = wrk.output(&mut cmd);
-        assert!(out.status.success());
+        // one closure, invoked twice — the shape `viz_geojson_auto_second_run_makes_no_requests`
+        // already uses, so the double-run check sees two distinct executions rather than one
+        // command whose output is asserted across runs
+        let run = || {
+            let mut cmd = county_cmd(&wrk, base, "c.csv");
+            let out = wrk.output(&mut cmd);
+            assert!(
+                out.status.success(),
+                "run failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+
+        run();
+        let after_first = observed.requests.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(after_first > 0, "the first run should have fetched");
+
+        run();
         assert_eq!(
             observed.requests.load(std::sync::atomic::Ordering::SeqCst),
-            0,
+            after_first,
             "a warm run must make no requests"
         );
     });

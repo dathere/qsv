@@ -281,7 +281,7 @@ fn viz_geojson_auto_geocode_nothing_resolves_errors() {
     });
 }
 
-// Without --geocode, an all-names column is pre-empted BEFORE any network with the actionable
+// Without --geocode, an all-names column is preempted BEFORE any network with the actionable
 // suggestion — the dead end turned into the exact next command.
 #[test]
 #[serial]

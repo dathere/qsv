@@ -546,6 +546,20 @@ fn fract_3digits_regex() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\.\d\d\d$").unwrap())
 }
 
+// Render a currency's integer "coins" value (i.e. hundredths) as a decimal string.
+// The sign is stripped before zero-padding on purpose: padding the *signed* rendering
+// lets the sign consume a pad column, so -23 stays "-23" instead of widening to "-023"
+// and the slice below yields "-.23" rather than "-0.23".
+fn coins_to_decimal(coins: &impl std::fmt::Display) -> String {
+    let raw = coins.to_string();
+    let (sign, digits) = raw
+        .strip_prefix('-')
+        .map_or(("", raw.as_str()), |digits| ("-", digits));
+    let padded = format!("{digits:0>3}");
+    let decpoint = padded.len() - 2;
+    format!("{sign}{}.{}", &padded[..decpoint], &padded[decpoint..])
+}
+
 // valid subcommands
 #[derive(PartialEq)]
 enum ApplySubCmd {
@@ -1620,21 +1634,8 @@ fn apply_operations(
                 if let Ok(currency_val) = Currency::from_str(&cell_val) {
                     if formatstr == "strict" {
                         // Process ISO currency values
-                        let currency_coins = currency_val.value();
-                        let coins = format!("{currency_coins:03}");
-
                         if currency_val.is_iso_currency() {
-                            if coins == "000" {
-                                *cell = "0.00".to_string();
-                            } else {
-                                let coinlen = coins.len();
-                                if coinlen > 2 {
-                                    let decpoint = coinlen - 2;
-                                    let coin_num = &coins[..decpoint];
-                                    let coin_frac = &coins[decpoint..];
-                                    *cell = format!("{coin_num}.{coin_frac}");
-                                }
-                            }
+                            *cell = coins_to_decimal(currency_val.value());
                         }
                     } else {
                         // For non-strict mode, extract numeric parts from currency strings
@@ -1653,20 +1654,7 @@ fn apply_operations(
                             };
 
                             if let Ok(extracted_currency) = Currency::from_str(&numparts_val) {
-                                let currency_coins = extracted_currency.value();
-                                let coins = format!("{currency_coins:03}");
-
-                                if coins == "000" {
-                                    *cell = "0.00".to_string();
-                                } else {
-                                    let coinlen = coins.len();
-                                    if coinlen > 2 {
-                                        let decpoint = coinlen - 2;
-                                        let coin_num = &coins[..decpoint];
-                                        let coin_frac = &coins[decpoint..];
-                                        *cell = format!("{coin_num}.{coin_frac}");
-                                    }
-                                }
+                                *cell = coins_to_decimal(extracted_currency.value());
                             }
                         }
                     }

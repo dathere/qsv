@@ -574,7 +574,7 @@ spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", bran
 # support big-endian targets, so we exclude the crate on big-endian builds.
 # Code paths that use it are guarded by #[cfg(not(target_endian = "big"))].
 [target.'cfg(not(target_endian = "big"))'.dependencies]
-datasketches = { version = "0.3", features = ["frequencies", "hll", "tdigest"] }
+datasketches = { version = "0.4", features = ["frequencies", "hll", "tdigest"] }
 
 # AVX-512 is an x86_64-only ISA extension; Polars' avx512 kernels are inert on
 # other targets, so gate the feature to x86_64. Cargo unions these features with

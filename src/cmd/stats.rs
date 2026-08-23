@@ -1383,6 +1383,26 @@ fn try_enable_approx_sketches(
     Vec::new()
 }
 
+/// RAII guard for the temp file that stdin is spilled to.
+///
+/// Removing the file on Drop guarantees cleanup on *every* exit path from `run()`.
+/// There are a dozen fallible operations between the spill and the end of the run
+/// (sniffing, compute, flush, cache install); an early return from any of them used
+/// to leak a full copy of stdin - which for a piped multi-GB input filled the disk.
+///
+/// Only the path is held, deliberately: the write handle must still be dropped before
+/// any reader re-opens the path by name (Windows/ARM64 deadlocks otherwise).
+struct StdinTempFile(PathBuf);
+
+impl Drop for StdinTempFile {
+    fn drop(&mut self) {
+        if std::fs::remove_file(&self.0).is_err() {
+            // fails silently if it can't remove the temp file
+            log::warn!("Could not remove stdin temp file: {}", self.0.display());
+        }
+    }
+}
+
 /// Main entry point for the stats command.
 ///
 /// This function orchestrates the entire CSV statistics computation process, including
@@ -1426,26 +1446,6 @@ fn try_enable_approx_sketches(
 /// * Handles CSV parsing errors gracefully
 /// * Manages temporary file creation and cleanup
 /// * Provides detailed error messages for configuration issues
-/// RAII guard for the temp file that stdin is spilled to.
-///
-/// Removing the file on Drop guarantees cleanup on *every* exit path from `run()`.
-/// There are a dozen fallible operations between the spill and the end of the run
-/// (sniffing, compute, flush, cache install); an early return from any of them used
-/// to leak a full copy of stdin - which for a piped multi-GB input filled the disk.
-///
-/// Only the path is held, deliberately: the write handle must still be dropped before
-/// any reader re-opens the path by name (Windows/ARM64 deadlocks otherwise).
-struct StdinTempFile(PathBuf);
-
-impl Drop for StdinTempFile {
-    fn drop(&mut self) {
-        if std::fs::remove_file(&self.0).is_err() {
-            // fails silently if it can't remove the temp file
-            log::warn!("Could not remove stdin temp file: {}", self.0.display());
-        }
-    }
-}
-
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
@@ -2661,7 +2661,7 @@ impl Args {
     ///
     /// `capacity_hint` is ONLY a preallocation hint for the per-column accumulators; it is
     /// never a read limit and is deliberately NOT the value reported back. The returned
-    /// count comes from the compute pass itself, so the caller's record_count always
+    /// count comes from the compute pass itself, so the caller's `record_count` always
     /// matches the records actually accumulated even when the hint was obtained from a
     /// counter with different blank-line semantics (see the note in `run()`).
     ///

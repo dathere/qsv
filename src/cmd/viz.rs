@@ -18433,7 +18433,8 @@ fn is_per_unit_money(tokens: &[String]) -> bool {
     // money noun AND a unit token. Adjacency is what separates the compound noun "unit price"
     // from a sentence that merely mentions units and cost.
     tokens.windows(2).any(|w| {
-        let (a, b) = (w[0].as_str(), w[1].as_str());
+        let [a, b] = w else { return false };
+        let (a, b) = (a.as_str(), b.as_str());
         (MONEY_NOUNS.contains(&a) && PER_UNIT.contains(&b))
             || (PER_UNIT.contains(&a) && MONEY_NOUNS.contains(&b))
     })
@@ -18441,16 +18442,17 @@ fn is_per_unit_money(tokens: &[String]) -> bool {
 
 /// Recognize the per-single-item PHRASE `per unit` / `per item` as adjacent TOKENS.
 ///
-/// Deliberately not a substring test. `per_unit` is a substring of `upper_unit_sales` (`up`
-/// + `per_unit`) and `per_item` of `super_item_revenue` (`su` + `per_item`), both of which are
+/// Deliberately not a substring test. `per_unit` is a substring of `upper_unit_sales`
+/// (`up + per_unit`) and `per_item` of `super_item_revenue` (`su + per_item`), both of which are
 /// additive — the same hazard this file already records for `ratio` inside `duration`. Token
 /// windows also pick up camelCase (`pricePerUnit`), which a substring test never could, since
 /// the tokenizer splits on case transitions.
 fn has_per_unit_phrase(tokens: &[String]) -> bool {
     const UNIT_NOUNS: &[&str] = &["unit", "units", "item", "items"];
-    tokens
-        .windows(2)
-        .any(|w| w[0] == "per" && UNIT_NOUNS.contains(&w[1].as_str()))
+    tokens.windows(2).any(|w| {
+        let [a, b] = w else { return false };
+        a.as_str() == "per" && UNIT_NOUNS.contains(&b.as_str())
+    })
 }
 
 fn is_intensive_measure(label: &str, field: &str) -> bool {

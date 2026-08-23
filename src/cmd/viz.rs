@@ -5527,9 +5527,11 @@ struct GeocodedAliases {
     hint_rejected: Vec<(String, String)>,
     /// Names that matched a place with no US county FIPS (foreign, or no admin2).
     non_county:    Vec<String>,
-    /// Names that resolved to DIFFERENT counties under different per-row hints. Removed rather
-    /// than resolved to whichever came first — the same policy as [`RegionMatcher`]'s ambiguous
-    /// case-fold removal.
+    /// Names with CONFLICTING outcomes under different per-row hints — resolved to different
+    /// counties, or resolved under one hint but unusable (no match / hint-rejected / non-county)
+    /// under another. Their alias is removed rather than resolved to whichever won — the same
+    /// policy as [`RegionMatcher`]'s ambiguous case-fold removal, because the renderer joins by
+    /// bare name and cannot honor the distinction per row.
     ambiguous:     Vec<String>,
 }
 
@@ -5545,6 +5547,12 @@ fn build_geocoded_aliases(
     use crate::cmd::geocode::ForwardMatch;
     let mut out = GeocodedAliases::default();
     let mut divergent: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Names with ANY non-usable outcome (no match / hint-rejected / non-county) under some hint.
+    // The per-row renderer canonicalizes by BARE name — it cannot tell which hint a row carried —
+    // so a name that is usable under one hint and unusable under another must not keep its alias:
+    // the unusable rows would silently chart under the usable hint's county while the report
+    // claims they were dropped.
+    let mut unusable: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (name, found) in names.iter().zip(matches.iter()) {
         match found {
             ForwardMatch::Matched(r) if !r.us_county_fips.is_empty() => {
@@ -5559,14 +5567,21 @@ fn build_geocoded_aliases(
                     },
                 }
             },
-            ForwardMatch::Matched(_) => out.non_county.push(name.clone()),
-            ForwardMatch::NoMatch => out.no_match.push(name.clone()),
+            ForwardMatch::Matched(_) => {
+                unusable.insert(name.trim().to_ascii_lowercase());
+                out.non_county.push(name.clone());
+            },
+            ForwardMatch::NoMatch => {
+                unusable.insert(name.trim().to_ascii_lowercase());
+                out.no_match.push(name.clone());
+            },
             ForwardMatch::HintRejected(r) => {
                 let where_found = if r.admin1_name.is_empty() {
                     r.country_name.clone()
                 } else {
                     format!("{}, {}", r.admin1_name, r.iso2)
                 };
+                unusable.insert(name.trim().to_ascii_lowercase());
                 out.hint_rejected.push((name.clone(), where_found));
             },
         }
@@ -5574,6 +5589,15 @@ fn build_geocoded_aliases(
     for key in divergent {
         out.aliases.remove(&key);
         out.ambiguous.push(key);
+    }
+    // Mixed outcomes across hints: drop the alias rather than resolve it — conservative in the
+    // honest direction (every row of that name is omitted AND counted), same policy as the
+    // divergent-county removal above. Only counted as ambiguous when an alias actually existed;
+    // a name that never resolved anywhere is already fully accounted for by its own cause.
+    for key in unusable {
+        if out.aliases.remove(&key).is_some() {
+            out.ambiguous.push(key);
+        }
     }
     out
 }
@@ -5812,8 +5836,8 @@ fn geocode_resolution_breakdown(resolved: &GeocodedAliases) -> String {
     }
     if !resolved.ambiguous.is_empty() {
         note.push_str(&format!(
-            "\n  {} name(s) resolved to different counties under different hints and were dropped \
-             (e.g. {}).",
+            "\n  {} name(s) had conflicting outcomes under different hints and were dropped (e.g. \
+             {}).",
             resolved.ambiguous.len(),
             sample(&resolved.ambiguous)
         ));
@@ -5853,7 +5877,18 @@ fn resolve_smart_city_candidate(
     let hint = crate::cmd::geocode::RegionHint::parse(None, None, Some("us"))?;
     let hints = vec![hint; names.len()];
     let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    let matches = crate::cmd::geocode::forward_geocode_regions(&name_refs, &hints, None)?;
+    // A geocode SETUP failure — engine init, or the Geonames index download on first use — is a
+    // statement about THIS candidate's resolvability, not about the Census service, so strip the
+    // Network variant here: the caller's transient-abort check must fire only for
+    // `viz_census::resolve` failures below (roborev job 4397).
+    let matches = crate::cmd::geocode::forward_geocode_regions(&name_refs, &hints, None).map_err(
+        |e| match e {
+            crate::CliError::Network(msg) => {
+                crate::CliError::Other(format!("forward geocoding failed: {msg}"))
+            },
+            other => other,
+        },
+    )?;
     let resolved = build_geocoded_aliases(names, &matches);
     let breakdown = geocode_resolution_breakdown(&resolved);
     if resolved.aliases.is_empty() {
@@ -38949,6 +38984,8 @@ mod tests {
             "Montgomery",
             "Erewhon",
             "London",
+            "Erie",
+            "Erie", // resolved under one hint, unmatched under another: MIXED outcome
         ]
         .into_iter()
         .map(String::from)
@@ -38962,6 +38999,8 @@ mod tests {
             ForwardMatch::NoMatch,
             // matched, but no US county FIPS (foreign match)
             ForwardMatch::Matched(region("", "England", "GB")),
+            ForwardMatch::Matched(region("42049", "Pennsylvania", "US")),
+            ForwardMatch::NoMatch,
         ];
         let out = build_geocoded_aliases(&names, &matches);
         assert_eq!(
@@ -38970,8 +39009,13 @@ mod tests {
         );
         // the divergent name is REMOVED, not resolved to whichever hint came first
         assert!(!out.aliases.contains_key("springfield"));
-        assert_eq!(out.ambiguous, vec!["springfield"]);
-        assert_eq!(out.no_match, vec!["Erewhon"]);
+        // so is the MIXED-outcome name: its unmatched rows would otherwise chart under the
+        // matched hint's county while being reported as dropped (roborev job 4396)
+        assert!(!out.aliases.contains_key("erie"));
+        let mut ambiguous = out.ambiguous.clone();
+        ambiguous.sort_unstable();
+        assert_eq!(ambiguous, vec!["erie", "springfield"]);
+        assert_eq!(out.no_match, vec!["Erewhon", "Erie"]);
         assert_eq!(
             out.hint_rejected,
             vec![("Montgomery".to_string(), "Punjab, PK".to_string())]
@@ -38984,7 +39028,7 @@ mod tests {
         assert!(note.contains("matched no known place"));
         assert!(note.contains("Montgomery matched Punjab, PK"));
         assert!(note.contains("resolved outside a US county"));
-        assert!(note.contains("different counties under different hints"));
+        assert!(note.contains("conflicting outcomes under different hints"));
         assert!(note.contains("qsv geocode index-load 1000"));
 
         // hint rejections alone must NOT advertise the denser index — it cannot help them

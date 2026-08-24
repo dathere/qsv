@@ -23,8 +23,8 @@ viz:
     generated_by: "Generado por:"
     pid: "PID:"
   viewer:
-    link_explore: "(Explorar)"
-    link_preview: "(Vista previa)"
+    link_explore: "Explorar"
+    link_preview: "Vista previa"
     title_all: "Datos \u2014 %{q_rows} filas en total"
     title_preview: "Datos \u2014 primeras %{q_shown} de %{q_total} filas (vista previa)"
     export_csv: "CSV"
@@ -209,7 +209,7 @@ viz:
     # une a uno de ellos), nunca un fragmento insertado en una frase.
     # `top_n` se comparte a proposito: es el sufijo de desborde de
     # `measure_by_dim` y de `distribution_by`, y de nada mas.
-    data_overview: "%{q_dataset} — resumen de datos"
+    data_schematic: "%{q_dataset} — Data Schematic"
     map: "Mapa"
     distribution_by: "distribución de %{q_measure} por %{q_dim}"
     measure_by_dim: "%{q_measure} por %{q_dim} (%{q_agg}, explica el %{q_pct}% de la varianza)"

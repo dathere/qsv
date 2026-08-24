@@ -4577,9 +4577,9 @@ fn viz_smart_metadata_table_always_renders() {
     let html = wrk.read_to_string("dash.html").unwrap();
     // Rows/Columns/Compiled always render in HTML output.
     assert!(html.contains(r#"<table class="qsv-viz-meta">"#));
-    // the Rows cell also carries the data viewer's "(Explore)" link (issue #4283)
+    // the Rows cell also carries the data viewer's "Explore" link (issue #4283)
     assert!(html.contains(r##"<td class="qsv-viz-meta-k">Rows:</td><td>5 <a href="#""##));
-    assert!(html.contains(r#"(Explore)<svg class="qsv-link-icon""#));
+    assert!(html.contains(r#"Explore<svg class="qsv-link-icon""#));
     assert!(html.contains("</svg></a></td>"));
     assert!(html.contains(r#"<td class="qsv-viz-meta-k">Columns:</td><td>3</td>"#));
     // assert on the label, never the timestamp value (it makes output non-deterministic).
@@ -8477,7 +8477,7 @@ fn viz_smart_grid_has_theme_toggle() {
     // the typed plot already bakes the dashboard title into its layout, so the page <h1> is
     // suppressed (no double title); the document <title> tab is still set.
     assert!(!html.contains(r#"<h1 class="qsv-viz-title""#));
-    assert!(html.contains("<title>people.csv \u{2014} data overview</title>"));
+    assert!(html.contains("<title>people.csv \u{2014} Data Schematic</title>"));
     // regression (roborev #3176): the page shell must not split the `\n{script}` escape into a
     // literal `\` + `n` before the toggle script. The toggle <script> follows clean markup.
     assert!(html.contains("<script>\n(function () {"));
@@ -14920,7 +14920,7 @@ fn data_viewer_csv(wrk: &Workdir) {
 }
 
 // Under the (default 50k) threshold every row embeds and the metadata Rows cell links
-// "(Explore)"; the page carries the payloads, the drawer chrome, and the DataTables init with
+// "Explore"; the page carries the payloads, the drawer chrome, and the DataTables init with
 // global search + SearchBuilder + per-column filter inputs.
 #[test]
 fn viz_smart_data_viewer_explore_link_under_threshold() {
@@ -14935,11 +14935,11 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     let html = String::from_utf8_lossy(&out.stdout);
 
     // the metadata Rows cell carries the Explore link
-    assert!(html.contains("qsvOpenData()\">(Explore)<svg"));
+    assert!(html.contains("qsvOpenData()\">Explore<svg"));
     // the link must pin :visited too — href="#" means one click would otherwise leave it the
     // UA's #551A8B forever, unreadable on dark paper
     assert!(html.contains(".qsv-viz-meta a.qsv-data-link:visited"));
-    assert!(!html.contains("(Preview)"));
+    assert!(!html.contains(">Preview<svg"));
     // payloads: plain JSON rows + column config, with a recognizable cell value
     assert!(html.contains(r#"id="qsv-data-rows" type="application/json""#));
     assert!(html.contains(r#"id="qsv-data-cols" type="application/json""#));
@@ -14985,7 +14985,7 @@ fn viz_smart_data_viewer_explore_link_under_threshold() {
     assert!(html.contains("DataTables 3."));
 }
 
-// Above the threshold only the first N rows embed and the link reads "(Preview)"; the drawer
+// Above the threshold only the first N rows embed and the link reads "Preview"; the drawer
 // title says so, and rows past the cut are NOT in the page.
 #[test]
 fn viz_smart_data_viewer_preview_over_threshold() {
@@ -15004,8 +15004,8 @@ fn viz_smart_data_viewer_preview_over_threshold() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
 
-    assert!(html.contains("qsvOpenData()\">(Preview)<svg"));
-    assert!(!html.contains("(Explore)"));
+    assert!(html.contains("qsvOpenData()\">Preview<svg"));
+    assert!(!html.contains(">Explore<svg"));
     assert!(html.contains("Data — first 5 of 10 rows (preview)"));
     assert!(html.contains("row5sentinel"));
     assert!(!html.contains("row6sentinel"));
@@ -15481,8 +15481,8 @@ fn viz_smart_data_viewer_disabled_at_zero() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
 
-    assert!(!html.contains("(Explore)"));
-    assert!(!html.contains("(Preview)"));
+    assert!(!html.contains(">Explore<svg"));
+    assert!(!html.contains(">Preview<svg"));
     assert!(!html.contains("qsvOpenData"));
     assert!(!html.contains("qsv-data-rows"));
     assert!(!html.contains("qsv-data-drawer"));

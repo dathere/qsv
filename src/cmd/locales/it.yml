@@ -27,8 +27,8 @@ viz:
     generated_by: "Generato da:"
     pid: "PID:"
   viewer:
-    link_explore: "(Esplora)"
-    link_preview: "(Anteprima)"
+    link_explore: "Esplora"
+    link_preview: "Anteprima"
     title_all: "Dati — tutte le %{q_rows} righe"
     title_preview: "Dati — prime %{q_shown} righe su %{q_total} (anteprima)"
     export_csv: "CSV"
@@ -203,7 +203,7 @@ viz:
     trace_rank_correlation: "correlazione per ranghi"
     trace_association: "associazione"
   title:
-    data_overview: "%{q_dataset} — panoramica dei dati"
+    data_schematic: "%{q_dataset} — Data Schematic"
     map: "Mappa"
     distribution_by: "distribuzione di %{q_measure} per %{q_dim}"
     measure_by_dim: "%{q_measure} per %{q_dim} (%{q_agg}, spiega il %{q_pct}% della varianza)"

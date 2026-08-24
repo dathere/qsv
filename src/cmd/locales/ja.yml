@@ -27,8 +27,8 @@ viz:
     generated_by: "生成ツール:"
     pid: "PID:"
   viewer:
-    link_explore: "(詳細表示)"
-    link_preview: "(プレビュー)"
+    link_explore: "詳細表示"
+    link_preview: "プレビュー"
     title_all: "データ — 全 %{q_rows} 行"
     title_preview: "データ — %{q_total} 行中の先頭 %{q_shown} 行(プレビュー)"
     export_csv: "CSV"
@@ -203,7 +203,7 @@ viz:
     trace_rank_correlation: "順位相関"
     trace_association: "関連度"
   title:
-    data_overview: "%{q_dataset} — データ概要"
+    data_schematic: "%{q_dataset} — Data Schematic"
     map: "地図"
     distribution_by: "%{q_dim} 別の %{q_measure} の分布"
     measure_by_dim: "%{q_dim} 別の %{q_measure}(%{q_agg}、分散の %{q_pct}% を説明)"

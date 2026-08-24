@@ -20580,8 +20580,8 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   #qsv-data-table { min-width: var(--qsv-data-minw, 0px); }
   /* theme-aware: left to the UA default this is #0000EE, then #551A8B once visited — both
      unreadable on dark paper, and href="#" means one click marks it visited forever */
-  .qsv-viz-meta a.qsv-data-link, .qsv-viz-meta a.qsv-data-link:visited { font-size: 0.9em; font-weight: 600; color: var(--qsv-link, #0a5fb4); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
-  .qsv-viz-meta a.qsv-data-link:hover, .qsv-viz-meta a.qsv-data-link:focus-visible { color: var(--qsv-link-hover, #084b8f); text-decoration: underline; }
+  .qsv-viz-meta a.qsv-data-link, .qsv-viz-meta a.qsv-data-link:visited { font-size: 0.85em; font-weight: 600; color: var(--qsv-link, #0a5fb4); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px; border: 1px solid var(--qsv-link, #0a5fb4); border-radius: 999px; margin-left: 4px; }
+  .qsv-viz-meta a.qsv-data-link:hover, .qsv-viz-meta a.qsv-data-link:focus-visible { color: var(--qsv-link-hover, #084b8f); border-color: var(--qsv-link-hover, #084b8f); background: color-mix(in srgb, var(--qsv-link, #0a5fb4) 14%, transparent); }
   /* Selected rows. Derived from --qsv-link with color-mix rather than hardcoded, so the tint
      tracks the theme automatically (the link color flips with body.qsv-dark) instead of needing
      a separate dark-mode rule that could drift. DataTables' own Select CSS paints a solid grey
@@ -22385,13 +22385,21 @@ fn render_dict_page_html(
     let ui_lang = viz_i18n::active_locale().bcp47;
     let dict_page_title = t!("viz.dict.title");
     let back_to_dashboard = t!("viz.dict.back_to_dashboard");
+    // Default (no --title) dashboard titles already end in the "Data Schematic" brand
+    // (viz.title.data_schematic) — prefixing it again would read "Data Schematic — x.csv —
+    // Data Schematic", so the brand prefix is reserved for custom titles that lack it.
+    let doc_title = if title.contains(dict_page_title.as_ref()) {
+        title.to_string()
+    } else {
+        format!("{dict_page_title} — {title}")
+    };
     format!(
         r##"<!doctype html>
 <html lang="{ui_lang}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>{dict_page_title} — {title}</title>
+<title>{doc_title}</title>
 <style>
   body.qsv-dict-body {{ font-family: {FONT_FAMILY}; margin: 0; padding: 24px; background: #ffffff; color: #222222; }}
   body.qsv-dict-body.qsv-dark {{ background: #14171c; color: #d7dce2; }}
@@ -31823,7 +31831,7 @@ impl<'a> SmartCtx<'a> {
                 .file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or("data");
-            t!("viz.title.data_overview", q_dataset = dataset).into_owned()
+            t!("viz.title.data_schematic", q_dataset = dataset).into_owned()
         });
 
         // Drained UNCONDITIONALLY — outside every `--dict-info` branch below — so the collector

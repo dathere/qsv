@@ -34,8 +34,8 @@ viz:
     generated_by: "生成工具:"
     pid: "PID:"
   viewer:
-    link_explore: "(浏览)"
-    link_preview: "(预览)"
+    link_explore: "浏览"
+    link_preview: "预览"
     title_all: "数据 — 全部 %{q_rows} 行"
     title_preview: "数据 — 共 %{q_total} 行中的前 %{q_shown} 行(预览)"
     export_csv: "CSV"
@@ -210,7 +210,7 @@ viz:
     trace_rank_correlation: "秩相关"
     trace_association: "关联度"
   title:
-    data_overview: "%{q_dataset} — 数据概览"
+    data_schematic: "%{q_dataset} — Data Schematic"
     map: "地图"
     distribution_by: "按 %{q_dim} 划分的 %{q_measure} 分布"
     measure_by_dim: "按 %{q_dim} 划分的 %{q_measure}(%{q_agg},可解释 %{q_pct}% 的方差)"

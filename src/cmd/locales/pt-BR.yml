@@ -33,8 +33,8 @@ viz:
     generated_by: "Gerado por:"
     pid: "PID:"
   viewer:
-    link_explore: "(Explorar)"
-    link_preview: "(Pré-visualização)"
+    link_explore: "Explorar"
+    link_preview: "Pré-visualização"
     title_all: "Dados — todas as %{q_rows} linhas"
     title_preview: "Dados — primeiras %{q_shown} de %{q_total} linhas (pré-visualização)"
     export_csv: "CSV"
@@ -209,7 +209,7 @@ viz:
     trace_rank_correlation: "correlação de postos"
     trace_association: "associação"
   title:
-    data_overview: "%{q_dataset} — visão geral dos dados"
+    data_schematic: "%{q_dataset} — Data Schematic"
     map: "Mapa"
     distribution_by: "distribuição de %{q_measure} por %{q_dim}"
     measure_by_dim: "%{q_measure} por %{q_dim} (%{q_agg}, explica %{q_pct}% da variância)"

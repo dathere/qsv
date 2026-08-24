@@ -24,7 +24,8 @@
 #
 # Triggers:
 #   - Nightly cron
-#   - PRs touching src/cmd/, src/main.rs, docs/help/, or .claude/skills/qsv/
+#   - PRs touching src/cmd/, src/main.rs, docs/help/, .claude/skills/qsv/, or the
+#     generator sources themselves
 #   - Manual workflow_dispatch
 #
 # Nightly failures open (or comment on) a sticky issue tagged `wiki-lint`.
@@ -42,6 +43,13 @@ on:
       # Hand-editing a skill JSON is the other half of the drift surface: without this
       # path, a PR that only touches one would never run the staleness check below.
       - '.claude/skills/qsv/**'
+      # The generators THEMSELVES are inputs: a parser change rewrites every generated
+      # file without touching a single USAGE string, so a PR that edits one of these and
+      # forgets to regenerate is exactly the drift these checks exist to catch.
+      # generators_common is shared by both generators.
+      - 'src/mcp_skills_gen.rs'
+      - 'src/help_markdown_gen.rs'
+      - 'src/generators_common.rs'
       # README.md is a generator INPUT, not just an output: `--generate-help-md`
       # reads the command table for each command's description blurb, so a
       # README-only edit rewrites docs/help/*.md and TableOfContents.md.

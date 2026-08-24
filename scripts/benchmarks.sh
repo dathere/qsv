@@ -866,8 +866,9 @@ run to_xlsx "$qsv_bin" to xlsx benchmark_work.xlsx "$data"
 # rest measure an instant failure (masked by hyperfine's -i). We wrap in `bash -c` (the
 # extsort_csv pattern) so the rm runs INSIDE each timed run; its overhead is negligible
 # vs the multi-second conversion. (A bare `;rm` here would run once at queue time, not
-# between runs — that was the old bug.)
-run to_sqlite bash -c \'"$qsv_bin" to sqlite benchmark_work.db "$data"\; rm -f benchmark_work.db\'
+# between runs — that was the old bug.) We preserve the conversion's exit status so a
+# failed conversion isn't masked by a successful rm.
+run to_sqlite bash -c \'"$qsv_bin" to sqlite benchmark_work.db "$data"\; s=\$\?\; rm -f benchmark_work.db\; exit \$s\'
 run to_datapackage "$qsv_bin" to datapackage benchmark_work.json "$data"
 # to_ods uses a 500k-row subset (ods_data.csv); the full dataset overflows the ODS 4GB
 # ZIP limit. See the ods_data.csv prep step above. Unlike `to sqlite`, `to ods`

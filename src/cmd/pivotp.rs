@@ -1203,7 +1203,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     actual_index_cols.iter().map(col).collect::<Vec<_>>(),
                     actual_index_cols.iter().map(col).collect::<Vec<_>>(),
                     JoinArgs::new(JoinType::Left),
-                )
+                )?
                 .sort([row_order_col], SortMultipleOptions::default())
                 .drop(cols([row_order_col]))
                 .collect()?
@@ -1304,7 +1304,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
                     &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
                     JoinArgs::new(JoinType::Left),
-                )
+                )?
                 .sort([row_order_col], SortMultipleOptions::default())
                 .drop(cols([row_order_col]))
                 .collect()?;

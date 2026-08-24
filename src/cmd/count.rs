@@ -643,23 +643,22 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
             },
         };
 
-        let mut count = match sqlresult_lf.collect()?["len"].u32() {
-            Ok(cnt) => {
-                if let Some(count) = cnt.get(0) {
-                    count as u64
-                } else {
-                    // Empty result, fall back to regular CSV reader
-                    log::warn!("empty polars result, falling back to regular reader");
-                    let (count_regular, _) =
-                        count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
-                    count_regular
-                }
-            },
-            Err(e) => {
-                // Polars error, fall back to regular CSV reader
-                log::warn!("polars error, falling back to regular reader: {e}");
+        // COUNT(*)'s result dtype changed from u32 to i64 in polars py-1.44.0,
+        // so cast to u64 to handle both
+        let polars_count = sqlresult_lf.collect()?["len"]
+            .cast(&DataType::UInt64)
+            .ok()
+            .and_then(|s| s.u64().ok().and_then(|ca| ca.get(0)));
+
+        let mut count = match polars_count {
+            Some(count) => count,
+            None => {
+                // Fall back to the regular CSV reader and return directly: it
+                // already accounts for --no-headers, so the no-headers
+                // adjustment below must NOT be applied on top of it
+                log::warn!("unexpected polars count result, falling back to regular reader");
                 let (count_regular, _) = count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
-                count_regular
+                return Ok(count_regular);
             },
         };
 

@@ -728,7 +728,7 @@ impl JoinStruct {
                 .coalesce(coalesce_flag)
                 .allow_parallel(true)
                 .validate(validation)
-                .finish()
+                .finish()?
                 .collect()?
         } else {
             if special_join == SpecialJoin::AsOfAutoSort {
@@ -803,7 +803,7 @@ impl JoinStruct {
                     .coalesce(coalesce_flag)
                     .allow_parallel(true)
                     .validate(validation)
-                    .finish()
+                    .finish()?
                     .collect()?
             }
         };

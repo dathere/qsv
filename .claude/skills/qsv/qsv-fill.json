@@ -10,13 +10,13 @@
         "name": "selection",
         "type": "string",
         "required": true,
-        "description": ""
+        "description": "The columns to operate on. See 'qsv select --help' for the selection syntax."
       },
       {
         "name": "input",
         "type": "file",
         "required": false,
-        "description": ""
+        "description": "Input CSV file. If not specified, reads from stdin."
       }
     ],
     "options": [

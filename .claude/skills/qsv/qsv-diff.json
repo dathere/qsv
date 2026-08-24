@@ -10,13 +10,13 @@
         "name": "input-left",
         "type": "file",
         "required": false,
-        "description": ""
+        "description": "The left input CSV file to compare."
       },
       {
         "name": "input-right",
         "type": "file",
         "required": false,
-        "description": ""
+        "description": "The right input CSV file to compare."
       }
     ],
     "options": [

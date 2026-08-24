@@ -436,6 +436,13 @@ impl UsageParser {
                 Atom::Long(name) => {
                     let flag_str = format!("--{name}");
 
+                    // Not a real flag - docopt happily parses the ASCII
+                    // separator rules used in USAGE prose (e.g. `----------`)
+                    // as long options. Drop them.
+                    if Self::normalize_flag_token(&flag_str).is_none() {
+                        continue;
+                    }
+
                     // Skip if already processed
                     if options.iter().any(|o| o.flag == flag_str) {
                         continue;
@@ -545,13 +552,27 @@ impl UsageParser {
 
                     let arg_type = self.infer_argument_type(&arg_name, &description);
 
+                    // `optional_args` also covers the USAGE [] syntax
+                    let required = !opts.arg.has_default() && !optional_args.contains(&arg_name);
+
+                    // qsv's USAGE text describes positionals in prose rather
+                    // than in an extractable `<name>  description` line, so
+                    // most of them have none. Fall back to a generic one so
+                    // MCP agents are not left with a bare name. Deliberately
+                    // applied *after* `infer_argument_type` so the synthesized
+                    // wording cannot change an inferred type.
+                    let description = if description.is_empty() {
+                        Self::generic_positional_description(&arg_name, required)
+                    } else {
+                        description
+                    };
+
                     args_map.insert(
                         arg_name.clone(),
                         Argument {
                             name: arg_name.clone(),
                             arg_type,
-                            required: !opts.arg.has_default()
-                                && !optional_args.contains(&arg_name), // Also check USAGE [] syntax
+                            required,
                             description,
                             r#enum: None,
                         },
@@ -684,6 +705,107 @@ impl UsageParser {
         )
     }
 
+    /// Generic descriptions for the well-known positional arguments that
+    /// qsv's USAGE text never documents in an extractable
+    /// `<name>  description` line. Used only as a fallback.
+    ///
+    /// `required` matters: a required `<input>` (e.g. `sqlp`, `viz`) does not
+    /// fall back to stdin, so it must not claim that it does.
+    fn generic_positional_description(name: &str, required: bool) -> String {
+        match name {
+            "input" if required => "Input CSV file.",
+            "input" => "Input CSV file. If not specified, reads from stdin.",
+            "output" if required => "Output CSV file.",
+            "output" => "Output CSV file. If not specified, writes to stdout.",
+            "input1" => "The first input CSV file.",
+            "input2" => "The second input CSV file.",
+            "input-left" => "The left input CSV file to compare.",
+            "input-right" => "The right input CSV file to compare.",
+            "columns1" => {
+                "Column selection for the first input. See 'qsv select --help' for the selection \
+                 syntax."
+            },
+            "columns2" => {
+                "Column selection for the second input. See 'qsv select --help' for the selection \
+                 syntax."
+            },
+            "column" => {
+                "The column to operate on. See 'qsv select --help' for the selection syntax."
+            },
+            "selection" => {
+                "The columns to operate on. See 'qsv select --help' for the selection syntax."
+            },
+            "separator" => "The separator string used to split/join values.",
+            "sql" => "The SQL query to execute, or the path to a file containing it.",
+            _ => "",
+        }
+        .to_string()
+    }
+
+    /// Canonical bare form of a flag token from a USAGE options block:
+    /// `--formatstr=<string>` -> `--formatstr`, `--select <arg>` -> `--select`.
+    ///
+    /// The lookups in `parse_with_docopt` are all keyed on the bare flag, so
+    /// the `--flag=<value>` docopt spelling has to be normalized here or its
+    /// description is silently dropped.
+    ///
+    /// Returns `None` when the token is not a well-formed flag. The character
+    /// after the leading dashes must be alphabetic, which is what keeps the
+    /// ASCII separator rules used in USAGE prose (`------------`) out of the
+    /// option list.
+    fn normalize_flag_token(token: &str) -> Option<&str> {
+        let token = token.trim();
+        let end = token.find(['=', ' ', '\t']).unwrap_or(token.len());
+        let flag = &token[..end];
+
+        let name = flag.strip_prefix("--").or_else(|| flag.strip_prefix('-'))?;
+        let mut chars = name.chars();
+        if !chars.next()?.is_ascii_alphabetic() {
+            return None;
+        }
+        chars
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            .then_some(flag)
+    }
+
+    /// Recognize a line that consists *only* of a flag declaration, e.g.
+    /// `-S, --bivariate-stats <stats>` or `--denominator-unit <u>`. qsv's
+    /// USAGE convention wraps such a declaration's description onto the
+    /// following, more-indented lines when the flag plus its argument is too
+    /// wide for the description column.
+    ///
+    /// Returns the declared flags, or `None` for prose, section headers and
+    /// separator rules - anything that must not swallow the lines below it.
+    fn parse_flag_declaration_line(trimmed: &str) -> Option<Vec<&str>> {
+        let mut flags = Vec::with_capacity(2);
+        for token in trimmed.split(',') {
+            let token = token.trim();
+            let flag = Self::normalize_flag_token(token)?;
+            // whatever trails the flag must be its argument placeholder,
+            // never prose
+            let rest = token[flag.len()..].trim();
+            if !rest.is_empty() && !Self::is_arg_placeholder(rest) {
+                return None;
+            }
+            flags.push(flag);
+        }
+        (!flags.is_empty()).then_some(flags)
+    }
+
+    /// A single, whitespace-free angle-bracketed argument placeholder:
+    /// `<arg>`, `=<arg>`, `[<arg>]` or `[=<arg>]`.
+    fn is_arg_placeholder(rest: &str) -> bool {
+        let inner = rest
+            .strip_prefix('[')
+            .map_or(rest, |r| r.strip_suffix(']').unwrap_or(r));
+        let inner = inner.strip_prefix('=').unwrap_or(inner);
+        inner.len() > 2
+            && inner.starts_with('<')
+            && inner.ends_with('>')
+            && !inner[1..inner.len() - 1].contains(['<', '>'])
+            && !inner.contains(char::is_whitespace)
+    }
+
     /// Extract descriptions from the usage text manually
     /// Returns a map of flag/arg name to description
     fn extract_descriptions_from_text(&self) -> HashMap<String, String> {
@@ -715,10 +837,48 @@ impl UsageParser {
                         j += 1;
                     }
 
-                    // Parse flags
-                    for flag in flags_part.split(',') {
-                        let flag = flag.split_whitespace().next().unwrap_or("");
-                        if flag.starts_with("--") || flag.starts_with('-') {
+                    // Parse flags, normalizing the `--flag=<value>` docopt
+                    // spelling to the bare `--flag` the lookups use
+                    for token in flags_part.split(',') {
+                        if let Some(flag) = Self::normalize_flag_token(token) {
+                            descriptions.insert(flag.to_string(), description.clone());
+                        }
+                    }
+
+                    i = j;
+                    continue;
+                }
+                // The flag plus its argument was too wide for the description
+                // column, so the description wraps onto the following lines:
+                //     --denominator-unit <u>
+                //                            Unit the denominator values are IN
+                // Indentation - not `starts_with('-')` - decides where that
+                // description ends, so a section header sitting at the flag
+                // column is not swallowed by a declaration with no description.
+                else if let Some(flags) = Self::parse_flag_declaration_line(trimmed) {
+                    let indent = line.len() - line.trim_start().len();
+                    let mut description = String::new();
+
+                    let mut j = i + 1;
+                    while j < lines.len() {
+                        let next_line = lines[j];
+                        let next_trimmed = next_line.trim();
+                        if next_trimmed.is_empty()
+                            || next_line.len() - next_line.trim_start().len() <= indent
+                        {
+                            break;
+                        }
+                        if !next_trimmed.starts_with("Usage:") {
+                            if !description.is_empty() {
+                                description.push(' ');
+                            }
+                            description.push_str(next_trimmed);
+                        }
+                        j += 1;
+                    }
+
+                    if !description.is_empty() {
+                        for flag in flags {
                             descriptions.insert(flag.to_string(), description.clone());
                         }
                     }
@@ -1464,4 +1624,245 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     eprintln!("\n💡 Restart Claude Desktop to load the updated skills.");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn descriptions(usage: &str) -> HashMap<String, String> {
+        UsageParser::new(usage.to_string(), "test".to_string()).extract_descriptions_from_text()
+    }
+
+    // ------------------------------------------------------------------
+    // inline (two-space) declarations - behavior must be unchanged
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn inline_declaration_keys_short_and_long() {
+        let d = descriptions(
+            "\ntest options:\n    -s, --select <arg>     Select these columns.\n                           \
+             Supports ranges.\n",
+        );
+        assert_eq!(
+            d.get("-s").map(String::as_str),
+            Some("Select these columns. Supports ranges.")
+        );
+        assert_eq!(
+            d.get("--select").map(String::as_str),
+            Some("Select these columns. Supports ranges.")
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // bug 1 - description wrapped onto the following lines
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn wrapped_declaration_is_captured() {
+        let d = descriptions(
+            "\nviz options:\n    --denominator-unit <u>\n                           Unit the \
+             denominator values are IN.\n                           One of: m2, km2.\n",
+        );
+        assert_eq!(
+            d.get("--denominator-unit").map(String::as_str),
+            Some("Unit the denominator values are IN. One of: m2, km2.")
+        );
+    }
+
+    #[test]
+    fn wrapped_declaration_keys_short_and_long_and_keeps_default_marker() {
+        // The stored map value still carries `[default: fast]`;
+        // `strip_default_from_description` removes it later, at emit time.
+        let d = descriptions(
+            "\nmoarstats options:\n    -S, --bivariate-stats <stats>\n                           \
+             Comma-separated list of bivariate statistics to compute.\n                           \
+             Use \"all\" to compute all statistics.\n                           [default: fast]\n",
+        );
+        let expected = "Comma-separated list of bivariate statistics to compute. Use \"all\" to \
+                        compute all statistics. [default: fast]";
+        assert_eq!(d.get("-S").map(String::as_str), Some(expected));
+        assert_eq!(
+            d.get("--bivariate-stats").map(String::as_str),
+            Some(expected)
+        );
+    }
+
+    #[test]
+    fn two_wrapped_declarations_back_to_back_do_not_bleed() {
+        // The case where the indentation rule and the old `starts_with('-')`
+        // rule disagree: the second declaration sits at the flag column, but
+        // its own description is at the description column.
+        let d = descriptions(
+            "\ntest options:\n    --first <a>\n                           First description.\n    \
+             --second <b>\n                           Second description.\n",
+        );
+        assert_eq!(
+            d.get("--first").map(String::as_str),
+            Some("First description.")
+        );
+        assert_eq!(
+            d.get("--second").map(String::as_str),
+            Some("Second description.")
+        );
+    }
+
+    #[test]
+    fn inline_declaration_still_terminates_at_the_next_flag() {
+        let d = descriptions(
+            "\ntest options:\n    -B, --bivariate        Enable bivariate stats.\n                 \
+             \n    -S, --bivariate-stats <stats>\n                           Which ones.\n",
+        );
+        assert_eq!(
+            d.get("--bivariate").map(String::as_str),
+            Some("Enable bivariate stats.")
+        );
+        assert_eq!(
+            d.get("--bivariate-stats").map(String::as_str),
+            Some("Which ones.")
+        );
+    }
+
+    #[test]
+    fn description_less_declaration_does_not_swallow_a_section_header() {
+        let d =
+            descriptions("\ntest options:\n    --lonely <x>\nCommon options:\n    -h, --help\n");
+        assert_eq!(d.get("--lonely"), None);
+        assert!(!d.values().any(|v| v.contains("Common options")));
+    }
+
+    // ------------------------------------------------------------------
+    // bug 2 - `--flag=<value>` docopt syntax
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn equals_syntax_is_keyed_on_the_bare_flag() {
+        let d = descriptions(
+            "\ndatefmt options:\n    --formatstr=<string>        The date format to use.\n",
+        );
+        assert_eq!(
+            d.get("--formatstr").map(String::as_str),
+            Some("The date format to use.")
+        );
+        assert!(!d.contains_key("--formatstr=<string>"));
+    }
+
+    #[test]
+    fn equals_syntax_with_a_short_partner_keys_both() {
+        let d = descriptions(
+            "\napply options:\n    -C, --comparand=<string>    The string to compare against.\n",
+        );
+        assert_eq!(
+            d.get("-C").map(String::as_str),
+            Some("The string to compare against.")
+        );
+        assert_eq!(
+            d.get("--comparand").map(String::as_str),
+            Some("The string to compare against.")
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // bug 3a - separator rules and prose must not become flags
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn separator_rule_is_not_a_flag() {
+        let d = descriptions(
+            "\n---------------------------------------\nSome prose about the schema \
+             subcommand.\n\ntest options:\n    --real <x>             Real flag.\n",
+        );
+        assert!(d.keys().all(|k| !k.trim_start_matches('-').is_empty()));
+        assert!(!d.keys().any(|k| k.chars().all(|c| c == '-')));
+        assert_eq!(d.get("--real").map(String::as_str), Some("Real flag."));
+    }
+
+    #[test]
+    fn prose_starting_with_a_flag_is_not_a_declaration() {
+        let d = descriptions(
+            "\n    --lat and --lon are mutually exclusive options that\n        must be given \
+             together.\n",
+        );
+        assert_eq!(d.get("--lat"), None);
+    }
+
+    #[test]
+    fn negative_number_prose_is_not_a_flag() {
+        let d = descriptions("\n    -1 means the last record\n        of the file.\n");
+        assert_eq!(d.get("-1"), None);
+    }
+
+    // ------------------------------------------------------------------
+    // flag-token normalization helper
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn normalize_flag_token_shapes() {
+        let n = UsageParser::normalize_flag_token;
+        assert_eq!(n("--formatstr=<string>"), Some("--formatstr"));
+        assert_eq!(n(" --select <arg>"), Some("--select"));
+        assert_eq!(n("-s"), Some("-s"));
+        assert_eq!(n("--geocode-admin1"), Some("--geocode-admin1"));
+        assert_eq!(n("-----------"), None);
+        assert_eq!(n("--"), None);
+        assert_eq!(n("-"), None);
+        assert_eq!(n("-1"), None);
+        assert_eq!(n("not-a-flag"), None);
+    }
+
+    #[test]
+    fn parse_flag_declaration_line_shapes() {
+        let p = UsageParser::parse_flag_declaration_line;
+        assert_eq!(
+            p("-S, --bivariate-stats <stats>"),
+            Some(vec!["-S", "--bivariate-stats"])
+        );
+        assert_eq!(
+            p("--denominator-unit <u>"),
+            Some(vec!["--denominator-unit"])
+        );
+        assert_eq!(p("--formatstr=<string>"), Some(vec!["--formatstr"]));
+        assert_eq!(p("--maybe [<arg>]"), Some(vec!["--maybe"]));
+        assert_eq!(p("--lat and --lon are exclusive"), None);
+        assert_eq!(p("-------------------"), None);
+        assert_eq!(p("Common options:"), None);
+    }
+
+    // ------------------------------------------------------------------
+    // bug 3b - generic positional descriptions
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn generic_positional_descriptions_cover_the_undocumented_names() {
+        for name in [
+            "input",
+            "output",
+            "input1",
+            "input2",
+            "input-left",
+            "input-right",
+            "columns1",
+            "columns2",
+            "column",
+            "selection",
+            "separator",
+            "sql",
+        ] {
+            assert!(
+                !UsageParser::generic_positional_description(name, false).is_empty(),
+                "no generic description for <{name}>"
+            );
+            assert!(
+                !UsageParser::generic_positional_description(name, true).is_empty(),
+                "no generic description for required <{name}>"
+            );
+        }
+        assert!(UsageParser::generic_positional_description("unknown-arg", false).is_empty());
+
+        // a required positional must not claim it falls back to a std stream
+        assert!(!UsageParser::generic_positional_description("input", true).contains("stdin"));
+        assert!(UsageParser::generic_positional_description("input", false).contains("stdin"));
+        assert!(!UsageParser::generic_positional_description("output", true).contains("stdout"));
+        assert!(UsageParser::generic_positional_description("output", false).contains("stdout"));
+    }
 }

@@ -10,13 +10,13 @@
         "name": "separator",
         "type": "string",
         "required": true,
-        "description": ""
+        "description": "The separator string used to split/join values."
       },
       {
         "name": "input",
         "type": "file",
         "required": false,
-        "description": ""
+        "description": "Input CSV file. If not specified, reads from stdin."
       }
     ],
     "options": [

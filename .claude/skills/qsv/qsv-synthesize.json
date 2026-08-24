@@ -10,7 +10,7 @@
         "name": "input",
         "type": "file",
         "required": true,
-        "description": ""
+        "description": "Input CSV file."
       }
     ],
     "options": [

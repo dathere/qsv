@@ -29,7 +29,7 @@
       {
         "flag": "--default-tz",
         "type": "string",
-        "description": ""
+        "description": "Fallback timezone consulted only when --input-tz or --output-tz is set to \"local\" but local-timezone detection fails. Defaults to UTC. Does NOT override the --input-tz / --output-tz defaults — use --utc to force both input and output to UTC. The timezone must be a valid IANA timezone name or the string \"local\"."
       },
       {
         "flag": "--delimiter",
@@ -39,13 +39,13 @@
       {
         "flag": "--formatstr",
         "type": "string",
-        "description": "",
+        "description": "The date format to use for the datefmt operation. For formats, see https://docs.rs/chrono/latest/chrono/format/strftime/ Default to ISO 8601 / RFC 3339 date & time format - \"%Y-%m-%dT%H:%M:%S%z\" - e.g. 2001-07-08T00:34:60.026490+09:30",
         "default": "%+"
       },
       {
         "flag": "--input-tz",
         "type": "string",
-        "description": "",
+        "description": "The timezone to use for the input date if the date does not have timezone specified. The timezone must be a valid IANA timezone name or the string \"local\" for the local timezone. See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for a list of valid timezone names.",
         "default": "UTC"
       },
       {
@@ -71,7 +71,7 @@
       {
         "flag": "--output-tz",
         "type": "string",
-        "description": "",
+        "description": "The timezone to use for the output date. The timezone must be a valid IANA timezone name or the string \"local\".",
         "default": "UTC"
       },
       {

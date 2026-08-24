@@ -10,19 +10,19 @@
         "name": "column",
         "type": "string",
         "required": true,
-        "description": ""
+        "description": "The column to operate on. See 'qsv select --help' for the selection syntax."
       },
       {
         "name": "separator",
         "type": "string",
         "required": true,
-        "description": ""
+        "description": "The separator string used to split/join values."
       },
       {
         "name": "input",
         "type": "file",
         "required": false,
-        "description": ""
+        "description": "Input CSV file. If not specified, reads from stdin."
       }
     ],
     "options": [

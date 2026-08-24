@@ -10,25 +10,25 @@
         "name": "columns1",
         "type": "string",
         "required": false,
-        "description": ""
+        "description": "Column selection for the first input. See 'qsv select --help' for the selection syntax."
       },
       {
         "name": "input1",
         "type": "file",
         "required": true,
-        "description": ""
+        "description": "The first input CSV file."
       },
       {
         "name": "columns2",
         "type": "string",
         "required": false,
-        "description": ""
+        "description": "Column selection for the second input. See 'qsv select --help' for the selection syntax."
       },
       {
         "name": "input2",
         "type": "file",
         "required": true,
-        "description": ""
+        "description": "The second input CSV file."
       }
     ],
     "options": [

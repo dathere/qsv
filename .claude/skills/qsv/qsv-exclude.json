@@ -10,7 +10,7 @@
         "name": "columns1",
         "type": "string",
         "required": true,
-        "description": ""
+        "description": "Column selection for the first input. See 'qsv select --help' for the selection syntax."
       },
       {
         "name": "input1",
@@ -22,7 +22,7 @@
         "name": "columns2",
         "type": "string",
         "required": true,
-        "description": ""
+        "description": "Column selection for the second input. See 'qsv select --help' for the selection syntax."
       },
       {
         "name": "input2",

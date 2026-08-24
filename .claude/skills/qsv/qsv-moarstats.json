@@ -10,7 +10,7 @@
         "name": "input",
         "type": "file",
         "required": false,
-        "description": ""
+        "description": "Input CSV file. If not specified, reads from stdin."
       }
     ],
     "options": [
@@ -33,13 +33,13 @@
       {
         "flag": "--bivariate-stats",
         "type": "string",
-        "description": "",
+        "description": "Comma-separated list of bivariate statistics to compute. Options: pearson, spearman, kendall, covariance, mi (mutual information), nmi (normalized mutual information), u (Theil's directed uncertainty coefficient; emits u_field2_given_field1 and u_field1_given_field2) Use \"all\" to compute all statistics or \"fast\" to compute only pearson & covariance, which is much faster as it doesn't require storing all values and uses streaming algorithms.",
         "default": "fast"
       },
       {
         "flag": "--cardinality-threshold",
         "type": "string",
-        "description": ""
+        "description": "Skip mutual information (mi/nmi/u) for field pairs where either field's cardinality exceeds this threshold. Such pairs also skip building their joint-frequency table, which is the dominant memory cost of --bivariate-stats all. Defaults to half the row count, floored at 1000, so it stays inert on small inputs and scales with large ones. Mutual information between near-unique columns saturates at log(n) and is noise regardless of how efficiently it is computed."
       },
       {
         "flag": "--epsilon",
@@ -55,17 +55,17 @@
       {
         "flag": "--join-inputs",
         "type": "string",
-        "description": ""
+        "description": "Additional datasets to join. Comma-separated list of CSV files to join with the primary input. e.g.: --join-inputs customers.csv,products.csv"
       },
       {
         "flag": "--join-keys",
         "type": "string",
-        "description": ""
+        "description": "Join keys for each dataset. Comma-separated list of join key column names, one per dataset. Must specify same number of keys as datasets (primary + addl). e.g.: --join-keys customer_id,customer_id,product_id"
       },
       {
         "flag": "--join-type",
         "type": "string",
-        "description": "",
+        "description": "Join type when using --join-inputs. Valid values: inner, left, right, full",
         "default": "inner"
       },
       {
@@ -76,7 +76,7 @@
       {
         "flag": "--pct-thresholds",
         "type": "string",
-        "description": "Comma-separated percentile pair (e.g., \"10,90\") to use for winsorization/trimming when --use-percentiles is set. Both values must be between 0 and 100, and lower < upper.",
+        "description": "Comma-separated percentile pair (e.g., \"10,90\") to use for winsorization/trimming when --use-percentiles is set. Both values must truncate to whole percentiles between 1 and 100, and lower < upper. The thresholds are automatically merged into the --percentile-list of the stats run, and an existing stats CSV computed with a percentile list that lacks them is recomputed.",
         "default": "5,95"
       },
       {

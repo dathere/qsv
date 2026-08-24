@@ -30,16 +30,6 @@
     ],
     "options": [
       {
-        "flag": "---------------------------------------",
-        "type": "flag",
-        "description": ""
-      },
-      {
-        "flag": "-------------------------------------------------------",
-        "type": "flag",
-        "description": ""
-      },
-      {
         "flag": "--backtrack-limit",
         "type": "string",
         "description": "Set the approximate number of backtracking steps allowed. This is only used when --fancy-regex is set.",

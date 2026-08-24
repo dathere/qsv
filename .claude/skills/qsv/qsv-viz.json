@@ -42,7 +42,7 @@
         "name": "input",
         "type": "file",
         "required": true,
-        "description": ""
+        "description": "Input CSV file."
       }
     ],
     "options": [
@@ -121,7 +121,7 @@
       {
         "flag": "--denominator-unit",
         "type": "string",
-        "description": ""
+        "description": "Unit the denominator values are IN, so qsv can convert them and name them. Without this, an area denominator is divided in its raw unit and labelled with its raw field name — real boundary files carry land area in square METRES, which reads as \"per 100,000 AREALAND\" at approximately zero everywhere. One of: m2, km2 (also spelled m², km², sqm, sqkm). Values in m2 are converted to km², so the map reads \"per km²\". Never inferred from a field name; boundaries fetched by `--geojson auto` declare their own units and need no flag."
       },
       {
         "flag": "--density",
@@ -167,12 +167,12 @@
       {
         "flag": "--geocode-admin1",
         "type": "string",
-        "description": ""
+        "description": "Column holding each row's expected admin1 (state/province), either as a qualified Geonames code (US.AL) or a bare subdivision code (AL) qualified by the country. Narrows a place-name search within a country, for names that are ambiguous on their own (there are dozens of US Springfields). Spelled-out names are rejected: admin1 names are matched by prefix, so `AL` would silently accept Alaska. Valid only with a locations name column, not with lat/lon points."
       },
       {
         "flag": "--geocode-country",
         "type": "string",
-        "description": ""
+        "description": "Column holding each row's expected country, as an ISO-3166-1 alpha-2 code (e.g. US, GB, BR). Without it a place-name search spans every country, so US city names have resolved to Pakistan and the UK, and a point near a border takes the nearest FOREIGN place. Rows whose match falls outside the hint are counted and reported, never silently dropped. Country NAMES are not accepted, only codes. With location-mode usa-states the country defaults to `us`, so no hint is needed there. Applies to both geocode sources."
       },
       {
         "flag": "--geojson",

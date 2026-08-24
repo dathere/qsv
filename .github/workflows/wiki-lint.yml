@@ -17,9 +17,14 @@
 # exactly the generator's inputs (src/cmd/**, src/main.rs, docs/help/**), so the
 # check rides along for free rather than paying for a second 10-minute build.
 #
+# The same reasoning covers .claude/skills/qsv/*.json, generated from those same USAGE
+# strings by `qsv --update-mcp-skills` -- a flag the released binaries lack, since
+# publish.yml omits the `mcp` feature, but which this job's `-F all_features` build has.
+# See issue #4491.
+#
 # Triggers:
 #   - Nightly cron
-#   - PRs touching src/cmd/, src/main.rs, or docs/help/
+#   - PRs touching src/cmd/, src/main.rs, docs/help/, or .claude/skills/qsv/
 #   - Manual workflow_dispatch
 #
 # Nightly failures open (or comment on) a sticky issue tagged `wiki-lint`.
@@ -34,6 +39,9 @@ on:
       - 'src/cmd/**'
       - 'src/main.rs'
       - 'docs/help/**'
+      # Hand-editing a skill JSON is the other half of the drift surface: without this
+      # path, a PR that only touches one would never run the staleness check below.
+      - '.claude/skills/qsv/**'
       # README.md is a generator INPUT, not just an output: `--generate-help-md`
       # reads the command table for each command's description blurb, so a
       # README-only edit rewrites docs/help/*.md and TableOfContents.md.
@@ -126,6 +134,33 @@ jobs:
             exit 1
           fi
           echo "docs/help/ is in sync with the USAGE strings and the README command table."
+
+      # .claude/skills/qsv/*.json is GENERATED from the same USAGE strings, and nothing
+      # verified it: a clean `git status` proves only that nobody regenerated locally.
+      # Two descriptions (qsv-geocode's <index-file>, qsv-moarstats' --pct-thresholds)
+      # had silently drifted until #4488/PR #4490 regenerated and turned them up, so MCP
+      # agents were reading stale docs. tests/test_mcp_skills.rs catches an EMPTY
+      # description but cannot see a stale one -- that needs fresh generator output.
+      #
+      # Must run AFTER the docs/help check: `--update-mcp-skills` also invokes the help
+      # generator (src/main.rs), whose output is known clean by this point. The skills
+      # generator is byte-stable across runs on an unchanged tree.
+      - name: Generated MCP skill JSONs are up to date
+        run: |
+          qsv --update-mcp-skills
+          # Porcelain for the same reason as above, plus two specific to this generator:
+          # a newly registered command emits an UNTRACKED qsv-<cmd>.json, and the
+          # stale-file sweep DELETES retired ones. `git diff` reports neither.
+          drift="$(git status --porcelain -- .claude/skills/qsv)"
+          if [ -n "$drift" ]; then
+            echo "::error::.claude/skills/qsv/ is stale. A USAGE string or README table row changed without regenerating the MCP skills."
+            echo "Run 'qsv --update-mcp-skills' and commit the result. Never hand-edit .claude/skills/qsv/*.json."
+            echo "--- drift ---"
+            echo "$drift"
+            git --no-pager diff -- .claude/skills/qsv | head -200
+            exit 1
+          fi
+          echo ".claude/skills/qsv/ is in sync with the USAGE strings and the README command table."
 
       - name: Run wiki lint
         env:

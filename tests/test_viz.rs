@@ -16133,6 +16133,36 @@ fn viz_smart_dict_page_shares_the_dashboard_language() {
     );
 }
 
+// The default (no --title) dashboard title already ends in the "Data Schematic" brand, so the
+// standalone dictionary page must not prefix the brand again ("Data Schematic — x.csv — Data
+// Schematic"); a custom --title without the brand still gets the prefix. Both the page <title>
+// and the visible <h1> must agree.
+#[test]
+fn viz_smart_dict_page_title_is_not_double_branded() {
+    let wrk = Workdir::new("viz_smart_dict_page_title_is_not_double_branded");
+    dict_info_codes_csv(&wrk);
+    wrk.create_from_string("dict.schema.json", dict_info_schema());
+
+    let run = |title_args: &[&str]| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "codes.csv", "--dict-info", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .args(title_args);
+        let out = wrk.output(&mut cmd);
+        assert!(out.status.success());
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    let html = run(&[]);
+    assert!(html.contains("<title>codes.csv \u{2014} Data Schematic</title>"));
+    assert!(html.contains("<h1>codes.csv \u{2014} Data Schematic</h1>"));
+    assert!(!html.contains("Data Schematic \u{2014} codes.csv"));
+
+    let html = run(&["--title", "Service Requests"]);
+    assert!(html.contains("<title>Data Schematic \u{2014} Service Requests</title>"));
+    assert!(html.contains("<h1>Data Schematic \u{2014} Service Requests</h1>"));
+}
+
 #[test]
 fn viz_smart_language_flag_overrides_dictionary() {
     let wrk = Workdir::new("viz_smart_language_flag_overrides_dictionary");

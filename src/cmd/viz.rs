@@ -22488,7 +22488,7 @@ fn render_dict_page_html(
 <div class="qsv-dict-wrap qsv-dict-doc">
 <header class="qsv-dict-head">
 <a class="qsv-dict-back" href="#" onclick="var o=window.opener;if(o&&!o.closed){{try{{o.focus();}}catch(e){{}}}}window.close();return false">&#8592; {back_to_dashboard}</a>
-<h1>{dict_page_title} — {title}</h1>
+<h1>{doc_title}</h1>
 </header>
 {downloads}{intro}{toc_nav}{omissions}{sections}{provenance}</div>
 </body>

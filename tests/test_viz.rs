@@ -13138,8 +13138,8 @@ fn viz_smart_dict_info_grid_path() {
     );
     assert!(html.contains("qsvOpenDict"), "qsvOpenDict script missing");
     assert!(
-        html.contains(r#"Data Dictionary<svg class="qsv-link-icon""#),
-        "Data Dictionary link missing"
+        html.contains(r#"Data Schematic<svg class="qsv-link-icon""#),
+        "Data Schematic link missing"
     );
     // per-column anchors (stable prefix; the trailing hash is an implementation detail)
     assert!(
@@ -17063,9 +17063,11 @@ fn viz_smart_dict_info_localizes_an_early_refusal_from_the_dictionary_language()
         stderr.contains("columns exceeds the") && stderr.contains("-column cap"),
         "fixture should trip the bivariate column cap in smart_prepare, got: {stderr}"
     );
-    // the page is Spanish (proving the dictionary language won) ...
+    // the page is Spanish (proving the dictionary language won). NOTE: the drawer/page
+    // heading is the untranslated brand ("Data Schematic") in every locale, so it cannot
+    // serve as the language proof -- this asserts on the dict page's back link instead.
     assert!(
-        html.contains("Diccionario de datos"),
+        html.contains("Volver al panel"),
         "the dictionary language should drive the UI"
     );
     // ... and so is the refusal that fired BEFORE that language was known

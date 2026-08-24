@@ -782,7 +782,7 @@ smart options:
                            is used (it does not apply when reading an existing dictionary file).
                            Only affects `smart`.
     --dict-info            When a usable Data Dictionary is available (per --dictionary), add
-                           a "Data Dictionary" link beneath the Data Schematic title and an info
+                           a "Data Schematic" link beneath the page title and an info
                            icon on each panel title: hovering shows that column's dictionary
                            description; clicking opens a human-friendly rendering of the
                            dictionary in a side drawer NEXT TO the plots (embedded in the
@@ -12728,7 +12728,7 @@ const LINK_ON_DARK_HOVER: &str = "#9ecbff";
 /// stroked in `currentColor` so they re-theme with the link they sit in, and `aria-hidden` +
 /// `focusable="false"` so assistive tech announces just the link text.
 ///
-/// An open book — the "Data Dictionary" link.
+/// An open book — the "Data Schematic" link.
 const DICT_LINK_ICON: &str = r#"<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 4.3C6.9 3.3 5.4 2.8 3.6 2.8c-.6 0-1.1.05-1.5.15v9.6c.4-.1.9-.15 1.5-.15 1.8 0 3.3.5 4.4 1.5 1.1-1 2.6-1.5 4.4-1.5.6 0 1.1.05 1.5.15v-9.6c-.4-.1-.9-.15-1.5-.15-1.8 0-3.3.5-4.4 1.5Z"/><path d="M8 4.3v9.6"/></svg>"#;
 /// A spreadsheet grid — the "(Explore)"/"(Preview)" data-viewer link.
 const DATA_LINK_ICON: &str = r#"<svg class="qsv-link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.4"/><path d="M1.7 6.2h12.6M1.7 9.8h12.6M6.2 6.2v7.2M10.2 6.2v7.2"/></svg>"#;
@@ -14987,7 +14987,7 @@ fn smart_html_page(
     } else {
         String::new()
     };
-    // --dict-info chrome: the "Data Dictionary" link under the title (rendered whether or not the
+    // --dict-info chrome: the "Data Schematic" link under the title (rendered whether or not the
     // page shows an <h1>, since the typed-grid page bakes its title into the plot) plus the
     // embedded dictionary document + `qsvOpenDict` script. All empty when --dict-info is off, so
     // those dashboards stay byte-identical.

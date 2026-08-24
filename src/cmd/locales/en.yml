@@ -106,7 +106,7 @@ viz:
     unavailable_suffix: " - unavailable"
   dict:
     notable_characteristics: "Notable Characteristics"
-    title: "Data Dictionary"
+    title: "Data Schematic"
     open_own_tab: "Open in its own tab"
     close_esc: "Close (Esc)"
     field_type: "Type"
@@ -120,30 +120,30 @@ viz:
     field_examples: "Examples"
     role_unknown: "role unknown"
     grain: "Grain:"
-    export_tooltip: "Download this Data Dictionary as JSON Schema"
+    export_tooltip: "Download this Data Schematic as JSON Schema"
     export_label: "Export JSONSchema"
     export_short: "schema"
     view_chart: "View chart "
-    back_to_dashboard: "Back to Data Schematic"
+    back_to_dashboard: "Back to dashboard"
     # "Not charted" notes. `viz smart` explains its omissions on stderr; these put the same
     # explanation in the artifact, beside the column it is about. Each is recorded at the
     # decision (see `SkipReason`), never re-derived at render time.
     # skip_capped is a DIFFERENT CLAIM from the rest: that column WAS chartable and lost the
     # panel_interest ranking -- keep the two wordings distinct in every catalog.
-    skip_no_entry: "No dictionary entry for this column."
+    skip_no_entry: "No Data Schematic entry for this column."
     skip_all_empty: "Not charted - every value is empty."
     skip_near_unique_identifier: "Not charted - near-unique values, so this reads as an identifier rather than a distribution."
     skip_high_cardinality_text: "Not charted - high-cardinality text with no dominant categories."
     skip_measure_without_quartiles: "Not charted - no quartiles in the stats cache, so there is no distribution to draw."
     skip_constant_column: "Not charted - every row holds the same value."
-    skip_dictionary_excluded: "Not charted - the data dictionary marks this an identifier, PII or free text."
+    skip_dictionary_excluded: "Not charted - the Data Schematic marks this an identifier, PII or free text."
     # Deliberately NOT "shown in the time-series panel": the temporal route fires for EVERY date
     # column while only one is chosen as the time-series x-axis, so that phrasing would be false
     # on any dataset with more than one date column.
-    skip_routed_temporal: "Not charted as a distribution - the data dictionary routes this as a timestamp."
+    skip_routed_temporal: "Not charted as a distribution - the Data Schematic routes this as a timestamp."
     skip_time_axis: "Not charted as a distribution - it is the x-axis of the time-based panels."
     skip_projected_coord_on_map: "Not charted - these projected coordinates are already shown on the map."
-    skip_empty_dimension: "Not charted - the data dictionary calls this a dimension, but it has no values to count."
+    skip_empty_dimension: "Not charted - the Data Schematic calls this a dimension, but it has no values to count."
     skip_twin_of: "Not charted - duplicates %{q_kept}, which is charted instead."
     skip_capped: "Not shown - the panel limit (--max-charts) kept higher-interest panels."
     omissions_heading: "Panels not drawn"
@@ -188,7 +188,7 @@ viz:
     # (issue #4394). Unlike the --denominator-key FLAG (whose violations are hard
     # errors), a bad hint only costs the rate panel: the count panel still renders,
     # carrying its raw-count caveat. `q_reason` is an English clause from the code.
-    denominator_invalid: "the dictionary's x-qsv.denominator column '%{q_col}' cannot be used (%{q_reason}); charting raw counts instead."
+    denominator_invalid: "the Data Schematic's x-qsv.denominator column '%{q_col}' cannot be used (%{q_reason}); charting raw counts instead."
     # Some regions lacked a usable denominator, so the rate panel covers fewer
     # regions than the count panel beside it.
     denominator_excluded: "no usable denominator for %{q_n} of %{q_total} regions; they are omitted from the rate panel."

@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.3.1
+bm_version=9.4.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -861,11 +861,19 @@ run table "$qsv_bin" table "$data"
 run template "$qsv_bin" template --template-file template.tpl "$data" >/dev/null
 run template_lookup_outdir "$qsv_bin" template --template-file template-with-cb-lookup.tpl "$data" >/dev/null
 run to_xlsx "$qsv_bin" to xlsx benchmark_work.xlsx "$data"
-run to_sqlite "$qsv_bin" to sqlite benchmark_work.db "$data";rm benchmark_work.db
+# `to sqlite` ERRORS OUT if the target db already has the table, so the db must be
+# removed between hyperfine runs — otherwise only the first run does real work and the
+# rest measure an instant failure (masked by hyperfine's -i). We wrap in `bash -c` (the
+# extsort_csv pattern) so the rm runs INSIDE each timed run; its overhead is negligible
+# vs the multi-second conversion. (A bare `;rm` here would run once at queue time, not
+# between runs — that was the old bug.)
+run to_sqlite bash -c \'"$qsv_bin" to sqlite benchmark_work.db "$data"\; rm -f benchmark_work.db\'
 run to_datapackage "$qsv_bin" to datapackage benchmark_work.json "$data"
 # to_ods uses a 500k-row subset (ods_data.csv); the full dataset overflows the ODS 4GB
-# ZIP limit. See the ods_data.csv prep step above.
-run to_ods "$qsv_bin" to ods benchmark_work.ods ods_data.csv;rm benchmark_work.ods
+# ZIP limit. See the ods_data.csv prep step above. Unlike `to sqlite`, `to ods`
+# overwrites an existing output file cleanly, so no per-run cleanup is needed
+# (cleanup_files removes benchmark_work.* at the end).
+run to_ods "$qsv_bin" to ods benchmark_work.ods ods_data.csv
 run tojsonl "$qsv_bin" tojsonl "$data"
 run tojsonl_batchall "$qsv_bin" tojsonl --batch 0 "$data"
 run tojsonl_j1 "$qsv_bin" tojsonl -j 1 "$data"
@@ -1098,8 +1106,14 @@ cleanup_files
 # Finalize benchmark run info. Append the run info to results/run_info_history.csv
 # we use the TSV format as some of the data has commas/quotes/whitespace/semicolon, etc.
 
-# get the environment variables used by qsv
-qsv_envvars=$("$qsv_bin" --envlist)
+# get the environment variables used by qsv.
+# NOTE: `--envlist` prints VALUES too (e.g. `QSV_CENSUS_API_KEY: "..."`), and
+# run_info_history.tsv is committed & published (qsv.dathere.com/benchmarks and the
+# GitHub wiki), so we record only the variable NAMES. We also collapse the
+# potentially multi-line output to a single `;`-separated field so it cannot break
+# the one-row-per-run TSV format. (The "No qsv-relevant environment variables set."
+# message has no colon, so it passes through `cut` unchanged.)
+qsv_envvars=$("$qsv_bin" --envlist | cut -d: -f1 | paste -sd ';' -)
 
 elapsed=$SECONDS
 

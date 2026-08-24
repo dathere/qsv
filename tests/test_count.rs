@@ -687,3 +687,37 @@ fn count_quoted_double_newline_field() {
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "2");
 }
+
+// Regression coverage for the polars py-1.44.0 count fixes (commit 359cf3c8):
+// COUNT(*)'s dtype changed from u32 to i64, which made the old `u32()` read fail on
+// every count — so every unindexed `count --no-headers` fell back to the regular
+// reader (which already accounts for --no-headers) and then applied the polars-only
+// first-row +1 adjustment on top, returning N+1. The unindexed no-headers property
+// tests above are cfg'd out under the polars feature, so pin the behavior here.
+#[cfg(feature = "polars")]
+#[test]
+fn count_no_headers_polars_path_exact() {
+    let wrk = Workdir::new("count_no_headers_polars_path_exact");
+    wrk.create_from_string("in.csv", "1,2\n3,4\n5,6\n");
+
+    let mut cmd = wrk.command("count");
+    cmd.args(["--no-headers", "in.csv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "3");
+}
+
+// The same invariant through `polars_count_input`'s regular-reader fallback: a
+// trailing blank line deterministically routes through the blank-line-guard
+// fallback, whose count must be returned as-is — never with the polars-only
+// --no-headers +1 adjustment applied on top.
+#[cfg(feature = "polars")]
+#[test]
+fn count_no_headers_fallback_is_not_double_adjusted() {
+    let wrk = Workdir::new("count_no_headers_fallback_is_not_double_adjusted");
+    wrk.create_from_string("in.csv", "1,2\n3,4\n5,6\n\n");
+
+    let mut cmd = wrk.command("count");
+    cmd.args(["--no-headers", "in.csv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "3");
+}

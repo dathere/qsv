@@ -115,6 +115,8 @@ mod test_jsonl;
 mod test_log;
 #[cfg(feature = "luau")]
 mod test_luau;
+#[cfg(feature = "mcp")]
+mod test_mcp_skills;
 mod test_moarstats;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_partition;

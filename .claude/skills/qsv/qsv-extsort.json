@@ -10,13 +10,13 @@
         "name": "input",
         "type": "file",
         "required": false,
-        "description": ""
+        "description": "Input CSV file. If not specified, reads from stdin."
       },
       {
         "name": "output",
         "type": "string",
         "required": false,
-        "description": ""
+        "description": "Output CSV file. If not specified, writes to stdout."
       }
     ],
     "options": [

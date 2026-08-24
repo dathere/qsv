@@ -10,13 +10,13 @@
         "name": "input",
         "type": "file",
         "required": true,
-        "description": ""
+        "description": "Input CSV file."
       },
       {
         "name": "sql",
         "type": "string",
         "required": true,
-        "description": ""
+        "description": "The SQL query to execute, or the path to a file containing it."
       }
     ],
     "options": [

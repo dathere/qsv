@@ -46,7 +46,7 @@ datefmt arguments:
                                 See 'qsv select --help' for the format details.
 
     --formatstr=<string>        The date format to use for the datefmt operation.
-                                The date format to use. For formats, see
+                                For formats, see
                                 https://docs.rs/chrono/latest/chrono/format/strftime/
                                 Default to ISO 8601 / RFC 3339 date & time format -
                                 "%Y-%m-%dT%H:%M:%S%z" - e.g. 2001-07-08T00:34:60.026490+09:30

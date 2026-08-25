@@ -604,6 +604,20 @@ smart options:
                            proportion to rows x columns. Set to 0 to disable the data
                            viewer entirely (no link, no embedded data). Only affects
                            `smart` HTML output. [default: 50000]
+    --no-tour              Suppress the guided tour of `smart` HTML dashboards. By
+                           default every Data Schematic ships an interactive tour
+                           (auto-started the first time a reader opens the page, and
+                           relaunchable anytime from the "Tour" button) that walks
+                           through the Data Dictionary drawer, the data viewer and
+                           the summary panels, explaining why each chart was chosen
+                           for this data. A dictionary's dataset-level "x-qsv"
+                           "tour" object can refine the narration: its "overrides"
+                           map replaces step prose by step id, its "panels" map
+                           replaces per-panel explanations (keyed by raw field name,
+                           or by "@kind" tokens like "@kpi", "@correlation", "@map"
+                           for overview panels), and "panel_order" picks which
+                           panels the tour spotlights. Only affects `smart` HTML
+                           output.
     --heatmap-density <n>  For the `viz smart` map panel: at or above <n> mappable
                            points, draw the core as a density heatmap (DensityMap)
                            instead of markers. The heatmap keeps per-point hover
@@ -1866,6 +1880,7 @@ struct Args {
     flag_max_charts:         usize,
     flag_grid_cols:          usize,
     flag_preview_threshold:  usize,
+    flag_no_tour:            bool,
     flag_heatmap_density:    usize,
     flag_cluster:            String,
     flag_photos:             bool,
@@ -2230,6 +2245,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 dict_page,
                 metadata,
                 data_chrome,
+                tour_chrome,
             } => {
                 // HTML smart-grid is wrapped in qsv's own page so it gets the light/dark toggle;
                 // plotly's `to_html()` (used by the generic single-`Plot` path) has no injection
@@ -2242,6 +2258,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         dict_page.as_deref(),
                         metadata.as_deref(),
                         data_chrome.as_deref(),
+                        tour_chrome.as_deref(),
                     );
                     progress.finish_and_clear();
                     return output_inline_html(&html, &args);
@@ -2302,6 +2319,8 @@ enum SmartRender {
         metadata:    Option<String>,
         /// The data viewer drawer chrome (issue #4283; HTML output only).
         data_chrome: Option<String>,
+        /// The guided-tour chrome (issue #4389; HTML output only, `None` under `--no-tour`).
+        tour_chrome: Option<String>,
     },
     /// A fully-assembled Plotly JSON value (data + layout). Used only for static image export of
     /// more than `MAX_SUBPLOTS` panels: the layout carries `xaxis9+`/`yaxis9+`, which the typed
@@ -12609,12 +12628,18 @@ const THIRD_PARTY_NOTICES_URL: &str =
 /// This matters because the embedded plotly.js and DataTables payloads are gzipped: their own
 /// copyright banners survive inside the payload but are not human-readable in the delivered
 /// artifact. This comment (and `third_party_footer`) restore that visibility.
-fn third_party_comment(datatables: bool, basemap: bool) -> String {
+fn third_party_comment(datatables: bool, driverjs: bool, basemap: bool) -> String {
     let datatables_line = if datatables {
         "\n     DataTables 3.0.1 + Buttons/ColumnControl/DateTime/SearchBuilder\n       (c) \
          SpryMedia Ltd - MIT"
     } else {
         ""
+    };
+    // the guided-tour engine (issue #4389); embedded whenever the tour chrome is
+    let driverjs_line = if driverjs {
+        format!("\n     driver.js {DRIVERJS_CDN_VERSION} - (c) Kamran Ahmed - MIT")
+    } else {
+        String::new()
     };
     let basemap_line = if basemap {
         "\n     Basemap tiles (c) OpenStreetMap contributors (ODbL 1.0), (c) CARTO"
@@ -12624,8 +12649,8 @@ fn third_party_comment(datatables: bool, basemap: bool) -> String {
     format!(
         "<!-- Third-party software used by this page:\n     plotly.js {PLOTLY_CDN_VERSION} - (c) \
          2012-2026 Plotly, Inc. - MIT\n       (bundles MapLibre GL JS - \
-         BSD-3-Clause){datatables_line}{basemap_line}\n     Full texts: {THIRD_PARTY_NOTICES_URL} \
-         -->"
+         BSD-3-Clause){datatables_line}{driverjs_line}{basemap_line}\n     Full texts: \
+         {THIRD_PARTY_NOTICES_URL} -->"
     )
 }
 
@@ -12636,7 +12661,7 @@ fn third_party_comment(datatables: bool, basemap: bool) -> String {
 /// panel, so the ODbL/CARTO obligation is already discharged *inside the map*, where it belongs.
 /// Repeating it down in the footer was pure duplication. The machine-readable
 /// `third_party_comment` still names the tile sources unconditionally.
-fn third_party_footer(datatables: bool) -> String {
+fn third_party_footer(datatables: bool, driverjs: bool) -> String {
     // Only the label words are translatable; the anchors stay in Rust so no markup (and no
     // escaping question) enters the locale files. "(MIT)" is a licence identifier, not prose.
     let mut parts = vec![format!(
@@ -12647,6 +12672,12 @@ fn third_party_footer(datatables: bool) -> String {
         parts.push(format!(
             r#"{} <a href="https://datatables.net/" target="_blank" rel="noopener">DataTables</a> (MIT)"#,
             t!("viz.chrome.credits_table")
+        ));
+    }
+    if driverjs {
+        parts.push(format!(
+            r#"{} <a href="https://driverjs.com/" target="_blank" rel="noopener">driver.js</a> (MIT)"#,
+            t!("viz.chrome.credits_tour")
         ));
     }
     format!(
@@ -12699,14 +12730,14 @@ fn inject_third_party_notice(doc: &str, datatables: bool, basemap: bool) -> Stri
         let at = pos + "<!doctype html>".len();
         out.insert_str(
             at,
-            &format!("\n{}", third_party_comment(datatables, basemap)),
+            &format!("\n{}", third_party_comment(datatables, false, basemap)),
         );
     }
     if let Some(pos) = out.rfind("</body>") {
         let block = format!(
             "<style>\n{}\n</style>\n{}\n",
             third_party_footer_style(),
-            third_party_footer(datatables)
+            third_party_footer(datatables, false)
         );
         out.insert_str(pos, &block);
     }
@@ -14934,6 +14965,9 @@ const CHORO_FILTER_CHROME: &str = r##"<script>
 </script>
 "##;
 
+// every param is one optional chrome slot; bundling them into a struct would just relocate the
+// same thirteen names
+#[allow(clippy::too_many_arguments)]
 fn smart_html_page(
     title_text: &str,
     theme: Option<BuiltinTheme>,
@@ -14954,6 +14988,10 @@ fn smart_html_page(
     // CSV region column, so the region-click -> data-viewer SearchBuilder filter is worth
     // emitting. Still gated on the drawer actually being present (see `choro_filter_chrome`).
     choro_filter: Option<&RegionFilter>,
+    // The guided-tour chrome (issue #4389): the vendored driver.js block + resolved step config
+    // + engine script. `None` under `--no-tour` (and on non-HTML paths), keeping those pages
+    // byte-identical.
+    tour_chrome: Option<&str>,
 ) -> String {
     let js = plotly_js_block();
     let meta_table = meta_table.unwrap_or("");
@@ -14963,9 +15001,14 @@ fn smart_html_page(
     // Attribution for the embedded plotly.js / DataTables / basemap tiles. `data_chrome` being
     // non-empty is exactly the condition under which the DataTables bundle is embedded, so it
     // doubles as the "is DataTables in this file" test.
-    let tp_comment = third_party_comment(!data_chrome.is_empty(), has_basemap);
+    let tour_chrome = tour_chrome.unwrap_or("");
+    let tp_comment = third_party_comment(
+        !data_chrome.is_empty(),
+        !tour_chrome.is_empty(),
+        has_basemap,
+    );
     let tp_style = third_party_footer_style();
-    let tp_footer = third_party_footer(!data_chrome.is_empty());
+    let tp_footer = third_party_footer(!data_chrome.is_empty(), !tour_chrome.is_empty());
     let title = html_escape(title_text);
     let ToggleChrome {
         style: toggle_style,
@@ -15114,6 +15157,7 @@ fn smart_html_page(
 {photo_chrome}
 {map_select_chrome}
 {choro_filter_chrome}
+{tour_chrome}
 {script}
 <div class="qsv-page-foot">{tp_footer}<div class="qsv-page-foot-right">{button}{logo}</div></div>
 </body>
@@ -15641,6 +15685,826 @@ fn datatables_lib_block() -> String {
          id=\"qsv-data-css\">{DATATABLES_CSS}</style>"
     )
 }
+
+/// Vendored driver.js bundle (the guided-tour engine behind the Data Schematic Tour, issue
+/// #4389). MIT licensed (Copyright (c) Kamran Ahmed) — the full license text lives in
+/// `assets/LICENSE-Driverjs.txt`. Zero-dependency vanilla IIFE build (exposes
+/// `window.driver.js.driver`). To rebuild or bump, fetch the version `DRIVERJS_CDN_VERSION`
+/// pins:
+///
+/// ```text
+/// curl -sSL -o src/cmd/assets/driverjs.min.js \
+///   https://cdn.jsdelivr.net/npm/driver.js@<VER>/dist/driver.js.iife.js
+/// curl -sSL -o src/cmd/assets/driverjs.min.css \
+///   https://cdn.jsdelivr.net/npm/driver.js@<VER>/dist/driver.css
+/// echo "sha384-$(openssl dgst -sha384 -binary src/cmd/assets/driverjs.min.js | openssl base64 -A)"
+/// echo "sha384-$(openssl dgst -sha384 -binary src/cmd/assets/driverjs.min.css | openssl base64 -A)"
+/// ```
+///
+/// The CDN serves exactly these vendored bytes at the version-pinned (immutable) URL, so the
+/// vendored files are a local oracle for the SRI digests (see
+/// `driverjs_cdn_sri_matches_the_vendored_bundle`).
+const DRIVERJS_JS: &str = include_str!("assets/driverjs.min.js");
+const DRIVERJS_CSS: &str = include_str!("assets/driverjs.min.css");
+const DRIVERJS_CDN_VERSION: &str = "1.8.0";
+const DRIVERJS_CDN_JS_SRI: &str =
+    "sha384-ZD4UAn12lO2plEJ4lonOHO0fRSCgq0VAuoDx6/rglijDjzDYIXgCexIVu3PFJpJf";
+const DRIVERJS_CDN_CSS_SRI: &str =
+    "sha384-XUGWln86d3kDvw/W1Qbii8QQyeWs2LcFYfGhYrmSZ0ZiXxowttKpfdhPdLE+WMFx";
+
+/// The driver.js bundle gzipped at max compression + base64 (~25 KB -> ~9 KB b64), computed
+/// once per process like `DATATABLES_GZ_B64`. Empty on (never-expected) gzip failure — callers
+/// then emit the plain bundle.
+static DRIVERJS_GZ_B64: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| gzip_b64(DRIVERJS_JS.as_bytes(), flate2::Compression::best()));
+
+/// Like `DRIVERJS_GZ_B64` but for the stylesheet (~3 KB -> ~1.3 KB b64).
+static DRIVERJS_CSS_GZ_B64: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| gzip_b64(DRIVERJS_CSS.as_bytes(), flate2::Compression::best()));
+
+/// The driver.js library block for the Data Schematic Tour: under `QSV_VIZ_CDN` version-pinned
+/// `<link>`/`<script src>` tags with Subresource Integrity; under `QSV_VIZ_NO_COMPRESS` (or on
+/// gzip failure) the plain inline bundle; otherwise gzip+base64 payload tags that `TOUR_SCRIPT`
+/// inflates lazily on first tour start (zero page-load cost, and the library never executes
+/// unless the tour actually runs).
+///
+/// The payload elements mirror `datatables_lib_block`'s and are dispatched on by id + shape in
+/// `TOUR_SCRIPT`: `#qsv-tour-lib` is a `<script>` holding either gzip-b64 or plain JS source
+/// (by `type`), and `#qsv-tour-css` is either a real `<style>` (already applied, nothing to do)
+/// or a gzip-b64 `<script>` to inflate into one. In CDN mode neither payload element exists and
+/// `window.driver` is already installed by the `<script src>` tag.
+fn driverjs_lib_block() -> String {
+    if viz_cdn() {
+        return format!(
+            "<link rel=\"stylesheet\" \
+             href=\"https://cdn.jsdelivr.net/npm/driver.js@{DRIVERJS_CDN_VERSION}/dist/driver.\
+             css\" integrity=\"{DRIVERJS_CDN_CSS_SRI}\" crossorigin=\"anonymous\">\n<script \
+             src=\"https://cdn.jsdelivr.net/npm/driver.js@{DRIVERJS_CDN_VERSION}/dist/driver.js.\
+             iife.js\" integrity=\"{DRIVERJS_CDN_JS_SRI}\" crossorigin=\"anonymous\"></script>"
+        );
+    }
+    if viz_compress() {
+        let js_b64 = DRIVERJS_GZ_B64.as_str();
+        let css_b64 = DRIVERJS_CSS_GZ_B64.as_str();
+        if !js_b64.is_empty() && !css_b64.is_empty() {
+            return format!(
+                "<script id=\"qsv-tour-lib\" \
+                 type=\"application/gzip-b64\">{js_b64}</script>\n<script id=\"qsv-tour-css\" \
+                 type=\"application/gzip-b64\">{css_b64}</script>"
+            );
+        }
+    }
+    // vendored bundle contains no `</script>`/`</style>` (asserted by unit tests), so plain
+    // inline embedding needs no escaping
+    format!(
+        "<script id=\"qsv-tour-lib\" type=\"text/javascript\">{DRIVERJS_JS}</script>\n<style \
+         id=\"qsv-tour-css\">{DRIVERJS_CSS}</style>"
+    )
+}
+
+/// Cap on the number of per-panel spotlight steps in the guided tour. The dictionary's
+/// `x-qsv.tour.panel_order` can select any panels it likes but is capped to the same budget —
+/// a tour that walks all 40 panels of a wide Data Schematic stops being a tour.
+const TOUR_MAX_PANEL_STEPS: usize = 6;
+
+/// The stable `@kind` token an OVERVIEW panel is keyed by in `x-qsv.tour.panels` /
+/// `panel_order`. `None` for the per-column distribution kinds, which are keyed by their RAW
+/// field name instead (rejoined via `Panel::stat_idx` — never the decorated display title).
+/// These tokens are a public contract (documented in the USAGE text and consumed by
+/// agent-authored tours), so renaming one is a breaking change.
+fn tour_overview_key(kind: &PanelKind) -> Option<&'static str> {
+    match kind {
+        PanelKind::KpiRow { .. } => Some("@kpi"),
+        PanelKind::CorrHeatmap { .. } => Some("@correlation"),
+        PanelKind::AssocHeatmap { .. } => Some("@association"),
+        PanelKind::TopRelationships { .. } => Some("@relationships"),
+        PanelKind::ScatterPair { .. } => Some("@scatter"),
+        PanelKind::ContourPair { .. } => Some("@contour"),
+        PanelKind::Scatter3D { .. } => Some("@scatter3d"),
+        PanelKind::Lorenz { .. } => Some("@lorenz"),
+        PanelKind::Funnel { .. } => Some("@funnel"),
+        PanelKind::MeasureByDim { .. } => Some("@measure_by_dim"),
+        PanelKind::GroupedViolin { .. } => Some("@grouped_violin"),
+        PanelKind::CyclicProfile { .. } => Some("@cyclic"),
+        PanelKind::TimeSeries { .. } => Some("@timeseries"),
+        PanelKind::AnimatedScatterPair { .. } => Some("@animated_scatter"),
+        PanelKind::AnimatedGeo { .. } => Some("@animated_geo"),
+        PanelKind::AnimatedBubble { .. } => Some("@animated_bubble"),
+        PanelKind::Map { .. } | PanelKind::Geo { .. } => Some("@map"),
+        PanelKind::Choropleth { .. } | PanelKind::ChoroplethMap { .. } => Some("@choropleth"),
+        PanelKind::Hierarchy { .. } => Some("@hierarchy"),
+        PanelKind::Sankey { .. } => Some("@sankey"),
+        PanelKind::Parcats { .. } => Some("@parcats"),
+        PanelKind::BoxStats { .. }
+        | PanelKind::BoxRaw { .. }
+        | PanelKind::BoxOutliers { .. }
+        | PanelKind::Violin { .. }
+        | PanelKind::FreqBar { .. }
+        | PanelKind::Histogram { .. } => None,
+    }
+}
+
+/// The key a panel is addressed by in `x-qsv.tour.panels` / `panel_order`: the `@kind` token
+/// for overview panels, the RAW field name (via `Panel::stat_idx`) for per-column ones. Falls
+/// back to the display name only when a per-column panel somehow carries no `stat_idx`.
+fn tour_panel_key(panel: &Panel, stats: &[crate::cmd::stats::StatsData]) -> String {
+    if let Some(k) = tour_overview_key(&panel.kind) {
+        return k.to_string();
+    }
+    panel
+        .stat_idx
+        .and_then(|i| stats.get(i))
+        .map_or_else(|| panel.name.clone(), |s| s.field.clone())
+}
+
+/// The deterministic DRAFT explanation of why a panel was chosen — assembled from the concrete
+/// signals recorded on the panel at classification time (kind, cardinality, correlation pair,
+/// Gini, point count), never boilerplate. A dictionary's `x-qsv.tour.panels` entry overrides
+/// this wholesale when its language matches the UI locale (see `build_tour_chrome`).
+///
+/// Every `t!` key is a LITERAL spelled out per arm —
+/// `every_t_key_used_in_this_file_exists_in_the_catalog` bans computed keys (same discipline as
+/// `localize_skip_reason`).
+#[inline(never)]
+fn tour_panel_explanation(panel: &Panel, stats: &[crate::cmd::stats::StatsData]) -> String {
+    let col = || {
+        panel
+            .stat_idx
+            .and_then(|i| stats.get(i))
+            .map_or_else(|| panel.name.clone(), |s| s.field.clone())
+    };
+    let mut out = match &panel.kind {
+        PanelKind::KpiRow { .. } => t!("viz.tour.explain.kpi").into_owned(),
+        PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } => {
+            t!("viz.tour.explain.box", q_col = col()).into_owned()
+        },
+        PanelKind::BoxOutliers { .. } => {
+            t!("viz.tour.explain.box_outliers", q_col = col()).into_owned()
+        },
+        PanelKind::Violin { .. } => t!("viz.tour.explain.violin", q_col = col()).into_owned(),
+        PanelKind::FreqBar { .. } => {
+            let n = panel
+                .stat_idx
+                .and_then(|i| stats.get(i))
+                .map_or(0, |s| s.cardinality);
+            t!("viz.tour.explain.freq", q_col = col(), q_n = n).into_owned()
+        },
+        PanelKind::Histogram { .. } => t!("viz.tour.explain.histogram", q_col = col()).into_owned(),
+        PanelKind::TimeSeries { y_label, .. } => {
+            t!("viz.tour.explain.timeseries", q_y = y_label).into_owned()
+        },
+        PanelKind::CyclicProfile { .. } => t!("viz.tour.explain.cyclic").into_owned(),
+        PanelKind::CorrHeatmap { labels, .. } => {
+            t!("viz.tour.explain.corr", q_n = labels.len()).into_owned()
+        },
+        PanelKind::AssocHeatmap { .. } => t!("viz.tour.explain.assoc").into_owned(),
+        PanelKind::TopRelationships { .. } => t!("viz.tour.explain.relationships").into_owned(),
+        PanelKind::ScatterPair {
+            x_label, y_label, ..
+        } => t!("viz.tour.explain.scatter", q_x = x_label, q_y = y_label).into_owned(),
+        PanelKind::ContourPair {
+            x_label, y_label, ..
+        } => t!("viz.tour.explain.contour", q_x = x_label, q_y = y_label).into_owned(),
+        PanelKind::Scatter3D { .. } => t!("viz.tour.explain.scatter3d").into_owned(),
+        PanelKind::Lorenz { gini, label, .. } => t!(
+            "viz.tour.explain.lorenz",
+            q_col = label,
+            q_gini = format!("{gini:.2}")
+        )
+        .into_owned(),
+        PanelKind::Funnel { .. } => t!("viz.tour.explain.funnel").into_owned(),
+        PanelKind::MeasureByDim { .. } => t!("viz.tour.explain.measure_by_dim").into_owned(),
+        PanelKind::GroupedViolin { .. } => t!("viz.tour.explain.grouped_violin").into_owned(),
+        PanelKind::Map {
+            lats, outlier_lats, ..
+        } => t!(
+            "viz.tour.explain.map",
+            q_n = lats.len() + outlier_lats.len()
+        )
+        .into_owned(),
+        PanelKind::Geo {
+            lats, outlier_lats, ..
+        } => t!(
+            "viz.tour.explain.map",
+            q_n = lats.len() + outlier_lats.len()
+        )
+        .into_owned(),
+        PanelKind::Choropleth { .. } | PanelKind::ChoroplethMap { .. } => {
+            t!("viz.tour.explain.choropleth").into_owned()
+        },
+        PanelKind::Hierarchy { .. } => t!("viz.tour.explain.hierarchy").into_owned(),
+        PanelKind::Sankey { .. } => t!("viz.tour.explain.sankey").into_owned(),
+        PanelKind::Parcats { .. } => t!("viz.tour.explain.parcats").into_owned(),
+        PanelKind::AnimatedScatterPair { .. } => {
+            t!("viz.tour.explain.animated_scatter").into_owned()
+        },
+        PanelKind::AnimatedGeo { .. } => t!("viz.tour.explain.animated_geo").into_owned(),
+        PanelKind::AnimatedBubble { .. } => t!("viz.tour.explain.animated_bubble").into_owned(),
+    };
+    if panel.value_log {
+        out.push(' ');
+        out.push_str(&t!("viz.tour.explain.log_axis"));
+    }
+    if let PanelKind::Violin { sample_stride, .. } = &panel.kind
+        && *sample_stride > 1
+    {
+        out.push(' ');
+        out.push_str(&t!("viz.tour.explain.sampled"));
+    }
+    out
+}
+
+/// Which panels get spotlight steps, in order. `x-qsv.tour.panel_order` wins when present
+/// (unknown keys ignored; each key claims the FIRST matching panel); otherwise the KPI row,
+/// then the first overview panel of each distinct kind, then the highest-`interest` per-column
+/// panels, in document order for ties — capped at `TOUR_MAX_PANEL_STEPS` either way.
+fn tour_panel_selection(
+    panels: &[Panel],
+    stats: &[crate::cmd::stats::StatsData],
+    spec: Option<&TourSpec>,
+) -> Vec<usize> {
+    if let Some(order) = spec.and_then(|s| s.panel_order.as_ref()) {
+        let mut picked = Vec::new();
+        for key in order {
+            if let Some(idx) = panels.iter().position(|p| tour_panel_key(p, stats) == *key)
+                && !picked.contains(&idx)
+            {
+                picked.push(idx);
+                if picked.len() == TOUR_MAX_PANEL_STEPS {
+                    break;
+                }
+            }
+        }
+        if !picked.is_empty() {
+            return picked;
+        }
+    }
+    let mut picked = Vec::new();
+    let mut seen_kinds: Vec<&'static str> = Vec::new();
+    for (idx, p) in panels.iter().enumerate() {
+        if let Some(k) = tour_overview_key(&p.kind)
+            && !seen_kinds.contains(&k)
+        {
+            seen_kinds.push(k);
+            picked.push(idx);
+        }
+    }
+    // top per-column panels by interest, document order for ties (stable sort on a stable key)
+    let mut per_col: Vec<usize> = panels
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| tour_overview_key(&p.kind).is_none())
+        .map(|(i, _)| i)
+        .collect();
+    per_col.sort_by(|a, b| {
+        panels[*b]
+            .interest
+            .partial_cmp(&panels[*a].interest)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    picked.extend(per_col.into_iter().take(3));
+    picked.truncate(TOUR_MAX_PANEL_STEPS);
+    picked.sort_unstable();
+    picked
+}
+
+/// Whether an `x-qsv.tour`'s prose may override the localized drafts: its declared `language`
+/// must prefix-match the active UI locale (case-insensitively, "pt" matches "pt-BR"). A tour
+/// with NO declared language is treated as English — describegpt's default output language.
+fn tour_spec_language_matches(spec: &TourSpec) -> bool {
+    let authored = spec.language.as_deref().unwrap_or("en");
+    let ui = viz_i18n::active_locale().bcp47;
+    let authored_primary = authored.split('-').next().unwrap_or(authored);
+    let ui_primary = ui.split('-').next().unwrap_or(ui);
+    authored_primary.eq_ignore_ascii_case(ui_primary)
+}
+
+/// How the tour's panel steps anchor: the inline-div grid has a real `#qsv-viz-panel-{n}` DOM
+/// element per panel; the typed single-`Plot` grid has none, so each panel step instead carries
+/// its paper-coordinate domain (from `smart_grid_layout` — exact, server-side, no client
+/// `_fullLayout` archaeology) and `TOUR_SCRIPT` positions a transparent anchor div over it.
+enum TourPanelTargets {
+    Inline,
+    Typed(Vec<SubplotGeometry>),
+}
+
+/// Assemble the guided-tour chrome (issue #4389): the vendored driver.js library block, the
+/// `#qsv-tour-config` JSON payload of fully-resolved localized steps, and the `TOUR_SCRIPT`
+/// engine. Returns `None` under `--no-tour`. All prose (drafts and `x-qsv.tour` overrides
+/// alike) is HTML-escaped exactly once HERE — the popover renders description as HTML, so this
+/// sink is where plain text becomes safe markup (newlines become `<br>` client-side).
+///
+/// Its own `#[inline(never)]` fn: HTML assembly with many locals must not pile onto a caller's
+/// stack frame (Windows' 1 MB main-thread stack, issue #4328).
+#[inline(never)]
+fn build_tour_chrome(
+    no_tour: bool,
+    panels: &[Panel],
+    stats: &[crate::cmd::stats::StatsData],
+    dict: Option<&DictData>,
+    has_dict_page: bool,
+    has_data_drawer: bool,
+    title_text: &str,
+    targets: &TourPanelTargets,
+) -> Option<String> {
+    if no_tour {
+        return None;
+    }
+    let spec = dict.and_then(|d| d.tour.as_ref());
+    let spec_prose = spec.filter(|s| tour_spec_language_matches(s));
+    // step body: the x-qsv.tour override when present (in a matching language), else the
+    // localized draft. Escaped once here (the popover sink renders HTML).
+    let body = |id: &str, draft: String| -> String {
+        let text = spec_prose
+            .and_then(|s| s.overrides.get(id))
+            .map_or(draft, Clone::clone);
+        html_escape(&text)
+    };
+    let mut steps: Vec<serde_json::Value> = Vec::new();
+    steps.push(serde_json::json!({
+        "id": "intro",
+        "title": html_escape(&t!("viz.tour.intro_title")),
+        "body": body("intro", t!("viz.tour.intro_body", q_title = title_text).into_owned()),
+    }));
+    if has_dict_page {
+        for (id, target, title, draft) in [
+            (
+                "dict-open",
+                "#qsv-dict-drawer",
+                t!("viz.tour.dict_open_title"),
+                t!("viz.tour.dict_open_body"),
+            ),
+            (
+                "dict-downloads",
+                "#qsv-dict-drawer .qsv-dict-downloads",
+                t!("viz.tour.dict_downloads_title"),
+                t!("viz.tour.dict_downloads_body"),
+            ),
+            (
+                "dict-roles",
+                "#qsv-dict-drawer .qsv-dict-chip",
+                t!("viz.tour.dict_roles_title"),
+                t!("viz.tour.dict_roles_body"),
+            ),
+            (
+                "dict-fields",
+                "#qsv-dict-drawer .qsv-dict-col",
+                t!("viz.tour.dict_fields_title"),
+                t!("viz.tour.dict_fields_body"),
+            ),
+            (
+                "dict-omissions",
+                "#qsv-dict-drawer .qsv-dict-omissions",
+                t!("viz.tour.dict_omissions_title"),
+                t!("viz.tour.dict_omissions_body"),
+            ),
+        ] {
+            steps.push(serde_json::json!({
+                "id": id,
+                "open": "qsvOpenDict",
+                "close": "qsvCloseDict",
+                "wait": "#qsv-dict-drawer",
+                "target": target,
+                "title": html_escape(&title),
+                "body": body(id, draft.into_owned()),
+            }));
+        }
+    }
+    if has_data_drawer {
+        for (id, target, title, draft) in [
+            (
+                "data-open",
+                "#qsv-data-drawer",
+                t!("viz.tour.data_open_title"),
+                t!("viz.tour.data_open_body"),
+            ),
+            (
+                "data-filter",
+                "#qsv-data-drawer div.dt-buttons button",
+                t!("viz.tour.data_filter_title"),
+                t!("viz.tour.data_filter_body"),
+            ),
+            (
+                "data-search",
+                "#qsv-data-drawer div.dt-search input",
+                t!("viz.tour.data_search_title"),
+                t!("viz.tour.data_search_body"),
+            ),
+            (
+                "data-colsearch",
+                "#qsv-data-drawer thead tr:nth-child(2)",
+                t!("viz.tour.data_colsearch_title"),
+                t!("viz.tour.data_colsearch_body"),
+            ),
+            (
+                "data-export",
+                "#qsv-data-drawer button.buttons-csv",
+                t!("viz.tour.data_export_title"),
+                t!("viz.tour.data_export_body"),
+            ),
+        ] {
+            steps.push(serde_json::json!({
+                "id": id,
+                "open": "qsvOpenData",
+                "close": "qsvCloseData",
+                // the drawer inflates + initializes DataTables on first open; only the
+                // .dt-container marks it actually ready
+                "wait": "#qsv-data-drawer div.dt-container",
+                "target": target,
+                "title": html_escape(&title),
+                "body": body(id, draft.into_owned()),
+            }));
+        }
+    }
+    steps.push(serde_json::json!({
+        "id": "panels-intro",
+        "target": "div.qsv-viz-grid",
+        "title": html_escape(&t!("viz.tour.panels_intro_title")),
+        "body": body("panels-intro", t!("viz.tour.panels_intro_body").into_owned()),
+    }));
+    for idx in tour_panel_selection(panels, stats, spec) {
+        let panel = &panels[idx];
+        let key = tour_panel_key(panel, stats);
+        let explanation = spec_prose
+            .and_then(|s| s.panels.get(&key))
+            .map_or_else(|| tour_panel_explanation(panel, stats), Clone::clone);
+        let mut step = serde_json::json!({
+            "id": "panel",
+            "title": html_escape(&panel.name),
+            "body": html_escape(&explanation),
+        });
+        match targets {
+            TourPanelTargets::Inline => {
+                step["target"] = serde_json::json!(format!("#qsv-viz-panel-{idx}"));
+            },
+            TourPanelTargets::Typed(geoms) => {
+                if let Some(g) = geoms.get(idx) {
+                    let (x0, x1) = (
+                        g.x_domain.first().copied().unwrap_or(0.0),
+                        g.x_domain.get(1).copied().unwrap_or(1.0),
+                    );
+                    let (y0, y1) = (
+                        g.y_domain.first().copied().unwrap_or(0.0),
+                        g.y_domain.get(1).copied().unwrap_or(1.0),
+                    );
+                    step["domain"] = serde_json::json!([x0, x1, y0, y1]);
+                }
+            },
+        }
+        steps.push(step);
+    }
+    steps.push(serde_json::json!({
+        "id": "conclusion",
+        "title": html_escape(&t!("viz.tour.conclusion_title")),
+        "body": body("conclusion", t!("viz.tour.conclusion_body").into_owned()),
+    }));
+    // Page-scoped first-run key: title + the panel key set, so two Data Schematics sharing a
+    // title (same basename, different directories) don't suppress each other's first tour,
+    // while a regenerated page for the same dataset still counts as seen.
+    let mut key_src = String::from(title_text);
+    for p in panels {
+        key_src.push('\n');
+        key_src.push_str(&tour_panel_key(p, stats));
+    }
+    let config = serde_json::json!({
+        "key": dict_short_hash(&key_src),
+        "steps": steps,
+    });
+    // `</` must not appear inside a <script> payload (it would terminate the tag mid-JSON);
+    // serde_json never escapes it, so do it here — JSON string escaping makes `<\/` read back
+    // as `</`.
+    let config_json = serde_json::to_string(&config)
+        .unwrap_or_default()
+        .replace("</", "<\\/");
+    let mut out = String::with_capacity(config_json.len() + 4096);
+    out.push_str(&driverjs_lib_block());
+    out.push('\n');
+    out.push_str("<script type=\"application/json\" id=\"qsv-tour-config\">");
+    out.push_str(&config_json);
+    out.push_str("</script>\n");
+    out.push_str(&tour_script());
+    out.push('\n');
+    Some(out)
+}
+
+/// Localize `TOUR_SCRIPT`'s chrome. The button label/aria are HTML written inside JS strings
+/// ([`html_in_js_text`]); the driver.js button texts and progress template are JS-value
+/// positions ([`js_string_literal`]) that driver renders as HTML (so the catalog may use
+/// `&rarr;` entities).
+fn tour_script() -> String {
+    // The gz inflate routine is substituted ONLY when the library block actually emitted gz
+    // payloads (same condition as `driverjs_lib_block`'s middle branch). CDN and plain pages get
+    // an inert rejection instead, so they carry no gz machinery — `ensureLib`'s first check
+    // already resolved on them (the library installed at load).
+    let gz_loader = if !viz_cdn()
+        && viz_compress()
+        && !DRIVERJS_GZ_B64.is_empty()
+        && !DRIVERJS_CSS_GZ_B64.is_empty()
+    {
+        r#"(function () {
+      var lib = document.getElementById("qsv-tour-lib");
+      var css = document.getElementById("qsv-tour-css");
+      if (!lib || !window.__qsvGunzip) return Promise.reject(new Error("tour lib missing"));
+      var jobs = [window.__qsvGunzip(lib).then(function (src) { (0, eval)(src); })];
+      if (css) {
+        jobs.push(window.__qsvGunzip(css).then(function (src) {
+          var st = document.createElement("style");
+          st.id = "qsv-tour-css-inflated";
+          st.textContent = src;
+          document.head.appendChild(st);
+        }));
+      }
+      return Promise.all(jobs);
+    })()"#
+    } else {
+        r#"Promise.reject(new Error("tour lib missing"))"#
+    };
+    TOUR_SCRIPT
+        .replace("__QSVTOURGZLOADER__", gz_loader)
+        .replace(
+            "__QSVI18N_TOUR_BUTTON__",
+            &html_in_js_text(&t!("viz.tour.button")),
+        )
+        .replace(
+            "__QSVI18N_TOUR_BUTTON_ARIA__",
+            &js_string_literal(&t!("viz.tour.button_aria")),
+        )
+        .replace(
+            "__QSVI18N_TOUR_NEXT__",
+            &js_string_literal(&t!("viz.tour.btn_next")),
+        )
+        .replace(
+            "__QSVI18N_TOUR_PREV__",
+            &js_string_literal(&t!("viz.tour.btn_prev")),
+        )
+        .replace(
+            "__QSVI18N_TOUR_DONE__",
+            &js_string_literal(&t!("viz.tour.btn_done")),
+        )
+        .replace(
+            "__QSVI18N_TOUR_PROGRESS__",
+            &js_string_literal(&t!("viz.tour.progress")),
+        )
+}
+
+/// The guided-tour engine (issue #4389). Reads `#qsv-tour-config` (fully-resolved localized
+/// steps from `build_tour_chrome`), injects the "Tour" pill, lazily inflates the vendored
+/// driver.js payloads on first start, walks the steps with drawer open/close choreography, and
+/// records first-run state under a page-scoped localStorage key. Raw string (like
+/// `SCRIPT_TEMPLATE`) so the brace-heavy JS needs no escaping.
+///
+/// Auto-start rules: top window only (a gallery iframe auto-starting a tour would fight the
+/// page around it), localStorage available (file:// in some browsers has none — the pill still
+/// works, the tour just never self-starts), and the page-scoped seen-key unset. Both finishing
+/// and dismissing mark the page seen — an interrupted tour re-offered on every load is nagging,
+/// and the pill stays one click away.
+const TOUR_SCRIPT: &str = r##"<style>
+  .qsv-viz-tour-link { font-size: 13px; text-align: center; margin: -8px 0 16px; }
+  .qsv-viz-dict-link + .qsv-viz-tour-link { margin-top: -12px; }
+  .qsv-viz-tour-link a, .qsv-viz-tour-link a:visited { display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px; border: 1px solid var(--qsv-link); border-radius: 999px; color: var(--qsv-link); font-weight: 600; text-decoration: none; }
+  .qsv-viz-tour-link a:hover, .qsv-viz-tour-link a:focus-visible { color: var(--qsv-link-hover); border-color: var(--qsv-link-hover); background: color-mix(in srgb, var(--qsv-link) 14%, transparent); }
+  #qsv-tour-anchor { position: absolute; pointer-events: none; }
+  /* driver.js popover, re-themed off the page variables so it follows the runtime Theme
+     toggle in both directions (driver's own stylesheet is light-only). */
+  body.qsv-dark .driver-popover { background-color: #1c2128; color: #adbac7; }
+  body.qsv-dark .driver-popover-title { color: #cdd9e5; }
+  body.qsv-dark .driver-popover-arrow-side-left.driver-popover-arrow { border-left-color: #1c2128; }
+  body.qsv-dark .driver-popover-arrow-side-right.driver-popover-arrow { border-right-color: #1c2128; }
+  body.qsv-dark .driver-popover-arrow-side-top.driver-popover-arrow { border-top-color: #1c2128; }
+  body.qsv-dark .driver-popover-arrow-side-bottom.driver-popover-arrow { border-bottom-color: #1c2128; }
+  body.qsv-dark .driver-popover-navigation-btns button { background-color: #22272e; color: #adbac7; text-shadow: none; border-color: #444c56; }
+  body.qsv-dark .driver-popover-progress-text { color: #768390; }
+  body.qsv-dark .driver-popover-close-btn { color: #768390; }
+</style>
+<script>
+(function () {
+  var cfgEl = document.getElementById("qsv-tour-config");
+  if (!cfgEl) return;
+  var cfg;
+  try { cfg = JSON.parse(cfgEl.textContent); } catch (e) { return; }
+  if (!cfg || !cfg.steps || !cfg.steps.length) return;
+  var SEEN_KEY = "qsv-viz-tour-seen-" + cfg.key;
+  // localStorage probe: some file:// and privacy contexts throw on ACCESS, not just on write
+  function store() { try { return window.localStorage; } catch (e) { return null; } }
+  function markSeen() { var s = store(); if (s) { try { s.setItem(SEEN_KEY, "1"); } catch (e) {} } }
+  function wasSeen() { var s = store(); if (!s) return true; try { return !!s.getItem(SEEN_KEY); } catch (e) { return true; } }
+
+  // lazily install the vendored driver.js payloads: CDN mode has window.driver already, plain
+  // mode executed at load, and in gz mode `tour_script()` substitutes the inflate routine below
+  // (so CDN/plain pages carry no gz machinery — pinned by viz_cdn_uncompressed_has_no_gz_machinery).
+  function ensureLib() {
+    if (window.driver && window.driver.js) return Promise.resolve();
+    return __QSVTOURGZLOADER__;
+  }
+
+  // rAF-poll until fn() returns a truthy value (or ~4s passes); the drawers build their DOM —
+  // and the data drawer additionally inflates + initializes DataTables — on first open.
+  function waitFor(fn, cb) {
+    var tries = 0;
+    (function poll() {
+      var v = fn();
+      if (v) return cb(v);
+      if (++tries > 240) return cb(null);
+      requestAnimationFrame(poll);
+    })();
+  }
+
+  // A typed-grid panel step has no DOM element — position a transparent anchor div over the
+  // panel's paper-coordinate domain (emitted server-side from the grid geometry). Paper y is
+  // bottom-up; _fullLayout._size is the margin box when plotly has rendered.
+  function domainAnchor(domain) {
+    var gd = document.querySelector(".js-plotly-plot");
+    if (!gd) return null;
+    var a = document.getElementById("qsv-tour-anchor");
+    if (!a) {
+      a = document.createElement("div");
+      a.id = "qsv-tour-anchor";
+      document.body.appendChild(a);
+    }
+    var r = gd.getBoundingClientRect();
+    var l = 0, t = 0, w = r.width, h = r.height;
+    var fl = gd._fullLayout && gd._fullLayout._size;
+    if (fl) { l = fl.l; t = fl.t; w = fl.w; h = fl.h; }
+    a.style.left = (window.scrollX + r.left + l + domain[0] * w) + "px";
+    a.style.top = (window.scrollY + r.top + t + (1 - domain[3]) * h) + "px";
+    a.style.width = ((domain[1] - domain[0]) * w) + "px";
+    a.style.height = ((domain[3] - domain[2]) * h) + "px";
+    return a;
+  }
+
+  function removeAnchor() {
+    var a = document.getElementById("qsv-tour-anchor");
+    if (a) a.remove();
+  }
+
+  var driverObj = null;
+
+  // Resolve a config step to a driver.js step. Steps whose selector matches nothing after
+  // their chapter's drawer opens are skipped at navigation time (see move()).
+  function stepElement(step) {
+    if (step.domain) return domainAnchor(step.domain) || undefined;
+    if (!step.target) return undefined;
+    return document.querySelector(step.target) || undefined;
+  }
+
+  // Chapter choreography, fully config-driven: a drawer step carries the NAMES of its opener /
+  // closer globals plus a readiness selector, all emitted only when that drawer's chrome exists
+  // — the static script names no drawer, so a page without a drawer carries no reference to it.
+  function prepare(step, cb) {
+    var opener = step.open && window[step.open];
+    if (typeof opener === "function") {
+      opener("");
+      // the drawers slide in over 0.22s; positioning a popover against a mid-transition rect
+      // anchors it wrong, so settle past the transition after the readiness selector appears
+      waitFor(function () { return document.querySelector(step.wait || "body"); }, function () {
+        setTimeout(cb, 280);
+      });
+      return;
+    }
+    cb();
+  }
+
+  function leaveChapter(from, to) {
+    var f = from && from.open, t = to && to.open;
+    if (f === t || !f) return;
+    var closer = from.close && window[from.close];
+    if (typeof closer === "function") closer();
+  }
+
+  // Tear the tour down through ONE path. driver only commits its active-step state when the
+  // highlight animation completes, and on a heavy page (many plotly panels starving rAF) that
+  // can take seconds — a dismissal before then would skip a config onDestroyed entirely. So
+  // the teardown work lives here and is invoked from onDestroyStarted (close button, Esc,
+  // overlay click — fired regardless of transition state) and from walking past the last step.
+  function endTour() {
+    markSeen();
+    removeAnchor();
+    var idx = driverObj ? driverObj.getActiveIndex() || 0 : 0;
+    leaveChapter(cfg.steps[idx], null);
+    navBusy = false;
+    if (driverObj) driverObj.destroy();
+  }
+
+  // One navigation at a time: driver animates each highlight in a rAF loop, and a second
+  // moveTo racing an in-flight transition corrupts the overlay state (and can spin the main
+  // thread on a heavy page). Cleared when the highlight settles (onHighlighted), with a
+  // timeout backstop in case a skipped/ended step never highlights.
+  var navBusy = false;
+
+  // walk to the next/previous VISIBLE step (a sub-step whose target vanished — e.g. no
+  // omissions section in this dictionary — is skipped, drawer steps skip when their opener
+  // is absent)
+  function move(dir, fromIdx) {
+    if (navBusy) return;
+    navBusy = true;
+    setTimeout(function () { navBusy = false; }, 2500);
+    var i = fromIdx + dir;
+    while (i >= 0 && i < cfg.steps.length) {
+      var step = cfg.steps[i];
+      if (!step.open || typeof window[step.open] === "function") break;
+      i += dir;
+    }
+    if (i < 0) { navBusy = false; return; }
+    if (i >= cfg.steps.length) { endTour(); return; }
+    var step = cfg.steps[i];
+    leaveChapter(cfg.steps[fromIdx], step);
+    prepare(step, function () {
+      // a chapter sub-step whose selector matches nothing gets skipped in the SAME direction
+      if (step.target && !document.querySelector(step.target) && !step.domain) {
+        navBusy = false;
+        move(dir, i);
+        return;
+      }
+      driverObj.moveTo(i);
+      // late layout shifts (drawer finishing its slide, plots re-fitting) move the anchor
+      // after the popover positioned; one deferred refresh re-computes it
+      setTimeout(function () { if (driverObj && driverObj.isActive()) driverObj.refresh(); }, 700);
+    });
+  }
+
+  function startTour() {
+    markSeen();
+    ensureLib().then(function () {
+      var driver = window.driver.js.driver;
+      var driverSteps = cfg.steps.map(function (s) {
+        return {
+          // resolved at highlight time: drawer targets don't exist until their chapter's
+          // prepare() built them, and typed-grid anchors are positioned per show
+          element: function () { return stepElement(s) || undefined; },
+          popover: {
+            title: s.title,
+            description: s.body,
+            onNextClick: function () { move(1, driverObj.getActiveIndex()); },
+            onPrevClick: function () { move(-1, driverObj.getActiveIndex()); },
+          },
+        };
+      });
+      driverObj = driver({
+        showProgress: true,
+        progressText: __QSVI18N_TOUR_PROGRESS__,
+        nextBtnText: __QSVI18N_TOUR_NEXT__,
+        prevBtnText: __QSVI18N_TOUR_PREV__,
+        doneBtnText: __QSVI18N_TOUR_DONE__,
+        allowClose: true,
+        overlayOpacity: 0.6,
+        steps: driverSteps,
+        // NOT onDestroyed: driver skips that hook when the tour is dismissed before the
+        // highlight animation has committed its state (see endTour). onDestroyStarted fires
+        // unconditionally and defers the actual teardown to our endTour -> destroy().
+        onDestroyStarted: function () { endTour(); },
+        onHighlighted: function () { navBusy = false; },
+      });
+      driverObj.drive();
+    }).catch(function (e) { console.error("qsv tour:", e); });
+    return false;
+  }
+
+  // The relaunch pill: after the dictionary link when present, else after the page <h1>,
+  // else before the metadata table.
+  function injectButton() {
+    if (document.querySelector(".qsv-viz-tour-link")) return;
+    var holder = document.createElement("div");
+    holder.className = "qsv-viz-tour-link";
+    var a = document.createElement("a");
+    a.href = "#";
+    a.setAttribute("aria-label", __QSVI18N_TOUR_BUTTON_ARIA__);
+    a.innerHTML = '__QSVI18N_TOUR_BUTTON__';
+    a.addEventListener("click", function (ev) { ev.preventDefault(); startTour(); });
+    holder.appendChild(a);
+    var after = document.querySelector(".qsv-viz-dict-link") || document.querySelector("h1.qsv-viz-title");
+    if (after) { after.insertAdjacentElement("afterend", holder); return; }
+    var meta = document.querySelector("table.qsv-viz-meta");
+    if (meta) { meta.insertAdjacentElement("beforebegin", holder); return; }
+    document.body.insertAdjacentElement("afterbegin", holder);
+  }
+
+  function boot() {
+    injectButton();
+    // Auto-start on first open: top window only, storage available, not seen before. Waits
+    // for plotly to be genuinely ready — on gzip-embedded pages the panels render in a
+    // sequential replay after the bundle inflates (window.Plotly is a queue stub until then,
+    // detectable by the missing .react), and starting the tour mid-replay both janks the
+    // page and spotlights still-empty panels. Capped poll, then start regardless.
+    if (window.self === window.top && !wasSeen()) {
+      var tries = 0;
+      (function whenReady() {
+        var ready = !document.getElementById("qsv-plotly-gz") ||
+          (window.Plotly && typeof window.Plotly.react === "function");
+        if (ready || ++tries > 120) {
+          setTimeout(function () { if (!driverObj) startTour(); }, 1200);
+        } else {
+          setTimeout(whenReady, 125);
+        }
+      })();
+    }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+})();
+</script>"##;
 
 fn build_layout(
     args: &Args,
@@ -19102,6 +19966,90 @@ enum PipelineSpec {
     },
 }
 
+/// The dataset-level `x-qsv.tour` object (issue #4389): LLM- or hand-refined prose for the Data
+/// Schematic's guided tour, plus which panels the tour should spotlight. Only PROSE and panel
+/// selection/order are schema-controlled — step structure (ids, targets, drawer choreography)
+/// stays in Rust, so schema content can never inject selectors or markup. All prose is treated
+/// as plain text and HTML-escaped once at the tour-config emit sink.
+///
+/// Written by hand, by an agent (the visual-data-dictionary skill), or — in a follow-up — by
+/// `--dictionary infer`'s LLM pass with `--tour-audience`. `--dictionary infer` reuses an
+/// existing `<stem>.schema.json` verbatim, so an agent-authored tour rides through untouched.
+#[derive(Clone, Debug, Default)]
+struct TourSpec {
+    /// Freeform audience the prose was written for (e.g. "Explain like I'm 10"). Informational;
+    /// rendered in the dictionary drawer's collapsed tour section.
+    audience:     Option<String>,
+    /// BCP-47 tag of the language the prose was AUTHORED in. Overrides are honored only when
+    /// this prefix-matches the active UI locale — an English-refined tour must not leak into a
+    /// localized page, where the localized deterministic drafts are the better text.
+    language:     Option<String>,
+    /// Provenance blurb (model/tool), mirroring the `x-qsv.generated_by` convention.
+    generated_by: Option<String>,
+    /// Plain-text BODY overrides keyed by built-in step id ("intro", "dict-open", …,
+    /// "conclusion"). Unknown ids are ignored.
+    overrides:    HashMap<String, String>,
+    /// Per-panel explanation overrides: keyed by RAW field name for per-column panels
+    /// (rejoined via `Panel::stat_idx`, never the decorated display title) or by a stable
+    /// `@kind` token ("@kpi", "@correlation", "@timeseries", "@map", "@choropleth",
+    /// "@scatter", …) for overview panels.
+    panels:       HashMap<String, String>,
+    /// Which panels get tour steps and in what order (same keys as `panels`). Unknown keys are
+    /// ignored; `None` falls back to the deterministic interest-based selection.
+    panel_order:  Option<Vec<String>>,
+}
+
+/// Parse the dataset-level `x-qsv.tour` object. Returns `None` unless `version` is the integer
+/// `1` — the renderer then falls back to its deterministic drafts wholesale, so a future
+/// contract revision can never half-apply. Prose values are trimmed; empties are dropped.
+fn parse_tour_spec(v: &serde_json::Value) -> Option<TourSpec> {
+    let tour = v.get("x-qsv")?.get("tour")?;
+    if tour.get("version").and_then(serde_json::Value::as_i64) != Some(1) {
+        return None;
+    }
+    let top = |k: &str| {
+        tour.get(k)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string)
+    };
+    let prose_map = |k: &str| -> HashMap<String, String> {
+        tour.get(k)
+            .and_then(serde_json::Value::as_object)
+            .map(|m| {
+                m.iter()
+                    .filter_map(|(key, val)| {
+                        let text = val.as_str()?.trim();
+                        (!text.is_empty() && !key.is_empty())
+                            .then(|| (key.clone(), text.to_string()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let panel_order = tour
+        .get("panel_order")
+        .and_then(serde_json::Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|e| e.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .filter(|v: &Vec<String>| !v.is_empty());
+    Some(TourSpec {
+        audience: top("audience"),
+        language: top("language"),
+        generated_by: top("generated_by"),
+        overrides: prose_map("overrides"),
+        panels: prose_map("panels"),
+        panel_order,
+    })
+}
+
 /// A parsed describegpt Data Dictionary: per-column semantic rows keyed by field name, plus the
 /// dataset `grain` ("one row = one X"). Drives `viz smart` semantic routing.
 #[derive(Clone, Debug, Default)]
@@ -19138,6 +20086,10 @@ struct DictData {
     /// candidates -- see issue #4406). viz applies no threshold of its own. Drives the Data
     /// Schematic UI language unless `--language` overrides it.
     detected_language:   Option<String>,
+    /// The dataset-level `x-qsv.tour` object (issue #4389): refined guided-tour prose + panel
+    /// selection. `None` on legacy dictionaries, an absent object, or a `version` this build
+    /// does not understand.
+    tour:                Option<TourSpec>,
 }
 
 /// Map a `concept` token (the most specific, highest-confidence signal) to a route. Returns `None`
@@ -20046,6 +20998,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
             dataset_description,
             generated_by,
             detected_language,
+            tour: parse_tour_spec(&v),
         });
     }
 
@@ -22296,6 +23249,55 @@ fn render_dict_page_html(
         s
     };
 
+    // The dictionary's `x-qsv.tour` narration (issue #4389), rendered COLLAPSED by default — it
+    // is metadata about the tour, not dictionary content, so it must not push the field entries
+    // below the fold. A native <details> needs no JS (this page can't carry any). Assembled with
+    // `push_str` in short pieces for the same rustfmt `format_strings` reason as `omissions`.
+    let tour_meta = dict.tour.as_ref().map_or_else(String::new, |spec| {
+        let mut s = String::from("<details class=\"qsv-dict-tour\">\n");
+        s.push_str(&format!(
+            "<summary>{}</summary>\n",
+            html_escape(&t!("viz.tour.meta_heading"))
+        ));
+        s.push_str("<dl class=\"qsv-dict-meta\">\n");
+        for (label, value) in [
+            (t!("viz.tour.meta_audience"), spec.audience.as_deref()),
+            (t!("viz.tour.meta_language"), spec.language.as_deref()),
+            (t!("viz.tour.meta_model"), spec.generated_by.as_deref()),
+        ] {
+            if let Some(v) = value {
+                s.push_str(&format!(
+                    "<dt>{}</dt><dd>{}</dd>\n",
+                    html_escape(&label),
+                    html_escape(v)
+                ));
+            }
+        }
+        // deterministic order: BTreeMap-style sort, since TourSpec stores HashMaps
+        let mut overrides: Vec<_> = spec.overrides.iter().collect();
+        overrides.sort();
+        for (id, text) in overrides {
+            s.push_str(&format!(
+                "<dt>{} {}</dt><dd>{}</dd>\n",
+                html_escape(&t!("viz.tour.meta_step")),
+                html_escape(id),
+                html_escape(text)
+            ));
+        }
+        let mut panels: Vec<_> = spec.panels.iter().collect();
+        panels.sort();
+        for (key, text) in panels {
+            s.push_str(&format!(
+                "<dt>{} {}</dt><dd>{}</dd>\n",
+                html_escape(&t!("viz.tour.meta_panel")),
+                html_escape(key),
+                html_escape(text)
+            ));
+        }
+        s.push_str("</dl>\n</details>\n");
+        s
+    });
+
     // The download row: "Export JSONSchema" plus one link per generated sidecar this run consumed.
     //
     // Every link is a script-free `<a download>` whose bytes ride as a base64 `data:` URI — base64
@@ -22452,6 +23454,9 @@ fn render_dict_page_html(
   /* the catalog values start lower-case so stderr stays byte-identical; lift the first letter
      here instead of diverging the two sinks. A no-op for scripts without case (ja, zh). */
   .qsv-dict-omissions li::first-letter {{ text-transform: capitalize; }}
+  .qsv-dict-tour {{ margin: 10px 0 14px; padding: 6px 12px; border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 6px; background: rgba(128, 128, 128, 0.07); }}
+  .qsv-dict-tour summary {{ font-size: 13px; font-weight: 600; cursor: pointer; }}
+  .qsv-dict-tour dl {{ font-size: 12.5px; }}
   .qsv-dict-label {{ font-size: 13px; color: #888888; margin: 2px 0 6px; }}
   .qsv-dict-desc {{ font-size: 13px; line-height: 1.5; margin: 4px 0 8px; }}
   .qsv-dict-desc h4.qsv-dict-mdh, .qsv-dict-dataset-desc h4.qsv-dict-mdh {{ font-size: 13.5px; font-weight: 600; margin: 10px 0 4px; }}
@@ -22490,7 +23495,7 @@ fn render_dict_page_html(
 <a class="qsv-dict-back" href="#" onclick="var o=window.opener;if(o&&!o.closed){{try{{o.focus();}}catch(e){{}}}}window.close();return false">&#8592; {back_to_dashboard}</a>
 <h1>{doc_title}</h1>
 </header>
-{downloads}{intro}{toc_nav}{omissions}{sections}{provenance}</div>
+{downloads}{intro}{toc_nav}{omissions}{tour_meta}{sections}{provenance}</div>
 </body>
 </html>"##
     )
@@ -32091,6 +33096,31 @@ impl<'a> SmartCtx<'a> {
         }
 
         self.progress.set_message("Rendering Data Schematic…");
+        // Guided-tour chrome (issue #4389): HTML-only, resolved AFTER the KPI insertion so panel
+        // indexes/geometry match what actually renders. The typed grid has no per-panel DOM, so
+        // its panel steps carry the exact paper-coordinate domains from `smart_grid_layout` —
+        // the same geometry `smart_grid_parts` lays the subplots out with.
+        let tour_chrome = if matches!(self.out_format, OutFormat::Html) {
+            let targets = if self.inline {
+                TourPanelTargets::Inline
+            } else {
+                let cols = self.args.flag_grid_cols.clamp(1, self.panels.len().max(1));
+                let (geoms, _rows, _height) = smart_grid_layout(&self.panels, cols);
+                TourPanelTargets::Typed(geoms)
+            };
+            build_tour_chrome(
+                self.args.flag_no_tour,
+                &self.panels,
+                &self.stats,
+                self.dict_data.as_ref(),
+                dict_page.is_some(),
+                data_chrome.is_some(),
+                &title_text,
+                &targets,
+            )
+        } else {
+            None
+        };
         if self.inline {
             Ok(SmartRender::Inline(render_smart_inline(
                 &self.args,
@@ -32104,6 +33134,7 @@ impl<'a> SmartCtx<'a> {
                 metadata_html.as_deref(),
                 data_chrome.as_deref(),
                 self.map_cols,
+                tour_chrome.as_deref(),
             )))
         } else if self
             .panels
@@ -32138,6 +33169,7 @@ impl<'a> SmartCtx<'a> {
                 dict_page,
                 metadata_html,
                 data_chrome,
+                tour_chrome,
             )
         }
     }
@@ -33753,6 +34785,7 @@ fn render_smart_grid(
     dict_page: Option<String>,
     metadata: Option<String>,
     data_chrome: Option<String>,
+    tour_chrome: Option<String>,
 ) -> CliResult<SmartRender> {
     let SmartGridParts {
         traces,
@@ -33784,6 +34817,7 @@ fn render_smart_grid(
         dict_page,
         metadata,
         data_chrome,
+        tour_chrome,
     })
 }
 
@@ -33794,6 +34828,7 @@ fn render_smart_grid_page(
     dict_page: Option<&str>,
     meta_table: Option<&str>,
     data_chrome: Option<&str>,
+    tour_chrome: Option<&str>,
 ) -> String {
     // match the responsiveness the single-`Plot` HTML path applies in `run`.
     plot.set_configuration(Configuration::new().responsive(true));
@@ -33829,6 +34864,7 @@ fn render_smart_grid_page(
         None,
         // ...and no choropleth either (they force the inline path), so no region-click filter.
         None,
+        tour_chrome,
     )
 }
 
@@ -35360,6 +36396,7 @@ fn render_smart_inline(
     // — which is how the bridge reads the coordinates of a row that has no plotted point of its
     // own (downsampled away) in order to pin it.
     map_cols: Option<(usize, usize)>,
+    tour_chrome: Option<&str>,
 ) -> String {
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
     let theme = args.theme();
@@ -35485,6 +36522,7 @@ fn render_smart_inline(
         has_basemap,
         map_select,
         choro_filter,
+        tour_chrome,
     )
 }
 
@@ -43273,7 +44311,7 @@ mod tests {
         let notices = flatten(&notices_raw);
         let license = flatten(&license_raw);
         // `datatables: true` is the branch that emits the DataTables credit line
-        let in_page = flatten(&third_party_comment(true, false));
+        let in_page = flatten(&third_party_comment(true, false, false));
 
         for (label, text) in [
             ("THIRD_PARTY_NOTICES.md", &notices),
@@ -43354,6 +44392,313 @@ mod tests {
             "DATATABLES_CDN_CSS_SRI is stale: the vendored datatables.min.css hashes to \
              sha384-{css_digest}. Regenerate it (see the command on DATATABLES_JS)."
         );
+    }
+
+    #[test]
+    fn driverjs_cdn_sri_matches_the_vendored_bundle() {
+        use base64_simd::STANDARD as BASE64;
+        use sha2::{Digest, Sha384};
+
+        // Like the DataTables oracle above: the version-pinned jsdelivr URLs serve exactly the
+        // vendored bytes, so this fails the moment the bundle is bumped without the hashes (or
+        // DRIVERJS_CDN_VERSION) being regenerated.
+        let js_digest = BASE64.encode_to_string(Sha384::digest(DRIVERJS_JS.as_bytes()));
+        assert_eq!(
+            format!("sha384-{js_digest}"),
+            DRIVERJS_CDN_JS_SRI,
+            "DRIVERJS_CDN_JS_SRI is stale: the vendored driverjs.min.js hashes to \
+             sha384-{js_digest}. Regenerate it (see the command on DRIVERJS_JS)."
+        );
+        let css_digest = BASE64.encode_to_string(Sha384::digest(DRIVERJS_CSS.as_bytes()));
+        assert_eq!(
+            format!("sha384-{css_digest}"),
+            DRIVERJS_CDN_CSS_SRI,
+            "DRIVERJS_CDN_CSS_SRI is stale: the vendored driverjs.min.css hashes to \
+             sha384-{css_digest}. Regenerate it (see the command on DRIVERJS_JS)."
+        );
+    }
+
+    #[test]
+    fn driverjs_bundle_is_plain_embed_safe() {
+        // The plain (QSV_VIZ_NO_COMPRESS) path inlines the vendored bundle with NO escaping, so
+        // neither file may contain its own close tag. (The gz-b64 path is `</script>`-safe by
+        // construction — base64 has no `<`.)
+        assert!(
+            !DRIVERJS_JS.contains("</script"),
+            "vendored driverjs.min.js contains `</script` — plain inline embedding would truncate \
+             the tag"
+        );
+        assert!(
+            !DRIVERJS_CSS.contains("</style"),
+            "vendored driverjs.min.css contains `</style` — plain inline embedding would truncate \
+             the tag"
+        );
+        // the IIFE build installs the global TOUR_SCRIPT dispatches on (`window.driver.js.driver`)
+        assert!(
+            DRIVERJS_JS.starts_with("this.driver="),
+            "vendored driverjs.min.js is not the dist/driver.js.iife.js build (missing the \
+             `this.driver=` IIFE preamble TOUR_SCRIPT depends on)"
+        );
+        assert!(
+            DRIVERJS_CSS.contains(".driver-popover"),
+            "vendored driverjs.min.css lacks the .driver-popover rules"
+        );
+    }
+
+    /// Same discipline as `datatables_attribution_matches_the_pinned_combo`: the driver.js
+    /// version is written out in places nothing else ties together, so a bump that skips one
+    /// leaves the shipped attribution describing the wrong bundle.
+    #[test]
+    fn driverjs_attribution_matches_the_pinned_version() {
+        fn flatten(s: &str) -> String {
+            s.split_whitespace().collect::<Vec<_>>().join(" ")
+        }
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let notices_raw = std::fs::read_to_string(format!("{manifest}/THIRD_PARTY_NOTICES.md"))
+            .expect("THIRD_PARTY_NOTICES.md is readable");
+        let notices = flatten(&notices_raw);
+        assert!(
+            notices.contains(&format!("version **{DRIVERJS_CDN_VERSION}**")),
+            "THIRD_PARTY_NOTICES.md does not name driver.js {DRIVERJS_CDN_VERSION} — update its \
+             driver.js section (summary row AND body) to match DRIVERJS_CDN_VERSION."
+        );
+        // `driverjs: true` is the branch that emits the driver.js credit line
+        let in_page = flatten(&third_party_comment(false, true, false));
+        assert!(
+            in_page.contains(&format!("driver.js {DRIVERJS_CDN_VERSION}")),
+            "third_party_comment's driver.js line does not carry DRIVERJS_CDN_VERSION"
+        );
+        // the vendored license file exists and is the MIT text the bundle ships under
+        let license =
+            std::fs::read_to_string(format!("{manifest}/src/cmd/assets/LICENSE-Driverjs.txt"))
+                .expect("src/cmd/assets/LICENSE-Driverjs.txt is readable");
+        assert!(license.contains("Kamran Ahmed") && license.contains("The MIT License"));
+    }
+
+    #[test]
+    fn parse_tour_spec_validates_shape() {
+        let valid: serde_json::Value = serde_json::json!({
+            "x-qsv": { "tour": {
+                "version": 1,
+                "audience": " Explain like I'm 10 ",
+                "language": "en",
+                "generated_by": "test-model",
+                "overrides": { "intro": "Refined intro.", "conclusion": "  ", "bogus-id": "kept (unknown ids ignore at merge)" },
+                "panels": { "revenue": "Refined revenue story.", "@map": "Refined map story.", "": "dropped" },
+                "panel_order": [" revenue ", "", "@map"]
+            } }
+        });
+        let spec = parse_tour_spec(&valid).expect("valid v1 tour parses");
+        assert_eq!(spec.audience.as_deref(), Some("Explain like I'm 10"));
+        assert_eq!(spec.language.as_deref(), Some("en"));
+        assert_eq!(spec.generated_by.as_deref(), Some("test-model"));
+        // empty prose dropped, unknown ids retained (merge ignores them)
+        assert_eq!(spec.overrides.len(), 2);
+        assert!(!spec.overrides.contains_key("conclusion"));
+        // empty keys dropped
+        assert_eq!(spec.panels.len(), 2);
+        // entries trimmed, empties dropped
+        assert_eq!(
+            spec.panel_order.as_deref(),
+            Some(&["revenue".to_string(), "@map".to_string()][..])
+        );
+
+        // a future contract version is ignored WHOLESALE — never half-applied
+        let v2 = serde_json::json!({ "x-qsv": { "tour": { "version": 2, "overrides": { "intro": "x" } } } });
+        assert!(parse_tour_spec(&v2).is_none());
+        // missing version, non-object tour, absent x-qsv: all None
+        assert!(parse_tour_spec(&serde_json::json!({ "x-qsv": { "tour": {} } })).is_none());
+        assert!(parse_tour_spec(&serde_json::json!({ "x-qsv": { "tour": "nope" } })).is_none());
+        assert!(parse_tour_spec(&serde_json::json!({})).is_none());
+        // non-string prose values are dropped, not honored
+        let mixed = serde_json::json!({ "x-qsv": { "tour": {
+            "version": 1, "overrides": { "intro": 42, "conclusion": "Bye." } } } });
+        let spec = parse_tour_spec(&mixed).expect("v1 parses");
+        assert_eq!(spec.overrides.len(), 1);
+        assert_eq!(
+            spec.overrides.get("conclusion").map(String::as_str),
+            Some("Bye.")
+        );
+    }
+
+    #[test]
+    fn tour_spec_language_gates_on_primary_subtag() {
+        let _locale = english_locale();
+        // no declared language is treated as English (describegpt's default output language)
+        assert!(tour_spec_language_matches(&TourSpec::default()));
+        let mut spec = TourSpec {
+            language: Some("en-US".into()),
+            ..Default::default()
+        };
+        assert!(tour_spec_language_matches(&spec));
+        // a tour authored in another language must NOT override English drafts
+        spec.language = Some("pt-BR".into());
+        assert!(!tour_spec_language_matches(&spec));
+    }
+
+    #[test]
+    fn tour_panel_selection_prefers_overviews_then_interest() {
+        let stats = Vec::new();
+        let mk = |name: &str, kind: PanelKind, interest: f64| {
+            Panel::new(name.to_string(), kind).with_interest(interest)
+        };
+        let panels = vec![
+            mk(
+                "kpi",
+                PanelKind::KpiRow { tiles: Vec::new() },
+                f64::INFINITY,
+            ),
+            mk(
+                "corr",
+                PanelKind::CorrHeatmap {
+                    labels:   vec!["a".into(), "b".into()],
+                    matrix:   vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+                    spearman: false,
+                },
+                f64::INFINITY,
+            ),
+            mk("low", PanelKind::FreqBar { idx: 0 }, 0.1),
+            mk("hi", PanelKind::Histogram { idx: 1 }, 0.9),
+            mk("mid", PanelKind::FreqBar { idx: 2 }, 0.5),
+        ];
+        // overviews first (document order), then per-column by interest desc — result re-sorted
+        // into document order for a front-to-back walk
+        assert_eq!(
+            tour_panel_selection(&panels, &stats, None),
+            vec![0, 1, 2, 3, 4]
+        );
+
+        // panel_order picks and caps; unknown keys are ignored
+        let spec = TourSpec {
+            panel_order: Some(vec!["hi".into(), "@kpi".into(), "no-such".into()]),
+            ..Default::default()
+        };
+        assert_eq!(
+            tour_panel_selection(&panels, &stats, Some(&spec)),
+            vec![3, 0]
+        );
+        // an all-unknown panel_order falls back to the deterministic selection
+        let spec = TourSpec {
+            panel_order: Some(vec!["no-such".into()]),
+            ..Default::default()
+        };
+        assert_eq!(
+            tour_panel_selection(&panels, &stats, Some(&spec)),
+            vec![0, 1, 2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn build_tour_chrome_merges_and_gates() {
+        let _locale = english_locale();
+        let stats = Vec::new();
+        let panels = vec![Panel::new(
+            "kpi".to_string(),
+            PanelKind::KpiRow { tiles: Vec::new() },
+        )];
+        // --no-tour: nothing at all
+        assert!(
+            build_tour_chrome(
+                true,
+                &panels,
+                &stats,
+                None,
+                false,
+                false,
+                "T",
+                &TourPanelTargets::Inline
+            )
+            .is_none()
+        );
+        // default: config + engine + vendored lib present; no drawer chapters without drawers
+        let chrome = build_tour_chrome(
+            false,
+            &panels,
+            &stats,
+            None,
+            false,
+            false,
+            "Title </th>",
+            &TourPanelTargets::Inline,
+        )
+        .expect("tour chrome on by default");
+        assert!(chrome.contains("id=\"qsv-tour-config\""));
+        assert!(chrome.contains("id=\"qsv-tour-lib\""));
+        let cfg_json = chrome
+            .split("id=\"qsv-tour-config\">")
+            .nth(1)
+            .and_then(|rest| rest.split("</script>").next())
+            .expect("config payload");
+        // `</` never appears raw inside the script payload; the JSON escape reads back as `</`
+        assert!(!cfg_json.contains("</"));
+        let cfg: serde_json::Value =
+            serde_json::from_str(cfg_json).expect("tour config is valid JSON");
+        let steps = cfg["steps"].as_array().expect("steps");
+        assert!(
+            steps.iter().all(|s| s["pre"].is_null()),
+            "no drawer chapters without drawers"
+        );
+        // the title interpolates escaped (once, at this sink)
+        assert!(
+            steps[0]["body"]
+                .as_str()
+                .unwrap()
+                .contains("Title &lt;/th&gt;")
+        );
+
+        // an x-qsv.tour override in a matching language beats the draft; a language-mismatched
+        // one is ignored
+        let mk_dict = |lang: &str| DictData {
+            rows: HashMap::from([(String::from("c"), DictRow::default())]),
+            tour: Some(TourSpec {
+                language: Some(lang.to_string()),
+                overrides: HashMap::from([(String::from("intro"), String::from("REFINED-INTRO"))]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let with_en = build_tour_chrome(
+            false,
+            &panels,
+            &stats,
+            Some(&mk_dict("en")),
+            false,
+            false,
+            "T",
+            &TourPanelTargets::Inline,
+        )
+        .unwrap();
+        assert!(with_en.contains("REFINED-INTRO"));
+        let with_ja = build_tour_chrome(
+            false,
+            &panels,
+            &stats,
+            Some(&mk_dict("ja")),
+            false,
+            false,
+            "T",
+            &TourPanelTargets::Inline,
+        )
+        .unwrap();
+        assert!(!with_ja.contains("REFINED-INTRO"));
+
+        // drawer chapters appear when their chrome does; typed grids emit domains, not targets
+        let geoms = smart_grid_layout(&panels, 1).0;
+        let typed = build_tour_chrome(
+            false,
+            &panels,
+            &stats,
+            None,
+            true,
+            true,
+            "T",
+            &TourPanelTargets::Typed(geoms),
+        )
+        .unwrap();
+        assert!(typed.contains("\"open\":\"qsvOpenDict\""));
+        assert!(typed.contains("\"open\":\"qsvOpenData\""));
+        assert!(typed.contains("\"domain\":["));
+        assert!(!typed.contains("#qsv-viz-panel-"));
     }
 
     #[test]
@@ -47397,6 +48742,7 @@ mod tests {
             ("PHOTO_CHROME", photo_chrome()),
             ("DICT_SCRIPT_TEMPLATE", dict_script_template()),
             ("DATA_DRAWER_SCRIPT", data_drawer_script()),
+            ("TOUR_SCRIPT", tour_script()),
         ] {
             assert!(
                 !rendered.contains("__QSVI18N"),

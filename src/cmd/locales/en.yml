@@ -32,6 +32,7 @@ viz:
     logo_alt: "qsv by datHere"
     credits_charts: "Charts:"
     credits_table: "Table:"
+    credits_tour: "Tour:"
     credits_notices: "notices"
   meta:
     description: "Description:"
@@ -573,3 +574,86 @@ viz:
     # because a wrong one would misstate what the rate measures.
     noun_residents: "residents"
     noun_resident: "resident"
+  # ---------------------------------------------------------------------------
+  # Guided Data Schematic Tour (issue #4389). Static step prose + the per-panel
+  # explanation templates `tour_panel_explanation` assembles. The `explain.*`
+  # values are DRAFTS: a dictionary's `x-qsv.tour` object can override any of
+  # them with refined prose (see `TourSpec`), but only when its declared
+  # language matches the active UI locale.
+  #
+  # driver.js's own progress text uses `{{current}}/{{total}}` templating, which
+  # cannot collide with rust-i18n's `%{...}` syntax.
+  # ---------------------------------------------------------------------------
+  tour:
+    button: "Tour"
+    button_aria: "Start the guided tour of this Data Schematic"
+    btn_next: "Next &rarr;"
+    btn_prev: "&larr; Back"
+    btn_done: "Done"
+    progress: "{{current}} of {{total}}"
+    intro_title: "Welcome to your Data Schematic"
+    intro_body: "This short tour walks through %{q_title}: what each part does, and why each chart was chosen for this data. Use the arrow keys or the buttons below; Esc leaves the tour at any time."
+    dict_open_title: "The Data Dictionary"
+    dict_open_body: "This drawer documents every column: what it holds, what it means, and how it was classified. Reopen it anytime from this link."
+    dict_downloads_title: "Downloadable sidecars"
+    dict_downloads_body: "These buttons download the artifacts this Data Schematic was built from - summary statistics, frequency tables and the JSON Schema data dictionary - ready for your own tools."
+    dict_roles_title: "Color-coded tags"
+    dict_roles_body: "Each column chip is tinted by its role - dimension, measure, identifier, temporal. The role decides how (or whether) a column gets charted."
+    dict_fields_title: "Field definitions"
+    dict_fields_body: "Every column has its own entry: type, meaning, range, cardinality and examples. A \"View chart\" link jumps to the panel that column is drawn in."
+    dict_omissions_title: "What was left out"
+    dict_omissions_body: "Not every column earns a chart. This section records each column or panel that was skipped - and exactly why."
+    data_open_title: "The data viewer"
+    data_open_body: "The rows behind the charts, in a searchable table. Reopen it anytime from the link beside the row count."
+    data_filter_title: "Advanced filters"
+    data_filter_body: "The Filter button builds multi-condition searches - AND/OR groups over any column - complementing the quick searches."
+    data_search_title: "Global search"
+    data_search_body: "Type here to search across every column at once."
+    data_colsearch_title: "Per-column search"
+    data_colsearch_body: "Each column header carries its own search box, for narrowing one column at a time."
+    data_export_title: "CSV export"
+    data_export_body: "Download the table - as filtered - back out as CSV."
+    panels_intro_title: "Summary panels"
+    panels_intro_body: "Each panel was picked to fit its column's data. The next steps explain the choices made for this dataset."
+    conclusion_title: "That's the tour"
+    conclusion_body: "Relaunch it anytime with the Tour button at the top of the page. Enjoy exploring!"
+    # Per-panel draft explanations. Deliberately context-bearing: each names the
+    # concrete signal that selected the panel kind, so the tour never reads as
+    # boilerplate. Values interpolate panel/stats facts computed at build time.
+    explain:
+      kpi: "These KPI tiles lead the Data Schematic with its headline numbers - record and field counts, completeness, and the standout measures."
+      box: "%{q_col} is a continuous numeric column, so its distribution is drawn as a box plot from its quartiles - the box is the middle half of the values."
+      box_outliers: "%{q_col} is continuous and carries values beyond the Tukey fences, so its box plot also overlays those outliers as individual points."
+      violin: "%{q_col} is a continuous numeric column; the violin's silhouette traces the density of its values, with the quartile box inside."
+      freq: "%{q_col} has only %{q_n} distinct values, so a bar per value shows each one's share of the rows."
+      histogram: "%{q_col} is a continuous numeric column; its values are binned into a histogram to show the shape of the distribution."
+      timeseries: "This dataset carries a date column, so %{q_y} is plotted over it chronologically to expose the trend."
+      cyclic: "The timestamps repeat on a cycle, so record volume is folded onto that repeating phase to expose seasonality the timeline hides."
+      corr: "The %{q_n} numeric columns are compared pairwise in this correlation heatmap - darker cells mean two columns move together."
+      assoc: "This association heatmap scores every column pair by normalized mutual information, which - unlike correlation - also works for categorical columns."
+      relationships: "The strongest column-pair associations, ranked. Dot position is association strength; dot size is how many rows back it."
+      scatter: "%{q_x} and %{q_y} are the most strongly correlated pair in this dataset, so they get a drill-down scatter of their own."
+      contour: "%{q_x} and %{q_y} are the most strongly correlated pair; with this many rows a scatter would overplot, so their density is contoured instead."
+      scatter3d: "These three columns form the strongest-correlation triple, so they are drawn together in a rotatable 3D scatter."
+      lorenz: "%{q_col} is unevenly distributed (Gini %{q_gini}); the Lorenz curve shows how far its cumulative share bends away from perfect equality."
+      funnel: "The data dictionary declares these columns as ordered pipeline stages, so they are drawn as a funnel from first stage to last."
+      measure_by_dim: "This pair - a measure split by a category - shows the strongest such association in the dataset."
+      grouped_violin: "One distribution silhouette per category: the same split as the bar beside it, but showing the full spread instead of one aggregate."
+      map: "This data carries coordinates, so its %{q_n} points are drawn on an interactive map."
+      choropleth: "The values aggregate cleanly by region, so they are shaded onto region boundaries as a choropleth."
+      hierarchy: "These categorical columns nest, so their composition is drawn as an interactive hierarchy - click a segment to descend."
+      sankey: "A directed flow links these two columns, so their crossings are drawn as a Sankey diagram - ribbon width is flow volume."
+      parcats: "Several categorical columns are read together here: each ribbon traces rows that share the same combination of categories."
+      animated_scatter: "The correlated pair also spans time, so the scatter is animated: press Play to watch the relationship build chronologically."
+      animated_geo: "The mapped points are dated, so the map is animated - press Play to watch events accumulate across the map over time."
+      animated_bubble: "Each bubble is one category tracing its path through two measures over time - press Play to run the clock."
+      # appended fragments
+      log_axis: "Its value axis is logarithmic, because the values span several orders of magnitude."
+      sampled: "Drawn from a deterministic sample of the rows, to stay responsive."
+    # The dictionary drawer's collapsed tour-metadata section (renders x-qsv.tour).
+    meta_heading: "Tour narration"
+    meta_audience: "Audience:"
+    meta_language: "Language:"
+    meta_model: "Generated by:"
+    meta_step: "Step"
+    meta_panel: "Panel"

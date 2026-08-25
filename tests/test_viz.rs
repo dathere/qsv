@@ -12026,6 +12026,171 @@ fn viz_single_chart_has_fullscreen_button() {
     assert!(html.contains("Toggle legend"));
 }
 
+// The guided Data Schematic tour (issue #4389): on by default in every smart HTML page,
+// suppressed wholesale by --no-tour, with drawer chapters gated on their chrome and panel
+// steps anchored per render path (typed grid = paper-coordinate domains, inline = panel divs).
+
+#[test]
+fn viz_smart_has_tour_by_default() {
+    let wrk = Workdir::new("viz_smart_has_tour_by_default");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fruits.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // vendored driver.js payloads + the resolved step config + the engine
+    assert!(
+        html.contains(r#"id="qsv-tour-lib""#),
+        "tour lib payload missing"
+    );
+    assert!(
+        html.contains(r#"id="qsv-tour-css""#),
+        "tour css payload missing"
+    );
+    assert!(
+        html.contains(r#"id="qsv-tour-config""#),
+        "tour config missing"
+    );
+    assert!(
+        html.contains(".qsv-viz-tour-link"),
+        "tour relaunch pill chrome missing"
+    );
+    // attribution: machine-readable comment + human credits footer
+    assert!(html.contains("driver.js 1.8.0 - (c) Kamran Ahmed - MIT"));
+    assert!(html.contains(
+        r#"<a href="https://driverjs.com/" target="_blank" rel="noopener">driver.js</a> (MIT)"#
+    ));
+    // fruits renders on the typed grid: panel steps carry domains, never panel-div targets
+    assert!(
+        html.contains(r#""domain":["#),
+        "typed-grid panel domains missing"
+    );
+    assert!(
+        !html.contains("#qsv-viz-panel-"),
+        "typed grid must not carry panel-div targets"
+    );
+    // the default preview threshold embeds the data viewer, so its chapter is present
+    assert!(
+        html.contains(r#""open":"qsvOpenData""#),
+        "data viewer chapter missing"
+    );
+    // ...but with no --dict-info there is no dictionary chapter
+    assert!(
+        !html.contains(r#""open":"qsvOpenDict""#),
+        "dict chapter must be gated on --dict-info"
+    );
+}
+
+#[test]
+fn viz_smart_no_tour_opts_out() {
+    let wrk = Workdir::new("viz_smart_no_tour_opts_out");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fruits.csv", "--no-tour"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // NOTHING of the tour ships: no payloads, no config, no engine, no pill, no attribution
+    assert!(
+        !html.contains("qsv-tour"),
+        "--no-tour must suppress every tour token"
+    );
+    assert!(
+        !html.contains("driver.js"),
+        "--no-tour must suppress the driver.js attribution"
+    );
+}
+
+#[test]
+fn viz_smart_tour_skips_data_chapter_when_viewer_disabled() {
+    let wrk = Workdir::new("viz_smart_tour_skips_data_chapter_when_viewer_disabled");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fruits.csv", "--preview-threshold", "0"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the tour still ships...
+    assert!(html.contains(r#"id="qsv-tour-config""#));
+    // ...but with the data viewer disabled its chapter is absent — the tour (config AND
+    // engine) then names no data-drawer global at all
+    assert!(
+        !html.contains("qsvOpenData"),
+        "data chapter must be gated on the viewer"
+    );
+}
+
+#[test]
+fn viz_smart_tour_inline_path_targets_panel_divs() {
+    let wrk = Workdir::new("viz_smart_tour_inline_path_targets_panel_divs");
+    quakes(&wrk);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    // the map panel forces the inline render path
+    cmd.args(["smart", "quakes.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(html.contains(r#"id="qsv-tour-config""#));
+    assert!(
+        html.contains(r##""target":"#qsv-viz-panel-"##),
+        "inline panel steps must target the per-panel divs"
+    );
+}
+
+#[test]
+fn viz_smart_tour_honors_x_qsv_tour_overrides() {
+    let wrk = Workdir::new("viz_smart_tour_honors_x_qsv_tour_overrides");
+    dict_info_codes_csv(&wrk);
+    // the stock dict-info schema, plus a dataset-level x-qsv.tour narration
+    let mut schema: serde_json::Value = serde_json::from_str(dict_info_schema()).unwrap();
+    schema["x-qsv"]["tour"] = serde_json::json!({
+        "version": 1,
+        "audience": "Explain like I'm 10",
+        "language": "en",
+        "generated_by": "test-tour-model",
+        "overrides": { "intro": "TOUR-OVERRIDE-INTRO sentence." },
+        "panels": { "status": "TOUR-OVERRIDE-STATUS story." }
+    });
+    wrk.create_from_string("dict.schema.json", &schema.to_string());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dict-info", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the refined prose replaces the deterministic drafts in the tour config
+    assert!(html.contains("TOUR-OVERRIDE-INTRO sentence."));
+    assert!(html.contains("TOUR-OVERRIDE-STATUS story."));
+    // with --dict-info the dictionary chapter is present
+    assert!(html.contains(r#""open":"qsvOpenDict""#));
+    // ...and the dictionary page renders the narration COLLAPSED (a plain <details>, no `open`)
+    assert!(html.contains(r#"<details class="qsv-dict-tour">"#));
+    assert!(!html.contains(r#"<details class="qsv-dict-tour" open"#));
+    assert!(html.contains("test-tour-model"));
+    // a plain run of the same file without the tour object has no narration section
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dict-info", "--dictionary"]);
+    wrk.create_from_string("plain.schema.json", dict_info_schema());
+    cmd.arg(wrk.path("plain.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the CSS rule ships with the dict page style block unconditionally; the ELEMENT is what
+    // the tour object gates
+    assert!(!html.contains(r#"<details class="qsv-dict-tour">"#));
+}
+
 #[test]
 fn viz_smart_has_fullscreen_button() {
     let wrk = Workdir::new("viz_smart_has_fullscreen_button");

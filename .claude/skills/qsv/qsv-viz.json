@@ -282,6 +282,11 @@
         "description": "For point-in-polygon binning (lat/lon points binned into a custom GeoJSON without geocoding): do not snap at all — drop every point that falls outside every region. By default an outside point instead snaps to its nearest region when within the snap-distance limit (see --snap-max-dist). Applies to both the `viz choropleth` command and the `viz smart` GeoJSON choropleth panel. A stderr note reports coverage either way; each snapping region's hover tallies the points it absorbed from outside, and snapped or dropped points are reported in a note beneath the map (or in the smart panel's title)."
       },
       {
+        "flag": "--no-tour",
+        "type": "flag",
+        "description": "Suppress the guided tour of `smart` HTML dashboards. By default every Data Schematic ships an interactive tour (auto-started the first time a reader opens the page, and relaunchable anytime from the \"Tour\" button) that walks through the Data Dictionary drawer, the data viewer and the summary panels, explaining why each chart was chosen for this data. A dictionary's dataset-level \"x-qsv\" \"tour\" object can refine the narration: its \"overrides\" map replaces step prose by step id, its \"panels\" map replaces per-panel explanations (keyed by raw field name, or by \"@kind\" tokens like \"@kpi\", \"@correlation\", \"@map\" for overview panels), and \"panel_order\" picks which panels the tour spotlights. Only affects `smart` HTML output."
+      },
+      {
         "flag": "--ohlc-open",
         "type": "string",
         "description": "Open-price column for candlestick/ohlc charts."

@@ -2963,11 +2963,7 @@ fn get_prompt(
     // only ask the LLM for it there — for every other format the USAGE-documented
     // "ignored otherwise" is literal: no tour section is rendered, no tokens spent on
     // narration that would be discarded (roborev 4449).
-    let tour_audience = if get_output_format(args)? == OutputFormat::JsonSchema {
-        args.flag_tour_audience.as_deref().unwrap_or("")
-    } else {
-        ""
-    };
+    let tour_audience = effective_tour_audience(args).unwrap_or("");
 
     let ctx = context! {
         stats => stats,
@@ -3326,7 +3322,11 @@ fn get_cache_key_with_flag(
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
         language = args.flag_language,
-        tour_audience = args.flag_tour_audience,
+        // The EFFECTIVE (format-gated) audience, not the raw flag: an audience the
+        // prompt ignores must share the no-audience key (identical prompt), and a
+        // jsonschema run must never be satisfied by a no-tour completion cached
+        // under another format (roborev 4454).
+        tour_audience = effective_tour_audience(args),
         tag_vocab = args.flag_tag_vocab,
         num_tags = args.flag_num_tags,
         enum_threshold = args.flag_enum_threshold,
@@ -3572,6 +3572,24 @@ fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
             "Invalid format '{format_str}'. Must be one of: Markdown, TSV, JSON, TOON, \
              JSONSchema, SemanticMd, OKF"
         ),
+    }
+}
+
+/// The tour audience the rendered prompt ACTUALLY carries: the `--tour-audience`
+/// value only when the output format is `JSONSchema` (the only format that ships
+/// `x-qsv.tour`), `None` otherwise. The single source of truth shared by prompt
+/// rendering, the cache key and the emission gate, so a prompt and its cache
+/// entry can never disagree about whether narration was requested — keying the
+/// cache on the raw flag while rendering on the gated value would let a
+/// no-tour completion cached under `--format json` satisfy a later
+/// `--format jsonschema` run, silently dropping the tour (roborev 4454). An
+/// unparseable `--format` maps to `None`; it hard-errors before any completion
+/// anyway.
+fn effective_tour_audience(args: &Args) -> Option<&str> {
+    if matches!(get_output_format(args), Ok(OutputFormat::JsonSchema)) {
+        args.flag_tour_audience.as_deref()
+    } else {
+        None
     }
 }
 
@@ -3902,17 +3920,26 @@ fn tour_language_bcp47(language: Option<&str>) -> Option<&'static str> {
         ),
     ];
     // Normalize before matching: case-insensitive, underscore-form tags ("pt_BR")
-    // folded to hyphens, and a regional tag with no curated entry falls back to its
-    // base subtag ("es-MX" -> "es") — the same safe direction viz_i18n::parse_lang
-    // takes (roborev 4449).
+    // folded to hyphens (roborev 4449). A regional tag with no curated entry falls
+    // back to its base subtag ("es-MX" -> "es"), but the fallback matches curated
+    // BCP-47 tags ONLY, never aliases — the same load-bearing restriction as
+    // viz_i18n::parse_lang: following aliases would stamp "pt-PT" as pt-BR and
+    // "zh-Hant" as zh-CN, silently claiming a dialect/script the prose isn't in.
+    // Those fall through to None (language omitted) instead (roborev 4454).
     let needle = language?.trim().to_lowercase().replace('_', "-");
-    let lookup = |needle: &str| {
-        LANG_TO_BCP47
-            .iter()
-            .find(|(bcp47, aliases)| bcp47.to_lowercase() == needle || aliases.contains(&needle))
-            .map(|(bcp47, _)| *bcp47)
-    };
-    lookup(&needle).or_else(|| needle.split_once('-').and_then(|(base, _)| lookup(base)))
+    LANG_TO_BCP47
+        .iter()
+        .find(|(bcp47, aliases)| {
+            bcp47.to_lowercase() == needle || aliases.contains(&needle.as_str())
+        })
+        .map(|(bcp47, _)| *bcp47)
+        .or_else(|| {
+            let (base, _) = needle.split_once('-')?;
+            LANG_TO_BCP47
+                .iter()
+                .find(|(bcp47, _)| bcp47.to_lowercase() == base)
+                .map(|(bcp47, _)| *bcp47)
+        })
 }
 
 /// Assemble the `x-qsv.tour` object from LLM prose plus a Rust-built envelope.
@@ -4127,7 +4154,7 @@ fn format_dictionary_phase(
             // the envelope (integer version 1, audience, BCP-47 language, provenance)
             // is built here so a model can never poison it. Gated on the flag AND on
             // usable prose so a flag-less run stays byte-identical.
-            if let (Some(audience), Some(prose)) = (args.flag_tour_audience.as_deref(), tour) {
+            if let (Some(audience), Some(prose)) = (effective_tour_audience(args), tour) {
                 x_qsv.insert(
                     "tour".to_string(),
                     build_tour_value(
@@ -7811,8 +7838,13 @@ mod tests {
                 Box::new(|a| a.flag_fewshot_examples = true),
             ),
             (
-                "flag_tour_audience",
-                Box::new(|a| a.flag_tour_audience = Some("Explain like I'm 10".to_string())),
+                // The cache keys on the EFFECTIVE audience, which is only non-None
+                // under jsonschema output — so the case must set both (roborev 4454).
+                "flag_tour_audience (jsonschema)",
+                Box::new(|a| {
+                    a.flag_format = Some("jsonschema".to_string());
+                    a.flag_tour_audience = Some("Explain like I'm 10".to_string());
+                }),
             ),
             // flag_context_file is covered by the dedicated cache_key_reflects_context_file_*
             // tests below — its key contribution is gated on the file existing & being
@@ -7830,6 +7862,17 @@ mod tests {
         let restored = default_args_for_test();
         let restored_key = get_cache_key_with_flag(&restored, PromptType::Tags, "gpt-x", "valid");
         assert_eq!(restored_key, baseline);
+
+        // An audience the prompt IGNORES (non-jsonschema format) must share the
+        // no-audience key: the rendered prompt is byte-identical, so splitting the
+        // cache would only bust entries for nothing (roborev 4454).
+        let mut ignored = default_args_for_test();
+        ignored.flag_tour_audience = Some("Explain like I'm 10".to_string());
+        let ignored_key = get_cache_key_with_flag(&ignored, PromptType::Tags, "gpt-x", "valid");
+        assert_eq!(
+            ignored_key, baseline,
+            "a format-gated (ignored) tour audience must not change the cache key"
+        );
     }
 
     #[test]
@@ -7855,6 +7898,11 @@ mod tests {
         assert_eq!(tour_language_bcp47(Some("es-MX")), Some("es"));
         assert_eq!(tour_language_bcp47(Some("fr_CA")), Some("fr"));
         assert_eq!(tour_language_bcp47(Some("xx-YY")), None);
+        // ...but the regional fallback matches curated BCP-47 tags ONLY, never
+        // aliases — otherwise pt-PT would claim pt-BR and zh-Hant would claim
+        // zh-CN, mislabeling dialect/script (roborev 4454)
+        assert_eq!(tour_language_bcp47(Some("pt-PT")), None);
+        assert_eq!(tour_language_bcp47(Some("zh-Hant")), None);
         // Novelty dialects and unknowns -> None: the tour block then omits
         // `language`, which viz treats as "en" (the right default for
         // English-register dialects like these).

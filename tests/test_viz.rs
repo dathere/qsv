@@ -7000,6 +7000,112 @@ fn viz_smart_dictionary_context_ignored_with_file_dict() {
     assert!(!html.contains(r#""type":"box""#) && !html.contains(r#""type":"violin""#));
 }
 
+fn tour_audience_rows() -> String {
+    let mut rows = String::from("zone,status\n");
+    for i in 0..200 {
+        let zone = i % 40;
+        let status = if i % 2 == 0 { "Open" } else { "Closed" };
+        rows.push_str(&format!("{zone},{status}\n"));
+    }
+    rows
+}
+
+// `--tour-audience` is only forwarded to describegpt by a FRESH `--dictionary infer`.
+// Without --dictionary at all it's ignored with a note.
+#[test]
+fn viz_smart_tour_audience_ignored_without_dictionary() {
+    let wrk = Workdir::new("viz_smart_tour_audience_ignored_without_dictionary");
+    wrk.create_from_string("codes.csv", &tour_audience_rows());
+
+    let out_html = wrk.path("d.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv"])
+        .args(["--tour-audience", "data journalists"])
+        .args(["-o", &out_html]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--tour-audience: ignored without --dictionary infer"),
+        "expected an ignore note on stderr; got: {stderr}"
+    );
+}
+
+// With a dictionary FILE (not `infer`), no describegpt run happens, so the audience
+// can't apply; ignored with a note, and the file dictionary still drives the page.
+#[test]
+fn viz_smart_tour_audience_ignored_with_file_dict() {
+    let wrk = Workdir::new("viz_smart_tour_audience_ignored_with_file_dict");
+    wrk.create_from_string("codes.csv", &tour_audience_rows());
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "zone": { "type": ["integer","null"], "title": "Zone",
+              "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "geo.census_tract" } },
+            "status": { "type": "string", "title": "Status",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("d.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"))
+        .args(["--tour-audience", "data journalists"])
+        .args(["-o", &out_html]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--tour-audience") && stderr.contains("existing dictionary file"),
+        "expected an ignore note on stderr; got: {stderr}"
+    );
+}
+
+// When `--dictionary infer` reuses an existing <stem>.schema.json sidecar, no LLM runs,
+// so a (changed) --tour-audience is a silent no-op unless the sidecar is deleted —
+// which is exactly what the note must tell the user.
+#[test]
+fn viz_smart_tour_audience_ignored_on_sidecar_reuse() {
+    let wrk = Workdir::new("viz_smart_tour_audience_ignored_on_sidecar_reuse");
+    wrk.create_from_string("codes.csv", &tour_audience_rows());
+    // A pre-existing sidecar at the exact path `--dictionary infer` reuses.
+    wrk.create_from_string(
+        "codes.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "zone": { "type": ["integer","null"], "title": "Zone",
+              "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "geo.census_tract" } },
+            "status": { "type": "string", "title": "Status",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("d.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dictionary", "infer"])
+        .args(["--tour-audience", "a board of directors"])
+        .args(["-o", &out_html]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("reusing existing dictionary"),
+        "expected the sidecar-reuse note on stderr; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("--tour-audience") && stderr.contains("re-infer with the new audience"),
+        "expected the tour-audience ignore note on stderr; got: {stderr}"
+    );
+}
+
 // Coordinates with non-standard headers (`X Coordinate` / `Y Coordinate`) aren't found by the
 // header-name heuristic, so without a dictionary no map renders and they're charted as numeric
 // distributions. A jsonschema dictionary tagging them geo.latitude/geo.longitude must render the

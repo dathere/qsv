@@ -219,7 +219,7 @@
       "type": [
         "integer"
       ],
-      "title": "Total Revenue",
+      "title": "Revenue",
       "description": "The total amount of money generated from the sale; calculated from units sold, unit price, and discount percentage.",
       "minimum": 0,
       "maximum": 18600,

@@ -16141,6 +16141,13 @@ fn build_tour_chrome(
             .map_or_else(|| tour_panel_explanation(panel, stats), Clone::clone);
         let mut step = serde_json::json!({
             "id": "panel",
+            // The panel's stable tour key (raw field name or @kind token) — the same key
+            // `x-qsv.tour.panels`/`panel_order` address. Emitted so an agent refining the
+            // tour (visual-data-dictionary Stage 6) can read WHICH key each spotlighted
+            // panel answers to from `#qsv-tour-config`, instead of guessing it from the
+            // display title (which is decorated: "activated (right-skewed)"). The tour
+            // engine itself ignores it (roborev 4452).
+            "key": key,
             "title": html_escape(&panel.name),
             "body": html_escape(&explanation),
         });

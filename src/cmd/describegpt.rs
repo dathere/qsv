@@ -2959,6 +2959,16 @@ fn get_prompt(
         _ => " (in Markdown format)",
     };
 
+    // The tour narration only ever ships in the JSONSchema output (`x-qsv.tour`), so
+    // only ask the LLM for it there — for every other format the USAGE-documented
+    // "ignored otherwise" is literal: no tour section is rendered, no tokens spent on
+    // narration that would be discarded (roborev 4449).
+    let tour_audience = if get_output_format(args)? == OutputFormat::JsonSchema {
+        args.flag_tour_audience.as_deref().unwrap_or("")
+    } else {
+        ""
+    };
+
     let ctx = context! {
         stats => stats,
         frequency => frequency,
@@ -2969,7 +2979,7 @@ fn get_prompt(
         num_tags => args.flag_num_tags,
         tag_vocab => tag_vocab,
         language => args.flag_language.as_ref().map_or("", |s| s.as_str()),
-        tour_audience => args.flag_tour_audience.as_ref().map_or("", |s| s.as_str()),
+        tour_audience => tour_audience,
         headers => headers,
         delimiter => delimiter.to_string(),
         input_table_name => INPUT_TABLE_NAME,
@@ -3891,13 +3901,18 @@ fn tour_language_bcp47(language: Option<&str>) -> Option<&'static str> {
             &["simplified chinese", "chinese", "zho", "cmn", "zh"],
         ),
     ];
-    let needle = language?.trim().to_lowercase();
-    LANG_TO_BCP47
-        .iter()
-        .find(|(bcp47, aliases)| {
-            bcp47.to_lowercase() == needle || aliases.contains(&needle.as_str())
-        })
-        .map(|(bcp47, _)| *bcp47)
+    // Normalize before matching: case-insensitive, underscore-form tags ("pt_BR")
+    // folded to hyphens, and a regional tag with no curated entry falls back to its
+    // base subtag ("es-MX" -> "es") — the same safe direction viz_i18n::parse_lang
+    // takes (roborev 4449).
+    let needle = language?.trim().to_lowercase().replace('_', "-");
+    let lookup = |needle: &str| {
+        LANG_TO_BCP47
+            .iter()
+            .find(|(bcp47, aliases)| bcp47.to_lowercase() == needle || aliases.contains(&needle))
+            .map(|(bcp47, _)| *bcp47)
+    };
+    lookup(&needle).or_else(|| needle.split_once('-').and_then(|(base, _)| lookup(base)))
 }
 
 /// Assemble the `x-qsv.tour` object from LLM prose plus a Rust-built envelope.
@@ -7834,6 +7849,12 @@ mod tests {
             Some("zh-CN")
         );
         assert_eq!(tour_language_bcp47(Some("English")), Some("en"));
+        // underscore-form tags fold to hyphens; a regional tag with no curated
+        // entry falls back to its base subtag (roborev 4449)
+        assert_eq!(tour_language_bcp47(Some("pt_BR")), Some("pt-BR"));
+        assert_eq!(tour_language_bcp47(Some("es-MX")), Some("es"));
+        assert_eq!(tour_language_bcp47(Some("fr_CA")), Some("fr"));
+        assert_eq!(tour_language_bcp47(Some("xx-YY")), None);
         // Novelty dialects and unknowns -> None: the tour block then omits
         // `language`, which viz treats as "en" (the right default for
         // English-register dialects like these).

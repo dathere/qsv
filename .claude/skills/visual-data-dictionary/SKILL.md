@@ -598,13 +598,16 @@ selector/anchor, not by tool.
 
 1. **Open** `file://$OUT` (or serve it locally if the tool requires http).
 2. **Read the resolved tour** from the element `#qsv-tour-config` — its JSON
-   payload lists the steps this page actually built: which step ids exist,
-   which panels got spotlight steps (`#qsv-viz-panel-N` anchors), and the prose
-   each carries. This is ground truth; the schema's `overrides`/`panels` only
-   applied where a matching step/panel exists.
+   payload lists the steps this page actually built: which step ids exist, the
+   prose each carries, and for each panel step its **`key`** — the stable
+   raw-field-name or `@kind` token that `x-qsv.tour.panels`/`panel_order`
+   address. Use `key`, never the display `title` (titles are decorated:
+   "activated (right-skewed)"). This is ground truth; the schema's
+   `overrides`/`panels` only applied where a matching step/panel exists.
 3. **Replay the tour.** It auto-runs only on first visit — click the **Tour**
-   pill in the header, or clear the `localStorage` key
-   `qsv-viz-tour-seen-<hash>` and reload.
+   pill in the header, or remove every `localStorage` key starting with
+   `qsv-viz-tour-seen-` (the key is suffixed with a page hash *and* the
+   pathname, so clear by prefix) and reload.
 4. **Step through and judge** each popover against three things: (a) the
    audience's register, (b) what is actually visible on that panel — narration
    must never reference a chart that wasn't drawn or numbers that aren't shown,

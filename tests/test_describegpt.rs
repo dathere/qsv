@@ -2658,7 +2658,13 @@ fn describegpt_tour_audience_renders_tour_prompt_section() {
     let phases = prepare_context_phases(
         &wrk,
         tour_test_rows(),
-        &["--dictionary", "--tour-audience", "Explain like I'm 10"],
+        &[
+            "--dictionary",
+            "--format",
+            "jsonschema",
+            "--tour-audience",
+            "Explain like I'm 10",
+        ],
     );
 
     let dictionary = phases
@@ -2684,7 +2690,11 @@ fn describegpt_tour_audience_renders_tour_prompt_section() {
 #[test]
 fn describegpt_no_tour_audience_no_tour_prompt_section() {
     let wrk = Workdir::new("describegpt_no_tour_prompt");
-    let phases = prepare_context_phases(&wrk, tour_test_rows(), &["--dictionary"]);
+    let phases = prepare_context_phases(
+        &wrk,
+        tour_test_rows(),
+        &["--dictionary", "--format", "jsonschema"],
+    );
 
     let dictionary = phases
         .iter()
@@ -2694,6 +2704,35 @@ fn describegpt_no_tour_audience_no_tour_prompt_section() {
     assert!(
         !prompt.contains("guided-tour") && !prompt.contains("Audience:"),
         "flag-less prompt must not carry the tour section:\n{prompt}"
+    );
+}
+
+#[test]
+fn describegpt_tour_audience_not_rendered_for_non_jsonschema_formats() {
+    // The tour only ever ships in the JSONSchema output, so for every other
+    // format the flag must not render the tour section — "ignored otherwise"
+    // is literal: no tokens are spent on narration that would be discarded.
+    let wrk = Workdir::new("describegpt_tour_prompt_format_gate");
+    let phases = prepare_context_phases(
+        &wrk,
+        tour_test_rows(),
+        &[
+            "--dictionary",
+            "--format",
+            "json",
+            "--tour-audience",
+            "Explain like I'm 10",
+        ],
+    );
+
+    let dictionary = phases
+        .iter()
+        .find(|p| p["kind"] == "Dictionary")
+        .expect("Dictionary phase");
+    let prompt = dictionary["user_prompt"].as_str().unwrap();
+    assert!(
+        !prompt.contains("guided-tour") && !prompt.contains("Audience:"),
+        "non-jsonschema prompt must not carry the tour section:\n{prompt}"
     );
 }
 

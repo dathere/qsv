@@ -2390,6 +2390,73 @@ pub(super) fn parse_llm_grain(llm_response: &str) -> Option<String> {
     (!grain.is_empty()).then(|| grain.to_string())
 }
 
+/// The guided-tour step ids `viz smart` renders (in on-screen order). Must stay
+/// in sync with the step builder in `src/cmd/viz.rs` (`build_tour_chrome`) — the
+/// list there is the source of truth. Drift is fail-soft: viz ignores unknown
+/// override ids, so a stale entry here can only lose prose, never break a page.
+pub(super) const TOUR_STEP_IDS: [&str; 13] = [
+    "intro",
+    "dict-open",
+    "dict-downloads",
+    "dict-roles",
+    "dict-fields",
+    "dict-omissions",
+    "data-open",
+    "data-filter",
+    "data-search",
+    "data-colsearch",
+    "data-export",
+    "panels-intro",
+    "conclusion",
+];
+
+/// Tour narration prose extracted from the LLM's dictionary response — the
+/// model-authored half of the `x-qsv.tour` contract. The envelope (`version`,
+/// `audience`, `language`, `generated_by`) is built Rust-side so a model can
+/// never poison it. Entries keep deterministic order (overrides in
+/// `TOUR_STEP_IDS` order, panels in dataset column order) so regenerated
+/// sidecars diff cleanly.
+pub(super) struct TourProse {
+    pub overrides: Vec<(String, String)>,
+    pub panels:    Vec<(String, String)>,
+}
+
+/// Extract the optional top-level `tour` object from the LLM's dictionary
+/// response. Best-effort like `parse_llm_grain`: malformed JSON, a missing
+/// `tour`, unknown step ids, panel keys that aren't dataset columns, and blank
+/// prose are all dropped silently; `None` when nothing usable remains. Only
+/// prose survives — structure is decided by qsv (see `TourProse`).
+pub(super) fn parse_llm_tour(llm_response: &str, field_names: &[String]) -> Option<TourProse> {
+    let json_value = extract_json_from_output(llm_response).ok()?;
+    let tour = json_value.get("tour")?.as_object()?;
+    let prose_of = |v: &serde_json::Value| {
+        v.as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string)
+    };
+
+    let mut overrides = Vec::new();
+    if let Some(raw) = tour.get("overrides").and_then(|v| v.as_object()) {
+        for step_id in TOUR_STEP_IDS {
+            if let Some(prose) = raw.get(step_id).and_then(&prose_of) {
+                overrides.push((step_id.to_string(), prose));
+            }
+        }
+    }
+
+    let mut panels = Vec::new();
+    if let Some(raw) = tour.get("panels").and_then(|v| v.as_object()) {
+        for field in field_names {
+            if let Some(prose) = raw.get(field).and_then(&prose_of) {
+                panels.push((field.clone(), prose));
+            }
+        }
+    }
+
+    (!overrides.is_empty() || !panels.is_empty()).then_some(TourProse { overrides, panels })
+}
+
 /// Extract the optional top-level `grain_unit` string from the LLM's dictionary
 /// response — the bare entity noun behind the `grain` sentence ("311 service
 /// request"), which `viz smart` renders VERBATIM as the subject of its
@@ -5346,6 +5413,89 @@ mod tests {
             None
         );
         assert_eq!(parse_llm_grain_unit("not json at all"), None);
+    }
+
+    #[test]
+    fn parse_llm_tour_filters_and_orders() {
+        let fields = vec!["status".to_string(), "amount".to_string()];
+        // Deliberately scrambled input order + junk keys: unknown step id, panel key
+        // that isn't a real column, blank prose, non-string prose.
+        let response = r#"{
+            "tour": {
+                "overrides": {
+                    "conclusion": "Bye!",
+                    "made-up-step": "dropped",
+                    "intro": "Hello!",
+                    "dict-roles": "   ",
+                    "panels-intro": 42
+                },
+                "panels": {
+                    "amount": "Watch the big bars.",
+                    "not_a_column": "dropped",
+                    "status": "Most rows are Open."
+                }
+            }
+        }"#;
+        let tour = parse_llm_tour(response, &fields).unwrap();
+        // overrides in TOUR_STEP_IDS (on-screen) order, not response order
+        assert_eq!(
+            tour.overrides,
+            vec![
+                ("intro".to_string(), "Hello!".to_string()),
+                ("conclusion".to_string(), "Bye!".to_string()),
+            ]
+        );
+        // panels in dataset column order, not response order
+        assert_eq!(
+            tour.panels,
+            vec![
+                ("status".to_string(), "Most rows are Open.".to_string()),
+                ("amount".to_string(), "Watch the big bars.".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_llm_tour_rejects_unusable_input() {
+        let fields = vec!["a".to_string()];
+        assert!(parse_llm_tour("not json at all", &fields).is_none());
+        assert!(parse_llm_tour(r#"{"grain":"one row = one x"}"#, &fields).is_none());
+        // tour present but not an object
+        assert!(parse_llm_tour(r#"{"tour":"a string"}"#, &fields).is_none());
+        // tour object with nothing that survives filtering -> None, so the emit
+        // side can gate on Some and never write an empty x-qsv.tour
+        assert!(
+            parse_llm_tour(
+                r#"{"tour":{"overrides":{"bogus":"x"},"panels":{"b":"y"}}}"#,
+                &fields
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn tour_step_ids_match_the_public_contract() {
+        // The 13 step ids are a public contract shared with viz's build_tour_chrome
+        // (renaming one there is breaking). Pin the exact list so an accidental
+        // edit here is caught even without a viz build.
+        assert_eq!(
+            TOUR_STEP_IDS,
+            [
+                "intro",
+                "dict-open",
+                "dict-downloads",
+                "dict-roles",
+                "dict-fields",
+                "dict-omissions",
+                "data-open",
+                "data-filter",
+                "data-search",
+                "data-colsearch",
+                "data-export",
+                "panels-intro",
+                "conclusion",
+            ]
+        );
     }
 
     #[test]

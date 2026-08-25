@@ -454,6 +454,14 @@ describegpt options:
                              Note that LLMs often detect the language independently, but will often respond
                              in the model's default language. This option is here to ensure responses are
                              in the detected language of the prompt.
+    --tour-audience <text>  Also write an "x-qsv.tour" guided-tour narration for the qsv
+                           viz smart Data Schematic into the generated dictionary, addressed
+                           to the given audience (e.g. "Explain like I'm 10", "a board of
+                           directors", "data journalists"). Only meaningful with --dictionary
+                           when the format is jsonschema; ignored otherwise. The audience
+                           shapes ONLY the tour prose - field labels & descriptions keep
+                           their normal register. "qsv viz smart --dictionary infer" forwards
+                           this flag automatically (defaulting to "Explain like I'm 10").
     --addl-props <json>    Additional model properties to pass to the LLM chat/completion API.
                            Various models support different properties beyond the standard ones.
                            For instance, gpt-oss-20b supports the "reasoning_effort" property.
@@ -690,6 +698,7 @@ struct Args {
     flag_base_url:           Option<String>,
     flag_model:              Option<String>,
     flag_language:           Option<String>,
+    flag_tour_audience:      Option<String>,
     flag_addl_props:         Option<String>,
     flag_api_key:            Option<String>,
     flag_max_tokens:         u32,
@@ -2960,6 +2969,7 @@ fn get_prompt(
         num_tags => args.flag_num_tags,
         tag_vocab => tag_vocab,
         language => args.flag_language.as_ref().map_or("", |s| s.as_str()),
+        tour_audience => args.flag_tour_audience.as_ref().map_or("", |s| s.as_str()),
         headers => headers,
         delimiter => delimiter.to_string(),
         input_table_name => INPUT_TABLE_NAME,
@@ -3300,12 +3310,13 @@ fn get_cache_key_with_flag(
         "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
          {actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};{tag_vocab_fp};\
          {num_tags};{enum_threshold};{infer_content_type};{infer_null_values};{sample_size};\
-         {fewshot_examples};{duckdb_enabled};{duckdb_path};{duckdb_binary_fp};\
+         {fewshot_examples};{duckdb_enabled};{duckdb_path};{duckdb_binary_fp};{tour_audience:?};\
          {dictionary_fingerprint:?}{context_suffix}",
         prompt_file = args.flag_prompt_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
         language = args.flag_language,
+        tour_audience = args.flag_tour_audience,
         tag_vocab = args.flag_tag_vocab,
         num_tags = args.flag_num_tags,
         enum_threshold = args.flag_enum_threshold,
@@ -3655,6 +3666,7 @@ fn build_combined_dictionary_entries(
     Vec<serde_json::Value>,
     Option<String>,
     Option<String>,
+    Option<dictionary::TourProse>,
 )> {
     let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
     let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
@@ -3707,7 +3719,10 @@ fn build_combined_dictionary_entries(
     // entity noun viz renders in chart titles (issue #4321).
     let grain = dictionary::parse_llm_grain(&completion_response.response);
     let grain_unit = dictionary::parse_llm_grain_unit(&completion_response.response);
-    Ok((entries, relationships, grain, grain_unit))
+    // Guided-tour narration (--tour-audience) rides the same response; prose only,
+    // filtered against the known step ids and real field names.
+    let tour = dictionary::parse_llm_tour(&completion_response.response, &field_names);
+    Ok((entries, relationships, grain, grain_unit, tour))
 }
 
 /// Two-pass variant: parse stats/frequency, parse BOTH the baseline (first-pass) and refine
@@ -3728,6 +3743,7 @@ fn build_combined_dictionary_entries_two_pass(
     Vec<serde_json::Value>,
     Option<String>,
     Option<String>,
+    Option<dictionary::TourProse>,
 )> {
     let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
     let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
@@ -3785,10 +3801,12 @@ fn build_combined_dictionary_entries_two_pass(
     let relationships =
         dictionary::parse_llm_relationships(&baseline_completion.response, &field_names);
     // Grain, like relationships, is taken from the first-pass (relationship-aware) response.
-    // The refine prompt never revisits either, so `grain_unit` must come from the same pass.
+    // The refine prompt never revisits either, so `grain_unit` — and the guided-tour
+    // narration (--tour-audience) — must come from the same pass.
     let grain = dictionary::parse_llm_grain(&baseline_completion.response);
     let grain_unit = dictionary::parse_llm_grain_unit(&baseline_completion.response);
-    Ok((entries, relationships, grain, grain_unit))
+    let tour = dictionary::parse_llm_tour(&baseline_completion.response, &field_names);
+    Ok((entries, relationships, grain, grain_unit, tour))
 }
 
 /// Produce the prettified first-pass dictionary JSON string used as `{{ first_pass_dictionary }}`
@@ -3834,6 +3852,88 @@ fn build_first_pass_dictionary_json_string(
 /// conditional `relationships` emission).
 fn inject_detected_language(obj: &mut serde_json::Map<String, serde_json::Value>) {
     inject_detected_language_value(obj, DATASET_LANGUAGE.get().and_then(Option::as_ref));
+}
+
+/// Map a resolved `--language` value (an English language name like "Spanish", a
+/// whatlang ISO 639-3 detection code like "spa", or a BCP-47 tag) to the BCP-47
+/// tag of one of viz's curated UI locales. `x-qsv.tour.language` must be BCP-47:
+/// viz honors tour overrides only when the tag prefix-matches the active UI
+/// locale (`tour_spec_language_matches` in viz.rs) — writing "Spanish" there
+/// would silently drop ALL overrides. Unmappable values ("Pirate", "Valley
+/// Girl") yield `None` and the field is omitted; viz treats an absent language
+/// as "en", the right default for English-register novelty dialects.
+///
+/// describegpt is compiled without viz (e.g. the qsvdp binary), so this cannot
+/// call `viz_i18n`; the inline table mirrors `viz_i18n::LOCALES` (`bcp47` +
+/// `english_name` + aliases) and is cross-checked against it by a cfg-gated unit
+/// test so drift is caught in any `all_features` test run.
+fn tour_language_bcp47(language: Option<&str>) -> Option<&'static str> {
+    const LANG_TO_BCP47: [(&str, &[&str]); 8] = [
+        ("en", &["english", "eng"]),
+        ("es", &["spanish", "spa", "espanol", "español"]),
+        ("fr", &["french", "fra", "francais", "français"]),
+        ("de", &["german", "deu", "deutsch"]),
+        ("it", &["italian", "ita", "italiano"]),
+        (
+            "pt-BR",
+            &[
+                "brazilian portuguese",
+                "portuguese",
+                "por",
+                "pt",
+                "portugues",
+                "português",
+            ],
+        ),
+        ("ja", &["japanese", "jpn"]),
+        (
+            "zh-CN",
+            &["simplified chinese", "chinese", "zho", "cmn", "zh"],
+        ),
+    ];
+    let needle = language?.trim().to_lowercase();
+    LANG_TO_BCP47
+        .iter()
+        .find(|(bcp47, aliases)| {
+            bcp47.to_lowercase() == needle || aliases.contains(&needle.as_str())
+        })
+        .map(|(bcp47, _)| *bcp47)
+}
+
+/// Assemble the `x-qsv.tour` object from LLM prose plus a Rust-built envelope.
+/// `version` MUST be the integer `1`: viz's `parse_tour_spec` discards the whole
+/// block on any other type or value (deliberately — a contract revision can
+/// never half-apply). Map insertion order is preserved (`serde_json`
+/// `preserve_order`), so overrides emit in on-screen step order and panels in
+/// dataset column order — regenerated sidecars diff cleanly.
+fn build_tour_value(
+    audience: &str,
+    language: Option<&'static str>,
+    generated_by: &str,
+    prose: &dictionary::TourProse,
+) -> serde_json::Value {
+    let prose_map = |pairs: &[(String, String)]| {
+        serde_json::Value::Object(
+            pairs
+                .iter()
+                .map(|(k, v)| (k.clone(), json!(v)))
+                .collect::<serde_json::Map<String, serde_json::Value>>(),
+        )
+    };
+    let mut tour = serde_json::Map::new();
+    tour.insert("version".to_string(), json!(1_i64));
+    tour.insert("audience".to_string(), json!(audience));
+    if let Some(lang) = language {
+        tour.insert("language".to_string(), json!(lang));
+    }
+    tour.insert("generated_by".to_string(), json!(generated_by));
+    if !prose.overrides.is_empty() {
+        tour.insert("overrides".to_string(), prose_map(&prose.overrides));
+    }
+    if !prose.panels.is_empty() {
+        tour.insert("panels".to_string(), prose_map(&prose.panels));
+    }
+    serde_json::Value::Object(tour)
 }
 
 /// Pure worker for `inject_detected_language`, split out so unit tests can exercise
@@ -3915,6 +4015,9 @@ fn emit_dictionary_context_only(
 /// `viz smart` renders verbatim in chart titles. It rides only in the JSON Schema output —
 /// the SemanticMd/OKF documents render the human-readable `grain` sentence instead, and
 /// viz consumes JSON Schema.
+///
+/// `tour` is the LLM-authored guided-tour narration (`--tour-audience`); like
+/// `grain_unit` it rides only in the JSON Schema output, as `x-qsv.tour`.
 #[allow(clippy::too_many_arguments)]
 fn format_dictionary_phase(
     kind: PromptType,
@@ -3923,6 +4026,7 @@ fn format_dictionary_phase(
     relationships: &[serde_json::Value],
     grain: Option<&str>,
     grain_unit: Option<&str>,
+    tour: Option<&dictionary::TourProse>,
     completion_response: &CompletionResponse,
     total_json_output: &mut serde_json::Value,
     model: &str,
@@ -4004,6 +4108,24 @@ fn format_dictionary_phase(
         {
             x_qsv.insert("generated_by".to_string(), json!(attribution));
             inject_detected_language(x_qsv);
+            // Guided-tour narration (--tour-audience). The LLM contributed prose only;
+            // the envelope (integer version 1, audience, BCP-47 language, provenance)
+            // is built here so a model can never poison it. Gated on the flag AND on
+            // usable prose so a flag-less run stays byte-identical.
+            if let (Some(audience), Some(prose)) = (args.flag_tour_audience.as_deref(), tour) {
+                x_qsv.insert(
+                    "tour".to_string(),
+                    build_tour_value(
+                        audience,
+                        tour_language_bcp47(args.flag_language.as_deref()),
+                        &format!(
+                            "qsv describegpt v{version} · {model}",
+                            version = util::CARGO_PKG_VERSION
+                        ),
+                        prose,
+                    ),
+                );
+            }
         }
         // Downstream Description/Tags prompts read `DATA_DICTIONARY_JSON` as the
         // `{{ dictionary }}` Mini-Jinja variable, and that variable's contract is the
@@ -4345,7 +4467,7 @@ fn process_phase_output(
 ) -> CliResult<()> {
     // Dictionary when --prompt is active: generate dictionary JSON for prompt context, no output.
     if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
-        let (combined_entries, relationships, _grain, _grain_unit) =
+        let (combined_entries, relationships, _grain, _grain_unit, _tour) =
             build_combined_dictionary_entries(args, analysis_results, completion_response)?;
         return emit_dictionary_context_only(
             args,
@@ -4357,7 +4479,7 @@ fn process_phase_output(
     }
 
     if kind == PromptType::Dictionary {
-        let (combined_entries, relationships, grain, grain_unit) =
+        let (combined_entries, relationships, grain, grain_unit, tour) =
             build_combined_dictionary_entries(args, analysis_results, completion_response)?;
         return format_dictionary_phase(
             kind,
@@ -4366,6 +4488,7 @@ fn process_phase_output(
             &relationships,
             grain.as_deref(),
             grain_unit.as_deref(),
+            tour.as_ref(),
             completion_response,
             total_json_output,
             model,
@@ -4669,7 +4792,7 @@ fn run_dictionary_phase(
     // --- FIRST_PASS_DICT_JSON, render the refine prompt, and call the LLM again. ---
     // First-pass relationships are discarded here; the final ones are re-parsed
     // from the (relationship-aware) first-pass response by the two-pass builder.
-    let (first_pass_entries, _, _, _) =
+    let (first_pass_entries, _, _, _, _) =
         build_combined_dictionary_entries(args, analysis_results, &data_dict)?;
     let first_pass_json = build_first_pass_dictionary_json_string(args, &first_pass_entries);
     // Seed the global the refine prompt template reads via `{{ first_pass_dictionary }}`.
@@ -4715,7 +4838,7 @@ fn run_dictionary_phase(
     // don't wipe first-pass Label/Description. Then emit using the SAME format functions
     // the single-pass flow uses — process_phase_output is bypassed here because routing
     // back through it would re-parse only the refine response and lose the baseline.
-    let (merged_entries, relationships, grain, grain_unit) =
+    let (merged_entries, relationships, grain, grain_unit, tour) =
         build_combined_dictionary_entries_two_pass(
             args,
             analysis_results,
@@ -4753,6 +4876,7 @@ fn run_dictionary_phase(
             &relationships,
             grain.as_deref(),
             grain_unit.as_deref(),
+            tour.as_ref(),
             &combined_completion,
             total_json_output,
             model,
@@ -7671,6 +7795,10 @@ mod tests {
                 "flag_fewshot_examples",
                 Box::new(|a| a.flag_fewshot_examples = true),
             ),
+            (
+                "flag_tour_audience",
+                Box::new(|a| a.flag_tour_audience = Some("Explain like I'm 10".to_string())),
+            ),
             // flag_context_file is covered by the dedicated cache_key_reflects_context_file_*
             // tests below — its key contribution is gated on the file existing & being
             // non-empty, which a bare-string closure here can't set up.
@@ -7687,6 +7815,93 @@ mod tests {
         let restored = default_args_for_test();
         let restored_key = get_cache_key_with_flag(&restored, PromptType::Tags, "gpt-x", "valid");
         assert_eq!(restored_key, baseline);
+    }
+
+    #[test]
+    fn tour_language_bcp47_maps_names_codes_and_tags() {
+        // English names (what viz forwards), whatlang ISO 639-3 detection codes,
+        // and BCP-47 tags themselves must all resolve; case-insensitively.
+        assert_eq!(tour_language_bcp47(Some("Spanish")), Some("es"));
+        assert_eq!(tour_language_bcp47(Some("spa")), Some("es"));
+        assert_eq!(
+            tour_language_bcp47(Some("Brazilian Portuguese")),
+            Some("pt-BR")
+        );
+        assert_eq!(tour_language_bcp47(Some("Portuguese")), Some("pt-BR"));
+        assert_eq!(tour_language_bcp47(Some("pt-br")), Some("pt-BR"));
+        assert_eq!(
+            tour_language_bcp47(Some("Simplified Chinese")),
+            Some("zh-CN")
+        );
+        assert_eq!(tour_language_bcp47(Some("English")), Some("en"));
+        // Novelty dialects and unknowns -> None: the tour block then omits
+        // `language`, which viz treats as "en" (the right default for
+        // English-register dialects like these).
+        assert_eq!(tour_language_bcp47(Some("Pirate")), None);
+        assert_eq!(tour_language_bcp47(Some("Valley Girl")), None);
+        assert_eq!(tour_language_bcp47(None), None);
+    }
+
+    /// Guards the inline table in `tour_language_bcp47` against drift from
+    /// `viz_i18n::LOCALES` (which describegpt cannot reference at runtime —
+    /// it is compiled into builds without viz, e.g. qsvdp).
+    #[cfg(all(feature = "viz", feature = "feature_capable"))]
+    #[test]
+    fn tour_language_bcp47_matches_viz_i18n_locales() {
+        for row in crate::cmd::viz_i18n::LOCALES {
+            assert_eq!(
+                tour_language_bcp47(Some(row.english_name)),
+                Some(row.bcp47),
+                "english_name {:?} must map to {:?}",
+                row.english_name,
+                row.bcp47
+            );
+            for alias in row.aliases {
+                assert_eq!(
+                    tour_language_bcp47(Some(alias)),
+                    Some(row.bcp47),
+                    "alias {alias:?} must map to {:?}",
+                    row.bcp47
+                );
+            }
+            assert_eq!(tour_language_bcp47(Some(row.bcp47)), Some(row.bcp47));
+        }
+    }
+
+    #[test]
+    fn build_tour_value_builds_the_viz_contract_envelope() {
+        let prose = dictionary::TourProse {
+            overrides: vec![("intro".to_string(), "Hi!".to_string())],
+            panels:    vec![("status".to_string(), "Look here.".to_string())],
+        };
+        let v = build_tour_value(
+            "Explain like I'm 10",
+            Some("en"),
+            "qsv describegpt vX",
+            &prose,
+        );
+        // version must be the INTEGER 1 — viz's parse_tour_spec discards the
+        // whole block on any other type or value.
+        assert_eq!(v["version"].as_i64(), Some(1));
+        assert!(v["version"].is_i64());
+        assert_eq!(v["audience"], "Explain like I'm 10");
+        assert_eq!(v["language"], "en");
+        assert_eq!(v["generated_by"], "qsv describegpt vX");
+        assert_eq!(v["overrides"]["intro"], "Hi!");
+        assert_eq!(v["panels"]["status"], "Look here.");
+
+        // no mappable language -> the key is OMITTED entirely (never null)
+        let v = build_tour_value("kids", None, "qsv", &prose);
+        assert!(v.get("language").is_none());
+
+        // empty maps are omitted, not emitted as {}
+        let empty = dictionary::TourProse {
+            overrides: vec![],
+            panels:    vec![("status".to_string(), "x".to_string())],
+        };
+        let v = build_tour_value("kids", None, "qsv", &empty);
+        assert!(v.get("overrides").is_none());
+        assert!(v.get("panels").is_some());
     }
 
     #[test]
@@ -8221,6 +8436,7 @@ p_fewshot_examples = ""
             flag_base_url:           None,
             flag_model:              None,
             flag_language:           None,
+            flag_tour_audience:      None,
             flag_addl_props:         None,
             flag_api_key:            None,
             flag_max_tokens:         0,

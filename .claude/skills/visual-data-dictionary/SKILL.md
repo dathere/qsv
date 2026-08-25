@@ -14,14 +14,17 @@ argument-hint: "<input.csv> [geojson]"
 > `mcp__qsv__*` MCP tools, while this one drives the **qsv CLI** directly and needs
 > `Bash` plus `python3`. Shipping it would require rewriting it against the MCP
 > tool surface, which has no equivalent for the GeoJSON inspection or the HTML
-> verification below.
+> verification below (nor for the optional Stage 6 browser pass).
 >
 > **Requires:** `qsv` on `PATH`, `python3`, and an LLM endpoint for `describegpt`.
+> Stage 6 (optional) additionally needs a browser-automation MCP — any one
+> (Playwright MCP, claude-in-chrome, …); skip the stage when none is available.
 
 Turn a CSV into a self-contained HTML Data Schematic whose panels are chosen from an
 LLM-inferred data dictionary, with that dictionary embedded beside the charts.
 
-Four stages, plus one optional fine-tune, in this order and no other:
+Four stages, plus one optional fine-tune and one optional browser pass, in this
+order and no other:
 
 1. **denull** — blank null sentinels so numeric columns are actually numeric
 2. **describegpt** — infer a JSON Schema data dictionary from the *cleaned* data
@@ -29,6 +32,9 @@ Four stages, plus one optional fine-tune, in this order and no other:
      before it drives the Data Schematic
 3. **geojson** (optional) — pick a feature id key by inspecting the file
 4. **viz smart** — render the Data Schematic, dictionary-driven, dictionary-embedded
+   - **5 verify** — check the HTML, then report
+   - **6 tour refinement** (optional, browser) — step through the guided Tour and
+     refine its `x-qsv.tour` narration against what actually rendered
 
 The order is load-bearing. Clean first, then describe, then draw. A dictionary
 built from dirty data documents a `String` column that is really a number, and
@@ -160,10 +166,15 @@ memory.
 
 ### Generate
 
+First ask with **AskUserQuestion**: *"Who is the Data Schematic's guided Tour
+for?"* — default `TOUR_AUDIENCE="Explain like I'm 10"`; any free-text audience
+works ("a board of directors", "data journalists", …).
+
 ```bash
 qsv describegpt "$WORK" \
   --dictionary --description --two-pass --infer-content-type \
   --format JSONSchema \
+  --tour-audience "$TOUR_AUDIENCE" \
   ${BASE_URL:+--base-url "$BASE_URL"} --model "$MODEL" \
   -o "$SCHEMA"
 ```
@@ -186,6 +197,10 @@ qsv describegpt "$WORK" \
 - Naming it `<WORK stem>.schema.json` means a later
   `qsv viz smart "$WORK" --dictionary infer` finds and **reuses** it instead of
   paying for the LLM again. Delete the file to force a re-infer.
+- `--tour-audience` makes describegpt also write a dataset-level `x-qsv.tour`
+  narration — the prose the Data Schematic's guided Tour speaks — in the
+  audience's register. The audience shapes ONLY the tour prose; labels and
+  descriptions keep their normal register. Stage 6 refines it in a browser.
 
 Optionally add `--infer-null-values` to have the model propose null sentinels
 into each property's `x-qsv` object, split into `null_values` (confirmed present
@@ -215,6 +230,13 @@ print(f"relationships: {len(rels)} ({len(pipes)} pipeline -> funnel/bridge panel
 if not rels and s.get("relationships"):
     print("WARNING: relationships found at the ROOT, not under x-qsv — viz ignores"
           " those. Is this the flat JSON dictionary instead of JSONSchema?")
+tour = (s.get("x-qsv") or {}).get("tour")
+if tour:
+    print(f"tour: version {tour.get('version')}, audience {tour.get('audience')!r}, "
+          f"{len(tour.get('overrides') or {})} override(s), "
+          f"{len(tour.get('panels') or {})} panel narration(s)")
+else:
+    print("tour: (none — was --tour-audience passed?)")
 PY
 ```
 
@@ -300,7 +322,7 @@ Scope note: the TUI deliberately does **not** edit null sentinels
 (`--infer-null-values` output). Those are reported-never-applied and have no
 `viz smart` effect, so editing them here would change nothing downstream.
 
-Four keys that *do* affect the Data Schematic are outside the TUI, and are
+Five keys that *do* affect the Data Schematic are outside the TUI, and are
 **hand-edited in the JSON** — this is the supported path for them, not a
 violation of the "never hand-write the schema" rule:
 
@@ -310,6 +332,7 @@ violation of the "never hand-write the schema" rule:
 | `x-qsv.target` | per property, a number | KPI tile gains a **"vs target" delta**. Never inferred — it is a goal only the user knows |
 | `x-qsv.currency` | per property, an ISO-4217 code (`"USD"`) | KPI tile is prefixed with the currency **symbol** (`$192B`) and the panel subtitle names the currency. `describegpt` proposes it for money columns; qsv drops it unless the column is a numeric measure that reads as money (concept `measure.money` or `measure.amount`, or content type `money`) |
 | `x-qsv.relationships` | dataset level, `{"kind":"pipeline", …}` | draws the **pipeline** panel |
+| `x-qsv.tour` | dataset level | replaces the guided Tour's built-in narration: `overrides` keyed by step id, `panels` keyed by RAW field name or `@kind` token, `panel_order` picks/orders the panel spotlights (cap 6). `version` MUST stay the **integer** `1` — viz silently discards the whole block on anything else. Plain text only; `language` (if present) is BCP-47 and must match the page locale or overrides are dropped. Written by `--tour-audience` (Stage 2), refined in Stage 6 |
 
 (`x-qsv.aggregation` used to be a fifth row here; it is now edited with `a` in
 the TUI above. Its meaning is unchanged: `sum` or `mean` on a numeric measure,
@@ -535,6 +558,8 @@ print("dictionary drawer embedded:", "qsv-dict-drawer" in h)
 print("dictionary back-links:", h.count("View chart"))
 m = re.search(r"Data — [^\"<]{0,60}", h)
 print("data viewer:", m.group(0) if m else "disabled / not embedded")
+print("guided tour config:", "qsv-tour-config" in h)
+print("tour narration in dict drawer:", 'class="qsv-dict-tour"' in h)
 PY
 ```
 
@@ -556,7 +581,47 @@ Then tell the user:
 - the path to `$OUT`
 
 If the user can open a browser, offer to render it. Do not assert the Data Schematic
-"looks right" — you cannot see it.
+"looks right" — you cannot see it. **Unless you have a browser-automation MCP —
+then Stage 6 lets you.**
+
+## Stage 6 — Tour refinement (optional, browser)
+
+The `x-qsv.tour` narration from Stage 2 was written blind: the LLM never saw
+which panels `viz smart` actually drew. With a browser you can close that loop —
+step through the Tour, judge each narration against what is really on screen,
+and refine the schema. Skip this stage (and say so) when no browser-automation
+MCP is available.
+
+**Tool-agnostic:** use whatever browser-automation MCP is available — Playwright
+MCP, claude-in-chrome, or any other. Every check below is specified by
+selector/anchor, not by tool.
+
+1. **Open** `file://$OUT` (or serve it locally if the tool requires http).
+2. **Read the resolved tour** from the element `#qsv-tour-config` — its JSON
+   payload lists the steps this page actually built: which step ids exist,
+   which panels got spotlight steps (`#qsv-viz-panel-N` anchors), and the prose
+   each carries. This is ground truth; the schema's `overrides`/`panels` only
+   applied where a matching step/panel exists.
+3. **Replay the tour.** It auto-runs only on first visit — click the **Tour**
+   pill in the header, or clear the `localStorage` key
+   `qsv-viz-tour-seen-<hash>` and reload.
+4. **Step through and judge** each popover against three things: (a) the
+   audience's register, (b) what is actually visible on that panel — narration
+   must never reference a chart that wasn't drawn or numbers that aren't shown,
+   and (c) the collapsed `<details class="qsv-dict-tour">` section on the
+   dictionary page (open the drawers with the page's `qsvOpenDict` /
+   `qsvOpenData` links as the tour does).
+5. **Refine `$SCHEMA`** with an inline `python3` JSON merge — load, mutate ONLY
+   `s["x-qsv"]["tour"]`, dump. Never `sed`/regex the file, never touch other
+   keys. Unlike the Stage 2 LLM pass, you can now see which panels rendered, so
+   you MAY also set `@kind`-token `panels` entries (`@kpi`, `@correlation`,
+   `@timeseries`, `@map`, `@choropleth`, `@scatter`, …) and a `panel_order`
+   array to pick and order the spotlights (viz caps them at 6). Keep `version`
+   the integer `1`; keep `language` BCP-47 matching the page locale.
+6. **Re-render and re-verify.** Stage 4 passes `--dictionary "$SCHEMA"` by
+   path, so re-running it is cheap (no LLM call, no sidecar-reuse trap). Re-open
+   the page and spot-check the changed steps. At most **two** refinement loops —
+   then report what changed and stop.
 
 ## Guardrails
 
@@ -569,9 +634,14 @@ If the user can open a browser, offer to render it. Do not assert the Data Schem
   through the Stage 2.5 `edit_dictionary.py` TUI — never by editing the JSON by
   hand (an off-vocab `role`/`concept` typed into the raw file silently routes a
   column to the wrong panel; the TUI validates against the vocab and flags
-  drift). The exceptions are the four keys the TUI does not own —
+  drift). The exceptions are the five keys the TUI does not own —
   `x-qsv.gauge_range`, `x-qsv.target`, `x-qsv.currency` and the dataset-level
-  `x-qsv.relationships` — which qsv documents as hand-edited.
+  `x-qsv.relationships` and `x-qsv.tour` — which qsv documents as hand-edited.
+  `x-qsv.tour` is freeform prose (nothing for a validator to check), but three
+  of its fields are load-bearing: `version` must stay the integer `1`,
+  `language` must stay BCP-47 matching the page locale, and prose is plain
+  text only — never HTML or Markdown. When editing it, never touch any other
+  key in the schema.
 - The Stage 2.5 TUI is **out-of-band**: it needs the user's real terminal. Never
   try to launch it through your Bash tool and "drive" it — that shell is not a
   TTY, and the script will refuse. Print the command, wait, then re-read.

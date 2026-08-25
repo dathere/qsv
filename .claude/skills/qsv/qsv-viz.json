@@ -407,6 +407,11 @@
         "description": "Chart title."
       },
       {
+        "flag": "--tour-audience",
+        "type": "string",
+        "description": "Who the guided Tour should talk to. Forwarded to describegpt when `--dictionary infer` generates the dictionary, so the inferred dictionary carries an \"x-qsv.tour\" narration written for that audience (e.g. \"Explain like I'm 10\" - the default - or \"a board of directors\", \"data journalists\"). The audience shapes ONLY the tour prose; field labels & descriptions keep their normal register. Ignored unless a FRESH `--dictionary infer` actually runs: when an existing <stem>.schema.json sidecar is reused, delete it (or set QSV_VIZ_DICT_FRESH=1) to re-infer with a new audience. Only affects `smart`."
+      },
+      {
         "flag": "--value",
         "type": "string",
         "description": "Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1. For treemap/sunburst/icicle: a numeric measure summed per sector (when omitted, each row counts as 1)."

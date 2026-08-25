@@ -2545,6 +2545,246 @@ fn describegpt_dictionary_jsonschema_language_in_x_qsv() {
     );
 }
 
+// ====== --tour-audience tests ======
+// All LLM-free: --prepare-context asserts the rendered prompt; --process-response
+// feeds a crafted LLM response and asserts the emitted x-qsv.tour envelope.
+
+/// Like `process_response_dictionary_output_with`, but the synthesized LLM
+/// response body is caller-controlled so tests can feed a JSON dictionary
+/// carrying a top-level "tour" object.
+fn process_dictionary_with_response_body(
+    wrk: &Workdir,
+    format: &str,
+    response_body: &str,
+    extra_args: &[&str],
+) -> serde_json::Value {
+    use std::{io::Write, process::Stdio};
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context")
+        .arg("--dictionary")
+        .arg("--no-cache");
+    for arg in extra_args {
+        cmd.arg(arg);
+    }
+    cmd.arg("data.csv");
+
+    let prep_json: String = wrk.stdout(&mut cmd);
+    let prep: serde_json::Value = serde_json::from_str(&prep_json).unwrap();
+
+    let phases: Vec<serde_json::Value> = prep["phases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "kind": p["kind"],
+                "response": response_body,
+                "reasoning": "Test reasoning",
+                "token_usage": {"prompt": 100, "completion": 50, "total": 150, "elapsed": 500}
+            })
+        })
+        .collect();
+
+    let process_input = serde_json::json!({
+        "phases": phases,
+        "analysis_results": prep["analysis_results"],
+        "model": prep["model"]
+    });
+
+    let mut cmd_2 = wrk.command("describegpt");
+    cmd_2
+        .arg("--process-response")
+        .arg("--dictionary")
+        .arg("--format")
+        .arg(format)
+        .arg("--no-cache");
+    for arg in extra_args {
+        cmd_2.arg(arg);
+    }
+    cmd_2
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd_2.spawn().unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(process_input.to_string().as_bytes())
+        .unwrap();
+
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "process-response should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn tour_test_rows() -> Vec<Vec<String>> {
+    vec![
+        svec!["status", "amount"],
+        svec!["Open", "10"],
+        svec!["Closed", "25"],
+        svec!["Open", "31"],
+    ]
+}
+
+/// The LLM response the tour tests feed back: a JSON dictionary for the two
+/// columns plus a "tour" object that exercises the filtering rules (an unknown
+/// step id and a panel key that is not a real column must be dropped).
+const TOUR_TEST_RESPONSE: &str = r#"{
+  "status": {"label": "Status", "description": "Request state"},
+  "amount": {"label": "Amount", "description": "Dollars requested"},
+  "tour": {
+    "overrides": {
+      "intro": "Welcome, explorer!",
+      "made-up-step": "must be dropped",
+      "conclusion": "Now go explore!"
+    },
+    "panels": {
+      "status": "Most requests are Open.",
+      "not_a_column": "must be dropped"
+    }
+  }
+}"#;
+
+#[test]
+fn describegpt_tour_audience_renders_tour_prompt_section() {
+    let wrk = Workdir::new("describegpt_tour_prompt");
+    let phases = prepare_context_phases(
+        &wrk,
+        tour_test_rows(),
+        &[
+            "--dictionary",
+            "--format",
+            "jsonschema",
+            "--tour-audience",
+            "Explain like I'm 10",
+        ],
+    );
+
+    let dictionary = phases
+        .iter()
+        .find(|p| p["kind"] == "Dictionary")
+        .expect("Dictionary phase");
+    let prompt = dictionary["user_prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains("Audience: Explain like I'm 10"),
+        "tour section should carry the audience:\n{prompt}"
+    );
+    // one distinctive step id from the enumerated contract list
+    assert!(
+        prompt.contains("dict-omissions"),
+        "tour section should enumerate the step ids:\n{prompt}"
+    );
+    assert!(
+        prompt.contains(r#"a top-level "tour" object"#),
+        "output-shape sentence should ask for the tour object:\n{prompt}"
+    );
+}
+
+#[test]
+fn describegpt_no_tour_audience_no_tour_prompt_section() {
+    let wrk = Workdir::new("describegpt_no_tour_prompt");
+    let phases = prepare_context_phases(
+        &wrk,
+        tour_test_rows(),
+        &["--dictionary", "--format", "jsonschema"],
+    );
+
+    let dictionary = phases
+        .iter()
+        .find(|p| p["kind"] == "Dictionary")
+        .expect("Dictionary phase");
+    let prompt = dictionary["user_prompt"].as_str().unwrap();
+    assert!(
+        !prompt.contains("guided-tour") && !prompt.contains("Audience:"),
+        "flag-less prompt must not carry the tour section:\n{prompt}"
+    );
+}
+
+#[test]
+fn describegpt_tour_audience_not_rendered_for_non_jsonschema_formats() {
+    // The tour only ever ships in the JSONSchema output, so for every other
+    // format the flag must not render the tour section — "ignored otherwise"
+    // is literal: no tokens are spent on narration that would be discarded.
+    let wrk = Workdir::new("describegpt_tour_prompt_format_gate");
+    let phases = prepare_context_phases(
+        &wrk,
+        tour_test_rows(),
+        &[
+            "--dictionary",
+            "--format",
+            "json",
+            "--tour-audience",
+            "Explain like I'm 10",
+        ],
+    );
+
+    let dictionary = phases
+        .iter()
+        .find(|p| p["kind"] == "Dictionary")
+        .expect("Dictionary phase");
+    let prompt = dictionary["user_prompt"].as_str().unwrap();
+    assert!(
+        !prompt.contains("guided-tour") && !prompt.contains("Audience:"),
+        "non-jsonschema prompt must not carry the tour section:\n{prompt}"
+    );
+}
+
+#[test]
+fn describegpt_tour_audience_emits_x_qsv_tour_in_jsonschema() {
+    let wrk = Workdir::new("describegpt_tour_schema");
+    wrk.create_indexed("data.csv", tour_test_rows());
+
+    let schema = process_dictionary_with_response_body(
+        &wrk,
+        "jsonschema",
+        TOUR_TEST_RESPONSE,
+        &["--tour-audience", "Explain like I'm 10"],
+    );
+
+    let tour = &schema["x-qsv"]["tour"];
+    // The envelope is Rust-built: version must be the INTEGER 1 (viz's
+    // parse_tour_spec discards the whole block otherwise).
+    assert_eq!(tour["version"].as_i64(), Some(1));
+    assert!(tour["version"].is_i64());
+    assert_eq!(tour["audience"], "Explain like I'm 10");
+    assert!(
+        tour["generated_by"]
+            .as_str()
+            .unwrap()
+            .starts_with("qsv describegpt v"),
+        "generated_by should carry provenance: {tour}"
+    );
+    // LLM prose survives, filtered against the contract
+    assert_eq!(tour["overrides"]["intro"], "Welcome, explorer!");
+    assert_eq!(tour["overrides"]["conclusion"], "Now go explore!");
+    assert!(tour["overrides"].get("made-up-step").is_none());
+    assert_eq!(tour["panels"]["status"], "Most requests are Open.");
+    assert!(tour["panels"].get("not_a_column").is_none());
+}
+
+#[test]
+fn describegpt_no_tour_audience_omits_x_qsv_tour() {
+    // Even when the LLM volunteers a "tour" object, a flag-less run must not
+    // emit it — flag-less output stays byte-identical to pre-tour qsv.
+    let wrk = Workdir::new("describegpt_no_tour_schema");
+    wrk.create_indexed("data.csv", tour_test_rows());
+
+    let schema = process_dictionary_with_response_body(&wrk, "jsonschema", TOUR_TEST_RESPONSE, &[]);
+
+    assert!(
+        schema["x-qsv"].get("tour").is_none(),
+        "x-qsv.tour must be absent without --tour-audience: {}",
+        schema["x-qsv"]
+    );
+}
+
 // ====== Output-language resolution tests ======
 // All LLM-free: --prepare-context emits the prompts that WOULD be sent, so we can
 // assert on the rendered `language` clause without an API key.

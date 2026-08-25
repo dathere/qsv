@@ -795,6 +795,16 @@ smart options:
                            tags, hence a better Data Schematic. Ignored unless `--dictionary infer`
                            is used (it does not apply when reading an existing dictionary file).
                            Only affects `smart`.
+    --tour-audience <text>  Who the guided Tour should talk to. Forwarded to describegpt when
+                           `--dictionary infer` generates the dictionary, so the inferred
+                           dictionary carries an "x-qsv.tour" narration written for that
+                           audience (e.g. "Explain like I'm 10" - the default - or
+                           "a board of directors", "data journalists"). The audience shapes
+                           ONLY the tour prose; field labels & descriptions keep their normal
+                           register. Ignored unless a FRESH `--dictionary infer` actually runs:
+                           when an existing <stem>.schema.json sidecar is reused, delete it (or
+                           set QSV_VIZ_DICT_FRESH=1) to re-infer with a new audience.
+                           Only affects `smart`.
     --dict-info            When a usable Data Dictionary is available (per --dictionary), add
                            a "Data Schematic" link beneath the page title and an info
                            icon on each panel title: hovering shows that column's dictionary
@@ -1892,6 +1902,7 @@ struct Args {
     flag_hierarchy_style:    Option<String>,
     flag_dictionary:         Option<String>,
     flag_dictionary_context: Option<String>,
+    flag_tour_audience:      Option<String>,
     flag_dict_info:          bool,
     flag_dataset_pid:        Option<String>,
     flag_log_scale:          String,
@@ -16130,6 +16141,13 @@ fn build_tour_chrome(
             .map_or_else(|| tour_panel_explanation(panel, stats), Clone::clone);
         let mut step = serde_json::json!({
             "id": "panel",
+            // The panel's stable tour key (raw field name or @kind token) — the same key
+            // `x-qsv.tour.panels`/`panel_order` address. Emitted so an agent refining the
+            // tour (visual-data-dictionary Stage 6) can read WHICH key each spotlighted
+            // panel answers to from `#qsv-tour-config`, instead of guessing it from the
+            // display title (which is decorated: "activated (right-skewed)"). The tour
+            // engine itself ignores it (roborev 4452).
+            "key": key,
             "title": html_escape(&panel.name),
             "body": html_escape(&explanation),
         });
@@ -20032,9 +20050,10 @@ enum PipelineSpec {
 /// stays in Rust, so schema content can never inject selectors or markup. All prose is treated
 /// as plain text and HTML-escaped once at the tour-config emit sink.
 ///
-/// Written by hand, by an agent (the visual-data-dictionary skill), or — in a follow-up — by
-/// `--dictionary infer`'s LLM pass with `--tour-audience`. `--dictionary infer` reuses an
-/// existing `<stem>.schema.json` verbatim, so an agent-authored tour rides through untouched.
+/// Written by hand, by an agent (the visual-data-dictionary skill), or by `--dictionary infer`'s
+/// LLM pass (describegpt `--tour-audience`, forwarded from viz's own `--tour-audience`, default
+/// "Explain like I'm 10"). `--dictionary infer` reuses an existing `<stem>.schema.json` verbatim,
+/// so an agent-authored tour rides through untouched.
 #[derive(Clone, Debug, Default)]
 struct TourSpec {
     /// Freeform audience the prose was written for (e.g. "Explain like I'm 10"). Informational;
@@ -23593,6 +23612,9 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
         if args.flag_dictionary_context.is_some() {
             viz_note("viz smart --dictionary-context: ignored without --dictionary infer.");
         }
+        if args.flag_tour_audience.is_some() {
+            viz_note("viz smart --tour-audience: ignored without --dictionary infer.");
+        }
         return Ok(None);
     };
     let Some(input) = args.arg_input.as_deref() else {
@@ -23603,6 +23625,12 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
     if args.flag_dictionary_context.is_some() && !is_infer {
         viz_note(
             "viz smart --dictionary-context: only applies to `--dictionary infer` (a generated \
+             dictionary); ignored when reading an existing dictionary file.",
+        );
+    }
+    if args.flag_tour_audience.is_some() && !is_infer {
+        viz_note(
+            "viz smart --tour-audience: only applies to `--dictionary infer` (a generated \
              dictionary); ignored when reading an existing dictionary file.",
         );
     }
@@ -23645,6 +23673,14 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
                             sidecar.display()
                         ));
                     }
+                    if args.flag_tour_audience.is_some() {
+                        viz_note(&format!(
+                            "viz smart --tour-audience: ignored when reusing the existing \
+                             dictionary '{}' (its tour narration is already built); delete it (or \
+                             set QSV_VIZ_DICT_FRESH=1) to re-infer with the new audience.",
+                            sidecar.display()
+                        ));
+                    }
                     source_label = sidecar.display().to_string();
                     text
                 },
@@ -23672,6 +23708,17 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)
                 dg_args.push("--context-file");
                 dg_args.push(ctx);
             }
+            // Always ask describegpt for an x-qsv.tour narration on a fresh infer:
+            // every fresh Data Schematic dictionary gets a guided tour by default.
+            // This is the single place the audience default lives — describegpt
+            // itself is opt-in by flag presence, keeping bare describegpt runs
+            // byte-identical.
+            dg_args.push("--tour-audience");
+            dg_args.push(
+                args.flag_tour_audience
+                    .as_deref()
+                    .unwrap_or("Explain like I'm 10"),
+            );
             // An explicit --language must reach describegpt too, or the inferred field
             // titles/descriptions come back in the dataset's own language while the chrome
             // renders in the requested one -- a worse result than either alone. Only

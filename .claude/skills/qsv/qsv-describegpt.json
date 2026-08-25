@@ -190,6 +190,11 @@
         "description": "Infer Tags that categorize the dataset based on detailed statistical context. Useful for grouping datasets and filtering."
       },
       {
+        "flag": "--tour-audience",
+        "type": "string",
+        "description": "Also write an \"x-qsv.tour\" guided-tour narration for the qsv viz smart Data Schematic into the generated dictionary, addressed to the given audience (e.g. \"Explain like I'm 10\", \"a board of directors\", \"data journalists\"). Only meaningful with --dictionary when the format is jsonschema; ignored otherwise. The audience shapes ONLY the tour prose - field labels & descriptions keep their normal register. \"qsv viz smart --dictionary infer\" forwards this flag automatically (defaulting to \"Explain like I'm 10\")."
+      },
+      {
         "flag": "--truncate-str",
         "type": "string",
         "description": "The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed. Bounds the prompt sent to the LLM, and applies to the csv/json/semantic-md dictionary output. The jsonschema output is machine-facing, so it always carries the full, untruncated Example values.",

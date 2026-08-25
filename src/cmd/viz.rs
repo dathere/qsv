@@ -16422,11 +16422,15 @@ const TOUR_SCRIPT: &str = r##"<style>
     leaveChapter(cfg.steps[fromIdx], step);
     prepare(step, function () {
       if (gen !== tourGen) {
-        // the tour was dismissed while this step's drawer was opening: don't touch the
+        // The tour was dismissed while this step's drawer was opening: don't touch the
         // destroyed driver, and close the drawer prepare() just opened (endTour's own
-        // leaveChapter only saw the step the reader dismissed FROM)
-        var closer = step.close && window[step.close];
-        if (typeof closer === "function") closer();
+        // leaveChapter only saw the step the reader dismissed FROM) — but only while no
+        // NEWER tour is running: a quickly-restarted tour may have claimed the same drawer,
+        // and it manages its own chapters (roborev 4446).
+        if (!driverObj || !driverObj.isActive()) {
+          var closer = step.close && window[step.close];
+          if (typeof closer === "function") closer();
+        }
         return;
       }
       // a chapter sub-step whose selector matches nothing gets skipped in the SAME direction

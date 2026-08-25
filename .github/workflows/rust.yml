@@ -64,7 +64,7 @@ jobs:
       # this, `viz_static` appeared in no test workflow at all and those tests were never even
       # checked — which is how their fixtures silently rotted (issues #4221 / #4343).
       # Actually RUNNING them needs a browser; that is the rust-viz-static.yml workflow.
-      run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,feature_capable,lens,magika,color,viz_static
+      run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,feature_capable,lens,magika,color,viz_static,mcp
     # Windows gives the main thread 1 MB of stack and debug frames are not collapsed, so a
     # stack-usage regression in `viz smart` breaks every Windows debug test run (issue #4328).
     # Encode that constraint on every PR by running the debug binary under a 1 MB rlimit here.

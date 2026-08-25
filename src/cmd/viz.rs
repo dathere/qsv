@@ -16283,7 +16283,12 @@ const TOUR_SCRIPT: &str = r##"<style>
   var cfg;
   try { cfg = JSON.parse(cfgEl.textContent); } catch (e) { return; }
   if (!cfg || !cfg.steps || !cfg.steps.length) return;
-  var SEEN_KEY = "qsv-viz-tour-seen-" + cfg.key;
+  // cfg.key hashes title + panel keys, so two copies of the SAME dataset in different
+  // directories would otherwise share first-run state; the pathname scopes it per location
+  // without embedding any path in the emitted HTML (roborev 4445). Moving a page re-offers
+  // the tour once — "first time opened HERE" semantics.
+  var SEEN_KEY = "qsv-viz-tour-seen-" + cfg.key + "-" +
+    ((window.location && window.location.pathname) || "");
   // localStorage probe: some file:// and privacy contexts throw on ACCESS, not just on write
   function store() { try { return window.localStorage; } catch (e) { return null; } }
   function markSeen() { var s = store(); if (s) { try { s.setItem(SEEN_KEY, "1"); } catch (e) {} } }
@@ -16377,6 +16382,10 @@ const TOUR_SCRIPT: &str = r##"<style>
   // the teardown work lives here and is invoked from onDestroyStarted (close button, Esc,
   // overlay click — fired regardless of transition state) and from walking past the last step.
   function endTour() {
+    // invalidate every in-flight async continuation (drawer waitFor/settle, deferred
+    // refresh): a callback that fires after this would otherwise call moveTo on the
+    // destroyed driver and resurrect an orphan overlay (roborev 4445)
+    tourGen++;
     markSeen();
     removeAnchor();
     var idx = driverObj ? driverObj.getActiveIndex() || 0 : 0;
@@ -16390,6 +16399,8 @@ const TOUR_SCRIPT: &str = r##"<style>
   // thread on a heavy page). Cleared when the highlight settles (onHighlighted), with a
   // timeout backstop in case a skipped/ended step never highlights.
   var navBusy = false;
+  // teardown generation: async continuations capture it and bail if a teardown intervened
+  var tourGen = 0;
 
   // walk to the next/previous VISIBLE step (a sub-step whose target vanished — e.g. no
   // omissions section in this dictionary — is skipped, drawer steps skip when their opener
@@ -16398,6 +16409,7 @@ const TOUR_SCRIPT: &str = r##"<style>
     if (navBusy) return;
     navBusy = true;
     setTimeout(function () { navBusy = false; }, 2500);
+    var gen = tourGen;
     var i = fromIdx + dir;
     while (i >= 0 && i < cfg.steps.length) {
       var step = cfg.steps[i];
@@ -16409,6 +16421,14 @@ const TOUR_SCRIPT: &str = r##"<style>
     var step = cfg.steps[i];
     leaveChapter(cfg.steps[fromIdx], step);
     prepare(step, function () {
+      if (gen !== tourGen) {
+        // the tour was dismissed while this step's drawer was opening: don't touch the
+        // destroyed driver, and close the drawer prepare() just opened (endTour's own
+        // leaveChapter only saw the step the reader dismissed FROM)
+        var closer = step.close && window[step.close];
+        if (typeof closer === "function") closer();
+        return;
+      }
       // a chapter sub-step whose selector matches nothing gets skipped in the SAME direction
       if (step.target && !document.querySelector(step.target) && !step.domain) {
         navBusy = false;
@@ -16416,13 +16436,45 @@ const TOUR_SCRIPT: &str = r##"<style>
         return;
       }
       driverObj.moveTo(i);
-      // late layout shifts (drawer finishing its slide, plots re-fitting) move the anchor
-      // after the popover positioned; one deferred refresh re-computes it
-      setTimeout(function () { if (driverObj && driverObj.isActive()) driverObj.refresh(); }, 700);
+      // Late layout shifts (drawer finishing its slide, plots re-fitting after the drawer's
+      // close dispatched a resize) move the target after the popover positioned. driver's
+      // refresh() repositions against the STORED element without re-invoking the element
+      // function, so a typed-grid domain anchor must be re-laid-out first — domainAnchor
+      // updates the same #qsv-tour-anchor div in place, keeping driver's reference valid.
+      setTimeout(function () {
+        if (gen !== tourGen || !driverObj || !driverObj.isActive()) return;
+        if (step.domain) domainAnchor(step.domain);
+        driverObj.refresh();
+      }, 700);
     });
   }
 
+  // Keep a domain-backed spotlight glued to its panel through window resizes: driver's own
+  // resize handling repositions around the anchor div, so the anchor's absolute pixel box
+  // must be recomputed first (debounced past plotly's own responsive re-fit).
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    if (!driverObj || !driverObj.isActive()) return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      if (!driverObj || !driverObj.isActive()) return;
+      var s = cfg.steps[driverObj.getActiveIndex() || 0];
+      if (s && s.domain) {
+        domainAnchor(s.domain);
+        driverObj.refresh();
+      }
+    }, 250);
+  });
+
+  var tourStarting = false;
+
   function startTour() {
+    // A tour is already running or mid-launch (auto-start racing a pill click, a
+    // double-click on the pill): a second driver() instance would orphan the first one's
+    // popover/overlay. isActive() alone can't cover the async ensureLib() window, hence
+    // the tourStarting latch.
+    if (tourStarting || (driverObj && driverObj.isActive())) return false;
+    tourStarting = true;
     markSeen();
     ensureLib().then(function () {
       var driver = window.driver.js.driver;
@@ -16455,7 +16507,11 @@ const TOUR_SCRIPT: &str = r##"<style>
         onHighlighted: function () { navBusy = false; },
       });
       driverObj.drive();
-    }).catch(function (e) { console.error("qsv tour:", e); });
+      tourStarting = false;
+    }).catch(function (e) {
+      tourStarting = false;
+      console.error("qsv tour:", e);
+    });
     return false;
   }
 

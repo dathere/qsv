@@ -344,7 +344,8 @@ SOFTWARE.
 
 ## driver.js
 
-Upstream: <https://github.com/kamranahmedse/driver.js> — version **1.8.0**.
+Upstream: <https://github.com/nilbuild/driver.js> (formerly `kamranahmedse/driver.js`,
+which now redirects there) — version **1.8.0**.
 
 Vendored unmodified at [`src/cmd/assets/driverjs.min.js`](src/cmd/assets/driverjs.min.js)
 (the `dist/driver.js.iife.js` build) and

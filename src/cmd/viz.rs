@@ -30119,6 +30119,91 @@ fn kpi_label_annotation(
         .font(font)
 }
 
+/// Render a localized KPI title without repeating an aggregation word already present in the
+/// dictionary label. The catalog owns the word order: English/German/etc. put the aggregation
+/// before the label, while Japanese/Chinese put it after. Using a sentinel to inspect the
+/// translated template keeps this helper from baking English word order into every locale.
+fn kpi_title(label: &str, intensive: bool) -> String {
+    const LABEL_SENTINEL: &str = "\u{e000}qsv-kpi-label\u{e001}";
+
+    let template = if intensive {
+        t!("viz.title.kpi_mean", q_label = LABEL_SENTINEL).into_owned()
+    } else {
+        t!("viz.title.kpi_total", q_label = LABEL_SENTINEL).into_owned()
+    };
+
+    let Some((before, after)) = template.split_once(LABEL_SENTINEL) else {
+        // A missing placeholder is a catalog defect, but the direct lookup still gives callers
+        // the best available title rather than leaking the sentinel into rendered HTML.
+        return if intensive {
+            t!("viz.title.kpi_mean", q_label = label).into_owned()
+        } else {
+            t!("viz.title.kpi_total", q_label = label).into_owned()
+        };
+    };
+
+    // `agg_mean`/`agg_sum` are the catalog's canonical aggregation words. The KPI template often
+    // includes the same word with capitalization or a grammatical preposition, but keeping both
+    // catches a hand-authored label such as "Sum Revenue" in a locale whose template says
+    // "Total de ...". English also commonly uses "Average" for a mean, although its KPI catalog
+    // deliberately says "Mean"; this is the only synonym not represented by a catalog key.
+    let aggregation_word = if intensive {
+        t!("viz.title.agg_mean").into_owned()
+    } else {
+        t!("viz.title.agg_sum").into_owned()
+    };
+    let template_word = before.split_whitespace().next().unwrap_or("");
+    let english_average =
+        (intensive && viz_i18n::active_locale().bcp47 == "en").then_some("average");
+    let words = [
+        template_word,
+        aggregation_word.as_str(),
+        english_average.unwrap_or(""),
+    ];
+
+    let already_aggregated = if before.trim().is_empty() {
+        // Suffix-order locales can carry the complete localized suffix ("の平均", "总计") or
+        // just the aggregation word in a hand-authored title. Both should render only once.
+        let suffix = after.trim();
+        (!suffix.is_empty() && label_ends_with(label, suffix))
+            || words.iter().any(|word| label_ends_with(label, word))
+    } else {
+        // For prefix-order locales, compare the first localized aggregation word as a whole word
+        // so a field called "Totality" is not mistaken for an already-prefixed "Total" title.
+        words.iter().any(|word| label_starts_with_word(label, word))
+    };
+
+    if already_aggregated {
+        label.to_owned()
+    } else {
+        format!("{before}{label}{after}")
+    }
+}
+
+/// Case-insensitive Unicode-aware prefix check with a word boundary after `word`.
+fn label_starts_with_word(label: &str, word: &str) -> bool {
+    let word = word.trim();
+    if word.is_empty() {
+        return false;
+    }
+    let label = label.trim_start().to_lowercase();
+    let word = word.to_lowercase();
+    let Some(rest) = label.strip_prefix(&word) else {
+        return false;
+    };
+    rest.chars().next().is_none_or(|ch| !ch.is_alphanumeric())
+}
+
+/// Case-insensitive Unicode-aware suffix check used by suffix-order locales.
+fn label_ends_with(label: &str, suffix: &str) -> bool {
+    let suffix = suffix.trim();
+    !suffix.is_empty()
+        && label
+            .trim_end()
+            .to_lowercase()
+            .ends_with(&suffix.to_lowercase())
+}
+
 /// Build the leading KPI-tile row for `viz smart`: the headline numeric measures (capped at
 /// `KPI_MAX_TILES`). A measure tile becomes a gauge when its dictionary supplies a `gauge_range`
 /// that CONTAINS the observed value (else it falls back to a plain number — never a misleading
@@ -30222,12 +30307,7 @@ fn build_kpi_row(
             kpi_number_format(value)
         };
         tiles.push(KpiTile {
-            label: if intensive {
-                t!("viz.title.kpi_mean", q_label = label)
-            } else {
-                t!("viz.title.kpi_total", q_label = label)
-            }
-            .into_owned(),
+            label: kpi_title(&label, intensive),
             value,
             format,
             gauge,
@@ -45234,6 +45314,40 @@ mod tests {
         // negative control: an overview panel carries no stats row, so it contributes no tile
         let overview = vec![Panel::new("amount".to_string(), kind())];
         assert!(build_kpi_row(&stats, &overview, None).is_none());
+    }
+
+    #[test]
+    fn kpi_title_does_not_repeat_english_aggregation_terms() {
+        let _locale = english_locale();
+
+        assert_eq!(kpi_title("Revenue", false), "Total Revenue");
+        assert_eq!(kpi_title("Total Revenue", false), "Total Revenue");
+        assert_eq!(kpi_title("Margin", true), "Mean Margin");
+        // "Average" is a common hand-authored synonym for the catalog's "Mean".
+        assert_eq!(kpi_title("Average Margin", true), "Average Margin");
+        assert_eq!(
+            kpi_title("Mean Average Margin", true),
+            "Mean Average Margin"
+        );
+        // Prefix matching must respect word boundaries.
+        assert_eq!(kpi_title("Totality", false), "Total Totality");
+    }
+
+    #[test]
+    fn kpi_title_follows_non_english_template_order() {
+        let _locale = viz_i18n::lock_locale();
+
+        viz_i18n::set_active(viz_i18n::parse_lang("es").unwrap());
+        assert_eq!(kpi_title("Ingresos", false), "Total de Ingresos");
+        assert_eq!(kpi_title("Total Ingresos", false), "Total Ingresos");
+
+        // Japanese puts the aggregation after the label; English prefix matching must not be
+        // applied to it.
+        viz_i18n::set_active(viz_i18n::parse_lang("ja").unwrap());
+        assert_eq!(kpi_title("売上", false), "売上 の合計");
+        assert_eq!(kpi_title("売上 の合計", false), "売上 の合計");
+
+        viz_i18n::reset_active();
     }
 
     /// A single Float measure summing to `sum`, its `BoxStats` panel, and an optional dictionary

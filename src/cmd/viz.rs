@@ -30191,7 +30191,11 @@ fn label_starts_with_word(label: &str, word: &str) -> bool {
     let Some(rest) = label.strip_prefix(&word) else {
         return false;
     };
-    rest.chars().next().is_none_or(|ch| !ch.is_alphanumeric())
+    // Underscore is an identifier character, not a separator: `total_price` is a field name
+    // whose lowercase prefix must not suppress the visible `Total` aggregation label.
+    rest.chars()
+        .next()
+        .is_none_or(|ch| !ch.is_alphanumeric() && ch != '_')
 }
 
 /// Case-insensitive Unicode-aware suffix check used by suffix-order locales.
@@ -45331,6 +45335,7 @@ mod tests {
         );
         // Prefix matching must respect word boundaries.
         assert_eq!(kpi_title("Totality", false), "Total Totality");
+        assert_eq!(kpi_title("total_price", false), "Total total_price");
     }
 
     #[test]

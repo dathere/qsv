@@ -566,8 +566,8 @@ spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", bran
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=py-1.44.0
-polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.44.0", optional = true }
+# QSV_POLARS_REV=py-1.44.1
+polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.44.1", optional = true }
 # polars = { git = "https://github.com/pola-rs/polars", rev = "f9f8653", optional = true }
 
 # Apache DataSketches (t-digest, HLL, Frequent Items) — upstream C++ does not

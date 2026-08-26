@@ -112,7 +112,7 @@
 🧠: expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.  
 🗄️: [Extended input support](#extended-input-support).  
 🗃️: [Limited Extended input support](#limited-extended-input-support).  
-🐻‍❄️: command powered/accelerated by [![polars 0.55.1 at py-1.44.1](https://img.shields.io/badge/polars-0.55.1:py-1.44.1-blue?logo=polars)](https://github.com/pola-rs/polars/releases/tag/py-1.44.1) vectorized query engine.  
+🐻‍❄️: command powered/accelerated by [![polars 0.55.1 at py-1.44.1](https://img.shields.io/badge/polars-0.55.1:py--1.44.1-blue?logo=polars)](https://github.com/pola-rs/polars/releases/tag/py-1.44.1) vectorized query engine.  
 🤖: command uses Natural Language Processing or Generative AI.  
 🏎️: multithreaded and/or faster when an index (📇) is available.  
 🚀: multithreaded even without an index.  
@@ -302,7 +302,7 @@ There are five binary variants of qsv:
 * `qsvdp` - optimized for use with [DataPusher+](https://github.com/dathere/datapusher-plus) with only DataPusher+ relevant commands; [`applydp`](#applydp_deeplink), a slimmed-down version of the `apply` feature; the `--progressbar` option disabled; and the self-update only checking for new releases, requiring an explicit `--update` (~16% of the size of `qsv`).
 
 > [!NOTE]
-> Past releases also shipped "portable" subvariants with a "p" suffix (`qsvp`, `qsvplite`, `qsvpdp`, `qsvpmcp`), compiled without CPU features for users hitting "Illegal instruction (SIGILL)" errors. They are being discontinued: the x86_64 prebuilts stopped enabling `target-cpu=native` (it was the cause of those SIGILL faults), so the regular binaries are already built without CPU features and the subvariants no longer differed from them. Which archives still contain them varies by release and platform; if you have been using one, switch to the regular binary of the same name (`qsvp` → `qsv`, `qsvplite` → `qsvlite`, `qsvpdp` → `qsvdp`, `qsvpmcp` → `qsvmcp`).
+> Past releases also shipped "portable" subvariants with a "p" suffix (`qsvp`, `qsvplite`, `qsvpdp`, `qsvpmcp`), compiled without CPU features for users hitting "Illegal instruction (SIGILL)" errors. They are being discontinued: the x86_64 prebuilts stopped enabling `target-cpu=native` (it was the cause of those SIGILL faults), so the regular binaries are already built without CPU features and the subvariants no longer differed from them. Which release archives still contain them varies by release and platform; if you have been using one, switch to the regular binary of the same name (`qsvp` → `qsv`, `qsvplite` → `qsvlite`, `qsvpdp` → `qsvdp`, `qsvpmcp` → `qsvmcp`).
 
 [^3]: The `luau`feature is NOT enabled by default on the prebuilt binaries for musl platforms. This is because we cross-compile using GitHub Action Runners using Ubuntu 20.04 LTS with the [musl libc](https://musl.libc.org/) toolchain. However, Ubuntu is a glibc-based, not a musl-based distro. We get around this by [cross-compiling](https://blog.logrocket.com/guide-cross-compilation-rust/).   
 Unfortunately, this prevents us from cross-compiling binaries with the `luau` feature enabled as doing so requires statically linking the host OS libc library. If you need the `luau` feature on `musl`, you will need to compile from source on your own musl-based Linux Distro (e.g. Alpine, Void, [etc.](https://wiki.musl-libc.org/projects-using-musl)).  

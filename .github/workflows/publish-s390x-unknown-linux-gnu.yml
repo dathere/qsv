@@ -8,6 +8,22 @@ name: Publish s390x
 # `stats --cardinality-method approx`, and `frequency --sketch-method frequent_items`
 # all return a "requires a little-endian target" error on s390x. The exact-method
 # defaults are unaffected.
+#
+# The `geocode` and `viz` features are DELIBERATELY absent from the build args
+# below -- do not "simplify" them to `distrib_features`, which resolves to include
+# BOTH:
+#   * `viz` is a hard compile_error! on big-endian (see src/cmd/mod.rs).
+#   * `geocode` pulls geosuggest-core -> kiddo, whose build.rs calls
+#     yep_cache_line_size::get_cache_line_size() unconditionally; that crate exports
+#     nothing outside x86/ARM, so the build script fails to compile natively on
+#     s390x (E0425). Filed upstream as sdd/kiddo#536.
+# Cargo.toml gates geosuggest-core out of [dev-dependencies] on big-endian, which
+# keeps `cargo test` working in rust-s390x.yml -- but that gate does NOT protect
+# this workflow, where enabling `geocode` would make kiddo a NORMAL dependency.
+# Verify any change here with:
+#   cargo tree --target s390x-unknown-linux-gnu -e normal,build -i kiddo \
+#     --no-default-features --features <the list below>,feature_capable
+# which must report "nothing to print".
 
 on:
 #   push:

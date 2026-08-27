@@ -587,13 +587,22 @@ polars = { version = "0.55", features = ["avx512"], optional = true }
 # silently break on every geosuggest bump (the layout is version-coupled); building it with the
 # Cargo.lock-unified crate version removes that risk by construction.
 #
-# It is excluded on big-endian because it pulls kiddo, whose build script calls
-# yep_cache_line_size::get_cache_line_size() unconditionally — and that crate exports nothing
-# outside x86/ARM, so the build script fails to compile on s390x (E0425). Dev-dependencies are
-# built by `cargo test` regardless of --features, so an unconditional entry broke the s390x CI
-# job even though it never enables `geocode`. Nothing is lost: the sole consumer is gated on
-# `viz` + `geocode`, and `viz` is a compile_error! on big-endian (see src/cmd/mod.rs).
-[target.'cfg(not(target_endian = "big"))'.dev-dependencies]
+# It pulls kiddo, whose build script calls yep_cache_line_size::get_cache_line_size()
+# unconditionally — and that crate exports nothing outside x86/x86_64/arm/aarch64, so the build
+# script fails to compile (E0425) when kiddo is built NATIVELY on any other host. Build scripts
+# compile for the HOST, so cross-compiling is unaffected; it is the native runners that break.
+# Dev-dependencies are built by `cargo test` regardless of --features, so an unconditional entry
+# broke the s390x CI job even though it never enables `geocode`.
+#
+# The cfg below is an ALLOWLIST of the architectures yep-cache-line-size actually supports (it
+# mirrors that crate's own cfg in its lib.rs). It is deliberately NOT `not(target_endian = "big")`:
+# the constraint is architectural, not endianness. ppc64le is little-endian yet still outside
+# x86/ARM, so an endian gate left rust-ppc64le.yml — a native `cargo test` runner using the same
+# feature list as s390x — just as broken. Add an arch here only when yep-cache-line-size gains it.
+#
+# Nothing is lost on the excluded arches: the sole consumer, tests/test_viz_geocode_auto.rs, is
+# gated on `viz` + `geocode`, and neither the s390x nor the ppc64le job enables either one.
+[target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "arm", target_arch = "aarch64"))'.dev-dependencies]
 geosuggest-core = "0.8"
 
 [features]

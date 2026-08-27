@@ -58,10 +58,29 @@ jobs:
       # longer match. The dedicated `*_big_endian_*_rejected` tests in
       # tests/test_stats.rs / tests/test_frequency.rs (compiled in only on
       # big-endian) cover the platform-rejection error message instead.
+      #
+      # The three cache/regression skips (stats_cache_not_reused_when_cardinality_
+      # method_differs, stats_everything_approx_quantiles_header_matches_records,
+      # frequency_all_unique_shortcut_skipped_on_approx_cardinality_cache) are NOT
+      # part of the *_method_* naming families above -- they merely USE an approx
+      # flag to set up a fixture, so the prefix patterns miss them and they failed
+      # here on 2026-08-22.
+      # To re-derive the full list after adding a test: find every #[test] in
+      # tests/test_stats.rs and tests/test_frequency.rs that passes
+      # --cardinality-method approx, --quantile-method approx, or
+      # --sketch-method frequent_items AND asserts SUCCESS. Tests that assert the
+      # rejection (`*_rejected`, `*_invalid_value_*`) must keep running here.
+      # CAVEAT: that flag search only finds tests passing the flags LITERALLY. Tests
+      # that reach the same codepaths another way -- the stats_oom_* family, which
+      # relies on OOM auto-enabling approx sketches -- are not covered by it. Those
+      # pass on s390x today; re-check them by hand if the auto-enable logic changes.
       # run: cargo test s390x --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui -- --nocapture
       run: |
         cargo test --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui -- \
           --skip stats_quantile_method_approx_ \
           --skip stats_cardinality_method_approx_ \
           --skip frequency_sketch_method_frequent_items_ \
-          --skip frequency_sketch_method_invalid_map_size_is_rejected
+          --skip frequency_sketch_method_invalid_map_size_is_rejected \
+          --skip stats_cache_not_reused_when_cardinality_method_differs \
+          --skip stats_everything_approx_quantiles_header_matches_records \
+          --skip frequency_all_unique_shortcut_skipped_on_approx_cardinality_cache

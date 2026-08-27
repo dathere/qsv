@@ -447,13 +447,10 @@ actix-web = { version = "4.13", default-features = false, features = [
 assert-json-diff = "2.0"
 # for inflating the gzip+base64 payloads viz HTML embeds (see tests/test_viz.rs inflate helpers)
 base64-simd = "0.8"
-# for building a tiny Geonames index at test time from the committed TSVs under
-# resources/test/geonames-mini/ (see tests/test_viz_geocode_auto.rs). A committed .rkyv would
-# silently break on every geosuggest bump (the layout is version-coupled); building it with the
-# Cargo.lock-unified crate version removes that risk by construction. rkyv rides along to write
-# the index file's metadata framing by hand (Storage::dump_to omits it without geosuggest's
-# `tracing` feature — the qsv issue #4433 corruption).
-geosuggest-core = "0.8"
+# rkyv writes the mini Geonames index's metadata framing by hand (Storage::dump_to omits it
+# without geosuggest's `tracing` feature — the qsv issue #4433 corruption). Also used by
+# tests/test_geocode.rs, and it pulls no big-endian-hostile crates, so it stays unconditional.
+# geosuggest-core itself lives in the big-endian-excluded dev-dependencies table below.
 rkyv = "0.8"
 # for verifying the pinned plotly.js CDN Subresource Integrity digest against the bundle qsv
 # actually embeds (see cmd::viz plotly_cdn_sri_matches_the_embedded_bundle). A dev-dependency, not
@@ -584,6 +581,20 @@ datasketches = { version = "0.4", features = ["frequencies", "hll", "tdigest"] }
 # kernels at runtime, so enabling it for all x86_64 builds is safe.
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 polars = { version = "0.55", features = ["avx512"], optional = true }
+
+# geosuggest-core builds the tiny Geonames index at test time from the committed TSVs under
+# resources/test/geonames-mini/ (see tests/test_viz_geocode_auto.rs). A committed .rkyv would
+# silently break on every geosuggest bump (the layout is version-coupled); building it with the
+# Cargo.lock-unified crate version removes that risk by construction.
+#
+# It is excluded on big-endian because it pulls kiddo, whose build script calls
+# yep_cache_line_size::get_cache_line_size() unconditionally — and that crate exports nothing
+# outside x86/ARM, so the build script fails to compile on s390x (E0425). Dev-dependencies are
+# built by `cargo test` regardless of --features, so an unconditional entry broke the s390x CI
+# job even though it never enables `geocode`. Nothing is lost: the sole consumer is gated on
+# `viz` + `geocode`, and `viz` is a compile_error! on big-endian (see src/cmd/mod.rs).
+[target.'cfg(not(target_endian = "big"))'.dev-dependencies]
+geosuggest-core = "0.8"
 
 [features]
 default = ["jemallocator"]

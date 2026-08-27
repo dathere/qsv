@@ -6890,6 +6890,7 @@ dependencies = [
  "base64-simd",
  "bitvec",
  "blake3",
+ "bytecount",
  "bytemuck",
  "byteorder",
  "bytes",

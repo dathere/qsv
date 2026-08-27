@@ -2622,7 +2622,7 @@ mod rich {
 
         // first-N / offset: accumulate bounded windows until enough lines or EOF.
         let start = opts.offset_mb.map_or(0, |mb| mb.saturating_mul(1 << 20));
-        let needed_lines = opts.sample + 2;
+        let needed_lines = opts.sample.saturating_add(2);
         let mut buf = Vec::new();
         let mut pos = start;
         while pos < total && (buf.len() as u64) < PREVIEW_MAX_FETCH {
@@ -2633,7 +2633,7 @@ mod rich {
             }
             pos = end;
             buf.extend_from_slice(&chunk);
-            if (buf.iter().filter(|&&b| b == b'\n').count() as u64) >= needed_lines {
+            if bytecount::count(&buf, b'\n') as u64 >= needed_lines {
                 break;
             }
         }

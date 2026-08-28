@@ -16540,7 +16540,32 @@ const TOUR_SCRIPT: &str = r##"<style>
           setTimeout(function () {
             if (gen !== tourGen || !driverObj || !driverObj.isActive()) return;
             var pop = (popover && popover.wrapper) || document.querySelector(".driver-popover");
-            if (pop) { pop.setAttribute("tabindex", "-1"); pop.focus(); }
+            if (!pop) return;
+            pop.setAttribute("tabindex", "-1");
+            pop.focus();
+            // Inside a content-sized embed (the gallery's scrolling="no" iframes) the popover
+            // is position:fixed within the iframe's full-height "viewport", so neither focus()
+            // nor scrollIntoView() scrolls the OUTER page — the browser already considers a
+            // fixed element in view of its own frame. Reveal it the way the data drawer's
+            // revealTop does: ask a cooperating parent (the qsv gallery's qsvVizReveal
+            // listener) via postMessage first — that works even when the frames are
+            // cross-origin, e.g. a file://-opened gallery, where every direct parent-window
+            // access below throws — then scroll a same-origin parent directly as a fallback
+            // for embedders without the listener. In the gallery both paths fire and converge
+            // on the same position. behavior "instant", never "auto"/"smooth": "auto" inherits
+            // the gallery's scroll-behavior:smooth CSS, and a smooth programmatic scroll can
+            // be canceled at its first frame by concurrent layout work, arriving nowhere.
+            if (window.self !== window.top) {
+              var pr = pop.getBoundingClientRect();
+              try { window.parent.postMessage({ qsvVizReveal: "top", qsvVizOffset: pr.top }, "*"); } catch (e) {}
+              try {
+                var fr = window.frameElement.getBoundingClientRect();
+                var pw = window.parent;
+                if (fr.top + pr.top < 0 || fr.top + pr.bottom > pw.innerHeight) {
+                  pw.scrollTo({ top: Math.max(0, pw.scrollY + fr.top + pr.top - 80), behavior: "instant" });
+                }
+              } catch (e) {}
+            }
           }, 0);
         },
       });

@@ -16278,7 +16278,7 @@ fn tour_script() -> String {
 /// and the pill stays one click away.
 const TOUR_SCRIPT: &str = r##"<style>
   .qsv-viz-tour-link { font-size: 13px; text-align: center; margin: -8px 0 16px; }
-  .qsv-viz-dict-link + .qsv-viz-tour-link { margin-top: -12px; }
+  .qsv-viz-dict-link a + a.qsv-viz-tour-open { margin-left: 10px; }
   .qsv-viz-tour-link a, .qsv-viz-tour-link a:visited { display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px; border: 1px solid var(--qsv-link); border-radius: 999px; color: var(--qsv-link); font-weight: 600; text-decoration: none; }
   .qsv-viz-tour-link a:hover, .qsv-viz-tour-link a:focus-visible { color: var(--qsv-link-hover); border-color: var(--qsv-link-hover); background: color-mix(in srgb, var(--qsv-link) 14%, transparent); }
   #qsv-tour-anchor { position: absolute; pointer-events: none; }
@@ -16419,6 +16419,9 @@ const TOUR_SCRIPT: &str = r##"<style>
   var navBusy = false;
   // teardown generation: async continuations capture it and bail if a teardown intervened
   var tourGen = 0;
+  // one-shot, armed per tour start: focus the first popover so the browser scrolls it into
+  // view if off-screen and keyboard users land in the tour dialog immediately
+  var focusFirstPopover = false;
 
   // walk to the next/previous VISIBLE step (a sub-step whose target vanished — e.g. no
   // omissions section in this dictionary — is skipped, drawer steps skip when their opener
@@ -16527,7 +16530,21 @@ const TOUR_SCRIPT: &str = r##"<style>
         // unconditionally and defers the actual teardown to our endTour -> destroy().
         onDestroyStarted: function () { endTour(); },
         onHighlighted: function () { navBusy = false; },
+        // NOT onHighlighted: that hook fires before the popover DOM exists. onPopoverRender
+        // hands us the built popover, and the tick deferral lets driver's own
+        // focus-first-button call (synchronous, later in its render) run first so ours wins.
+        onPopoverRender: function (popover) {
+          if (!focusFirstPopover) return;
+          focusFirstPopover = false;
+          var gen = tourGen;
+          setTimeout(function () {
+            if (gen !== tourGen || !driverObj || !driverObj.isActive()) return;
+            var pop = (popover && popover.wrapper) || document.querySelector(".driver-popover");
+            if (pop) { pop.setAttribute("tabindex", "-1"); pop.focus(); }
+          }, 0);
+        },
       });
+      focusFirstPopover = true;
       driverObj.drive();
       tourStarting = false;
     }).catch(function (e) {
@@ -16540,16 +16557,21 @@ const TOUR_SCRIPT: &str = r##"<style>
   // The relaunch pill: after the dictionary link when present, else after the page <h1>,
   // else before the metadata table.
   function injectButton() {
-    if (document.querySelector(".qsv-viz-tour-link")) return;
-    var holder = document.createElement("div");
-    holder.className = "qsv-viz-tour-link";
+    if (document.querySelector(".qsv-viz-tour-open")) return;
     var a = document.createElement("a");
     a.href = "#";
+    a.className = "qsv-viz-tour-open";
     a.setAttribute("aria-label", __QSVI18N_TOUR_BUTTON_ARIA__);
     a.innerHTML = '__QSVI18N_TOUR_BUTTON__';
     a.addEventListener("click", function (ev) { ev.preventDefault(); startTour(); });
+    // Share the Data Schematic pill's row when it exists (one helpers row, and the anchor
+    // inherits the identical `.qsv-viz-dict-link a` pill styling); own row otherwise.
+    var dict = document.querySelector(".qsv-viz-dict-link");
+    if (dict) { dict.appendChild(a); return; }
+    var holder = document.createElement("div");
+    holder.className = "qsv-viz-tour-link";
     holder.appendChild(a);
-    var after = document.querySelector(".qsv-viz-dict-link") || document.querySelector("h1.qsv-viz-title");
+    var after = document.querySelector("h1.qsv-viz-title");
     if (after) { after.insertAdjacentElement("afterend", holder); return; }
     var meta = document.querySelector("table.qsv-viz-meta");
     if (meta) { meta.insertAdjacentElement("beforebegin", holder); return; }

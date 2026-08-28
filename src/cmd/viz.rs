@@ -16546,21 +16546,26 @@ const TOUR_SCRIPT: &str = r##"<style>
             // Inside a content-sized embed (the gallery's scrolling="no" iframes) the popover
             // is position:fixed within the iframe's full-height "viewport", so neither focus()
             // nor scrollIntoView() scrolls the OUTER page — the browser already considers a
-            // fixed element in view of its own frame. Center it in the parent viewport
-            // explicitly; a cross-origin parent throws and is left alone.
-            try {
-              var fe = window.frameElement;
-              if (fe) {
-                var pr = pop.getBoundingClientRect();
-                var fr = fe.getBoundingClientRect();
+            // fixed element in view of its own frame. Reveal it the way the data drawer's
+            // revealTop does: ask a cooperating parent (the qsv gallery's qsvVizReveal
+            // listener) via postMessage first — that works even when the frames are
+            // cross-origin, e.g. a file://-opened gallery, where every direct parent-window
+            // access below throws — then scroll a same-origin parent directly as a fallback
+            // for embedders without the listener. In the gallery both paths fire and converge
+            // on the same position. behavior "instant", never "auto"/"smooth": "auto" inherits
+            // the gallery's scroll-behavior:smooth CSS, and a smooth programmatic scroll can
+            // be canceled at its first frame by concurrent layout work, arriving nowhere.
+            if (window.self !== window.top) {
+              var pr = pop.getBoundingClientRect();
+              try { window.parent.postMessage({ qsvVizReveal: "top", qsvVizOffset: pr.top }, "*"); } catch (e) {}
+              try {
+                var fr = window.frameElement.getBoundingClientRect();
                 var pw = window.parent;
                 if (fr.top + pr.top < 0 || fr.top + pr.bottom > pw.innerHeight) {
-                  // instant, not behavior:"smooth" — a competing scroll cancels an in-flight
-                  // smooth scroll a few px in (observed in Chrome on the embedded gallery)
-                  pw.scrollBy(0, fr.top + pr.top - (pw.innerHeight - pr.height) / 2);
+                  pw.scrollTo({ top: Math.max(0, pw.scrollY + fr.top + pr.top - 80), behavior: "instant" });
                 }
-              }
-            } catch (e) {}
+              } catch (e) {}
+            }
           }, 0);
         },
       });

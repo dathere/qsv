@@ -16540,7 +16540,27 @@ const TOUR_SCRIPT: &str = r##"<style>
           setTimeout(function () {
             if (gen !== tourGen || !driverObj || !driverObj.isActive()) return;
             var pop = (popover && popover.wrapper) || document.querySelector(".driver-popover");
-            if (pop) { pop.setAttribute("tabindex", "-1"); pop.focus(); }
+            if (!pop) return;
+            pop.setAttribute("tabindex", "-1");
+            pop.focus();
+            // Inside a content-sized embed (the gallery's scrolling="no" iframes) the popover
+            // is position:fixed within the iframe's full-height "viewport", so neither focus()
+            // nor scrollIntoView() scrolls the OUTER page — the browser already considers a
+            // fixed element in view of its own frame. Center it in the parent viewport
+            // explicitly; a cross-origin parent throws and is left alone.
+            try {
+              var fe = window.frameElement;
+              if (fe) {
+                var pr = pop.getBoundingClientRect();
+                var fr = fe.getBoundingClientRect();
+                var pw = window.parent;
+                if (fr.top + pr.top < 0 || fr.top + pr.bottom > pw.innerHeight) {
+                  // instant, not behavior:"smooth" — a competing scroll cancels an in-flight
+                  // smooth scroll a few px in (observed in Chrome on the embedded gallery)
+                  pw.scrollBy(0, fr.top + pr.top - (pw.innerHeight - pr.height) / 2);
+                }
+              }
+            } catch (e) {}
           }, 0);
         },
       });

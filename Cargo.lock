@@ -80,9 +80,9 @@ dependencies = [
 
 [[package]]
 name = "actix-rt"
-version = "2.12.0"
+version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c25da0441692de4ad67950cb7ed6c9ce4b669a6609525e547566c2e1ab4d695c"
+checksum = "6a16bf2f19c2ad84842bdfe6f3665620e93197d5c607889bfa3aaac45e762fd1"
 dependencies = [
  "futures-core",
  "tokio",
@@ -187,9 +187,9 @@ checksum = "aae1277d39aeec15cb388266ecc24b11c80469deae6067e17a1a7aa9e5c1f234"
 
 [[package]]
 name = "aes"
-version = "0.9.2"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8eb277bec05f56a0e0591f155a484cbd0f4f07ff2905051a48c72f004f7ed58"
+checksum = "35f0f96ce78e38c3dc6d8948aa8163d06385be74000f3c7a95bf1eef35d3ea32"
 dependencies = [
  "cipher",
  "cpubits",
@@ -869,7 +869,7 @@ dependencies = [
  "addr2line",
  "cfg-if",
  "libc",
- "miniz_oxide",
+ "miniz_oxide 0.8.9",
  "object 0.37.3",
  "rustc-demangle",
  "windows-link",
@@ -1653,7 +1653,7 @@ dependencies = [
  "cookie 0.18.2",
  "document-features",
  "idna",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "log",
  "publicsuffix",
  "serde",
@@ -2833,12 +2833,12 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "flate2"
-version = "1.1.9"
+version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
+checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
 dependencies = [
  "crc32fast",
- "miniz_oxide",
+ "miniz_oxide 0.9.1",
  "zlib-rs",
 ]
 
@@ -3407,7 +3407,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "http 1.5.0",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "slab",
  "tokio",
  "tokio-util",
@@ -3641,9 +3641,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.11.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d22053281f852e11534f5198498373cbb59295120a20771d90f7ed1897490a72"
+checksum = "27b501faa50e7a26c3d3560ca625132f4078a17771f4810baf70475ae48cbe43"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -3960,9 +3960,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.14.0"
+version = "2.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
+checksum = "07aa2048142242915a31d35844fb311e0e53fcca590c3a0a40dcf1b841fa09eb"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
@@ -4088,9 +4088,9 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jaq-core"
-version = "3.1.0"
+version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7561783b20275a6c9cb576e39208b0c635f34ef14357f1f05a2927a774f3adec"
+checksum = "f72ba7158fe9fc1bc4baace1b71e6d0d3d27c6839dd87dc1f233dd408f5dd85b"
 dependencies = [
  "dyn-clone",
  "once_cell",
@@ -4099,15 +4099,15 @@ dependencies = [
 
 [[package]]
 name = "jaq-json"
-version = "2.0.2"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48d801b0b57f10064c4e9f5a4f6c97d0ccf62649b179ff8ac23cd494a3120ee9"
+checksum = "4be2f53207ffb1313a2d2ad819cfa8bfaa7936cb85a110eda10fd5da822cec94"
 dependencies = [
  "bstr",
  "bytes",
  "foldhash 0.1.5",
  "hifijson",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jaq-core",
  "jaq-std",
  "num-bigint 0.4.8",
@@ -4119,9 +4119,9 @@ dependencies = [
 
 [[package]]
 name = "jaq-std"
-version = "3.0.2"
+version = "3.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7941c8de9c591052050550f228c62ef80d3ecbd84c330f5c454bc8ebb7a04089"
+checksum = "9f90e485abfd3189510c996e77be55056a51038b0fa5805e6c97b5dcf0d9ab55"
 dependencies = [
  "aho-corasick",
  "base64 0.22.1",
@@ -4858,6 +4858,15 @@ name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
+dependencies = [
+ "adler2",
+]
+
+[[package]]
+name = "miniz_oxide"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
@@ -5692,7 +5701,7 @@ checksum = "8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455"
 dependencies = [
  "fixedbitset 0.5.7",
  "hashbrown 0.15.5",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "serde",
 ]
 
@@ -6097,7 +6106,7 @@ dependencies = [
  "either",
  "getrandom 0.4.3",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "num-traits",
  "polars-arrow",
@@ -6248,7 +6257,7 @@ dependencies = [
  "chrono-tz",
  "fallible-streaming-iterator",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "num-traits",
  "polars-arrow",
@@ -6352,7 +6361,7 @@ dependencies = [
  "either",
  "hashbrown 0.17.1",
  "hex",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jsonpath_lib_polars_vendor",
  "libm",
  "memchr",
@@ -6433,7 +6442,7 @@ dependencies = [
  "futures",
  "hashbrown 0.17.1",
  "hex",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "memmap2",
  "murmur3",
  "num-traits",
@@ -6482,7 +6491,7 @@ name = "polars-schema"
 version = "0.55.1"
 source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "polars-error",
  "polars-utils",
  "serde",
@@ -6594,7 +6603,7 @@ dependencies = [
  "futures",
  "half",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "libc",
  "memmap2",
  "num-derive",
@@ -6939,7 +6948,7 @@ dependencies = [
  "hostname-validator",
  "human-panic",
  "iana-time-zone",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "indicatif",
  "iso_currency",
  "itertools 0.15.0",
@@ -7866,7 +7875,7 @@ dependencies = [
  "bytecheck 0.8.3",
  "bytes",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "munge",
  "ptr_meta 0.3.2",
  "rancor",
@@ -8418,7 +8427,7 @@ version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "memchr",
  "serde",
@@ -8489,7 +8498,7 @@ dependencies = [
  "chrono",
  "hex",
  "indexmap 1.9.3",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "schemars 0.9.0",
  "schemars 1.2.2",
@@ -9547,7 +9556,7 @@ version = "1.1.4+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3aace63f4bbcdfc2c965b059de67119c89c4017a70d633be6c104910f67056f5"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "serde_core",
  "serde_spanned 1.1.1",
  "toml_datetime 1.1.1+spec-1.1.0",
@@ -9580,7 +9589,7 @@ version = "0.22.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "serde",
  "serde_spanned 0.6.9",
  "toml_datetime 0.6.11",
@@ -9594,7 +9603,7 @@ version = "0.25.13+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6975367e4d2ef766d86af01ffad14b622fecc8d4357a998fbc4deb6e9bacaf9b"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
  "winnow 1.0.4",
@@ -9627,7 +9636,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f89570c1a68d73941f728cca32a4345b2ffca36667ad921af336c60309a3e7e"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -10888,7 +10897,7 @@ version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33b729a08a9a6be689bbad3e2bf8015926db54b6622cc89c3a5f7dc174b9e918"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "libyaml-rs",
  "ryu",
@@ -11068,7 +11077,7 @@ dependencies = [
  "flate2",
  "getrandom 0.4.3",
  "hmac",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "lzma-rust2 0.16.5",
  "memchr",
  "pbkdf2",

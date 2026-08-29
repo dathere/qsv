@@ -2076,6 +2076,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
              --geojson for that map to exist (try `--geojson auto` to fetch boundaries too)."
         );
     }
+    if args.flag_geojson.is_some() && !(args.cmd_choropleth || args.cmd_smart) {
+        return fail_incorrectusage_clierror!(
+            "--geojson only applies to `viz choropleth` and `viz smart`."
+        );
+    }
     if args.flag_denominator_key.is_some() {
         if !(args.cmd_choropleth || args.cmd_smart) {
             return fail_incorrectusage_clierror!(
@@ -4048,7 +4053,7 @@ fn geo_point_hover(
         .map(|p| {
             let mut h = String::new();
             // the --text label heads the tooltip as the point's name
-            if let Some(t) = texts.get(p) {
+            if let Some(t) = texts.get(p).filter(|t| !t.trim().is_empty()) {
                 h.push_str(t);
                 h.push_str("<br>");
             }
@@ -4076,7 +4081,7 @@ fn geo_series_hover(name: &str, lats: &[f64], lons: &[f64], texts: &[String]) ->
     (0..lats.len())
         .map(|p| {
             let mut h = String::new();
-            if has_text {
+            if has_text && !texts[p].trim().is_empty() {
                 h.push_str(&texts[p]);
                 h.push_str("<br>");
             }
@@ -5058,9 +5063,10 @@ fn distinct_region_codes(args: &Args) -> CliResult<Vec<String>> {
     let loc_idx = resolve_one(args.flag_locations.as_ref(), &headers, nh, "locations")?;
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut codes: Vec<String> = Vec::new();
-    let mut record = csv::StringRecord::new();
-    while rdr.read_record(&mut record)? {
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
         if let Some(cell) = record.get(loc_idx) {
+            let cell = String::from_utf8_lossy(cell);
             let cell = cell.trim();
             if !cell.is_empty() && seen.insert(cell.to_string()) {
                 codes.push(cell.to_string());
@@ -6566,16 +6572,19 @@ fn distinct_name_state_pairs(
     let mut bad_state: Vec<String> = Vec::new();
     let spec = state_idx.map_or(QualifierSpec::None, QualifierSpec::StateFips);
     let mut quals: Vec<String> = Vec::new();
-    let mut record = csv::StringRecord::new();
-    while rdr.read_record(&mut record)? {
-        let Some(name) = record.get(name_idx).map(str::trim) else {
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let Some(name) = record.get(name_idx) else {
             continue;
         };
+        let name = String::from_utf8_lossy(name);
+        let name = name.trim();
         if name.is_empty() {
             continue;
         }
         let state_cell = state_idx
             .and_then(|i| record.get(i))
+            .map(String::from_utf8_lossy)
             .unwrap_or_default()
             .trim()
             .to_string();
@@ -6593,7 +6602,9 @@ fn distinct_name_state_pairs(
         };
         names.push(name.to_string());
         states.push(state_fips);
-        quals.push(spec.for_cells(|i| record.get(i).unwrap_or_default().to_string()));
+        quals.push(spec.for_cells(|i| {
+            String::from_utf8_lossy(record.get(i).unwrap_or_default()).into_owned()
+        }));
     }
     Ok((names, states, bad_state, quals, spec))
 }
@@ -6798,12 +6809,13 @@ fn distinct_column_values(args: &Args, cols: &[usize]) -> CliResult<Vec<Vec<Stri
     let mut seen: Vec<std::collections::HashSet<String>> =
         vec![std::collections::HashSet::new(); cols.len()];
     let mut out: Vec<Vec<String>> = vec![Vec::new(); cols.len()];
-    let mut record = csv::StringRecord::new();
-    while rdr.read_record(&mut record)? {
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
         for (slot, &col) in cols.iter().enumerate() {
             let Some(cell) = record.get(col) else {
                 continue;
             };
+            let cell = String::from_utf8_lossy(cell);
             let cell = cell.trim();
             if !cell.is_empty() && seen[slot].insert(cell.to_string()) {
                 out[slot].push(cell.to_string());
@@ -7606,9 +7618,12 @@ fn fmt_measure(v: f64) -> String {
 /// Returns `(1.0, "")` below 1e3 so callers can branch on an empty suffix.
 fn magnitude_scale(v: f64) -> (f64, &'static str) {
     let a = v.abs();
-    if a >= 1e12 {
+    // Once suffixing is active, switch at each three-significant-digit rounding boundary so the
+    // label rolls over to the next unit (999_500 -> 1M), never "1000k". Keep the established 1k
+    // entry threshold so ordinary sub-thousand values retain their exact grouped form.
+    if a >= 999_500_000_000.0 {
         (1e12, "T")
-    } else if a >= 1e9 {
+    } else if a >= 999_500_000.0 {
         (
             1e9,
             if viz_i18n::active_locale().bcp47.starts_with("en") {
@@ -7617,7 +7632,7 @@ fn magnitude_scale(v: f64) -> (f64, &'static str) {
                 "G"
             },
         )
-    } else if a >= 1e6 {
+    } else if a >= 999_500.0 {
         (1e6, "M")
     } else if a >= 1e3 {
         (1e3, "k")
@@ -7770,6 +7785,10 @@ fn choropleth_hover_text(
 ) -> Vec<String> {
     let n = locs.len();
     let label = escape_hover(measure_label);
+    // A signed aggregate has no meaningful part-of-whole interpretation: suppress percentages
+    // for the entire trace when any region is negative rather than emitting values far outside
+    // 0..=100% from a near-zero signed total.
+    let include_pct = include_pct && z.iter().all(|v| v.is_finite() && *v >= 0.0);
     let total: f64 = if include_pct {
         z.iter().copied().filter(|v| v.is_finite()).sum()
     } else {
@@ -7964,20 +7983,53 @@ struct ArgvExtras {
 impl ArgvExtras {
     /// Read both from the raw argv.
     fn from_argv(argv: &[&str]) -> Self {
-        let value_of = |flag: &str| -> Option<&str> {
-            let eq = format!("{flag}=");
-            argv.iter()
-                .position(|a| *a == flag)
-                .and_then(|i| argv.get(i + 1).copied())
-                .or_else(|| argv.iter().find_map(|a| a.strip_prefix(eq.as_str())))
+        // Derive option arity from the same docopt usage text that parsed `Args`. This scanner only
+        // recovers distinctions docopt's target types erase, but it must still skip values of
+        // preceding options: `--title --denominator` names a title, not a denominator flag.
+        let option_takes_value = |flag: &str| {
+            USAGE.lines().any(|line| {
+                let line = line.trim_start();
+                if !line.starts_with('-') {
+                    return false;
+                }
+                let spec = line.split("  ").next().unwrap_or(line);
+                let tokens: Vec<&str> = spec.split_whitespace().collect();
+                tokens.iter().enumerate().any(|(i, token)| {
+                    let token = token.trim_end_matches(',');
+                    (token == flag && tokens.get(i + 1).is_some_and(|next| next.starts_with('<')))
+                        || token
+                            .strip_prefix(flag)
+                            .is_some_and(|rest| rest.starts_with("=<"))
+                })
+            })
         };
-        Self {
-            feature_id_key_explicit: argv
-                .iter()
-                .any(|a| *a == "--feature-id-key" || a.starts_with("--feature-id-key=")),
-            census_denominator:      value_of("--denominator")
-                .and_then(crate::cmd::viz_census::parse_census_denominator),
+
+        let mut extras = Self::default();
+        let mut i = 0_usize;
+        while i < argv.len() {
+            let arg = argv[i];
+            if arg == "--" {
+                break;
+            }
+            let (flag, inline_value) = arg
+                .split_once('=')
+                .map_or((arg, None), |(flag, value)| (flag, Some(value)));
+            let next_value = inline_value.or_else(|| argv.get(i + 1).copied());
+            match flag {
+                "--feature-id-key" => extras.feature_id_key_explicit = true,
+                "--denominator" => {
+                    extras.census_denominator =
+                        next_value.and_then(crate::cmd::viz_census::parse_census_denominator);
+                },
+                _ => {},
+            }
+            i += if inline_value.is_none() && option_takes_value(flag) {
+                2
+            } else {
+                1
+            };
         }
+        extras
     }
 }
 
@@ -11874,9 +11926,8 @@ fn bin_2d(
         y_min = y_min.min(ay);
         y_max = y_max.max(ay);
     }
-    // guard against a degenerate (single-value) axis so the bin math never divides by zero
-    let x_span = if x_max > x_min { x_max - x_min } else { 1.0 };
-    let y_span = if y_max > y_min { y_max - y_min } else { 1.0 };
+    let x_span = x_max - x_min;
+    let y_span = y_max - y_min;
 
     // z[yi][xi] = number of points falling in that cell
     let mut z = vec![vec![0.0_f64; bins]; bins];
@@ -11885,21 +11936,47 @@ fn bin_2d(
         if !ax.is_finite() || !ay.is_finite() {
             continue;
         }
-        let xi = (((ax - x_min) / x_span) * bins as f64) as usize;
-        let yi = (((ay - y_min) / y_span) * bins as f64) as usize;
+        let xi = if x_span > 0.0 {
+            (((ax - x_min) / x_span) * bins as f64) as usize
+        } else {
+            0
+        };
+        let yi = if y_span > 0.0 {
+            (((ay - y_min) / y_span) * bins as f64) as usize
+        } else {
+            0
+        };
         z[yi.min(bins - 1)][xi.min(bins - 1)] += 1.0;
     }
 
     // bin-center coordinates for the axes, mapped back to RAW values: a plotly log axis is fed
     // raw coordinates and does the log transform itself, so geometric centers must be un-logged
     // here or the axis would log them twice.
-    let x_centers: Vec<f64> = (0..bins)
-        .map(|i| from_axis(x_min + (i as f64 + 0.5) * x_span / bins as f64, log_x))
-        .collect();
-    let y_centers: Vec<f64> = (0..bins)
-        .map(|i| from_axis(y_min + (i as f64 + 0.5) * y_span / bins as f64, log_y))
-        .collect();
+    let centers = |min: f64, span: f64, log: bool| {
+        if span > 0.0 {
+            (0..bins)
+                .map(|i| from_axis(min + (i as f64 + 0.5) * span / bins as f64, log))
+                .collect()
+        } else {
+            vec![from_axis(min, log); bins]
+        }
+    };
+    let x_centers = centers(x_min, x_span, log_x);
+    let y_centers = centers(y_min, y_span, log_y);
     (x_centers, y_centers, z)
+}
+
+fn axis_has_span(values: &[f64], log: bool) -> bool {
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    for &value in values {
+        let value = if log { value.log10() } else { value };
+        if value.is_finite() {
+            min = min.min(value);
+            max = max.max(value);
+        }
+    }
+    max > min
 }
 
 /// The share of all binned points that landed in the single busiest cell of a `bin_2d` grid — the
@@ -11976,6 +12053,9 @@ fn smart_contour_panel(
     mode: LogScale,
     labels: (&str, &str),
 ) -> Option<Panel> {
+    if !axis_has_span(xs, false) || !axis_has_span(ys, false) {
+        return None;
+    }
     // `On` forces log without consulting the linear grid, just as `measure_by_dim_logs` / the box
     // paths force a log value axis under `On`.
     if mode == LogScale::On {
@@ -12011,6 +12091,9 @@ fn smart_contour_panel(
 /// A non-zero omission that rounds below 1% is still disclosed (`<1%`) rather than silently hidden.
 fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str, labels: (&str, &str)) -> Option<Panel> {
     let (px, py, dropped) = positive_subset_pair(xs, ys)?;
+    if !axis_has_span(&px, true) || !axis_has_span(&py, true) {
+        return None;
+    }
     let (x, y, z) = bin_2d(&px, &py, SMART_CONTOUR_BINS, (true, true));
     if density_concentration(&z) > SMART_CONTOUR_MAX_BIN_SHARE {
         // even in log space the mass sits in one cell: there is no distribution to draw
@@ -12090,6 +12173,11 @@ fn build_contour(args: &Args) -> CliResult<(Box<dyn Trace>, String, String)> {
     }
     if xs.is_empty() {
         return fail_clierror!("No rows with numeric --x and --y values found for the contour.");
+    }
+    if !axis_has_span(&xs, false) || !axis_has_span(&ys, false) {
+        return fail_clierror!(
+            "Contour needs variation in both --x and --y; at least one selected axis is constant."
+        );
     }
 
     // grid resolution: --bins per axis (clamped to a sane range), else a default
@@ -12258,10 +12346,13 @@ fn build_radar(args: &Args) -> CliResult<Vec<Box<dyn Trace>>> {
         Some(s) => Some(resolve_one(Some(s), &headers, nh, "series")?),
         None => None,
     };
-    let axis_labels: Vec<String> = axis_idx
+    let raw_axis_labels: Vec<String> = axis_idx
         .iter()
         .map(|&i| col_label(&headers, i, nh))
         .collect();
+    // Plotly keys polar spokes by their category string. Ensure duplicate headers remain distinct
+    // axes rather than silently collapsing onto the same spoke.
+    let axis_labels = truncate_labels_unique(&raw_axis_labels, usize::MAX);
 
     let mut order: Vec<String> = Vec::new();
     let mut grouped: HashMap<String, Vec<Vec<f64>>> = HashMap::new();
@@ -12941,6 +13032,74 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", function () { setTimeout(init, 0); });
   else setTimeout(init, 0);
+})();
+</script>"#;
+
+/// Keep auto-bucketed Quarter/Year time-series ticks readable as their plot width changes.
+///
+/// Those labels deliberately use a category axis ("2024-Q1" is not a date), but plotly's default
+/// auto-angle turns a dense category axis vertical and then admits nearly every label. The axis is
+/// marked by an explicit zero-degree `tickangle`; this observer converts its measured pixel width
+/// into an evenly-spaced label budget (including both endpoints), preserving every trace point
+/// while showing only labels that fit.
+const RESPONSIVE_CATEGORY_TICKS_SCRIPT: &str = r#"<script>
+(function () {
+  var MARK = "qsv-responsive-category-ticks", PX_PER_TICK = 72;
+  function update(gd) {
+    var layout = gd.layout || {}, full = gd._fullLayout, state = gd.__qsvCategoryTicks;
+    if (!full || !full._size || !state || state.mark !== MARK) return;
+    var upd = {}, changed = false;
+    state.keys.forEach(function (key) {
+      var axis = layout[key] || {}, fa = full[key] || {};
+      var categories = fa._categories || [];
+      if (!categories.length) return;
+      var domain = fa.domain || [0, 1];
+      var width = full._size.w * Math.max(0, domain[1] - domain[0]);
+      var budget = Math.min(categories.length, Math.max(2, Math.floor(width / PX_PER_TICK)));
+      var ticks = [];
+      for (var i = 0; i < budget; i++) {
+        var at = budget === 1 ? 0 : Math.round(i * (categories.length - 1) / (budget - 1));
+        if (ticks[ticks.length - 1] !== categories[at]) ticks.push(categories[at]);
+      }
+      if (JSON.stringify(axis.ticktext || []) !== JSON.stringify(ticks)) {
+        upd[key + ".tickmode"] = "array";
+        upd[key + ".tickvals"] = ticks;
+        upd[key + ".ticktext"] = ticks;
+        changed = true;
+      }
+    });
+    if (changed && window.Plotly && Plotly.relayout) Plotly.relayout(gd, upd);
+  }
+  function debounce(fn) {
+    var timer = null;
+    return function () { clearTimeout(timer); timer = setTimeout(fn, 120); };
+  }
+  function attach() {
+    var divs = document.querySelectorAll(".js-plotly-plot"), found = false;
+    for (var i = 0; i < divs.length; i++) {
+      var gd = divs[i];
+      if (gd.__qsvCategoryTicks) { found = true; continue; }
+      if (!gd.layout) continue;
+      var marked = Object.keys(gd.layout).some(function (key) {
+        var axis = gd.layout[key];
+        return /^xaxis\d*$/.test(key) && axis && axis.type === "category" &&
+          axis.tickangle === 0 && !axis.tickvals && !axis.ticktext;
+      });
+      if (!marked) continue;
+      var keys = Object.keys(gd.layout).filter(function (key) {
+        var axis = gd.layout[key];
+        return /^xaxis\d*$/.test(key) && axis && axis.type === "category" &&
+          axis.tickangle === 0 && !axis.tickvals && !axis.ticktext;
+      });
+      gd.__qsvCategoryTicks = { mark: MARK, keys: keys }; found = true;
+      var run = (function (el) { return debounce(function () { try { update(el); } catch (e) {} }); })(gd);
+      try { new ResizeObserver(run).observe(gd); } catch (e) { window.addEventListener("resize", run); }
+      run();
+    }
+    return found;
+  }
+  var tries = 0;
+  (function poll() { if (attach() || ++tries > 40) return; setTimeout(poll, 150); })();
 })();
 </script>"#;
 
@@ -15163,6 +15322,7 @@ fn smart_html_page(
 {fullscreen_script}
 {parcats_script}
 {KPI_REWRAP_SCRIPT}
+{RESPONSIVE_CATEGORY_TICKS_SCRIPT}
 {dict_chrome}
 {data_chrome}
 {photo_chrome}
@@ -16885,6 +17045,17 @@ fn cell_to_string(cell: Option<&[u8]>) -> String {
         .unwrap_or_default()
 }
 
+/// Decode and normalize a categorical cell consistently across smart-chart builders.
+fn normalized_category(cell: Option<&[u8]>) -> String {
+    let raw = cell_to_string(cell);
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        null_text()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 fn parse_f64(cell: Option<&[u8]>) -> Option<f64> {
     parse_finite_f64(std::str::from_utf8(cell?).ok()?)
 }
@@ -18388,7 +18559,7 @@ fn parse_bivariate_csv(path: &std::path::Path) -> CliResult<Vec<BivariateRow>> {
         let (Some(field1), Some(field2)) = (record.get(f1i), record.get(f2i)) else {
             continue;
         };
-        let Some(nmi) = record.get(nmi_i).and_then(|s| s.parse::<f64>().ok()) else {
+        let Some(nmi) = record.get(nmi_i).and_then(parse_finite_f64) else {
             continue;
         };
         let pearson = pearson_i
@@ -18668,8 +18839,8 @@ fn sankey_side_topn(
 /// every target node, so a value appearing in both columns still yields two distinct nodes (a
 /// proper left→right flow, never a self-loop). `link_source`/`link_target` are 0-based indices into
 /// `node_labels`; `link_value` is the aggregated flow. Also returns each side's `Other` flow
-/// fraction for the caller's readability guard. Rows with either cell empty are skipped; returns
-/// `None` when no flow remains.
+/// fraction for the caller's readability guard. Cells are trimmed and blank values share the
+/// localized null bucket used by sibling categorical panels; returns `None` when no flow remains.
 #[allow(clippy::type_complexity)]
 fn build_smart_sankey_arrays(
     args: &Args,
@@ -18682,11 +18853,8 @@ fn build_smart_sankey_arrays(
     let mut tgt_tot: HashMap<String, f64> = HashMap::new();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
-        let s = cell_to_string(record.get(s_idx));
-        let t = cell_to_string(record.get(t_idx));
-        if s.is_empty() || t.is_empty() {
-            continue;
-        }
+        let s = normalized_category(record.get(s_idx));
+        let t = normalized_category(record.get(t_idx));
         *src_tot.entry(s.clone()).or_insert(0.0) += 1.0;
         *tgt_tot.entry(t.clone()).or_insert(0.0) += 1.0;
         *pair_counts.entry((s, t)).or_insert(0.0) += 1.0;
@@ -25374,6 +25542,38 @@ fn parse_record_date(
     qsv_dateparser::parse_with_preference(text, prefer_dmy).ok()
 }
 
+/// Parse a timestamp for cyclic bucketing while preserving an explicit source offset's local
+/// wall-clock fields. The general parser normalizes instants to UTC, which is correct for absolute
+/// timelines but shifts hour-of-day and weekday profiles.
+fn parse_record_cyclic_date(
+    record: &csv::ByteRecord,
+    idx: usize,
+    prefer_dmy: bool,
+) -> Option<chrono::NaiveDateTime> {
+    let text = std::str::from_utf8(record.get(idx)?).ok()?.trim();
+    if text.is_empty() {
+        return None;
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(text) {
+        return Some(dt.naive_local());
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(text) {
+        return Some(dt.naive_local());
+    }
+    for format in [
+        "%Y-%m-%d %H:%M:%S%.f%:z",
+        "%Y-%m-%dT%H:%M:%S%.f%z",
+        "%Y-%m-%d %H:%M:%S%.f%z",
+    ] {
+        if let Ok(dt) = chrono::DateTime::parse_from_str(text, format) {
+            return Some(dt.naive_local());
+        }
+    }
+    qsv_dateparser::parse_with_preference(text, prefer_dmy)
+        .ok()
+        .map(|dt| dt.naive_utc())
+}
+
 /// Pick the canonical date/datetime column for temporal panels (time-series overview, animated
 /// scatter). When a dictionary tagged timestamps, prefer the event/created one (`timestamp_rank`);
 /// among equal ranks prefer a column the file is physically sorted by (`sort_order_rank` — likely
@@ -26772,7 +26972,7 @@ impl CyclicAxis {
     }
 
     /// 0-based bucket index for a timestamp.
-    fn bucket(self, dt: &chrono::DateTime<chrono::Utc>) -> usize {
+    fn bucket(self, dt: &chrono::NaiveDateTime) -> usize {
         use chrono::{Datelike, Timelike};
         match self {
             CyclicAxis::HourOfDay => dt.hour() as usize,
@@ -26901,7 +27101,7 @@ fn build_cyclic_panel(
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
-        if let Some(dt) = parse_record_date(&record, date_idx, prefer_dmy) {
+        if let Some(dt) = parse_record_cyclic_date(&record, date_idx, prefer_dmy) {
             counts[axis.bucket(&dt)] += 1;
         }
     }
@@ -30153,8 +30353,13 @@ fn kpi_label_annotation(
     max_chars: usize,
     font: Font,
 ) -> Annotation {
+    let escaped_label = wrap_kpi_label(label, max_chars)
+        .split("<br>")
+        .map(escape_hover)
+        .collect::<Vec<_>>()
+        .join("<br>");
     Annotation::new()
-        .text(wrap_kpi_label(label, max_chars))
+        .text(escaped_label)
         .name(KPI_LABEL_MARK)
         .x(x_center)
         .y(y_top)
@@ -30394,6 +30599,12 @@ struct SmartPrep {
     bivariate_sidecar_fresh: bool,
 }
 
+/// Base stats options used by the `--smarter` moarstats pass. These must remain compatible with
+/// `StatsMode::ProfileSchema` because both paths write the same persistent cache.
+const SMARTER_STATS_OPTIONS: &str = "--infer-dates --cardinality --mode --mad --quartiles \
+                                     --percentiles --zero-padded-numeric --force --stats-jsonl \
+                                     --dates-whitelist sniff";
+
 /// Validate `viz smart`'s input, apply `--bivariate`'s flag implications, and run the optional
 /// `--smarter` moarstats enrichment pass (which rewrites the stats sidecar `build_smart` reads).
 fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> CliResult<SmartPrep> {
@@ -30512,11 +30723,12 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
             // regenerated cache infers dates the same way viz smart does (for the time-series
             // panel). Soft-fail: a moarstats error degrades to the plain ProfileSchema Data
             // Schematic.
-            let stats_opts = "--infer-dates --infer-boolean --cardinality --mode --mad \
-                              --quartiles --percentiles --force --stats-jsonl --dates-whitelist \
-                              sniff";
-            let mut moar_argv: Vec<&str> =
-                vec!["--advanced", "--force", "--stats-options", stats_opts];
+            let mut moar_argv: Vec<&str> = vec![
+                "--advanced",
+                "--force",
+                "--stats-options",
+                SMARTER_STATS_OPTIONS,
+            ];
             // `--bivariate`: extend the SAME moarstats subprocess (no second invocation) with the
             // bivariate sidecar request. Always asks for nmi (the association heatmap's value,
             // works for numeric AND categorical pairs), u (Theil's directed uncertainty
@@ -34880,12 +35092,12 @@ fn smart_grid_parts(
                 | PanelKind::Violin { .. }
         );
         // A Quarter/Year-bucketed trend carries non-date-parseable labels ("2024-Q1"): render it
-        // on a category axis via the tick_text mechanism instead of the date axis (issue #4216).
-        let (is_date, ts_ticks) = match &panel.kind {
-            PanelKind::TimeSeries {
-                categorical, xs, ..
-            } => (!*categorical, categorical.then(|| xs.clone())),
-            _ => (false, None),
+        // on an auto-ticked category axis instead of the date axis (issue #4216). Leaving tick
+        // selection to plotly lets the visible labels thin responsively while every bucket remains
+        // in the trace and hover.
+        let (is_date, is_category) = match &panel.kind {
+            PanelKind::TimeSeries { categorical, .. } => (!*categorical, *categorical),
+            _ => (false, false),
         };
         let (trace, bar_max, log_y) = panel_trace(
             panel,
@@ -34934,10 +35146,10 @@ fn smart_grid_parts(
             // with the ordinary bar headroom so the outside delta labels are not clipped.
             let max = totals.iter().copied().fold(0.0_f64, f64::max);
             (
-                styled_x_axis(false, false, false, theme, None)
+                styled_x_axis(false, false, false, false, theme, None)
                     .domain(&geom.x_domain)
                     .anchor(yref.clone()),
-                styled_y_axis(Some(max), false, theme)
+                styled_y_axis(Some((0.0, max)), false, theme)
                     .domain(&geom.y_domain)
                     .anchor(xref.clone()),
             )
@@ -34962,7 +35174,7 @@ fn smart_grid_parts(
             // axis TYPE only — `styled_y_axis`'s "log scale" title is the cue for an unlabeled
             // distribution axis, while these panels name the logged axis in the panel title.
             let (x_log, y_log) = panel.axis_log;
-            let mut y = styled_y_axis(bar_max, log_y, theme);
+            let mut y = styled_y_axis(panel_bar_headroom(panel, bar_max), log_y, theme);
             if y_log {
                 y = y.type_(AxisType::Log);
             }
@@ -34970,9 +35182,10 @@ fn smart_grid_parts(
                 styled_x_axis(
                     is_box,
                     is_date,
+                    is_category,
                     x_log,
                     theme,
-                    ts_ticks.or_else(|| freq_bar_tick_text(panel, freq)),
+                    freq_bar_tick_text(panel, freq),
                 )
                 .domain(&geom.x_domain)
                 .anchor(yref.clone()),
@@ -36385,12 +36598,11 @@ fn inline_panel_plot_cartesian(
         PanelKind::CorrHeatmap { .. } | PanelKind::AssocHeatmap { .. }
     );
     // A Quarter/Year-bucketed trend carries non-date-parseable labels ("2024-Q1"): render it
-    // on a category axis via the tick_text mechanism instead of the date axis (issue #4216).
-    let (is_date, ts_ticks) = match &panel.kind {
-        PanelKind::TimeSeries {
-            categorical, xs, ..
-        } => (!*categorical, categorical.then(|| xs.clone())),
-        _ => (false, None),
+    // on an auto-ticked category axis instead of the date axis (issue #4216). Plotly then adapts
+    // the visible label interval to the rendered width without dropping any trace points.
+    let (is_date, is_category) = match &panel.kind {
+        PanelKind::TimeSeries { categorical, .. } => (!*categorical, *categorical),
+        _ => (false, false),
     };
     let is_toprel = matches!(panel.kind, PanelKind::TopRelationships { .. });
     let (trace, bar_max, log_y) =
@@ -36457,7 +36669,7 @@ fn inline_panel_plot_cartesian(
         // per-axis log for a relationship panel (issue #4223); see the grid path for why the y
         // side sets only the axis type and not `styled_y_axis`'s title cue.
         let (x_log, y_log) = panel.axis_log;
-        let mut y = styled_y_axis(bar_max, log_y, theme);
+        let mut y = styled_y_axis(panel_bar_headroom(panel, bar_max), log_y, theme);
         if y_log {
             y = y.type_(AxisType::Log);
         }
@@ -36465,9 +36677,10 @@ fn inline_panel_plot_cartesian(
             styled_x_axis(
                 is_box,
                 is_date,
+                is_category,
                 x_log,
                 theme,
-                ts_ticks.or_else(|| freq_bar_tick_text(panel, freq)),
+                freq_bar_tick_text(panel, freq),
             ),
             y,
         )
@@ -38507,14 +38720,14 @@ fn freq_bar_tick_text(panel: &Panel, freq: &FreqMap) -> Option<Vec<String>> {
             let labels = freq
                 .get(idx)?
                 .iter()
-                .map(|b| truncate_label(&b.label, BAR_LABEL_MAX_CHARS))
+                .map(|b| escape_hover(&truncate_label(&b.label, BAR_LABEL_MAX_CHARS)))
                 .collect();
             Some(labels)
         },
         PanelKind::MeasureByDim { labels, .. } => Some(
             labels
                 .iter()
-                .map(|l| truncate_label(l, BAR_LABEL_MAX_CHARS))
+                .map(|l| escape_hover(&truncate_label(l, BAR_LABEL_MAX_CHARS)))
                 .collect(),
         ),
         _ => None,
@@ -38524,7 +38737,9 @@ fn freq_bar_tick_text(panel: &Panel, freq: &FreqMap) -> Option<Vec<String>> {
 /// A styled x-axis for a Data Schematic panel: no vertical gridlines, a light baseline, and
 /// small tick labels. For single-box panels (`is_box`), the lone "0" category tick is
 /// meaningless, so its labels and baseline are hidden. For time-series panels (`is_date`),
-/// the axis is typed as a date axis so plotly spaces ticks chronologically. For relationship
+/// the axis is typed as a date axis so plotly spaces ticks chronologically. Categorical time
+/// series (`auto_category`) use plotly's automatic category ticks so their visible label interval
+/// adapts to the rendered width. For relationship
 /// panels whose x values span orders of magnitude (`log`), the axis is typed logarithmic — the
 /// panel title names which axis was logged (issue #4223). `tick_text`, when
 /// present (frequency-bar panels, and Quarter/Year-bucketed trend panels whose "2024-Q1" labels
@@ -38534,6 +38749,7 @@ fn freq_bar_tick_text(panel: &Panel, freq: &FreqMap) -> Option<Vec<String>> {
 fn styled_x_axis(
     is_box: bool,
     is_date: bool,
+    auto_category: bool,
     log: bool,
     theme: Option<BuiltinTheme>,
     tick_text: Option<Vec<String>>,
@@ -38555,6 +38771,13 @@ fn styled_x_axis(
     }
     if is_date {
         a = a.type_(AxisType::Date);
+    }
+    if auto_category {
+        // Keep bucket labels horizontal. Plotly's default auto-angle rotates a dense category axis
+        // to 90 degrees and then admits nearly every label, which is technically non-overlapping
+        // but still reads as a picket fence. At zero degrees its auto tick interval responds to
+        // the measured label width and available plot width instead.
+        a = a.type_(AxisType::Category).tick_angle(0.0);
     }
     // a relationship panel whose x values span orders of magnitude (issue #4223). Mutually
     // exclusive with the date/category modes above by construction: those panels carry no
@@ -38581,12 +38804,28 @@ fn styled_x_axis(
 }
 
 /// A styled y-axis for a Data Schematic panel: light horizontal gridlines only, small ticks.
-/// When `headroom_max` is given (bar panels), the range is fixed so the tallest bar's outside
-/// value label has room and isn't clipped at the cell top: `0..=max*1.15` on a linear axis, or
-/// (when `log`) a log10 range from just under 1 up to `log10(max)` plus a margin. A `log` axis
-/// also carries a title as the visual cue that it's logarithmic: `LOG_AXIS_TITLE` ("count
-/// (log)") for bar panels, `VALUE_LOG_AXIS_TITLE` ("log scale") for box value axes.
-fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinTheme>) -> Axis {
+/// When bar bounds are given, the range is fixed so outside value labels have room and aren't
+/// clipped: signed bars get 15% headroom below and above zero, while nonnegative bars retain the
+/// `0..=max*1.15` range. On a log axis the upper bound supplies a log10 range from just under 1 to
+/// `log10(max)` plus a margin. A `log` axis also carries a title as the visual cue that it's
+/// logarithmic: `LOG_AXIS_TITLE` ("count (log)") for bar panels, `VALUE_LOG_AXIS_TITLE` ("log
+/// scale") for box value axes.
+fn panel_bar_headroom(panel: &Panel, headroom_max: Option<f64>) -> Option<(f64, f64)> {
+    match (&panel.kind, headroom_max) {
+        (PanelKind::MeasureByDim { values, .. }, Some(_)) => Some(
+            values
+                .iter()
+                .copied()
+                .fold((0.0_f64, 0.0_f64), |(lo, hi), value| {
+                    (lo.min(value), hi.max(value))
+                }),
+        ),
+        (_, Some(max)) => Some((0.0, max)),
+        (_, None) => None,
+    }
+}
+
+fn styled_y_axis(headroom: Option<(f64, f64)>, log: bool, theme: Option<BuiltinTheme>) -> Axis {
     let mut a = Axis::new()
         .show_grid(true)
         .grid_width(1)
@@ -38606,11 +38845,11 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
             // no explicit font color: inherit the layout font (ink) so the toggle can flip it.
             .tick_font(Font::new().family(FONT_FAMILY).size(10));
     }
-    match (log, headroom_max) {
+    match (log, headroom) {
         // log axis: plotly ranges are in log10 units. Start a hair below 1 (counts are >= 1) so
         // a count-of-1 bar still draws a visible sliver, and add ~0.15 in log10 (~1.4x) of top
         // headroom for the outside value labels.
-        (true, Some(m)) if m > 0.0 => {
+        (true, Some((_, m))) if m > 0.0 => {
             a = a.type_(AxisType::Log).range(vec![-0.05, m.log10() + 0.15]);
         },
         // log axis without a known max: a box panel's value axis (bar panels always pass their
@@ -38618,8 +38857,10 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
         (true, _) => {
             a = a.type_(AxisType::Log);
         },
-        (false, Some(m)) if m > 0.0 => {
-            a = a.range(vec![0.0, m * 1.15]);
+        (false, Some((lo, hi))) if lo < 0.0 || hi > 0.0 => {
+            let floor = if lo < 0.0 { lo * 1.15 } else { 0.0 };
+            let ceil = if hi > 0.0 { hi * 1.15 } else { 0.0 };
+            a = a.range(vec![floor, ceil]);
         },
         (false, _) => {},
     }
@@ -38633,7 +38874,7 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
             // no explicit color: inherit the layout font (ink) so the toggle can flip it.
             title_font = title_font.family(FONT_FAMILY);
         }
-        let cue = if headroom_max.is_some() {
+        let cue = if headroom.is_some() {
             log_axis_title()
         } else {
             value_log_axis_title()
@@ -42623,6 +42864,14 @@ mod tests {
             KPI_REWRAP_SCRIPT.contains(KPI_LABEL_MARK),
             "the script and the annotation must agree on the marker string"
         );
+
+        let unsafe_ann =
+            kpi_label_annotation("Revenue <script>&", 0.5, 0.24, 28, Font::new().size(13));
+        let unsafe_json = serde_json::to_value(&unsafe_ann).expect("annotation should serialize");
+        assert_eq!(
+            unsafe_json.get("text").and_then(serde_json::Value::as_str),
+            Some("Revenue &lt;script&gt;&amp;")
+        );
     }
 
     #[test]
@@ -45537,7 +45786,16 @@ mod tests {
         // in Rust by `fmt_magnitude`. Two different rounding rules for the same number would put
         // "192B" above a bar and "191B" in the tile summarizing it.
         let _locale = english_locale();
-        for v in [192e9, 2.4e9, 1.05e6, 258_000.0, 1.0e12, 999_999.0] {
+        for v in [
+            192e9,
+            2.4e9,
+            1.05e6,
+            258_000.0,
+            1.0e12,
+            999_999.0,
+            999_500.0,
+            999_500_000.0,
+        ] {
             let (stats, panels, _) = kpi_fixture(v, None);
             let row = build_kpi_row(&stats, &panels, None).expect("KPI row");
             let tile = only_tile(&row);
@@ -45552,6 +45810,8 @@ mod tests {
                 "KPI tile and bar label disagree for {v}"
             );
         }
+        assert_eq!(fmt_magnitude(999_500.0), "1M");
+        assert_eq!(fmt_magnitude(999_500_000.0), "1B");
     }
 
     #[test]
@@ -46498,6 +46758,21 @@ mod tests {
     }
 
     #[test]
+    fn bin_2d_does_not_invent_coordinates_for_a_constant_axis() {
+        let xs = vec![5.0, 5.0, 5.0];
+        let ys = vec![1.0, 2.0, 3.0];
+        let (xc, _, z) = bin_2d(&xs, &ys, 20, (false, false));
+        assert!(xc.iter().all(|x| (*x - 5.0).abs() < f64::EPSILON));
+        assert_eq!(z.iter().flatten().sum::<f64>(), 3.0);
+        assert!(!axis_has_span(&xs, false));
+        assert!(smart_contour_panel(&xs, &ys, "constant", LogScale::Auto, ("x", "y")).is_none());
+
+        let log_xs = vec![10.0, 10.0, 10.0];
+        let (log_xc, _, _) = bin_2d(&log_xs, &ys, 20, (true, false));
+        assert!(log_xc.iter().all(|x| (*x - 10.0).abs() < 1e-9));
+    }
+
+    #[test]
     fn smart_contour_panel_honors_log_scale_mode() {
         // the log-space retry's title is localized -- pin English, or this races the
         // Spanish-setting tests on the process-global locale. The "a vs b" passed in
@@ -46603,6 +46878,27 @@ mod tests {
             },
         );
         assert!(freq_bar_tick_text(&other, &freq).is_none());
+    }
+
+    #[test]
+    fn measure_by_dim_keeps_negative_bars_in_range_and_escapes_ticks() {
+        let panel = Panel::new(
+            "net by category".to_string(),
+            PanelKind::MeasureByDim {
+                labels: vec!["profit <b>".to_string(), "loss & more".to_string()],
+                values: vec![120.0, -80.0],
+            },
+        );
+        assert_eq!(
+            panel_bar_headroom(&panel, Some(120.0)),
+            Some((-80.0, 120.0))
+        );
+        let ticks = freq_bar_tick_text(&panel, &FreqMap::new()).expect("bar ticks");
+        assert_eq!(ticks, vec!["profit &lt;b&gt;", "loss &amp; more"]);
+
+        let axis = styled_y_axis(Some((-80.0, 120.0)), false, None);
+        let json = serde_json::to_value(&axis).expect("axis should serialize");
+        assert_eq!(json.get("range"), Some(&serde_json::json!([-92.0, 138.0])));
     }
 
     #[test]
@@ -47011,6 +47307,76 @@ mod tests {
         );
         // multiple wraps.
         assert_eq!(wrap_kpi_label("a b c d e", 3), "a b<br>c d<br>e");
+    }
+
+    #[test]
+    fn argv_extras_skip_values_that_look_like_flags() {
+        let extras = ArgvExtras::from_argv(&["smart", "--title", "--denominator", "census"]);
+        assert!(extras.census_denominator.is_none());
+
+        let real = ArgvExtras::from_argv(&["smart", "--denominator", "census@2020"]);
+        assert_eq!(real.census_denominator, Some(Some(2020)));
+        let explicit = ArgvExtras::from_argv(&["smart", "--feature-id-key=id"]);
+        assert!(explicit.feature_id_key_explicit);
+    }
+
+    #[test]
+    fn smarter_stats_options_match_profile_cache_semantics() {
+        assert!(SMARTER_STATS_OPTIONS.contains("--zero-padded-numeric"));
+        assert!(!SMARTER_STATS_OPTIONS.contains("--infer-boolean"));
+        for required in ["--infer-dates", "--cardinality", "--mode", "--quartiles"] {
+            assert!(SMARTER_STATS_OPTIONS.contains(required));
+        }
+    }
+
+    #[test]
+    fn cyclic_dates_preserve_explicit_local_wall_time() {
+        use chrono::{Datelike, Timelike};
+
+        let record = csv::ByteRecord::from(vec!["2024-05-03T22:30:00-04:00"]);
+        let local = parse_record_cyclic_date(&record, 0, false).expect("local timestamp");
+        assert_eq!(local.hour(), 22);
+        assert_eq!(local.weekday(), chrono::Weekday::Fri);
+
+        let normalized = parse_record_date(&record, 0, false).expect("UTC timestamp");
+        assert_eq!(normalized.hour(), 2);
+        assert_eq!(normalized.weekday(), chrono::Weekday::Sat);
+    }
+
+    #[test]
+    fn categorical_and_geo_hover_text_normalize_blank_values() {
+        assert_eq!(normalized_category(Some(b" Closed \t")), "Closed");
+        assert_eq!(normalized_category(Some(b" \t")), null_text());
+
+        let point = geo_point_hover(&[1.0], &[2.0], None, None, &["  ".to_string()])
+            .expect("explicit text requests custom hover");
+        assert_eq!(point, vec!["1.00000, 2.00000"]);
+        let series = geo_series_hover("group", &[1.0], &[2.0], &["".to_string()]);
+        assert_eq!(series, vec!["group<br>1.00000, 2.00000"]);
+    }
+
+    #[test]
+    fn duplicate_radar_labels_are_uniquified() {
+        let labels = vec!["amount".to_string(), "amount".to_string()];
+        assert_eq!(
+            truncate_labels_unique(&labels, usize::MAX),
+            vec!["amount", "amount(2)"]
+        );
+    }
+
+    #[test]
+    fn bivariate_parser_rejects_non_finite_nmi() {
+        use std::io::Write;
+
+        let mut file = tempfile::NamedTempFile::new().expect("temporary bivariate CSV");
+        writeln!(
+            file,
+            "field1,field2,normalized_mutual_information\na,b,NaN\na,c,0.5"
+        )
+        .expect("write bivariate CSV");
+        let rows = parse_bivariate_csv(file.path()).expect("parse bivariate CSV");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].nmi, 0.5);
     }
 
     #[test]
@@ -48195,6 +48561,16 @@ mod tests {
         assert_eq!(h[0], "<b>A</b><br>magnitude: 3.5<br>rank 1 of 2");
         assert_eq!(h[1], "<b>B</b><br>magnitude: 1.5<br>rank 2 of 2");
         assert!(!h[0].contains("% of total"));
+    }
+
+    #[test]
+    fn choropleth_hover_suppresses_percentages_for_signed_sums() {
+        let _locale = english_locale();
+        let locs = vec!["A".to_string(), "B".to_string()];
+        let h = choropleth_hover_text(&locs, &[100.0, -99.0], None, "net", true);
+        assert!(h.iter().all(|line| !line.contains("% of total")));
+        assert!(h[0].contains("net: 100"));
+        assert!(h[1].contains("net: -99"));
     }
 
     #[test]

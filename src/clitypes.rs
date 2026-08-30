@@ -7,11 +7,24 @@ use std::{
 
 use cached::{RedbCacheError, RedisCacheError};
 
+// None of these macros may `.unwrap()` their write. A panic here is routed through
+// `util::qsv_custom_panic` and reaches the user as a crash report asking them to file a bug,
+// for what is really just a failed write — a full disk, a closed fd (issue #4516).
+//
+// The two stream classes are handled differently ON PURPOSE:
+//   - stdout carries DATA. Losing it silently is unacceptable, so the first failure is recorded in
+//     `WRITE_ERROR` and `QsvExitCode::report` turns it into a non-zero exit.
+//   - stderr carries DIAGNOSTICS. A warning that cannot be delivered must not change the outcome of
+//     an otherwise successful run, so it is dropped. The `log` record, emitted before the write,
+//     survives either way.
+
 /// write to stdout
 macro_rules! wout {
     ($($arg:tt)*) => ({
         use std::io::Write;
-        (writeln!(&mut ::std::io::stdout(), $($arg)*)).unwrap();
+        if let Err(e) = writeln!(&mut ::std::io::stdout(), $($arg)*) {
+            crate::clitypes::record_write_error("stdout", &e);
+        }
     });
 }
 
@@ -22,7 +35,9 @@ macro_rules! woutinfo {
         use log::info;
         let info = format!($($arg)*);
         info!("{info}");
-        (writeln!(&mut ::std::io::stdout(), $($arg)*)).unwrap();
+        if let Err(e) = writeln!(&mut ::std::io::stdout(), $($arg)*) {
+            crate::clitypes::record_write_error("stdout", &e);
+        }
     });
 }
 
@@ -33,7 +48,7 @@ macro_rules! werr {
         use log::error;
         let error = format!($($arg)*);
         error!("{error}");
-        (writeln!(&mut ::std::io::stderr(), $($arg)*)).unwrap();
+        let _ = writeln!(&mut ::std::io::stderr(), $($arg)*);
     });
 }
 
@@ -44,7 +59,7 @@ macro_rules! wwarn {
         use log::warn;
         let warning = format!($($arg)*);
         warn!("{warning}");
-        (writeln!(&mut ::std::io::stderr(), $($arg)*)).unwrap();
+        let _ = writeln!(&mut ::std::io::stderr(), $($arg)*);
     });
 }
 
@@ -55,7 +70,7 @@ macro_rules! winfo {
         use log::info;
         let info = format!($($arg)*);
         info!("{info}");
-        (writeln!(&mut ::std::io::stderr(), $($arg)*)).unwrap();
+        let _ = writeln!(&mut ::std::io::stderr(), $($arg)*);
     });
 }
 
@@ -125,6 +140,23 @@ macro_rules! fail_format {
 
 pub static CURRENT_COMMAND: OnceLock<String> = OnceLock::new();
 
+/// The first failed write to a DATA stream (stdout), recorded instead of panicked on.
+///
+/// `wout!`/`woutinfo!` are used as statements in hundreds of places and cannot return an error
+/// to their caller, but silently losing data output is not acceptable either. So the first
+/// failure is stashed here and `QsvExitCode::report` — the single point every binary's `main`
+/// funnels through — turns it into a message and a non-zero exit.
+///
+/// Diagnostic writes (stderr) deliberately do NOT set this.
+pub static WRITE_ERROR: OnceLock<String> = OnceLock::new();
+
+/// Record a failed data-stream write. Only the FIRST is kept: whatever breaks one write
+/// (a full device, a closed fd) breaks every subsequent one too, and one accurate message
+/// beats several thousand identical ones.
+pub fn record_write_error(stream: &str, e: &io::Error) {
+    let _ = WRITE_ERROR.set(format!("error writing to {stream}: {e}"));
+}
+
 #[repr(u8)]
 pub enum QsvExitCode {
     Good           = 0,
@@ -136,9 +168,65 @@ pub enum QsvExitCode {
     Warning        = 255,
 }
 
+/// The status a run should actually report, given whether a data-stream write failed.
+///
+/// A run that would otherwise have SUCCEEDED must not claim success when its output never
+/// made it; an already-failing run keeps its more specific code. Split out from `report` so
+/// the promotion rule is testable without a real `ExitCode` or the process-global
+/// `WRITE_ERROR`.
+const fn effective_exit_code(code: u8, had_write_error: bool) -> u8 {
+    if had_write_error && code == QsvExitCode::Good as u8 {
+        QsvExitCode::Bad as u8
+    } else {
+        code
+    }
+}
+
 impl Termination for QsvExitCode {
     fn report(self) -> ExitCode {
-        ExitCode::from(self as u8)
+        // Surface a data-stream write failure that `wout!`/`woutinfo!` recorded rather than
+        // panicked on. This is the one place all three binaries' `main` funnels through, so
+        // the check cannot be forgotten by a new exit path.
+        let write_error = WRITE_ERROR.get();
+        if let Some(err) = write_error {
+            use std::io::Write;
+
+            log::error!("{err}");
+            let _ = writeln!(&mut io::stderr(), "{err}");
+        }
+        ExitCode::from(effective_exit_code(self as u8, write_error.is_some()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{QsvExitCode, effective_exit_code};
+
+    // A failed data write must never be reported as success — and must never mask a more
+    // specific failure that already happened.
+    #[test]
+    fn a_failed_data_write_promotes_only_a_successful_run() {
+        // clean run, working stdout => unchanged
+        assert_eq!(
+            effective_exit_code(QsvExitCode::Good as u8, false),
+            QsvExitCode::Good as u8
+        );
+        // clean run whose output never landed => must fail
+        assert_eq!(
+            effective_exit_code(QsvExitCode::Good as u8, true),
+            QsvExitCode::Bad as u8
+        );
+        // an already-failing run keeps its own, more informative code
+        for code in [
+            QsvExitCode::IncorrectUsage,
+            QsvExitCode::NetworkError,
+            QsvExitCode::OutOfMemory,
+            QsvExitCode::EncodingError,
+            QsvExitCode::Warning,
+        ] {
+            let code = code as u8;
+            assert_eq!(effective_exit_code(code, true), code);
+        }
     }
 }
 

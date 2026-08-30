@@ -37,7 +37,7 @@ use zip::read::root_dir_common_filter;
 #[cfg(feature = "polars")]
 use crate::cmd::count::polars_count_input;
 use crate::{
-    CURRENT_COMMAND, CliError, CliResult,
+    CURRENT_COMMAND, CliError, CliResult, QsvExitCode,
     cmd::stats::{JsonTypes, STATSDATA_TYPES_MAP, StatsData},
     config,
     config::{
@@ -268,6 +268,34 @@ pub fn bytes_to_cow_str(c: &[u8]) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// Does this panic payload come from Rust's own print machinery?
+///
+/// `println!`/`eprintln!` go through `std::io::_print`, which PANICS on a write error rather
+/// than returning it — `panic!("failed printing to {label}: {e}")` (`library/std/src/io/
+/// stdio.rs`, unchanged across every toolchain checked). That is an I/O failure, not a qsv
+/// bug, and it is not reachable from qsv's own `wout!`/`werr!` macros (they handle their
+/// `Result`). Kept as a free function so the classification is unit-testable without
+/// provoking a real panic.
+///
+/// The trailing `": "` is part of that format string and is matched DELIBERATELY: without it
+/// the prefix would also swallow any future panic merely beginning "failed printing to
+/// stdout…", and a false positive here costs a real bug its crash report. Matching the full
+/// literal prefix costs nothing, since std always emits the separator.
+fn is_io_print_panic(payload: &str) -> bool {
+    payload.starts_with("failed printing to stdout: ")
+        || payload.starts_with("failed printing to stderr: ")
+}
+
+/// The panic payload as a string, covering both `panic!("literal")` (`&str`) and
+/// `panic!("{}", fmt)` (`String`).
+fn panic_payload_str<'a>(info: &'a std::panic::PanicHookInfo<'_>) -> Option<&'a str> {
+    let payload = info.payload();
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+}
+
 pub fn qsv_custom_panic() {
     setup_panic!(
         human_panic::Metadata::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
@@ -275,6 +303,31 @@ pub fn qsv_custom_panic() {
             .homepage("https://qsv.dathere.com")
             .support("- Open a GitHub issue at https://github.com/dathere/qsv/issues")
     );
+
+    // Intercept the ONE panic shape that is an I/O failure rather than a bug: a failed
+    // `println!`/`eprintln!`. Left alone, it reaches the user through human_panic as "qsv had
+    // a problem and crashed", with a crash report to file — which is exactly what issue #2661
+    // reported (`qsv sniff --json | jaq <bad filter>`) and what #4516 tracks for the
+    // remaining cases (a full disk, a closed fd).
+    //
+    // Deliberately NARROW: only this known payload prefix is intercepted, so a genuine qsv
+    // panic still gets the full crash report. This does not replace `reset_sigpipe` — on Unix
+    // a closed PIPE never reaches here at all, since SIGPIPE is SIG_DFL (see #2664), and that
+    // must stay that way.
+    //
+    // In a debug build `setup_panic!` installs nothing, so this wraps the default hook
+    // instead; the interception behaves identically either way.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Some(payload) = panic_payload_str(info)
+            && is_io_print_panic(payload)
+        {
+            // Best-effort: the stream we are complaining about may be the broken one.
+            let _ = writeln!(&mut std::io::stderr(), "{payload}");
+            std::process::exit(QsvExitCode::Bad as i32);
+        }
+        previous_hook(info);
+    }));
 }
 
 fn default_user_agent() -> String {
@@ -5343,6 +5396,43 @@ mod tests {
     // only used by the hash_blake3_file tests, which are gated out of qsvlite
     #[cfg(not(feature = "lite"))]
     use std::io::Write;
+
+    use super::is_io_print_panic;
+
+    // The panic-hook guard must intercept a failed `println!`/`eprintln!` (an I/O failure)
+    // while leaving every genuine qsv panic on the human_panic crash-report path. Matching is
+    // deliberately narrow, so both directions matter — a false positive here would swallow a
+    // real bug report.
+    #[test]
+    fn io_print_panics_are_recognized_and_nothing_else_is() {
+        // the exact shapes std emits (issue #2661 reported the first one verbatim)
+        assert!(is_io_print_panic(
+            "failed printing to stdout: Broken pipe (os error 32)"
+        ));
+        assert!(is_io_print_panic(
+            "failed printing to stderr: No space left on device (os error 28)"
+        ));
+
+        // a genuine qsv panic must still reach the crash report
+        assert!(!is_io_print_panic(
+            "called `Option::unwrap()` on a `None` value"
+        ));
+        assert!(!is_io_print_panic("index out of bounds: the len is 3"));
+        assert!(!is_io_print_panic("attempt to divide by zero"));
+        // near-misses: the prefix is anchored, so a message merely MENTIONING it is a bug
+        assert!(!is_io_print_panic(
+            "assertion failed: failed printing to stdout"
+        ));
+        assert!(!is_io_print_panic("failed printing to a file"));
+
+        // the separator is matched too, so a hypothetical future panic that merely BEGINS
+        // the same way keeps its crash report rather than being mistaken for a write failure
+        assert!(!is_io_print_panic(
+            "failed printing to stdout buffer invariant violated"
+        ));
+        assert!(!is_io_print_panic("failed printing to stdout"));
+        assert!(!is_io_print_panic("failed printing to stderr, somehow"));
+    }
 
     /// A non-2xx response must be an ERROR, never a file.
     ///

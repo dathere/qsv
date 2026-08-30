@@ -488,7 +488,12 @@ mod rich {
     }
 
     /// Per-entry metadata recorded in the cache index, surfaced by `cache-list`.
-    #[derive(Serialize, Deserialize, Clone)]
+    ///
+    /// `Default` is derived for TESTS only — it lets a test build a record carrying just the
+    /// fields a rule reads (`..Default::default()`) instead of twenty irrelevant ones. It is
+    /// not a meaningful cache entry and nothing in the cache path constructs one this way; the
+    /// derive changes no serialized representation.
+    #[derive(Serialize, Deserialize, Clone, Default)]
     pub struct CacheEntry {
         /// The `dc:` handle / alias for this entry.
         pub logical_name:       String,
@@ -2911,20 +2916,24 @@ mod rich {
         Ok(resolved.csv_path)
     }
 
-    /// Render a cache entry's age as a compact, human-scale string ("30d", "6h").
-    /// Used only in the stale-refresh warning, where precision beyond one unit is noise —
-    /// the number exists to answer "do I care?", not to be arithmetic.
-    fn fmt_age(secs: i64) -> String {
-        const MINUTE: i64 = 60;
-        const HOUR: i64 = 60 * MINUTE;
-        const DAY: i64 = 24 * HOUR;
+    /// How long ago this entry was last fetched, in seconds.
+    pub fn entry_age_secs(meta: &CacheEntry) -> i64 {
+        unix_now().saturating_sub(meta.downloaded_at)
+    }
 
-        match secs {
-            s if s >= DAY => format!("last fetched {}d ago", s / DAY),
-            s if s >= HOUR => format!("last fetched {}h ago", s / HOUR),
-            s if s >= MINUTE => format!("last fetched {}m ago", s / MINUTE),
-            s => format!("last fetched {s}s ago"),
-        }
+    /// Will this entry re-fetch on its next `dc:` use?
+    ///
+    /// THE definition of `dc:` staleness — `resolve_dc_uncached` gates its refresh on this, and
+    /// `qsv get cache-list` reports it, so the two can never disagree about what "stale" means.
+    /// Takes the age rather than computing it because the refresh path needs the same value for
+    /// its warning message, and two `unix_now()` calls could straddle a second boundary.
+    ///
+    /// Note this is TTL-driven, not policy-driven: `RefreshPolicy::Always` does not make an
+    /// entry due sooner, it only makes the eventual fetch unconditional.
+    pub fn is_due_for_refresh(meta: &CacheEntry, age_secs: i64) -> bool {
+        meta.refresh_policy != RefreshPolicy::Never
+            && meta.ttl_secs >= 0
+            && age_secs >= meta.ttl_secs
     }
 
     /// A hint for the silent `ckan://` refresh failure that is otherwise undiagnosable: the
@@ -2964,79 +2973,75 @@ mod rich {
             ))
         })?;
 
-        // qsv-level staleness: refresh from the original source when past TTL.
-        if entry.meta.refresh_policy != RefreshPolicy::Never && entry.meta.ttl_secs >= 0 {
-            let age = unix_now().saturating_sub(entry.meta.downloaded_at);
-            if age >= entry.meta.ttl_secs {
-                let refresh_opts = GetOptions {
-                    source:         entry.meta.source_uri.clone(),
-                    name:           Some(name.to_string()),
-                    cache_dir:      cache_dir.to_string(),
-                    ttl_secs:       entry.meta.ttl_secs,
-                    refresh_policy: entry.meta.refresh_policy,
-                    compression:    entry.meta.compression,
-                    force:          false,
-                    // Re-resolve a ckan:// entry against the SAME CKAN instance it
-                    // was originally fetched from (the persisted `--ckan-api`),
-                    // falling back to the ambient env / default only for older
-                    // entries that predate this field.
-                    ckan_api_url:   entry
-                        .meta
-                        .ckan_api_url
-                        .clone()
-                        .or_else(|| std::env::var("QSV_CKAN_API").ok())
-                        .or_else(|| Some(DEFAULT_CKAN_API.to_string())),
-                    ckan_token:     std::env::var("QSV_CKAN_TOKEN").ok(),
-                    timeout_secs:   30,
-                    // Replay the persisted store identity (endpoint/region/…) so
-                    // a cloud `dc:` refresh rebuilds the SAME store and resolves
-                    // to the SAME cache entry. Credentials still come from the
-                    // ambient environment (they are never persisted). Empty for
-                    // non-cloud entries.
-                    cloud_opts:     entry
-                        .meta
-                        .cloud_identity
-                        .iter()
-                        .map(|(k, v)| format!("{k}={v}"))
-                        .collect(),
-                };
-                // Best-effort: on refresh failure, fall back to the stale copy but make
-                // the degraded result visible to callers instead of silently succeeding.
-                match get_resource(&refresh_opts) {
-                    Ok(_) => {
-                        if let Some(refreshed) = load_entry_by_name(root, name)? {
-                            entry = refreshed;
-                        }
-                    },
-                    Err(err) => {
-                        // Deliberately NOT `wwarn!`. Every other `wwarn!` call site is in a
-                        // command or in `main`; this one is in a shared path reached by every
-                        // command that reads a `dc:` handle, and the macro ends in
-                        // `writeln!(..).unwrap()`. A write that FAILS here — EBADF from a
-                        // closed fd (`2>&-`), ENOSPC from a full device — must drop the
-                        // warning, not panic a command that was otherwise about to succeed.
-                        //
-                        // This does NOT cover a closed stderr PIPE: `util::reset_sigpipe`
-                        // restores SIG_DFL at startup, so that case kills the process before
-                        // any `Result` comes back, and no error handling here can change it.
-                        // The log record always survives.
-                        use std::io::Write as _;
+        // qsv-level staleness: refresh from the original source when due. `age` is computed
+        // once and reused by both the gate and the warning below.
+        let age = entry_age_secs(&entry.meta);
+        if is_due_for_refresh(&entry.meta, age) {
+            let refresh_opts = GetOptions {
+                source:         entry.meta.source_uri.clone(),
+                name:           Some(name.to_string()),
+                cache_dir:      cache_dir.to_string(),
+                ttl_secs:       entry.meta.ttl_secs,
+                refresh_policy: entry.meta.refresh_policy,
+                compression:    entry.meta.compression,
+                force:          false,
+                // Re-resolve a ckan:// entry against the SAME CKAN instance it
+                // was originally fetched from (the persisted `--ckan-api`),
+                // falling back to the ambient env / default only for older
+                // entries that predate this field.
+                ckan_api_url:   entry
+                    .meta
+                    .ckan_api_url
+                    .clone()
+                    .or_else(|| std::env::var("QSV_CKAN_API").ok())
+                    .or_else(|| Some(DEFAULT_CKAN_API.to_string())),
+                ckan_token:     std::env::var("QSV_CKAN_TOKEN").ok(),
+                timeout_secs:   30,
+                // Replay the persisted store identity (endpoint/region/…) so
+                // a cloud `dc:` refresh rebuilds the SAME store and resolves
+                // to the SAME cache entry. Credentials still come from the
+                // ambient environment (they are never persisted). Empty for
+                // non-cloud entries.
+                cloud_opts:     entry
+                    .meta
+                    .cloud_identity
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect(),
+            };
+            // Best-effort: on refresh failure, fall back to the stale copy but make
+            // the degraded result visible to callers instead of silently succeeding.
+            match get_resource(&refresh_opts) {
+                Ok(_) => {
+                    if let Some(refreshed) = load_entry_by_name(root, name)? {
+                        entry = refreshed;
+                    }
+                },
+                Err(err) => {
+                    // Deliberately NOT `wwarn!`. Every other `wwarn!` call site is in a
+                    // command or in `main`; this one is in a shared path reached by every
+                    // command that reads a `dc:` handle, and the macro ends in
+                    // `writeln!(..).unwrap()`. A write that FAILS here — EBADF from a
+                    // closed fd (`2>&-`), ENOSPC from a full device — must drop the
+                    // warning, not panic a command that was otherwise about to succeed.
+                    //
+                    // This does NOT cover a closed stderr PIPE: `util::reset_sigpipe`
+                    // restores SIG_DFL at startup, so that case kills the process before
+                    // any `Result` comes back, and no error handling here can change it.
+                    // The log record always survives.
+                    use std::io::Write as _;
 
-                        let msg = format!(
-                            "get: refresh of stale cache entry '{}' ({}) from '{}' failed: {err}; \
-                             using cached copy{}",
-                            name,
-                            fmt_age(age),
-                            refresh_opts.source,
-                            ckan_auth_hint(
-                                &refresh_opts.source,
-                                refresh_opts.ckan_token.as_deref()
-                            )
-                        );
-                        log::warn!("{msg}");
-                        let _ = writeln!(std::io::stderr(), "{msg}");
-                    },
-                }
+                    let msg = format!(
+                        "get: refresh of stale cache entry '{}' (last fetched {} ago) from '{}' \
+                         failed: {err}; using cached copy{}",
+                        name,
+                        util::fmt_duration_compact(age),
+                        refresh_opts.source,
+                        ckan_auth_hint(&refresh_opts.source, refresh_opts.ckan_token.as_deref())
+                    );
+                    log::warn!("{msg}");
+                    let _ = writeln!(std::io::stderr(), "{msg}");
+                },
             }
         }
 
@@ -3280,21 +3285,44 @@ mod rich {
     mod tests {
         use std::io::Cursor;
 
-        use super::{ckan_auth_hint, emit_preview_reservoir, fmt_age};
+        use super::{
+            CacheEntry, RefreshPolicy, ckan_auth_hint, emit_preview_reservoir, is_due_for_refresh,
+        };
 
-        // The stale-refresh warning reports ONE unit, the largest that fits, so the unit
-        // boundaries are the whole contract.
+        /// A metadata record with only the fields the staleness rule reads.
+        fn meta(ttl_secs: i64, refresh_policy: RefreshPolicy) -> CacheEntry {
+            CacheEntry {
+                ttl_secs,
+                refresh_policy,
+                ..Default::default()
+            }
+        }
+
+        // THE definition of `dc:` staleness, shared by the refresh path and `cache-list`, so
+        // the two cannot disagree about which entries will re-fetch.
         #[test]
-        fn fmt_age_picks_the_largest_fitting_unit() {
-            assert_eq!(fmt_age(0), "last fetched 0s ago");
-            assert_eq!(fmt_age(59), "last fetched 59s ago");
-            assert_eq!(fmt_age(60), "last fetched 1m ago");
-            assert_eq!(fmt_age(3_599), "last fetched 59m ago");
-            assert_eq!(fmt_age(3_600), "last fetched 1h ago");
-            assert_eq!(fmt_age(86_399), "last fetched 23h ago");
-            assert_eq!(fmt_age(86_400), "last fetched 1d ago");
-            // the `qsv get` default TTL
-            assert_eq!(fmt_age(2_419_200), "last fetched 28d ago");
+        fn refresh_is_due_only_past_a_non_negative_ttl_under_a_refreshing_policy() {
+            let m = meta(100, RefreshPolicy::OnStale);
+            assert!(!is_due_for_refresh(&m, 99), "inside the TTL: not due");
+            assert!(is_due_for_refresh(&m, 100), "AT the TTL: due");
+            assert!(is_due_for_refresh(&m, 101), "past the TTL: due");
+
+            // `always` governs HOW the fetch is made, not WHETHER one is due
+            let always = meta(100, RefreshPolicy::Always);
+            assert!(!is_due_for_refresh(&always, 99));
+            assert!(is_due_for_refresh(&always, 100));
+
+            // `never` pins the entry no matter how old it gets
+            let never = meta(100, RefreshPolicy::Never);
+            assert!(!is_due_for_refresh(&never, 1_000_000));
+
+            // a negative TTL means "never expire", even under a refreshing policy
+            let pinned = meta(-1, RefreshPolicy::OnStale);
+            assert!(!is_due_for_refresh(&pinned, 1_000_000));
+
+            // a zero TTL is due on every resolution
+            let zero = meta(0, RefreshPolicy::OnStale);
+            assert!(is_due_for_refresh(&zero, 0));
         }
 
         // The hint takes the refresh's own token rather than reading the environment, so every

@@ -422,22 +422,31 @@ fn run_cache_list(cache_dir: &str, json: bool, info: bool, verify: bool) -> CliR
     }
 
     println!(
-        "{:<24} {:>10} {:>12} {:>12} {:>4} {:<5} {:<16} SOURCE",
-        "NAME", "RECORDS", "COMP", "UNCOMP", "IDX", "DELIM", "BLAKE3"
+        "{:<24} {:>10} {:>12} {:>12} {:>4} {:<5} {:>5} {:<5} {:<16} SOURCE",
+        "NAME", "RECORDS", "COMP", "UNCOMP", "IDX", "DELIM", "AGE", "STALE", "BLAKE3"
     );
     for e in &entries {
         let records = e
             .record_count
             .map_or_else(|| "?".to_string(), |c| c.to_string());
         let b3 = &e.blake3[..e.blake3.len().min(16)];
+        // Staleness comes from the same predicate the refresh path gates on, so the listing
+        // cannot claim an entry is fresh that the next `dc:` read would re-fetch.
+        let age_secs = diskcache::entry_age_secs(e);
         println!(
-            "{:<24} {:>10} {:>12} {:>12} {:>4} {:<5} {:<16} {}",
+            "{:<24} {:>10} {:>12} {:>12} {:>4} {:<5} {:>5} {:<5} {:<16} {}",
             truncate(&e.logical_name, 24),
             records,
             e.size_compressed,
             e.size_uncompressed,
             if e.indexed { "yes" } else { "no" },
             delim_label(e.sniffed.as_ref()),
+            util::fmt_duration_compact(age_secs),
+            if diskcache::is_due_for_refresh(e, age_secs) {
+                "yes"
+            } else {
+                "no"
+            },
             b3,
             e.source_uri,
         );

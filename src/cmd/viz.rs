@@ -7994,13 +7994,21 @@ impl ArgvExtras {
                 }
                 let spec = line.split("  ").next().unwrap_or(line);
                 let tokens: Vec<&str> = spec.split_whitespace().collect();
-                tokens.iter().enumerate().any(|(i, token)| {
-                    let token = token.trim_end_matches(',');
-                    (token == flag && tokens.get(i + 1).is_some_and(|next| next.starts_with('<')))
-                        || token
-                            .strip_prefix(flag)
-                            .is_some_and(|rest| rest.starts_with("=<"))
-                })
+                // Every alias on one usage line shares that option's arity, so read arity from the
+                // whole spec rather than from the token following `flag`. `-o, --output <file>`
+                // puts `--output`, not `<file>`, after the short alias, so a per-token lookahead
+                // would call `-o` valueless and then misread its value as a flag of its own.
+                let declares_value = tokens
+                    .iter()
+                    .any(|token| token.starts_with('<') || token.contains("=<"));
+                declares_value
+                    && tokens.iter().any(|token| {
+                        let token = token.trim_end_matches(',');
+                        token == flag
+                            || token
+                                .strip_prefix(flag)
+                                .is_some_and(|rest| rest.starts_with("=<"))
+                    })
             })
         };
 
@@ -47318,6 +47326,25 @@ mod tests {
         assert_eq!(real.census_denominator, Some(Some(2020)));
         let explicit = ArgvExtras::from_argv(&["smart", "--feature-id-key=id"]);
         assert!(explicit.feature_id_key_explicit);
+
+        // Short aliases declared beside a long one (`-o, --output <file>`) take a value too, so
+        // their values are skipped rather than rescanned as flags.
+        for valued in ["-o", "-x", "-y", "-z", "-d"] {
+            let skipped =
+                ArgvExtras::from_argv(&["scatter", valued, "--denominator", "census@2020"]);
+            assert!(
+                skipped.census_denominator.is_none(),
+                "{valued} takes a value, so `--denominator` after it is that value"
+            );
+        }
+        // Valueless flags must not swallow the token after them.
+        for valueless in ["-n", "--no-headers"] {
+            let seen = ArgvExtras::from_argv(&["scatter", valueless, "--feature-id-key", "id"]);
+            assert!(
+                seen.feature_id_key_explicit,
+                "{valueless} takes no value, so the next token is a real flag"
+            );
+        }
     }
 
     #[test]

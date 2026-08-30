@@ -173,6 +173,10 @@ mod test_viz_census;
 mod test_viz_county_names;
 #[cfg(all(feature = "viz", feature = "geocode"))]
 mod test_viz_geocode_auto;
+// needs /dev/full — a stdout that opens but never writes. Compiled on every unix so it cannot
+// bit-rot on a dev machine; it SKIPS at runtime where /dev/full is absent (macOS). See module docs.
+#[cfg(unix)]
+mod test_write_failure;
 
 fn qcheck<T: Testable>(p: T) {
     // safety: we are in single-threaded code.

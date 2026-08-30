@@ -2939,9 +2939,15 @@ mod rich {
     /// auth failures and, when it fired, still be guessing — so the hint states the fact
     /// (the var is unset) and lets the reader decide whether it applies.
     ///
+    /// Takes the token the REFRESH actually used rather than re-reading the environment, so the
+    /// hint cannot disagree with the attempt it is explaining. Re-reading would: `var_os` sees a
+    /// non-Unicode value that `var` (used for the refresh) rejects, so the refresh would go out
+    /// unauthenticated while the hint stayed silent. An empty value is likewise treated as
+    /// absent — it authenticates nothing, so the hint still applies.
+    ///
     /// `ckan://` is matched case-sensitively to mirror `resolve_uri_prefix`.
-    fn ckan_auth_hint(source_uri: &str) -> &'static str {
-        if source_uri.starts_with("ckan://") && std::env::var_os("QSV_CKAN_TOKEN").is_none() {
+    fn ckan_auth_hint(source_uri: &str, token: Option<&str>) -> &'static str {
+        if source_uri.starts_with("ckan://") && token.is_none_or(str::is_empty) {
             " (if this is a private CKAN resource, note that QSV_CKAN_TOKEN is not set)"
         } else {
             ""
@@ -3005,9 +3011,15 @@ mod rich {
                     Err(err) => {
                         // Deliberately NOT `wwarn!`. Every other `wwarn!` call site is in a
                         // command or in `main`; this one is in a shared path reached by every
-                        // command that reads a `dc:` handle, so a closed or full stderr must
-                        // DROP the warning rather than panic on the macro's
-                        // `writeln!(..).unwrap()`. The log record always survives.
+                        // command that reads a `dc:` handle, and the macro ends in
+                        // `writeln!(..).unwrap()`. A write that FAILS here — EBADF from a
+                        // closed fd (`2>&-`), ENOSPC from a full device — must drop the
+                        // warning, not panic a command that was otherwise about to succeed.
+                        //
+                        // This does NOT cover a closed stderr PIPE: `util::reset_sigpipe`
+                        // restores SIG_DFL at startup, so that case kills the process before
+                        // any `Result` comes back, and no error handling here can change it.
+                        // The log record always survives.
                         use std::io::Write as _;
 
                         let msg = format!(
@@ -3016,7 +3028,10 @@ mod rich {
                             name,
                             fmt_age(age),
                             refresh_opts.source,
-                            ckan_auth_hint(&refresh_opts.source)
+                            ckan_auth_hint(
+                                &refresh_opts.source,
+                                refresh_opts.ckan_token.as_deref()
+                            )
                         );
                         log::warn!("{msg}");
                         let _ = writeln!(std::io::stderr(), "{msg}");
@@ -3282,15 +3297,26 @@ mod rich {
             assert_eq!(fmt_age(2_419_200), "last fetched 28d ago");
         }
 
-        // A non-`ckan://` source short-circuits before consulting the environment, so this
-        // branch is deterministic no matter what QSV_CKAN_TOKEN is set to in the process
-        // running the test suite.
+        // The hint takes the refresh's own token rather than reading the environment, so every
+        // case here is deterministic regardless of the ambient QSV_CKAN_TOKEN.
         #[test]
-        fn ckan_auth_hint_is_empty_for_non_ckan_sources() {
-            assert_eq!(ckan_auth_hint("https://example.com/data.csv"), "");
-            assert_eq!(ckan_auth_hint("/local/data.csv"), "");
+        fn ckan_auth_hint_fires_only_for_ckan_without_a_usable_token() {
+            const HINT: &str =
+                " (if this is a private CKAN resource, note that QSV_CKAN_TOKEN is not set)";
+
+            // non-CKAN sources never hint, with or without a token
+            assert_eq!(ckan_auth_hint("https://example.com/data.csv", None), "");
+            assert_eq!(ckan_auth_hint("/local/data.csv", None), "");
             // matched case-sensitively, mirroring `resolve_uri_prefix`
-            assert_eq!(ckan_auth_hint("CKAN://some-id"), "");
+            assert_eq!(ckan_auth_hint("CKAN://some-id", None), "");
+
+            // a ckan:// source with no usable token hints; an empty token authenticates
+            // nothing, so it counts as absent
+            assert_eq!(ckan_auth_hint("ckan://some-id", None), HINT);
+            assert_eq!(ckan_auth_hint("ckan://some-id", Some("")), HINT);
+
+            // a real token means auth was attempted, so the hint would be misleading
+            assert_eq!(ckan_auth_hint("ckan://some-id", Some("tok")), "");
         }
 
         // The `--random` reservoir path parses the CSV from the start, so a quoted

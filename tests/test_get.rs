@@ -2208,3 +2208,107 @@ fn get_dc_approx_cardinality_does_not_take_all_unique_shortcut() {
          input:\n{got}"
     );
 }
+
+// Issue #4515: `cache-list`'s human-readable table reported no age and no TTL, so there was no
+// way to see how stale an entry was, or which ones would re-fetch, without dropping to --json.
+//
+// The STALE column is driven by `diskcache::is_due_for_refresh` — the SAME predicate the
+// refresh path gates on — so this also guards against the listing and the refresh disagreeing.
+//
+// Each entry needs DISTINCT content: the cache is content-addressed, so two names for the same
+// bytes are one entry, and TTL/policy are entry-level — setting a TTL through one alias would
+// silently apply to the other.
+#[test]
+fn get_cache_list_reports_age_and_staleness() {
+    let wrk = Workdir::new("get_cache_list_reports_age_and_staleness");
+    let cache_dir = wrk.path("qsvcache");
+    wrk.create_from_string("fresh_src.csv", "a,b\n1,2\n");
+    wrk.create_from_string("due_src.csv", "x,y\n9,9\n");
+    wrk.create_from_string("pinned_src.csv", "p,q\n7,7\n");
+
+    // default TTL (28d) => nowhere near due
+    let mut fresh = wrk.command("get");
+    fresh
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "fresh.csv"])
+        .arg("fresh_src.csv");
+    wrk.assert_success(&mut fresh);
+
+    // zero TTL => due on every resolution
+    let mut due = wrk.command("get");
+    due.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "due.csv", "--ttl", "0"])
+        .arg("due_src.csv");
+    wrk.assert_success(&mut due);
+
+    // negative TTL => never expires, however old it gets
+    let mut pinned = wrk.command("get");
+    pinned
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "pinned.csv", "--ttl", "-1"])
+        .arg("pinned_src.csv");
+    wrk.assert_success(&mut pinned);
+
+    let mut list = wrk.command("get");
+    list.env("QSV_CACHE_DIR", &cache_dir).arg("cache-list");
+    let out = wrk.output(&mut list);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        out.status.success(),
+        "cache-list exited non-zero:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("AGE") && stdout.contains("STALE"),
+        "cache-list header should carry AGE and STALE columns:\n{stdout}"
+    );
+
+    // Read the columns BY POSITION, never by substring: IDX is also "yes"/"no", so a bare
+    // `contains(" yes ")` would match that instead and assert nothing about staleness.
+    // Columns: NAME RECORDS COMP UNCOMP IDX DELIM AGE STALE BLAKE3 SOURCE
+    let cells = |name: &str| -> Vec<String> {
+        let line = stdout
+            .lines()
+            .find(|l| l.starts_with(name))
+            .unwrap_or_else(|| panic!("no cache-list row for {name}:\n{stdout}"));
+        line.split_whitespace().map(str::to_string).collect()
+    };
+    let age_of = |name: &str| cells(name)[6].clone();
+    let stale_of = |name: &str| cells(name)[7].clone();
+
+    // The AGE VALUE is not asserted: these entries are seconds old, but under a loaded full
+    // suite run the elapsed time drifts, and pinning it to "0s"/"1s" made this test flaky.
+    // `fmt_duration_compact`'s output is unit-tested directly; here it only has to be a
+    // well-formed duration in the right column.
+    for name in ["fresh.csv", "due.csv", "pinned.csv"] {
+        let age = age_of(name);
+        let (digits, unit) = age.split_at(age.len() - 1);
+        assert!(
+            !digits.is_empty()
+                && digits.chars().all(|c| c.is_ascii_digit())
+                && ["s", "m", "h", "d"].contains(&unit),
+            "{name} AGE should be a compact duration like \"3s\"; got {age:?}"
+        );
+    }
+
+    // a zero TTL is due immediately; the default and a pinned entry are not
+    assert_eq!(
+        stale_of("due.csv"),
+        "yes",
+        "a --ttl 0 entry must be reported STALE:\n{}",
+        stdout
+    );
+    assert_eq!(
+        stale_of("fresh.csv"),
+        "no",
+        "a default-TTL entry just fetched must not be STALE:\n{}",
+        stdout
+    );
+    assert_eq!(
+        stale_of("pinned.csv"),
+        "no",
+        "a --ttl -1 entry never expires, so it must not be STALE:\n{}",
+        stdout
+    );
+}

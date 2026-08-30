@@ -180,6 +180,29 @@ const WHITESPACE_MARKERS: &[(char, &str)] = &[
     ('\u{200B}', "《zwsp》"),  // zero width space
 ];
 
+/// Render a duration in seconds as a compact, single-unit string: "28d", "6h", "45m", "3s".
+///
+/// Deliberately ONE unit, the largest that fits, and deliberately WORDLESS. Callers that want a
+/// phrase build it around this ("last fetched {} ago"); callers that want a table cell use it
+/// as-is. An earlier version baked the phrase in, which made it unusable as a column value.
+///
+/// Precision beyond one unit is noise for both consumers — the number exists to answer "do I
+/// care?", not to be arithmetic. Days are the largest unit: `qsv get --older-than` also accepts
+/// weeks on INPUT, but "28d" reads more plainly in a cache listing than "4w", and no caller
+/// round-trips this back through that parser.
+pub fn fmt_duration_compact(secs: i64) -> String {
+    const MINUTE: i64 = 60;
+    const HOUR: i64 = 60 * MINUTE;
+    const DAY: i64 = 24 * HOUR;
+
+    match secs {
+        s if s >= DAY => format!("{}d", s / DAY),
+        s if s >= HOUR => format!("{}h", s / HOUR),
+        s if s >= MINUTE => format!("{}m", s / MINUTE),
+        s => format!("{s}s"),
+    }
+}
+
 pub fn reset_sigpipe() {
     cfg_select! {
         unix => unsafe {
@@ -5397,7 +5420,22 @@ mod tests {
     #[cfg(not(feature = "lite"))]
     use std::io::Write;
 
-    use super::is_io_print_panic;
+    use super::{fmt_duration_compact, is_io_print_panic};
+
+    // One unit, the largest that fits, so the unit boundaries are the whole contract. Shared by
+    // the stale-refresh warning and the `qsv get cache-list` AGE column.
+    #[test]
+    fn fmt_duration_compact_picks_the_largest_fitting_unit() {
+        assert_eq!(fmt_duration_compact(0), "0s");
+        assert_eq!(fmt_duration_compact(59), "59s");
+        assert_eq!(fmt_duration_compact(60), "1m");
+        assert_eq!(fmt_duration_compact(3_599), "59m");
+        assert_eq!(fmt_duration_compact(3_600), "1h");
+        assert_eq!(fmt_duration_compact(86_399), "23h");
+        assert_eq!(fmt_duration_compact(86_400), "1d");
+        // the `qsv get` default TTL — days are the largest unit, so this is not "4w"
+        assert_eq!(fmt_duration_compact(2_419_200), "28d");
+    }
 
     // The panic-hook guard must intercept a failed `println!`/`eprintln!` (an I/O failure)
     // while leaving every genuine qsv panic on the human_panic crash-report path. Matching is

@@ -5230,6 +5230,34 @@ fn viz_map_unknown_style_errors() {
 }
 
 #[test]
+fn viz_map_rejects_geojson_instead_of_silently_ignoring_it() {
+    let wrk = Workdir::new("viz_map_rejects_geojson_instead_of_silently_ignoring_it");
+    quakes(&wrk);
+    wrk.create_from_string(
+        "bounds.json",
+        r#"{"type":"FeatureCollection","features":[]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "map",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "bounds.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr)
+            .contains("--geojson only applies to `viz choropleth` and `viz smart`")
+    );
+}
+
+#[test]
 fn viz_map_density_with_series_errors() {
     let wrk = Workdir::new("viz_map_density_with_series_errors");
     quakes(&wrk);
@@ -7986,6 +8014,18 @@ fn viz_contour_density() {
 }
 
 #[test]
+fn viz_contour_rejects_a_constant_axis() {
+    let wrk = Workdir::new("viz_contour_rejects_a_constant_axis");
+    wrk.create_from_string("constant.csv", "flag,amount\n5,1\n5,2\n5,3\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["contour", "constant.csv", "--x", "flag", "--y", "amount"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("variation in both --x and --y"));
+}
+
+#[test]
 fn viz_contour_hover_names_both_measures_and_the_row_count() {
     // Plotly's default contour hover is a bare x/y/z triple labeled "trace N", which names
     // neither measure and never says that z is a row count. Both contour paths (this standalone
@@ -10097,6 +10137,34 @@ fn viz_choropleth_geojson_auto_requires_locations() {
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--locations"));
+}
+
+#[test]
+fn viz_choropleth_geojson_auto_ignores_non_utf8_in_unrelated_cells() {
+    let wrk = Workdir::new("viz_choropleth_geojson_auto_ignores_non_utf8_in_unrelated_cells");
+    std::fs::write(
+        wrk.path("regions.csv"),
+        b"region,notes\nnot-a-region,\xff\nstill-not-a-region,ok\n",
+    )
+    .unwrap();
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "regions.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "auto",
+    ])
+    .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("invalid utf-8"),
+        "auto-boundary probing should decode only needed cells lossily; stderr: {stderr}"
+    );
 }
 
 // A build without the geocode feature must reject `--geojson auto --geocode` with the actionable
@@ -13321,8 +13389,15 @@ fn viz_smart_dictionary_measure_on_zero_padded_code_becomes_bar() {
 
     let out_html = wrk.path("diagnoses.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "diagnoses.csv", "-o", &out_html, "--dictionary"])
-        .arg(wrk.path("diagnoses.schema.json"));
+    cmd.args([
+        "smart",
+        "diagnoses.csv",
+        "--smarter",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("diagnoses.schema.json"));
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("diagnoses.html").unwrap();
@@ -13333,6 +13408,21 @@ fn viz_smart_dictionary_measure_on_zero_padded_code_becomes_bar() {
     assert!(
         !html.contains(r#""type":"box""#) && !html.contains(r#""type":"violin""#),
         "the code column must not chart as a measure; html: {html}"
+    );
+
+    // The smarter run rewrites the shared stats cache. A following plain run must reuse a cache
+    // with the same zero-padded-code semantics, not inherit a degraded history-dependent route.
+    let out_cached = wrk.path("cached.html").to_string_lossy().to_string();
+    let mut cached = wrk.command("viz");
+    cached
+        .args(["smart", "diagnoses.csv", "-o", &out_cached, "--dictionary"])
+        .arg(wrk.path("diagnoses.schema.json"));
+    wrk.assert_success(&mut cached);
+    let cached_html = wrk.read_to_string("cached.html").unwrap();
+    assert!(
+        cached_html.contains(r#""name":"icd9"#),
+        "plain viz must reuse the smarter cache without losing zero-padded routing; html: \
+         {cached_html}"
     );
 
     // contrast: stats-only routing (no dictionary) skips the same 40-category String column as
@@ -16725,11 +16815,13 @@ fn viz_smart_trend_quarterly_uses_quarter_bucket_and_category_axis() {
         html.contains("2021-Q1") && html.contains("2023-Q4"),
         "quarter buckets should be labeled YYYY-Qn; html: {html}"
     );
-    // category axis: the quarter labels ride in an explicit ticktext array (date axes have none)
+    // category axis: all quarter labels remain in the trace, but tick selection is automatic so
+    // plotly can thin the visible labels responsively instead of pinning every quarter.
     assert!(
-        html.contains(r#""ticktext":["2021-Q1"#),
-        "a quarter-bucketed trend must render on a category axis with quarter tick labels; html: \
-         {html}"
+        html.contains(r#""type":"category"#)
+            && !html.contains(r#""ticktext":["2021-Q1"#)
+            && html.contains("qsv-responsive-category-ticks"),
+        "a quarter-bucketed trend must use auto-ticked category labels; html: {html}"
     );
 }
 
@@ -16858,8 +16950,8 @@ fn viz_smart_trend_multidecade_coarsens_to_year() {
         "a 60-year span must coarsen the count trend to yearly buckets; html: {html}"
     );
     assert!(
-        html.contains(r#""ticktext":["1960","1961"#),
-        "year buckets should render bare years on a category axis; html: {html}"
+        html.contains(r#""type":"category"#) && !html.contains(r#""ticktext":["1960","1961"#),
+        "year buckets should use auto-ticked bare-year categories; html: {html}"
     );
 }
 

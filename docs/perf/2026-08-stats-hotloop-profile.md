@@ -7,8 +7,14 @@ Machine: **Apple M4 Max, 16 cores, 68 GB**. Fixture: `NYC_311_SR_2010-2020-sampl
 ## MEASURED denominator (hyperfine, min-runs 5, no `-i`, cache cleared between runs)
 
 Binary: `target/release-samply/qsv` 22.0.1, aarch64-apple-darwin, **Apple M4 Max (16 cores)**,
-Rust 1.98. ⚠️ `release-samply` is `panic="unwind"` + debug info, *not* the shipping
-`panic="abort"` profile — fine for A/B, so don't quote these as "qsv stats takes X".
+Rust 1.98. `release-samply` inherits `release` and adds `debug=true` / `strip=false`.
+
+ℹ️ It also sets `panic="unwind"` — but so does the **shipped** `qsv`: the published
+aarch64-apple-darwin binary is built with `luau` in its feature list, and
+`macOS-arm64-selfhosted-publish.yml:105` selects the **`release-luau`** profile
+(`panic="unwind"`, qsv#3937) for exactly that reason. `panic="abort"` applies to the *other*
+binaries and to non-Luau variants. So these numbers differ from a shipped `qsv` only by the
+presence of debug symbols, which is a smaller gap than an earlier draft of this file claimed.
 
 ⚠️ **An index exists** (`NYC_311_...csv.idx`), so every "default" run below takes the **indexed
 parallel** path (~1173% CPU). The plan's 870 ms figure was the *unindexed* number and was the
@@ -202,21 +208,25 @@ nothing but a version bump.
 Only visible in the default/indexed profile, and large: `HashMap::entry` 14.4% +
 `reserve_rehash` **7.0%** + `insert` 2.8% + `foldhash::hash_bytes_long` 1.9% ≈ **26%** of
 `everything --default`. `reserve_rehash` at 7% means the `Frequencies` map is **outgrowing its
-initial capacity and rehashing**. **Mechanism confirmed (the first guess was wrong).** The indexed-parallel path *does* size
-each worker correctly to its chunk — `stats.rs:2916` passes `chunk_size` as `expected_rows`,
-and it is neither a chunk-accounting bug nor clamp saturation (1M/16 => chunk 62,500, so
-`(62_500/10).clamp(16, 65_536)` = 6,250, well under the 65,536 cap).
+initial capacity and rehashing**.
 
-The real cause is the **10%-cardinality heuristic** at `stats.rs:4877-4879`. NYC 311 has
-several ~100%-unique columns (`Unique Key`, `Created Date`, addresses). For those the map must
-reach ~62,500 entries but starts at 6,250 — about **3.3 rehash doublings per chunk per column**,
-every run. That is the 7.0% `reserve_rehash`.
+⚠️ **Two wrong diagnoses were written here before the right one. Both are superseded — see
+[H5 re-diagnosed twice](#h5-re-diagnosed-twice-and-only-the-third-diagnosis-was-right) below
+for the attribution that settled it.** They are named rather than silently deleted so the same
+guesses are not re-made:
 
-**Cheap, local to `src/cmd/stats.rs`, no qsv-stats release.** But note the trade-off the
-heuristic exists to protect: hashbrown's `with_capacity` eagerly allocates its bucket array, so
-raising it costs RSS — and **peak RSS is a tracked metric here** (June's -43%). Any fix must
-A/B **RSS alongside wall time**. A cardinality-aware size from the stats cache (when present)
-would beat a blanket raise.
+1. *"Chunk workers are sized off a record count that does not match their chunk."* — **false**;
+   `stats.rs:2916` passes `chunk_size` correctly.
+2. *"The 10%-cardinality heuristic at `stats.rs:4877` is the real cause, and the fix is cheap
+   and local to `src/cmd/stats.rs` with no qsv-stats release."* — **false on both counts**.
+   Caller attribution puts **62.5% of `reserve_rehash` in `Frequencies::merge`**, not in
+   per-chunk building; the build-side remainder is inherent to amortized doubling; and the
+   merge-side fix is *not* local, because `Frequencies` exposes no `reserve()`.
+
+One thing from the discarded analysis is still worth keeping: hashbrown's `with_capacity`
+eagerly allocates its bucket array, so any capacity increase trades **RSS** for speed — and
+peak RSS is a tracked metric here (June's -43%). Any future attempt must A/B RSS alongside
+wall time.
 
 ## MICROBENCHMARK GATE — results (this is where four hypotheses died)
 
@@ -392,10 +402,33 @@ does not re-run these experiments.
 
 ### Reproducing
 
-- Profiles: `samply record --save-only --unstable-presymbolicate --iteration-count N -r 4000`
-  (`--save-only` alone yields an **unsymbolicated** profile — raw hex addresses; the sidecar
-  `.syms.json` is what carries the symbols, and must be joined by rva range).
-- Microbenchmarks replay **real field data** dumped from `data_unsorted.csv`, and the layout
-  harness replays **row-major** — the true access pattern. A column-major harness hides layout
-  effects entirely.
-- Every A/B asserted output equivalence, not just timing.
+**All harnesses are checked in: [`harnesses/`](harnesses/)** — sources, fixture generator,
+profile-analysis scripts, and a README with the exact `Cargo.toml`, build commands, and fixture
+commands. They are checked in so these conclusions can be **challenged**, not just trusted.
+(No `Cargo.toml` is checked in: a nested manifest inside the qsv package directory would
+interfere with `cargo build`/`cargo package`. The README supplies it.)
+
+| harness | question | result |
+|---|---|---|
+| `h1c_add_bytes.rs` | first-byte short-circuit in `MinMax::add_bytes` | -7.6% of `add_bytes` |
+| `h5_merge_reserve.rs` | reserve merge total once vs incrementally | -17.5% of the merge |
+| `layout_hot_cold.rs` | hot/cold split of `Stats`, 41 -> 984 cols | +0.1% |
+| `dateparser_precompiled_fmt.rs` | pre-compiled `Vec<Item>` vs `parse_from_str` | -47.1% |
+
+Each Rust harness **asserts output equivalence between variants before timing**, so a "win"
+that changed results would fail rather than be reported. Re-running the checked-in
+`dateparser_precompiled_fmt.rs` from a clean tree reproduced -49.7% against the -47.1% recorded
+above — run-to-run variance, same conclusion.
+
+Three traps worth carrying forward, each of which produced a wrong conclusion here first:
+
+- `samply record --save-only` **without** `--unstable-presymbolicate` yields an
+  **unsymbolicated** profile — every frame is a raw hex address, and the first pass at this
+  investigation produced exactly that. Symbols live in the sidecar `.syms.json`, joined back by
+  rva range (`harnesses/sym.py`).
+- A **column-major** microbenchmark hides layout effects entirely. The real loop walks one
+  `Stats` per field across all columns, then advances a row; only the **row-major** fixture
+  (`dump_fields.py ... rm`) exposes the stride that a layout change would alter.
+- This machine has an **index** for the fixture, so a bare `qsv stats` takes the
+  indexed-parallel path. Profiling the unindexed path by accident makes every percentage refer
+  to code most invocations never run.

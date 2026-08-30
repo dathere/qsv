@@ -1438,9 +1438,6 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
     // how many invalid rows found
     let mut invalid_count: u64 = 0;
 
-    // amortize memory allocation by reusing record
-    let mut record = csv::ByteRecord::with_capacity(500, header_len);
-
     let num_jobs = util::njobs(args.flag_jobs);
 
     // amortize allocations
@@ -1459,8 +1456,14 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
     // each batch is processed via Rayon parallel iterator.
     // loop exits when batch is empty.
     'batch_loop: loop {
-        for _ in 0..batch_size {
-            match rdr.read_byte_record(&mut record) {
+        let mut batch_len = 0_usize;
+        for slot in 0..batch_size {
+            if slot == batch.len() {
+                batch.push(csv::ByteRecord::with_capacity(500, header_len + 1));
+            }
+            // read_byte_record clears the record, so a reused slot keeps only its allocation
+            let record = &mut batch[slot];
+            match rdr.read_byte_record(record) {
                 Ok(true) => {
                     row_number += 1;
                     // Append the row number as an extra ByteRecord field at index `header_len`.
@@ -1472,8 +1475,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
                     if flag_trim {
                         record.trim();
                     }
-                    // we use mem::take() to avoid cloning & clearing the record
-                    batch.push(std::mem::take(&mut record));
+                    batch_len += 1;
                 },
                 Ok(false) => break, // nothing else to add to batch
                 Err(e) => {
@@ -1482,14 +1484,14 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
             }
         }
 
-        if batch.is_empty() {
+        if batch_len == 0 {
             // break out of infinite loop when at EOF
             break 'batch_loop;
         }
 
         // do actual validation via Rayon parallel iterator
         // validation_results vector should have same row count and in same order as input CSV
-        batch
+        batch[..batch_len]
             .par_iter()
             .with_min_len(batch_pariter_min_len)
             .map(|record| {
@@ -1574,7 +1576,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
         let start_idx = valid_flags.len();
         // extend by the actual batch length, not batch_size — the last batch may be partial,
         // and over-extending would leave trailing `true` flags for nonexistent rows.
-        valid_flags.extend(std::iter::repeat_n(true, batch.len()));
+        valid_flags.extend(std::iter::repeat_n(true, batch_len));
         for (i, result) in batch_validation_results.iter().enumerate() {
             if let Some(validation_error_msg) = result {
                 invalid_count += 1;
@@ -1586,9 +1588,8 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
 
         #[cfg(any(feature = "feature_capable", feature = "lite"))]
         if show_progress {
-            progress.inc(batch.len() as u64);
+            progress.inc(batch_len as u64);
         }
-        batch.clear();
 
         // for fail-fast, exit loop if batch has any error
         if flag_fail_fast && invalid_count > 0 {

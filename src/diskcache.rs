@@ -2916,9 +2916,16 @@ mod rich {
         Ok(resolved.csv_path)
     }
 
-    /// How long ago this entry was last fetched, in seconds.
+    /// How long ago this entry was last fetched, in seconds. Never negative.
+    ///
+    /// Clamped at zero because `downloaded_at` can legitimately be in the FUTURE: a backward
+    /// clock step (NTP correction, a resumed VM), or metadata written by a machine whose clock
+    /// ran ahead of this one — `QSV_CACHE_DIR` may point at a shared mount. Unclamped, that
+    /// yields a negative age, which `cache-list` renders as nonsense like "-30s" and which
+    /// reads as "not yet due" even for a zero TTL. Treating a future timestamp as "just
+    /// fetched" is the sane reading, and keeps both consumers honest.
     pub fn entry_age_secs(meta: &CacheEntry) -> i64 {
-        unix_now().saturating_sub(meta.downloaded_at)
+        unix_now().saturating_sub(meta.downloaded_at).max(0)
     }
 
     /// Will this entry re-fetch on its next `dc:` use?
@@ -3217,8 +3224,12 @@ mod rich {
         for de in rd.flatten() {
             if de.path().extension().is_some_and(|e| e == "json")
                 && let Ok(e) = load_entry_at(&de.path())
-                // Inclusive: `--older-than 0` prunes everything (age >= 0).
-                && now.saturating_sub(e.meta.downloaded_at) >= older_than_secs
+                // Inclusive: `--older-than 0` prunes everything (age >= 0). Clamped at zero
+                // for the same reason as `entry_age_secs` — a future `downloaded_at` would
+                // otherwise go negative and survive the very sweep documented to take
+                // everything. `now` stays hoisted so all entries are judged against one
+                // instant, which is why this does not just call `entry_age_secs`.
+                && now.saturating_sub(e.meta.downloaded_at).max(0) >= older_than_secs
                 && let Some(kh) = de.path().file_stem().map(|s| s.to_string_lossy().into_owned())
             {
                 stale_keys.push(kh);
@@ -3286,7 +3297,8 @@ mod rich {
         use std::io::Cursor;
 
         use super::{
-            CacheEntry, RefreshPolicy, ckan_auth_hint, emit_preview_reservoir, is_due_for_refresh,
+            CacheEntry, RefreshPolicy, ckan_auth_hint, emit_preview_reservoir, entry_age_secs,
+            is_due_for_refresh, unix_now,
         };
 
         /// A metadata record with only the fields the staleness rule reads.
@@ -3296,6 +3308,28 @@ mod rich {
                 refresh_policy,
                 ..Default::default()
             }
+        }
+
+        // A `downloaded_at` in the FUTURE — a backward clock step, or a cache dir shared with
+        // a machine whose clock ran ahead — must read as "just fetched", not as a negative
+        // age. Unclamped it would print as "-30s" in cache-list, and would read as "not yet
+        // due" even for a zero TTL, which is precisely backwards.
+        #[test]
+        fn a_future_timestamp_reads_as_zero_age_never_negative() {
+            let mut skewed = meta(100, RefreshPolicy::OnStale);
+            skewed.downloaded_at = unix_now() + 3_600;
+            assert_eq!(entry_age_secs(&skewed), 0);
+
+            // and a zero-TTL entry stays due despite the skew
+            let mut skewed_zero_ttl = meta(0, RefreshPolicy::OnStale);
+            skewed_zero_ttl.downloaded_at = unix_now() + 3_600;
+            let age = entry_age_secs(&skewed_zero_ttl);
+            assert!(is_due_for_refresh(&skewed_zero_ttl, age));
+
+            // a normal past timestamp still measures normally
+            let mut normal = meta(100, RefreshPolicy::OnStale);
+            normal.downloaded_at = unix_now() - 300;
+            assert!((295..=305).contains(&entry_age_secs(&normal)));
         }
 
         // THE definition of `dc:` staleness, shared by the refresh path and `cache-list`, so

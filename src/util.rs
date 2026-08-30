@@ -271,13 +271,19 @@ pub fn bytes_to_cow_str(c: &[u8]) -> std::borrow::Cow<'_, str> {
 /// Does this panic payload come from Rust's own print machinery?
 ///
 /// `println!`/`eprintln!` go through `std::io::_print`, which PANICS on a write error rather
-/// than returning it — `panic!("failed printing to {label}: {e}")`. That is an I/O failure,
-/// not a qsv bug, and it is not reachable from qsv's own `wout!`/`werr!` macros (they handle
-/// their `Result`). Kept as a free function so the classification is unit-testable without
+/// than returning it — `panic!("failed printing to {label}: {e}")` (`library/std/src/io/
+/// stdio.rs`, unchanged across every toolchain checked). That is an I/O failure, not a qsv
+/// bug, and it is not reachable from qsv's own `wout!`/`werr!` macros (they handle their
+/// `Result`). Kept as a free function so the classification is unit-testable without
 /// provoking a real panic.
+///
+/// The trailing `": "` is part of that format string and is matched DELIBERATELY: without it
+/// the prefix would also swallow any future panic merely beginning "failed printing to
+/// stdout…", and a false positive here costs a real bug its crash report. Matching the full
+/// literal prefix costs nothing, since std always emits the separator.
 fn is_io_print_panic(payload: &str) -> bool {
-    payload.starts_with("failed printing to stdout")
-        || payload.starts_with("failed printing to stderr")
+    payload.starts_with("failed printing to stdout: ")
+        || payload.starts_with("failed printing to stderr: ")
 }
 
 /// The panic payload as a string, covering both `panic!("literal")` (`&str`) and
@@ -5418,6 +5424,14 @@ mod tests {
             "assertion failed: failed printing to stdout"
         ));
         assert!(!is_io_print_panic("failed printing to a file"));
+
+        // the separator is matched too, so a hypothetical future panic that merely BEGINS
+        // the same way keeps its crash report rather than being mistaken for a write failure
+        assert!(!is_io_print_panic(
+            "failed printing to stdout buffer invariant violated"
+        ));
+        assert!(!is_io_print_panic("failed printing to stdout"));
+        assert!(!is_io_print_panic("failed printing to stderr, somehow"));
     }
 
     /// A non-2xx response must be an ERROR, never a file.

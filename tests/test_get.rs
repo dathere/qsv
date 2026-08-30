@@ -442,6 +442,22 @@ fn get_dc_failed_refresh_warns_and_uses_stale_copy() {
         stderr.contains("using cached copy"),
         "failed refresh should explain the stale fallback on stderr; got:\n{stderr}"
     );
+    // the warning must identify WHICH entry went stale — a run resolving several `dc:`
+    // handles emits one line per handle, and an unnamed line is not actionable
+    assert!(
+        stderr.contains("'states.csv'"),
+        "the warning should name the stale entry; got:\n{stderr}"
+    );
+    // ... and HOW stale it is, which is the number that decides whether to care
+    assert!(
+        stderr.contains("last fetched "),
+        "the warning should report the entry's age; got:\n{stderr}"
+    );
+    // a local source is not `ckan://`, so the CKAN token hint must stay out of it
+    assert!(
+        !stderr.contains("QSV_CKAN_TOKEN"),
+        "the CKAN token hint must not fire for a non-CKAN source; got:\n{stderr}"
+    );
 }
 
 // issue #3988: local compressed sources are STREAMED into the content-addressed

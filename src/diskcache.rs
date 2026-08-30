@@ -2911,6 +2911,49 @@ mod rich {
         Ok(resolved.csv_path)
     }
 
+    /// Render a cache entry's age as a compact, human-scale string ("30d", "6h").
+    /// Used only in the stale-refresh warning, where precision beyond one unit is noise —
+    /// the number exists to answer "do I care?", not to be arithmetic.
+    fn fmt_age(secs: i64) -> String {
+        const MINUTE: i64 = 60;
+        const HOUR: i64 = 60 * MINUTE;
+        const DAY: i64 = 24 * HOUR;
+
+        match secs {
+            s if s >= DAY => format!("last fetched {}d ago", s / DAY),
+            s if s >= HOUR => format!("last fetched {}h ago", s / HOUR),
+            s if s >= MINUTE => format!("last fetched {}m ago", s / MINUTE),
+            s => format!("last fetched {s}s ago"),
+        }
+    }
+
+    /// A hint for the silent `ckan://` refresh failure that is otherwise undiagnosable: the
+    /// CKAN API URL is persisted on the entry, but the TOKEN never is — it is read from
+    /// `QSV_CKAN_TOKEN` at refresh time — so a private resource stops refreshing in any shell
+    /// without that var set.
+    ///
+    /// Worded CONDITIONALLY on purpose. The refresh error is not a reliable auth signal: CKAN
+    /// may answer an unauthorized private resource with 404 rather than 401/403 (to avoid
+    /// confirming the resource exists), and a public resource can fail here for reasons that
+    /// have nothing to do with auth. Gating on a status code would therefore both miss real
+    /// auth failures and, when it fired, still be guessing — so the hint states the fact
+    /// (the var is unset) and lets the reader decide whether it applies.
+    ///
+    /// Takes the token the REFRESH actually used rather than re-reading the environment, so the
+    /// hint cannot disagree with the attempt it is explaining. Re-reading would: `var_os` sees a
+    /// non-Unicode value that `var` (used for the refresh) rejects, so the refresh would go out
+    /// unauthenticated while the hint stayed silent. An empty value is likewise treated as
+    /// absent — it authenticates nothing, so the hint still applies.
+    ///
+    /// `ckan://` is matched case-sensitively to mirror `resolve_uri_prefix`.
+    fn ckan_auth_hint(source_uri: &str, token: Option<&str>) -> &'static str {
+        if source_uri.starts_with("ckan://") && token.is_none_or(str::is_empty) {
+            " (if this is a private CKAN resource, note that QSV_CKAN_TOKEN is not set)"
+        } else {
+            ""
+        }
+    }
+
     /// The un-memoized body of `resolve_dc_path`: refresh-if-stale, then materialize the CSV
     /// and its sibling `.idx`. Call this ONCE per handle per run — see `DC_RESOLVED`.
     fn resolve_dc_uncached(cache_dir: &str, root: &Path, name: &str) -> CliResult<ResolvedDc> {
@@ -2966,12 +3009,32 @@ mod rich {
                         }
                     },
                     Err(err) => {
-                        wwarn!(
-                            "get: refresh of stale cache entry '{}' from '{}' failed: {err}; \
-                             using cached copy",
+                        // Deliberately NOT `wwarn!`. Every other `wwarn!` call site is in a
+                        // command or in `main`; this one is in a shared path reached by every
+                        // command that reads a `dc:` handle, and the macro ends in
+                        // `writeln!(..).unwrap()`. A write that FAILS here — EBADF from a
+                        // closed fd (`2>&-`), ENOSPC from a full device — must drop the
+                        // warning, not panic a command that was otherwise about to succeed.
+                        //
+                        // This does NOT cover a closed stderr PIPE: `util::reset_sigpipe`
+                        // restores SIG_DFL at startup, so that case kills the process before
+                        // any `Result` comes back, and no error handling here can change it.
+                        // The log record always survives.
+                        use std::io::Write as _;
+
+                        let msg = format!(
+                            "get: refresh of stale cache entry '{}' ({}) from '{}' failed: {err}; \
+                             using cached copy{}",
                             name,
-                            refresh_opts.source
+                            fmt_age(age),
+                            refresh_opts.source,
+                            ckan_auth_hint(
+                                &refresh_opts.source,
+                                refresh_opts.ckan_token.as_deref()
+                            )
                         );
+                        log::warn!("{msg}");
+                        let _ = writeln!(std::io::stderr(), "{msg}");
                     },
                 }
             }
@@ -3217,7 +3280,44 @@ mod rich {
     mod tests {
         use std::io::Cursor;
 
-        use super::emit_preview_reservoir;
+        use super::{ckan_auth_hint, emit_preview_reservoir, fmt_age};
+
+        // The stale-refresh warning reports ONE unit, the largest that fits, so the unit
+        // boundaries are the whole contract.
+        #[test]
+        fn fmt_age_picks_the_largest_fitting_unit() {
+            assert_eq!(fmt_age(0), "last fetched 0s ago");
+            assert_eq!(fmt_age(59), "last fetched 59s ago");
+            assert_eq!(fmt_age(60), "last fetched 1m ago");
+            assert_eq!(fmt_age(3_599), "last fetched 59m ago");
+            assert_eq!(fmt_age(3_600), "last fetched 1h ago");
+            assert_eq!(fmt_age(86_399), "last fetched 23h ago");
+            assert_eq!(fmt_age(86_400), "last fetched 1d ago");
+            // the `qsv get` default TTL
+            assert_eq!(fmt_age(2_419_200), "last fetched 28d ago");
+        }
+
+        // The hint takes the refresh's own token rather than reading the environment, so every
+        // case here is deterministic regardless of the ambient QSV_CKAN_TOKEN.
+        #[test]
+        fn ckan_auth_hint_fires_only_for_ckan_without_a_usable_token() {
+            const HINT: &str =
+                " (if this is a private CKAN resource, note that QSV_CKAN_TOKEN is not set)";
+
+            // non-CKAN sources never hint, with or without a token
+            assert_eq!(ckan_auth_hint("https://example.com/data.csv", None), "");
+            assert_eq!(ckan_auth_hint("/local/data.csv", None), "");
+            // matched case-sensitively, mirroring `resolve_uri_prefix`
+            assert_eq!(ckan_auth_hint("CKAN://some-id", None), "");
+
+            // a ckan:// source with no usable token hints; an empty token authenticates
+            // nothing, so it counts as absent
+            assert_eq!(ckan_auth_hint("ckan://some-id", None), HINT);
+            assert_eq!(ckan_auth_hint("ckan://some-id", Some("")), HINT);
+
+            // a real token means auth was attempted, so the hint would be misleading
+            assert_eq!(ckan_auth_hint("ckan://some-id", Some("tok")), "");
+        }
 
         // The `--random` reservoir path parses the CSV from the start, so a quoted
         // field containing an embedded newline must survive as ONE intact record

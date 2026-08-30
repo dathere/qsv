@@ -416,6 +416,34 @@ fn get_local_file_and_dc_read() {
     assert_eq!(got, "4");
 }
 
+#[test]
+fn get_dc_failed_refresh_warns_and_uses_stale_copy() {
+    let wrk = Workdir::new("get_dc_failed_refresh_warns_and_uses_stale_copy");
+    wrk.create_from_string("states_src.csv", STATES_CSV);
+    let cache_dir = wrk.path("qsvcache");
+
+    // A zero TTL makes the entry stale on every dc: resolution. Remove the
+    // source after seeding so the refresh fails while the cached copy remains.
+    let mut get = wrk.command("get");
+    get.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "states.csv", "--ttl", "0"])
+        .arg("states_src.csv");
+    wrk.assert_success(&mut get);
+    std::fs::remove_file(wrk.path("states_src.csv")).unwrap();
+
+    let mut count = wrk.command("count");
+    count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:states.csv");
+    let (got, stderr): (String, String) = wrk.stdout_and_stderr_on_success(&mut count);
+    assert_eq!(
+        got, "4",
+        "failed refresh should keep serving the stale copy"
+    );
+    assert!(
+        stderr.contains("using cached copy"),
+        "failed refresh should explain the stale fallback on stderr; got:\n{stderr}"
+    );
+}
+
 // issue #3988: local compressed sources are STREAMED into the content-addressed
 // blob store (bounded memory) and stored DECOMPRESSED, so `dc:` reads see plain
 // CSV with a correct record_count. Exercises `ingest_local`'s streaming-decode

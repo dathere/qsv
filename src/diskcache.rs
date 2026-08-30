@@ -2957,11 +2957,22 @@ mod rich {
                         .map(|(k, v)| format!("{k}={v}"))
                         .collect(),
                 };
-                // Best-effort: on refresh failure, fall back to the stale copy.
-                if get_resource(&refresh_opts).is_ok()
-                    && let Some(refreshed) = load_entry_by_name(root, name)?
-                {
-                    entry = refreshed;
+                // Best-effort: on refresh failure, fall back to the stale copy but make
+                // the degraded result visible to callers instead of silently succeeding.
+                match get_resource(&refresh_opts) {
+                    Ok(_) => {
+                        if let Some(refreshed) = load_entry_by_name(root, name)? {
+                            entry = refreshed;
+                        }
+                    },
+                    Err(err) => {
+                        wwarn!(
+                            "get: refresh of stale cache entry '{}' from '{}' failed: {err}; \
+                             using cached copy",
+                            name,
+                            refresh_opts.source
+                        );
+                    },
                 }
             }
         }

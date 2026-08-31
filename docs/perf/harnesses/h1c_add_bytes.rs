@@ -93,6 +93,18 @@ fn main(){
     let cols=load("/tmp/statsperf/fields.bin");
     let total:usize=cols.iter().map(|c|c.len()).sum();
     println!("replaying {} columns, {} values\n", cols.len(), total);
+    let which = std::env::args().nth(1).unwrap_or_else(|| "both".into());
+    if which=="A" || which=="B" {
+        let mut best=f64::MAX;
+        for _ in 0..5 {
+            let t=Instant::now(); let mut s=0u64;
+            if which=="A" { for c in &cols { let mut m=MmA::new(); for v in c { m.add(v); } s+=m.asc as u64+m.desc as u64; } }
+            else          { for c in &cols { let mut m=MmB::new(); for v in c { m.add(v); } s+=m.asc as u64+m.desc as u64; } }
+            let e=t.elapsed().as_secs_f64(); if e<best{best=e;} std::hint::black_box(s);
+        }
+        println!("{} {:.2} ms ({:.2} ns/value)", which, best*1e3, best*1e9/total as f64);
+        return;
+    }
     let reps=5;
     let mut best_a=f64::MAX; let mut best_b=f64::MAX;
     for _ in 0..reps {

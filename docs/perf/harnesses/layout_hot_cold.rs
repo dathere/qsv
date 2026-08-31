@@ -103,6 +103,32 @@ fn mkB(n:usize)->(Vec<StatsB>,Vec<ColdB>){ ((0..n).map(|_| StatsB{ typ:Default::
  online_len:Some(OnlineStats::new()), modes:Some(Frequencies::with_capacity(6250)),
  minmax:Some(Default::default())}).collect(), (0..n).map(|_| ColdB::default()).collect()) }
 
+/// Full observable snapshot of one column's accumulators, for A-vs-B equivalence.
+#[derive(PartialEq, Debug)]
+struct Snap { nullcount:u64, stotlen:u64, integer:i64, len_n:u64, len_mean:u64,
+              on_n:u64, on_mean:u64, on_var:u64, card:u64,
+              smin:Option<Vec<u8>>, smax:Option<Vec<u8>>, lmin:Option<usize>, lmax:Option<usize>,
+              asc:Option<u32>, desc:Option<u32> }
+macro_rules! snap { ($s:expr) => {{ let s=&$s; let mm=s.minmax.as_ref().unwrap();
+    let ol=s.online_len.as_ref().unwrap(); let on=s.online.as_ref().unwrap();
+    Snap{ nullcount:s.nullcount, stotlen:s.sum.as_ref().unwrap().stotlen,
+          integer:s.sum.as_ref().unwrap().integer,
+          len_n:ol.len() as u64, len_mean:ol.mean().to_bits(), on_n:on.len() as u64,
+          on_mean:on.mean().to_bits(), on_var:on.variance().to_bits(),
+          card:s.modes.as_ref().unwrap().cardinality(),
+          smin:mm.strings.min().cloned(), smax:mm.strings.max().cloned(),
+          lmin:mm.str_len.min().copied(), lmax:mm.str_len.max().copied(),
+          asc:Some(mm.strings.sort_order() as u32), desc:None } }} }
+
+fn equivalence(nc:usize, nr:usize, cols:&Vec<Vec<Vec<u8>>>){
+    let mut a=mkA(nc); let (mut b,_c)=mkB(nc);
+    for r in 0..nr { for c in 0..nc { a[c].add(&cols[c][r]); b[c].add(&cols[c][r]); } }
+    for c in 0..nc {
+        assert_eq!(snap!(a[c]), snap!(b[c]), "layout A/B diverged on column {c}");
+    }
+    println!("equivalence: OK — A and B produce identical accumulator state on all {nc} columns");
+}
+
 fn bench(nc:usize, nr:usize, cols:&Vec<Vec<Vec<u8>>>)->(f64,f64){
     let reps=3; let (mut ba,mut bb)=(f64::MAX,f64::MAX);
     for _ in 0..reps {
@@ -124,13 +150,35 @@ fn main(){
     println!("size_of StatsA = {} B, StatsB = {} B, cold = {} B\n", size_of::<StatsA>(), size_of::<StatsB>(), size_of::<ColdB>());
     // hold rows fixed at a smaller count so wide runs stay comparable in total work
     let nr = 40_000.min(nr0);
-    println!("{:>6} {:>10} {:>10} {:>11} {:>11} {:>9}", "cols", "A KB/row", "B KB/row", "A ms", "B ms", "delta");
+    // Which variant to time. Running exactly ONE per process removes the
+    // cross-contamination that made the in-process A-then-B ordering decide the result.
+    let which = std::env::args().nth(1).unwrap_or_else(|| "both".into());
+    if which == "eq" {
+        equivalence(nc0, 20_000.min(nr0), &(0..nc0).map(|c| cols0[c][..20_000.min(nr0)].to_vec()).collect());
+        return;
+    }
+    println!("{:>6} {:>8} {:>11}", "cols", "variant", "ms");
     for mult in [1usize,3,6,12,24] {
         let nc = nc0*mult;
         // replicate the real columns to widen the file
         let cols: Vec<Vec<Vec<u8>>> = (0..nc).map(|c| cols0[c % nc0][..nr].to_vec()).collect();
-        let (a,b)=bench(nc,nr,&cols);
-        println!("{:>6} {:>10} {:>10} {:>11.1} {:>11.1} {:>+8.1}%",
-            nc, nc*size_of::<StatsA>()/1024, nc*size_of::<StatsB>()/1024, a*1e3, b*1e3, 100.0*(b-a)/a);
+        let t = match which.as_str() {
+            "A" => { let mut best=f64::MAX;
+                     for _ in 0..3 { let mut st=mkA(nc); let t=Instant::now();
+                       for r in 0..nr { for c in 0..nc { st[c].add(&cols[c][r]); } }
+                       let e=t.elapsed().as_secs_f64(); if e<best{best=e;}
+                       std::hint::black_box(st.iter().map(|s|s.nullcount).sum::<u64>()); }
+                     best }
+            "B" => { let mut best=f64::MAX;
+                     for _ in 0..3 { let (mut st,cold)=mkB(nc); let t=Instant::now();
+                       for r in 0..nr { for c in 0..nc { st[c].add(&cols[c][r]); } }
+                       let e=t.elapsed().as_secs_f64(); if e<best{best=e;}
+                       std::hint::black_box((st.iter().map(|s|s.nullcount).sum::<u64>(),cold.len())); }
+                     best }
+            _ => { let (a,b)=bench(nc,nr,&cols);
+                   println!("{:>6} {:>11.1} {:>11.1} {:>+8.1}%", nc, a*1e3, b*1e3, 100.0*(b-a)/a);
+                   continue; }
+        };
+        println!("{:>6} {:>8} {:>11.1}", nc, which, t*1e3);
     }
 }

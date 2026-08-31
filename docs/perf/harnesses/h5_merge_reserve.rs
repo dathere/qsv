@@ -41,6 +41,33 @@ fn merge_b(mut ms:Vec<HashMap<Vec<u8>,u64>>)->usize{
 }
 fn main(){
     let cols=load("/tmp/statsperf/fields.bin");
+    let which = std::env::args().nth(1).unwrap_or_else(|| "both".into());
+    if which=="eq" {
+        // FULL key->count equality, not just aggregate cardinality
+        for (i,c) in cols.iter().enumerate() {
+            let ma=build(c,10); let mb=build(c,10);
+            let mut a=ma; let mut b=mb;
+            let ra={ let mut acc=a.remove(0); for v in a { acc.reserve(v.len());
+                for (k,cnt) in v { match acc.entry(k){Entry::Vacant(e)=>{e.insert(cnt);},Entry::Occupied(mut e)=>{*e.get_mut()+=cnt;}} } } acc };
+            let rb={ let total:usize=b.iter().skip(1).map(|m|m.len()).sum(); let mut acc=b.remove(0); acc.reserve(total);
+                for v in b { for (k,cnt) in v { match acc.entry(k){Entry::Vacant(e)=>{e.insert(cnt);},Entry::Occupied(mut e)=>{*e.get_mut()+=cnt;}} } } acc };
+            assert_eq!(ra.len(), rb.len(), "col {i}: cardinality differs");
+            for (k,v) in &ra { assert_eq!(rb.get(k), Some(v), "col {i}: count differs for a key"); }
+        }
+        println!("equivalence: OK — full key->count maps identical on all {} columns", cols.len());
+        return;
+    }
+    if which=="A" || which=="B" {
+        let mut best=f64::MAX;
+        for _ in 0..3 {
+            let pre:Vec<_>=cols.iter().map(|c|build(c,10)).collect();
+            let t=Instant::now(); let mut s=0;
+            for m in pre { s += if which=="A" { merge_a(m) } else { merge_b(m) }; }
+            let e=t.elapsed().as_secs_f64(); if e<best{best=e;} std::hint::black_box(s);
+        }
+        println!("{} {:.2} ms", which, best*1e3);
+        return;
+    }
     for (label,div) in [("current hint /10",10usize)] {
         let mut ba=f64::MAX; let mut bb=f64::MAX; let (mut la,mut lb)=(0,0);
         for _ in 0..3 {

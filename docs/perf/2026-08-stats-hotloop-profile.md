@@ -9,12 +9,19 @@ Machine: **Apple M4 Max, 16 cores, 68 GB**. Fixture: `NYC_311_SR_2010-2020-sampl
 Binary: `target/release-samply/qsv` 22.0.1, aarch64-apple-darwin, **Apple M4 Max (16 cores)**,
 Rust 1.98. `release-samply` inherits `release` and adds `debug=true` / `strip=false`.
 
-ℹ️ It also sets `panic="unwind"` — but so does the **shipped** `qsv`: the published
-aarch64-apple-darwin binary is built with `luau` in its feature list, and
-`macOS-arm64-selfhosted-publish.yml:105` selects the **`release-luau`** profile
-(`panic="unwind"`, qsv#3937) for exactly that reason. `panic="abort"` applies to the *other*
-binaries and to non-Luau variants. So these numbers differ from a shipped `qsv` only by the
-presence of debug symbols, which is a smaller gap than an earlier draft of this file claimed.
+ℹ️ On panic strategy it matches the shipped binary: the published aarch64-apple-darwin `qsv`
+carries `luau`, so `macOS-arm64-selfhosted-publish.yml:105` selects **`release-luau`**
+(`panic="unwind"`, qsv#3937). `panic="abort"` applies to the *other* binaries and non-Luau
+variants.
+
+⚠️ **But do NOT read these as shipped performance.** The published macOS binary is
+**PGO-optimized** (`scripts/build-pgo.sh`, `QSV_KIND=prebuilt-pgo`, qsv#1448) — instrument,
+train, re-optimize — and it is **trained on the NYC-311 dataset, i.e. this very fixture**.
+`release-samply` is an ordinary non-PGO build. A shipped `qsv` should be *faster* here than
+these numbers, by an unmeasured margin. These timings are valid as an **A/B baseline against
+themselves** and as **relative profile shares**; they are not "how fast `qsv stats` is".
+(Two earlier drafts got this wrong in both directions — first blaming `panic="abort"`, then
+claiming debug symbols were the only difference.)
 
 ⚠️ **An index exists** (`NYC_311_...csv.idx`), so every "default" run below takes the **indexed
 parallel** path (~1173% CPU). The plan's 870 ms figure was the *unindexed* number and was the
@@ -102,7 +109,7 @@ whether a column widens is not knowable mid-stream. Do **not** "fix" it by gatin
 `#[inline(always)]`, so it fused into `add_with_parsed` — but its slice `>=` lowered to a
 `memcmp` call and its `extend_from_slice` to a `memmove` call, and those did not inline.
 
-### H1c — short-circuit the libc calls — ⛔ TESTED, -7.6% of `add_bytes` ~= 2% wall. REJECTED.
+### H1c — short-circuit the libc calls — ⛔ TESTED, -3.8% of `add_bytes` ~= 1% wall. REJECTED.
 
 > **Verdict first:** this was the leading candidate coming out of the profile and it **did not
 > survive its microbenchmark** (see [the gate](#microbenchmark-gate--results-this-is-where-four-hypotheses-died)
@@ -210,18 +217,20 @@ Only visible in the default/indexed profile, and large: `HashMap::entry` 14.4% +
 `everything --default`. `reserve_rehash` at 7% means the `Frequencies` map is **outgrowing its
 initial capacity and rehashing**.
 
-⚠️ **Two wrong diagnoses were written here before the right one. Both are superseded — see
-[H5 re-diagnosed twice](#h5-re-diagnosed-twice-and-only-the-third-diagnosis-was-right) below
-for the attribution that settled it.** They are named rather than silently deleted so the same
-guesses are not re-made:
+⚠️ **Three wrong diagnoses were written before the right one.** They are named rather than
+silently deleted so the same guesses are not re-made. The attribution that settled it is in
+[H5 re-diagnosed](#h5-re-diagnosed-twice-and-only-the-third-diagnosis-was-right) below:
 
 1. *"Chunk workers are sized off a record count that does not match their chunk."* — **false**;
    `stats.rs:2916` passes `chunk_size` correctly.
-2. *"The 10%-cardinality heuristic at `stats.rs:4877` is the real cause, and the fix is cheap
-   and local to `src/cmd/stats.rs` with no qsv-stats release."* — **false on both counts**.
-   Caller attribution puts **62.5% of `reserve_rehash` in `Frequencies::merge`**, not in
-   per-chunk building; the build-side remainder is inherent to amortized doubling; and the
-   merge-side fix is *not* local, because `Frequencies` exposes no `reserve()`.
+2. *"It is clamp saturation."* — **false**; 1M/16 => 6,250, far below the 65,536 cap.
+3. *"The 10%-cardinality heuristic at `stats.rs:4877` is the cause, and the fix is cheap and
+   local to `src/cmd/stats.rs`."* — **misattributed, and wrong about the fix.** To be precise,
+   because an earlier revision of this file overstated it as simply "false": the 6,250 starting
+   capacity **does** cause build-side growth, and build-side rehashing is a real **2.61%** of
+   the profile. But it is the **minority** — caller attribution puts **62.5% of `reserve_rehash`
+   in `Frequencies::merge`** — and it is **not fixable**, being the inherent amortized cost of
+   doubling. The fix is also **not local**: `Frequencies` exposes no `reserve()`.
 
 One thing from the discarded analysis is still worth keeping: hashbrown's `with_capacity`
 eagerly allocates its bucket array, so any capacity increase trades **RSS** for speed — and
@@ -247,11 +256,13 @@ asc/desc/min/max/last across all 41 columns: **identical**.
 
 | | time | per value |
 |---|---:|---:|
-| A current | 54.92 ms | 9.79 ns |
-| B H1c | 50.76 ms | 9.04 ns |
-| **delta** | **-7.6%** | |
+| A current | 57.54 ms | 10.25 ns |
+| B H1c | 55.34 ms | 9.86 ns |
+| **delta** | **-3.8%** | |
 
-`add_bytes` is ~24-33% of the run, so -7.6% of it is **~2% of wall time**. The load-bearing
+(Mean of 3 rounds, each variant in its **own process** — see the correction note at the end of
+this section. An earlier in-process measurement reported -7.6%; that was inflated.)
+`add_bytes` is ~24-33% of the run, so -3.8% of it is **~1% of wall time**. The load-bearing
 assumption — that libc call overhead dominates at ~17.7 bytes — **did not hold**: Apple's
 `_platform_memcmp` is already short-length-tuned. Same failure shape as the 11.1 ms sort figure.
 **Do not ship H1c on its own.**
@@ -284,9 +295,9 @@ chunk lens and `reserve` once. Final entry count identical (1,455,804).
 
 | | time |
 |---|---:|
-| A incremental reserve | 50.10 ms |
-| B reserve-total-once | 41.31 ms |
-| **delta** | **-17.5%** |
+| A incremental reserve | 52.06 ms |
+| B reserve-total-once | 42.73 ms |
+| **delta** | **-17.9%** |
 
 **Inclusive** profile share of `Frequencies::merge` in `everything --default` is **28.66%** —
 far more than its 4.35% rehash leaf implied. So -17.5% of it is **~5% of wall time** (~17 ms of
@@ -327,23 +338,49 @@ String column**.
 That is a textbook case for an array-of-structs hot/cold split. **It does not work.**
 
 Benchmark: real 200k-row x 41-col field data replayed **row-major** — the true access pattern,
-striding one `Stats` per field (the earlier H1c/H5 harnesses were column-major, which would
-have hidden this). Layout A = current 896 B inline. Layout B = 704 B hot struct + a parallel
-`Vec<ColdB>` holding the 224 dead bytes. Column count scaled by replicating real columns:
+striding one `Stats` per field (the H1c/H5 harnesses are column-major, which would have hidden
+this). Layout A = current 896 B inline. Layout B = 704 B hot struct + a parallel `Vec<ColdB>`
+holding the 224 dead bytes. Equivalence asserted per column on nullcount, sum, string/length
+min-max, online mean/variance and cardinality. **Each variant timed in its own process** (see
+below); mean of 3 rounds, column count scaled by replicating real columns:
 
 | cols | A KB/row | B KB/row | A ms | B ms | delta |
 |---:|---:|---:|---:|---:|---:|
-| 41 | 35 | 28 | 48.3 | 48.3 | **+0.1%** |
-| 123 | 107 | 84 | 170.0 | 174.3 | +2.5% |
-| 246 | 215 | 169 | 389.0 | 392.3 | +0.8% |
-| 492 | 430 | 338 | 936.3 | 953.5 | +1.8% |
-| 984 | 861 | 676 | 2418.1 | 2631.8 | +8.8% |
+| 41 | 35 | 28 | 54.3 | 54.3 | **0.0%** |
+| 123 | 107 | 84 | 200.3 | 202.8 | +1.2% |
+| 246 | 215 | 169 | 443.9 | 446.4 | +0.6% |
+| 492 | 430 | 338 | 1121.4 | 1120.1 | -0.1% |
+| 984 | 861 | 676 | 2897.2 | 2868.3 | -1.0% |
 
-Three independent runs at 41 columns gave -0.7%, -1.4%, +0.1% — a noise floor of about
-+/-1.5%, so the realistic-width result is **exactly zero**. Shrinking the per-row working set by
-21% buys nothing, and at extreme widths the split is measurably *worse* (the stride change
-appears to interact badly with cache-set mapping; the mechanism is not worth chasing since the
-direction is wrong anyway).
+Every cell is within **±1.2%**. Shrinking the per-row working set by 21% buys nothing, at any
+width tested.
+
+### ⚠️ The benchmark that produced the first version of this table was invalid
+
+An earlier revision reported **+0.1% at 41 cols rising to +8.8% at 984** — B consistently
+*worse*. That table was an artifact and has been replaced. Timing A and B **in the same
+process** lets the first variant's allocations determine the second's heap placement: each
+column set carries ~164 satellite heap objects (`Frequencies` maps, four `Vec<u8>` per
+`MinMax<Vec<u8>>`), so whichever variant is constructed second inherits a fragmented heap.
+
+The confound was **larger than the effect being measured**, and it is not directionally safe.
+Merely inserting an equivalence pass before the timing loop — which allocates and drops one A
+and one B set, warming the allocator — flipped the same code from *+0.1%..+8.8% (B worse)* to
+*-4%..-17% (B better)*, reproducibly across runs. Had the harness been written in that order
+originally, this document would have claimed a **15% layout win** and very likely recommended a
+significant refactor on the strength of an allocator artifact.
+
+Running each variant in a **separate process** removes the confound, and gives the ±1.2% above.
+The same isolation was applied to the other harnesses: H1c fell from -7.6% to **-3.8%** (the
+in-process figure was inflated ~2x), while H5-merge was unaffected at **-17.9%** vs -17.5%. No
+*conclusion* changed, but two of four published numbers were materially wrong.
+
+**The lesson, which generalizes past this document:** an A/B microbenchmark of two allocating
+variants must isolate them, and "the result is stable across repeated runs" is *not* evidence
+of validity — the invalid version was perfectly stable too. Only changing the protocol exposed
+it. This was surfaced indirectly by roborev 4490, which asked why the harnesses did not assert
+output equivalence; adding those assertions is what perturbed the allocation order and made the
+instability visible.
 
 **Why layout is the wrong lever here.** The per-row walk is a short, perfectly regular,
 hardware-prefetchable stride, and 35 KB sits inside L1D on this machine. The profile agrees:
@@ -365,10 +402,10 @@ struct-of-arrays rewrite. All target a working set that is not the bottleneck.
 | H3 | `--everything` sort -> `select_nth_unstable` | **1.77%** of everything -j1 | ⛔ refuted; also a real non-total-order risk |
 | H1a | skip memcpy on consecutive duplicates | ~2% of plain -j1 | ⛔ too small alone |
 | H1b | inline small buffer in `MinMax` | discriminator not met (cost is in calls, not stalls) | ⛔ dropped |
-| H1c | inline first-byte short-circuit | **-7.6%** of `add_bytes` = ~2% wall | ⛔ too small for a release cycle |
+| H1c | inline first-byte short-circuit | **-3.8%** of `add_bytes` = ~1% wall | ⛔ too small for a release cycle |
 | H5-build | `Frequencies` per-chunk capacity | 2.61%, inherent to amortized doubling | ⛔ not cheaply fixable |
-| H5-merge | reserve the merge total once | **-17.5%** of a **28.66%** phase = **~5% wall** | ⛔ **DECLINED 2026-08-30** — not worth a qsv-stats release cycle + un-patch dance + ~1h44m verify rebuild |
-| LAYOUT | hot/cold split of the 896 B `Stats` | **+0.1%** at 41 cols (noise floor +/-1.5%) | ⛔ refuted; worse at extreme widths |
+| H5-merge | reserve the merge total once | **-17.9%** of a **28.66%** phase = **~5% wall** | ⛔ **DECLINED 2026-08-30** — not worth a qsv-stats release cycle + un-patch dance + ~1h44m verify rebuild |
+| LAYOUT | hot/cold split of the 896 B `Stats` | **±1.2% across 41-984 cols** | ⛔ refuted (see the benchmark-validity note) |
 | **H4** | **pre-compile strftime formats** | **-47.1%**, output identical | ✅ **FILED: dathere/qsv-dateparser#11** |
 
 ### The one actionable item
@@ -410,17 +447,22 @@ interfere with `cargo build`/`cargo package`. The README supplies it.)
 
 | harness | question | result |
 |---|---|---|
-| `h1c_add_bytes.rs` | first-byte short-circuit in `MinMax::add_bytes` | -7.6% of `add_bytes` |
-| `h5_merge_reserve.rs` | reserve merge total once vs incrementally | -17.5% of the merge |
-| `layout_hot_cold.rs` | hot/cold split of `Stats`, 41 -> 984 cols | +0.1% |
+| `h1c_add_bytes.rs` | first-byte short-circuit in `MinMax::add_bytes` | -3.8% of `add_bytes` |
+| `h5_merge_reserve.rs` | reserve merge total once vs incrementally | -17.9% of the merge |
+| `layout_hot_cold.rs` | hot/cold split of `Stats`, 41 -> 984 cols | ±1.2% (noise) |
 | `dateparser_precompiled_fmt.rs` | pre-compiled `Vec<Item>` vs `parse_from_str` | -47.1% |
 
-Each Rust harness **asserts output equivalence between variants before timing**, so a "win"
-that changed results would fail rather than be reported. Re-running the checked-in
-`dateparser_precompiled_fmt.rs` from a clean tree reproduced -49.7% against the -47.1% recorded
-above — run-to-run variance, same conclusion.
+Each harness takes `eq` / `A` / `B`. **`eq` asserts full observable state**, and **A and B must
+be timed in separate process invocations** — see the README, and the benchmark-validity note in
+the LAYOUT section for why this is not optional.
 
-Three traps worth carrying forward, each of which produced a wrong conclusion here first:
+Four traps worth carrying forward, each of which produced a wrong conclusion here first:
+
+- **Timing two allocating variants in one process is invalid.** The first variant's allocations
+  determine the second's heap placement, and here that confound exceeded the effect being
+  measured — it flipped the layout result from -17% to +8.8% depending only on whether a
+  warm-up ran first. Stability across repeated runs is **not** evidence of validity; the
+  invalid version was perfectly stable. Isolate per process.
 
 - `samply record --save-only` **without** `--unstable-presymbolicate` yields an
   **unsymbolicated** profile — every frame is a raw hex address, and the first pass at this

@@ -3506,9 +3506,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hermit-abi"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
+checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 
 [[package]]
 name = "hex"
@@ -7041,9 +7041,9 @@ dependencies = [
 
 [[package]]
 name = "qsv-dateparser"
-version = "0.16.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c72999773dbc5a7391a302d00830a4f22efd6ac6c8e929209a7aa3951c2af5c"
+checksum = "63a71f85eeb0fcb88908f50a8dc612f16623a6d8d203616f187e54c03da4b5b9"
 dependencies = [
  "anyhow",
  "chrono",

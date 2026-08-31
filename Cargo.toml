@@ -365,7 +365,7 @@ pyo3 = { version = "0.29", features = ["auto-initialize"], optional = true }
 # https://github.com/yaml/yaml-serde - used by the `profile` command to parse
 # CKAN scheming specs (e.g. dataset-druf.yaml).
 yaml_serde = { version = "0.10", optional = true }
-qsv-dateparser = "0.16"
+qsv-dateparser = "0.18"
 qsv_docopt = "1.10"
 qsv-stats = "0.55"
 qsv_currency = "0.8"

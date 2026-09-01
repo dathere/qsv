@@ -8306,8 +8306,9 @@ checksum = "2ab42ca02749e120097e328d91d415325bdf43b1c72c4c8badf37375fe40a813"
 
 [[package]]
 name = "self_update"
-version = "1.0.0-rc.6"
-source = "git+https://github.com/jaemk/self_update?rev=91b0531a22b76cabf46152fd2aae0b34a75c177e#91b0531a22b76cabf46152fd2aae0b34a75c177e"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93cd09e191f38e790e4ac967e7e6725c3331524689e5e5f14196a2b99bea8ad1"
 dependencies = [
  "http 1.5.0",
  "indicatif",

@@ -18603,3 +18603,78 @@ fn viz_smart_dictionary_declares_the_denominator_unit() {
         "the flag should have overridden the dictionary's unit: {html}"
     );
 }
+
+// A per-region MEDIAN can be constant even when the underlying column is not, so nothing upstream
+// screens it: `fatal_count` on the PA crashes gallery figure is 99% zeros, which gave all 67
+// counties a median of 0. Drawing that paints every polygon the same shade and still numbers them
+// "rank 1 of N" in the hover -- an ordering invented entirely from ties. These two tests pin both
+// directions of the guard, since suppressing too eagerly would silently drop a legitimate map.
+//
+// The values below differ WITHIN each region (so `SkipReason::ConstantColumn` does not fire on the
+// column) while every region's median is the same 5.
+const MEDIAN_REGIONS_GEOJSON: &str = r#"{"type":"FeatureCollection","features":[
+{"type":"Feature","id":"42001","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+{"type":"Feature","id":"42003","properties":{},"geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}},
+{"type":"Feature","id":"42017","properties":{},"geometry":{"type":"Polygon","coordinates":[[[2,0],[2,1],[3,1],[3,0],[2,0]]]}},
+{"type":"Feature","id":"42049","properties":{},"geometry":{"type":"Polygon","coordinates":[[[3,0],[3,1],[4,1],[4,0],[3,0]]]}},
+{"type":"Feature","id":"42133","properties":{},"geometry":{"type":"Polygon","coordinates":[[[4,0],[4,1],[5,1],[5,0],[4,0]]]}}]}"#;
+
+const MEDIAN_REGIONS_DICT: &str = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema",
+"title":"median_regions","type":"object",
+"x-qsv":{"grain":"one row = one record","grain_unit":"record"},
+"properties":{
+"county_fips":{"type":"string","title":"County","x-qsv":{"qsv_type":"String","role":"dimension","concept":"geo.county_fips","content_type":"category"}},
+"category":{"type":"string","title":"Category","x-qsv":{"qsv_type":"String","role":"dimension","concept":"category.type","content_type":"category"}},
+"value":{"type":"number","title":"Value","x-qsv":{"qsv_type":"Float","role":"measure","concept":"measure.count","aggregation":"sum"}}}}"#;
+
+fn median_region_html(name: &str, csv: &str) -> String {
+    let wrk = Workdir::new(name);
+    wrk.create_from_string("m.csv", csv);
+    wrk.create_from_string("r.geojson", MEDIAN_REGIONS_GEOJSON);
+    wrk.create_from_string("d.schema.json", MEDIAN_REGIONS_DICT);
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "m.csv",
+        "--geojson",
+        "r.geojson",
+        "--feature-id-key",
+        "id",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success(), "viz smart failed: {out:?}");
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+#[test]
+fn viz_smart_skips_median_region_map_when_every_region_shares_one_median() {
+    // each region: three DIFFERENT values whose median is 5
+    let html = median_region_html(
+        "viz_smart_skips_median_region_map_when_every_region_shares_one_median",
+        "county_fips,category,value\n42001,a,1\n42001,b,5\n42001,a,9\n42003,b,4\n42003,a,5\n42003,\
+         b,6\n42017,a,0\n42017,b,5\n42017,a,10\n42049,b,2\n42049,a,5\n42049,b,8\n42133,a,3\n42133,\
+         b,5\n42133,a,7\n",
+    );
+    assert!(
+        !html.contains("median Value"),
+        "a median map where every region is 5 conveys nothing and its ranks are pure ties, so it \
+         must not be drawn: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_draws_median_region_map_when_the_medians_differ() {
+    // same shape, but each region's median is distinct -- the map is informative and must survive
+    let html = median_region_html(
+        "viz_smart_draws_median_region_map_when_the_medians_differ",
+        "county_fips,category,value\n42001,a,1\n42001,b,2\n42001,a,3\n42003,b,10\n42003,a,20\\
+         n42003,b,30\n42017,a,5\n42017,b,6\n42017,a,7\n42049,b,40\n42049,a,50\n42049,b,60\n42133,\
+         a,70\n42133,b,80\n42133,a,90\n",
+    );
+    assert!(
+        html.contains("median Value"),
+        "medians 2/20/6/50/80 vary, so the median region map must still be drawn: {html}"
+    );
+}

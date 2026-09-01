@@ -1163,8 +1163,8 @@ SCREENSHOTS = [
             "<b>ACS population</b> onto the same regions. So the Data Schematic draws <b>both</b> "
             "maps: the raw <code>count by County Name</code> (labelled &ldquo;not adjusted for "
             "region size&rdquo;) and <code>crash incident per 1,000 residents</code> beneath it. "
-            "<b>They tell opposite stories.</b> Allegheny (261,561 crashes) and Philadelphia "
-            "(253,582) top the count map &mdash; which is largely a population map &mdash; while "
+            "<b>They tell opposite stories.</b> Allegheny (286,238 crashes) and Philadelphia "
+            "(274,824) top the count map &mdash; which is largely a population map &mdash; while "
             "on the rate map <b>Philadelphia ranks 67th of 67</b> (174 per 1,000) and Allegheny "
             "51st (231); rural <b>Wyoming</b> (486) and <b>Fulton</b> (483) lead. Two honest "
             "caveats the map cannot state for itself: the rates are <b>23-year cumulative</b>, not "
@@ -1173,7 +1173,7 @@ SCREENSHOTS = [
             "counties carrying I-80 and I-70 come out on top. The ACS vintage is <b>pinned</b> "
             "(<code>census@2024</code>): unpinned, qsv probes the newest published release against "
             "today, so a rebuild next year would silently re-vintage every number on this page. "
-            "The standalone Data Schematic is a ~24&nbsp;MB self-contained page &mdash; too large "
+            "The standalone Data Schematic is a ~17&nbsp;MB self-contained page &mdash; too large "
             "to embed inline &mdash; so this is a screenshot: <b>click it to open the fully "
             "interactive Data Schematic in a new window</b>."),
         "image": "pa-crashes-visual-datadic.webp",

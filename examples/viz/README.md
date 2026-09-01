@@ -52,7 +52,7 @@ in Portuguese (`--language pt`) and Spanish (`--language es`), and one **per-cap
 Schematic draws the raw-count map and the rate map side by side (it is also the only **light**
 dashboard, `--theme plotly_white`). They are shown as scaled preview images that open
 the Data Schematic in its own popup window, rather than embedded, so the gallery page stays light
-(those pages run 3.9&ndash;23.7&nbsp;MB each). `gen_gallery.py` still regenerates the NYC one from
+(those pages run 3.9&ndash;20.9&nbsp;MB each). `gen_gallery.py` still regenerates the NYC one from
 the committed `nyc_311.csv`; the other five are committed artifacts whose source data is not in
 the repo, so they are reused as-is.
 

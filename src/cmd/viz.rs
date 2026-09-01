@@ -28516,7 +28516,16 @@ fn build_smart_summary_choropleth_panels(
             med_locs.push(k.clone());
             med_z.push(median);
         }
-        if med_locs.len() >= 2 {
+        // ... and every region must not share ONE median. A single-valued median map paints every
+        // polygon the same shade and still numbers them "rank 1 of N" in the hover -- an ordering
+        // invented entirely from ties. A 99%-zero measure does exactly this: on the PA crashes
+        // figure `fatal_count` gives all 67 counties a median of 0. Same principle the column
+        // router already applies as `SkipReason::ConstantColumn` -- a constant has no distribution
+        // to draw -- applied to the AGGREGATED values, which is where the constancy appears here.
+        // Exact equality is deliberate: this suppresses only the degenerate case, not
+        // near-uniform maps (screening those was proposed and rejected in #4342).
+        let med_varies = med_z.iter().any(|v| *v != med_z[0]);
+        if med_locs.len() >= 2 && med_varies {
             let med_names = aligned_region_names(&features, &med_locs);
             let med_label = format!("median {measure_name}");
             let med_hover =

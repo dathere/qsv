@@ -18610,8 +18610,11 @@ fn viz_smart_dictionary_declares_the_denominator_unit() {
 // "rank 1 of N" in the hover -- an ordering invented entirely from ties. These two tests pin both
 // directions of the guard, since suppressing too eagerly would silently drop a legitimate map.
 //
-// The values below differ WITHIN each region (so `SkipReason::ConstantColumn` does not fire on the
-// column) while every region's median is the same 5.
+// The fixtures are RAW strings with real newlines rather than "\n"-escaped one-liners. An earlier
+// revision used escapes with trailing-backslash continuations and `cargo +nightly fmt`
+// (format_strings) re-wrapped one of them mid-escape, turning `\n\` + newline into `\\` + newline
+// + `n`. That silently produced the records `42003,a,20\` and `         n42003,b,30`, and the test
+// still passed because the OTHER regions' medians varied. Raw strings carry no escapes to split.
 const MEDIAN_REGIONS_GEOJSON: &str = r#"{"type":"FeatureCollection","features":[
 {"type":"Feature","id":"42001","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
 {"type":"Feature","id":"42003","properties":{},"geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}},
@@ -18627,7 +18630,61 @@ const MEDIAN_REGIONS_DICT: &str = r#"{"$schema":"https://json-schema.org/draft/2
 "category":{"type":"string","title":"Category","x-qsv":{"qsv_type":"String","role":"dimension","concept":"category.type","content_type":"category"}},
 "value":{"type":"number","title":"Value","x-qsv":{"qsv_type":"Float","role":"measure","concept":"measure.count","aggregation":"sum"}}}}"#;
 
+// every region: three DIFFERENT values whose median is 5. The column itself is NOT constant, so
+// `SkipReason::ConstantColumn` does not fire upstream and the rows do reach the median panel.
+const MEDIAN_CONSTANT_CSV: &str = r"county_fips,category,value
+42001,a,1
+42001,b,5
+42001,a,9
+42003,b,4
+42003,a,5
+42003,b,6
+42017,a,0
+42017,b,5
+42017,a,10
+42049,b,2
+42049,a,5
+42049,b,8
+42133,a,3
+42133,b,5
+42133,a,7
+";
+
+// same shape, but the per-region medians are 2 / 20 / 6 / 50 / 80
+const MEDIAN_VARYING_CSV: &str = r"county_fips,category,value
+42001,a,1
+42001,b,2
+42001,a,3
+42003,b,10
+42003,a,20
+42003,b,30
+42017,a,5
+42017,b,6
+42017,a,7
+42049,b,40
+42049,a,50
+42049,b,60
+42133,a,70
+42133,b,80
+42133,a,90
+";
+
 fn median_region_html(name: &str, csv: &str) -> String {
+    // guard the fixture itself: a mangled escape once produced a stray `         n42003,b,30`
+    // record that still let the assertion pass, so verify the shape before trusting the run
+    for (i, line) in csv.lines().enumerate().skip(1) {
+        let fields: Vec<&str> = line.split(',').collect();
+        assert_eq!(fields.len(), 3, "fixture record {i} is malformed: {line:?}");
+        assert!(
+            fields[0].len() == 5 && fields[0].bytes().all(|b| b.is_ascii_digit()),
+            "fixture record {i} has a non-FIPS region: {line:?}"
+        );
+        assert!(
+            fields[2].parse::<f64>().is_ok(),
+            "fixture record {i} has a non-numeric measure: {line:?}"
+        );
+    }
+
     let wrk = Workdir::new(name);
     wrk.create_from_string("m.csv", csv);
     wrk.create_from_string("r.geojson", MEDIAN_REGIONS_GEOJSON);
@@ -18650,12 +18707,9 @@ fn median_region_html(name: &str, csv: &str) -> String {
 
 #[test]
 fn viz_smart_skips_median_region_map_when_every_region_shares_one_median() {
-    // each region: three DIFFERENT values whose median is 5
     let html = median_region_html(
         "viz_smart_skips_median_region_map_when_every_region_shares_one_median",
-        "county_fips,category,value\n42001,a,1\n42001,b,5\n42001,a,9\n42003,b,4\n42003,a,5\n42003,\
-         b,6\n42017,a,0\n42017,b,5\n42017,a,10\n42049,b,2\n42049,a,5\n42049,b,8\n42133,a,3\n42133,\
-         b,5\n42133,a,7\n",
+        MEDIAN_CONSTANT_CSV,
     );
     assert!(
         !html.contains("median Value"),
@@ -18666,12 +18720,9 @@ fn viz_smart_skips_median_region_map_when_every_region_shares_one_median() {
 
 #[test]
 fn viz_smart_draws_median_region_map_when_the_medians_differ() {
-    // same shape, but each region's median is distinct -- the map is informative and must survive
     let html = median_region_html(
         "viz_smart_draws_median_region_map_when_the_medians_differ",
-        "county_fips,category,value\n42001,a,1\n42001,b,2\n42001,a,3\n42003,b,10\n42003,a,20\\
-         n42003,b,30\n42017,a,5\n42017,b,6\n42017,a,7\n42049,b,40\n42049,a,50\n42049,b,60\n42133,\
-         a,70\n42133,b,80\n42133,a,90\n",
+        MEDIAN_VARYING_CSV,
     );
     assert!(
         html.contains("median Value"),

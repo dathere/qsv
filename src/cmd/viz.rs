@@ -1020,7 +1020,7 @@ use plotly::{
     common::{
         Anchor, ColorBar, ColorScale, ColorScalePalette, Domain, ErrorData, ErrorType,
         ExponentFormat, Fill, Font, HoverInfo, Line, Marker, Mode, Orientation, Pattern,
-        PatternShape, TextPosition, TickMode, Title,
+        PatternShape, Side, TextPosition, TickMode, Title,
     },
     funnel::Connector as FunnelConnector,
     indicator::{Delta, Gauge, GaugeAxis, Mode as IndicatorMode, Number},
@@ -9236,6 +9236,21 @@ fn geojson_lat_lons(geojson: &serde_json::Value) -> (Vec<f64>, Vec<f64>) {
     (lats, lons)
 }
 
+/// Colorbar for a choropleth, with the measure label running ALONG the bar.
+///
+/// A region map's measure label is often a phrase rather than a word — a `--denominator`
+/// rate map's is "crash incident per 1,000 residents" — and plotly's default colorbar title
+/// sits horizontally above the bar. The layout then reserves right margin equal to the
+/// title's full width, so the wider the label the narrower the map: on the PA crashes
+/// figure the rate map rendered ~27% narrower than the plain count map directly above it,
+/// which reads as the two maps being drawn at different scales when they are not.
+///
+/// `Side::Right` runs the title along the bar, so the reserved margin is the bar plus its
+/// tick labels regardless of label length, and a rate map lines up with its count map.
+fn choropleth_color_bar(label: &str) -> ColorBar {
+    ColorBar::new().title(Title::with_text(escape_hover(label)).side(Side::Right))
+}
+
 /// Build the complete `Plot` for `viz choropleth`: fill whole geographic regions colored by an
 /// aggregated value. Defaults to a token-free `Choropleth` on the projection `geo` subplot; `--map`
 /// switches to a MapLibre `ChoroplethMap` (GeoJSON-only). Region keys come from `--locations`, or
@@ -9576,7 +9591,7 @@ fn build_choropleth_plot(
             .feature_id_key(args.flag_feature_id_key.as_deref().unwrap_or("id"))
             .color_scale(ColorScale::Palette(palette))
             .show_scale(true)
-            .color_bar(ColorBar::new().title(escape_hover(&measure_label)))
+            .color_bar(choropleth_color_bar(&measure_label))
             .marker(
                 ChoroplethMarker::new()
                     .line(Line::new().width(0.5))
@@ -9617,7 +9632,7 @@ fn build_choropleth_plot(
             .location_mode(mode)
             .color_scale(ColorScale::Palette(palette))
             .show_scale(true)
-            .color_bar(ColorBar::new().title(escape_hover(&measure_label)))
+            .color_bar(choropleth_color_bar(&measure_label))
             .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
             .hover_text_array(hover_text)
             .hover_info(HoverInfo::Text);
@@ -28501,7 +28516,16 @@ fn build_smart_summary_choropleth_panels(
             med_locs.push(k.clone());
             med_z.push(median);
         }
-        if med_locs.len() >= 2 {
+        // ... and every region must not share ONE median. A single-valued median map paints every
+        // polygon the same shade and still numbers them "rank 1 of N" in the hover -- an ordering
+        // invented entirely from ties. A 99%-zero measure does exactly this: on the PA crashes
+        // figure `fatal_count` gives all 67 counties a median of 0. Same principle the column
+        // router already applies as `SkipReason::ConstantColumn` -- a constant has no distribution
+        // to draw -- applied to the AGGREGATED values, which is where the constancy appears here.
+        // Exact equality is deliberate: this suppresses only the degenerate case, not
+        // near-uniform maps (screening those was proposed and rejected in #4342).
+        let med_varies = med_z.iter().any(|v| *v != med_z[0]);
+        if med_locs.len() >= 2 && med_varies {
             let med_names = aligned_region_names(&features, &med_locs);
             let med_label = format!("median {measure_name}");
             let med_hover =
@@ -35909,7 +35933,7 @@ fn inline_panel_plot_choropleth_map(panel: &Panel, theme: Option<BuiltinTheme>) 
         .feature_id_key(feature_id_key.clone())
         .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
         .show_scale(true)
-        .color_bar(ColorBar::new().title(escape_hover(measure_label)))
+        .color_bar(choropleth_color_bar(measure_label))
         .marker(
             ChoroplethMarker::new()
                 .line(Line::new().width(0.5))
@@ -35987,7 +36011,7 @@ fn inline_panel_plot_choropleth(panel: &Panel, theme: Option<BuiltinTheme>) -> P
         .location_mode(location_mode.clone())
         .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
         .show_scale(true)
-        .color_bar(ColorBar::new().title(escape_hover(measure_label)))
+        .color_bar(choropleth_color_bar(measure_label))
         .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
         .hover_text_array(hover_text.clone())
         .hover_info(HoverInfo::Text);

@@ -1146,6 +1146,45 @@ SCREENSHOTS = [
                   "--dictionary calidad-aire-pm-colombia.schema.json --dict-info --bivariate "
                   "-o smart-colombia-calidad-aire.html"),
     },
+    {
+        "title": "Pennsylvania crashes — Census per-capita county rates",
+        "win":   "smart_pa_crashes",
+        "desc": (
+            "The gallery's only <code>--denominator census</code> figure, and the only one with a "
+            "<b>light</b> theme (<code>--theme plotly_white</code>). <b>3,088,272 PennDOT crash "
+            "records</b> across all <b>67 Pennsylvania counties</b> "
+            '(<a href="https://data.pa.gov/Transportation/Crash-Incident-Details-CY-1997-Current-'
+            'Annual-Count/dc5b-gebx">data.pa.gov <code>dc5b-gebx</code></a>, a 19-column slice of '
+            "a 219-column table). <b>The dataset title says &ldquo;CY 1997 - Current&rdquo; but "
+            "the data stops at 2020</b> &mdash; the figure is captioned for what is actually in "
+            "it. <code>--geojson auto</code> does double duty: it fetches the county boundaries "
+            "from the Census TIGERweb service <i>and</i> canonicalizes the county-name column to "
+            "Census GEOIDs, which is what lets <code>--denominator census@2024</code> key fetched "
+            "<b>ACS population</b> onto the same regions. So the Data Schematic draws <b>both</b> "
+            "maps: the raw <code>count by County Name</code> (labelled &ldquo;not adjusted for "
+            "region size&rdquo;) and <code>crash incident per 1,000 residents</code> beneath it. "
+            "<b>They tell opposite stories.</b> Allegheny (286,238 crashes) and Philadelphia "
+            "(274,824) top the count map &mdash; which is largely a population map &mdash; while "
+            "on the rate map <b>Philadelphia ranks 67th of 67</b> (174 per 1,000) and Allegheny "
+            "51st (231); rural <b>Wyoming</b> (486) and <b>Fulton</b> (483) lead. Two honest "
+            "caveats the map cannot state for itself: the rates are <b>23-year cumulative</b>, not "
+            "annual (~21 per 1,000 per year), and a <i>per-resident</i> rate under-counts "
+            "commuter and through-traffic exposure, which is very likely why low-population "
+            "counties carrying I-80 and I-70 come out on top. The ACS vintage is <b>pinned</b> "
+            "(<code>census@2024</code>): unpinned, qsv probes the newest published release against "
+            "today, so a rebuild next year would silently re-vintage every number on this page. "
+            "The standalone Data Schematic is a ~17&nbsp;MB self-contained page &mdash; too large "
+            "to embed inline &mdash; so this is a screenshot: <b>click it to open the fully "
+            "interactive Data Schematic in a new window</b>."),
+        "image": "pa-crashes-visual-datadic.webp",
+        "href":  "smart_pa_crashes.html",
+        "cmd":   ("qsv viz smart pa_crashes.csv --smarter "
+                  "--dictionary pa_crashes.schema.json --dict-info --bivariate "
+                  "--theme plotly_white --geojson auto --denominator census@2024 "
+                  "-o smart_pa_crashes.html "
+                  "--dataset-pid https://data.pa.gov/Transportation/"
+                  "Crash-Incident-Details-CY-1997-Current-Annual-Count/dc5b-gebx"),
+    },
 ]
 
 

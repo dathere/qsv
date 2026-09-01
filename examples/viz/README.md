@@ -43,14 +43,17 @@ Reuse is the default for a reason: re-inferring is the one step here that is not
 [Curating a dictionary](#curating-a-dictionary) for why a committed sidecar is the artifact of
 record.
 
-The gallery closes with five clickable **screenshot link-outs** — `smart_nyc311.html`,
-`pitt311data.html`, `smart_boston_311_2025.html`, `smart-brazil-lpg-4-semanas.html` and
-`smart-colombia-calidad-aire.html` — full `--dict-info` **visual data dictionaries**: three over
-real municipal 311 data, plus two **localized** dashboards rendered entirely in Portuguese
-(`--language pt`) and Spanish (`--language es`). They are shown as scaled preview images that open
+The gallery closes with six clickable **screenshot link-outs** — `smart_nyc311.html`,
+`pitt311data.html`, `smart_boston_311_2025.html`, `smart-brazil-lpg-4-semanas.html`,
+`smart-colombia-calidad-aire.html` and `smart_pa_crashes.html` — full `--dict-info` **visual data
+dictionaries**: three over real municipal 311 data, two **localized** dashboards rendered entirely
+in Portuguese (`--language pt`) and Spanish (`--language es`), and one **per-capita rate** map over
+3.1M PennDOT crash records where `--denominator census` fetches ACS county population so the Data
+Schematic draws the raw-count map and the rate map side by side (it is also the only **light**
+dashboard, `--theme plotly_white`). They are shown as scaled preview images that open
 the Data Schematic in its own popup window, rather than embedded, so the gallery page stays light
-(those pages run 3.9&ndash;20.6&nbsp;MB each). `gen_gallery.py` still regenerates the NYC one from
-the committed `nyc_311.csv`; the other four are committed artifacts whose source data is not in
+(those pages run 3.9&ndash;20.9&nbsp;MB each). `gen_gallery.py` still regenerates the NYC one from
+the committed `nyc_311.csv`; the other five are committed artifacts whose source data is not in
 the repo, so they are reused as-is.
 
 **▶ View it rendered** (GitHub Pages, served with the correct `text/html` type):
@@ -114,6 +117,7 @@ render the dictionary as an in-page **Data Dictionary** tab. The committed ones 
 | `nyc_capital_projects_dict.schema.json` | 7 | `nyc_capital_projects.csv` — declares the three budget columns as an `x-qsv.relationships` pipeline. Their totals grow, so the panel is drawn as a **bridge** rather than a funnel |
 | `onboarding_funnel_dict.schema.json` | 6 | `onboarding_funnel.csv` — declares the four stage columns as a pipeline. Their totals nest, so the same declaration earns a **funnel** |
 | `ultimas-4-semanas-glp.schema.json` | 16 | `ultimas-4-semanas-glp.ssv` (not committed) for the Portuguese LPG-prices link-out Data Schematic |
+| `pa_crashes.schema.json` | 19 | `pa_crashes.csv` (not committed — 396&nbsp;MB, 3,088,272 PennDOT crash records) for the Pennsylvania per-capita link-out Data Schematic — **hand-tuned**: describegpt tagged the four outcome counts (`fatal_count`, `injury_count`, `person_count`, `vehicle_count`) as `role=dimension` with an `unknown` concept, so they charted as categories and produced no KPI totals; they are additive counts and carry `role=measure` / `measure.count` / `aggregation: sum` here. `hour_of_day` was inferred as a `timestamp` and got skipped entirely — it is a cyclical `category.type` dimension. The geo concepts (`county_name` → `geo.county`, `state` → `geo.state`) were inferred correctly and are load-bearing: `geo.state` is what disambiguates county names that occur in several states, and `viz smart` takes it from the dictionary rather than `--region-state` |
 | `calidad-aire-pm-colombia.schema.json` | 25 | `calidad-aire-pm-colombia.csv` (not committed) for the Spanish air-quality link-out Data Schematic — **hand-tuned twice**: `Latitud`/`Longitud` carry explicit `geo.latitude`/`geo.longitude` concepts (viz's header-name fallback only matches the English `lat`/`lon`, so without them there is no map at all), and only the additive columns keep `role=measure`, since viz detects non-additive measures from an English token list and would otherwise SUM Spanish `Promedio`/`Mediana`/`Porcentaje` into meaningless KPI totals |
 
 ### Curating a dictionary

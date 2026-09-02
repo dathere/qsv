@@ -20443,6 +20443,18 @@ fn route_from_concept(concept: &str) -> Option<(Route, Option<Agg>)> {
         "measure" => match leaf {
             // ratios/percentages average over time; counts/amounts are additive.
             "ratio" => (Route::Measure, Some(Agg::Mean)),
+            // A population or an area describes the REGION a sibling geo column names, not the row
+            // it sits on, so the same figure repeats on every row of that region. Summing it
+            // across rows multiplies each region's value by its row count — a "Population by
+            // County" bar that reads 3,778,176 for a county of 314,848 (issue #4528).
+            //
+            // Mean is correct in BOTH dataset shapes, which is why this is a routing decision
+            // rather than a conditional one: grouped by its own region it returns the region's
+            // exact figure (the mean of N identical values IS that value), and on a
+            // one-row-per-region extract sum and mean coincide. Grouped by some OTHER dimension it
+            // gives that group's average regional population, which is at least a quantity;
+            // the sum there is meaningless.
+            "population" | "area" => (Route::Measure, Some(Agg::Mean)),
             _ => (Route::Measure, Some(Agg::Sum)),
         },
         // unknown namespace (or the bare "unknown" token) -> defer to role
@@ -30492,6 +30504,71 @@ fn label_ends_with(label: &str, suffix: &str) -> bool {
             .ends_with(&suffix.to_lowercase())
 }
 
+/// Concepts whose value describes the REGION a sibling geo column names rather than the row it
+/// sits on, so the same figure repeats on every row of that region (issue #4528).
+const REGION_LEVEL_CONCEPTS: &[&str] = &["measure.population", "measure.area"];
+
+/// True when `field` holds a REGION-LEVEL value that REPEATS across rows, which makes `s.sum` —
+/// the stats cache's row-wise total — a multiple of the real one (issue #4528).
+///
+/// Two independent things must hold, and both are answerable from the dictionary plus the stats
+/// cache with no data pass:
+///
+///   1. the column is region-level — its `concept` says so, or some region column names it as that
+///      region's `x-qsv.denominator`; and
+///   2. the dataset is EVENT-level — some region column has fewer distinct values than the dataset
+///      has rows, i.e. regions repeat.
+///
+/// Condition 2 is what keeps the tidy case working. A one-row-per-county extract has
+/// `region cardinality == row count`, nothing repeats, and "Total Population" is both correct and
+/// worth showing; suppressing it there would trade a right answer for a missing one. It is
+/// deliberately keyed on the REGION column's cardinality rather than on the population column's
+/// own, so duplicate population VALUES in a tidy extract (two counties of identical size) do not
+/// read as repetition.
+///
+/// A `row_count` of 0 means the count was unavailable, and yields `false` — the pre-#4528
+/// behaviour — rather than suppressing a tile on an unknown.
+///
+/// Only the KPI tile needs this test. The grouped bar is handled upstream in `route_from_concept`,
+/// which routes these concepts to `Agg::Mean` — correct in both shapes, so it needs no condition.
+/// The tile cannot take the same route: its headline is the dataset-wide `s.sum`, and no
+/// aggregation available here can state the true total without a region-keyed dedupe pass.
+fn is_repeated_region_level(
+    field: &str,
+    stats: &[crate::cmd::stats::StatsData],
+    dict: Option<&DictData>,
+    row_count: u64,
+) -> bool {
+    let Some(dict) = dict else {
+        return false;
+    };
+    // An EXPLICIT `x-qsv.aggregation` is the author stating how this column combines, and it wins
+    // here exactly as it does everywhere else (#4401's precedent: a stated aggregation overrides
+    // inference in both directions). Keeps this guard consistent with the `col_sems` denominator
+    // pass, which carries the same exemption.
+    if dict.rows.get(field).and_then(|r| r.aggregation).is_some() {
+        return false;
+    }
+    let region_level = dict
+        .rows
+        .get(field)
+        .is_some_and(|r| REGION_LEVEL_CONCEPTS.contains(&r.concept.trim()))
+        || dict
+            .rows
+            .values()
+            .any(|r| r.denominator.as_deref() == Some(field));
+    if !region_level {
+        return false;
+    }
+    dict.rows.iter().any(|(name, r)| {
+        let leaf = r.concept.trim().split_once('.').map_or("", |(_, l)| l);
+        REGION_CODE_LEAVES.contains(&leaf)
+            && stats
+                .iter()
+                .any(|s| s.field == *name && s.cardinality < row_count)
+    })
+}
+
 /// Build the leading KPI-tile row for `viz smart`: the headline numeric measures (capped at
 /// `KPI_MAX_TILES`). A measure tile becomes a gauge when its dictionary supplies a `gauge_range`
 /// that CONTAINS the observed value (else it falls back to a plain number — never a misleading
@@ -30503,6 +30580,7 @@ fn build_kpi_row(
     stats: &[crate::cmd::stats::StatsData],
     panels: &[Panel],
     dict: Option<&DictData>,
+    row_count: u64,
 ) -> Option<Panel> {
     if stats.is_empty() {
         return None;
@@ -30539,6 +30617,14 @@ fn build_kpi_row(
             continue;
         };
         if !matches!(s.r#type.as_str(), "Integer" | "Float") {
+            continue;
+        }
+        // A region-level column that repeats across rows would headline a MULTIPLE of its real
+        // total -- "Total Population 28.8M" for 2.4M of residents -- and no aggregation available
+        // here can state the true figure without a region-keyed dedupe pass. Omit the tile rather
+        // than print a false one, the same rule the gauge guard applies just below: a missing
+        // number beats a misleading one (issue #4528).
+        if is_repeated_region_level(&s.field, stats, dict, row_count) {
             continue;
         }
         let row = dict.and_then(|d| d.rows.get(&s.field));
@@ -31056,10 +31142,39 @@ impl<'a> SmartCtx<'a> {
             // Already rejected in run() before any work started.
             viz_i18n::Resolution::UnknownRequested(_) => {},
         }
-        let col_sems: Vec<ColSemantics> = stats
+        let mut col_sems: Vec<ColSemantics> = stats
             .iter()
             .map(|s| derive_semantics(s, dict_data.as_ref().and_then(|d| d.rows.get(&s.field))))
             .collect();
+        // A column some REGION names as its `x-qsv.denominator` is region-level: its value repeats
+        // identically on every row of that region, so summing it across rows multiplies each
+        // region's figure by its row count (issue #4528). `measure.population`/`measure.area`
+        // already route to Mean in `route_from_concept`, but a denominator hint lives on a
+        // DIFFERENT column than the one it describes, and `derive_semantics` sees one column at a
+        // time — so this cross-column fact can only be applied here, after every row is mapped.
+        //
+        // Unconditional, unlike the KPI tile's sibling check: Mean is correct in BOTH dataset
+        // shapes, since the mean of N identical values IS that value and a one-row-per-region
+        // extract has N = 1. Only the tile, whose headline is a dataset-wide total, has to care
+        // whether regions actually repeat.
+        //
+        // An EXPLICIT `x-qsv.aggregation` still wins, per the #4401 precedent that a stated
+        // aggregation overrides inference in both directions.
+        if let Some(d) = dict_data.as_ref() {
+            for (i, s) in stats.iter().enumerate() {
+                let named_as_denominator = d
+                    .rows
+                    .values()
+                    .any(|r| r.denominator.as_deref() == Some(s.field.as_str()));
+                if named_as_denominator
+                    && col_sems[i].route == Route::Measure
+                    && d.rows.get(&s.field).and_then(|r| r.aggregation).is_none()
+                {
+                    col_sems[i].agg = Some(Agg::Mean);
+                }
+            }
+        }
+        let col_sems = col_sems;
 
         // Resolve the date-parsing preference per column ONCE (issue #4303). A dictionary that
         // declares a column's strftime format (`content_type: "date:%m/%d/%Y"`) is authoritative
@@ -33571,10 +33686,20 @@ impl<'a> SmartCtx<'a> {
         // the render-path choice) so it stays invisible to them and simply lands at index 0, on top
         // of the Data Schematic. HTML only: Indicator tiles are domain-positioned and never enter a
         // static image.
-        if !self.out_format.is_image()
-            && let Some(panel) = build_kpi_row(&self.stats, &self.panels, self.dict_data.as_ref())
-        {
-            self.panels.insert(0, panel);
+        if !self.out_format.is_image() {
+            // Resolved BEFORE the immutable borrows below, since `row_count()` takes `&mut self`.
+            // Memoized and already warm by this point on the smart path (the grouped-violin and
+            // box-points builders pull it earlier), so this adds no I/O in practice. It tells the
+            // tile builder whether regions repeat across rows (issue #4528).
+            let row_count = self.row_count();
+            if let Some(panel) = build_kpi_row(
+                &self.stats,
+                &self.panels,
+                self.dict_data.as_ref(),
+                row_count,
+            ) {
+                self.panels.insert(0, panel);
+            }
         }
 
         self.progress.set_message("Rendering Data Schematic…");
@@ -39924,6 +40049,131 @@ mod tests {
         assert_eq!(route_from_concept("unknown"), None);
     }
 
+    /// Issue #4528. A population or an area describes the REGION, not the row, so the same figure
+    /// repeats on every row of that region and must never be summed across rows.
+    #[test]
+    fn region_level_measures_average_rather_than_sum() {
+        assert_eq!(
+            route_from_concept("measure.population"),
+            Some((Route::Measure, Some(Agg::Mean)))
+        );
+        assert_eq!(
+            route_from_concept("measure.area"),
+            Some((Route::Measure, Some(Agg::Mean)))
+        );
+        // ... while an ordinary per-row amount stays additive, so this is a targeted exemption
+        // rather than a change to the whole `measure` namespace
+        assert_eq!(
+            route_from_concept("measure.amount"),
+            Some((Route::Measure, Some(Agg::Sum)))
+        );
+        assert_eq!(
+            route_from_concept("measure.count"),
+            Some((Route::Measure, Some(Agg::Sum)))
+        );
+    }
+
+    fn region_stats(
+        region: &str,
+        measure: &str,
+        cardinality: u64,
+    ) -> Vec<crate::cmd::stats::StatsData> {
+        let mut r = stat("String", cardinality, None);
+        r.field = region.to_string();
+        let mut m = stat("Integer", cardinality, None);
+        m.field = measure.to_string();
+        vec![r, m]
+    }
+
+    /// Issue #4528. A region-level column repeats on every row of its region, so the stats cache's
+    /// row-wise `sum` is a multiple of the true total ("Total Population 28.8M" for 2.4M of
+    /// residents). The KPI tile must drop it — but ONLY when the dataset actually repeats regions.
+    #[test]
+    fn repeated_region_level_is_detected_only_on_event_level_data() {
+        let schema = r#"{
+          "properties": {
+            "county_fips": {"x-qsv": {"concept": "geo.county_fips", "role": "dimension"}},
+            "population":  {"x-qsv": {"concept": "measure.population", "role": "measure"}},
+            "cases":       {"x-qsv": {"concept": "measure.count", "role": "measure"}}
+          }
+        }"#;
+        let dict = parse_dictionary_semantics(schema).expect("schema parses");
+        let stats = region_stats("county_fips", "population", 8);
+
+        // event-level: 8 counties across 96 rows, so each population repeats 12x
+        assert!(is_repeated_region_level(
+            "population",
+            &stats,
+            Some(&dict),
+            96
+        ));
+        // tidy: one row per county. Nothing repeats and "Total Population" is CORRECT there —
+        // suppressing it would trade a right answer for a missing one.
+        assert!(!is_repeated_region_level(
+            "population",
+            &stats,
+            Some(&dict),
+            8
+        ));
+        // an ordinary per-row measure is never region-level, whatever the dataset shape
+        assert!(!is_repeated_region_level("cases", &stats, Some(&dict), 96));
+        // no dictionary means no concepts, so nothing can be known to be region-level
+        assert!(!is_repeated_region_level("population", &stats, None, 96));
+        // an unavailable row count (0) must not suppress a tile on an unknown
+        assert!(!is_repeated_region_level(
+            "population",
+            &stats,
+            Some(&dict),
+            0
+        ));
+    }
+
+    /// An EXPLICIT `x-qsv.aggregation` is the author stating how the column combines, and it wins
+    /// here exactly as it does over `is_intensive_measure` (#4401) — in both directions. Keeps the
+    /// tile guard consistent with the `col_sems` denominator pass, which carries the same
+    /// exemption.
+    #[test]
+    fn an_explicit_aggregation_overrides_the_region_level_guard() {
+        let schema = r#"{
+          "properties": {
+            "county_fips": {"x-qsv": {"concept": "geo.county_fips", "role": "dimension"}},
+            "population":  {"x-qsv": {"concept": "measure.population", "role": "measure",
+                                      "aggregation": "sum"}}
+          }
+        }"#;
+        let dict = parse_dictionary_semantics(schema).expect("schema parses");
+        let stats = region_stats("county_fips", "population", 8);
+        assert!(
+            !is_repeated_region_level("population", &stats, Some(&dict), 96),
+            "a stated aggregation is the author's call and is honoured, even on event-level data"
+        );
+    }
+
+    /// The `x-qsv.denominator` hint is the second trigger: a column a region names as its
+    /// denominator is region-level even when its own concept says nothing more specific than
+    /// `measure.amount` — the shape a hand-authored sidecar (or a pre-#4523 dictionary) has.
+    #[test]
+    fn a_declared_denominator_column_is_region_level() {
+        let schema = r#"{
+          "properties": {
+            "county_fips": {"x-qsv": {"concept": "geo.county_fips", "role": "dimension",
+                                      "denominator": {"column": "residents"}}},
+            "residents":   {"x-qsv": {"concept": "measure.amount", "role": "measure"}}
+          }
+        }"#;
+        let dict = parse_dictionary_semantics(schema).expect("schema parses");
+        let stats = region_stats("county_fips", "residents", 8);
+        assert!(
+            is_repeated_region_level("residents", &stats, Some(&dict), 96),
+            "a column named as a region's denominator is region-level even when its own concept \
+             is only measure.amount"
+        );
+        assert!(
+            !is_repeated_region_level("residents", &stats, Some(&dict), 8),
+            "the tidy shape keeps its tile through the denominator trigger too"
+        );
+    }
+
     #[test]
     fn intensive_measure_detection() {
         // intensive quantities -> averaged, matched by label or field
@@ -45623,7 +45873,7 @@ mod tests {
         // decorated title + recorded stat_idx => tile still built
         let decorated =
             vec![Panel::new("amount (right-skewed)".to_string(), kind()).with_stat_idx(0)];
-        let row = build_kpi_row(&stats, &decorated, None).expect("KPI row for decorated panel");
+        let row = build_kpi_row(&stats, &decorated, None, 0).expect("KPI row for decorated panel");
         let PanelKind::KpiRow { tiles } = &row.kind else {
             panic!("expected a KpiRow");
         };
@@ -45639,13 +45889,13 @@ mod tests {
         }];
         let positional = vec![Panel::new("col 1".to_string(), kind()).with_stat_idx(0)];
         assert!(
-            build_kpi_row(&headerless_stats, &positional, None).is_some(),
+            build_kpi_row(&headerless_stats, &positional, None, 0).is_some(),
             "headerless columns must still produce a KPI tile"
         );
 
         // negative control: an overview panel carries no stats row, so it contributes no tile
         let overview = vec![Panel::new("amount".to_string(), kind())];
-        assert!(build_kpi_row(&stats, &overview, None).is_none());
+        assert!(build_kpi_row(&stats, &overview, None, 0).is_none());
     }
 
     #[test]
@@ -45738,7 +45988,7 @@ mod tests {
         // 192e9 is the NYC Capital Projects headline from issue #4393: it used to render as
         // "192G" via d3's `.3~s`.
         let (stats, panels, _) = kpi_fixture(192e9, None);
-        let row = build_kpi_row(&stats, &panels, None).expect("KPI row");
+        let row = build_kpi_row(&stats, &panels, None, 0).expect("KPI row");
         let tile = only_tile(&row);
         assert!((tile.value - 192.0).abs() < 1e-9, "value is scaled down");
         assert_eq!(tile.suffix.as_deref(), Some("B"));
@@ -45747,7 +45997,7 @@ mod tests {
         // ...and the small-magnitude path is untouched: below `kpi_number_format`'s own 10k SI
         // threshold a KPI still renders as a grouped whole number, not "5k".
         let (small_stats, small_panels, _) = kpi_fixture(5000.0, None);
-        let small = build_kpi_row(&small_stats, &small_panels, None).expect("KPI row");
+        let small = build_kpi_row(&small_stats, &small_panels, None, 0).expect("KPI row");
         let small_tile = only_tile(&small);
         assert!((small_tile.value - 5000.0).abs() < f64::EPSILON);
         assert_eq!(small_tile.suffix, None);
@@ -45767,7 +46017,7 @@ mod tests {
             ..DictRow::default()
         };
         let (stats, panels, dict) = kpi_fixture(2.4e9, Some(gauged));
-        let row = build_kpi_row(&stats, &panels, dict.as_ref()).expect("KPI row");
+        let row = build_kpi_row(&stats, &panels, dict.as_ref(), 0).expect("KPI row");
         let tile = only_tile(&row);
         assert!(tile.gauge.is_some());
         assert_eq!(tile.suffix, None, "a gauge tile keeps its unscaled value");
@@ -45779,7 +46029,7 @@ mod tests {
             ..DictRow::default()
         };
         let (stats2, panels2, dict2) = kpi_fixture(2.4e9, Some(targeted));
-        let row2 = build_kpi_row(&stats2, &panels2, dict2.as_ref()).expect("KPI row");
+        let row2 = build_kpi_row(&stats2, &panels2, dict2.as_ref(), 0).expect("KPI row");
         let tile2 = only_tile(&row2);
         assert!(tile2.target.is_some());
         assert_eq!(tile2.suffix, None, "a delta tile keeps its unscaled value");
@@ -45795,7 +46045,7 @@ mod tests {
             ..DictRow::default()
         };
         let (stats, panels, dict) = kpi_fixture(192e9, Some(money(Some("USD"))));
-        let row = build_kpi_row(&stats, &panels, dict.as_ref()).expect("KPI row");
+        let row = build_kpi_row(&stats, &panels, dict.as_ref(), 0).expect("KPI row");
         let tile = only_tile(&row);
         // the headline reads "$192B": symbol from the prefix, magnitude from the suffix
         assert_eq!(tile.prefix.as_deref(), Some("$"));
@@ -45803,12 +46053,12 @@ mod tests {
 
         // an ISO code the register doesn't know still labels the number, using the bare code
         let (s2, p2, d2) = kpi_fixture(192e9, Some(money(Some("ZZZ"))));
-        let row2 = build_kpi_row(&s2, &p2, d2.as_ref()).expect("KPI row");
+        let row2 = build_kpi_row(&s2, &p2, d2.as_ref(), 0).expect("KPI row");
         assert_eq!(only_tile(&row2).prefix.as_deref(), Some("ZZZ "));
 
         // no currency -> no prefix (a non-money measure is unmarked, as before)
         let (s3, p3, d3) = kpi_fixture(192e9, Some(money(None)));
-        let row3 = build_kpi_row(&s3, &p3, d3.as_ref()).expect("KPI row");
+        let row3 = build_kpi_row(&s3, &p3, d3.as_ref(), 0).expect("KPI row");
         assert_eq!(only_tile(&row3).prefix, None);
     }
 
@@ -45829,7 +46079,7 @@ mod tests {
             999_500_000.0,
         ] {
             let (stats, panels, _) = kpi_fixture(v, None);
-            let row = build_kpi_row(&stats, &panels, None).expect("KPI row");
+            let row = build_kpi_row(&stats, &panels, None, 0).expect("KPI row");
             let tile = only_tile(&row);
             let kpi_rendered = format!(
                 "{}{}",

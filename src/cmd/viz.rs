@@ -33084,7 +33084,7 @@ impl<'a> SmartCtx<'a> {
                     kept.push(p);
                 } else {
                     // `p.name` is the DECORATED panel title ("(right-skewed)", "(sampled)"), so it
-                    // is kept only for the stderr roll-up. The Data Dictionary drawer must rejoin
+                    // is kept only for the stderr roll-up. The Data Schematic drawer must rejoin
                     // by `stat_idx` — matching on the decorated title silently fails. An overview
                     // panel has no `stat_idx`, but also infinite interest, so it never lands here.
                     let field = p

@@ -155,6 +155,12 @@ CMD_CSS = ("figure .cmdbox{position:relative;margin:6px 4px 0}"
 NAV_CSS = (
     "html{scroll-behavior:smooth}"
     "figure{scroll-margin-top:64px}"
+    # legacy `#fig-...` fragments target a stub INSIDE the figure (see `legacy_anchor`), and
+    # scroll-margin applies to the scrolled-to element, not its ancestors -- so without this the
+    # stub lands at y=0 with the figure's title behind the sticky TOC, for both native fragment
+    # navigation and JUMP_JS's scrollIntoView. Block + zero height so it matches the figure's own
+    # offset while adding no layout box of its own.
+    "span.qsv-legacy-anchor{display:block;height:0;scroll-margin-top:64px}"
     "details.toc{position:sticky;top:0;z-index:30;max-width:1200px;margin:0 auto 16px;background:#fff;"
     "border:1px solid #e6e9f0;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05)}"
     "details.toc>summary{cursor:pointer;list-style:none;user-select:none;font-weight:600;font-size:13px;"
@@ -1086,8 +1092,8 @@ SCREENSHOTS = [
             'precos-de-combustiveis-e-de-glp">dados.gov.br</a>. This is the <b>localization</b> '
             "showcase: <code>--language pt</code> resolves through the curated <code>pt-BR</code> "
             "locale (the bare tag is a registered alias), so every piece of Data Schematic chrome — "
-            "<i>Descrição</i>, <i>Linhas</i>, <i>Colunas</i>, <i>Completude</i>, <i>Dicionário de "
-            "dados</i>, <i>Ver o gráfico</i> — plus the vendored plotly and DataTables locale "
+            "<i>Descrição</i>, <i>Linhas</i>, <i>Colunas</i>, <i>Completude</i>, "
+            "<i>Data Schematic</i>, <i>Ver o gráfico</i> — plus the vendored plotly and DataTables locale "
             "bundles all render in Portuguese. The input is a <b>semicolon-separated "
             "(<code>.ssv</code>)</b> export whose dates are day-first, so "
             "<code>QSV_PREFER_DMY=1</code> makes <code>Data da Coleta</code> parse as DD/MM/YYYY "
@@ -1099,7 +1105,7 @@ SCREENSHOTS = [
             "<code>--smarter</code>, so the stats cache is enriched by "
             "<code>moarstats --advanced</code>), while a committed <code>--dictionary</code> "
             "supplies the friendly Portuguese field labels that <code>--dict-info</code> renders "
-            "as the in-page <b>Dicionário de dados</b> tab. Neither the <code>.ssv</code> export "
+            "as the in-page <b>Data Schematic</b> tab. Neither the <code>.ssv</code> export "
             "nor <code>brazil_geo.json</code> is committed here, so this page is reused as-is. "
             "The standalone Data Schematic is a ~17&nbsp;MB self-contained page &mdash; too large to "
             "embed inline &mdash; so this is a screenshot: <b>click it to open the fully "
@@ -2104,10 +2110,11 @@ def main():
         # `display:none`, which browsers refuse to scroll to and which `armFromHash` (NAV_JS)
         # would hand the stabilizer as a zero-rect target -- the fragment would resolve to an
         # element and then go nowhere. Outside the <figure> it would instead become a stray
-        # grid item. An empty inline span inside the figure is rendered, occupies no space,
-        # and sits at the figure's own top.
+        # grid item. `.qsv-legacy-anchor` (NAV_CSS) carries the figure's own
+        # scroll-margin-top, without which the stub would land behind the sticky TOC.
         legacy = shot.get("legacy_anchor")
-        legacy_stub = f'<span id="{legacy}"></span>' if legacy else ''
+        legacy_stub = (f'<span class="qsv-legacy-anchor" id="{legacy}"></span>'
+                       if legacy else '')
         fig_divs.append(
             f'<figure class="cell full" id="{shot_anchor}">{legacy_stub}'
             f'<figcaption><span class="t">{shot["title"]}</span>'

@@ -17633,14 +17633,31 @@ fn measure_by_dim_panel(
     // Collapsing to one value per region and summing those is correct for EVERY grouping: by the
     // owning region itself each group holds exactly one region, so the sum IS that region's figure;
     // by anything coarser it is the sum of the distinct regional values, which is what a reader
-    // means by "population by state". First value wins per region, mirroring how the choropleth
-    // path keys `denom_by_cand`.
+    // means by "population by state".
     let track_dedup = owners.iter().any(Option::is_some);
     let mut dedup: Vec<HashMap<String, HashMap<String, f64>>> = if track_dedup {
         vec![HashMap::new(); n_m * n_d]
     } else {
         Vec::new()
     };
+    // seen[mi] : owning-region key -> the FIRST value observed for that region, and conflict[mi]:
+    // whether any later row disagreed with it.
+    //
+    // The ownership guard in `owning_region_idx` is only a NECESSARY condition -- a value constant
+    // within a region cannot out-number the region key -- and cannot prove constancy from the stats
+    // cache. But this panel already reads every row, so here constancy is cheap to actually VERIFY,
+    // the same way the choropleth path verifies its own denominator. A measure whose value differs
+    // between two rows of the same region is not region-level at all, so on conflict the collapse
+    // is abandoned for that measure and the ordinary verb applies -- which is the correct treatment
+    // for a genuine per-row measure, not a fallback.
+    //
+    // Without this, "first value wins" silently picked a row-order-dependent representative.
+    let mut seen: Vec<HashMap<String, f64>> = if track_dedup {
+        vec![HashMap::new(); n_m]
+    } else {
+        Vec::new()
+    };
+    let mut conflict: Vec<bool> = vec![false; n_m];
 
     let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
     let mut record = csv::ByteRecord::new();
@@ -17683,15 +17700,36 @@ fn measure_by_dim_panel(
             }
             // `groups` still accumulates for every measure: it feeds the eta-squared ranking, which
             // is a row-based heuristic and stays that way.
-            if let Some(owner_idx) = owners[mi] {
+            if let Some(owner_idx) = owners[mi]
+                && !conflict[mi]
+            {
                 let raw = cell_to_string(record.get(owner_idx));
-                let region = raw.trim();
-                if !region.is_empty() {
+                let trimmed = raw.trim();
+                // A blank owning-region cell is bucketed under the null placeholder rather than
+                // skipped, exactly as the DIMENSION keys above are. Skipping dropped those rows
+                // from the collapsed output while they still counted toward the title's
+                // explained-variance figure, which silently undercounted a category.
+                let region = if trimmed.is_empty() {
+                    null_text()
+                } else {
+                    trimmed.to_string()
+                };
+                match seen[mi].get(&region) {
+                    // not constant within its own region => not a region-level measure
+                    Some(prev) if (*prev - y).abs() > f64::EPSILON * prev.abs().max(1.0) => {
+                        conflict[mi] = true;
+                    },
+                    Some(_) => {},
+                    None => {
+                        seen[mi].insert(region.clone(), y);
+                    },
+                }
+                if !conflict[mi] {
                     for (di, key) in row_keys.iter().enumerate() {
                         dedup[mi * n_d + di]
                             .entry(key.clone())
                             .or_default()
-                            .entry(region.to_string())
+                            .entry(region.clone())
                             .or_insert(y);
                     }
                 }
@@ -17782,7 +17820,13 @@ fn measure_by_dim_panel(
     // would also defeat the fix in its likeliest case, since describegpt's own aggregation guidance
     // calls a population count extensive. On tidy data the collapse is a no-op (one row per
     // region).
-    let dedup_map = owners[mi].and(dedup.get(mi * n_d + di));
+    // a measure that turned out NOT to be constant within its region is an ordinary per-row
+    // measure, and gets the ordinary verb
+    let dedup_map = if conflict[mi] {
+        None
+    } else {
+        owners[mi].and(dedup.get(mi * n_d + di))
+    };
     let agg = match col_sems[m_idx].agg {
         _ if dedup_map.is_some() => Agg::Sum,
         Some(Agg::Sum) => Agg::Sum,
@@ -30578,15 +30622,14 @@ fn is_region_concept(concept: &str) -> bool {
     }
 }
 
-/// The FINEST region column a REGION-LEVEL measure is constant within, or `None` when no region
-/// owns it (issue #4528). This relationship is what makes the collapse correct, and why it
+/// The NEAREST ENCLOSING region column a REGION-LEVEL measure is constant within, or `None`
+/// when no region owns it (issue #4528). This relationship is what makes the collapse correct
 /// is the only correct unit for the decision.
 ///
 /// Returns a single index because its caller (the KPI tile) needs one cardinality to test. Where
-/// several region columns are equally the owner — describegpt hints EVERY qualifying region column,
-/// so a county FIPS and a county NAME column routinely both declare the same denominator — the
-/// finest is taken, since choosing a coarser one would under-report repetition and let an inflated
-/// figure through.
+/// several region columns qualify — describegpt hints EVERY qualifying region column, so a county
+/// FIPS and a county NAME column routinely both declare the same denominator — the NEAREST
+/// ENCLOSING one is taken: the smallest cardinality that can still hold the value constant.
 fn owning_region_idx(
     measure_idx: usize,
     stats: &[crate::cmd::stats::StatsData],
@@ -30621,7 +30664,8 @@ fn owning_region_idx(
                 && sem.denominator.as_deref() == Some(field)
                 && plausible(*i)
         })
-        .max_by_key(|(i, _)| card(*i))
+        // nearest enclosing among the declarers, for the same reason as the inferred branch below
+        .min_by_key(|(i, _)| card(*i))
         .map(|(i, _)| i);
     if declared.is_some() {
         return declared;
@@ -30637,7 +30681,15 @@ fn owning_region_idx(
         return None;
     }
     // INFERRED: the measure's own concept says it is region-level, but nothing declares which
-    // region owns it. Take the finest region column that could plausibly own it.
+    // region owns it. Take the NEAREST ENCLOSING region -- the SMALLEST cardinality that can still
+    // hold the value constant -- which is the same rule describegpt uses to derive the hint in the
+    // first place (issue #4523).
+    //
+    // Taking the finest region instead was wrong, because constancy does not identify the level: a
+    // county population is constant within its county AND within every city inside it. Picking the
+    // finer `city` then collapses to one copy per CITY, so a coarser grouping still multiplies each
+    // county's population by the number of its cities. The nearest enclosing region is the coarsest
+    // one the value can be constant in, which is the level it actually lives at.
     if !REGION_LEVEL_CONCEPTS.contains(&col_sems.get(measure_idx)?.concept.trim()) {
         return None;
     }
@@ -30645,7 +30697,7 @@ fn owning_region_idx(
         .iter()
         .enumerate()
         .filter(|(i, sem)| *i != measure_idx && is_region_concept(&sem.concept) && plausible(*i))
-        .max_by_key(|(i, _)| card(*i))
+        .min_by_key(|(i, _)| card(*i))
         .map(|(i, _)| i)
 }
 
@@ -40183,6 +40235,50 @@ mod tests {
             csem("measure.amount"),
         ];
         assert_eq!(owning_region_idx(2, &stats, &plain), None);
+    }
+
+    /// Constancy does not identify a level: a COUNTY population is constant within its county AND
+    /// within every city inside it. Inferring the FINEST region therefore picked `city`, and
+    /// collapsing per city left one copy per city, so a coarser grouping still multiplied each
+    /// county's population by its city count. The nearest ENCLOSING region — the smallest
+    /// cardinality that can still hold the value constant — is the level it actually lives at, and
+    /// is the same rule describegpt uses to derive the hint (issue #4523).
+    #[test]
+    fn inference_takes_the_nearest_enclosing_region_not_the_finest() {
+        // 0 = city (12, finer), 1 = county (4, the real level), 2 = population (4 distinct)
+        let mut city = stat("String", 12, None);
+        city.field = "city".to_string();
+        let mut county = stat("String", 4, None);
+        county.field = "county_fips".to_string();
+        let mut pop = stat("Integer", 4, None);
+        pop.field = "population".to_string();
+        let stats = vec![city, county, pop];
+        let col_sems = vec![
+            csem("geo.city"),
+            csem("geo.county_fips"),
+            csem("measure.population"),
+        ];
+        assert_eq!(
+            owning_region_idx(2, &stats, &col_sems),
+            Some(1),
+            "a 4-valued population lives at the county level, not the 12-valued city level"
+        );
+
+        // a region too coarse to hold the value constant is not a candidate at all
+        let mut state = stat("String", 2, None);
+        state.field = "state".to_string();
+        let stats2 = vec![stats[0].clone(), stats[1].clone(), stats[2].clone(), state];
+        let sems2 = vec![
+            col_sems[0].clone(),
+            col_sems[1].clone(),
+            col_sems[2].clone(),
+            csem("geo.state"),
+        ];
+        assert_eq!(
+            owning_region_idx(2, &stats2, &sems2),
+            Some(1),
+            "2 states cannot carry 4 distinct populations constantly"
+        );
     }
 
     /// A DECLARED owner wins outright. Falling through to inference when a declaration exists let a

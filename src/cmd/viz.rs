@@ -17640,24 +17640,36 @@ fn measure_by_dim_panel(
     } else {
         Vec::new()
     };
-    // seen[mi] : owning-region key -> the FIRST value observed for that region, and conflict[mi]:
-    // whether any later row disagreed with it.
+    // unkeyed[mi * n_d + di] : category -> summed value of rows whose OWNING-REGION cell is blank.
     //
-    // The ownership guard in `owning_region_idx` is only a NECESSARY condition -- a value constant
-    // within a region cannot out-number the region key -- and cannot prove constancy from the stats
-    // cache. But this panel already reads every row, so here constancy is cheap to actually VERIFY,
-    // the same way the choropleth path verifies its own denominator. A measure whose value differs
-    // between two rows of the same region is not region-level at all, so on conflict the collapse
-    // is abandoned for that measure and the ordinary verb applies -- which is the correct treatment
-    // for a genuine per-row measure, not a fallback.
-    //
-    // Without this, "first value wins" silently picked a row-order-dependent representative.
-    let mut seen: Vec<HashMap<String, f64>> = if track_dedup {
-        vec![HashMap::new(); n_m]
+    // Such a row cannot be collapsed: its region is unknown, so there is no identity to collapse it
+    // to. Merging every blank under one placeholder would fold genuinely different regions into one
+    // and undercount them; dropping the rows would erase contributions that still count toward the
+    // title's explained-variance figure. Instead each unidentified row is carried at full weight,
+    // so every row is counted exactly once at the finest identity that could be established. The
+    // result degrades smoothly toward the raw-row sum as blanks grow, rather than falling off a
+    // cliff at the first missing cell.
+    let mut unkeyed: Vec<HashMap<String, f64>> = if track_dedup {
+        vec![HashMap::new(); n_m * n_d]
     } else {
         Vec::new()
     };
-    let mut conflict: Vec<bool> = vec![false; n_m];
+    // conflict[mi * n_d + di] : a KNOWN region showed two different values for this measure, so it
+    // is not constant within that region and the collapse must be abandoned for this pair.
+    //
+    // The ownership guard in `owning_region_idx` is only a NECESSARY condition -- a value constant
+    // within a region cannot out-number the region key -- and cannot prove constancy from the stats
+    // cache. This panel already reads every row, so constancy is cheap to actually VERIFY here, the
+    // same way the choropleth path verifies its own denominator. Abandoning the collapse is the
+    // CORRECT treatment rather than a fallback: a measure that differs between two rows of the same
+    // region is a genuine per-row measure, which the ordinary verb already handles.
+    //
+    // Tracked per (measure, DIMENSION) rather than per measure. A panel dataset carrying a
+    // population per county AND per reporting period is not constant within county alone, but IS
+    // within each period -- so a global flag let one dimension's legitimate variation disable the
+    // collapse for every other dimension too. Blank region keys never set it: an unknown region is
+    // not evidence of a conflict.
+    let mut conflict: Vec<bool> = vec![false; n_m * n_d];
 
     let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
     let mut record = csv::ByteRecord::new();
@@ -17700,37 +17712,35 @@ fn measure_by_dim_panel(
             }
             // `groups` still accumulates for every measure: it feeds the eta-squared ranking, which
             // is a row-based heuristic and stays that way.
-            if let Some(owner_idx) = owners[mi]
-                && !conflict[mi]
-            {
+            if let Some(owner_idx) = owners[mi] {
                 let raw = cell_to_string(record.get(owner_idx));
-                let trimmed = raw.trim();
-                // A blank owning-region cell is bucketed under the null placeholder rather than
-                // skipped, exactly as the DIMENSION keys above are. Skipping dropped those rows
-                // from the collapsed output while they still counted toward the title's
-                // explained-variance figure, which silently undercounted a category.
-                let region = if trimmed.is_empty() {
-                    null_text()
-                } else {
-                    trimmed.to_string()
-                };
-                match seen[mi].get(&region) {
-                    // not constant within its own region => not a region-level measure
-                    Some(prev) if (*prev - y).abs() > f64::EPSILON * prev.abs().max(1.0) => {
-                        conflict[mi] = true;
-                    },
-                    Some(_) => {},
-                    None => {
-                        seen[mi].insert(region.clone(), y);
-                    },
-                }
-                if !conflict[mi] {
-                    for (di, key) in row_keys.iter().enumerate() {
-                        dedup[mi * n_d + di]
-                            .entry(key.clone())
-                            .or_default()
-                            .entry(region.clone())
-                            .or_insert(y);
+                let region = raw.trim();
+                for (di, key) in row_keys.iter().enumerate() {
+                    let slot = mi * n_d + di;
+                    if region.is_empty() {
+                        // unidentified region: carried at full weight, and never evidence of a
+                        // conflict
+                        *unkeyed[slot].entry(key.clone()).or_insert(0.0) += y;
+                        continue;
+                    }
+                    if conflict[slot] {
+                        continue;
+                    }
+                    match dedup[slot]
+                        .entry(key.clone())
+                        .or_default()
+                        .entry(region.to_string())
+                    {
+                        std::collections::hash_map::Entry::Occupied(e) => {
+                            let prev = *e.get();
+                            // not constant within its own region => not a region-level measure
+                            if (prev - y).abs() > f64::EPSILON * prev.abs().max(1.0) {
+                                conflict[slot] = true;
+                            }
+                        },
+                        std::collections::hash_map::Entry::Vacant(e) => {
+                            e.insert(y);
+                        },
                     }
                 }
             }
@@ -17822,7 +17832,7 @@ fn measure_by_dim_panel(
     // region).
     // a measure that turned out NOT to be constant within its region is an ordinary per-row
     // measure, and gets the ordinary verb
-    let dedup_map = if conflict[mi] {
+    let dedup_map = if conflict[mi * n_d + di] {
         None
     } else {
         owners[mi].and(dedup.get(mi * n_d + di))
@@ -17846,10 +17856,18 @@ fn measure_by_dim_panel(
 
     // aggregate each category, then sort by value descending and cap to the top-N
     let mut rows: Vec<(String, f64)> = if let Some(dmap) = dedup_map {
-        // one value per owning region, then summed
-        dmap.iter()
+        // one value per identified owning region, plus the unidentified rows at full weight
+        let extra = unkeyed.get(mi * n_d + di);
+        let mut out: HashMap<String, f64> = dmap
+            .iter()
             .map(|(k, regions)| (k.clone(), regions.values().sum::<f64>()))
-            .collect()
+            .collect();
+        if let Some(extra) = extra {
+            for (k, v) in extra {
+                *out.entry(k.clone()).or_insert(0.0) += v;
+            }
+        }
+        out.into_iter().collect()
     } else {
         groups[mi * n_d + di]
             .iter()

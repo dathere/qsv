@@ -316,6 +316,7 @@ Common options:
 
 use std::{
     env,
+    fmt::Write as _,
     fs::File,
     io::{BufReader, BufWriter, Read, Write},
     path::PathBuf,
@@ -333,7 +334,9 @@ use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use jsonschema::{
-    EmailOptions, Keyword, PatternOptions, ValidationError, Validator, paths::Location,
+    EmailOptions, Keyword, PatternOptions, ValidationError, Validator,
+    json::{Json, Node, Object},
+    paths::Location,
 };
 use log::debug;
 use qsv_currency::Currency;
@@ -342,7 +345,7 @@ use rayon::{
     prelude::IntoParallelRefIterator,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json, value::Number};
+use serde_json::{Map, Value, json};
 #[cfg(feature = "lite")]
 use tempfile::NamedTempFile;
 
@@ -416,6 +419,7 @@ struct Args {
     flag_email_domain_literal: bool,
 }
 
+#[derive(Clone, Copy)]
 enum JSONtypes {
     String,
     Number,
@@ -452,6 +456,496 @@ fn currency_format_checker(s: &str) -> bool {
     })
 }
 
+/// Validates a `ByteRecord` in place, without building a `serde_json::Value` for it: a column
+/// index picks a field, and the declared type from `get_json_types` says how to read it.
+mod csv_json {
+    use std::borrow::Cow;
+
+    use csv::ByteRecord;
+    use foldhash::{HashMap, HashMapExt};
+    use jsonschema::{
+        json::{Array, Json, JsonNumber, Node, NodeIdentity, Object},
+        types::JsonType,
+    };
+    use serde_json::{Map, Number, Value};
+
+    use super::JSONtypes;
+
+    struct Column<'h> {
+        name: &'h str,
+        kind: JSONtypes,
+    }
+
+    /// The header row as the object every record reads as: `columns` by field position,
+    /// `by_name` for lookups, `members` for iteration. A repeated header keeps one member at
+    /// its first position, holding the last field, as `serde_json::Map::insert` did.
+    pub struct Columns<'h> {
+        columns: Vec<Column<'h>>,
+        by_name: HashMap<&'h str, u32>,
+        members: Vec<u32>,
+    }
+
+    impl<'h> Columns<'h> {
+        pub fn new(header_types: &'h [(String, JSONtypes)]) -> Self {
+            let columns: Vec<Column<'h>> = header_types
+                .iter()
+                .map(|(name, kind)| Column {
+                    name: name.as_str(),
+                    kind: *kind,
+                })
+                .collect();
+            let mut by_name = HashMap::with_capacity(columns.len());
+            let mut members: Vec<u32> = Vec::with_capacity(columns.len());
+            for (index, column) in columns.iter().enumerate() {
+                match by_name.insert(column.name, index as u32) {
+                    None => members.push(index as u32),
+                    Some(shadowed) => {
+                        let position = members
+                            .iter()
+                            .position(|member| *member == shadowed)
+                            .expect("every inserted field is a member");
+                        members[position] = index as u32;
+                    },
+                }
+            }
+            Self {
+                columns,
+                by_name,
+                members,
+            }
+        }
+
+        /// CSV fields, duplicate header names counted separately.
+        pub fn field_count(&self) -> usize {
+            self.columns.len()
+        }
+
+        /// Distinct header names, ie the row object's member count.
+        fn len(&self) -> usize {
+            self.members.len()
+        }
+    }
+
+    /// Whether every field slices out of `text` on a char boundary. Two adjacent fields can
+    /// hold the halves of one multi-byte sequence, valid only once concatenated.
+    fn fields_aligned(text: &str, record: &ByteRecord, field_count: usize) -> bool {
+        // fields are contiguous, so walking the lengths visits every boundary
+        let mut offset = 0;
+        for field in record.iter().take(field_count) {
+            if offset != 0 && !text.is_char_boundary(offset) {
+                return false;
+            }
+            offset += field.len();
+        }
+        true
+    }
+
+    enum RowText<'a> {
+        /// The whole record as one `&str`; fields slice out of it by byte range.
+        Borrowed(&'a str),
+        /// One lossily-decoded string per field, when the row is not valid UTF-8.
+        Lossy(Vec<String>),
+    }
+
+    /// Holds the row's decode so the nodes can borrow from it.
+    pub struct Row<'a> {
+        columns: &'a Columns<'a>,
+        record:  &'a ByteRecord,
+        text:    RowText<'a>,
+    }
+
+    impl<'a> Row<'a> {
+        pub fn new(columns: &'a Columns<'a>, record: &'a ByteRecord) -> Self {
+            // one SIMD pass for the whole row, instead of one per field
+            let text = match simdutf8::basic::from_utf8(record.as_slice()) {
+                Ok(text) if fields_aligned(text, record, columns.field_count()) => {
+                    RowText::Borrowed(text)
+                },
+                // Lossy replacement shifts byte offsets, so decode field by field instead.
+                _ => RowText::Lossy(
+                    record
+                        .iter()
+                        .take(columns.field_count())
+                        .map(|field| String::from_utf8_lossy(field).into_owned())
+                        .collect(),
+                ),
+            };
+            Self {
+                columns,
+                record,
+                text,
+            }
+        }
+
+        pub fn node(&'a self) -> CsvNode<'a> {
+            CsvNode::Row(self)
+        }
+
+        fn field_text(&self, position: usize) -> &str {
+            // the reader rejects short records, and `Row::new` checked every field boundary
+            match &self.text {
+                RowText::Borrowed(text) => {
+                    &text[self.record.range(position).expect("field present")]
+                },
+                RowText::Lossy(fields) => &fields[position],
+            }
+        }
+    }
+
+    pub struct CsvJson;
+
+    impl Json for CsvJson {
+        type Node<'a> = CsvNode<'a>;
+        type PreparedKey = String;
+        type StringBuffer = String;
+
+        fn prepare_key(key: &str) -> String {
+            key.to_owned()
+        }
+
+        fn with_string_node<T>(
+            buffer: &mut String,
+            string: &str,
+            f: impl FnOnce(CsvNode<'_>) -> T,
+        ) -> T {
+            buffer.clear();
+            buffer.push_str(string);
+            f(CsvNode::Str(buffer.as_str()))
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    pub enum CsvNode<'a> {
+        Row(&'a Row<'a>),
+        Field {
+            row:      &'a Row<'a>,
+            position: u32,
+            kind:     Kind<'a>,
+        },
+        /// For `propertyNames`.
+        Str(&'a str),
+    }
+
+    /// What a cell holds, once its text is read against its declared type. Resolved once when
+    /// the node is built and read by every accessor, so `json_type` cannot name a type that
+    /// `as_string`/`as_number`/`as_boolean` then refuse to hand over.
+    #[derive(Clone, Copy)]
+    pub enum Kind<'a> {
+        Null,
+        Str(&'a str),
+        Number(CsvNumber<'a>),
+        Boolean(bool),
+    }
+
+    impl<'a> Kind<'a> {
+        fn resolve(text: &'a str, declared: JSONtypes) -> Self {
+            if text.is_empty() {
+                return Kind::Null;
+            }
+            match declared {
+                // `Unsupported` is any `type` other than the four scalars, which a cell cannot
+                // hold; reading it as a string lets the schema reject it
+                JSONtypes::String | JSONtypes::Unsupported => Kind::Str(text),
+                JSONtypes::Boolean => match text {
+                    "true" | "1" => Kind::Boolean(true),
+                    "false" | "0" => Kind::Boolean(false),
+                    // uncastable, so it reads as the string it is and `type` rejects it
+                    _ => Kind::Str(text),
+                },
+                JSONtypes::Number => CsvNumber::number(text).map_or(Kind::Str(text), Kind::Number),
+                JSONtypes::Integer => {
+                    CsvNumber::integer(text).map_or(Kind::Str(text), Kind::Number)
+                },
+            }
+        }
+    }
+
+    impl<'a> CsvNode<'a> {
+        fn field(row: &'a Row<'a>, position: usize) -> Self {
+            CsvNode::Field {
+                row,
+                position: position as u32,
+                kind: Kind::resolve(row.field_text(position), row.columns.columns[position].kind),
+            }
+        }
+
+        fn kind(&self) -> Option<Kind<'a>> {
+            match self {
+                CsvNode::Row(_) => None,
+                CsvNode::Str(string) => Some(Kind::Str(string)),
+                CsvNode::Field { kind, .. } => Some(*kind),
+            }
+        }
+
+        pub fn as_str_field(&self) -> Option<&'a str> {
+            match self.kind()? {
+                Kind::Str(text) => Some(text),
+                _ => None,
+            }
+        }
+    }
+
+    impl<'a> Node<'a, CsvJson> for CsvNode<'a> {
+        type Array = NoArray<'a>;
+        type Number = CsvNumber<'a>;
+        type Object = CsvRow<'a>;
+
+        fn as_object(&self) -> Option<CsvRow<'a>> {
+            match self {
+                CsvNode::Row(row) => Some(CsvRow(row)),
+                _ => None,
+            }
+        }
+
+        // A CSV row is flat.
+        fn as_array(&self) -> Option<NoArray<'a>> {
+            None
+        }
+
+        fn as_string(&self) -> Option<Cow<'a, str>> {
+            self.as_str_field().map(Cow::Borrowed)
+        }
+
+        fn as_number(&self) -> Option<CsvNumber<'a>> {
+            match self.kind()? {
+                Kind::Number(number) => Some(number),
+                _ => None,
+            }
+        }
+
+        fn as_boolean(&self) -> Option<bool> {
+            match self.kind()? {
+                Kind::Boolean(value) => Some(value),
+                _ => None,
+            }
+        }
+
+        fn is_null(&self) -> bool {
+            matches!(self.kind(), Some(Kind::Null))
+        }
+
+        fn is_string(&self) -> bool {
+            self.as_str_field().is_some()
+        }
+
+        fn json_type(&self) -> JsonType {
+            match self.kind() {
+                None => JsonType::Object,
+                Some(Kind::Null) => JsonType::Null,
+                Some(Kind::Str(_)) => JsonType::String,
+                Some(Kind::Number(_)) => JsonType::Number,
+                Some(Kind::Boolean(_)) => JsonType::Boolean,
+            }
+        }
+
+        fn string_length(&self) -> Option<u64> {
+            self.as_str_field()
+                .map(|string| bytecount::num_chars(string.as_bytes()) as u64)
+        }
+
+        // only the whole row needs a `Value`
+        fn equals_value(&self, expected: &Value) -> bool {
+            match self.kind() {
+                None => jsonschema::json::cmp::equal(&self.to_value(), expected),
+                Some(Kind::Null) => expected.is_null(),
+                Some(Kind::Str(text)) => expected.as_str() == Some(text),
+                Some(Kind::Boolean(value)) => expected.as_bool() == Some(value),
+                Some(Kind::Number(number)) => match expected {
+                    // JSON Schema compares numbers mathematically, across spellings
+                    Value::Number(expected) => {
+                        jsonschema::json::cmp::equal_numbers(&number, expected)
+                    },
+                    _ => false,
+                },
+            }
+        }
+
+        fn to_value(&self) -> Cow<'a, Value> {
+            Cow::Owned(match self {
+                CsvNode::Row(row) => Value::Object(
+                    row.columns
+                        .members
+                        .iter()
+                        .map(|&member| {
+                            let position = member as usize;
+                            (
+                                row.columns.columns[position].name.to_owned(),
+                                CsvNode::field(row, position).to_value().into_owned(),
+                            )
+                        })
+                        .collect::<Map<String, Value>>(),
+                ),
+                CsvNode::Str(text) => Value::String((*text).to_owned()),
+                CsvNode::Field { kind, .. } => match kind {
+                    Kind::Null => Value::Null,
+                    Kind::Str(text) => Value::String((*text).to_owned()),
+                    Kind::Boolean(value) => Value::Bool(*value),
+                    Kind::Number(number) => Value::Number(number.to_number().into_owned()),
+                },
+            })
+        }
+
+        fn identity(&self) -> Option<NodeIdentity> {
+            match self {
+                // Tag 0 is the row; field `n` takes tag `n + 1`.
+                CsvNode::Row(row) => {
+                    Some(NodeIdentity::tagged(std::ptr::from_ref(*row) as usize, 0))
+                },
+                CsvNode::Field { row, position, .. } => Some(NodeIdentity::tagged(
+                    std::ptr::from_ref(*row) as usize,
+                    *position + 1,
+                )),
+                // property names share one reused buffer, so addresses cannot tell them apart
+                CsvNode::Str(_) => None,
+            }
+        }
+    }
+
+    pub struct CsvRow<'a>(&'a Row<'a>);
+
+    impl<'a> Object<'a, CsvJson> for CsvRow<'a> {
+        type MemberName = &'a str;
+        type MembersIter = CsvMembers<'a>;
+        type Node = CsvNode<'a>;
+
+        fn len(&self) -> usize {
+            self.0.columns.len()
+        }
+
+        fn get(&self, key: &String) -> Option<CsvNode<'a>> {
+            let position = *self.0.columns.by_name.get(key.as_str())?;
+            Some(CsvNode::field(self.0, position as usize))
+        }
+
+        fn members(&self) -> CsvMembers<'a> {
+            CsvMembers {
+                row:      self.0,
+                position: 0,
+            }
+        }
+    }
+
+    pub struct CsvMembers<'a> {
+        row:      &'a Row<'a>,
+        position: usize,
+    }
+
+    impl<'a> Iterator for CsvMembers<'a> {
+        type Item = (&'a str, CsvNode<'a>);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            let columns = self.row.columns;
+            let position = *columns.members.get(self.position)? as usize;
+            self.position += 1;
+            Some((
+                columns.columns[position].name,
+                CsvNode::field(self.row, position),
+            ))
+        }
+    }
+
+    /// Only exists to satisfy the associated type.
+    pub struct NoArray<'a>(std::marker::PhantomData<&'a ()>);
+
+    impl<'a> Array<'a, CsvJson> for NoArray<'a> {
+        type ElementsIter = std::iter::Empty<CsvNode<'a>>;
+        type Node = CsvNode<'a>;
+
+        fn len(&self) -> usize {
+            0
+        }
+
+        fn elements(&self) -> Self::ElementsIter {
+            std::iter::empty()
+        }
+    }
+
+    /// Parsed once, keeping its decimal text so `as_str` stays exact.
+    #[derive(Clone, Copy)]
+    pub struct CsvNumber<'a> {
+        text:   &'a str,
+        parsed: Parsed,
+    }
+
+    #[derive(Clone, Copy)]
+    enum Parsed {
+        Integer(i64),
+        Float(f64),
+    }
+
+    impl<'a> CsvNumber<'a> {
+        /// An `integer` column takes an i64, nothing else.
+        fn integer(text: &'a str) -> Option<Self> {
+            let int = atoi_simd::parse::<i64, false, false>(text.as_bytes()).ok()?;
+            Some(Self {
+                text,
+                parsed: Parsed::Integer(int),
+            })
+        }
+
+        /// Integral literals stay integers, so comparisons past 2^53 are exact.
+        fn number(text: &'a str) -> Option<Self> {
+            Self::integer(text).or_else(|| {
+                Some(Self {
+                    text,
+                    parsed: Parsed::Float(Self::finite_float(text)?),
+                })
+            })
+        }
+
+        fn finite_float(text: &str) -> Option<f64> {
+            let float = fast_float2::parse::<f64, _>(text.as_bytes()).ok()?;
+            float.is_finite().then_some(float)
+        }
+    }
+
+    impl JsonNumber for CsvNumber<'_> {
+        fn as_u64(&self) -> Option<u64> {
+            match self.parsed {
+                Parsed::Integer(value) => u64::try_from(value).ok(),
+                Parsed::Float(_) => None,
+            }
+        }
+
+        fn as_i64(&self) -> Option<i64> {
+            match self.parsed {
+                Parsed::Integer(value) => Some(value),
+                Parsed::Float(_) => None,
+            }
+        }
+
+        #[allow(clippy::cast_precision_loss)]
+        fn as_f64(&self) -> Option<f64> {
+            Some(match self.parsed {
+                Parsed::Integer(value) => value as f64,
+                Parsed::Float(value) => value,
+            })
+        }
+
+        fn as_str(&self) -> Cow<'_, str> {
+            Cow::Borrowed(self.text)
+        }
+
+        fn is_integer(&self) -> bool {
+            match self.parsed {
+                Parsed::Integer(_) => true,
+                Parsed::Float(value) => value.fract() == 0.0,
+            }
+        }
+
+        fn to_number(&self) -> Cow<'_, Number> {
+            Cow::Owned(match self.parsed {
+                Parsed::Integer(value) => Number::from(value),
+                Parsed::Float(value) => {
+                    Number::from_f64(value).expect("finite_float excludes NaN and infinities")
+                },
+            })
+        }
+    }
+}
+
+use csv_json::CsvJson;
+
 struct DynEnumValidator {
     dynenum_set: HashSet<String>,
 }
@@ -463,96 +957,97 @@ impl DynEnumValidator {
     }
 }
 
-impl<'i> Keyword<'i> for DynEnumValidator {
+impl<'i, F: Json> Keyword<'i, F> for DynEnumValidator {
     #[inline]
-    fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
-        if let Value::String(s) = instance
-            && self.dynenum_set.contains(s)
+    fn validate(&self, instance: F::Node<'i>) -> Result<(), ValidationError<'i>> {
+        if let Some(s) = instance.as_string()
+            && self.dynenum_set.contains(s.as_ref())
         {
             return Ok(());
         }
         Err(ValidationError::custom(format!(
-            "{instance} is not a valid dynamicEnum value"
+            "{} is not a valid dynamicEnum value",
+            instance.to_value()
         )))
     }
 
     #[inline]
-    fn is_valid(&self, instance: &'i Value) -> bool {
-        if let Value::String(s) = instance {
-            self.dynenum_set.contains(s)
-        } else {
-            false
-        }
+    fn is_valid(&self, instance: F::Node<'i>) -> bool {
+        instance
+            .as_string()
+            .is_some_and(|s| self.dynenum_set.contains(s.as_ref()))
     }
 }
 
-struct UniqueCombinedWithValidator {
-    column_names:      Vec<String>,
+struct UniqueCombinedWithValidator<F: Json> {
+    // name for the error message, key prepared once so the row loop never re-derives it
+    columns:           Vec<(String, F::PreparedKey)>,
     column_indices:    Vec<usize>,
     // Mutex (not RwLock): `validate` always check-and-inserts under exclusive access,
     // so there is no read-only path that would benefit from an RwLock.
     seen_combinations: std::sync::Mutex<HashSet<String>>,
 }
 
-impl UniqueCombinedWithValidator {
+impl<F: Json> UniqueCombinedWithValidator<F> {
     fn new(column_names: Vec<String>, column_indices: Vec<usize>) -> Self {
         Self {
-            column_names,
+            columns: column_names
+                .into_iter()
+                .map(|name| {
+                    let key = F::prepare_key(&name);
+                    (name, key)
+                })
+                .collect(),
             column_indices,
             seen_combinations: std::sync::Mutex::new(HashSet::new()),
         }
     }
 }
 
-impl<'i> Keyword<'i> for UniqueCombinedWithValidator {
-    fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+impl<'i, F: Json> Keyword<'i, F> for UniqueCombinedWithValidator<F> {
+    fn validate(&self, instance: F::Node<'i>) -> Result<(), ValidationError<'i>> {
         let obj = instance
             .as_object()
             .ok_or_else(|| ValidationError::custom("Instance must be an object"))?;
 
-        let mut values = Vec::with_capacity(self.column_names.len() + self.column_indices.len());
+        let mut combination = String::new();
+        let push = |combination: &mut String, node: &F::Node<'i>| {
+            if !combination.is_empty() {
+                combination.push('|');
+            }
+            // values stay JSON-quoted, so `["a|b"]` and `["a", "b"]` stay distinct
+            let _ = write!(combination, "{}", node.to_value());
+        };
 
         // Get values from column names
-        for name in &self.column_names {
-            if let Some(value) = obj.get(name) {
-                values.push(value.to_string());
+        for (_, key) in &self.columns {
+            if let Some(value) = obj.get(key) {
+                push(&mut combination, &value);
             }
         }
 
-        // Get values from column indices.
-        // Index N refers to the Nth field of the CSV record. This relies on the JSON
-        // instance preserving header order — true here because qsv enables
-        // `serde_json/preserve_order` (so `Map` is `IndexMap`) and `to_json_instance`
-        // inserts in header order.
+        // Index N is the Nth field; `members()` walks the header names in file order.
         if !self.column_indices.is_empty() {
-            let array: Vec<_> = obj.values().collect();
+            let array: Vec<_> = obj.members().map(|(_, node)| node).collect();
             for &idx in &self.column_indices {
                 if let Some(value) = array.get(idx) {
-                    values.push(value.to_string());
+                    push(&mut combination, value);
                 }
             }
         }
 
-        let combination = values.join("|");
         let mut seen = self.seen_combinations.lock().unwrap();
 
         if seen.contains(&combination) {
             let mut column_desc_parts =
-                Vec::with_capacity(self.column_names.len() + self.column_indices.len());
+                Vec::with_capacity(self.columns.len() + self.column_indices.len());
 
-            // Add named columns
-            if !self.column_names.is_empty() {
-                column_desc_parts.extend(self.column_names.iter().cloned());
-            }
-
-            // Add indexed columns
-            if !self.column_indices.is_empty() {
-                column_desc_parts.extend(
-                    self.column_indices
-                        .iter()
-                        .map(std::string::ToString::to_string),
-                );
-            }
+            column_desc_parts.extend(self.columns.iter().map(|(name, _)| name.clone()));
+            column_desc_parts.extend(
+                self.column_indices
+                    .iter()
+                    .map(std::string::ToString::to_string),
+            );
 
             let column_desc = column_desc_parts.join(", ");
             return Err(ValidationError::custom(format!(
@@ -565,7 +1060,7 @@ impl<'i> Keyword<'i> for UniqueCombinedWithValidator {
         Ok(())
     }
 
-    fn is_valid(&self, _instance: &'i Value) -> bool {
+    fn is_valid(&self, _instance: F::Node<'i>) -> bool {
         // `uniqueCombinedWith` is stateful: a "valid" answer must atomically record the
         // combination, otherwise two concurrent duplicates both pass. Since `is_valid` is
         // not allowed to observably mutate state, we always return `false` to force the
@@ -575,11 +1070,11 @@ impl<'i> Keyword<'i> for UniqueCombinedWithValidator {
 }
 
 #[allow(clippy::result_large_err)]
-fn unique_combined_with_validator_factory<'a>(
+fn unique_combined_with_validator_factory<'a, F: Json>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
     _location: Location,
-) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
+) -> Result<Box<dyn for<'i> Keyword<'i, F>>, ValidationError<'a>> {
     // Get the array of column names/indices
     let columns = value.as_array().ok_or_else(|| {
         ValidationError::custom("'uniqueCombinedWith' must be an array of column names or indices")
@@ -610,7 +1105,7 @@ fn unique_combined_with_validator_factory<'a>(
         ));
     }
 
-    Ok(Box::new(UniqueCombinedWithValidator::new(
+    Ok(Box::new(UniqueCombinedWithValidator::<F>::new(
         column_names,
         column_indices,
     )))
@@ -934,11 +1429,11 @@ fn load_dynenum_set<'a>(
 /// * `Err(ValidationError)` - If loading/parsing CSV fails or value is not a string
 #[cfg(not(feature = "lite"))]
 #[allow(clippy::result_large_err)]
-fn dyn_enum_validator_factory<'a>(
+fn dyn_enum_validator_factory<'a, F: Json>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
     _location: Location,
-) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
+) -> Result<Box<dyn for<'i> Keyword<'i, F>>, ValidationError<'a>> {
     let uri = value.as_str().ok_or_else(|| {
         ValidationError::custom(
             "'dynamicEnum' must be set to a CSV file on the local filesystem or on a URL.",
@@ -970,11 +1465,11 @@ fn dyn_enum_validator_factory<'a>(
 
 #[cfg(feature = "lite")]
 #[allow(clippy::result_large_err)]
-fn dyn_enum_validator_factory<'a>(
+fn dyn_enum_validator_factory<'a, F: Json>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
     _location: Location,
-) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
+) -> Result<Box<dyn for<'i> Keyword<'i, F>>, ValidationError<'a>> {
     let Value::String(uri) = value else {
         return Err(ValidationError::custom(
             "'dynamicEnum' must be set to a CSV file on the local filesystem or on a URL.",
@@ -1307,7 +1802,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // parse and compile supplied JSON Schema
     let json_schema_path =
         json_schema_path.unwrap_or_else(|| PathBuf::from(json_schema_arg.as_ref().unwrap()));
-    let (schema_json, schema_compiled, has_unique_combined): (Value, Validator, bool) =
+    let (schema_json, schema_compiled, has_unique_combined): (Value, Validator<CsvJson>, bool) =
             // safety: we know the schema is_some() because we checked above
             match load_json(&json_schema_path.to_string_lossy()) {
             Ok(s) => {
@@ -1321,7 +1816,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 };
 
                 match json_result {
-                    Ok(json) => {
+                    Ok(mut json) => {
                         // Detect custom formats/keywords by walking the parsed schema.
                         // This is robust to whitespace and avoids false matches on
                         // descriptions/titles that mention these strings as text.
@@ -1339,7 +1834,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         );
 
                         // compile JSON Schema
-                        let mut validator_options = Validator::options()
+                        // `CsvJson` reads fields straight out of the `ByteRecord`.
+                        let mut validator_options = jsonschema::options_for::<CsvJson>()
                             .should_validate_formats(!args.flag_no_format_validation);
 
                         // Add custom validators based on pre-checked flags
@@ -1381,11 +1877,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         }
 
                         if has_dynamic_enum {
-                            validator_options = validator_options.with_keyword("dynamicEnum", dyn_enum_validator_factory);
+                            validator_options = validator_options.with_keyword("dynamicEnum", dyn_enum_validator_factory::<CsvJson>);
                         }
 
                         if has_unique_combined {
-                            validator_options = validator_options.with_keyword("uniqueCombinedWith", unique_combined_with_validator_factory);
+                            validator_options = validator_options.with_keyword("uniqueCombinedWith", unique_combined_with_validator_factory::<CsvJson>);
                         }
 
                         if args.flag_fancy_regex {
@@ -1401,6 +1897,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             validator_options = validator_options.with_pattern_options(regex_options);
                         }
 
+                        drop_required_headers(&mut json, &headers);
                         match validator_options.build(&json) {
                             Ok(schema) => (json, schema, has_unique_combined),
                             Err(e) => {
@@ -1432,6 +1929,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
 
     // get JSON types for each column in CSV file
     let header_types = get_json_types(&headers, &schema_json)?;
+    let columns = csv_json::Columns::new(&header_types);
 
     // how many rows read and processed as batches
     let mut row_number: u64 = 0;
@@ -1468,9 +1966,8 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
                     row_number += 1;
                     // Append the row number as an extra ByteRecord field at index `header_len`.
                     // It travels with the record into the parallel closure where it's read back
-                    // via `record[header_len]` for error-report formatting. `to_json_instance`
-                    // ignores it because it iterates `header_types` (length = header_len), so
-                    // the appended field is not visible to schema validation.
+                    // via `record[header_len]` for error-report formatting. Schema validation
+                    // does not see it: `columns` has `header_len` entries.
                     record.push_field(itoa_buffer.format(row_number).as_bytes());
                     if flag_trim {
                         record.trim();
@@ -1513,32 +2010,23 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
                     ));
                 }
 
-                // convert CSV record to JSON instance
-                let json_instance = match to_json_instance(&header_types, header_len, record) {
-                    Ok(obj) => obj,
-                    Err(e) => {
-                        std::hint::cold_path();
-                        // safety: row number was appended as the last field via itoa, so it is
-                        // always valid ASCII; the unwrap can never fire in practice.
-                        let row_number_string =
-                            simdutf8::basic::from_utf8(&record[header_len]).unwrap();
-                        return Some(format!("{row_number_string}\t<RECORD>\t{e}"));
-                    },
-                };
+                // Decodes the row once and borrows from it.
+                let row = csv_json::Row::new(&columns, record);
+                let json_instance = row.node();
 
-                // validate JSON instance against JSON Schema
+                // validate the record against the JSON Schema
                 // if the schema has stateful validators (like uniqueCombinedWith),
                 // we must fully evaluate every record (this is the hot path in that
                 // configuration, so no cold_path hint). Otherwise, fast-check with
                 // is_valid() and short-circuit valid records; only the rare invalid
                 // case falls through to the full evaluate.
                 let evaluation = if has_unique_combined {
-                    schema_compiled.evaluate(&json_instance)
-                } else if schema_compiled.is_valid(&json_instance) {
+                    schema_compiled.evaluate(json_instance)
+                } else if schema_compiled.is_valid(json_instance) {
                     return None;
                 } else {
                     std::hint::cold_path();
-                    schema_compiled.evaluate(&json_instance)
+                    schema_compiled.evaluate(json_instance)
                 };
 
                 if evaluation.flag().valid {
@@ -2318,70 +2806,16 @@ fn write_error_report(input_path: &str, validation_error_messages: Vec<String>) 
     Ok(())
 }
 
-/// convert CSV Record into JSON instance by referencing JSON types
-#[inline]
-fn to_json_instance(
-    header_types: &[(String, JSONtypes)],
-    header_len: usize,
-    record: &ByteRecord,
-) -> CliResult<Value> {
-    let mut json_object_map = Map::with_capacity(header_len);
-
-    let mut json_value;
-
-    for ((key, json_type), value) in header_types.iter().zip(record.iter()) {
-        if value.is_empty() {
-            json_object_map.insert(key.clone(), Value::Null);
-            continue;
-        }
-
-        json_value = match json_type {
-            JSONtypes::String => Value::String(util::bytes_to_cow_str(value).into_owned()),
-            JSONtypes::Number => {
-                if let Ok(float) = fast_float2::parse::<f64, _>(value) {
-                    match Number::from_f64(float) {
-                        Some(n) => Value::Number(n),
-                        None => {
-                            return fail_clierror!(
-                                "Non-finite Number. key: {key}, value: {}",
-                                util::bytes_to_cow_str(value)
-                            );
-                        },
-                    }
-                } else {
-                    return fail_clierror!(
-                        "Can't cast to Number. key: {key}, value: {}",
-                        util::bytes_to_cow_str(value)
-                    );
-                }
-            },
-            JSONtypes::Integer => {
-                if let Ok(int) = atoi_simd::parse::<i64, false, false>(value) {
-                    Value::Number(Number::from(int))
-                } else {
-                    return fail_clierror!(
-                        "Can't cast to Integer. key: {key}, value: {}",
-                        util::bytes_to_cow_str(value)
-                    );
-                }
-            },
-            JSONtypes::Boolean => match value {
-                b"true" | b"1" => Value::Bool(true),
-                b"false" | b"0" => Value::Bool(false),
-                _ => {
-                    return fail_clierror!(
-                        "Can't cast to Boolean. key: {key}, value: {}",
-                        util::bytes_to_cow_str(value)
-                    );
-                },
-            },
-            JSONtypes::Unsupported => unreachable!("we should never get an unsupported JSON type"),
-        };
-
-        json_object_map.insert(key.clone(), json_value);
+/// Drops `required` names that are headers. Every row holds every header (an empty cell reads
+/// as null), so they can never fail, and checking them costs a lookup per name per row.
+fn drop_required_headers(schema: &mut Value, headers: &ByteRecord) {
+    if let Some(Value::Array(required)) = schema.get_mut("required") {
+        required.retain(|name| {
+            !name
+                .as_str()
+                .is_some_and(|name| headers.iter().any(|header| header == name.as_bytes()))
+        });
     }
-
-    Ok(Value::Object(json_object_map))
 }
 
 /// get JSON types for each column in CSV file
@@ -2492,14 +2926,37 @@ fn load_json(uri: &str) -> Result<String, String> {
     Ok(json_string)
 }
 
+/// Reads a CSV into the same in-place row nodes the run loop validates.
+#[cfg(test)]
+fn with_csv_rows<T>(
+    csv: impl AsRef<[u8]>,
+    schema: &Value,
+    mut f: impl FnMut(csv_json::CsvNode<'_>) -> T,
+) -> Vec<T> {
+    let _ = NULL_TYPE.get_or_init(|| Value::String("null".to_string()));
+    let mut rdr = csv::Reader::from_reader(csv.as_ref());
+    let headers = rdr.byte_headers().unwrap().clone();
+    let header_types = get_json_types(&headers, schema).unwrap();
+    let columns = csv_json::Columns::new(&header_types);
+
+    let mut results = Vec::new();
+    for record in rdr.byte_records() {
+        let mut record = record.unwrap();
+        record.trim();
+        let row = csv_json::Row::new(&columns, &record);
+        results.push(f(row.node()));
+    }
+    results
+}
+
 /// Validate JSON instance against compiled JSON Schema
 /// If invalid, returns Some(Vec<(String,String)>) holding the error messages
 /// this is just for the tests below and is equivalent to the validation logic
 /// in the main `validate` function which was inlined for performance reasons
 #[cfg(test)]
 fn validate_json_instance(
-    instance: &Value,
-    schema_compiled: &Validator,
+    instance: csv_json::CsvNode<'_>,
+    schema_compiled: &Validator<CsvJson>,
 ) -> Option<Vec<(String, String)>> {
     // Use is_valid() for fast boolean check on valid records (doesn't walk full tree)
     // Only call evaluate() when invalid to get detailed errors
@@ -2519,6 +2976,7 @@ fn validate_json_instance(
 #[cfg(test)]
 mod tests_for_csv_to_json_conversion {
 
+    use jsonschema::types::JsonType;
     use serde_json::json;
 
     use super::*;
@@ -2574,21 +3032,15 @@ mod tests_for_csv_to_json_conversion {
 
     #[test]
     #[allow(clippy::approx_constant)]
-    fn test_to_json_instance() {
-        let _ = NULL_TYPE.get_or_init(|| Value::String("null".to_string()));
+    fn test_row_to_value() {
         let csv = "A,B,C,D,E,F,G,H,I,J,K,L
         hello,3.1415,300000000,true,,,,,hello,3.1415,300000000,true";
 
-        let mut rdr = csv::Reader::from_reader(csv.as_bytes());
-        let headers = rdr.byte_headers().unwrap().clone();
-        let header_types = get_json_types(&headers, &schema_json()).unwrap();
-        let mut record = rdr.byte_records().next().unwrap().unwrap();
-        record.trim();
+        let values = with_csv_rows(csv, &schema_json(), |row| row.to_value().into_owned());
 
         assert_eq!(
-            to_json_instance(&header_types, headers.len(), &record)
-                .expect("can't convert csv to json instance"),
-            json!({
+            values,
+            vec![json!({
                 "A": "hello",
                 "B": 3.1415,
                 "C": 300_000_000,
@@ -2601,28 +3053,135 @@ mod tests_for_csv_to_json_conversion {
                 "J": 3.1415,
                 "K": 300_000_000,
                 "L": true,
-            })
+            })]
         );
     }
 
+    // Where the up-front conversion failed the whole record, `type` now rejects the cell.
     #[test]
-    fn test_to_json_instance_cast_integer_error() {
-        let _ = NULL_TYPE.get_or_init(|| Value::String("null".to_string()));
+    fn test_uncastable_cell_is_a_type_error() {
         let csv = "A,B,C,D,E,F,G,H
-        hello,3.1415,3.0e8,true,,,,";
+        hello,3.1415,3.0e8,yes,,,,";
 
-        let mut rdr = csv::Reader::from_reader(csv.as_bytes());
-        let headers = rdr.byte_headers().unwrap().clone();
-        let header_types = get_json_types(&headers, &schema_json()).unwrap();
+        let schema = schema_json();
+        let compiled = jsonschema::options_for::<CsvJson>().build(&schema).unwrap();
+        let results = with_csv_rows(csv, &schema, |row| validate_json_instance(row, &compiled));
 
-        let result = to_json_instance(
-            &header_types,
-            headers.len(),
-            &rdr.byte_records().next().unwrap().unwrap(),
+        assert_eq!(
+            results,
+            vec![Some(vec![
+                (
+                    "/C".to_owned(),
+                    "\"3.0e8\" is not of type \"integer\"".to_owned()
+                ),
+                (
+                    "/D".to_owned(),
+                    "\"yes\" is not of type \"boolean\"".to_owned()
+                ),
+            ])]
         );
-        assert!(&result.is_err());
-        let error = result.err().unwrap().to_string();
-        assert_eq!("Can't cast to Integer. key: C, value: 3.0e8", error);
+    }
+
+    // `json_type` must not name a type the accessors then refuse to hand over.
+    #[test]
+    fn test_accessors_agree_with_json_type() {
+        let csv = "A,B,C,D
+        hello,notanumber,notaninteger,yes";
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "A": {"type": "string"},
+                "B": {"type": "number"},
+                "C": {"type": "integer"},
+                "D": {"type": "boolean"},
+            }
+        });
+
+        with_csv_rows(csv, &schema, |row| {
+            let object = row.as_object().unwrap();
+            for name in ["A", "B", "C", "D"] {
+                let node = object
+                    .get(&<CsvJson as Json>::prepare_key(name))
+                    .unwrap_or_else(|| panic!("column {name}"));
+                assert_eq!(node.json_type(), JsonType::String, "json_type of {name}");
+                assert!(node.is_string(), "is_string of {name}");
+                assert!(node.as_string().is_some(), "as_string of {name}");
+                assert!(node.string_length().is_some(), "length of {name}");
+                assert!(!node.is_number(), "is_number of {name}");
+                assert!(node.as_number().is_none(), "as_number of {name}");
+                assert_eq!(node.as_boolean(), None, "as_boolean of {name}");
+                assert!(!node.is_null(), "is_null of {name}");
+            }
+        });
+    }
+
+    // `const`/`enum` reach the row object and the property names, not just the cells.
+    #[test]
+    fn test_equals_value_on_rows_and_names() {
+        let csv = "name,age
+        Xaviers,60";
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {"age": {"type": "integer"}},
+            "propertyNames": {"enum": ["name", "age", 1]},
+            "const": {"name": "Xaviers", "age": 60},
+        });
+        let compiled = jsonschema::options_for::<CsvJson>().build(&schema).unwrap();
+
+        let results = with_csv_rows(csv, &schema, |row| validate_json_instance(row, &compiled));
+        assert_eq!(results, vec![None]);
+    }
+
+    // A `number` column keeps integral literals exact rather than rounding through f64.
+    #[test]
+    fn test_number_column_keeps_integer_precision() {
+        let csv = "n\n9007199254740993";
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {"n": {"type": "number", "maximum": 9_007_199_254_740_992_i64}}
+        });
+        let compiled = jsonschema::options_for::<CsvJson>().build(&schema).unwrap();
+
+        let results = with_csv_rows(csv, &schema, |row| validate_json_instance(row, &compiled));
+        assert_eq!(
+            results,
+            vec![Some(vec![(
+                "/n".to_owned(),
+                "9007199254740993 is greater than the maximum of 9007199254740992".to_owned()
+            )])]
+        );
+    }
+
+    // A repeated header name collapses to one member holding the last field's value.
+    #[test]
+    fn test_duplicate_header_names_keep_the_last_value() {
+        let csv = "id,name,name
+        1,first,last";
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {"name": {"type": "string"}}
+        });
+
+        let values = with_csv_rows(csv, &schema, |row| row.to_value().into_owned());
+        assert_eq!(values, vec![json!({"id": "1", "name": "last"})]);
+    }
+
+    // A field holding half a multi-byte sequence is decoded lossily, not silently dropped.
+    #[test]
+    fn test_split_multibyte_fields_decode_lossily() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {"a": {"type": "string"}, "b": {"type": "string"}}
+        });
+        // the two fields concatenate to a valid "é", so the whole-row check passes
+        let csv: &[u8] = b"a,b\n\xC3,\xA9";
+
+        let values = with_csv_rows(csv, &schema, |row| row.to_value().into_owned());
+        assert_eq!(values, vec![json!({"a": "\u{FFFD}", "b": "\u{FFFD}"})]);
     }
 }
 
@@ -2657,55 +3216,39 @@ mod tests_for_schema_validation {
         })
     }
 
-    fn compiled_schema() -> Validator {
-        Validator::options()
+    fn compiled_schema() -> Validator<CsvJson> {
+        jsonschema::options_for::<CsvJson>()
             .build(&schema_json())
             .expect("Invalid schema")
     }
 
     #[test]
     fn test_validate_with_no_errors() {
-        let _ = NULL_TYPE.get_or_init(|| Value::String("null".to_string()));
         let csv = "title,name,age
         Professor,Xaviers,60";
 
-        let mut rdr = csv::Reader::from_reader(csv.as_bytes());
-        let headers = rdr.byte_headers().unwrap().clone();
-        let header_types = get_json_types(&headers, &schema_json()).unwrap();
+        let results = with_csv_rows(csv, &schema_json(), |row| {
+            validate_json_instance(row, &compiled_schema())
+        });
 
-        let record = &rdr.byte_records().next().unwrap().unwrap();
-
-        let instance = to_json_instance(&header_types, headers.len(), record).unwrap();
-
-        let result = validate_json_instance(&instance, &compiled_schema());
-
-        assert!(result.is_none());
+        assert_eq!(results, vec![None]);
     }
 
     #[test]
     fn test_validate_with_error() {
-        let _ = NULL_TYPE.get_or_init(|| Value::String("null".to_string()));
         let csv = "title,name,age
         Professor,X,60";
 
-        let mut rdr = csv::Reader::from_reader(csv.as_bytes());
-        let headers = rdr.byte_headers().unwrap().clone();
-        let header_types = get_json_types(&headers, &schema_json()).unwrap();
-
-        let record = &rdr.byte_records().next().unwrap().unwrap();
-
-        let instance = to_json_instance(&header_types, headers.len(), record).unwrap();
-
-        let result = validate_json_instance(&instance, &compiled_schema());
-
-        assert!(result.is_some());
+        let results = with_csv_rows(csv, &schema_json(), |row| {
+            validate_json_instance(row, &compiled_schema())
+        });
 
         assert_eq!(
-            vec![(
+            results,
+            vec![Some(vec![(
                 "/name".to_string(),
                 "\"X\" is shorter than 2 characters".to_string()
-            )],
-            result.unwrap()
+            )])]
         );
     }
 }
@@ -2753,59 +3296,46 @@ fn test_validate_currency_email_dynamicenum_validator() {
         })
     }
 
-    let _ = NULL_TYPE.get_or_init(|| Value::String("null".to_string()));
     let csv = "title,name,fee
     Professor,Xaviers,Ð 100.00";
 
-    let mut rdr = csv::Reader::from_reader(csv.as_bytes());
-    let headers = rdr.byte_headers().unwrap().clone();
-    let header_types = get_json_types(&headers, &schema_currency_json()).unwrap();
-
-    let record = &rdr.byte_records().next().unwrap().unwrap();
-
-    let instance = to_json_instance(&header_types, headers.len(), record).unwrap();
-
-    let compiled_schema = Validator::options()
+    let compiled_schema = jsonschema::options_for::<CsvJson>()
         .with_format("currency", currency_format_checker)
         .with_keyword("dynamicEnum", dyn_enum_validator_factory)
         .should_validate_formats(true)
         .build(&schema_currency_json())
         .expect("Invalid schema");
 
-    let result = validate_json_instance(&instance, &compiled_schema);
+    let results = with_csv_rows(csv, &schema_currency_json(), |row| {
+        validate_json_instance(row, &compiled_schema)
+    });
 
     // Dogecoin is not an ISO currency
     assert_eq!(
-        result,
-        Some(vec![(
+        results,
+        vec![Some(vec![(
             "/fee".to_owned(),
             "\"Ð 100.00\" is not a \"currency\"".to_owned()
-        )])
+        )])]
     );
 
     let csv = "title,name,fee,email
     Professor,Xaviers,Ð 100.00,thisisnotanemail";
 
-    let mut rdr = csv::Reader::from_reader(csv.as_bytes());
-    let headers = rdr.byte_headers().unwrap().clone();
-    let header_types = get_json_types(&headers, &schema_currency_json()).unwrap();
-
-    let record = &rdr.byte_records().next().unwrap().unwrap();
-
-    let instance = to_json_instance(&header_types, headers.len(), record).unwrap();
-
-    let compiled_schema = Validator::options()
+    let compiled_schema = jsonschema::options_for::<CsvJson>()
         .with_format("currency", currency_format_checker)
         .with_keyword("dynamicEnum", dyn_enum_validator_factory)
         .should_validate_formats(true)
         .build(&schema_currency_json())
         .expect("Invalid schema");
 
-    let result = validate_json_instance(&instance, &compiled_schema);
+    let results = with_csv_rows(csv, &schema_currency_json(), |row| {
+        validate_json_instance(row, &compiled_schema)
+    });
 
     assert_eq!(
-        result,
-        Some(vec![
+        results,
+        vec![Some(vec![
             (
                 "/fee".to_owned(),
                 "\"Ð 100.00\" is not a \"currency\"".to_owned()
@@ -2814,7 +3344,7 @@ fn test_validate_currency_email_dynamicenum_validator() {
                 "/email".to_owned(),
                 "\"thisisnotanemail\" is not a \"email\"".to_owned()
             )
-        ])
+        ])]
     );
 
     let csv = r#"title,name,fee,email,agency
@@ -2828,23 +3358,18 @@ fn test_validate_currency_email_dynamicenum_validator() {
     Dr,Octopus,"WAX 100.000,00",octopussy@bond.net,DFTA
     Mr,Robot,"B 1,000,000",71076.964-compuserve,ABCD"#;
 
-    let mut rdr = csv::Reader::from_reader(csv.as_bytes());
-    let headers = rdr.byte_headers().unwrap().clone();
-    let header_types = get_json_types(&headers, &schema_currency_json()).unwrap();
-
-    let compiled_schema = Validator::options()
+    let compiled_schema = jsonschema::options_for::<CsvJson>()
         .with_format("currency", currency_format_checker)
         .with_keyword("dynamicEnum", dyn_enum_validator_factory)
         .should_validate_formats(true)
         .build(&schema_currency_json())
         .expect("Invalid schema");
 
-    for (i, record) in rdr.byte_records().enumerate() {
-        let record = record.unwrap();
-        let instance = to_json_instance(&header_types, headers.len(), &record).unwrap();
+    let results = with_csv_rows(csv, &schema_currency_json(), |row| {
+        validate_json_instance(row, &compiled_schema)
+    });
 
-        let result = validate_json_instance(&instance, &compiled_schema);
-
+    for (i, result) in results.into_iter().enumerate() {
         match i {
             0 => assert_eq!(result, None),
             1 => assert_eq!(result, None),

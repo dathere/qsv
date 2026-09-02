@@ -858,7 +858,7 @@ FIGURES = [
      "<code>LicenseType</code>/<code>Breed</code>/<code>Color</code> frequency bars and, via "
      "<code>--bivariate</code>, an <b>NMI association heatmap</b> (Breed ↔ Color) plus a ranked "
      "Top&nbsp;Relationships panel. <code>--dict-info</code> adds a per-panel info icon and a "
-     "slide-over <b>Data Dictionary</b> drawer sourced from the same curated schema, topped by a "
+     "slide-over <b>Data Schematic</b> drawer sourced from the same curated schema, topped by a "
      "<b>download row</b> bundling the dictionary, the charted frequency counts and the stats &amp; "
      "bivariate sidecars into the HTML itself. Fully "
      "deterministic — no LLM needed (the curated dictionary is reviewed and committed, exactly "
@@ -906,7 +906,7 @@ FIGURES = [
 ]
 
 # The gallery closes with clickable SCREENSHOTS (not plotly figures): scaled preview images that
-# open a full, standalone `qsv viz smart` "visual data dictionary" Data Schematic in a new popup window.
+# open a full, standalone `qsv viz smart` Data Schematic in a new popup window.
 # These pages are far too heavy to embed as iframes like the smart_*.html figures (6.9MB for
 # Boston, 6.8MB for Pittsburgh; NYC's 3.6MB Data Schematic is shown this way too so the gallery page
 # stays light), and Pittsburgh's and Boston's source data is too large to commit at all. Kept OUT
@@ -920,10 +920,11 @@ FIGURES = [
 # committed artifacts reused as-is, and supply their own `cmd`.
 SCREENSHOTS = [
     {
-        "title": "Pittsburgh 311 smart visual data dictionary",
+        "title": "Pittsburgh 311 Data Schematic",
+        "legacy_anchor": "fig-pittsburgh-311-smart-visual-data-dictionary",
         "win":   "pitt311data",
         "desc": (
-            "A full <code>qsv viz smart</code> <b>visual data dictionary</b> over real "
+            "A full <code>qsv viz smart</code> <b>Data Schematic</b> over real "
             "<b>Pittsburgh 311</b> service requests from the "
             '<a href="https://data.wprdc.org/dataset/pittsburgh-311-data">Western Pennsylvania '
             "Regional Data Center (WPRDC)</a>. The Data Schematic bins each request's lat/lon by "
@@ -931,7 +932,7 @@ SCREENSHOTS = [
             "(<code>--geojson pittsburgh-neighborhoods</code>, no geocoding); a curated "
             "<code>--dictionary</code> (<code>pitt311data.schema.json</code>) tags identifier/code "
             "columns and supplies friendly field labels, and <code>--dict-info</code> renders that "
-            "dictionary as its own in-page <b>Data Dictionary</b> tab (with a hover/click info icon "
+            "dictionary as its own in-page <b>Data Schematic</b> tab (with a hover/click info icon "
             "on every panel title). <code>--smarter</code> enriches the stats cache "
             "(<code>moarstats --advanced</code>) and <code>--bivariate</code> adds the NMI "
             "association heatmap plus the ranked top-relationships panel, while "
@@ -954,7 +955,8 @@ SCREENSHOTS = [
                   "--dataset-pid https://data.wprdc.org/dataset/pittsburgh-311-data"),
     },
     {
-        "title": "NYC 311 smart visual data dictionary (metro choropleth)",
+        "title": "NYC 311 Data Schematic (metro choropleth)",
+        "legacy_anchor": "fig-nyc-311-smart-visual-data-dictionary-metro-choropleth",
         "win":   "smart_nyc311",
         "desc": (
             "A <b>10,000-row</b> sample of NYC 311 service requests (2010–2020) profiled into auto-chosen "
@@ -1005,7 +1007,7 @@ SCREENSHOTS = [
             "meaningful one — the top of the ranking instead surfaces genuinely dataset-wide pairs like "
             "<i>Borough</i> × <i>Park Borough</i> (n=10,000) and "
             "<i>Due Date</i> × <i>Resolution Action Updated Date</i> (NMI=0.9996, n=3,467). "
-            "<code>--dict-info</code> adds a per-panel info icon and a slide-over <b>Data Dictionary</b> "
+            "<code>--dict-info</code> adds a per-panel info icon and a slide-over <b>Data Schematic</b> "
             "drawer sourced from the same committed schema, topped by a <b>download row</b> that bundles "
             "the dictionary as JSON Schema, the frequency counts the panels actually charted, and the "
             "stats &amp; bivariate sidecars this run was built from &mdash; every file carried inside the "
@@ -1024,10 +1026,11 @@ SCREENSHOTS = [
                  "--geojson", "nyc_neighborhoods.geojson"],
     },
     {
-        "title": "Boston 311 (2025) smart visual data dictionary",
+        "title": "Boston 311 (2025) Data Schematic",
+        "legacy_anchor": "fig-boston-311-2025-smart-visual-data-dictionary",
         "win":   "smart_boston_311_2025",
         "desc": (
-            "A full <code>qsv viz smart</code> <b>visual data dictionary</b> over a full year of "
+            "A full <code>qsv viz smart</code> <b>Data Schematic</b> over a full year of "
             "<b>Boston 311</b> service requests (2025): <b>267,187 rows x 31 columns</b>, 92.6% "
             "complete, from the "
             '<a href="https://data.boston.gov/dataset/311-service-requests">City of Boston open '
@@ -1047,7 +1050,7 @@ SCREENSHOTS = [
             "<code>--dictionary</code> (<code>boston311.schema.json</code>, generated with "
             "<code>qsv describegpt --dictionary --two-pass --format jsonschema</code>, then reviewed "
             "and committed) supplies the friendly field labels that <code>--dict-info</code> renders "
-            "as the in-page <b>Data Dictionary</b> tab &mdash; a hover/click info icon on every panel "
+            "as the in-page <b>Data Schematic</b> tab &mdash; a hover/click info icon on every panel "
             "title, and a download row bundling the dictionary as JSON Schema alongside the stats and "
             "charted-frequency sidecars this run was built from. <code>--dataset-pid</code> adds a "
             "clickable citation link back to the source dataset. <code>--photos</code> turns the "
@@ -1072,10 +1075,11 @@ SCREENSHOTS = [
                   "--feature-id-key properties.name"),
     },
     {
-        "title": "Brazil LPG prices smart visual data dictionary (Portuguese)",
+        "title": "Brazil LPG prices Data Schematic (Portuguese)",
+        "legacy_anchor": "fig-brazil-lpg-prices-smart-visual-data-dictionary-portuguese",
         "win":   "smart_brazil_lpg",
         "desc": (
-            "A <code>qsv viz smart</code> <b>visual data dictionary</b> rendered entirely in "
+            "A <code>qsv viz smart</code> <b>Data Schematic</b> rendered entirely in "
             "<b>Portuguese</b> over four weeks of <b>LPG (GLP) cooking-gas prices</b> — "
             "<b>12,732 rows x 16 columns</b>, 89.1% complete — from Brazil's national open data "
             'portal, <a href="https://dados.gov.br/dados/conjuntos-dados/serie-historica-de-'
@@ -1109,10 +1113,11 @@ SCREENSHOTS = [
                   "serie-historica-de-precos-de-combustiveis-e-de-glp"),
     },
     {
-        "title": "Colombia air quality (PM) smart visual data dictionary (Spanish)",
+        "title": "Colombia air quality (PM) Data Schematic (Spanish)",
+        "legacy_anchor": "fig-colombia-air-quality-pm-smart-visual-data-dictionary-spanish",
         "win":   "smart_colombia_aire",
         "desc": (
-            "A <code>qsv viz smart</code> <b>visual data dictionary</b> rendered entirely in "
+            "A <code>qsv viz smart</code> <b>Data Schematic</b> rendered entirely in "
             "<b>Spanish</b> (<code>--language es</code>) over <b>PM10 / PM2.5 particulate "
             "measurements</b> recorded at Colombian monitoring stations between 2011 and 2024 — "
             "<b>8,842 rows x 25 columns</b>, 100% complete. A <b>KPI row</b> headlines the totals "
@@ -1133,8 +1138,8 @@ SCREENSHOTS = [
             "English token list, so Spanish <i>Promedio</i>/<i>Mediana</i>/<i>Porcentaje</i> would "
             "otherwise be SUMMED into meaningless KPI totals. <code>--bivariate</code> adds the "
             "NMI association panels (and implicitly forces <code>--smarter</code>), and "
-            "<code>--dict-info</code> renders the dictionary as the in-page <b>Diccionario de "
-            "datos</b> tab. Regenerate with the committed dictionary, <b>not</b> "
+            "<code>--dict-info</code> renders the dictionary as the in-page "
+            "<b>Data Schematic</b> tab. Regenerate with the committed dictionary, <b>not</b> "
             "<code>--dictionary infer</code>. The standalone Data Schematic is a ~5.1&nbsp;MB "
             "self-contained page, shown here as a screenshot so the gallery page stays light: "
             "<b>click it to open the fully interactive Data Schematic in a new window</b>."),
@@ -1960,7 +1965,7 @@ def main():
     # per-figure command block styling (idempotent: drop all prior cmd rules before re-adding)
     head = re.sub(r"\s*figure (?:pre\.cmd|\.cmdbox|button\.copy)[^{]*\{[^}]*\}", "", head)
     head = head.replace("</style>", " " + CMD_CSS + "\n</style>", 1)
-    # clickable-screenshot styling for the final "visual data dictionary" entry
+    # clickable-screenshot styling for the final Data Schematic entry
     # (idempotent: drop any prior `figure a.shot` rules before re-adding)
     head = re.sub(r"\s*figure a\.shot[^{]*\{[^}]*\}", "", head)
     head = head.replace("</style>", " " + SHOT_CSS + "\n</style>", 1)
@@ -1976,11 +1981,11 @@ def main():
     head = re.sub(r'<details class="toc">.*?</details>\n', "", head, flags=re.S)
     toc_links = "".join(
         f'<a href="#{anchor_id(t)}">{html_escape(toc_label(t))}</a>' for (t, _d, _f, _a) in FIGURES)
-    # final entries: the clickable screenshots / visual data dictionaries (link-outs, not charts)
+    # final entries: the clickable screenshots / full Data Schematics (link-outs, not charts)
     toc_links += "".join(
         f'<a href="#{anchor_id(s["title"])}">{html_escape(s["title"])}</a>' for s in SCREENSHOTS)
-    dict_count = (f'{len(SCREENSHOTS)} data '
-                  f'{"dictionary" if len(SCREENSHOTS) == 1 else "dictionaries"}')
+    dict_count = (f'{len(SCREENSHOTS)} full Data '
+                  f'{"Schematic" if len(SCREENSHOTS) == 1 else "Schematics"}')
     toc_html = (f'<details class="toc"><summary>Jump to a chart'
                 f'<span class="toc-count">{len(FIGURES)} charts + {dict_count}</span></summary>'
                 f'<div class="toc-links">{toc_links}</div></details>\n')
@@ -2091,8 +2096,20 @@ def main():
         else:
             cmd_tokens = shlex.split(shot["cmd"])
         shot_anchor = anchor_id(shot["title"])
+        # `anchor_id` derives the id from the title, so the "visual data dictionary" ->
+        # "Data Schematic" retitling moved five fragments. `legacy_anchor` re-emits the old id
+        # so deep links minted before the rename still land on the figure.
+        #
+        # The stub goes INSIDE the <figure>, and carries no `hidden`: `hidden` computes to
+        # `display:none`, which browsers refuse to scroll to and which `armFromHash` (NAV_JS)
+        # would hand the stabilizer as a zero-rect target -- the fragment would resolve to an
+        # element and then go nowhere. Outside the <figure> it would instead become a stray
+        # grid item. An empty inline span inside the figure is rendered, occupies no space,
+        # and sits at the figure's own top.
+        legacy = shot.get("legacy_anchor")
+        legacy_stub = f'<span id="{legacy}"></span>' if legacy else ''
         fig_divs.append(
-            f'<figure class="cell full" id="{shot_anchor}">'
+            f'<figure class="cell full" id="{shot_anchor}">{legacy_stub}'
             f'<figcaption><span class="t">{shot["title"]}</span>'
             f'<span class="d">{shot["desc"]}</span>'
             f'{command_block_html(cmd_tokens)}</figcaption>'

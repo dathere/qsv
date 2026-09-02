@@ -327,7 +327,7 @@ viz:
     progress: "{{current}} / {{total}}"
     intro_title: "欢迎来到您的 Data Schematic"
     intro_body: "这个简短导览将带您了解 %{q_title}:每个部分的作用,以及为什么为这些数据选择了每个图表。使用方向键或下方按钮;随时按 Esc 退出导览。"
-    dict_open_title: "数据字典"
+    dict_open_title: "Data Schematic"
     dict_open_body: "此面板记录每一列:它包含什么、含义是什么、如何被分类。随时可通过此链接重新打开。"
     dict_downloads_title: "可下载的附件"
     dict_downloads_body: "这些按钮可下载构建本 Data Schematic 所用的产物 — 汇总统计、频次表和 JSON Schema 数据字典 — 可直接用于您自己的工具。"

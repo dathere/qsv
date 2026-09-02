@@ -1755,8 +1755,8 @@ const DENOMINATOR_REGION_CONCEPTS: &[&str] = &[
 /// telling a coarser denominator from a tied finer one needs the count of DISTINCT
 /// (region, denominator) PAIRS, which only a data pass can produce. `viz` already materializes
 /// exactly that while reading rows (`denom_by_cand`), so that is where the check belongs, under
-/// the project's "validity at the consumption site" discipline. This function is the best answer
-/// available WITHOUT a data pass, not a sound one.
+/// the project's "validity at the consumption site" discipline — issue #4526. This function is
+/// the best answer available WITHOUT a data pass, not a sound one.
 ///
 /// `measure.area` is NOT wired in. An area denominator is only readable once its unit is known
 /// (`x-qsv.denominator.unit`) and nothing in the dictionary supplies one yet, so an emitted area

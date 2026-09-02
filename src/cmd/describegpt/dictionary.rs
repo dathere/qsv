@@ -216,6 +216,20 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     // bug that issue fixed.
     "measure.money",
     "measure.ratio",
+    // a count of PEOPLE (or households) living in the region a sibling geo column names.
+    // More specific than `measure.count`, and the reason the extra specificity earns its keep:
+    // `verify_denominators` uses it to derive the per-field `denominator` hint that lets
+    // `viz smart` chart a PER-CAPITA rate map beside the raw count map (issue #4394), without
+    // the user hand-authoring the sidecar or paying for a `--denominator census` network fetch
+    // for a number the file already carries.
+    "measure.population",
+    // the geographic EXTENT of the region a sibling geo column names (land area, water area).
+    // Deliberately NOT wired into `verify_denominators` yet: an area denominator is only
+    // readable once its UNIT is known (`x-qsv.denominator.unit`), and nothing in the dictionary
+    // supplies one today -- an emitted area hint would divide by raw m2 and label the result
+    // with the column's own noun. It becomes emittable when a per-field unit annotation exists
+    // (issue #4525). The concept is still worth having now: it routes and documents the column.
+    "measure.area",
     "category.status",
     "category.type",
     "category.channel",
@@ -777,6 +791,19 @@ pub(super) struct DictionaryEntry {
     /// backward-compatibility.
     #[serde(default)]
     pub(super) aggregation:     Option<String>,
+    /// Optional name of the column holding this REGION column's denominator, emitted as
+    /// `x-qsv.denominator.column` and read by `viz smart --dictionary` to chart a rate map
+    /// beside the raw count map (issue #4394).
+    ///
+    /// Unlike every other optional annotation here, this one is NOT proposed by the LLM:
+    /// `verify_denominators` DERIVES it from the finalized concepts of the dictionary as a
+    /// whole — the LLM's only contribution is tagging one column `measure.population`. It is
+    /// therefore a cross-column fact, which is why it cannot be computed inside the per-entry
+    /// verify loop (when `entries[0]` is being finalized, `entries[5]`'s concept is not yet
+    /// final) and instead runs as a second pass that is the field's SOLE writer.
+    /// `#[serde(default)]` for cache backward-compatibility.
+    #[serde(default)]
+    pub(super) denominator:     Option<String>,
 }
 
 /// Parse the `stats` CSV into structured records, returning the records plus
@@ -1201,6 +1228,9 @@ pub(super) fn generate_code_based_dictionary(
             // answer -- `sum` is not a safe seed, since assuming additivity is the very bug
             // this field exists to fix (issue #4401).
             aggregation: None,
+            // Derived, not proposed: `verify_denominators` is the sole writer, and it needs the
+            // FINALIZED concepts of every column, which do not exist yet at this point.
+            denominator: None,
         });
     }
 
@@ -1441,6 +1471,11 @@ pub(super) fn combine_dictionary_entries(
             verify_aggregation(entry);
         }
     }
+    // AFTER every entry's role and concept are final: a denominator is a statement about a PAIR
+    // of columns, so it cannot be derived inside the loop above (issue #4394).
+    if infer_content_type {
+        verify_denominators(&mut code_entries);
+    }
     code_entries
 }
 
@@ -1656,6 +1691,148 @@ fn verify_aggregation(entry: &mut DictionaryEntry) {
     }
 }
 
+/// describegpt concepts naming a REGION a denominator can hang on — the dictionary-side mirror of
+/// `viz`'s `REGION_CODE_LEAVES`, plus `geo.city` (which `viz smart` unions in as a GEOCODABLE
+/// candidate). An explicit list rather than a `geo.` prefix test, because most `geo.*` concepts are
+/// not regions at all: a latitude, a coordinate pair or a street address keys no polygon and can
+/// carry no per-region denominator.
+///
+/// Deliberately errs toward hinting MORE columns than will chart. `viz` resolves the hint only for
+/// the candidate that actually wins its region contest, and reports a problem only for that winner
+/// ("a hint on a column that never charts is not the user's problem" — `viz.rs`), so a hint on a
+/// losing candidate costs nothing while a missing one costs the rate map.
+const DENOMINATOR_REGION_CONCEPTS: &[&str] = &[
+    "geo.zip_code",
+    "geo.census_tract",
+    "geo.county",
+    "geo.county_fips",
+    "geo.state",
+    "geo.state_fips",
+    "geo.country",
+    "geo.city",
+];
+
+/// Derive the per-field `denominator` hint for the dictionary as a WHOLE (issue #4394), so a
+/// dataset that already carries its own population column gets a PER-CAPITA rate map beside its
+/// raw count map without the user hand-authoring the sidecar — or paying for a
+/// `--denominator census` network fetch for a number the file already holds.
+///
+/// Structurally unlike its `verify_*` siblings, and deliberately so. `verify_gauge_range`,
+/// `verify_currency` and `verify_aggregation` each take one `&mut DictionaryEntry` and run INSIDE
+/// the per-entry loop, because everything they judge is a property of that one column. A
+/// denominator is a statement about a PAIR of columns, so it cannot be decided there: while
+/// `entries[0]` is being finalized, `entries[5]`'s concept has not been coerced yet. Hence a
+/// second pass over the finished vec, and hence this function is the field's SOLE writer — it
+/// clears before it derives, so the result depends only on this dictionary's finalized concepts
+/// and never on whatever a cached or round-tripped entry carried in.
+///
+/// The LLM proposes nothing here. Its entire contribution is tagging one column
+/// `measure.population`; every rule below is checked against the stats cache, with no data pass:
+///
+///   1. EXACTLY ONE verified `measure.population` column, or nothing at all. Two population-shaped
+///      columns make the divisor a guess, and a wrong denominator draws a confident, wrong rate map
+///      — the same "ambiguity is a refusal, not a best guess" discipline the county-name resolver
+///      settled on (issue #4417).
+///   2. numeric, `role == "measure"`, and observed `min >= 0` — a population cannot be negative.
+///   3. of the region columns that could hold the candidate constantly (cardinality >= the
+///      candidate's — a denominator is CONSTANT within a region, so it cannot take MORE distinct
+///      values than the region key it hangs on), only the NEAREST ENCLOSING ones are hinted: those
+///      at the SMALLEST such cardinality.
+///
+/// Rule 3's second half is the difference between a rate map and a confidently wrong one. A bare
+/// `cardinality >= candidate` test admits every COARSER geography in the dataset: a `county_fips`
+/// column (3143 values) beside a per-STATE population (50) passes it, and the resulting map
+/// divides county counts by state populations. Taking only the smallest qualifying cardinality
+/// sends that hint to the `state` column instead, where it is correct. The `>=` half still earns
+/// its keep by tolerating TIES — a per-county population with a few duplicate values has slightly
+/// fewer distinct values than there are counties, and an equality test would refuse the very
+/// dataset this feature exists for.
+///
+/// KNOWN HOLE, deliberately left open: this closes the case where the coarser region column is
+/// PRESENT, not the case where it is absent. A county extract that joined in state population for
+/// normalization but carries no `state` column (the state code being the first two digits of the
+/// county FIPS) still gets the hint on `county_fips`. Cardinality cannot express the difference:
+/// telling a coarser denominator from a tied finer one needs the count of DISTINCT
+/// (region, denominator) PAIRS, which only a data pass can produce. `viz` already materializes
+/// exactly that while reading rows (`denom_by_cand`), so that is where the check belongs, under
+/// the project's "validity at the consumption site" discipline. This function is the best answer
+/// available WITHOUT a data pass, not a sound one.
+///
+/// `measure.area` is NOT wired in. An area denominator is only readable once its unit is known
+/// (`x-qsv.denominator.unit`) and nothing in the dictionary supplies one yet, so an emitted area
+/// hint would divide by raw m2 and name the result after the column. It becomes emittable when a
+/// per-field unit annotation lands (issue #4525).
+///
+/// What `viz` DOES re-check at the consumption site is that the named column exists, is numeric,
+/// and is constant within each region — degrading to a skip note rather than taking the Data
+/// Schematic down. Note that a denominator from a COARSER geography passes that constant-within-
+/// region test (a state population really is constant within each of its counties), which is why
+/// the hole above is a hole and not something the consumer already catches.
+fn verify_denominators(entries: &mut [DictionaryEntry]) {
+    for entry in entries.iter_mut() {
+        entry.denominator = None;
+    }
+
+    let mut candidate: Option<(String, u64)> = None;
+    for entry in entries.iter() {
+        if entry.concept != "measure.population"
+            || !matches!(entry.r#type.as_str(), "Integer" | "Float")
+            || entry.role != "measure"
+        {
+            continue;
+        }
+        // `min` is the OBSERVED minimum from the stats cache, so this costs no data pass.
+        if !entry
+            .min
+            .parse::<f64>()
+            .is_ok_and(|m| m.is_finite() && m >= 0.0)
+        {
+            continue;
+        }
+        // `viz` resolves the hint by EXACT match against the stats field name
+        // (`stats.iter().position(|s| s.field == name)`) after trimming the JSON string, so a name
+        // carrying surrounding whitespace would emit a hint that can never resolve.
+        if entry.name.is_empty() || entry.name.trim() != entry.name {
+            continue;
+        }
+        if candidate.is_some() {
+            // ambiguous: the clearing pass above already left every entry without a hint
+            return;
+        }
+        candidate = Some((entry.name.clone(), entry.cardinality));
+    }
+    let Some((denom_name, denom_cardinality)) = candidate else {
+        return;
+    };
+
+    // The NEAREST ENCLOSING region: the smallest region cardinality that can still hold the
+    // denominator constant. Anything coarser is a different geography (see the doc comment).
+    let Some(target_cardinality) = entries
+        .iter()
+        .filter(|e| {
+            DENOMINATOR_REGION_CONCEPTS.contains(&e.concept.as_str())
+                && e.name != denom_name
+                && e.cardinality >= denom_cardinality
+        })
+        .map(|e| e.cardinality)
+        .min()
+    else {
+        return;
+    };
+
+    for entry in entries.iter_mut() {
+        // Membership in the filter above, restated: `!= target_cardinality` already implies the
+        // `>= denom_cardinality` test, since `target_cardinality` is the minimum over that set.
+        if !DENOMINATOR_REGION_CONCEPTS.contains(&entry.concept.as_str())
+            || entry.name == denom_name
+            || entry.cardinality != target_cardinality
+        {
+            continue;
+        }
+        entry.denominator = Some(denom_name.clone());
+    }
+}
+
 /// Two-pass-aware merge: seed `code_entries` with the BASELINE LLM Label / Description /
 /// Content Type (from the first pass) and then overlay the REFINE pass's LLM fields on top.
 /// If the refine pass omits a field, the baseline Label / Description / Content Type are
@@ -1732,6 +1909,12 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             verify_currency(entry);
             verify_aggregation(entry);
         }
+    }
+    // Same second pass as the single-pass path, for the same reason: the denominator depends on
+    // the finalized concepts of OTHER columns. Recomputed from scratch here rather than carried
+    // through the merge, so it needs no refine-merge rule of its own (issue #4394).
+    if infer_content_type {
+        verify_denominators(&mut code_entries);
     }
     code_entries
 }
@@ -2505,6 +2688,7 @@ mod tests {
             gauge_range:     None,
             currency:        None,
             aggregation:     None,
+            denominator:     None,
         }
     }
 
@@ -3576,6 +3760,274 @@ mod tests {
             "id.natural_key"
         ));
         assert!(!aggregation_survives("DateTime", "timestamp", "time.date"));
+    }
+
+    fn denom_entry(
+        name: &str,
+        concept: &str,
+        qsv_type: &str,
+        role: &str,
+        min: &str,
+        cardinality: u64,
+    ) -> DictionaryEntry {
+        let mut entry = blank_entry(name);
+        entry.concept = concept.to_string();
+        entry.r#type = qsv_type.to_string();
+        entry.role = role.to_string();
+        entry.min = min.to_string();
+        entry.cardinality = cardinality;
+        entry
+    }
+
+    /// The happy path (issue #4394): one verified `measure.population` column turns every
+    /// region column with enough cardinality into a rate-map candidate.
+    #[test]
+    fn verify_denominators_hints_region_columns_from_a_lone_population() {
+        let mut entries = vec![
+            denom_entry(
+                "county_fips",
+                "geo.county_fips",
+                "String",
+                "dimension",
+                "",
+                100,
+            ),
+            // 50 distinct states cannot carry a 95-valued per-county population constantly, so
+            // the cardinality rule correctly refuses this one.
+            denom_entry("state", "geo.state", "String", "dimension", "", 50),
+            denom_entry(
+                "population",
+                "measure.population",
+                "Integer",
+                "measure",
+                "0",
+                95,
+            ),
+            denom_entry("revenue", "measure.amount", "Float", "measure", "0", 900),
+        ];
+        verify_denominators(&mut entries);
+        assert_eq!(entries[0].denominator.as_deref(), Some("population"));
+        assert_eq!(
+            entries[1].denominator, None,
+            "a region with FEWER distinct values than the denominator cannot hold it constant"
+        );
+        assert_eq!(
+            entries[2].denominator, None,
+            "the population column is not itself a region"
+        );
+        assert_eq!(
+            entries[3].denominator, None,
+            "a non-region measure is never hinted"
+        );
+    }
+
+    /// The discriminating case, and the reason rule 3 takes the SMALLEST qualifying cardinality
+    /// rather than every column that clears the candidate's. A bare `cardinality >= candidate`
+    /// test hints `county_fips` here, and viz's constant-within-region check does NOT catch it —
+    /// a state population really is constant within each of its counties — so the map would
+    /// silently divide county counts by state populations.
+    #[test]
+    fn verify_denominators_prefers_the_nearest_enclosing_region() {
+        let mut entries = vec![
+            denom_entry(
+                "county_fips",
+                "geo.county_fips",
+                "String",
+                "dimension",
+                "",
+                3143,
+            ),
+            denom_entry("state", "geo.state", "String", "dimension", "", 50),
+            denom_entry(
+                "state_pop",
+                "measure.population",
+                "Integer",
+                "measure",
+                "0",
+                50,
+            ),
+        ];
+        verify_denominators(&mut entries);
+        assert_eq!(
+            entries[1].denominator.as_deref(),
+            Some("state_pop"),
+            "the state population belongs to the state column"
+        );
+        assert_eq!(
+            entries[0].denominator, None,
+            "a coarser denominator must not be hinted onto a finer region — county counts over \
+             state populations is a confidently wrong rate map"
+        );
+    }
+
+    /// The `>=` half of rule 3 still earns its keep: a per-county population with duplicate
+    /// values has FEWER distinct values than there are counties, and an equality test would
+    /// refuse the flagship dataset. With no coarser region present, the tied column is still the
+    /// nearest enclosing one.
+    #[test]
+    fn verify_denominators_tolerates_ties_in_the_denominator() {
+        let mut entries = vec![
+            denom_entry(
+                "county_fips",
+                "geo.county_fips",
+                "String",
+                "dimension",
+                "",
+                3143,
+            ),
+            denom_entry("pop", "measure.population", "Integer", "measure", "0", 3140),
+        ];
+        verify_denominators(&mut entries);
+        assert_eq!(
+            entries[0].denominator.as_deref(),
+            Some("pop"),
+            "3140 distinct populations across 3143 counties is ties, not a coarser geography"
+        );
+    }
+
+    /// Ambiguity is a refusal, not a best guess — the discipline the county-name resolver
+    /// settled on (issue #4417). A wrong divisor draws a confident, wrong rate map.
+    #[test]
+    fn verify_denominators_refuses_two_population_columns() {
+        let mut entries = vec![
+            denom_entry("zip", "geo.zip_code", "String", "dimension", "", 500),
+            denom_entry(
+                "pop_2020",
+                "measure.population",
+                "Integer",
+                "measure",
+                "0",
+                480,
+            ),
+            denom_entry(
+                "pop_2010",
+                "measure.population",
+                "Integer",
+                "measure",
+                "0",
+                470,
+            ),
+        ];
+        verify_denominators(&mut entries);
+        assert!(
+            entries.iter().all(|e| e.denominator.is_none()),
+            "two population-shaped columns make the divisor a guess; emit nothing"
+        );
+    }
+
+    /// Every candidate gate, one column at a time. Each of these is the ONLY population-tagged
+    /// column in its dictionary, so a hint appears if and only if the gate passes.
+    #[test]
+    fn verify_denominators_rejects_unverifiable_candidates() {
+        // (candidate entry, why it must be rejected)
+        let bad = [
+            (
+                denom_entry("pop", "measure.population", "String", "measure", "0", 90),
+                "a non-numeric column cannot divide",
+            ),
+            (
+                denom_entry("pop", "measure.population", "Integer", "dimension", "0", 90),
+                "role must be measure",
+            ),
+            (
+                denom_entry("pop", "measure.population", "Integer", "measure", "-5", 90),
+                "a population cannot be negative",
+            ),
+            (
+                denom_entry("pop", "measure.population", "Integer", "measure", "", 90),
+                "an unparseable min cannot be shown non-negative",
+            ),
+            (
+                // viz resolves the hint by EXACT match on the stats field name after trimming
+                // the JSON string, so an untrimmed name could never resolve.
+                denom_entry(" pop ", "measure.population", "Integer", "measure", "0", 90),
+                "an untrimmed name would emit a hint viz can never resolve",
+            ),
+            (
+                denom_entry("pop", "measure.count", "Integer", "measure", "0", 90),
+                "only measure.population is a denominator candidate",
+            ),
+            (
+                // deliberately NOT wired in until a per-field unit annotation exists (#4525)
+                denom_entry("land_area", "measure.area", "Float", "measure", "0", 90),
+                "measure.area has no unit source yet, so it is not emitted",
+            ),
+        ];
+        for (candidate, why) in bad {
+            let mut entries = vec![
+                denom_entry(
+                    "county_fips",
+                    "geo.county_fips",
+                    "String",
+                    "dimension",
+                    "",
+                    100,
+                ),
+                candidate,
+            ];
+            verify_denominators(&mut entries);
+            assert_eq!(entries[0].denominator, None, "{why}");
+        }
+
+        // the same fixture with every gate satisfied DOES hint, so the assertions above are
+        // testing the gates rather than a permanently-empty result
+        let mut ok = vec![
+            denom_entry(
+                "county_fips",
+                "geo.county_fips",
+                "String",
+                "dimension",
+                "",
+                100,
+            ),
+            denom_entry("pop", "measure.population", "Integer", "measure", "0", 90),
+        ];
+        verify_denominators(&mut ok);
+        assert_eq!(ok[0].denominator.as_deref(), Some("pop"));
+    }
+
+    /// Only concepts that name a boundary region get a hint. Most `geo.*` concepts key no
+    /// polygon, which is why the list is explicit rather than a `geo.` prefix test.
+    #[test]
+    fn verify_denominators_only_hints_region_concepts() {
+        let mut entries = vec![
+            denom_entry("lat", "geo.latitude", "Float", "measure", "", 900),
+            denom_entry("addr", "geo.street_address", "String", "dimension", "", 900),
+            denom_entry("city", "geo.city", "String", "dimension", "", 900),
+            denom_entry("pop", "measure.population", "Integer", "measure", "0", 90),
+        ];
+        verify_denominators(&mut entries);
+        assert_eq!(entries[0].denominator, None, "a latitude keys no polygon");
+        assert_eq!(entries[1].denominator, None, "an address keys no polygon");
+        assert_eq!(
+            entries[2].denominator.as_deref(),
+            Some("pop"),
+            "a city IS a region candidate — viz unions geocodable city columns in"
+        );
+    }
+
+    /// The pass is the field's SOLE writer, so a value carried in by a cached or round-tripped
+    /// entry never survives a run whose concepts no longer justify it.
+    #[test]
+    fn verify_denominators_clears_a_stale_hint() {
+        let mut entries = vec![
+            denom_entry(
+                "county_fips",
+                "geo.county_fips",
+                "String",
+                "dimension",
+                "",
+                100,
+            ),
+            denom_entry("revenue", "measure.amount", "Float", "measure", "0", 900),
+        ];
+        entries[0].denominator = Some("population".to_string());
+        entries[1].denominator = Some("population".to_string());
+        verify_denominators(&mut entries);
+        assert!(
+            entries.iter().all(|e| e.denominator.is_none()),
+            "no measure.population column remains, so no hint may survive"
+        );
     }
 
     #[test]

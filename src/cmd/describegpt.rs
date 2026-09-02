@@ -220,6 +220,19 @@ describegpt options:
                            with the "money" content type and the "measure.money" concept.
                            "qsv viz smart --dictionary" reads the code to prefix that column's
                            KPI tile with the currency's symbol.
+                           When the dictionary carries exactly ONE "measure.population" field
+                           (a count of people or households IN a region that another column
+                           names), qsv DERIVES an "x-qsv.denominator" of {"column": "<that
+                           field>"} on every region column able to hold it constantly. A
+                           dictionary-driven "qsv viz smart" Data Schematic then charts a
+                           PER-CAPITA rate map beside the raw count map, with no hand-edited
+                           sidecar and no Census network fetch for a number the file already
+                           carries. This one is DERIVED, not proposed: the LLM's only job is
+                           tagging the population field. Two population fields are an ambiguity
+                           qsv refuses rather than guesses at, and an explicit denominator flag
+                           still outranks the hint. "measure.area" is a sibling concept the LLM
+                           may tag, but qsv does not derive an area denominator from it yet - an
+                           area divisor is unreadable without its unit.
                            The LLM also infers dataset-level INTER-COLUMN RELATIONSHIPS, emitted
                            as a "relationships" array (top-level in the JSON dictionary, and in
                            the dataset-level "x-qsv" object of the JSON Schema one). Each entry
@@ -8436,6 +8449,7 @@ p_fewshot_examples = ""
             gauge_range:     None,
             currency:        None,
             aggregation:     None,
+            denominator:     None,
         }];
         let first = build_first_pass_dictionary_json_string(&args, &entries);
         sleep(Duration::from_millis(10));
@@ -8642,6 +8656,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "category|raw".to_string(),
@@ -8667,6 +8682,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
         ];
 
@@ -8754,6 +8770,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "Status".to_string(),
@@ -8792,6 +8809,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
         ];
 
@@ -8895,6 +8913,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "Status".to_string(),
@@ -8920,6 +8939,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
         ];
 
@@ -8998,6 +9018,7 @@ p_fewshot_examples = ""
             gauge_range:     None,
             currency:        None,
             aggregation:     None,
+            denominator:     None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -9090,6 +9111,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
             // Text column with only `min_length` retained.
             dictionary::DictionaryEntry {
@@ -9116,6 +9138,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
             // Text column with only `max_length` retained.
             dictionary::DictionaryEntry {
@@ -9142,6 +9165,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
         ];
 
@@ -9219,6 +9243,7 @@ p_fewshot_examples = ""
             gauge_range:     None,
             currency:        None,
             aggregation:     None,
+            denominator:     None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -9383,6 +9408,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
             dictionary::DictionaryEntry {
                 name:          "category".to_string(),
@@ -9408,6 +9434,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
         ];
 
@@ -9477,6 +9504,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
             // datetime with an inferred format (contains colons) over an RFC3339 min/max.
             dictionary::DictionaryEntry {
@@ -9503,6 +9531,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
             // bare `date` token (no inferred fmt) — Min/Max stay as-is.
             dictionary::DictionaryEntry {
@@ -9529,6 +9558,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
             // non-date content type — Min/Max untouched even though numeric.
             dictionary::DictionaryEntry {
@@ -9555,6 +9585,7 @@ p_fewshot_examples = ""
                 gauge_range:     None,
                 currency:        None,
                 aggregation:     None,
+                denominator:     None,
             },
         ];
 

@@ -30775,8 +30775,16 @@ struct RegionDedupe {
     /// collapsed total would produce a figure that is neither the true total nor a defensible
     /// approximation.
     unattributed_rows: u64,
-    /// a known region showed two DIFFERENT values, so the measure is not constant within it after
-    /// all — the ownership guard is only a NECESSARY condition and was wrong here.
+    /// a known region showed two DIFFERENT values, so the measure is not constant within that
+    /// region alone.
+    ///
+    /// This does NOT establish what the measure IS. It may be genuinely per-row (a stale sidecar
+    /// tagging a row-level column `measure.population`), or it may be region x PERIOD level — a
+    /// population per county per YEAR — which disagrees with itself inside a county for an
+    /// entirely legitimate reason. The two are indistinguishable here, so a conflict is treated as
+    /// AMBIGUOUS and the KPI tile is omitted rather than falling back to a row-wise total, which
+    /// would be inflated in the second reading (roborev 4542). `measure_by_dim_panel` does fall
+    /// back for the grouped bar; see `unattributed_rows` for why the two sites differ.
     conflict:          bool,
 }
 
@@ -30796,10 +30804,9 @@ struct RegionDedupe {
 /// than guessed at here. `measure_by_dim_panel` keys its own dedupe the same way.
 ///
 /// This both VERIFIES and COMPUTES. The ownership guard cannot prove constancy from the stats
-/// cache, so a measure that disagrees with itself inside one region sets `conflict` and is handed
-/// back to the ordinary row-wise treatment — the same call `measure_by_dim_panel` makes for the
-/// grouped bar, and the correct one: a value that differs between two rows of the same region is a
-/// genuine per-row measure.
+/// cache, so a measure that disagrees with itself inside one region sets `conflict` — which the
+/// KPI caller treats as AMBIGUOUS and omits, since a conflict cannot tell a genuine per-row
+/// measure from a legitimate region-per-period one. See [`RegionDedupe::conflict`].
 fn region_deduped_totals(
     args: &Args,
     targets: &[(usize, usize)],

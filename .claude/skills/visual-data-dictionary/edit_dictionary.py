@@ -181,6 +181,18 @@ def honored_agg(aggregation, role, qsv_type):
 
     An aggregation failing any of these is dropped by viz and the column falls
     back to the label heuristic — so it must not appear in the ROUTE preview.
+
+    CAVEAT (issue #4528): this mirrors the READ GATE faithfully, but for a
+    REGION-LEVEL column the gate is no longer the last word. A column a region
+    declares as its `x-qsv.denominator`, or one tagged
+    `measure.population`/`measure.area`, holds a value that repeats on every row
+    of its region; viz collapses it to one value per owning region before
+    aggregating, and that collapse OUTRANKS an explicit aggregation. For those
+    columns the preview's AGG/ROUTE is optimistic in two ways: the grouped bar
+    shows the region's own figure rather than a row-wise total, and the KPI tile
+    is omitted entirely when regions repeat. The TUI cannot see either — it has
+    no row count and does not read the data — so treat the preview as the gate,
+    not the rendering.
     """
     if not normalized_agg(aggregation):
         return ""

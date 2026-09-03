@@ -365,6 +365,22 @@ for a quantity each row contributes. It is the **language-neutral** signal: the
 name heuristic is English-first and cannot read non-English column names, issue
 #4401.)
 
+**One exception to "overrides in both directions"** (issue #4528): a
+REGION-LEVEL column — one a region declares as its `x-qsv.denominator`, or one
+tagged `measure.population`/`measure.area` — holds a value that repeats
+identically on every row of its region. `viz smart` collapses it to one value
+per owning region before aggregating, and that collapse outranks an explicit
+`x-qsv.aggregation`. #4401's precedence is about what a measure MEANS
+(extensive vs intensive); this is about the data's SHAPE — the rows are
+duplicates of one regional value, and even a genuinely extensive measure must
+not be counted once per duplicate. So writing `aggregation: sum` on a
+population column does **not** restore a row-wise total. On tidy
+one-row-per-region data the collapse is a no-op. Two consequences to expect:
+its grouped bar shows the region's own figure (or, grouped by something
+coarser, the sum of the distinct regional values), and its **KPI tile is
+omitted entirely** when regions repeat, because no available aggregation can
+state a true dataset-wide total without a region-keyed dedupe pass.
+
 For a pipeline, both encodings are hand-editable — stages as columns
 (`"members"` in process order, **widest/upstream first**, the opposite direction
 from `"kind":"ordered"`), or stages as row values (`"stage_column"` + an ordered
@@ -597,6 +613,16 @@ Then tell the user:
 - whether the KPI row, any gauge tile, and the pipeline panel rendered — and if
   a hint from Stage 2 was dropped, viz says why on stderr (a `gauge_range` whose
   range excludes the data, a pipeline naming a missing column)
+- if a **region-level** column (a population/area, or anything a region names as
+  its `x-qsv.denominator`) has **no KPI tile**, that is by design, not a
+  regression: its value repeats per region, so a dataset-wide total would be a
+  multiple of the real one and viz omits the tile rather than print it (issue
+  #4528). Any grouped bar SELECTED for that column is collapsed per region — but
+  do not promise one: `viz smart` draws at most a single measure-by-dimension
+  panel (the strongest measure/dimension pair, and only above an eta-squared
+  threshold), so a region-level column frequently has no bar of its own. Report
+  what actually rendered. Say so either way — the missing tile is otherwise read
+  as a bug
 - the data viewer's state: all rows (Explore) or a truncated preview, and what
   it costs in file size
 - the GeoJSON coverage note, if any (points that fell outside every region)

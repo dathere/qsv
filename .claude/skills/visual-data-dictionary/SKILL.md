@@ -1,6 +1,6 @@
 ---
 name: visual-data-dictionary
-description: Build a Visual Data Dictionary — an interactive qsv viz smart dashboard (a Data Schematic) driven by an LLM-inferred JSON Schema data dictionary, with the dictionary browsable beside the charts. Use when the user asks for a visual data dictionary, a documented dashboard, a dictionary-driven dashboard or Data Schematic, or wants to explore and document a CSV at the same time. Optionally bins rows into GeoJSON regions.
+description: Build a Data Schematic with its Data Dictionary beside it — an interactive qsv viz smart dashboard driven by an LLM-inferred JSON Schema data dictionary, browsable in-page next to the charts. Use when the user asks for a Data Schematic, a visual data dictionary, a documented dashboard or a dictionary-driven dashboard, or wants to explore and document a CSV at the same time. Optionally bins rows into GeoJSON regions.
 argument-hint: "<input.csv> [geojson]"
 ---
 

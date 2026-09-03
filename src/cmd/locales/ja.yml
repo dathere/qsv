@@ -320,7 +320,7 @@ viz:
     progress: "{{current}} / {{total}}"
     intro_title: "Data Schematic へようこそ"
     intro_body: "この短いツアーでは %{q_title} を巡ります。各部分の役割と、このデータに各グラフが選ばれた理由を説明します。矢印キーかボタンで進み、Esc でいつでも終了できます。"
-    dict_open_title: "データ辞書"
+    dict_open_title: "Data Schematic"
     dict_open_body: "このパネルは各列を文書化します。何が入っているか、何を意味するか、どう分類されたか。リンクからいつでも再度開けます。"
     dict_downloads_title: "ダウンロード可能なファイル"
     dict_downloads_body: "これらのボタンで、この Data Schematic の元になった成果物 — 要約統計、頻度表、JSON Schema データ辞書 — をダウンロードでき、お手元のツールでそのまま使えます。"

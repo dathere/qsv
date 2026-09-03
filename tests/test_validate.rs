@@ -2193,7 +2193,10 @@ fn validate_with_no_format_validation_mixed_errors() {
         .read_to_string("data.csv.validation-errors.tsv")
         .unwrap();
     assert!(validation_errors.contains("is not a \"email\"")); // Format error
-    assert!(validation_errors.contains("Can't cast to Integer")); // Type error
+    // Type error. Reported by the schema against the `age` field rather than as a
+    // whole-record cast failure: validation reads the record in place, so a cell that
+    // does not parse as its declared type is simply not of that type.
+    assert!(validation_errors.contains(r#""not-a-number" is not of type "integer""#));
 
     // Clean up output files for next test
     let _ = std::fs::remove_file(wrk.path("data.csv.valid"));
@@ -2213,7 +2216,8 @@ fn validate_with_no_format_validation_mixed_errors() {
         .read_to_string("data.csv.validation-errors.tsv")
         .unwrap();
     assert!(!validation_errors_no_format.contains("is not a \"email\"")); // No format error
-    assert!(validation_errors_no_format.contains("Can't cast to Integer")); // Still has type error
+    // Still has the type error, now attributed to the `age` field.
+    assert!(validation_errors_no_format.contains(r#""not-a-number" is not of type "integer""#));
 
     // Check valid records - should include the record with only format errors
     let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");

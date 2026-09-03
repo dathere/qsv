@@ -328,7 +328,7 @@ viz:
     progress: "{{current}} de {{total}}"
     intro_title: "Bem-vindo ao seu Data Schematic"
     intro_body: "Este tour rápido percorre %{q_title}: o que cada parte faz e por que cada gráfico foi escolhido para estes dados. Use as setas ou os botões; Esc sai do tour a qualquer momento."
-    dict_open_title: "O dicionário de dados"
+    dict_open_title: "O Data Schematic"
     dict_open_body: "Este painel documenta cada coluna: o que ela contém, o que significa e como foi classificada. Reabra-o quando quiser por este link."
     dict_downloads_title: "Arquivos para download"
     dict_downloads_body: "Estes botões baixam os artefatos com que este Data Schematic foi construído — estatísticas resumidas, tabelas de frequência e o dicionário de dados JSON Schema — prontos para as suas ferramentas."

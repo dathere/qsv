@@ -104,7 +104,7 @@ as `text/plain`, so a browser won't render it):
 [`describegpt`](https://github.com/dathere/qsv/blob/master/docs/help/describegpt.md) and then
 reviewed — so the Data Schematic's field labels and semantic routing are **deterministic and offline**
 (unlike `--dictionary infer`, which calls a local LLM on every run). Pair it with `--dict-info` to
-render the dictionary as an in-page **Data Dictionary** tab. The committed ones here:
+render the dictionary as an in-page **Data Schematic** tab. The committed ones here:
 
 | Dictionary | Fields | Used by |
 |------------|-------:|---------|

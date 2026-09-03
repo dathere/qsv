@@ -89,6 +89,10 @@ CONCEPT_VOCAB = [
     "pii.email", "pii.phone", "pii.full_name", "pii.address",
     # quantities / categoricals
     "measure.count", "measure.amount", "measure.money", "measure.ratio",
+    # region-level: the value describes the REGION a sibling geo column names, not
+    # the row, so it repeats on every row of that region. `measure.population` is
+    # what lets describegpt derive `x-qsv.denominator` -> per-capita rate map.
+    "measure.population", "measure.area",
     "category.status", "category.type", "category.channel",
     # NYC-domain extension
     "nyc.bbl", "nyc.borough", "nyc.community_board", "nyc.complaint_type",

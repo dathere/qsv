@@ -144,6 +144,15 @@ For each field, provide:
   none do. Do NOT invent tokens. NOTE: "id.surrogate_key" is RESERVED and set deterministically by
   qsv for unique-key columns - do not use it yourself.
   Allowed Concept tokens: {{ concept_vocab }}
+  Two of those tokens are worth calling out because they unlock a map qsv cannot draw otherwise:
+  use "measure.population" for a field counting the PEOPLE (or households) IN a region that another
+  column of this dataset names - a per-county population, a per-ZIP household count. When such a
+  field exists alongside a geographic column, qsv can chart a PER-CAPITA rate, not just a raw
+  total. Use "measure.area" for that region's geographic EXTENT (land or water area). Both describe
+  the REGION, so their value repeats for every row of the same region; a field counting the dataset's
+  own rows, or one that is already a per-capita rate, is NOT either of these - use "measure.count"
+  or "measure.ratio". Tag at most ONE field "measure.population": if two fields could both claim it,
+  qsv cannot tell which is the intended divisor and uses neither.
 - Gauge Range (OPTIONAL, CONTINUOUS numeric MEASURE fields only): if - and ONLY if - this field is
   a CONTINUOUS numeric "measure" (a quantity that varies smoothly across many values, charted as a
   distribution) that rides a well-known CANONICAL scale with a fixed, meaningful full-scale maximum,

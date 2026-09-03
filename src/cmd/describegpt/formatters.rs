@@ -512,6 +512,17 @@ fn build_x_qsv(
         if let Some(agg) = &entry.aggregation {
             x_qsv.insert("aggregation".to_string(), json!(agg));
         }
+        // The column holding this REGION column's denominator, DERIVED (not LLM-proposed) by
+        // `verify_denominators` from the dictionary's finalized concepts, so it is only ever
+        // present when exactly one `measure.population` column verified against it. Read by
+        // `viz smart --dictionary` as `x-qsv.denominator.column` to chart a per-capita rate map
+        // beside the raw count map (issue #4394). Nested in an object because `unit` rides
+        // beside `column` in the same hint (issue #4414) — qsv emits no `unit` yet, since only a
+        // per-field unit annotation could supply one. Absent otherwise, keeping no-flag runs
+        // byte-identical.
+        if let Some(col) = &entry.denominator {
+            x_qsv.insert("denominator".to_string(), json!({ "column": col }));
+        }
     }
     // Null sentinels. Deliberately NOT gated on the flag: emission keys off the lists being
     // non-empty, and they are only populated when a response actually supplied `null_values`.
@@ -1263,6 +1274,7 @@ mod tests {
             gauge_range:     None,
             currency:        None,
             aggregation:     None,
+            denominator:     None,
         }
     }
 
@@ -1793,6 +1805,89 @@ mod tests {
         );
     }
 
+    /// Issue #4394: the EMIT half of the denominator round-trip. The derivation is covered in
+    /// `dictionary.rs`; this pins the SHAPE `viz smart --dictionary` parses back — an OBJECT
+    /// under `x-qsv.denominator` with a `column` key, not a bare string. `viz`'s
+    /// `xq_denominator_field` reads `denominator` as an object and returns `None` for a scalar,
+    /// so emitting the name directly would be silently ignored at the consumption site.
+    #[test]
+    fn jsonschema_x_qsv_carries_denominator_as_an_object() {
+        let mut county = sample_entry("county_fips", "");
+        county.role = "dimension".to_string();
+        county.concept = "geo.county_fips".to_string();
+        county.denominator = Some("population".to_string());
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&county),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert_eq!(
+            schema["properties"]["county_fips"]["x-qsv"]["denominator"],
+            json!({ "column": "population" }),
+            "viz parses x-qsv.denominator as an object keyed by `column`"
+        );
+        // no `unit` yet: only a per-field unit annotation could supply one (issue #4525), and a
+        // unit qsv cannot justify is worse than none — viz falls back to naming the denominator
+        // after its own label.
+        assert!(
+            schema["properties"]["county_fips"]["x-qsv"]["denominator"]
+                .get("unit")
+                .is_none(),
+            "no unit source exists yet, so none may be invented"
+        );
+
+        // flag off: absent, keeping legacy schemas byte-identical.
+        let off = format_dictionary_jsonschema(
+            std::slice::from_ref(&county),
+            "test.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert!(
+            off["properties"]["county_fips"]["x-qsv"]
+                .get("denominator")
+                .is_none(),
+            "denominator leaked when flag off"
+        );
+
+        // None is omitted even with the flag on.
+        let plain = sample_entry("plain_dim", "");
+        let schema3 = format_dictionary_jsonschema(
+            std::slice::from_ref(&plain),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert!(
+            schema3["properties"]["plain_dim"]["x-qsv"]
+                .get("denominator")
+                .is_none(),
+            "denominator emitted when None"
+        );
+    }
+
     /// Issue #4401: the EMIT half of the aggregation round-trip. The parse/verify links are
     /// covered in `dictionary.rs`, but nothing else asserts that a verified value actually
     /// reaches `x-qsv.aggregation` in the emitted schema — which is what
@@ -1967,6 +2062,7 @@ mod tests {
             gauge_range:     None,
             currency:        None,
             aggregation:     None,
+            denominator:     None,
         };
         let schema = format_dictionary_jsonschema(
             std::slice::from_ref(&entry),

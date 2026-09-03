@@ -1,6 +1,6 @@
 ---
 name: visual-data-dictionary
-description: Build a Visual Data Dictionary — an interactive qsv viz smart dashboard (a Data Schematic) driven by an LLM-inferred JSON Schema data dictionary, with the dictionary browsable beside the charts. Use when the user asks for a visual data dictionary, a documented dashboard, a dictionary-driven dashboard or Data Schematic, or wants to explore and document a CSV at the same time. Optionally bins rows into GeoJSON regions.
+description: Build a Data Schematic with its Data Dictionary beside it — an interactive qsv viz smart dashboard driven by an LLM-inferred JSON Schema data dictionary, browsable in-page next to the charts. Use when the user asks for a Data Schematic, a visual data dictionary, a documented dashboard or a dictionary-driven dashboard, or wants to explore and document a CSV at the same time. Optionally bins rows into GeoJSON regions.
 argument-hint: "<input.csv> [geojson]"
 ---
 
@@ -182,11 +182,22 @@ qsv describegpt "$WORK" \
 - `--infer-content-type` is **mandatory here**, not optional: `viz smart` routes
   panels off each field's `role` and `concept`, and those are only inferred under
   this flag. Without it the dictionary loads and changes nothing. It is also the
-  only way to get the two dictionary hints that unlock extra panels:
+  only way to get the three dictionary hints that unlock extra panels:
   per-field `x-qsv.gauge_range` (turns a measure's KPI tile into a gauge; kept
-  only when the observed data lies inside the range) and the dataset-level
-  `x-qsv.relationships` array, whose `"kind": "pipeline"` entry is the **only**
-  source of the pipeline funnel/bridge panel.
+  only when the observed data lies inside the range), per-field
+  `x-qsv.denominator` on a region column (adds a **per-capita rate map** beside
+  the raw count map), and the dataset-level `x-qsv.relationships` array, whose
+  `"kind": "pipeline"` entry is the **only** source of the pipeline
+  funnel/bridge panel.
+- `x-qsv.denominator` is the odd one out: qsv **derives** it, the LLM does not
+  propose it. The model's whole contribution is tagging one column
+  `measure.population` (a count of people or households IN a region another
+  column names); `describegpt` then attaches the hint to every region column
+  that can hold it, checking from the stats cache alone that the counts are
+  plausible. Two population-shaped columns are an ambiguity it refuses rather
+  than guesses at, so you get nothing. This is what makes a rate map reachable
+  without hand-editing the JSON or paying for a `--denominator census` fetch of
+  a number the file already carries.
 - Pass `--context-file <file>` when the user has a glossary, README or codebook.
   Better context yields better roles, concepts and labels, hence a better
   Data Schematic. (`viz --dictionary-context` is the same thing for the `infer` path,
@@ -221,11 +232,18 @@ if have == 0:
     print("WARNING: no roles inferred — was --infer-content-type passed?")
 # panel-unlocking hints, so the user knows up front what will/won't be drawn
 gauges = [k for k, v in p.items() if (v.get("x-qsv") or {}).get("gauge_range")]
+# a derived denominator turns the region map into a count map PLUS a rate map
+denoms = {k: ((v.get("x-qsv") or {}).get("denominator") or {}).get("column")
+          for k, v in p.items()}
+denoms = {k: c for k, c in denoms.items() if c}
 # viz reads pipelines ONLY from the dataset-level x-qsv (see xq_pipelines in
 # src/cmd/viz.rs) — a root-level "relationships" array draws nothing.
 rels = (s.get("x-qsv") or {}).get("relationships") or []
 pipes = [r for r in rels if r.get("kind") == "pipeline"]
 print(f"gauge_range on {len(gauges)} measure(s): {', '.join(gauges) or '(none)'}")
+print(f"denominator on {len(denoms)} region column(s): "
+      + (", ".join(f"{k} -> {c}" for k, c in denoms.items()) or "(none)")
+      + ("   [rate map]" if denoms else ""))
 print(f"relationships: {len(rels)} ({len(pipes)} pipeline -> funnel/bridge panel)")
 if not rels and s.get("relationships"):
     print("WARNING: relationships found at the ROOT, not under x-qsv — viz ignores"
@@ -240,9 +258,10 @@ else:
 PY
 ```
 
-No `gauge_range` and no `pipeline` is a perfectly normal outcome — most datasets
-have neither a canonical-scale measure nor a staged process. Say so and move on;
-both can be hand-added later (see Stage 2.5).
+No `gauge_range`, no `denominator` and no `pipeline` is a perfectly normal
+outcome — most datasets have none of a canonical-scale measure, a per-region
+population, or a staged process. Say so and move on; all three can be hand-added
+later (see Stage 2.5).
 
 ## Stage 2.5 — Fine-tune the dictionary (optional, TUI)
 
@@ -322,15 +341,18 @@ Scope note: the TUI deliberately does **not** edit null sentinels
 (`--infer-null-values` output). Those are reported-never-applied and have no
 `viz smart` effect, so editing them here would change nothing downstream.
 
-Five keys that *do* affect the Data Schematic are outside the TUI, and are
+Six keys that *do* affect the Data Schematic are outside the TUI, and are
 **hand-edited in the JSON** — this is the supported path for them, not a
-violation of the "never hand-write the schema" rule:
+violation of the "never hand-write the schema" rule. (`x-qsv.denominator` is the
+one qsv now normally fills in for you; hand-editing it is a correction, or the
+route to an area/household denominator describegpt will not derive.)
 
 | key | where | effect |
 |---|---|---|
 | `x-qsv.gauge_range` | per property, `[min, max]` | KPI tile becomes a **gauge**. `describegpt` proposes it for canonical-scale measures; qsv drops it if the data falls outside the range |
 | `x-qsv.target` | per property, a number | KPI tile gains a **"vs target" delta**. Never inferred — it is a goal only the user knows |
 | `x-qsv.currency` | per property, an ISO-4217 code (`"USD"`) | KPI tile is prefixed with the currency **symbol** (`$192B`) and the panel subtitle names the currency. `describegpt` proposes it for money columns; qsv drops it unless the column is a numeric measure that reads as money (concept `measure.money` or `measure.amount`, or content type `money`) |
+| `x-qsv.denominator` | per property on a REGION column, `{"column": "<name>"}` | the region map gains a **rate panel** beside the raw count ("per 10,000 residents"). Normally **derived** by describegpt from a `measure.population` column (#4523); hand-edit to point at households/area, or to correct it. An explicit `--denominator`/`--denominator census` flag outranks it. qsv rejects a hint whose named column has more distinct values than the region key could hold constant |
 | `x-qsv.relationships` | dataset level, `{"kind":"pipeline", …}` | draws the **pipeline** panel |
 | `x-qsv.tour` | dataset level | replaces the guided Tour's built-in narration: `overrides` keyed by step id, `panels` keyed by RAW field name or `@kind` token, `panel_order` picks/orders the panel spotlights (cap 6). `version` MUST stay the **integer** `1` — viz silently discards the whole block on anything else. Plain text only; `language` (if present) is BCP-47 and must match the page locale or overrides are dropped. Written by `--tour-audience` (Stage 2), refined in Stage 6 |
 
@@ -637,9 +659,10 @@ selector/anchor, not by tool.
   through the Stage 2.5 `edit_dictionary.py` TUI — never by editing the JSON by
   hand (an off-vocab `role`/`concept` typed into the raw file silently routes a
   column to the wrong panel; the TUI validates against the vocab and flags
-  drift). The exceptions are the five keys the TUI does not own —
-  `x-qsv.gauge_range`, `x-qsv.target`, `x-qsv.currency` and the dataset-level
-  `x-qsv.relationships` and `x-qsv.tour` — which qsv documents as hand-edited.
+  drift). The exceptions are the six keys the TUI does not own —
+  `x-qsv.gauge_range`, `x-qsv.target`, `x-qsv.currency`, `x-qsv.denominator` and
+  the dataset-level `x-qsv.relationships` and `x-qsv.tour` — which qsv documents
+  as hand-edited.
   `x-qsv.tour` is freeform prose (nothing for a validator to check), but three
   of its fields are load-bearing: `version` must stay the integer `1`,
   `language` must stay BCP-47 matching the page locale, and prose is plain

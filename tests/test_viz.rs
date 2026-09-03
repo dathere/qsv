@@ -9878,13 +9878,12 @@ fn viz_smart_kpi_region_level_states_unattributed_coverage() {
 }
 
 #[test]
-fn viz_smart_kpi_region_level_conflict_restores_the_ordinary_total() {
-    // The ownership guard is a NECESSARY condition only: `cardinality(measure) <= cardinality(
-    // region)` can be satisfied by a genuinely PER-ROW measure, and a stale sidecar can tag one
-    // `measure.population`. Before the row pass such a tile was suppressed on that guess. The pass
-    // sees the measure disagree with itself inside one county and hands it back to the ordinary
-    // row-wise total -- the same call `measure_by_dim_panel` makes for the grouped bar.
-    let wrk = Workdir::new("viz_smart_kpi_region_level_conflict_restores_the_ordinary_total");
+fn viz_smart_kpi_region_level_conflict_omits_the_tile() {
+    // A conflict means the measure is not constant within its owning region. It does NOT follow
+    // that the measure is per-row -- see the region-per-period test below, which produces an
+    // identical conflict from data whose row-wise total is inflated 8x. A conflict is AMBIGUOUS,
+    // so the tile is omitted rather than falling back to the row-wise total.
+    let wrk = Workdir::new("viz_smart_kpi_region_level_conflict_omits_the_tile");
     let counties = [
         "Albany", "Bronx", "Erie", "Kings", "Monroe", "Nassau", "Queens", "Suffolk",
     ];
@@ -9917,13 +9916,77 @@ fn viz_smart_kpi_region_level_conflict_restores_the_ordinary_total() {
 
     let html = wrk.read_to_string("k.html").unwrap();
     assert!(
-        html.contains(r#""text":"Total Population""#),
-        "a genuine per-row measure must keep its ordinary tile: {html}"
+        !html.contains(r#""text":"Total Population"#),
+        "an ambiguous measure must not be headlined at all: {html}"
     );
-    // 36,800 -- the plain row-wise sum, scaled by the KPI magnitude suffix
+    // 36,800 is the row-wise sum; falling back to it would be a guess that the measure is per-row
     assert!(
-        html.contains(r#""value":36.8"#),
-        "a conflicting measure must headline the ordinary row-wise sum: {html}"
+        !html.contains(r#""value":36.8"#),
+        "the row-wise sum must not be used as a conflict fallback: {html}"
+    );
+    assert!(
+        html.contains(r#""text":"Total Requests""#),
+        "other measures keep their tiles: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_kpi_region_level_varying_by_period_is_not_row_wise() {
+    // roborev 4542: a region-level measure can legitimately vary BY REPORTING PERIOD -- a
+    // population per county per YEAR. That produces exactly the same within-region disagreement a
+    // genuinely per-row measure does, so a conflict cannot be read as proof of per-row-ness. If it
+    // were, this dataset's tile would headline 86,400,000 against a true per-year total of
+    // 10,800,000 -- reintroducing the very inflation issue #4528 removed.
+    //
+    // The value pool is deliberately only 8 wide so `cardinality(population) <=
+    // cardinality(county)` still holds: with per-year values drawn from a wider pool the
+    // ownership guard rejects the claim upstream and this path is never reached at all.
+    let wrk = Workdir::new("viz_smart_kpi_region_level_varying_by_period_is_not_row_wise");
+    let counties = [
+        "Albany", "Bronx", "Erie", "Kings", "Monroe", "Nassau", "Queens", "Suffolk",
+    ];
+    let vals = [
+        300_000, 600_000, 900_000, 1_200_000, 1_500_000, 1_800_000, 2_100_000, 2_400_000,
+    ];
+    let mut s = String::from("county,year,population,requests\n");
+    for (yi, year) in [2023, 2024].iter().enumerate() {
+        for (i, c) in counties.iter().enumerate() {
+            let p = vals[(i + yi) % 8];
+            for j in 1..=4 {
+                s.push_str(&format!("{c},{year},{p},{}\n", (i + 1) * j));
+            }
+        }
+    }
+    wrk.create_from_string("c.csv", &s);
+    wrk.create_from_string(
+        "d.schema.json",
+        &region_level_dict().replace(
+            r#""requests":{"type":"integer""#,
+            r#""year":{"type":"integer","title":"Year","x-qsv":{"concept":"time.year","role":"dimension","qsv_type":"Integer"}},
+   "requests":{"type":"integer""#,
+        ),
+    );
+
+    let out_html = wrk.path("k.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "c.csv",
+        "--dictionary",
+        "d.schema.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("k.html").unwrap();
+    assert!(
+        !html.contains(r#""value":86.4"#),
+        "the row-wise total of a per-period regional measure must never be headlined: {html}"
+    );
+    assert!(
+        !html.contains(r#""text":"Total Population"#),
+        "an ambiguous measure is omitted rather than guessed at: {html}"
     );
 }
 

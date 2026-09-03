@@ -30786,6 +30786,15 @@ struct RegionDedupe {
 /// [`owning_region_idx`]). Returns a map keyed by MEASURE index, so a caller can look up the
 /// measure it is about to headline.
 ///
+/// KNOWN LIMITATION, deliberately left open (roborev 4542): the owning-region CELL is the identity.
+/// [`is_region_concept`] accepts city and county NAMES, which are not unique — two `Springfield`
+/// rows can be different cities in different states. When their values DIFFER that registers as a
+/// `conflict` and the tile is omitted, which is safe; when they are EXACTLY equal the two regions
+/// merge into one key and the total silently undercounts by one of them. Closing it needs a
+/// composite identity, and choosing the enclosing column to qualify by is the same granularity
+/// question issue #4526 records as unanswerable from cardinality — so this is scoped there rather
+/// than guessed at here. `measure_by_dim_panel` keys its own dedupe the same way.
+///
 /// This both VERIFIES and COMPUTES. The ownership guard cannot prove constancy from the stats
 /// cache, so a measure that disagrees with itself inside one region sets `conflict` and is handed
 /// back to the ordinary row-wise treatment — the same call `measure_by_dim_panel` makes for the
@@ -30885,24 +30894,34 @@ fn build_kpi_row(
         let region_dedupe = match p.stat_idx {
             Some(i) if is_repeated_region_level(i, stats, col_sems, row_count) => {
                 match deduped.and_then(|d| d.get(&i)) {
-                    // The data says the value is NOT constant within its region, so the ownership
-                    // guard -- a NECESSARY condition only -- was wrong. A measure that differs
-                    // between two rows of one region is a genuine per-row measure, so the ordinary
-                    // row-wise tile is the CORRECT treatment rather than a fallback; the same call
-                    // `measure_by_dim_panel` makes for the grouped bar.
-                    Some(d) if d.conflict => None,
-                    // Verified region-level: headline the collapsed figure.
-                    Some(d) if d.regions > 0 => Some(*d),
-                    // No row pass available, or not one region could be identified, so there is no
-                    // figure to state. Omit the tile rather than print a false one -- the same rule
-                    // the gauge guard applies just below: a missing number beats a misleading one.
+                    // Verified constant within every region that could be identified: headline the
+                    // collapsed figure.
+                    Some(d) if !d.conflict && d.regions > 0 => Some(*d),
+                    // Everything else leaves this tile with no figure it can state truthfully, so
+                    // omit it -- the same rule the gauge guard applies just below: a missing number
+                    // beats a misleading one. Two ways to get here:
                     //
-                    // This is the ONLY suppression condition, and it is deliberately
-                    // THRESHOLD-FREE. A total stated as covering the regions it
-                    // could identify, with the remainder reported beside it, is
-                    // honest at ANY coverage level, so there is no "suppress
-                    // below N% attributed" rule to tune -- and no granularity to guess, which is
-                    // what separates this from the denominator-geography case (issue #4526).
+                    //   - CONFLICT. The measure is not constant within its owning region. That does
+                    //     NOT prove it is per-row: it may be region x PERIOD level -- a population
+                    //     per county per YEAR -- and then the row-wise total is inflated by exactly
+                    //     the factor issue #4528 exists to remove. A conflict is AMBIGUOUS, so
+                    //     falling back to the row-wise total would reintroduce that bug for the
+                    //     region-per-period reading of the same data.
+                    //
+                    //     `measure_by_dim_panel` DOES fall back for the grouped bar, and the two
+                    //     sites are meant to differ here for the same reason they differ on a blank
+                    //     region key (see `RegionDedupe::unattributed_rows`): a grouped bar shows
+                    //     its per-group figures, so a reader can see what was aggregated and judge
+                    //     it, while a lone headline number carries no such context.
+                    //
+                    //   - NOT ONE REGION IDENTIFIABLE, or no row pass ran. Nothing to collapse.
+                    //
+                    // Suppression is deliberately THRESHOLD-FREE: partial coverage is NOT a reason
+                    // to suppress, because a total stated over the regions it could identify, with
+                    // the remainder reported beside it, is honest at ANY coverage level. There is
+                    // no "suppress below N% attributed" rule to tune -- and no granularity to
+                    // guess, which is what separates this from the denominator-geography case
+                    // (issue #4526).
                     _ => continue,
                 }
             },

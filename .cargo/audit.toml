@@ -42,23 +42,6 @@ ignore = [
     # vulnerabilities
     # ---------------------------------------------------------------------
 
-    # RUSTSEC-2026-0235: insufficient archive validation in rkyv 0.7.x can cause
-    # out-of-bounds reads for archives containing Rc/Arc.
-    # NOT actually compiled by qsv:
-    #   qsv (also via spreadsheet-ods, csvs_convert) -> rust_decimal 1.42.1 -> rkyv 0.7.46
-    # `rkyv` is an OPTIONAL dependency of rust_decimal, gated behind its `rkyv`
-    # feature. qsv declares `rust_decimal = { default-features = false }` and none
-    # of the three dependents request that feature, so (feature unification being
-    # global) rkyv 0.7.46 only appears in Cargo.lock and is never built or linked:
-    #   `cargo tree -i rkyv@0.7.46 --all-features` -> empty.
-    # The rkyv that IS compiled (0.8.18, via geosuggest-core/geosuggest-utils/kiddo)
-    # is >= the patched 0.8.17 and unaffected.
-    # rust_decimal 1.42.1 is the latest release, so there is no upgrade available;
-    # it already carries `rkyv-0_8` as a dev-dependency, so this clears when
-    # rust_decimal completes its migration to rkyv 0.8.
-    # See dathere/qsv#4346.
-    "RUSTSEC-2026-0235",
-
     # RUSTSEC-2026-0194: quadratic run time when checking a start tag for
     # duplicate attribute names in quick-xml.
     # RUSTSEC-2026-0195: unbounded namespace-declaration allocation in `NsReader`

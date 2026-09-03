@@ -257,6 +257,7 @@ viz:
     category_flow: "カテゴリの流れ: %{q_dims}"
     kpi_mean: "%{q_label} の平均"
     kpi_total: "%{q_label} の合計"
+    kpi_unattributed: "%{q_total} 行中 %{q_n} 行が未割り当て"
     cyclic_records_by: "%{q_axis} 別のレコード数(%{q_date})"
     cyclic_hour_of_day: "時刻"
     cyclic_day_of_week: "曜日"

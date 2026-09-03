@@ -30753,12 +30753,93 @@ fn is_repeated_region_level(
     stats.get(owner).is_some_and(|s| s.cardinality < row_count)
 }
 
+/// One measure's result from the region-dedupe row pass (issue #4534).
+///
+/// A REGION-LEVEL measure repeats identically on every row of its region, so the stats cache's
+/// row-wise `sum` is a MULTIPLE of the real one. Collapsing to one value per owning region is the
+/// only way for a dataset-wide headline to state it truthfully, and it needs the data: the cache
+/// carries no `(region, value)` pair count, which is exactly the limit
+/// [`owning_region_idx`]'s cardinality guard documents.
+#[derive(Clone, Copy, Debug, Default)]
+struct RegionDedupe {
+    /// Σ, over the owning regions that could be identified, of that region's single value.
+    sum:               f64,
+    /// how many owning regions contributed a value.
+    regions:           usize,
+    /// rows where the measure parsed but its OWNING-REGION cell was blank, so the value belongs to
+    /// no identifiable region. Reported as coverage beside the tile, never folded into `sum`.
+    ///
+    /// Deliberately NOT the full-weight treatment `measure_by_dim_panel` gives a blank region.
+    /// That rule is right for a grouped bar, where the grouping makes the compromise visible;
+    /// a single headline number has no such context, so adding unattributable rows to a
+    /// collapsed total would produce a figure that is neither the true total nor a defensible
+    /// approximation.
+    unattributed_rows: u64,
+    /// a known region showed two DIFFERENT values, so the measure is not constant within it after
+    /// all — the ownership guard is only a NECESSARY condition and was wrong here.
+    conflict:          bool,
+}
+
+/// Collapse each region-level measure to one value per owning region, in ONE row pass.
+///
+/// `targets` pairs a measure's column index with the region column that owns it (from
+/// [`owning_region_idx`]). Returns a map keyed by MEASURE index, so a caller can look up the
+/// measure it is about to headline.
+///
+/// This both VERIFIES and COMPUTES. The ownership guard cannot prove constancy from the stats
+/// cache, so a measure that disagrees with itself inside one region sets `conflict` and is handed
+/// back to the ordinary row-wise treatment — the same call `measure_by_dim_panel` makes for the
+/// grouped bar, and the correct one: a value that differs between two rows of the same region is a
+/// genuine per-row measure.
+fn region_deduped_totals(
+    args: &Args,
+    targets: &[(usize, usize)],
+) -> CliResult<HashMap<usize, RegionDedupe>> {
+    if targets.is_empty() {
+        return Ok(HashMap::new());
+    }
+    // first value seen per owning region, per target
+    let mut seen: Vec<HashMap<String, f64>> = vec![HashMap::new(); targets.len()];
+    let mut out: Vec<RegionDedupe> = vec![RegionDedupe::default(); targets.len()];
+
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        for (ti, &(measure_idx, region_idx)) in targets.iter().enumerate() {
+            let Some(v) = parse_f64(record.get(measure_idx)).filter(|v| v.is_finite()) else {
+                continue;
+            };
+            let cell = cell_to_string(record.get(region_idx));
+            let key = cell.trim();
+            if key.is_empty() {
+                out[ti].unattributed_rows += 1;
+                continue;
+            }
+            match seen[ti].get(key) {
+                // Relative epsilon, matching the choropleth path's own constancy test, so the
+                // same column is judged identically wherever it is read.
+                Some(&prev) if (prev - v).abs() > f64::EPSILON * prev.abs().max(1.0) => {
+                    out[ti].conflict = true;
+                },
+                Some(_) => {},
+                None => {
+                    seen[ti].insert(key.to_string(), v);
+                    out[ti].sum += v;
+                    out[ti].regions += 1;
+                },
+            }
+        }
+    }
+    Ok(targets.iter().map(|&(m, _)| m).zip(out).collect())
+}
+
 fn build_kpi_row(
     stats: &[crate::cmd::stats::StatsData],
     panels: &[Panel],
     dict: Option<&DictData>,
     col_sems: &[ColSemantics],
     row_count: u64,
+    deduped: Option<&HashMap<usize, RegionDedupe>>,
 ) -> Option<Panel> {
     if stats.is_empty() {
         return None;
@@ -30798,15 +30879,35 @@ fn build_kpi_row(
             continue;
         }
         // A region-level column that repeats across rows would headline a MULTIPLE of its real
-        // total -- "Total Population 28.8M" for 2.4M of residents -- and no aggregation available
-        // here can state the true figure without a region-keyed dedupe pass. Omit the tile rather
-        // than print a false one, the same rule the gauge guard applies just below: a missing
-        // number beats a misleading one (issue #4528).
-        if p.stat_idx
-            .is_some_and(|i| is_repeated_region_level(i, stats, col_sems, row_count))
-        {
-            continue;
-        }
+        // total -- "Total Population 28.8M" for 2.4M of residents (issue #4528). The dedupe row
+        // pass now supplies the figure the stats cache cannot, so the tile states the truth
+        // instead of vanishing (issue #4534). Three outcomes, in the order they are decided:
+        let region_dedupe = match p.stat_idx {
+            Some(i) if is_repeated_region_level(i, stats, col_sems, row_count) => {
+                match deduped.and_then(|d| d.get(&i)) {
+                    // The data says the value is NOT constant within its region, so the ownership
+                    // guard -- a NECESSARY condition only -- was wrong. A measure that differs
+                    // between two rows of one region is a genuine per-row measure, so the ordinary
+                    // row-wise tile is the CORRECT treatment rather than a fallback; the same call
+                    // `measure_by_dim_panel` makes for the grouped bar.
+                    Some(d) if d.conflict => None,
+                    // Verified region-level: headline the collapsed figure.
+                    Some(d) if d.regions > 0 => Some(*d),
+                    // No row pass available, or not one region could be identified, so there is no
+                    // figure to state. Omit the tile rather than print a false one -- the same rule
+                    // the gauge guard applies just below: a missing number beats a misleading one.
+                    //
+                    // This is the ONLY suppression condition, and it is deliberately
+                    // THRESHOLD-FREE. A total stated as covering the regions it
+                    // could identify, with the remainder reported beside it, is
+                    // honest at ANY coverage level, so there is no "suppress
+                    // below N% attributed" rule to tune -- and no granularity to guess, which is
+                    // what separates this from the denominator-geography case (issue #4526).
+                    _ => continue,
+                }
+            },
+            _ => None,
+        };
         let row = dict.and_then(|d| d.rows.get(&s.field));
         let label = match row {
             Some(r) if !r.label.is_empty() => r.label.clone(),
@@ -30826,8 +30927,17 @@ fn build_kpi_row(
             Some(_) => true,
             None => has_range || is_intensive_measure(&label, &s.field),
         };
-        let Some(value) = (if intensive { s.mean_f64() } else { s.sum }).filter(|v| v.is_finite())
-        else {
+        // A verified region-level measure headlines its COLLAPSED figure: the sum of the distinct
+        // regional values, or their unweighted mean. The row-wise `mean` is wrong for the same
+        // reason the row-wise `sum` is -- it weights each region by how many rows it happens to
+        // occupy, so "Mean Population" would drift toward whichever county files the most reports.
+        let Some(value) = (match (&region_dedupe, intensive) {
+            (Some(d), false) => Some(d.sum),
+            (Some(d), true) => Some(d.sum / d.regions as f64),
+            (None, true) => s.mean_f64(),
+            (None, false) => s.sum,
+        })
+        .filter(|v| v.is_finite()) else {
             continue;
         };
         // gauge only when a range is supplied AND actually contains the value (guardrail against a
@@ -30860,8 +30970,24 @@ fn build_kpi_row(
         } else {
             kpi_number_format(value)
         };
+        // A collapsed figure covers only the regions that could be identified, so when some rows
+        // carried no owning region the tile says so in place rather than only on stderr — the same
+        // reasoning as the rate panel's `denom_excluded` suffix, and phrased the same
+        // count-of-total way so it stays grammatical at 1 without a plural rule.
+        let label = match &region_dedupe {
+            Some(d) if d.unattributed_rows > 0 => format!(
+                "{} ({})",
+                kpi_title(&label, intensive),
+                t!(
+                    "viz.title.kpi_unattributed",
+                    q_n = d.unattributed_rows,
+                    q_total = row_count
+                )
+            ),
+            _ => kpi_title(&label, intensive),
+        };
         tiles.push(KpiTile {
-            label: kpi_title(&label, intensive),
+            label,
             value,
             format,
             gauge,
@@ -33843,12 +33969,24 @@ impl<'a> SmartCtx<'a> {
             // box-points builders pull it earlier), so this adds no I/O in practice. It tells the
             // tile builder whether regions repeat across rows (issue #4528).
             let row_count = self.row_count();
+            // Region-level measures need one value per OWNING region before a dataset-wide headline
+            // can state them, and only the data carries that (issue #4534). Deliberately a SUPERSET
+            // of what the tile builder will use — every numeric measure an owning region claims,
+            // whether or not it ends up with a tile — so a lookup there can never miss and fall
+            // back to suppressing a measure the pass actually covered. Empty on the overwhelmingly
+            // common path, where it costs no read at all.
+            let dedupe_targets: Vec<(usize, usize)> = (0..self.stats.len())
+                .filter(|&i| is_repeated_region_level(i, &self.stats, &self.col_sems, row_count))
+                .filter_map(|i| owning_region_idx(i, &self.stats, &self.col_sems).map(|o| (i, o)))
+                .collect();
+            let deduped = region_deduped_totals(&self.args, &dedupe_targets)?;
             if let Some(panel) = build_kpi_row(
                 &self.stats,
                 &self.panels,
                 self.dict_data.as_ref(),
                 &self.col_sems,
                 row_count,
+                Some(&deduped),
             ) {
                 self.panels.insert(0, panel);
             }
@@ -46227,8 +46365,8 @@ mod tests {
         // decorated title + recorded stat_idx => tile still built
         let decorated =
             vec![Panel::new("amount (right-skewed)".to_string(), kind()).with_stat_idx(0)];
-        let row =
-            build_kpi_row(&stats, &decorated, None, &[], 0).expect("KPI row for decorated panel");
+        let row = build_kpi_row(&stats, &decorated, None, &[], 0, None)
+            .expect("KPI row for decorated panel");
         let PanelKind::KpiRow { tiles } = &row.kind else {
             panic!("expected a KpiRow");
         };
@@ -46244,13 +46382,13 @@ mod tests {
         }];
         let positional = vec![Panel::new("col 1".to_string(), kind()).with_stat_idx(0)];
         assert!(
-            build_kpi_row(&headerless_stats, &positional, None, &[], 0).is_some(),
+            build_kpi_row(&headerless_stats, &positional, None, &[], 0, None).is_some(),
             "headerless columns must still produce a KPI tile"
         );
 
         // negative control: an overview panel carries no stats row, so it contributes no tile
         let overview = vec![Panel::new("amount".to_string(), kind())];
-        assert!(build_kpi_row(&stats, &overview, None, &[], 0).is_none());
+        assert!(build_kpi_row(&stats, &overview, None, &[], 0, None).is_none());
     }
 
     #[test]
@@ -46343,7 +46481,7 @@ mod tests {
         // 192e9 is the NYC Capital Projects headline from issue #4393: it used to render as
         // "192G" via d3's `.3~s`.
         let (stats, panels, _) = kpi_fixture(192e9, None);
-        let row = build_kpi_row(&stats, &panels, None, &[], 0).expect("KPI row");
+        let row = build_kpi_row(&stats, &panels, None, &[], 0, None).expect("KPI row");
         let tile = only_tile(&row);
         assert!((tile.value - 192.0).abs() < 1e-9, "value is scaled down");
         assert_eq!(tile.suffix.as_deref(), Some("B"));
@@ -46352,7 +46490,8 @@ mod tests {
         // ...and the small-magnitude path is untouched: below `kpi_number_format`'s own 10k SI
         // threshold a KPI still renders as a grouped whole number, not "5k".
         let (small_stats, small_panels, _) = kpi_fixture(5000.0, None);
-        let small = build_kpi_row(&small_stats, &small_panels, None, &[], 0).expect("KPI row");
+        let small =
+            build_kpi_row(&small_stats, &small_panels, None, &[], 0, None).expect("KPI row");
         let small_tile = only_tile(&small);
         assert!((small_tile.value - 5000.0).abs() < f64::EPSILON);
         assert_eq!(small_tile.suffix, None);
@@ -46372,7 +46511,7 @@ mod tests {
             ..DictRow::default()
         };
         let (stats, panels, dict) = kpi_fixture(2.4e9, Some(gauged));
-        let row = build_kpi_row(&stats, &panels, dict.as_ref(), &[], 0).expect("KPI row");
+        let row = build_kpi_row(&stats, &panels, dict.as_ref(), &[], 0, None).expect("KPI row");
         let tile = only_tile(&row);
         assert!(tile.gauge.is_some());
         assert_eq!(tile.suffix, None, "a gauge tile keeps its unscaled value");
@@ -46384,7 +46523,7 @@ mod tests {
             ..DictRow::default()
         };
         let (stats2, panels2, dict2) = kpi_fixture(2.4e9, Some(targeted));
-        let row2 = build_kpi_row(&stats2, &panels2, dict2.as_ref(), &[], 0).expect("KPI row");
+        let row2 = build_kpi_row(&stats2, &panels2, dict2.as_ref(), &[], 0, None).expect("KPI row");
         let tile2 = only_tile(&row2);
         assert!(tile2.target.is_some());
         assert_eq!(tile2.suffix, None, "a delta tile keeps its unscaled value");
@@ -46400,7 +46539,7 @@ mod tests {
             ..DictRow::default()
         };
         let (stats, panels, dict) = kpi_fixture(192e9, Some(money(Some("USD"))));
-        let row = build_kpi_row(&stats, &panels, dict.as_ref(), &[], 0).expect("KPI row");
+        let row = build_kpi_row(&stats, &panels, dict.as_ref(), &[], 0, None).expect("KPI row");
         let tile = only_tile(&row);
         // the headline reads "$192B": symbol from the prefix, magnitude from the suffix
         assert_eq!(tile.prefix.as_deref(), Some("$"));
@@ -46408,12 +46547,12 @@ mod tests {
 
         // an ISO code the register doesn't know still labels the number, using the bare code
         let (s2, p2, d2) = kpi_fixture(192e9, Some(money(Some("ZZZ"))));
-        let row2 = build_kpi_row(&s2, &p2, d2.as_ref(), &[], 0).expect("KPI row");
+        let row2 = build_kpi_row(&s2, &p2, d2.as_ref(), &[], 0, None).expect("KPI row");
         assert_eq!(only_tile(&row2).prefix.as_deref(), Some("ZZZ "));
 
         // no currency -> no prefix (a non-money measure is unmarked, as before)
         let (s3, p3, d3) = kpi_fixture(192e9, Some(money(None)));
-        let row3 = build_kpi_row(&s3, &p3, d3.as_ref(), &[], 0).expect("KPI row");
+        let row3 = build_kpi_row(&s3, &p3, d3.as_ref(), &[], 0, None).expect("KPI row");
         assert_eq!(only_tile(&row3).prefix, None);
     }
 
@@ -46434,7 +46573,7 @@ mod tests {
             999_500_000.0,
         ] {
             let (stats, panels, _) = kpi_fixture(v, None);
-            let row = build_kpi_row(&stats, &panels, None, &[], 0).expect("KPI row");
+            let row = build_kpi_row(&stats, &panels, None, &[], 0, None).expect("KPI row");
             let tile = only_tile(&row);
             let kpi_rendered = format!(
                 "{}{}",

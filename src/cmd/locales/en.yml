@@ -475,6 +475,12 @@ viz:
     # verdict, never by the locale.
     kpi_mean: "Mean %{q_label}"
     kpi_total: "Total %{q_label}"
+    # Suffix appended to a KPI tile's label when the measure is REGION-LEVEL and some
+    # rows carried no owning region, so its collapsed total covers only the regions
+    # that could be identified (issue #4534).
+    # Phrased as a count-of-total for the same reason as `denom_excluded` above: it
+    # stays grammatical at n = 1 without needing a plural rule.
+    kpi_unattributed: "%{q_n} of %{q_total} rows unattributed"
     cyclic_records_by: "Records by %{q_axis} (%{q_date})"
     cyclic_hour_of_day: "hour of day"
     cyclic_day_of_week: "day of week"

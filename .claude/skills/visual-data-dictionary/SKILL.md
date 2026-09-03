@@ -595,8 +595,12 @@ Then tell the user:
   its `x-qsv.denominator`) has **no KPI tile**, that is by design, not a
   regression: its value repeats per region, so a dataset-wide total would be a
   multiple of the real one and viz omits the tile rather than print it (issue
-  #4528). Its grouped bar is still drawn, collapsed per region. Say so — the
-  absence is otherwise read as a bug
+  #4528). Any grouped bar SELECTED for that column is collapsed per region — but
+  do not promise one: `viz smart` draws at most a single measure-by-dimension
+  panel (the strongest measure/dimension pair, and only above an eta-squared
+  threshold), so a region-level column frequently has no bar of its own. Report
+  what actually rendered. Say so either way — the missing tile is otherwise read
+  as a bug
 - the data viewer's state: all rows (Explore) or a truncated preview, and what
   it costs in file size
 - the GeoJSON coverage note, if any (points that fell outside every region)

@@ -9928,6 +9928,63 @@ fn viz_smart_kpi_region_level_conflict_restores_the_ordinary_total() {
 }
 
 #[test]
+fn viz_smart_kpi_region_level_mean_is_unweighted_by_region_row_count() {
+    // The INTENSIVE arm. A row-wise mean of a region-level measure weights each region by how many
+    // rows it happens to occupy, so "Mean Population" drifts toward whichever county files the most
+    // reports -- wrong for the same reason the row-wise sum is. The collapse makes it the
+    // unweighted mean over the regions themselves.
+    //
+    // Rows per region are deliberately UNEQUAL (2/3/5/50): with equal counts the weighted and
+    // unweighted means coincide and this test would pass without exercising anything.
+    let wrk = Workdir::new("viz_smart_kpi_region_level_mean_is_unweighted_by_region_row_count");
+    let data = [
+        ("Albany", 300_000, 2),
+        ("Bronx", 1_500_000, 3),
+        ("Erie", 900_000, 5),
+        ("Kings", 2_400_000, 50),
+    ];
+    let mut s = String::from("county,population,requests\n");
+    for (i, (c, p, n)) in data.iter().enumerate() {
+        for j in 1..=*n {
+            s.push_str(&format!("{c},{p},{}\n", (i + 1) * j));
+        }
+    }
+    wrk.create_from_string("c.csv", &s);
+    // `aggregation: mean` routes the region-level measure down the intensive path.
+    wrk.create_from_string(
+        "d.schema.json",
+        &region_level_dict().replace(
+            r#""concept":"measure.population","role":"measure","qsv_type":"Integer""#,
+            r#""concept":"measure.population","role":"measure","qsv_type":"Integer","aggregation":"mean""#,
+        ),
+    );
+
+    let out_html = wrk.path("k.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "c.csv",
+        "--dictionary",
+        "d.schema.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("k.html").unwrap();
+    // (300k + 1.5M + 900k + 2.4M) / 4 = 1,275,000, scaled to millions by the KPI suffix.
+    assert!(
+        html.contains(r#""value":1.275"#),
+        "the mean must be unweighted across regions: {html}"
+    );
+    // the row-weighted mean would be 2,160,000
+    assert!(
+        !html.contains(r#""value":2.16"#),
+        "the row-weighted mean must never be headlined: {html}"
+    );
+}
+
+#[test]
 fn viz_smart_kpi_region_level_without_an_identifiable_region_is_omitted() {
     // The one suppression condition, and deliberately threshold-free: not a single owning region
     // could be identified, so there is no figure to state at all. Here the region column carries

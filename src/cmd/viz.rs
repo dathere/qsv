@@ -30641,8 +30641,8 @@ fn is_region_concept(concept: &str) -> bool {
 }
 
 /// The NEAREST ENCLOSING region column a REGION-LEVEL measure is constant within, or `None`
-/// when no region owns it (issue #4528). This relationship is what makes the collapse correct
-/// is the only correct unit for the decision.
+/// when no region owns it (issue #4528). This relationship is what makes the collapse correct:
+/// the region a value is constant WITHIN is the only correct unit for the decision.
 ///
 /// Returns a single index because its caller (the KPI tile) needs one cardinality to test. Where
 /// several region columns qualify — describegpt hints EVERY qualifying region column, so a county

@@ -6043,6 +6043,15 @@ mod tests {
             coerced_role_concept("time_zone", "dimension", "geo.timezone", "String"),
             ("dimension".to_string(), "geo.timezone".to_string())
         );
+        // Seeding `time_zone` moved it from the namespace-mismatch branch to the deterministic
+        // one, so this is the arm whose OUTPUT actually changed: a dissenting `time.*` concept
+        // used to be reset to the routeless `"unknown"`, and is now reset to the specific
+        // `geo.timezone`. Strictly better — the column keeps a routable identity — and the route
+        // is `Route::Dimension` either way, so nothing downstream of viz moves.
+        assert_eq!(
+            coerced_role_concept("time_zone", "dimension", "time.event_timestamp", "String"),
+            ("dimension".to_string(), "geo.timezone".to_string())
+        );
     }
 
     #[test]

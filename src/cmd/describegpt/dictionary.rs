@@ -186,7 +186,7 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     // incorporated place's, and a zero-match layer simply loses the probe and is reported as a
     // per-candidate failure. Same shape as `geo.country`, a region concept with no Census
     // layer at all. Adding the CDP layer would widen coverage; it is not needed for the
-    // concept to be correct.
+    // concept to be correct, and is tracked as issue #4540.
     "geo.place_fips",
     "geo.country",
     // the ISO-3166 alpha-2 code, as distinct from `geo.country` (the name). Split for the same

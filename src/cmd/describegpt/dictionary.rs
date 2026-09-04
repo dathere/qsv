@@ -173,11 +173,20 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     "geo.county_fips",
     "geo.state",
     "geo.state_fips",
-    // a 7-digit place GEOID (2-digit state + 5-digit place), the key of TIGERweb's "Incorporated
-    // Places" layer. Distinct from `geo.city`, which is a NAME needing forward geocoding to key a
-    // polygon; a place FIPS keys one directly. Issue #4524 -- `viz_census::Layer::Place` was fully
-    // implemented and probed by `--geojson auto`, but no dictionary could nominate a column for
-    // it.
+    // a 7-digit place GEOID (2-digit state + 5-digit place). Distinct from `geo.city`, which is a
+    // NAME needing forward geocoding to key a polygon; a place FIPS keys one directly. Issue #4524
+    // -- `viz_census::Layer::Place` was fully implemented and probed by `--geojson auto`, but no
+    // dictionary could nominate a column for it.
+    //
+    // The concept describes the DATA, and is deliberately broader than what `--geojson auto` can
+    // draw: Census places span INCORPORATED places and CENSUS DESIGNATED places, while
+    // `Layer::Place` matches only the "Incorporated Places" catalog entry, so a CDP-keyed column
+    // resolves against nothing. That degrades softly rather than mis-drawing -- the two kinds
+    // share one per-state place-FIPS numbering space, so a CDP code cannot collide with an
+    // incorporated place's, and a zero-match layer simply loses the probe and is reported as a
+    // per-candidate failure. Same shape as `geo.country`, a region concept with no Census
+    // layer at all. Adding the CDP layer would widen coverage; it is not needed for the
+    // concept to be correct.
     "geo.place_fips",
     "geo.country",
     // the ISO-3166 alpha-2 code, as distinct from `geo.country` (the name). Split for the same

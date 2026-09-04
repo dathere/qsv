@@ -8430,6 +8430,35 @@ fn assemble_map_hover(
     lines.join("<br>")
 }
 
+/// Which reverse-geocoded components a chosen dataset hover column already supplies, so
+/// [`geocode_hover_place`] can drop them (gap-filling: dataset fields win).
+///
+/// `geo.country_code` supplies the country exactly as `geo.country` does. It has to be named
+/// explicitly because the value-level `shown` check in `geocode_hover_place` cannot catch it: that
+/// test asks whether the geocoded component already appears in the point's dataset line, and "US"
+/// does not contain "United States", so the hover would print both spellings of one country
+/// side by side. Found by review on issue #4524's PR, which added the concept to
+/// [`MAP_GEO_CONTEXT_CONCEPTS`] and so made a code-form country column selectable here.
+///
+/// Extracted from the caller purely so this is unit-testable — the hover assembly it came from is
+/// `#[cfg(feature = "geocode")]` and reaches for a live geocode engine.
+#[cfg(feature = "geocode")]
+fn hover_supplied_geo_components(
+    col_sems: &[ColSemantics],
+    hover_field_idxs: &[usize],
+) -> (bool, bool, bool) {
+    let (mut sup_city, mut sup_admin1, mut sup_country) = (false, false, false);
+    for &idx in hover_field_idxs {
+        match col_sems.get(idx).map_or("", |s| s.concept.as_str()) {
+            "geo.city" => sup_city = true,
+            "geo.state" => sup_admin1 = true,
+            "geo.country" | "geo.country_code" => sup_country = true,
+            _ => {},
+        }
+    }
+    (sup_city, sup_admin1, sup_country)
+}
+
 /// Format a reverse-geocoded `GeoLabel` into a "City, County, Admin1, Country" hover line for
 /// gap-filling — dataset fields win, so a component is dropped when (a) a chosen dataset column
 /// already covers it by concept (`sup_*`), or (b) its value already appears in this point's
@@ -29339,17 +29368,8 @@ fn build_map_panel(
     #[cfg(feature = "geocode")]
     let (core_places, out_places): (Vec<String>, Vec<String>) = {
         // which geocoded components are already supplied by a chosen dataset column (gap-filling)
-        let mut sup_city = false;
-        let mut sup_admin1 = false;
-        let mut sup_country = false;
-        for &idx in &hover_field_idxs {
-            match col_sems.get(idx).map(|s| s.concept.as_str()).unwrap_or("") {
-                "geo.city" => sup_city = true,
-                "geo.state" => sup_admin1 = true,
-                "geo.country" => sup_country = true,
-                _ => {},
-            }
-        }
+        let (sup_city, sup_admin1, sup_country) =
+            hover_supplied_geo_components(col_sems, &hover_field_idxs);
         // Always reverse-geocode when a map renders: even if the dataset already supplies
         // city/state/country, the lookup still contributes the county (always-on) and — under
         // --smarter — the US FIPS code. `geocode_hover_place` suppresses (via the sup_* flags) any
@@ -41380,6 +41400,45 @@ mod tests {
         assert_eq!(
             select_map_hover_fields(&stats, &sems, Some(&dict), 1, 2, true),
             vec![0, 3, 4]
+        );
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn hover_country_code_suppresses_the_geocoded_country_name() {
+        // Adding `geo.country_code` to `MAP_GEO_CONTEXT_CONCEPTS` made a code-form country column
+        // selectable as a hover field, but the gap-filling flags only recognized `geo.country`, so
+        // reverse geocoding appended "United States" beside the dataset's "US". The value-level
+        // `shown` check in `geocode_hover_place` cannot catch that — the two spellings share no
+        // substring — so the concept has to be named here.
+        let sems = vec![
+            csem("id.natural_key"),
+            csem("geo.latitude"),
+            csem("geo.longitude"),
+            csem("geo.country_code"),
+        ];
+        assert_eq!(
+            hover_supplied_geo_components(&sems, &[0, 3]),
+            (false, false, true),
+            "a geo.country_code hover column must supply the country component"
+        );
+        // the name form still does, and neither form claims city or state
+        let named = vec![csem("geo.country")];
+        assert_eq!(
+            hover_supplied_geo_components(&named, &[0]),
+            (false, false, true)
+        );
+        // a column that is NOT in the hover set supplies nothing, so an unrelated geo column
+        // cannot suppress a component the hover never shows.
+        assert_eq!(
+            hover_supplied_geo_components(&sems, &[0]),
+            (false, false, false)
+        );
+        // `geo.state_fips` is deliberately not handled: it is absent from
+        // `MAP_GEO_CONTEXT_CONCEPTS`, so it can never be chosen as the geo-context field.
+        assert_eq!(
+            hover_supplied_geo_components(&[csem("geo.state_fips")], &[0]),
+            (false, false, false)
         );
     }
 

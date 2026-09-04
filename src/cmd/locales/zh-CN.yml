@@ -264,6 +264,7 @@ viz:
     category_flow: "类别流向: %{q_dims}"
     kpi_mean: "%{q_label} 平均值"
     kpi_total: "%{q_label} 总计"
+    kpi_unattributed: "%{q_total} 行中有 %{q_n} 行未归属"
     cyclic_records_by: "按 %{q_axis} 的记录数(%{q_date})"
     cyclic_hour_of_day: "一天中的小时"
     cyclic_day_of_week: "星期"

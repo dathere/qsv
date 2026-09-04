@@ -257,6 +257,7 @@ viz:
     category_flow: "Flux de catégories : %{q_dims}"
     kpi_mean: "Moyenne de %{q_label}"
     kpi_total: "Total de %{q_label}"
+    kpi_unattributed: "%{q_n} sur %{q_total} lignes non attribuées"
     cyclic_records_by: "Enregistrements par %{q_axis} (%{q_date})"
     cyclic_hour_of_day: "heure de la journée"
     cyclic_day_of_week: "jour de la semaine"

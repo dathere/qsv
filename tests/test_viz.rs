@@ -9758,6 +9758,343 @@ fn viz_smart_kpi_row_does_not_orphan_eighth_axis() {
     assert!(!html.contains(r#""xaxis":"x9""#));
 }
 
+// ---------------------------------------------------------------------------------------------
+// Region-level KPI tiles (issue #4534, building on #4528)
+//
+// A REGION-LEVEL measure -- a population, an area -- repeats identically on every row of its
+// region, so the stats cache's row-wise `sum` is a MULTIPLE of the real one. #4528 suppressed the
+// tile rather than print the inflated figure; the region-dedupe row pass supplies the number the
+// cache cannot, so the tile now states the truth.
+//
+// NOTE for anyone extending these: the concept MUST be a token describegpt's `CONCEPT_VOCAB` can
+// emit (`geo.county`). A plausible-looking but off-vocabulary concept (`geo.county_name`) makes
+// `is_region_concept` reject the column, so `owning_region_idx` returns None, no guard fires, and
+// the test passes while asserting nothing.
+fn region_level_dict() -> &'static str {
+    r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object",
+ "properties":{
+   "county":{"type":"string","title":"County","x-qsv":{"concept":"geo.county","role":"dimension"}},
+   "population":{"type":"integer","title":"Population","x-qsv":{"concept":"measure.population","role":"measure","qsv_type":"Integer"}},
+   "requests":{"type":"integer","title":"Requests","x-qsv":{"concept":"measure.count","role":"measure","qsv_type":"Integer"}}
+ }}"#
+}
+
+/// 8 counties x 12 rows, `population` constant within each county. True total 11,564,413; the
+/// row-wise sum would be 138,772,956 (12x).
+fn region_level_csv(trailing: &str) -> String {
+    let pops = [
+        ("Albany", 314_848),
+        ("Bronx", 1_472_654),
+        ("Erie", 954_236),
+        ("Kings", 2_736_074),
+        ("Monroe", 759_443),
+        ("Nassau", 1_395_774),
+        ("Queens", 2_405_464),
+        ("Suffolk", 1_525_920),
+    ];
+    let mut s = String::from("county,population,requests\n");
+    for (i, (c, p)) in pops.iter().enumerate() {
+        for j in 1..=12 {
+            s.push_str(&format!("{c},{p},{}\n", (i + 1) * j));
+        }
+    }
+    s.push_str(trailing);
+    s
+}
+
+#[test]
+fn viz_smart_kpi_region_level_headlines_the_deduped_total() {
+    let wrk = Workdir::new("viz_smart_kpi_region_level_headlines_the_deduped_total");
+    wrk.create_from_string("c.csv", &region_level_csv(""));
+    wrk.create_from_string("d.schema.json", region_level_dict());
+
+    let out_html = wrk.path("k.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "c.csv",
+        "--dictionary",
+        "d.schema.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("k.html").unwrap();
+    // 11,564,413 -- the sum of the eight DISTINCT county populations, scaled to millions by the
+    // KPI magnitude suffix. Not 138,772,956 (the 12x row-wise sum), and not absent.
+    assert!(
+        html.contains(r#""text":"Total Population""#),
+        "the tile must be present, not suppressed: {html}"
+    );
+    assert!(
+        html.contains(r#""value":11.564413"#),
+        "the tile must headline the region-deduped total: {html}"
+    );
+    assert!(
+        !html.contains("138.772956"),
+        "the row-wise sum must never be headlined: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_kpi_region_level_states_unattributed_coverage() {
+    // A blank owning-region cell cannot be collapsed -- there is no identity to collapse it to --
+    // and folding it into the total at full weight (the rule `measure_by_dim_panel` uses for a
+    // GROUPED bar, where the grouping makes the compromise visible) would make a headline that is
+    // neither the true total nor a defensible approximation. So the total covers the regions it
+    // could identify and says so in place.
+    let wrk = Workdir::new("viz_smart_kpi_region_level_states_unattributed_coverage");
+    let mut trailing = String::new();
+    for i in 1..=20 {
+        trailing.push_str(&format!(",900000,{i}\n"));
+    }
+    wrk.create_from_string("c.csv", &region_level_csv(&trailing));
+    wrk.create_from_string("d.schema.json", region_level_dict());
+
+    let out_html = wrk.path("k.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "c.csv",
+        "--dictionary",
+        "d.schema.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("k.html").unwrap();
+    // unchanged total -- the 20 unattributable rows are NOT added to it ...
+    assert!(
+        html.contains(r#""value":11.564413"#),
+        "unattributed rows must not enter the total: {html}"
+    );
+    // ... and the label states the coverage (the label is word-wrapped, so it may carry <br>)
+    assert!(
+        html.contains("20 of 116") && html.contains("rows unattributed"),
+        "the tile must state its coverage: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_kpi_region_level_conflict_omits_the_tile() {
+    // A conflict means the measure is not constant within its owning region. It does NOT follow
+    // that the measure is per-row -- see the region-per-period test below, which produces an
+    // identical conflict from data whose row-wise total is inflated 8x. A conflict is AMBIGUOUS,
+    // so the tile is omitted rather than falling back to the row-wise total.
+    let wrk = Workdir::new("viz_smart_kpi_region_level_conflict_omits_the_tile");
+    let counties = [
+        "Albany", "Bronx", "Erie", "Kings", "Monroe", "Nassau", "Queens", "Suffolk",
+    ];
+    let mut s = String::from("county,population,requests\n");
+    let mut total = 0u32;
+    for (i, c) in counties.iter().enumerate() {
+        for j in 0..12 {
+            // 8 distinct values overall, so the cardinality guard still passes, but they VARY
+            // within each county.
+            let v = (j % 8 + 1) * 100;
+            total += v as u32;
+            s.push_str(&format!("{c},{v},{}\n", (i + 1) * (j + 1)));
+        }
+    }
+    assert_eq!(total, 36_800);
+    wrk.create_from_string("c.csv", &s);
+    wrk.create_from_string("d.schema.json", region_level_dict());
+
+    let out_html = wrk.path("k.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "c.csv",
+        "--dictionary",
+        "d.schema.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("k.html").unwrap();
+    assert!(
+        !html.contains(r#""text":"Total Population"#),
+        "an ambiguous measure must not be headlined at all: {html}"
+    );
+    // 36,800 is the row-wise sum; falling back to it would be a guess that the measure is per-row
+    assert!(
+        !html.contains(r#""value":36.8"#),
+        "the row-wise sum must not be used as a conflict fallback: {html}"
+    );
+    assert!(
+        html.contains(r#""text":"Total Requests""#),
+        "other measures keep their tiles: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_kpi_region_level_varying_by_period_is_not_row_wise() {
+    // roborev 4542: a region-level measure can legitimately vary BY REPORTING PERIOD -- a
+    // population per county per YEAR. That produces exactly the same within-region disagreement a
+    // genuinely per-row measure does, so a conflict cannot be read as proof of per-row-ness. If it
+    // were, this dataset's tile would headline 86,400,000 against a true per-year total of
+    // 10,800,000 -- reintroducing the very inflation issue #4528 removed.
+    //
+    // The value pool is deliberately only 8 wide so `cardinality(population) <=
+    // cardinality(county)` still holds: with per-year values drawn from a wider pool the
+    // ownership guard rejects the claim upstream and this path is never reached at all.
+    let wrk = Workdir::new("viz_smart_kpi_region_level_varying_by_period_is_not_row_wise");
+    let counties = [
+        "Albany", "Bronx", "Erie", "Kings", "Monroe", "Nassau", "Queens", "Suffolk",
+    ];
+    let vals = [
+        300_000, 600_000, 900_000, 1_200_000, 1_500_000, 1_800_000, 2_100_000, 2_400_000,
+    ];
+    let mut s = String::from("county,year,population,requests\n");
+    for (yi, year) in [2023, 2024].iter().enumerate() {
+        for (i, c) in counties.iter().enumerate() {
+            let p = vals[(i + yi) % 8];
+            for j in 1..=4 {
+                s.push_str(&format!("{c},{year},{p},{}\n", (i + 1) * j));
+            }
+        }
+    }
+    wrk.create_from_string("c.csv", &s);
+    wrk.create_from_string(
+        "d.schema.json",
+        &region_level_dict().replace(
+            r#""requests":{"type":"integer""#,
+            r#""year":{"type":"integer","title":"Year","x-qsv":{"concept":"time.year","role":"dimension","qsv_type":"Integer"}},
+   "requests":{"type":"integer""#,
+        ),
+    );
+
+    let out_html = wrk.path("k.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "c.csv",
+        "--dictionary",
+        "d.schema.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("k.html").unwrap();
+    assert!(
+        !html.contains(r#""value":86.4"#),
+        "the row-wise total of a per-period regional measure must never be headlined: {html}"
+    );
+    assert!(
+        !html.contains(r#""text":"Total Population"#),
+        "an ambiguous measure is omitted rather than guessed at: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_kpi_region_level_mean_is_unweighted_by_region_row_count() {
+    // The INTENSIVE arm. A row-wise mean of a region-level measure weights each region by how many
+    // rows it happens to occupy, so "Mean Population" drifts toward whichever county files the most
+    // reports -- wrong for the same reason the row-wise sum is. The collapse makes it the
+    // unweighted mean over the regions themselves.
+    //
+    // Rows per region are deliberately UNEQUAL (2/3/5/50): with equal counts the weighted and
+    // unweighted means coincide and this test would pass without exercising anything.
+    let wrk = Workdir::new("viz_smart_kpi_region_level_mean_is_unweighted_by_region_row_count");
+    let data = [
+        ("Albany", 300_000, 2),
+        ("Bronx", 1_500_000, 3),
+        ("Erie", 900_000, 5),
+        ("Kings", 2_400_000, 50),
+    ];
+    let mut s = String::from("county,population,requests\n");
+    for (i, (c, p, n)) in data.iter().enumerate() {
+        for j in 1..=*n {
+            s.push_str(&format!("{c},{p},{}\n", (i + 1) * j));
+        }
+    }
+    wrk.create_from_string("c.csv", &s);
+    // `aggregation: mean` routes the region-level measure down the intensive path.
+    wrk.create_from_string(
+        "d.schema.json",
+        &region_level_dict().replace(
+            r#""concept":"measure.population","role":"measure","qsv_type":"Integer""#,
+            r#""concept":"measure.population","role":"measure","qsv_type":"Integer","aggregation":"mean""#,
+        ),
+    );
+
+    let out_html = wrk.path("k.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "c.csv",
+        "--dictionary",
+        "d.schema.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("k.html").unwrap();
+    // (300k + 1.5M + 900k + 2.4M) / 4 = 1,275,000, scaled to millions by the KPI suffix.
+    assert!(
+        html.contains(r#""value":1.275"#),
+        "the mean must be unweighted across regions: {html}"
+    );
+    // the row-weighted mean would be 2,160,000
+    assert!(
+        !html.contains(r#""value":2.16"#),
+        "the row-weighted mean must never be headlined: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_kpi_region_level_without_an_identifiable_region_is_omitted() {
+    // The one suppression condition, and deliberately threshold-free: not a single owning region
+    // could be identified, so there is no figure to state at all. Here the region column carries
+    // enough distinct values to satisfy the cardinality guard, but is blank on exactly the rows
+    // where the measure parses.
+    let wrk = Workdir::new("viz_smart_kpi_region_level_without_an_identifiable_region_is_omitted");
+    // Shape matters here, and a careless fixture makes this test VACUOUS: the measure must still
+    // earn a distribution panel (a heavily-null column does not, so its tile could never exist and
+    // the assertion would prove nothing). 10% null keeps it charted, while `cardinality(population)
+    // <= cardinality(county)` keeps the ownership guard satisfied, so the omission below really is
+    // this branch and not an upstream filter. Verified by mutation.
+    let mut s = String::from("county,population,requests\n");
+    for i in 0..20 {
+        s.push_str(&format!("County{i:03},,{}\n", i + 1));
+    }
+    for i in 0..180 {
+        s.push_str(&format!(",{},{}\n", (i % 20 + 1) * 137_000, i + 1));
+    }
+    wrk.create_from_string("c.csv", &s);
+    wrk.create_from_string("d.schema.json", region_level_dict());
+
+    let out_html = wrk.path("k.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "c.csv",
+        "--dictionary",
+        "d.schema.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("k.html").unwrap();
+    // Match the LABEL PREFIX, not the exact string: a wrongly-emitted tile would carry the
+    // "(180 of 200 rows unattributed)" coverage suffix and slip past an exact-match assertion.
+    assert!(
+        !html.contains(r#""text":"Total Population"#),
+        "with no identifiable region there is no truthful figure, so no tile: {html}"
+    );
+    // the ordinary measure beside it is unaffected
+    assert!(
+        html.contains(r#""text":"Total Requests""#),
+        "other measures keep their tiles: {html}"
+    );
+}
+
 #[test]
 fn viz_treemap_requires_two_cols() {
     let wrk = Workdir::new("viz_treemap_requires_two_cols");

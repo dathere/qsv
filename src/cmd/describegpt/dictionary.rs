@@ -173,7 +173,18 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     "geo.county_fips",
     "geo.state",
     "geo.state_fips",
+    // a 7-digit place GEOID (2-digit state + 5-digit place), the key of TIGERweb's "Incorporated
+    // Places" layer. Distinct from `geo.city`, which is a NAME needing forward geocoding to key a
+    // polygon; a place FIPS keys one directly. Issue #4524 -- `viz_census::Layer::Place` was fully
+    // implemented and probed by `--geojson auto`, but no dictionary could nominate a column for
+    // it.
+    "geo.place_fips",
     "geo.country",
+    // the ISO-3166 alpha-2 code, as distinct from `geo.country` (the name). Split for the same
+    // reason `geo.state`/`geo.state_fips` and `geo.county`/`geo.county_fips` are: "US" and "United
+    // States" denote the same country but are NOT join-compatible, and `geocode countryinfo` takes
+    // the alpha-2 form only. Issue #4524.
+    "geo.country_code",
     "geo.latitude",
     "geo.longitude",
     "geo.coordinate_pair",
@@ -181,6 +192,14 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     "geo.census_tract",
     "geo.crs_stateplane_x",
     "geo.crs_stateplane_y",
+    // an IANA tz database zone ("America/New_York"). Spatial rather than temporal: it names a
+    // REGION that observes a clock rule, and it is the region — not the clock — that another
+    // dataset joins on. Seeded from the `time_zone` content_type. Issue #4524.
+    "geo.timezone",
+    // a Geonames feature id, the join key of the gazetteer `qsv geocode` indexes. The one concept
+    // here with no `content_type` to seed it (a Geonames id is an undistinguished integer), so it
+    // arrives only from a hand-authored sidecar or a literally-named column. Issue #4524.
+    "geo.geonames_id",
     // temporal
     "time.event_timestamp",
     "time.created_at",
@@ -313,7 +332,9 @@ pub(super) fn concept_from_content_type(content_type_base: &str) -> Option<&'sta
         "zip_code" => "geo.zip_code",
         "city" => "geo.city",
         "state" | "state_abbr" => "geo.state",
-        "country" | "country_code" => "geo.country",
+        "country" => "geo.country",
+        "country_code" => "geo.country_code",
+        "time_zone" => "geo.timezone",
         "latitude" => "geo.latitude",
         "longitude" => "geo.longitude",
         "street_address" | "street_name" => "geo.street_address",
@@ -1709,6 +1730,12 @@ const DENOMINATOR_REGION_CONCEPTS: &[&str] = &[
     "geo.state",
     "geo.state_fips",
     "geo.country",
+    // both added with the `geo.place_fips` / `geo.country_code` concepts (issue #4524). A place is
+    // a boundary region a per-region denominator hangs on exactly as a county is, and splitting
+    // the country concept must not cost a code-form country column its hint. Consistent with this
+    // list's stated bias toward hinting MORE columns than will chart.
+    "geo.country_code",
+    "geo.place_fips",
     "geo.city",
 ];
 
@@ -5962,6 +5989,71 @@ mod tests {
             Some("time.event_timestamp")
         );
         assert_eq!(concept_from_content_type("free_text"), None);
+    }
+
+    #[test]
+    fn concept_from_content_type_splits_country_name_from_country_code() {
+        // issue #4524: a name and a code are not join-compatible, which is why the vocabulary
+        // already splits `geo.state`/`geo.state_fips` and `geo.county`/`geo.county_fips`. Both
+        // country content_types used to collapse onto `geo.country`.
+        assert_eq!(concept_from_content_type("country"), Some("geo.country"));
+        assert_eq!(
+            concept_from_content_type("country_code"),
+            Some("geo.country_code")
+        );
+        // a time zone names the REGION observing a clock rule, so it is a `geo.*` identity
+        // rather than a `time.*` axis. It had no concept at all before #4524.
+        assert_eq!(concept_from_content_type("time_zone"), Some("geo.timezone"));
+    }
+
+    #[test]
+    fn every_deterministic_concept_is_in_the_vocabulary() {
+        // `coerce_role_concept` writes a deterministic seed straight onto the entry without
+        // re-validating it, and `parse_llm_dictionary_response` rejects any concept outside
+        // `CONCEPT_VOCAB` — so a seed missing from the vocabulary would emit a token the
+        // dictionary's own parser refuses to read back. Guards every future mapping, not just
+        // the ones #4524 added.
+        for &content_type in CONTENT_TYPE_VOCAB {
+            if let Some(concept) = concept_from_content_type(content_type) {
+                assert!(
+                    CONCEPT_VOCAB.contains(&concept),
+                    "content_type `{content_type}` seeds `{concept}`, which is not in \
+                     CONCEPT_VOCAB"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn coerce_role_concept_resets_a_country_name_concept_on_a_country_code() {
+        // the split only bites if the reconciliation enforces it: `country_code` has no
+        // admissible refinements, so the name concept is a contradiction and is reset (#4524).
+        assert_eq!(
+            coerced_role_concept("country_code", "dimension", "geo.country", "String"),
+            ("dimension".to_string(), "geo.country_code".to_string())
+        );
+        // ... and the reverse direction, so a code concept cannot squat on a name column.
+        assert_eq!(
+            coerced_role_concept("country", "dimension", "geo.country_code", "String"),
+            ("dimension".to_string(), "geo.country".to_string())
+        );
+        // a time zone is a dimension, never a temporal axis: `is_temporal_content_type` matches
+        // `time`, not `time_zone`, so a stray `time.*` concept is the dissenter here.
+        assert_eq!(
+            coerced_role_concept("time_zone", "dimension", "geo.timezone", "String"),
+            ("dimension".to_string(), "geo.timezone".to_string())
+        );
+    }
+
+    #[test]
+    fn denominator_region_concepts_cover_the_new_region_identities() {
+        // a place is a boundary region a per-region denominator hangs on exactly as a county is,
+        // and splitting the country concept must not cost a code-form column its hint (#4524).
+        assert!(DENOMINATOR_REGION_CONCEPTS.contains(&"geo.place_fips"));
+        assert!(DENOMINATOR_REGION_CONCEPTS.contains(&"geo.country_code"));
+        // a timezone or a gazetteer id keys no polygon, so neither can carry a denominator.
+        assert!(!DENOMINATOR_REGION_CONCEPTS.contains(&"geo.timezone"));
+        assert!(!DENOMINATOR_REGION_CONCEPTS.contains(&"geo.geonames_id"));
     }
 
     #[test]

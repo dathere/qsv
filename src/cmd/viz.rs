@@ -24283,7 +24283,11 @@ const MAP_MEASURE_CONCEPTS: &[&str] = &[
     "measure.ratio",
 ];
 const MAP_CATEGORY_CONCEPTS: &[&str] = &["category.status", "category.type", "category.channel"];
-const MAP_GEO_CONTEXT_CONCEPTS: &[&str] = &["geo.country", "geo.state", "geo.city"];
+// `geo.country_code` follows `geo.country` rather than replacing it: splitting the concept
+// (issue #4524) would otherwise drop a code-form country column out of hover context entirely,
+// and where a dataset carries both forms the NAME is the more readable hover value.
+const MAP_GEO_CONTEXT_CONCEPTS: &[&str] =
+    &["geo.country", "geo.country_code", "geo.state", "geo.city"];
 
 /// Observed numeric range (`|max - min|`) of a column from its stats, or 0.0 when unparseable.
 fn stat_range(s: &crate::cmd::stats::StatsData) -> f64 {
@@ -27970,6 +27974,16 @@ const REGION_CODE_LEAVES: &[&str] = &[
     "state",
     "state_fips",
     "country",
+    // the ISO-3166 alpha-2 code form of `country`, split off as its own concept in issue #4524.
+    // Listed here so splitting the concept does not silently cost a code-form country column its
+    // choropleth candidacy against a custom `--geojson` file.
+    "country_code",
+    // a 7-digit place GEOID, the key of `viz_census::Layer::Place`. The layer was already
+    // implemented and probed by `--geojson auto`, but with no leaf here no dictionary could
+    // nominate a column for it (issue #4524). A bare `place` is deliberately NOT a lenient alias:
+    // it reads equally as a place NAME, which keys no polygon without forward geocoding, and
+    // guessing between the two is the ambiguity issue #4417 settled as a refusal.
+    "place_fips",
     "fips",
 ];
 
@@ -41341,6 +41355,93 @@ mod tests {
             vec![0, 3, 4],
             "a measure.money column must be hover-eligible like any other measure"
         );
+    }
+
+    #[test]
+    fn select_map_hover_fields_geo_context_accepts_a_country_code() {
+        // `MAP_GEO_CONTEXT_CONCEPTS` is a CLOSED enumeration, so splitting `geo.country_code`
+        // off `geo.country` (issue #4524) would have dropped a code-form country column out of
+        // hover context entirely. The column is eligible only because the token was added.
+        let stats = vec![
+            stat("String", 1000, Some(0.99)), // 0: id
+            stat("Float", 9, Some(0.5)),      // 1: lat
+            stat("Float", 9, Some(0.5)),      // 2: lon
+            stat("Float", 100, Some(0.5)),    // 3: measure
+            stat("String", 4, Some(0.04)),    // 4: country code
+        ];
+        let sems = vec![
+            csem("id.natural_key"),
+            csem("geo.latitude"),
+            csem("geo.longitude"),
+            csem("measure.amount"),
+            csem("geo.country_code"),
+        ];
+        let dict = DictData::default();
+        assert_eq!(
+            select_map_hover_fields(&stats, &sems, Some(&dict), 1, 2, true),
+            vec![0, 3, 4]
+        );
+    }
+
+    #[test]
+    fn region_code_candidates_accept_place_fips_and_country_code() {
+        // issue #4524. `viz_census::Layer::Place` is fully implemented and probed by
+        // `--geojson auto`, but with no `place_fips` leaf no dictionary could nominate a column
+        // for it, so the layer was unreachable from `viz smart`.
+        let stats = vec![
+            stat("String", 30, Some(0.3)),  // 0: place GEOID
+            stat("String", 4, Some(0.04)),  // 1: ISO-3166 alpha-2
+            stat("Float", 100, Some(0.99)), // 2: a measure, never a region key
+        ];
+        let sems = vec![
+            csem("geo.place_fips"),
+            csem("geo.country_code"),
+            csem("measure.amount"),
+        ];
+        assert_eq!(region_code_candidates(&stats, &sems), vec![0, 1]);
+
+        // A bare `place` is deliberately NOT a lenient alias the way `zip`/`fips` are: it reads
+        // equally as a place NAME, which keys no polygon without forward geocoding.
+        let bare = vec![
+            csem("geo.place"),
+            csem("geo.country_code"),
+            csem("measure.amount"),
+        ];
+        assert_eq!(region_code_candidates(&stats, &bare), vec![1]);
+        // ... and it is not silently absorbed by the geocodable NAME pool either.
+        assert!(geocodable_name_candidates(&stats, &bare).is_empty());
+    }
+
+    #[test]
+    fn is_region_concept_accepts_place_fips_and_country_code() {
+        // `REGION_CODE_LEAVES` has a second consumer beyond choropleth candidacy: the
+        // region-deduped KPI/bar path (issues #4528/#4534). A place and a country are both
+        // regions a per-region measure can be constant within, so widening it here is correct.
+        assert!(is_region_concept("geo.place_fips"));
+        assert!(is_region_concept("geo.country_code"));
+        // A timezone or a gazetteer id names no boundary, so neither may own a region-level
+        // measure — which is why #4524's other two concepts stay out of the leaf lists.
+        assert!(!is_region_concept("geo.timezone"));
+        assert!(!is_region_concept("geo.geonames_id"));
+    }
+
+    #[test]
+    fn new_geo_concepts_route_to_dimension() {
+        // Issue #4524's checklist asked for `route_from_concept` arms for these leaves; the
+        // `geo` arm's catch-all already routes every one of them, so that item is a no-op.
+        // Pinned here so a future arm-by-arm rewrite of that match cannot silently drop one.
+        for concept in [
+            "geo.place_fips",
+            "geo.country_code",
+            "geo.timezone",
+            "geo.geonames_id",
+        ] {
+            assert_eq!(
+                route_from_concept(concept),
+                Some((Route::Dimension, None)),
+                "{concept} must route to a dimension"
+            );
+        }
     }
 
     #[test]

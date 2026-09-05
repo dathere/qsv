@@ -3231,6 +3231,19 @@ fn path_fingerprint(path: &str) -> String {
     fp
 }
 
+/// Content fingerprint of a `--stats-options` / `--freq-options` value that uses the
+/// `file:<path>` form, whose file CONTENTS `perform_analysis` reads and injects verbatim as
+/// `{{ stats }}` / `{{ frequency }}`. Empty for the ordinary flag form, where the options
+/// themselves already describe the output and the input file's own hash covers the data.
+///
+/// Both cache keys need this: the completion key so a re-run against edited stats is not
+/// answered from the old completion, and the ANALYSIS key so the re-run is not then handed
+/// the stale `AnalysisResults` cached under the unchanged path (roborev 4556).
+fn file_option_fingerprint(flag: &str) -> String {
+    flag.strip_prefix("file:")
+        .map_or(String::new(), path_fingerprint)
+}
+
 /// BLAKE3 fingerprint of the prompt templates, over BOTH sources they can come from.
 ///
 /// `resolved_source_fp` fingerprints the TOML actually in play — a custom `--prompt-file`'s
@@ -3382,14 +3395,8 @@ fn get_cache_key_with_flag(
     // `file:<path>` form whose CONTENTS are injected verbatim, so fingerprint that file the
     // same way --tag-vocab and --context-file are: the flag string alone does not change
     // when the file it points at is edited in place.
-    let stats_options_fp = args
-        .flag_stats_options
-        .strip_prefix("file:")
-        .map_or(String::new(), path_fingerprint);
-    let freq_options_fp = args
-        .flag_freq_options
-        .strip_prefix("file:")
-        .map_or(String::new(), path_fingerprint);
+    let stats_options_fp = file_option_fingerprint(&args.flag_stats_options);
+    let freq_options_fp = file_option_fingerprint(&args.flag_freq_options);
     // The four closed vocabularies are rendered into the prompts from Rust constants
     // (`content_type_vocab` / `concept_vocab` / `role_vocab` / `agg_vocab` in `get_prompt`'s
     // context), not from the template file, so the template fingerprint above does NOT cover
@@ -3435,9 +3442,21 @@ fn get_cache_key_with_flag(
 }
 
 fn get_analysis_cache_key(args: &Args, file_hash: &str) -> String {
+    // The `file:<path>` form of --stats-options / --freq-options makes `perform_analysis`
+    // read that file and store its CONTENTS in the cached `AnalysisResults`, but the flag
+    // string does not change when the file it points at is edited. Without these
+    // fingerprints an edited stats/frequency file keeps hitting the analysis cache, so a
+    // completion-cache miss (which the content fingerprint in `get_cache_key_with_flag`
+    // now correctly produces) would re-ask the LLM with the STALE analysis and store the
+    // answer under a key asserting the new contents (roborev 4556).
     format!(
-        "analysis_{:?}{:?}{:?}{:?}",
-        file_hash, args.flag_stats_options, args.flag_freq_options, args.flag_enum_threshold,
+        "analysis_{:?}{:?}{:?}{:?}{}{}",
+        file_hash,
+        args.flag_stats_options,
+        args.flag_freq_options,
+        args.flag_enum_threshold,
+        file_option_fingerprint(&args.flag_stats_options),
+        file_option_fingerprint(&args.flag_freq_options),
     )
 }
 
@@ -8229,6 +8248,58 @@ mod tests {
             base_key,
             get_cache_key_with_flag(&freq_changed, PromptType::Dictionary, "gpt-x", "valid"),
             "a changed --freq-options must change the cache key"
+        );
+    }
+
+    #[test]
+    fn analysis_cache_key_reflects_file_option_contents() {
+        // `perform_analysis` reads the `file:<path>` form's CONTENTS into the cached
+        // AnalysisResults, so an in-place edit must miss the analysis cache too. Otherwise the
+        // completion-cache miss that the content fingerprint now correctly produces re-asks
+        // the LLM with the STALE analysis and stores the answer under a key that asserts the
+        // new contents (roborev 4556).
+        use std::io::Write;
+        let mut tmp = tempfile::Builder::new()
+            .prefix("qsv_describegpt_analysis_")
+            .suffix(".jsonl")
+            .tempfile()
+            .expect("create tmpfile");
+        writeln!(tmp, r#"{{"field":"id","type":"Integer"}}"#).expect("write v1");
+        tmp.flush().expect("flush v1");
+        let path = tmp.path().to_string_lossy().into_owned();
+
+        for which in ["stats", "freq"] {
+            let mut args = default_args_for_test();
+            if which == "stats" {
+                args.flag_stats_options = format!("file:{path}");
+            } else {
+                args.flag_freq_options = format!("file:{path}");
+            }
+            let key_v1 = get_analysis_cache_key(&args, "filehash");
+
+            let mut f = fs::File::create(&path).expect("rewrite tmpfile");
+            writeln!(
+                f,
+                r#"{{"field":"email","type":"String","which":"{which}"}}"#
+            )
+            .expect("write v2");
+            f.flush().expect("flush v2");
+            drop(f);
+
+            assert_ne!(
+                key_v1,
+                get_analysis_cache_key(&args, "filehash"),
+                "an in-place edit of a file: {which} source must change the analysis cache key"
+            );
+        }
+
+        // The ordinary (non-file:) flag form must not gain a fingerprint suffix, so existing
+        // analysis cache entries are not disturbed by this change.
+        let mut plain = default_args_for_test();
+        plain.flag_stats_options = "--everything".to_string();
+        assert!(
+            file_option_fingerprint(&plain.flag_stats_options).is_empty(),
+            "a non-file: options string must not be fingerprinted"
         );
     }
 

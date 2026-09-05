@@ -1298,6 +1298,12 @@ mod tests {
         };
         assert!(flags("geo.ip_address").contains(&"PII-location".to_string()));
         assert!(flags("geo.street_address").contains(&"PII-location".to_string()));
+        // an IPv6 column seeds the SAME concept, so it inherits the flag rather than needing a
+        // second arm here -- which is the reason one concept covers both address families.
+        assert_eq!(
+            crate::cmd::describegpt::dictionary::concept_from_content_type("ipv6_address"),
+            Some("geo.ip_address")
+        );
         // the `pii.*` namespace keeps its own, distinct flag ...
         assert!(flags("pii.email").contains(&"PII".to_string()));
         assert!(!flags("pii.email").contains(&"PII-location".to_string()));

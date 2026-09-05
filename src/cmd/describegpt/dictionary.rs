@@ -366,7 +366,11 @@ pub(super) fn concept_from_content_type(content_type_base: &str) -> Option<&'sta
         "country" => "geo.country",
         "country_code" => "geo.country_code",
         "time_zone" => "geo.timezone",
-        "ip_address" => "geo.ip_address",
+        // both address families: `geocode iplookup` parses `std::net::IpAddr`, which accepts
+        // v4 and v6 alike, so an IPv6 column is exactly as locatable -- and exactly as sensitive
+        // -- as an IPv4 one. One concept rather than two: the real-world identity is "an IP
+        // address", and the vocabulary does not split identities by representation width.
+        "ip_address" | "ipv6_address" => "geo.ip_address",
         "latitude" => "geo.latitude",
         "longitude" => "geo.longitude",
         "street_address" | "street_name" => "geo.street_address",
@@ -6102,9 +6106,16 @@ mod tests {
         // ... and it is linkable, exactly like the `geo.street_address` precedent it follows.
         assert!(is_linkable_concept("geo.ip_address"));
         assert!(is_linkable_concept("geo.street_address"));
-        // the sibling technical ids stay concept-less: neither resolves to a place.
+        // IPv6 gets the SAME concept: `geocode iplookup` parses `std::net::IpAddr`, which accepts
+        // both families, so an IPv6 column is equally locatable and equally sensitive. An earlier
+        // draft of this test asserted it stayed concept-less, which codified the inconsistency.
+        assert_eq!(
+            concept_from_content_type("ipv6_address"),
+            Some("geo.ip_address")
+        );
+        // a MAC address stays concept-less: it identifies a NIC, not a place, and no qsv command
+        // resolves one to a location.
         assert_eq!(concept_from_content_type("mac_address"), None);
-        assert_eq!(concept_from_content_type("ipv6_address"), None);
     }
 
     #[test]

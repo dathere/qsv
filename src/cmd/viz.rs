@@ -20619,6 +20619,20 @@ fn route_from_concept(concept: &str) -> Option<(Route, Option<Agg>)> {
             // be mapped (not degrees) and a frequency bar of near-unique coordinates is garbage.
             // `ProjectedCoord` charts their distribution only when no point map rendered.
             "crs_stateplane_x" | "crs_stateplane_y" => (Route::ProjectedCoord, None),
+            // An IP address is a geo IDENTITY (it resolves to a place via `geocode iplookup`, and
+            // that is why it earns a `geo.*` concept at all) but it is NOT a chartable dimension:
+            // `Route::Dimension` makes it a `FreqBar`, which has no cardinality ceiling, so a
+            // dashboard would render raw IP addresses into a shareable HTML artifact. Issue #4524
+            // called this out itself -- "even if viz never consumes it, the concept tells an agent
+            // which qsv command applies" -- so skipping the CHART costs nothing the concept was
+            // added for: `make` carries `concept` onto `ColSemantics` whatever the route, so the
+            // PII-location flag, the join identity and every concept-keyed consumer still see it.
+            //
+            // Deliberately not conditioned on cardinality. viz cannot tell eight infrastructure
+            // IPs (a legitimate bar) from eight user IPs (a privacy incident), and the downside is
+            // wildly asymmetric, so this takes the same "ambiguity is a refusal, not a best guess"
+            // line as issue #4417.
+            "ip_address" => (Route::Skip, None),
             // geo *keys* (zip, census_tract, city, state, country, street_address) name a place;
             // they are dimensions to bar, never continuous measures. This is the signal that fixes
             // census_tract even when describegpt defaulted its numeric `role` to `measure`.
@@ -41608,6 +41622,40 @@ mod tests {
         // measure — which is why #4524's other two concepts stay out of the leaf lists.
         assert!(!is_region_concept("geo.timezone"));
         assert!(!is_region_concept("geo.geonames_id"));
+    }
+
+    #[test]
+    fn ip_address_concept_is_never_charted() {
+        // `Route::Dimension` becomes a `FreqBar` with NO cardinality ceiling (see `classify`), so
+        // routing an IP column as a dimension would render raw addresses into a shareable HTML
+        // dashboard. The concept still exists for agents and for the PII-location flag; only the
+        // CHART is refused.
+        assert_eq!(
+            route_from_concept("geo.ip_address"),
+            Some((Route::Skip, None))
+        );
+        // the skip is specific to the IP leaf, not a widening of the geo arm: its neighbours must
+        // still chart, or the concept vocabulary would stop earning its keep.
+        for still_charted in ["geo.zcta", "geo.zip_code", "geo.timezone", "geo.place_fips"] {
+            assert_eq!(
+                route_from_concept(still_charted),
+                Some((Route::Dimension, None)),
+                "{still_charted} must still route to a dimension"
+            );
+        }
+        // and the concept survives onto ColSemantics despite the Skip, so every concept-keyed
+        // consumer (PII flag, join identity, hover eligibility) still sees it.
+        let sem = derive_semantics(
+            &stat("String", 5000, Some(0.99)),
+            Some(&dict_row(
+                "ip_address",
+                "dimension",
+                "geo.ip_address",
+                "Client IP",
+            )),
+        );
+        assert_eq!(sem.route, Route::Skip);
+        assert_eq!(sem.concept, "geo.ip_address");
     }
 
     #[test]

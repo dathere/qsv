@@ -935,7 +935,15 @@ fn build_semanticmd_entry(e: &DictionaryEntry, primary_key: Option<&str>) -> Sem
         quality_flags.push("PII".to_string());
     } else if matches!(
         e.concept.as_str(),
-        "geo.latitude" | "geo.longitude" | "geo.coordinate_pair" | "geo.street_address"
+        "geo.latitude"
+            | "geo.longitude"
+            | "geo.coordinate_pair"
+            | "geo.street_address"
+            // an IP resolves to a place via `geocode iplookup`, and many jurisdictions treat it
+            // as personal data. It stays a `geo.*` concept (so it keeps its join identity and
+            // signals which qsv command applies) and is marked sensitive here instead -- the
+            // same split `geo.street_address` already gets. Issue #4524.
+            | "geo.ip_address"
     ) {
         quality_flags.push("PII-location".to_string());
     }
@@ -1276,6 +1284,33 @@ mod tests {
             aggregation:     None,
             denominator:     None,
         }
+    }
+
+    #[test]
+    fn ip_address_concept_is_flagged_pii_location() {
+        // issue #4524: `geo.ip_address` deliberately lives in the LINKABLE `geo.*` namespace
+        // rather than `pii.*`, so this flag is the only thing marking it sensitive. Follows the
+        // `geo.street_address` precedent.
+        let flags = |concept: &str| {
+            let mut e = sample_entry("col", "ip_address");
+            e.concept = concept.to_string();
+            build_semanticmd_entry(&e, None).quality_flags
+        };
+        assert!(flags("geo.ip_address").contains(&"PII-location".to_string()));
+        assert!(flags("geo.street_address").contains(&"PII-location".to_string()));
+        // an IPv6 column seeds the SAME concept, so it inherits the flag rather than needing a
+        // second arm here -- which is the reason one concept covers both address families.
+        assert_eq!(
+            crate::cmd::describegpt::dictionary::concept_from_content_type("ipv6_address"),
+            Some("geo.ip_address")
+        );
+        // the `pii.*` namespace keeps its own, distinct flag ...
+        assert!(flags("pii.email").contains(&"PII".to_string()));
+        assert!(!flags("pii.email").contains(&"PII-location".to_string()));
+        // ... and an ordinary geo region key is not sensitive at all, so the arm has to stay a
+        // closed list rather than a `geo.` prefix test.
+        assert!(flags("geo.zip_code").is_empty());
+        assert!(flags("geo.zcta").is_empty());
     }
 
     #[test]

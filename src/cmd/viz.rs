@@ -24351,6 +24351,33 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Result<PanelKind, S
 
 /// Max number of fields (identifier + extras) shown in a `viz smart --smarter` map-point hover.
 const MAP_HOVER_MAX_FIELDS: usize = 4;
+
+/// Concepts whose VALUES must never be embedded in a map hover, however good an identifier the
+/// column would otherwise make (issue #4524 review).
+///
+/// Distinct from `Route::Skip`, which cannot serve this purpose in either direction: several
+/// Skip-routed concepts are DELIBERATELY preferred hover identifiers (`MAP_ID_CONCEPTS` is all
+/// `id.*`, and `MAP_NAME_CONCEPTS` leads with `pii.full_name`), while a hover embeds raw values
+/// into a shareable HTML artifact, which is a stricter bar than "is this worth charting".
+const HOVER_EXCLUDED_CONCEPTS: &[&str] = &["geo.ip_address"];
+
+/// The same values reached by `content_type` rather than concept, for a hand-authored sidecar that
+/// supplies one without the other. Both IPv4 and IPv6 tokens, matching the single concept they
+/// share.
+const HOVER_EXCLUDED_CONTENT_TYPES: &[&str] = &["ip_address", "ipv6_address"];
+
+/// Are a column's values too sensitive to embed in a shareable artifact's map hover?
+///
+/// A named predicate rather than an inline test so the exclusion is asserted directly, and so the
+/// concept and content_type routes to the same values stay in one place.
+fn is_hover_excluded(concept: &str, content_type: &str) -> bool {
+    let ct_base = content_type
+        .split_once(':')
+        .map_or(content_type, |(b, _)| b)
+        .trim();
+    HOVER_EXCLUDED_CONCEPTS.contains(&concept.trim())
+        || HOVER_EXCLUDED_CONTENT_TYPES.contains(&ct_base)
+}
 // describegpt concept tokens (see `describegpt::dictionary::CONCEPT_VOCAB`) used to pick map-hover
 // fields, in descending preference within each category.
 const MAP_ID_CONCEPTS: &[&str] = &[
@@ -24430,6 +24457,17 @@ fn select_map_identifier(
     lon_idx: usize,
 ) -> Option<usize> {
     let is_coord = |i: usize| i == lat_idx || i == lon_idx;
+    // Steps 3 and 4 pick by ROLE and by STATISTICS, so neither consults the concept — which is
+    // exactly how an IP column slips in: it is routinely near-unique (step 4) and routinely tagged
+    // `identifier` (step 3). Routing it `Route::Skip` suppresses its CHART but not its values
+    // here, and a map hover embeds those values in the shareable HTML. Issue #4524 review.
+    let sensitive = |i: usize, s: &crate::cmd::stats::StatsData| {
+        is_hover_excluded(
+            col_sems.get(i).map_or("", |c| c.concept.as_str()),
+            dict.and_then(|d| d.rows.get(&s.field))
+                .map_or("", |r| r.content_type.as_str()),
+        )
+    };
 
     // 1 & 2: dictionary concept — id.* then name-like, in preference order
     if let Some(i) = first_col_by_concepts(
@@ -24446,6 +24484,7 @@ fn select_map_identifier(
     if let Some(d) = dict
         && let Some(i) = stats.iter().enumerate().find_map(|(i, s)| {
             (!is_coord(i)
+                && !sensitive(i, s)
                 && d.rows
                     .get(&s.field)
                     .is_some_and(|r| r.role.eq_ignore_ascii_case("identifier")))
@@ -24458,7 +24497,8 @@ fn select_map_identifier(
     // 4: statistical fallback — near-unique column, prefer String over Integer
     for want in ["String", "Integer"] {
         if let Some(i) = stats.iter().enumerate().find_map(|(i, s)| {
-            (!is_coord(i) && s.r#type == want && near_unique_col(s)).then_some(i)
+            (!is_coord(i) && !sensitive(i, s) && s.r#type == want && near_unique_col(s))
+                .then_some(i)
         }) {
             return Some(i);
         }
@@ -41622,6 +41662,95 @@ mod tests {
         // measure — which is why #4524's other two concepts stay out of the leaf lists.
         assert!(!is_region_concept("geo.timezone"));
         assert!(!is_region_concept("geo.geonames_id"));
+    }
+
+    #[test]
+    fn map_hover_never_embeds_an_ip_column() {
+        // `Route::Skip` suppresses the CHART but not the hover: `select_map_identifier` steps 3
+        // and 4 pick by role and by statistics, neither of which consults the route. An IP column
+        // is near-unique (step 4) and routinely tagged `identifier` (step 3), so without the
+        // exclusion its raw values land in the shareable HTML. Issue #4524 review.
+        let stats = vec![
+            stat("String", 5000, Some(0.99)), // 0: client IP, near-unique
+            stat("Float", 900, Some(0.5)),    // 1: lat
+            stat("Float", 900, Some(0.5)),    // 2: lon
+        ];
+        let sems = vec![
+            csem("geo.ip_address"),
+            csem("geo.latitude"),
+            csem("geo.longitude"),
+        ];
+        // step 4 (statistical fallback): the IP is the ONLY near-unique String, so before the
+        // exclusion it was the identifier by default.
+        assert_eq!(select_map_identifier(&stats, &sems, None, 1, 2), None);
+        assert!(select_map_hover_fields(&stats, &sems, None, 1, 2, false).is_empty());
+
+        // a non-sensitive near-unique String in the same shape IS still chosen, so the exclusion
+        // is specific rather than a blanket disabling of the fallback.
+        let benign = vec![
+            csem("id.natural_key"),
+            csem("geo.latitude"),
+            csem("geo.longitude"),
+        ];
+        assert_eq!(select_map_identifier(&stats, &benign, None, 1, 2), Some(0));
+
+        // Step 3 (dictionary `role: identifier`) is a SEPARATE path from step 4 and needs its own
+        // coverage: mutation-testing showed that gating only step 4 left this one unasserted. An
+        // IP column is routinely tagged `identifier` -- `is_identifier_content_type` lists
+        // `ip_address`, so `role_from_content_type` returns exactly that role.
+        let named = |field: &str, ty: &str, card: u64, uniq: f64| crate::cmd::stats::StatsData {
+            field: field.to_string(),
+            r#type: ty.to_string(),
+            cardinality: card,
+            uniqueness_ratio: Some(uniq),
+            ..Default::default()
+        };
+        // low cardinality and not near-unique, so step 4 cannot fire and step 3 is isolated
+        let by_role = vec![
+            named("client_ip", "String", 8, 0.01),
+            named("lat", "Float", 900, 0.5),
+            named("lon", "Float", 900, 0.5),
+        ];
+        let mut dict = DictData::default();
+        dict.rows.insert(
+            "client_ip".to_string(),
+            dict_row("ip_address", "identifier", "geo.ip_address", "Client IP"),
+        );
+        assert_eq!(
+            select_map_identifier(&by_role, &sems, Some(&dict), 1, 2),
+            None,
+            "an IP column tagged role:identifier must not become the hover identifier"
+        );
+        // the same shape on a benign column still yields an identifier, so step 3 is GATED
+        // rather than broken.
+        let mut ok_dict = DictData::default();
+        ok_dict.rows.insert(
+            "client_ip".to_string(),
+            dict_row("unique_id", "identifier", "id.natural_key", "Request ID"),
+        );
+        assert_eq!(
+            select_map_identifier(&by_role, &benign, Some(&ok_dict), 1, 2),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn is_hover_excluded_covers_both_ip_routes() {
+        // by concept ...
+        assert!(is_hover_excluded("geo.ip_address", ""));
+        // ... and by content_type, for a hand-authored sidecar carrying one without the other,
+        // for BOTH address families (they share one concept, so the content_type list is what
+        // keeps IPv6 covered on that route).
+        assert!(is_hover_excluded("", "ip_address"));
+        assert!(is_hover_excluded("", "ipv6_address"));
+        // a `:suffix` on the content_type token must not defeat the match
+        assert!(is_hover_excluded("", "ip_address:v4"));
+        // neighbouring geo concepts stay eligible -- a city or street address is exactly what a
+        // hover SHOULD say, and `MAP_NAME_CONCEPTS` already prefers them.
+        assert!(!is_hover_excluded("geo.city", "city"));
+        assert!(!is_hover_excluded("geo.street_address", "street_address"));
+        assert!(!is_hover_excluded("pii.full_name", "full_name"));
+        assert!(!is_hover_excluded("", ""));
     }
 
     #[test]

@@ -3231,6 +3231,29 @@ fn path_fingerprint(path: &str) -> String {
     fp
 }
 
+/// BLAKE3 fingerprint of the prompt templates, over BOTH sources they can come from.
+///
+/// `resolved_source_fp` fingerprints the TOML actually in play — a custom `--prompt-file`'s
+/// bytes, or the compiled-in `resources/describegpt_defaults.toml`. `refine_default` is
+/// `DEFAULT_DICTIONARY_REFINE_PROMPT`, the `#[serde(default)]` filler for
+/// `PromptFile::dictionary_refine_prompt`: a custom TOML written before `--two-pass` existed
+/// omits that field and silently renders its refine prompt from this Rust const, which no
+/// fingerprint of the user's file can see. Both must be in the key or a future edit to
+/// either replays completions rendered from the old template.
+fn prompt_template_fingerprint(resolved_source_fp: &str, refine_default: &str) -> String {
+    let joined = format!("{resolved_source_fp}\x1f{refine_default}");
+    blake3::hash(joined.as_bytes()).to_hex()[..16].to_string()
+}
+
+/// BLAKE3 fingerprint of the four closed vocabularies that `get_prompt` renders into the
+/// prompts from Rust constants. Separated by the unit separator (U+001F), which cannot occur
+/// in a vocabulary token, so two different sets of vocabularies can never re-split to the
+/// same joined string (`["a,b"], []` vs `["a"], ["b"]` stay distinct).
+fn vocab_fingerprint(content_type: &str, concept: &str, role: &str, agg: &str) -> String {
+    let joined = format!("{content_type}\x1f{concept}\x1f{role}\x1f{agg}");
+    blake3::hash(joined.as_bytes()).to_hex()[..16].to_string()
+}
+
 /// Build a cache key with an explicit validity flag. Used by both `get_cache_key`
 /// (which reads the current flag) and cache-invalidation paths (which need to
 /// reconstruct keys for both "valid" and "invalid" flags to purge stored entries).
@@ -3325,12 +3348,71 @@ fn get_cache_key_with_flag(
         (String::new(), String::new())
     };
 
+    // Fingerprint of the MiniJinja templates the prompts are rendered from. The templates
+    // live either in a user-supplied --prompt-file or in the compiled-in
+    // `resources/describegpt_defaults.toml`; both reach the LLM verbatim, so both must be
+    // in the key. One field with two sources (rather than a conditionally-present one)
+    // keeps the key's shape constant no matter how the template was resolved.
+    //
+    // Custom file: BLAKE3 of its bytes, so editing your own prompt file no longer returns
+    // the completion cached under the previous revision (the path alone was tracked by
+    // `{prompt_file:?}` and never changed on an edit). --prompt-file is read with
+    // `fs::read_to_string`, so it is always a local path — no remote form to fall through
+    // `path_fingerprint`'s URL guard. An unreadable/missing path fingerprints as "" here,
+    // which is correct for the cache-removal paths (--forget, invalidate_cache_entry) that
+    // rebuild this key WITHOUT reading the file: the quoted path in `{prompt_file:?}` still
+    // keeps it distinct from the compiled-in-default key.
+    //
+    // Default: BLAKE3 of the compiled-in TOML, so editing a shipped prompt (or upgrading
+    // to a qsv whose prompts changed) invalidates entries whose prompt actually moved,
+    // while leaving the key qsv-version-agnostic otherwise (#4538).
+    let resolved_prompt_source_fp = match args.flag_prompt_file.as_deref() {
+        Some(path) => path_fingerprint(path),
+        None => {
+            blake3::hash(get_default_prompt_file_content().as_bytes()).to_hex()[..16].to_string()
+        },
+    };
+    let prompt_template_fp =
+        prompt_template_fingerprint(&resolved_prompt_source_fp, DEFAULT_DICTIONARY_REFINE_PROMPT);
+    // --stats-options / --freq-options select and shape the `qsv stats` / `qsv frequency`
+    // output that `get_prompt` injects as `{{ stats }}` and `{{ frequency }}`, so changing
+    // either changes the rendered prompt. `get_analysis_cache_key` already treats them as
+    // cache-relevant; the completion key must too, or a re-run with different options is
+    // answered from the completion generated against the old ones. Both accept a
+    // `file:<path>` form whose CONTENTS are injected verbatim, so fingerprint that file the
+    // same way --tag-vocab and --context-file are: the flag string alone does not change
+    // when the file it points at is edited in place.
+    let stats_options_fp = args
+        .flag_stats_options
+        .strip_prefix("file:")
+        .map_or(String::new(), path_fingerprint);
+    let freq_options_fp = args
+        .flag_freq_options
+        .strip_prefix("file:")
+        .map_or(String::new(), path_fingerprint);
+    // The four closed vocabularies are rendered into the prompts from Rust constants
+    // (`content_type_vocab` / `concept_vocab` / `role_vocab` / `agg_vocab` in `get_prompt`'s
+    // context), not from the template file, so the template fingerprint above does NOT cover
+    // them. Adding a token to `CONCEPT_VOCAB` changes what the LLM is asked to choose from
+    // and must invalidate; without this, a cached completion keyed on unchanged file content
+    // is replayed and the new token can never be emitted (#4538). `CADENCE_VOCAB` is
+    // deliberately absent: it is computed deterministically from stats and never injected
+    // into a prompt. The unit separator can't occur in a vocabulary token, so distinct
+    // vocabularies can't collide by re-splitting across the joins.
+    let vocab_fp = vocab_fingerprint(
+        &dictionary::content_type_vocab_list(),
+        &dictionary::concept_vocab_list(),
+        &dictionary::role_vocab_list(),
+        &dictionary::agg_vocab_list(),
+    );
+
     format!(
-        "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
-         {actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};{tag_vocab_fp};\
-         {num_tags};{enum_threshold};{infer_content_type};{infer_null_values};{sample_size};\
-         {fewshot_examples};{duckdb_enabled};{duckdb_path};{duckdb_binary_fp};{tour_audience:?};\
-         {dictionary_fingerprint:?}{context_suffix}",
+        "{file_hash};{prompt_file:?};{prompt_template_fp};{vocab_fp};{prompt_content:?};\
+         {stats_options:?};{stats_options_fp};{freq_options:?};{freq_options_fp};{max_tokens};\
+         {addl_props:?};{actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};\
+         {tag_vocab_fp};{num_tags};{enum_threshold};{infer_content_type};{infer_null_values};\
+         {sample_size};{fewshot_examples};{duckdb_enabled};{duckdb_path};{duckdb_binary_fp};\
+         {tour_audience:?};{dictionary_fingerprint:?}{context_suffix}",
         prompt_file = args.flag_prompt_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
@@ -3346,6 +3428,8 @@ fn get_cache_key_with_flag(
         infer_content_type = args.flag_infer_content_type,
         infer_null_values = args.flag_infer_null_values,
         sample_size = args.flag_sample_size,
+        stats_options = args.flag_stats_options,
+        freq_options = args.flag_freq_options,
         fewshot_examples = args.flag_fewshot_examples,
     )
 }
@@ -8015,6 +8099,244 @@ mod tests {
         assert_ne!(
             key_v1, key_v2,
             "in-place vocab edit must change the cache key"
+        );
+    }
+
+    #[test]
+    fn cache_key_reflects_prompt_file_contents() {
+        // Editing a custom --prompt-file in place must change the cache key. Before #4538
+        // only the PATH was in the key, so revising your own prompt template silently
+        // replayed the completion generated by the previous revision.
+        use std::io::Write;
+        let mut tmp = tempfile::Builder::new()
+            .prefix("qsv_describegpt_prompts_")
+            .suffix(".toml")
+            .tempfile()
+            .expect("create prompt tmpfile");
+        write!(tmp, "{}", get_default_prompt_file_content()).expect("write v1");
+        tmp.flush().expect("flush v1");
+
+        let mut args = default_args_for_test();
+        args.flag_prompt_file = Some(tmp.path().to_string_lossy().into_owned());
+        let key_v1 = get_cache_key_with_flag(&args, PromptType::Dictionary, "gpt-x", "valid");
+
+        // Rewrite in place. Content hashing (not mtime) detects this, so no mtime tick needed.
+        let mut f = fs::File::create(tmp.path()).expect("rewrite prompt tmpfile");
+        write!(
+            f,
+            "{}\n# a materially different instruction to the model\n",
+            get_default_prompt_file_content()
+        )
+        .expect("write v2");
+        f.flush().expect("flush v2");
+        drop(f);
+
+        let key_v2 = get_cache_key_with_flag(&args, PromptType::Dictionary, "gpt-x", "valid");
+        assert_ne!(
+            key_v1, key_v2,
+            "an in-place --prompt-file edit must change the cache key"
+        );
+    }
+
+    #[test]
+    fn cache_key_fingerprints_the_compiled_in_default_prompts() {
+        // With no --prompt-file the templates come from the compiled-in TOML, which must
+        // still be fingerprinted (#4538) — otherwise a shipped-prompt revision replays
+        // completions rendered from the old template. Both branches of the resolution are
+        // exercised: the default's fingerprint must be non-empty and must differ from a
+        // custom file whose contents differ from the default.
+        use std::io::Write;
+        let args_default = default_args_for_test();
+        assert!(
+            args_default.flag_prompt_file.is_none(),
+            "fixture must exercise the compiled-in default branch"
+        );
+        // The contract, stated independently of how the key computes it: with no
+        // --prompt-file the key carries a fingerprint of the shipped prompt TOML, folded
+        // together with the serde-default refine prompt.
+        let default_fp = prompt_template_fingerprint(
+            &blake3::hash(get_default_prompt_file_content().as_bytes()).to_hex()[..16],
+            DEFAULT_DICTIONARY_REFINE_PROMPT,
+        );
+        let key_default =
+            get_cache_key_with_flag(&args_default, PromptType::Dictionary, "gpt-x", "valid");
+        assert!(
+            key_default.contains(&default_fp) && !default_fp.is_empty(),
+            "the default-prompt key must carry a non-empty template fingerprint:\n{key_default}"
+        );
+
+        let mut tmp = tempfile::Builder::new()
+            .prefix("qsv_describegpt_custom_prompts_")
+            .suffix(".toml")
+            .tempfile()
+            .expect("create prompt tmpfile");
+        write!(tmp, "# not the shipped defaults at all\n").expect("write custom");
+        tmp.flush().expect("flush custom");
+        let mut args_custom = default_args_for_test();
+        args_custom.flag_prompt_file = Some(tmp.path().to_string_lossy().into_owned());
+        let key_custom =
+            get_cache_key_with_flag(&args_custom, PromptType::Dictionary, "gpt-x", "valid");
+        assert!(
+            !key_custom.contains(&default_fp),
+            "a custom prompt file must not be keyed under the default's template \
+             fingerprint:\n{key_custom}"
+        );
+    }
+
+    #[test]
+    fn cache_key_reflects_the_serde_default_refine_prompt() {
+        // `PromptFile::dictionary_refine_prompt` is `#[serde(default)]`: a custom --prompt-file
+        // written before --two-pass existed omits the field and renders its refine prompt from
+        // DEFAULT_DICTIONARY_REFINE_PROMPT, a Rust const no fingerprint of the user's own file
+        // can see. Editing that const must still move the key (#4538).
+        let source_fp = "deadbeefdeadbeef";
+        assert_ne!(
+            prompt_template_fingerprint(source_fp, DEFAULT_DICTIONARY_REFINE_PROMPT),
+            prompt_template_fingerprint(source_fp, "a materially different refine prompt"),
+            "a changed serde-default refine prompt must change the template fingerprint"
+        );
+        assert_ne!(
+            prompt_template_fingerprint("aaaaaaaaaaaaaaaa", DEFAULT_DICTIONARY_REFINE_PROMPT),
+            prompt_template_fingerprint("bbbbbbbbbbbbbbbb", DEFAULT_DICTIONARY_REFINE_PROMPT),
+            "a changed template source must change the template fingerprint"
+        );
+        assert_ne!(
+            prompt_template_fingerprint("a\x1fb", ""),
+            prompt_template_fingerprint("a", "b"),
+            "sources must not collide by re-splitting across the separator"
+        );
+    }
+
+    #[test]
+    fn cache_key_reflects_stats_and_freq_options() {
+        // --stats-options / --freq-options shape the `{{ stats }}` and `{{ frequency }}` text
+        // injected into every prompt, so a re-run with different options must not be answered
+        // from the completion generated against the old ones (#4538).
+        let base = default_args_for_test();
+        let base_key = get_cache_key_with_flag(&base, PromptType::Dictionary, "gpt-x", "valid");
+
+        let mut stats_changed = default_args_for_test();
+        stats_changed.flag_stats_options = "--everything --infer-dates".to_string();
+        assert_ne!(
+            base_key,
+            get_cache_key_with_flag(&stats_changed, PromptType::Dictionary, "gpt-x", "valid"),
+            "a changed --stats-options must change the cache key"
+        );
+
+        let mut freq_changed = default_args_for_test();
+        freq_changed.flag_freq_options = "--limit 5".to_string();
+        assert_ne!(
+            base_key,
+            get_cache_key_with_flag(&freq_changed, PromptType::Dictionary, "gpt-x", "valid"),
+            "a changed --freq-options must change the cache key"
+        );
+    }
+
+    #[test]
+    fn cache_key_reflects_stats_options_file_contents() {
+        // The `file:<path>` form injects that file's CONTENTS as `{{ stats }}`, so an in-place
+        // edit must move the key even though the flag string is unchanged — the same defect
+        // the --prompt-file path had.
+        use std::io::Write;
+        let mut tmp = tempfile::Builder::new()
+            .prefix("qsv_describegpt_stats_")
+            .suffix(".jsonl")
+            .tempfile()
+            .expect("create stats tmpfile");
+        writeln!(tmp, r#"{{"field":"id","type":"Integer"}}"#).expect("write v1");
+        tmp.flush().expect("flush v1");
+
+        let mut args = default_args_for_test();
+        args.flag_stats_options = format!("file:{}", tmp.path().to_string_lossy());
+        let key_v1 = get_cache_key_with_flag(&args, PromptType::Dictionary, "gpt-x", "valid");
+
+        let mut f = fs::File::create(tmp.path()).expect("rewrite stats tmpfile");
+        writeln!(f, r#"{{"field":"email","type":"String","cardinality":42}}"#).expect("write v2");
+        f.flush().expect("flush v2");
+        drop(f);
+
+        assert_ne!(
+            key_v1,
+            get_cache_key_with_flag(&args, PromptType::Dictionary, "gpt-x", "valid"),
+            "an in-place edit of a file: stats source must change the cache key"
+        );
+    }
+
+    #[test]
+    fn cache_key_reflects_the_injected_vocabularies() {
+        // The four vocabularies are injected into the prompts from Rust constants, not from
+        // the template file, so the template fingerprint does not cover them. Adding a token
+        // to CONCEPT_VOCAB changes what the LLM may choose from and must invalidate (#4538);
+        // otherwise the cached completion is replayed and the new token can never appear.
+        // Exercises the production `vocab_fingerprint` rather than restating its formula.
+        let base = vocab_fingerprint("ct", "concept", "role", "agg");
+        for (label, changed) in [
+            (
+                "content_type",
+                vocab_fingerprint("ct2", "concept", "role", "agg"),
+            ),
+            (
+                "concept",
+                vocab_fingerprint("ct", "concept2", "role", "agg"),
+            ),
+            ("role", vocab_fingerprint("ct", "concept", "role2", "agg")),
+            ("agg", vocab_fingerprint("ct", "concept", "role", "agg2")),
+        ] {
+            assert_ne!(
+                base, changed,
+                "a changed {label} vocabulary must change the fingerprint"
+            );
+        }
+        // The joins must not let one vocabulary's tokens migrate into another's slot.
+        assert_ne!(
+            vocab_fingerprint("a,b", "", "role", "agg"),
+            vocab_fingerprint("a", "b", "role", "agg"),
+            "vocabularies must not collide by re-splitting across the separator"
+        );
+
+        // And the key must actually carry it — this is the wiring that makes the above matter.
+        let args = default_args_for_test();
+        let live = vocab_fingerprint(
+            &dictionary::content_type_vocab_list(),
+            &dictionary::concept_vocab_list(),
+            &dictionary::role_vocab_list(),
+            &dictionary::agg_vocab_list(),
+        );
+        let key = get_cache_key_with_flag(&args, PromptType::Dictionary, "gpt-x", "valid");
+        assert!(
+            key.contains(&live),
+            "the cache key must embed the live vocabulary fingerprint:\n{key}"
+        );
+    }
+
+    #[test]
+    fn cache_key_is_stable_across_identical_calls() {
+        // The failure mode that would be invisible in a passing suite: a fingerprint that
+        // recomputes to a different value each call would key every run to a fresh slot and
+        // silently destroy caching for everyone, while every "a change moves the key"
+        // assertion above still passed. Same inputs must give a byte-identical key, for the
+        // compiled-in-default and custom --prompt-file resolutions alike.
+        use std::io::Write;
+        let args = default_args_for_test();
+        assert_eq!(
+            get_cache_key_with_flag(&args, PromptType::Dictionary, "gpt-x", "valid"),
+            get_cache_key_with_flag(&args, PromptType::Dictionary, "gpt-x", "valid"),
+            "identical inputs must produce an identical key (compiled-in defaults)"
+        );
+
+        let mut tmp = tempfile::Builder::new()
+            .prefix("qsv_describegpt_stable_prompts_")
+            .suffix(".toml")
+            .tempfile()
+            .expect("create prompt tmpfile");
+        write!(tmp, "{}", get_default_prompt_file_content()).expect("write prompts");
+        tmp.flush().expect("flush prompts");
+        let mut args_custom = default_args_for_test();
+        args_custom.flag_prompt_file = Some(tmp.path().to_string_lossy().into_owned());
+        assert_eq!(
+            get_cache_key_with_flag(&args_custom, PromptType::Dictionary, "gpt-x", "valid"),
+            get_cache_key_with_flag(&args_custom, PromptType::Dictionary, "gpt-x", "valid"),
+            "identical inputs must produce an identical key (custom --prompt-file)"
         );
     }
 

@@ -24416,8 +24416,44 @@ fn stat_range(s: &crate::cmd::stats::StatsData) -> f64 {
 }
 
 /// A column is unavailable for a hover field when it's the lat/lon pair or already chosen.
-fn map_field_used(i: usize, lat_idx: usize, lon_idx: usize, chosen: &[usize]) -> bool {
-    i == lat_idx || i == lon_idx || chosen.contains(&i)
+fn map_field_used(
+    i: usize,
+    lat_idx: usize,
+    lon_idx: usize,
+    chosen: &[usize],
+    excluded: &[usize],
+) -> bool {
+    i == lat_idx || i == lon_idx || chosen.contains(&i) || excluded.contains(&i)
+}
+
+/// Column indices whose VALUES must never be embedded in a map hover ([`is_hover_excluded`]).
+///
+/// Computed once per map and threaded through [`map_field_used`], which EVERY hover-selection
+/// path already funnels through -- so a new selection step inherits the exclusion by
+/// construction instead of needing its own gate. Gating individual steps is what let an IP
+/// column reach the hover through an un-gated path twice running (issue #4524 review): first the
+/// role/statistical identifier fallbacks, then the concept-keyed steps and the `--smarter` extras
+/// reachable from a hand-authored sidecar whose `content_type` and `concept` disagree. describegpt
+/// cannot emit that disagreement -- `coerce_role_concept` resets any concept other than
+/// `geo.ip_address` on an `ip_address` column -- but `parse_dictionary_semantics` reads a
+/// hand-authored sidecar without coercing it, so the contradiction is reachable there.
+fn hover_excluded_idxs(
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    dict: Option<&DictData>,
+) -> Vec<usize> {
+    stats
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| {
+            is_hover_excluded(
+                col_sems.get(*i).map_or("", |c| c.concept.as_str()),
+                dict.and_then(|d| d.rows.get(&s.field))
+                    .map_or("", |r| r.content_type.as_str()),
+            )
+        })
+        .map(|(i, _)| i)
+        .collect()
 }
 
 /// First available (not lat/lon, not already chosen) column whose `concept` exactly matches one of
@@ -24428,12 +24464,15 @@ fn first_col_by_concepts(
     lat_idx: usize,
     lon_idx: usize,
     chosen: &[usize],
+    excluded: &[usize],
 ) -> Option<usize> {
     preferred.iter().find_map(|c| {
         col_sems
             .iter()
             .enumerate()
-            .find(|(i, s)| !map_field_used(*i, lat_idx, lon_idx, chosen) && s.concept == *c)
+            .find(|(i, s)| {
+                !map_field_used(*i, lat_idx, lon_idx, chosen, excluded) && s.concept == *c
+            })
             .map(|(i, _)| i)
     })
 }
@@ -24457,17 +24496,9 @@ fn select_map_identifier(
     lon_idx: usize,
 ) -> Option<usize> {
     let is_coord = |i: usize| i == lat_idx || i == lon_idx;
-    // Steps 3 and 4 pick by ROLE and by STATISTICS, so neither consults the concept — which is
-    // exactly how an IP column slips in: it is routinely near-unique (step 4) and routinely tagged
-    // `identifier` (step 3). Routing it `Route::Skip` suppresses its CHART but not its values
-    // here, and a map hover embeds those values in the shareable HTML. Issue #4524 review.
-    let sensitive = |i: usize, s: &crate::cmd::stats::StatsData| {
-        is_hover_excluded(
-            col_sems.get(i).map_or("", |c| c.concept.as_str()),
-            dict.and_then(|d| d.rows.get(&s.field))
-                .map_or("", |r| r.content_type.as_str()),
-        )
-    };
+    // Every step consults this, including the concept-keyed ones: a map hover embeds raw values in
+    // the shareable HTML, and `Route::Skip` does not reach here. Issue #4524 review.
+    let excluded = hover_excluded_idxs(stats, col_sems, dict);
 
     // 1 & 2: dictionary concept — id.* then name-like, in preference order
     if let Some(i) = first_col_by_concepts(
@@ -24476,6 +24507,7 @@ fn select_map_identifier(
         lat_idx,
         lon_idx,
         &[],
+        &excluded,
     ) {
         return Some(i);
     }
@@ -24484,7 +24516,7 @@ fn select_map_identifier(
     if let Some(d) = dict
         && let Some(i) = stats.iter().enumerate().find_map(|(i, s)| {
             (!is_coord(i)
-                && !sensitive(i, s)
+                && !excluded.contains(&i)
                 && d.rows
                     .get(&s.field)
                     .is_some_and(|r| r.role.eq_ignore_ascii_case("identifier")))
@@ -24497,7 +24529,7 @@ fn select_map_identifier(
     // 4: statistical fallback — near-unique column, prefer String over Integer
     for want in ["String", "Integer"] {
         if let Some(i) = stats.iter().enumerate().find_map(|(i, s)| {
-            (!is_coord(i) && !sensitive(i, s) && s.r#type == want && near_unique_col(s))
+            (!is_coord(i) && !excluded.contains(&i) && s.r#type == want && near_unique_col(s))
                 .then_some(i)
         }) {
             return Some(i);
@@ -24598,6 +24630,9 @@ fn select_map_hover_fields(
     smarter: bool,
 ) -> Vec<usize> {
     let mut chosen: Vec<usize> = Vec::new();
+    // Same set the identifier honors, so the `--smarter` extras cannot re-admit a column the
+    // identifier step refused.
+    let excluded = hover_excluded_idxs(stats, col_sems, dict);
     if let Some(id) = select_map_identifier(stats, col_sems, dict, lat_idx, lon_idx) {
         chosen.push(id);
     }
@@ -24610,43 +24645,54 @@ fn select_map_hover_fields(
     if dict.is_some() {
         // measure: concept priority, else any `measure.*` (tie → largest observed range)
         if room(&chosen) {
-            let m =
-                first_col_by_concepts(col_sems, MAP_MEASURE_CONCEPTS, lat_idx, lon_idx, &chosen)
-                    .or_else(|| {
-                        col_sems
-                            .iter()
-                            .enumerate()
-                            .filter(|(i, s)| {
-                                !map_field_used(*i, lat_idx, lon_idx, &chosen)
-                                    && s.concept.starts_with("measure.")
-                            })
-                            .max_by(|(ia, _), (ib, _)| {
-                                stat_range(&stats[*ia])
-                                    .partial_cmp(&stat_range(&stats[*ib]))
-                                    .unwrap_or(std::cmp::Ordering::Equal)
-                            })
-                            .map(|(i, _)| i)
-                    });
+            let m = first_col_by_concepts(
+                col_sems,
+                MAP_MEASURE_CONCEPTS,
+                lat_idx,
+                lon_idx,
+                &chosen,
+                &excluded,
+            )
+            .or_else(|| {
+                col_sems
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, s)| {
+                        !map_field_used(*i, lat_idx, lon_idx, &chosen, &excluded)
+                            && s.concept.starts_with("measure.")
+                    })
+                    .max_by(|(ia, _), (ib, _)| {
+                        stat_range(&stats[*ia])
+                            .partial_cmp(&stat_range(&stats[*ib]))
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .map(|(i, _)| i)
+            });
             if let Some(i) = m {
                 chosen.push(i);
             }
         }
         // category: concept priority, else any `category.*`/`org.*` (tie → lowest cardinality)
         if room(&chosen) {
-            let c =
-                first_col_by_concepts(col_sems, MAP_CATEGORY_CONCEPTS, lat_idx, lon_idx, &chosen)
-                    .or_else(|| {
-                        col_sems
-                            .iter()
-                            .enumerate()
-                            .filter(|(i, s)| {
-                                !map_field_used(*i, lat_idx, lon_idx, &chosen)
-                                    && (s.concept.starts_with("category.")
-                                        || s.concept.starts_with("org."))
-                            })
-                            .min_by_key(|(i, _)| stats[*i].cardinality)
-                            .map(|(i, _)| i)
-                    });
+            let c = first_col_by_concepts(
+                col_sems,
+                MAP_CATEGORY_CONCEPTS,
+                lat_idx,
+                lon_idx,
+                &chosen,
+                &excluded,
+            )
+            .or_else(|| {
+                col_sems
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, s)| {
+                        !map_field_used(*i, lat_idx, lon_idx, &chosen, &excluded)
+                            && (s.concept.starts_with("category.") || s.concept.starts_with("org."))
+                    })
+                    .min_by_key(|(i, _)| stats[*i].cardinality)
+                    .map(|(i, _)| i)
+            });
             if let Some(i) = c {
                 chosen.push(i);
             }
@@ -24654,8 +24700,9 @@ fn select_map_hover_fields(
         // time: any `time.*`
         if room(&chosen)
             && let Some(i) = col_sems.iter().enumerate().find_map(|(i, s)| {
-                (!map_field_used(i, lat_idx, lon_idx, &chosen) && s.concept.starts_with("time."))
-                    .then_some(i)
+                (!map_field_used(i, lat_idx, lon_idx, &chosen, &excluded)
+                    && s.concept.starts_with("time."))
+                .then_some(i)
             })
         {
             chosen.push(i);
@@ -24668,6 +24715,7 @@ fn select_map_hover_fields(
                 lat_idx,
                 lon_idx,
                 &chosen,
+                &excluded,
             )
         {
             chosen.push(i);
@@ -24679,7 +24727,7 @@ fn select_map_hover_fields(
                 .iter()
                 .enumerate()
                 .filter(|(i, s)| {
-                    !map_field_used(*i, lat_idx, lon_idx, &chosen)
+                    !map_field_used(*i, lat_idx, lon_idx, &chosen, &excluded)
                         && matches!(s.r#type.as_str(), "Integer" | "Float")
                         && !near_unique_col(s)
                 })
@@ -24702,7 +24750,7 @@ fn select_map_hover_fields(
                 .iter()
                 .enumerate()
                 .filter(|(i, s)| {
-                    !map_field_used(*i, lat_idx, lon_idx, &chosen)
+                    !map_field_used(*i, lat_idx, lon_idx, &chosen, &excluded)
                         && s.cardinality >= 1
                         && s.cardinality <= CATEGORICAL_MAX_CARDINALITY
                         && !near_unique_col(s)
@@ -28304,12 +28352,15 @@ fn build_smart_summary_choropleth_panels(
     // optional measure column to color the second panel: prefer a MAP_MEASURE_CONCEPTS concept,
     // else any `role=measure` column (catches an untagged-concept amount like PRICE whose
     // dictionary role is still "measure"). Never a candidate region column, never a denominator.
+    // Empty hover exclusion: this picks a choropleth's COLOR measure, not a hover field, and the
+    // excluded concepts are never measures anyway (`geo.ip_address` routes to `Route::Skip`).
     let measure_idx: Option<usize> = first_col_by_concepts(
         col_sems,
         MAP_MEASURE_CONCEPTS,
         usize::MAX,
         usize::MAX,
         &measure_excluded,
+        &[],
     )
     .or_else(|| {
         col_sems
@@ -29239,7 +29290,8 @@ fn build_map_panel(
     // optional bubble-size measure: a dictionary-tagged map measure (amount/count/ratio). `None`
     // without a dictionary (concepts are empty), so non-dictionary maps stay fixed-size markers —
     // sizing by an untagged numeric would be an arbitrary, misleading encoding.
-    let size_idx = first_col_by_concepts(col_sems, MAP_MEASURE_CONCEPTS, lat_idx, lon_idx, &[]);
+    let size_idx =
+        first_col_by_concepts(col_sems, MAP_MEASURE_CONCEPTS, lat_idx, lon_idx, &[], &[]);
 
     // opt-in `--photos`: the image-URL columns whose per-row values ride along as `customdata` for
     // the hover-dwell lightbox. Empty unless the flag is set, so a default Data Schematic embeds no
@@ -41730,6 +41782,77 @@ mod tests {
         );
         assert_eq!(
             select_map_identifier(&by_role, &benign, Some(&ok_dict), 1, 2),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn contradictory_sidecar_cannot_smuggle_an_ip_into_a_hover() {
+        // A HAND-AUTHORED sidecar can disagree with itself -- `content_type: ip_address` beside a
+        // concept that the concept-keyed steps prefer. describegpt cannot emit that (an
+        // `ip_address` content_type has no admissible refinements, so `coerce_role_concept` resets
+        // any other concept), but `parse_dictionary_semantics` reads a sidecar without coercing
+        // it. The exclusion now lives inside `map_field_used`, which every selection path funnels
+        // through, so each of these is refused by construction. Issue #4524 review.
+        let named = |field: &str, ty: &str, card: u64, uniq: f64| crate::cmd::stats::StatsData {
+            field: field.to_string(),
+            r#type: ty.to_string(),
+            cardinality: card,
+            uniqueness_ratio: Some(uniq),
+            ..Default::default()
+        };
+        let stats = vec![
+            named("client_ip", "String", 5000, 0.99),
+            named("lat", "Float", 900, 0.5),
+            named("lon", "Float", 900, 0.5),
+        ];
+        let mut dict = DictData::default();
+        dict.rows.insert(
+            "client_ip".to_string(),
+            dict_row("ip_address", "dimension", "id.natural_key", "Client IP"),
+        );
+
+        // step 1 (MAP_ID_CONCEPTS) would otherwise select it on the `id.natural_key` concept
+        let as_id = vec![
+            csem("id.natural_key"),
+            csem("geo.latitude"),
+            csem("geo.longitude"),
+        ];
+        assert_eq!(
+            select_map_identifier(&stats, &as_id, Some(&dict), 1, 2),
+            None
+        );
+        assert!(select_map_hover_fields(&stats, &as_id, Some(&dict), 1, 2, false).is_empty());
+
+        // step 2 (MAP_NAME_CONCEPTS) via a name-like concept
+        let as_name = vec![
+            csem("org.company"),
+            csem("geo.latitude"),
+            csem("geo.longitude"),
+        ];
+        assert_eq!(
+            select_map_identifier(&stats, &as_name, Some(&dict), 1, 2),
+            None
+        );
+
+        // the `--smarter` extras: a category-tagged IP column must not re-enter as an extra
+        // after the identifier step refused it.
+        let as_category = vec![
+            csem("category.type"),
+            csem("geo.latitude"),
+            csem("geo.longitude"),
+        ];
+        assert!(select_map_hover_fields(&stats, &as_category, Some(&dict), 1, 2, true).is_empty());
+
+        // ... and the same column WITHOUT the ip_address content_type is still selectable, so the
+        // exclusion keys on the metadata rather than disabling the paths.
+        let mut benign_dict = DictData::default();
+        benign_dict.rows.insert(
+            "client_ip".to_string(),
+            dict_row("unique_id", "dimension", "id.natural_key", "Request ID"),
+        );
+        assert_eq!(
+            select_map_identifier(&stats, &as_id, Some(&benign_dict), 1, 2),
             Some(0)
         );
     }

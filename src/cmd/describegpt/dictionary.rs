@@ -167,7 +167,17 @@ pub(crate) const ROLE_VOCAB: &[&str] = &["dimension", "measure", "identifier", "
 ///   * domain prefixes (e.g. `nyc.*`) — catalog-specific shared keys
 pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     // spatial
+    // a MAILING ZIP code. Routes to the ZCTA boundary layer, which is an approximation rather
+    // than the same thing -- see `geo.zcta` -- so `viz smart` stamps a caveat into the map's
+    // provenance when a column carrying THIS concept is drawn on ZCTA polygons.
     "geo.zip_code",
+    // a ZIP Code Tabulation Area: the Census's own areal approximation of a ZIP code, and the key
+    // of TIGERweb's ZCTA layer. Split from `geo.zip_code` in issue #4524 because the two are not
+    // the same identity: a ZIP is a mail-delivery ROUTE set, a ZCTA is a TABULATION area, PO-box
+    // and point ZIPs have no ZCTA at all, and the boundaries differ where they do correspond.
+    // Both route to `Layer::Zcta`; tagging a column `geo.zcta` asserts it already holds tabulation
+    // codes (Census-derived data), which is what suppresses the approximation caveat.
+    "geo.zcta",
     "geo.city",
     "geo.county",
     "geo.county_fips",
@@ -201,6 +211,18 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     "geo.census_tract",
     "geo.crs_stateplane_x",
     "geo.crs_stateplane_y",
+    // an IP address. Spatial because `qsv geocode iplookup` resolves one to a city and a
+    // lat/long, so on a geocode-enabled build it is a locatable dimension rather than an opaque
+    // key -- and even where viz never consumes it, the concept tells an agent which qsv command
+    // applies. Issue #4524.
+    //
+    // Linkable, like every `geo.*` concept, and simultaneously sensitive: many jurisdictions
+    // treat an IP as personal data. Those are not in tension here, because the codebase already
+    // has the pattern -- `geo.street_address` is likewise linkable and carries a `PII-location`
+    // quality flag (`formatters::…`), which `geo.ip_address` joins. The `pii.*` namespace was the
+    // alternative and was rejected: it routes to `Route::Skip` and drops the geo identity, which
+    // is the entire point of having the concept.
+    "geo.ip_address",
     // an IANA tz database zone ("America/New_York"). Spatial rather than temporal: it names a
     // REGION that observes a clock rule, and it is the region — not the clock — that another
     // dataset joins on. Seeded from the `time_zone` content_type. Issue #4524.
@@ -344,6 +366,7 @@ pub(super) fn concept_from_content_type(content_type_base: &str) -> Option<&'sta
         "country" => "geo.country",
         "country_code" => "geo.country_code",
         "time_zone" => "geo.timezone",
+        "ip_address" => "geo.ip_address",
         "latitude" => "geo.latitude",
         "longitude" => "geo.longitude",
         "street_address" | "street_name" => "geo.street_address",
@@ -1733,6 +1756,10 @@ fn verify_aggregation(entry: &mut DictionaryEntry) {
 /// losing candidate costs nothing while a missing one costs the rate map.
 const DENOMINATOR_REGION_CONCEPTS: &[&str] = &[
     "geo.zip_code",
+    // added with the concept in issue #4524: a ZCTA is a region a per-region denominator hangs
+    // on exactly as a mailing-ZIP-keyed one is, and splitting the concept must not cost a
+    // tabulation-code column its hint.
+    "geo.zcta",
     "geo.census_tract",
     "geo.county",
     "geo.county_fips",
@@ -6061,6 +6088,35 @@ mod tests {
             coerced_role_concept("time_zone", "dimension", "time.event_timestamp", "String"),
             ("dimension".to_string(), "geo.timezone".to_string())
         );
+    }
+
+    #[test]
+    fn concept_from_content_type_seeds_an_ip_address_as_a_geo_identity() {
+        // issue #4524: `ip_address` had no concept at all. It is `geo.*` rather than `pii.*` so it
+        // keeps a join identity and signals that `geocode iplookup` applies; the sensitivity is
+        // carried by the PII-location quality flag instead (see formatters).
+        assert_eq!(
+            concept_from_content_type("ip_address"),
+            Some("geo.ip_address")
+        );
+        // ... and it is linkable, exactly like the `geo.street_address` precedent it follows.
+        assert!(is_linkable_concept("geo.ip_address"));
+        assert!(is_linkable_concept("geo.street_address"));
+        // the sibling technical ids stay concept-less: neither resolves to a place.
+        assert_eq!(concept_from_content_type("mac_address"), None);
+        assert_eq!(concept_from_content_type("ipv6_address"), None);
+    }
+
+    #[test]
+    fn zcta_is_a_distinct_concept_from_a_mailing_zip() {
+        // issue #4524: a ZIP is a mail-delivery route set, a ZCTA is a tabulation area. Both are
+        // in the vocabulary and neither is seeded from the other's content_type -- `zip_code` is
+        // a mailing ZIP, and no content_type asserts "these are tabulation codes".
+        assert!(CONCEPT_VOCAB.contains(&"geo.zcta"));
+        assert_eq!(concept_from_content_type("zip_code"), Some("geo.zip_code"));
+        // both are regions a denominator can hang on
+        assert!(DENOMINATOR_REGION_CONCEPTS.contains(&"geo.zcta"));
+        assert!(DENOMINATOR_REGION_CONCEPTS.contains(&"geo.zip_code"));
     }
 
     #[test]

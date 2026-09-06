@@ -86,7 +86,19 @@ async fn serve_mapserver(o: web::Data<Observed>) -> HttpResponse {
         "layers": [
             {"id": 77, "name": "Counties"},
             {"id": 88, "name": "2020 Census ZIP Code Tabulation Areas"},
-            {"id": 99, "name": "Census Tracts"}
+            // The ZCTA layer's name must be matched on a SUBSTRING (it carries the delineation
+            // year), so its Labels sibling contains that substring too. Left UNROUTED: if the
+            // matcher ever selects it, every ZCTA resolution 404s instead of silently doubling
+            // the probe count and merging label points into the boundary set (roborev 4562).
+            {"id": 89, "name": "2020 Census ZIP Code Tabulation Areas Labels"},
+            {"id": 99, "name": "Census Tracts"},
+            // A Census place is a union of two catalog entries (#4540). Each has a `... Labels`
+            // sibling carrying label POINTS; those ids are deliberately left UNROUTED below, so
+            // selecting one 404s and fails the test loudly instead of silently drawing nothing.
+            {"id": 28, "name": "Incorporated Places"},
+            {"id": 29, "name": "Incorporated Places Labels"},
+            {"id": 30, "name": "Census Designated Places"},
+            {"id": 31, "name": "Census Designated Places Labels"}
         ]
     }))
 }
@@ -103,6 +115,70 @@ fn county_feature(geoid: &str, x: f64) -> serde_json::Value {
             "coordinates": [[[x, 0.0], [x, 1.0], [x + 1.0, 1.0], [x + 1.0, 0.0], [x, 0.0]]]
         }
     })
+}
+
+/// One place polygon. The two place layers share a 7-digit numbering space and are disjoint, so
+/// the fixture's ids are enough to tell which layer answered.
+fn place_feature(geoid: &str, name: &str, x: f64) -> serde_json::Value {
+    serde_json::json!({
+        "type": "Feature",
+        "properties": {"GEOID": geoid, "NAME": name, "AREALAND": 1_000_000_i64},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[x, 0.0], [x, 1.0], [x + 1.0, 1.0], [x + 1.0, 0.0], [x, 0.0]]]
+        }
+    })
+}
+
+/// The fixture's place universe, split across the two catalog entries exactly as Census splits
+/// it. Deliberately CDP-majority: an incorporated-only resolver scores 1/4 on this column, which
+/// is below `LAYER_PROBE_MIN_RATIO` (0.5), so `--geojson auto` refuses it outright. That refusal
+/// is the user-visible #4540 bug, and it is what the auto test below pins.
+const INCORPORATED_PLACES: [(&str, &str); 1] = [("4214584", "Coaldale borough")];
+const DESIGNATED_PLACES: [(&str, &str); 3] = [
+    ("4228360", "Ganister CDP"),
+    ("4270020", "Shelltown CDP"),
+    ("4201234", "Sample CDP"),
+];
+
+/// Answer a place query from one half of the universe: echo back only the ids this layer owns
+/// that the `where` clause actually asked for. A fixed response regardless of the query would
+/// make every probe score 1/1 and hide the ratio the layer choice turns on.
+fn place_response(
+    o: &web::Data<Observed>,
+    req: &HttpRequest,
+    universe: &[(&str, &str)],
+) -> HttpResponse {
+    o.requests.fetch_add(1, Ordering::SeqCst);
+    let where_clause = query_param(req.query_string(), "where");
+    o.where_clauses.lock().unwrap().push(where_clause.clone());
+
+    // `STATE IN (...)` is the geometry fetch (every id this layer owns); `GEOID IN (...)` is the
+    // probe (only the ids named).
+    let features: Vec<serde_json::Value> = universe
+        .iter()
+        .enumerate()
+        .filter(|(_, (geoid, _))| {
+            where_clause.starts_with("STATE IN") || where_clause.contains(&format!("'{geoid}'"))
+        })
+        .map(|(i, (geoid, name))| {
+            #[allow(clippy::cast_precision_loss)]
+            place_feature(geoid, name, i as f64 * 2.0)
+        })
+        .collect();
+    HttpResponse::Ok().json(serde_json::json!({
+        "type": "FeatureCollection", "features": features
+    }))
+}
+
+/// `Incorporated Places` (id 28) — half of the place union.
+async fn serve_incorporated_places_query(o: web::Data<Observed>, req: HttpRequest) -> HttpResponse {
+    place_response(&o, &req, &INCORPORATED_PLACES)
+}
+
+/// `Census Designated Places` (id 30) — the half that resolved against nothing before #4540.
+async fn serve_cdp_query(o: web::Data<Observed>, req: HttpRequest) -> HttpResponse {
+    place_response(&o, &req, &DESIGNATED_PLACES)
 }
 
 /// The county layer. Records the `where` clause, and returns the two Pennsylvania counties the
@@ -269,6 +345,16 @@ async fn run_webserver(
                 web::resource("/TIGERweb/tigerWMS_ACS2023/MapServer/99/query")
                     .to(serve_empty_query),
             )
+            // Only the two POLYGON place layers are routed. Their `Labels` siblings (29, 31) are
+            // deliberately unrouted: a matcher that ever selects one gets a 404, not a quiet
+            // boundary-free map.
+            .service(
+                web::resource("/TIGERweb/tigerWMS_ACS2023/MapServer/28/query")
+                    .to(serve_incorporated_places_query),
+            )
+            .service(
+                web::resource("/TIGERweb/tigerWMS_ACS2023/MapServer/30/query").to(serve_cdp_query),
+            )
             // the Data API lives under its own root; only 2023 is "published" here, so the
             // vintage probe has to walk back to find it
             .service(web::resource("/data/2023/acs/acs5").to(serve_acs))
@@ -369,6 +455,146 @@ fn viz_geojson_auto_scopes_the_fetch_to_the_states_present() {
                 .iter()
                 .any(|c| c.trim() == "1=1" || c.trim().is_empty()),
             "a nationwide (unfiltered) query was issued: {clauses:?}"
+        );
+    });
+}
+
+// A Census place is an incorporated place OR a census designated place, and one column routinely
+// holds both (#4540). Before the union, `census:place` resolved only the incorporated half and
+// every CDP row silently dropped out of the map. Asserts the MERGE: both layers are queried and
+// both features land in one boundary set.
+#[test]
+#[serial]
+fn viz_geojson_census_place_unions_incorporated_and_designated_places() {
+    let wrk = Workdir::new("viz_geojson_census_place_unions_incorporated_and_designated_places");
+    // 4214584 = Coaldale borough (incorporated), 4228360 = Ganister CDP
+    wrk.create_from_string("places.csv", "place,cases\n4214584,10\n4228360,20\n");
+    let cache = wrk.path("boundary-cache").to_string_lossy().to_string();
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "places.csv",
+            "--locations",
+            "place",
+            "--value",
+            "cases",
+            "--location-mode",
+            "geojson-id",
+            "--geojson",
+            "census:place",
+        ])
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env("QSV_CACHE_DIR", &cache);
+        let out = wrk.output(&mut cmd);
+        assert!(out.status.success(), "census:place resolution failed");
+
+        // Both halves were asked for. A resolver that stops at the first catalog match issues
+        // only one of these.
+        let requested = observed.where_clauses.lock().unwrap().clone();
+        assert!(
+            requested.iter().any(|c| c.starts_with("STATE IN")),
+            "no state-scoped place query was issued: {requested:?}"
+        );
+
+        // ...and both halves' features are merged into ONE cached boundary set.
+        let mut found = String::new();
+        for entry in std::fs::read_dir(&cache).expect("cache dir").flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "geojson") {
+                found = std::fs::read_to_string(&path).expect("read cached geojson");
+                break;
+            }
+        }
+        assert!(
+            !found.is_empty(),
+            "no boundary set was cached under {cache}"
+        );
+        assert!(
+            found.contains("4214584"),
+            "the incorporated place is missing from the union: {found}"
+        );
+        assert!(
+            found.contains("4228360"),
+            "the CDP is missing from the union — this is the #4540 bug: {found}"
+        );
+    });
+}
+
+// The half of #4540 the explicit-selector test above does NOT reach: `--geojson auto`, which
+// goes probe_scores -> choose_layer -> Layer::ALL and consumes the SUMMED union score.
+//
+// The fixture column is CDP-majority (1 incorporated, 3 CDPs) on purpose. An incorporated-only
+// resolver scores Place 1/4 = 0.25, below LAYER_PROBE_MIN_RATIO (0.5), so `auto` finds NO viable
+// layer and errors out — the user-visible failure the issue reports. With the union it scores
+// 4/4 and Place wins.
+#[test]
+#[serial]
+fn viz_geojson_auto_resolves_a_cdp_majority_place_column() {
+    let wrk = Workdir::new("viz_geojson_auto_resolves_a_cdp_majority_place_column");
+    wrk.create_from_string(
+        "places.csv",
+        "place,cases\n4214584,10\n4228360,20\n4270020,30\n4201234,40\n",
+    );
+    let cache = wrk.path("boundary-cache").to_string_lossy().to_string();
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "places.csv",
+            "--locations",
+            "place",
+            "--value",
+            "cases",
+            "--location-mode",
+            "geojson-id",
+            "--geojson",
+            "auto",
+        ])
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env("QSV_CACHE_DIR", &cache);
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "auto refused a CDP-majority place column - this is the #4540 bug: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        // auto chose the place layer, and the boundary set carries BOTH halves
+        let mut found = String::new();
+        for entry in std::fs::read_dir(&cache).expect("cache dir").flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "geojson") {
+                found = std::fs::read_to_string(&path).expect("read cached geojson");
+                break;
+            }
+        }
+        assert!(
+            !found.is_empty(),
+            "no boundary set was cached under {cache}"
+        );
+        assert!(
+            found.contains("\"layer\":\"census:place\""),
+            "auto did not resolve to the place layer: {found}"
+        );
+        for geoid in ["4214584", "4228360", "4270020", "4201234"] {
+            assert!(
+                found.contains(geoid),
+                "{geoid} is missing from the auto-resolved union: {found}"
+            );
+        }
+
+        // the probe asked BOTH halves for the codes, not just the incorporated one
+        let clauses = observed.where_clauses.lock().unwrap().clone();
+        let probes: Vec<&String> = clauses
+            .iter()
+            .filter(|c| c.starts_with("GEOID IN"))
+            .collect();
+        assert!(
+            probes.len() >= 2,
+            "the place probe did not query both catalog entries: {clauses:?}"
         );
     });
 }

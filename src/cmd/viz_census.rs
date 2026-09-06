@@ -13,7 +13,7 @@
 //! 1. **Layer ids are NOT stable across vintages.** `Counties` is layer 82 in `tigerWMS_ACS2023`
 //!    and `tigerWMS_Current`, 84 in `tigerWMS_ACS2019`, and 78 in `tigerWMS_ACS2021`. Hardcoding an
 //!    id does not fail loudly — it silently fetches a *different geography*. Layers are therefore
-//!    always resolved by NAME against the `MapServer`'s own catalog ([`resolve_layer_id`]).
+//!    always resolved by NAME against the `MapServer`'s own catalog ([`resolve_layer_ids`]).
 //! 2. **`properties.GEOID` is the canonical feature id for every layer we target**, including
 //!    ZCTAs, where `GEOID == ZCTA5`. The `ZCTA5CE20`/`ZCTA5CE10` field names that appear in the
 //!    Census *shapefiles* do not exist in `TIGERweb`, so there is no per-layer id special-casing.
@@ -135,12 +135,33 @@ impl Layer {
     /// (`2010 Census ZIP Code Tabulation Areas` in ACS2019, `2020 Census ...` from ACS2021), so it
     /// is matched on the stable part. The FULL matched name is kept for provenance — the
     /// delineation is read from the service rather than inferred from the vintage.
+    ///
+    /// `Place` is the one layer that matches MORE THAN ONE catalog entry (#4540). A Census place
+    /// is an incorporated place OR a census designated place (a CDP — the unincorporated
+    /// communities Census delineates for tabulation), and a state's list of places routinely
+    /// holds both, so a single column carries both kinds. They share one 7-digit numbering space
+    /// and are disjoint sets, so their union needs no de-duplication and cannot collide.
+    ///
+    /// ⚠️ `TIGERweb` pairs almost every polygon layer with a `... Labels` sibling carrying label
+    /// POINTS rather than boundaries — 39 of the ACS2023 catalog's 78 layers are Labels. None is
+    /// ever a boundary source, so they are rejected up front, for every layer.
+    ///
+    /// That guard is load-bearing, not defensive. `resolve_layer_ids` collects EVERY match (so
+    /// `Place` can be a union), which turned ZCTA's necessarily-substring match into a two-layer
+    /// resolution: `2020 Census ZIP Code Tabulation Areas` AND `... Labels`. That would count
+    /// every ZCTA twice in the probe — a ratio of 2.0, beating any competing 5-digit county
+    /// column outright — and merge label points into the fetched polygon set (roborev 4562).
+    /// Rejecting the siblings centrally is safer than relying on each arm to be exact, since the
+    /// exactness requirement is invisible at the point where a future arm gets written.
     fn matches_catalog_name(self, name: &str) -> bool {
+        if name.ends_with(" Labels") {
+            return false;
+        }
         match self {
             Self::County => name == "Counties",
             Self::Zcta => name.contains("ZIP Code Tabulation Areas"),
             Self::Tract => name == "Census Tracts",
-            Self::Place => name == "Incorporated Places",
+            Self::Place => name == "Incorporated Places" || name == "Census Designated Places",
         }
     }
 
@@ -163,6 +184,24 @@ impl Layer {
             // 2-digit state + 5-digit place
             Self::Place => 7,
         }
+    }
+
+    /// Inclusive `[min, max]` width band of codes that could BE one of this layer's ids.
+    ///
+    /// How many leading zeros a numeric column can actually have eaten is a property of the id,
+    /// not a guess: a GEOID that starts with a state FIPS loses at most ONE (only states 01-09
+    /// have a leading zero), whereas a ZCTA can lose TWO, because Puerto Rico's run 006xx-009xx
+    /// and `00601` arrives as `601`.
+    ///
+    /// Named rather than inlined into `normalize_codes` because the bands carry an invariant
+    /// worth asserting on directly: Place's band must stay disjoint from every other layer's, or
+    /// a place column could also score as a county/ZCTA/tract and the probe's winner could flip.
+    const fn code_width_band(self) -> (usize, usize) {
+        let width = self.code_width();
+        (
+            width.saturating_sub(if matches!(self, Self::Zcta) { 2 } else { 1 }),
+            width,
+        )
     }
 
     /// Human label used in errors and provenance.
@@ -376,48 +415,55 @@ pub fn available_acs_vintages(client: &reqwest::blocking::Client) -> CliResult<V
     Ok(vintages)
 }
 
-/// Resolve a layer's numeric id by NAME within a vintage's `MapServer`, returning
-/// `(layer_id, catalog_name)`.
+/// Resolve a layer's numeric ids by NAME within a vintage's `MapServer`, returning every
+/// matching `(layer_id, catalog_name)` in catalog order.
 ///
 /// See module fact 1: ids move between vintages, and a stale id fetches the wrong geography
 /// without erroring. Matching on the catalog's own name makes a rename fail loudly instead. The
 /// catalog name comes back so provenance can quote the service's own wording — for ZCTAs that
 /// string carries the delineation year, which is not derivable from the vintage.
-fn resolve_layer_id(
+///
+/// Returns a Vec because `Layer::Place` is a union of two catalog entries (#4540); every other
+/// layer yields exactly one. A PARTIAL match succeeds on purpose: a vintage that publishes
+/// incorporated places but not CDPs should still draw the incorporated ones rather than fail the
+/// whole run. Only a zero match is an error. The result is never empty.
+fn resolve_layer_ids(
     client: &reqwest::blocking::Client,
     vintage: u16,
     layer: Layer,
-) -> CliResult<(u64, String)> {
+) -> CliResult<Vec<(u64, String)>> {
     let url = format!(
         "{}/TIGERweb/tigerWMS_ACS{vintage}/MapServer",
         tigerweb_root()
     );
     let meta = get_json(client, &url, &[("f", "json")])?;
-    let found = meta
+    let found: Vec<(u64, String)> = meta
         .get("layers")
         .and_then(serde_json::Value::as_array)
-        .and_then(|layers| {
-            layers.iter().find_map(|l| {
-                let name = l.get("name").and_then(serde_json::Value::as_str)?;
-                if !layer.matches_catalog_name(name) {
-                    return None;
-                }
-                Some((
-                    l.get("id").and_then(serde_json::Value::as_u64)?,
-                    name.to_string(),
-                ))
-            })
-        });
-    found.map_or_else(
-        || {
-            Err(crate::CliError::Other(format!(
-                "--geojson auto: no {} layer in the Census TIGERweb {vintage} vintage. Supply an \
-                 explicit --geojson file.",
-                layer.label()
-            )))
-        },
-        Ok,
-    )
+        .map(|layers| {
+            layers
+                .iter()
+                .filter_map(|l| {
+                    let name = l.get("name").and_then(serde_json::Value::as_str)?;
+                    if !layer.matches_catalog_name(name) {
+                        return None;
+                    }
+                    Some((
+                        l.get("id").and_then(serde_json::Value::as_u64)?,
+                        name.to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if found.is_empty() {
+        return Err(crate::CliError::Other(format!(
+            "--geojson auto: no {} layer in the Census TIGERweb {vintage} vintage. Supply an \
+             explicit --geojson file.",
+            layer.label()
+        )));
+    }
+    Ok(found)
 }
 
 /// Normalize region codes for a layer: keep only codes that could BE one of its ids, and re-pad
@@ -434,14 +480,10 @@ fn resolve_layer_id(
 /// scored against the caller's original, unfiltered codes, so nothing is hidden from the honesty
 /// check by being dropped here.
 fn normalize_codes(codes: &[String], layer: Layer) -> Vec<String> {
-    let width = layer.code_width();
-    // How many leading zeros a numeric column can actually have eaten is a property of the id, not
-    // a guess: a GEOID that starts with a state FIPS loses at most ONE (only states 01-09 have a
-    // leading zero), whereas a ZCTA can lose TWO, because Puerto Rico's run 006xx-009xx and
-    // `00601` arrives as `601`. Using the loosest band for every layer would make a 5-digit county
-    // code look like a paddable 7-digit place id (`0042003`, state "00", which does not exist) and
-    // buy a wasted probe on every run.
-    let min_width = width.saturating_sub(if matches!(layer, Layer::Zcta) { 2 } else { 1 });
+    // Using the loosest band for every layer would make a 5-digit county code look like a
+    // paddable 7-digit place id (`0042003`, state "00", which does not exist) and buy a wasted
+    // probe on every run. See `code_width_band` for why each layer's slack is what it is.
+    let (min_width, width) = layer.code_width_band();
     let mut out: Vec<String> = codes
         .iter()
         .filter_map(|raw| {
@@ -493,27 +535,33 @@ fn probe_layer(
     layer: Layer,
     codes: &[String],
 ) -> CliResult<usize> {
-    let (layer_id, _) = resolve_layer_id(client, vintage, layer)?;
-    let url = format!(
-        "{}/TIGERweb/tigerWMS_ACS{vintage}/MapServer/{layer_id}/query",
-        tigerweb_root()
-    );
+    let clauses = in_clauses(codes, layer);
     let mut found = 0usize;
-    for clause in in_clauses(codes, layer) {
-        let page = get_json(
-            client,
-            &url,
-            &[
-                ("where", clause.as_str()),
-                ("outFields", layer.id_field()),
-                ("returnGeometry", "false"),
-                ("f", "geojson"),
-            ],
-        )?;
-        found += page
-            .get("features")
-            .and_then(serde_json::Value::as_array)
-            .map_or(0, Vec::len);
+    // Summed across every catalog entry the layer resolves to. For the place union (#4540) this
+    // is the whole point: the two entries are disjoint, so a column of mixed incorporated and
+    // CDP codes scores its true coverage instead of only the incorporated share — which is what
+    // decides whether `auto` picks this layer at all.
+    for (layer_id, _) in resolve_layer_ids(client, vintage, layer)? {
+        let url = format!(
+            "{}/TIGERweb/tigerWMS_ACS{vintage}/MapServer/{layer_id}/query",
+            tigerweb_root()
+        );
+        for clause in &clauses {
+            let page = get_json(
+                client,
+                &url,
+                &[
+                    ("where", clause.as_str()),
+                    ("outFields", layer.id_field()),
+                    ("returnGeometry", "false"),
+                    ("f", "geojson"),
+                ],
+            )?;
+            found += page
+                .get("features")
+                .and_then(serde_json::Value::as_array)
+                .map_or(0, Vec::len);
+        }
     }
     Ok(found)
 }
@@ -722,7 +770,11 @@ fn cache_key(spec: AutoSpec, codes: &[String]) -> String {
     //               labelled itself "per 100,000 AREALAND".
     //   v3 (#4395): added `x-qsv.layer`, without which a ZCTA set is indistinguishable from a
     //               county set and a Census denominator fetches the wrong geography.
-    hasher.update(b"census/v3/");
+    //   v4 (#4540): `census:place` widened to the union of Incorporated Places AND Census
+    //               Designated Places. The selector string did not change, so a v3 entry would
+    //               keep serving incorporated-only boundaries for a request that now means both
+    //               - every CDP row silently missing from the map, with no error.
+    hasher.update(b"census/v4/");
     // the service root is part of the entry's IDENTITY: pointing QSV_CENSUS_TIGERWEB_URL at a
     // mirror (or a mock) must not be served boundaries fetched from a different source
     hasher.update(tigerweb_root().as_bytes());
@@ -1101,7 +1153,14 @@ fn fetch_layer(
     codes: &[String],
 ) -> CliResult<BoundarySet> {
     let normalized = normalize_codes(codes, layer);
-    let (layer_id, catalog_name) = resolve_layer_id(client, vintage, layer)?;
+    let resolved = resolve_layer_ids(client, vintage, layer)?;
+    // Quote every catalog entry that was actually matched, so a union reports itself honestly and
+    // a vintage that carries only one of the two says so rather than implying both.
+    let catalog_name = resolved
+        .iter()
+        .map(|(_, n)| n.as_str())
+        .collect::<Vec<_>>()
+        .join(" + ");
 
     let (where_clauses, scope_desc, scope_key_part) = match layer {
         // every layer whose GEOID embeds a state prefix is scoped by STATE, which keeps the
@@ -1135,15 +1194,17 @@ fn fetch_layer(
     };
 
     let mut features: Vec<serde_json::Value> = Vec::new();
-    for clause in where_clauses {
-        features.extend(query_layer_geojson(
-            client,
-            vintage,
-            layer_id,
-            &clause,
-            &format!("{},NAME,AREALAND,AREAWATER", layer.id_field()),
-            layer.id_field(),
-        )?);
+    for (layer_id, _) in &resolved {
+        for clause in &where_clauses {
+            features.extend(query_layer_geojson(
+                client,
+                vintage,
+                *layer_id,
+                clause,
+                &format!("{},NAME,AREALAND,AREAWATER", layer.id_field()),
+                layer.id_field(),
+            )?);
+        }
     }
     if features.is_empty() {
         return Err(crate::CliError::Other(format!(
@@ -1266,6 +1327,89 @@ mod tests {
             "123456789".to_string(),
         ];
         assert_eq!(state_fips_from_geoids(&codes, Layer::County), vec!["42"]);
+    }
+
+    #[test]
+    fn place_layer_is_the_union_of_incorporated_and_designated_places() {
+        // A Census place is an incorporated place OR a census designated place, and a state's
+        // place list routinely holds both, so one column carries both kinds (#4540). Before the
+        // union a CDP-keyed column resolved against nothing.
+        assert!(Layer::Place.matches_catalog_name("Incorporated Places"));
+        assert!(Layer::Place.matches_catalog_name("Census Designated Places"));
+    }
+
+    #[test]
+    fn no_layer_ever_matches_a_label_point_sibling() {
+        // ZCTA is the dangerous one: its catalog name carries a delineation year so it MUST be
+        // matched on a substring, and `2020 Census ZIP Code Tabulation Areas Labels` contains
+        // that substring. Once `resolve_layer_ids` began collecting every match (for the place
+        // union), that resolved ZCTA to two layers — doubling its probe count and merging label
+        // points into the boundary set (roborev 4562).
+        assert!(Layer::Zcta.matches_catalog_name("2020 Census ZIP Code Tabulation Areas"));
+        assert!(
+            !Layer::Zcta.matches_catalog_name("2020 Census ZIP Code Tabulation Areas Labels"),
+            "the ZCTA Labels sibling must never be selected"
+        );
+        assert!(!Layer::Zcta.matches_catalog_name("2010 Census ZIP Code Tabulation Areas Labels"));
+    }
+
+    #[test]
+    fn place_layer_never_matches_the_label_point_layers() {
+        // Both place layers have a `... Labels` sibling carrying label POINTS, not polygons.
+        // Matching one would fetch a boundary set with no boundaries in it and no error. This is
+        // why every non-ZCTA arm of matches_catalog_name must stay an exact `==`: the `contains`
+        // form ZCTA needs would match all four names here.
+        for labels in [
+            "Incorporated Places Labels",
+            "Census Designated Places Labels",
+        ] {
+            assert!(
+                !Layer::Place.matches_catalog_name(labels),
+                "the {labels} layer must never be selected"
+            );
+        }
+        // the exact-match property the above depends on, stated directly
+        assert!(!Layer::County.matches_catalog_name("Counties Labels"));
+        assert!(!Layer::Tract.matches_catalog_name("Census Tracts Labels"));
+    }
+
+    #[test]
+    fn a_cdp_geoid_normalizes_and_scopes_exactly_like_an_incorporated_place() {
+        // The two kinds share ONE 7-digit numbering space, so the union needs no new code path:
+        // the same width and the same 2-digit state prefix serve both. Verified against the code
+        // path rather than assumed from the service's field list.
+        let mixed = vec![
+            "4214584".to_string(), // Coaldale borough (incorporated)
+            "4228360".to_string(), // Ganister CDP
+            "4270020".to_string(), // Shelltown CDP
+        ];
+        let normalized = normalize_codes(&mixed, Layer::Place);
+        assert_eq!(
+            normalized.len(),
+            3,
+            "a CDP GEOID must survive place normalization: {normalized:?}"
+        );
+        assert_eq!(
+            state_fips_from_geoids(&normalized, Layer::Place),
+            vec!["42"]
+        );
+    }
+
+    #[test]
+    fn the_place_width_band_cannot_overlap_another_layers() {
+        // Why widening Place cannot flip another layer's probe win: normalize_codes keeps only
+        // codes in [width - slack, width], and Place's band is disjoint from every other layer's.
+        // A union raises Place's MATCHED count, but a column that scores for Place cannot also
+        // score for county/ZCTA/tract, so no existing winner can change.
+        let (plo, phi) = Layer::Place.code_width_band();
+        for other in [Layer::County, Layer::Zcta, Layer::Tract] {
+            let (olo, ohi) = other.code_width_band();
+            assert!(
+                phi < olo || ohi < plo,
+                "place band {plo}..={phi} must not overlap {} band {olo}..={ohi}",
+                other.label()
+            );
+        }
     }
 
     #[test]
@@ -2368,7 +2512,8 @@ pub fn county_name_table(vintage: Option<u16>) -> CliResult<CountyNameTable> {
                 vintage,
             },
         )?;
-        let (layer_id, _) = resolve_layer_id(&client, resolved, Layer::County)?;
+        // County matches exactly one catalog entry; only Layer::Place is a union (#4540).
+        let (layer_id, _) = resolve_layer_ids(&client, resolved, Layer::County)?[0];
         Ok((fetch_county_names(&client, resolved, layer_id)?, resolved))
     })();
 

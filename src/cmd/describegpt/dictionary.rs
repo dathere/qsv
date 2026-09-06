@@ -188,15 +188,16 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     // -- `viz_census::Layer::Place` was fully implemented and probed by `--geojson auto`, but no
     // dictionary could nominate a column for it.
     //
-    // The concept describes the DATA, and is deliberately broader than what `--geojson auto` can
-    // draw: Census places span INCORPORATED places and CENSUS DESIGNATED places, while
-    // `Layer::Place` matches only the "Incorporated Places" catalog entry, so a CDP-keyed column
-    // resolves against nothing. That degrades softly rather than mis-drawing -- the two kinds
-    // share one per-state place-FIPS numbering space, so a CDP code cannot collide with an
-    // incorporated place's, and a zero-match layer simply loses the probe and is reported as a
-    // per-candidate failure. Same shape as `geo.country`, a region concept with no Census
-    // layer at all. Adding the CDP layer would widen coverage; it is not needed for the
-    // concept to be correct, and is tracked as issue #4540.
+    // Census places span INCORPORATED places and CENSUS DESIGNATED places, and `Layer::Place` is
+    // the union of both catalog entries, so a column holding either kind (or a mix, which a
+    // state's place list routinely is) draws. The two share one per-state place-FIPS numbering
+    // space and are disjoint sets, which is what lets the union merge them without ambiguity.
+    // Issue #4540 -- before it, `Layer::Place` matched only "Incorporated Places" and a
+    // CDP-majority column was refused outright by `--geojson auto`.
+    //
+    // Note the concept still describes the DATA and remains broader than what `--geojson auto`
+    // can necessarily draw, as `geo.country` does -- a region concept with no Census layer at
+    // all. Coverage is not what makes the concept correct.
     "geo.place_fips",
     "geo.country",
     // the ISO-3166 alpha-2 code, as distinct from `geo.country` (the name). Split for the same

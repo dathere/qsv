@@ -426,7 +426,8 @@ choropleth options:
                            codes are both 5-digit, so qsv probes the layers and picks
                            whichever your codes resolve against, reporting them when it
                            cannot tell; force one with `census:county`, `census:zcta`,
-                           `census:tract` or `census:place`. Sets the
+                           `census:tract` or `census:place` (which covers both
+                           incorporated places and census designated places). Sets the
                            feature-id-key to properties.GEOID. It needs to know which
                            column holds the region codes: `viz choropleth` reads the
                            column named by --locations, while `viz smart` takes the

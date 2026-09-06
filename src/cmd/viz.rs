@@ -8478,8 +8478,29 @@ fn assemble_map_hover(
     lines.join("<br>")
 }
 
-/// Which reverse-geocoded components a chosen dataset hover column already supplies, so
+/// Which chosen dataset hover columns can supply each reverse-geocoded component, held as COLUMN
+/// INDICES rather than flat booleans so suppression is decided per ROW by
+/// [`row_supplied_geo_components`]. An empty vector means nothing suppresses that component.
+///
+/// A component can have several suppliers (a hover carrying both `geo.country` and
+/// `geo.country_code`), so any one of them holding a value on a row is enough to suppress.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct GeoSupplierCols {
+    city:    Vec<usize>,
+    admin1:  Vec<usize>,
+    country: Vec<usize>,
+}
+
+/// Which reverse-geocoded components the dataset already shows for ONE point, so
 /// [`geocode_hover_place`] can drop them (gap-filling: dataset fields win).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct GeoSupplied {
+    city:    bool,
+    admin1:  bool,
+    country: bool,
+}
+
+/// Map the chosen hover columns onto the geocoded components they can supply.
 ///
 /// `geo.country_code` supplies the country exactly as `geo.country` does. It has to be named
 /// explicitly because the value-level `shown` check in `geocode_hover_place` cannot catch it: that
@@ -8488,28 +8509,59 @@ fn assemble_map_hover(
 /// side by side. Found by review on issue #4524's PR, which added the concept to
 /// [`MAP_GEO_CONTEXT_CONCEPTS`] and so made a code-form country column selectable here.
 ///
-/// Extracted from the caller purely so this is unit-testable — the hover assembly it came from is
-/// `#[cfg(feature = "geocode")]` and reaches for a live geocode engine.
-#[cfg(feature = "geocode")]
-fn hover_supplied_geo_components(
+/// The two guards are kept side by side because neither subsumes the other: `shown` catches a
+/// value echoed by ANY hover field, while this concept-level one expresses "supplying this
+/// component is that column's job" and so also covers abbreviated spellings (a `PA` cell against a
+/// geocoded `Pennsylvania`) that share no substring with the geocoded name.
+///
+/// Deliberately NOT `#[cfg(feature = "geocode")]`, unlike [`geocode_hover_place`]: the resolved
+/// per-row flags ride the same packed tuple as the hover lines through the outlier partition and
+/// the downsample stride, and gating the payload but not the packing is where alignment bugs come
+/// from. In a build that never reads them this costs three bytes per point and a lookup over at
+/// most a handful of column indices.
+fn hover_geo_supplier_cols(
     col_sems: &[ColSemantics],
     hover_field_idxs: &[usize],
-) -> (bool, bool, bool) {
-    let (mut sup_city, mut sup_admin1, mut sup_country) = (false, false, false);
+) -> GeoSupplierCols {
+    let mut cols = GeoSupplierCols::default();
     for &idx in hover_field_idxs {
         match col_sems.get(idx).map_or("", |s| s.concept.as_str()) {
-            "geo.city" => sup_city = true,
-            "geo.state" => sup_admin1 = true,
-            "geo.country" | "geo.country_code" => sup_country = true,
+            "geo.city" => cols.city.push(idx),
+            "geo.state" => cols.admin1.push(idx),
+            "geo.country" | "geo.country_code" => cols.country.push(idx),
             _ => {},
         }
     }
-    (sup_city, sup_admin1, sup_country)
+    cols
+}
+
+/// Resolve [`GeoSupplierCols`] against ONE row: a component counts as supplied only when one of
+/// its columns actually holds a value *here*.
+///
+/// Issue #4541 — these flags used to be hoisted out of the row loop, computed once per COLUMN for
+/// every point. A NULLABLE geo column then lost its component from BOTH sources on its empty rows:
+/// the dataset had nothing to show, and the geocoded value was suppressed anyway. Gap-filling
+/// failed on exactly the rows that needed filling, so a 90%-populated `city` column produced
+/// city-less hovers on the other 10%.
+///
+/// Blank-only cells count as empty, matching the `shown` value-check's own trim: such a cell
+/// renders nothing a reader can use, so the geocoded component should still fill the gap.
+fn row_supplied_geo_components(cols: &GeoSupplierCols, record: &csv::ByteRecord) -> GeoSupplied {
+    let filled = |idxs: &[usize]| {
+        idxs.iter()
+            .any(|&i| record.get(i).is_some_and(|b| !b.trim_ascii().is_empty()))
+    };
+    GeoSupplied {
+        city:    filled(&cols.city),
+        admin1:  filled(&cols.admin1),
+        country: filled(&cols.country),
+    }
 }
 
 /// Format a reverse-geocoded `GeoLabel` into a "City, County, Admin1, Country" hover line for
 /// gap-filling — dataset fields win, so a component is dropped when (a) a chosen dataset column
-/// already covers it by concept (`sup_*`), or (b) its value already appears in this point's
+/// covers it by concept AND holds a value on THIS row (`sup`, resolved per point by
+/// [`row_supplied_geo_components`]), or (b) its value already appears in this point's
 /// `dataset_line` (so e.g. a city-name identifier isn't echoed by the geocoded city). When
 /// `verbose` (driven by `--smarter`) and the place resolved to a US location, the combined 5-digit
 /// county FIPS (else the 2-digit state FIPS) is appended as "(FIPS …)". Components are
@@ -8517,9 +8569,7 @@ fn hover_supplied_geo_components(
 #[cfg(feature = "geocode")]
 fn geocode_hover_place(
     label: &crate::cmd::geocode::GeoLabel,
-    sup_city: bool,
-    sup_admin1: bool,
-    sup_country: bool,
+    sup: GeoSupplied,
     verbose: bool,
     dataset_line: &str,
 ) -> String {
@@ -8531,10 +8581,10 @@ fn geocode_hover_place(
     // it when the county literally appears in this point's dataset line. Geonames US county
     // names already include "County", so no suffix is appended here.
     let place = [
-        (!sup_city && !shown(&label.city)).then_some(label.city.as_str()),
+        (!sup.city && !shown(&label.city)).then_some(label.city.as_str()),
         (!shown(&label.admin2)).then_some(label.admin2.as_str()),
-        (!sup_admin1 && !shown(&label.admin1)).then_some(label.admin1.as_str()),
-        (!sup_country && !shown(&label.country)).then_some(label.country.as_str()),
+        (!sup.admin1 && !shown(&label.admin1)).then_some(label.admin1.as_str()),
+        (!sup.country && !shown(&label.country)).then_some(label.country.as_str()),
     ]
     .into_iter()
     .flatten()
@@ -29333,6 +29383,14 @@ fn build_map_panel(
     // same single pass over the same Config (see `collect_datatable_rows`).
     let mut row_ids: Vec<u64> = Vec::new();
     let build_dataset_lines = id_idx.is_some() || !extra_idxs.is_empty();
+    // gap-filling suppression is resolved per ROW, not per column (issue #4541): which hover
+    // columns COULD supply a geocoded component is fixed here, but whether one actually does is a
+    // property of each row's cells, so a nullable geo column stops suppressing on its empty rows.
+    let geo_supplier_cols = hover_geo_supplier_cols(col_sems, &hover_field_idxs);
+    // this point's resolved flags, row-aligned with lats/lons exactly like `dataset_lines` —
+    // pushed on EVERY kept row, then carried through the outlier partition and the downsample
+    // stride in the same packed tuple as the line itself.
+    let mut geo_supplied: Vec<GeoSupplied> = Vec::new();
     let mut record = csv::ByteRecord::new();
     // counts EVERY data row read, including ones dropped below for unparseable/out-of-range
     // coordinates — those rows still occupy an ordinal in the drawer, so skipping them here
@@ -29390,6 +29448,7 @@ fn build_map_panel(
             } else {
                 dataset_lines.push(String::new());
             }
+            geo_supplied.push(row_supplied_geo_components(&geo_supplier_cols, &record));
         }
     }
     if lats.is_empty() {
@@ -29439,6 +29498,11 @@ fn build_map_panel(
     let out_lons = gather_f64(&out_idx, &lons);
     let core_lines = gather_str(&core_idx, &dataset_lines);
     let out_lines = gather_str(&out_idx, &dataset_lines);
+    let gather_sup = |idx: &[usize], src: &[GeoSupplied]| -> Vec<GeoSupplied> {
+        idx.iter().map(|&i| src[i]).collect()
+    };
+    let core_supplied_raw = gather_sup(&core_idx, &geo_supplied);
+    let out_supplied_raw = gather_sup(&out_idx, &geo_supplied);
     // `--photos` payloads follow the SAME index partition as the hover lines, so a point's photos
     // can never drift onto a different point's marker. A filler of empty strings when the flag is
     // off keeps one packing path below rather than two (two is where alignment bugs come from).
@@ -29488,14 +29552,15 @@ fn build_map_panel(
     };
     // move the lines in rather than cloning the whole set: `core_lines` is rebuilt from the
     // downsampled result below, so the original vector is dead after this
-    let core_packed: Vec<(f64, String, f64, String, u64)> = core_lons
+    let core_packed: Vec<(f64, String, f64, String, u64, GeoSupplied)> = core_lons
         .iter()
         .copied()
         .zip(core_lines)
         .zip(core_sizes_raw.iter().copied())
         .zip(core_photos_raw)
         .zip(core_ids_raw)
-        .map(|((((lo, line), sz), photo), rid)| (lo, line, sz, photo, rid))
+        .zip(core_supplied_raw)
+        .map(|(((((lo, line), sz), photo), rid), sup)| (lo, line, sz, photo, rid, sup))
         .collect();
     let (lats, core_pl) = downsample_pair(&core_lats, &core_packed, *MAX_SMART_POINTS);
     let lons: Vec<f64> = core_pl.iter().map(|t| t.0).collect();
@@ -29505,17 +29570,25 @@ fn build_map_panel(
     let core_sizes: Option<Vec<f64>> = size_idx
         .map(|_| core_pl.iter().map(|t| t.2).collect::<Vec<f64>>())
         .filter(|v| v.iter().any(|x| x.is_finite()));
-    let out_packed: Vec<(f64, String, String, u64)> = out_lons
+    let out_packed: Vec<(f64, String, String, u64, GeoSupplied)> = out_lons
         .iter()
         .copied()
         .zip(out_lines)
         .zip(out_photos_raw)
         .zip(out_ids_raw)
-        .map(|(((lo, line), photo), rid)| (lo, line, photo, rid))
+        .zip(out_supplied_raw)
+        .map(|((((lo, line), photo), rid), sup)| (lo, line, photo, rid, sup))
         .collect();
     let (outlier_lats, out_pl) = downsample_pair(&out_lats, &out_packed, SMART_GEO_OUTLIER_CAP);
     let outlier_lons: Vec<f64> = out_pl.iter().map(|t| t.0).collect();
     let out_lines: Vec<String> = out_pl.iter().map(|t| t.1.clone()).collect();
+    // Resolved AFTER downsampling, like the photos and row ordinals below, so each SURVIVING point
+    // keeps its own gap-filling flags rather than the pre-stride row's.
+    #[cfg(feature = "geocode")]
+    let (core_supplied, out_supplied): (Vec<GeoSupplied>, Vec<GeoSupplied>) = (
+        core_pl.iter().map(|t| t.5).collect(),
+        out_pl.iter().map(|t| t.4).collect(),
+    );
     // resolved AFTER downsampling so each surviving point keeps its own photos; left empty when
     // `--photos` is off so the trace emits no `customdata` at all.
     let (core_photos, outlier_photos): (Vec<String>, Vec<String>) = if photo_idxs.is_empty() {
@@ -29551,13 +29624,11 @@ fn build_map_panel(
     // geocode feature is off or a point didn't resolve.
     #[cfg(feature = "geocode")]
     let (core_places, out_places): (Vec<String>, Vec<String>) = {
-        // which geocoded components are already supplied by a chosen dataset column (gap-filling)
-        let (sup_city, sup_admin1, sup_country) =
-            hover_supplied_geo_components(col_sems, &hover_field_idxs);
         // Always reverse-geocode when a map renders: even if the dataset already supplies
         // city/state/country, the lookup still contributes the county (always-on) and — under
-        // --smarter — the US FIPS code. `geocode_hover_place` suppresses (via the sup_* flags) any
-        // component the dataset already shows, so nothing is duplicated.
+        // --smarter — the US FIPS code. `geocode_hover_place` suppresses any component the dataset
+        // shows FOR THIS POINT (`core_supplied`/`out_supplied`), so nothing is duplicated and a
+        // row whose geo cell is empty still gets the geocoded value.
         let mut pts: Vec<(f64, f64)> = Vec::with_capacity(lats.len() + outlier_lats.len());
         pts.extend(lats.iter().zip(&lons).map(|(&a, &o)| (a, o)));
         pts.extend(
@@ -29569,31 +29640,24 @@ fn build_map_panel(
         let labels = crate::cmd::geocode::reverse_geocode_points(&pts, None).unwrap_or_default();
         // dataset_line lets the place drop any component the dataset already shows for this
         // point (e.g. a city-name identifier).
-        let place = |i: usize, dataset_line: &str| -> String {
+        let place = |i: usize, sup: GeoSupplied, dataset_line: &str| -> String {
             labels
                 .get(i)
                 .and_then(Option::as_ref)
-                .map(|l| {
-                    geocode_hover_place(
-                        l,
-                        sup_city,
-                        sup_admin1,
-                        sup_country,
-                        args.flag_smarter,
-                        dataset_line,
-                    )
-                })
+                .map(|l| geocode_hover_place(l, sup, args.flag_smarter, dataset_line))
                 .unwrap_or_default()
         };
         let core: Vec<String> = core_lines
             .iter()
+            .zip(&core_supplied)
             .enumerate()
-            .map(|(i, l)| place(i, l))
+            .map(|(i, (l, &sup))| place(i, sup, l))
             .collect();
         let out: Vec<String> = out_lines
             .iter()
+            .zip(&out_supplied)
             .enumerate()
-            .map(|(j, l)| place(lats.len() + j, l))
+            .map(|(j, (l, &sup))| place(lats.len() + j, sup, l))
             .collect();
         (core, out)
     };
@@ -41587,7 +41651,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "geocode")]
     #[test]
     fn hover_country_code_suppresses_the_geocoded_country_name() {
         // Adding `geo.country_code` to `MAP_GEO_CONTEXT_CONCEPTS` made a code-form country column
@@ -41602,28 +41665,116 @@ mod tests {
             csem("geo.country_code"),
         ];
         assert_eq!(
-            hover_supplied_geo_components(&sems, &[0, 3]),
-            (false, false, true),
+            hover_geo_supplier_cols(&sems, &[0, 3]),
+            GeoSupplierCols {
+                city:    vec![],
+                admin1:  vec![],
+                country: vec![3],
+            },
             "a geo.country_code hover column must supply the country component"
         );
         // the name form still does, and neither form claims city or state
         let named = vec![csem("geo.country")];
-        assert_eq!(
-            hover_supplied_geo_components(&named, &[0]),
-            (false, false, true)
-        );
+        assert_eq!(hover_geo_supplier_cols(&named, &[0]).country, vec![0]);
         // a column that is NOT in the hover set supplies nothing, so an unrelated geo column
         // cannot suppress a component the hover never shows.
         assert_eq!(
-            hover_supplied_geo_components(&sems, &[0]),
-            (false, false, false)
+            hover_geo_supplier_cols(&sems, &[0]),
+            GeoSupplierCols::default()
         );
         // `geo.state_fips` is deliberately not handled: it is absent from
         // `MAP_GEO_CONTEXT_CONCEPTS`, so it can never be chosen as the geo-context field.
         assert_eq!(
-            hover_supplied_geo_components(&[csem("geo.state_fips")], &[0]),
-            (false, false, false)
+            hover_geo_supplier_cols(&[csem("geo.state_fips")], &[0]),
+            GeoSupplierCols::default()
         );
+        // several columns can supply ONE component (both country forms chosen), and any of them
+        // holding a value on a row is enough to suppress it there.
+        let both = vec![csem("geo.country"), csem("geo.country_code")];
+        assert_eq!(hover_geo_supplier_cols(&both, &[0, 1]).country, vec![0, 1]);
+    }
+
+    #[test]
+    fn map_hover_gap_fill_suppression_is_per_row() {
+        // Issue #4541. The gap-filling flags were computed once per COLUMN, so a NULLABLE geo
+        // column suppressed its geocoded component on every point — including the rows where the
+        // cell was empty and the dataset therefore showed nothing. Those are exactly the rows
+        // reverse geocoding had something to contribute to.
+        let sems = vec![csem("geo.city"), csem("geo.country")];
+        let cols = hover_geo_supplier_cols(&sems, &[0, 1]);
+        assert_eq!(
+            cols,
+            GeoSupplierCols {
+                city:    vec![0],
+                admin1:  vec![],
+                country: vec![1],
+            }
+        );
+
+        // a fully populated row: the dataset covers both, so both are suppressed
+        let full = csv::ByteRecord::from(vec!["Kinshasa Ville", "DR Congo"]);
+        assert_eq!(
+            row_supplied_geo_components(&cols, &full),
+            GeoSupplied {
+                city:    true,
+                admin1:  false,
+                country: true,
+            }
+        );
+        // the SAME columns, empty city cell -> the city is no longer supplied on THIS row
+        let gap = csv::ByteRecord::from(vec!["", "DR Congo"]);
+        assert_eq!(
+            row_supplied_geo_components(&cols, &gap),
+            GeoSupplied {
+                city:    false,
+                admin1:  false,
+                country: true,
+            }
+        );
+        // a blank-only cell renders nothing a reader can use, so it doesn't suppress either
+        let blank = csv::ByteRecord::from(vec!["   ", ""]);
+        assert_eq!(
+            row_supplied_geo_components(&cols, &blank),
+            GeoSupplied::default()
+        );
+        // a short (ragged) row has no cell at all -> nothing supplied, never a panic
+        assert_eq!(
+            row_supplied_geo_components(&cols, &csv::ByteRecord::new()),
+            GeoSupplied::default()
+        );
+
+        // end-to-end: the same column, the same label, two rows, two different hovers. The
+        // dataset spellings deliberately share no substring with the geocoded ones, so `shown`
+        // stays false throughout and the difference is entirely down to the per-row flags.
+        #[cfg(feature = "geocode")]
+        {
+            let label = crate::cmd::geocode::GeoLabel {
+                city: "Kinshasa".to_string(),
+                admin1: "Kinshasa City".to_string(),
+                country: "Democratic Republic of Congo".to_string(),
+                ..Default::default()
+            };
+            assert_eq!(
+                geocode_hover_place(
+                    &label,
+                    row_supplied_geo_components(&cols, &full),
+                    false,
+                    "<b>Kinshasa Ville</b><br>Country: DR Congo"
+                ),
+                "Kinshasa City",
+                "a populated row keeps letting the dataset win"
+            );
+            assert_eq!(
+                geocode_hover_place(
+                    &label,
+                    row_supplied_geo_components(&cols, &gap),
+                    false,
+                    "Country: DR Congo"
+                ),
+                "Kinshasa, Kinshasa City",
+                "an empty city cell must be gap-filled by the geocoded city, not suppressed"
+            );
+        }
     }
 
     #[test]
@@ -42080,17 +42231,25 @@ mod tests {
         };
         // nothing suppressed, empty dataset line -> the full place
         assert_eq!(
-            geocode_hover_place(&label, false, false, false, false, ""),
+            geocode_hover_place(&label, GeoSupplied::default(), false, ""),
             "Kinshasa, Kinshasa City, Democratic Republic of Congo"
         );
         // the city already appears in the dataset line (it's the identifier) -> dropped
         assert_eq!(
-            geocode_hover_place(&label, false, false, false, false, "<b>Kinshasa</b>"),
+            geocode_hover_place(&label, GeoSupplied::default(), false, "<b>Kinshasa</b>"),
             "Kinshasa City, Democratic Republic of Congo"
         );
         // concept suppression (a chosen geo.country column) drops the country
         assert_eq!(
-            geocode_hover_place(&label, false, false, true, false, ""),
+            geocode_hover_place(
+                &label,
+                GeoSupplied {
+                    country: true,
+                    ..Default::default()
+                },
+                false,
+                ""
+            ),
             "Kinshasa, Kinshasa City"
         );
 
@@ -42105,12 +42264,12 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            geocode_hover_place(&us, false, false, false, false, ""),
+            geocode_hover_place(&us, GeoSupplied::default(), false, ""),
             "Pittsburgh, Allegheny County, Pennsylvania, United States"
         );
         // FIPS appended only when verbose (--smarter): prefer the 5-digit county FIPS
         assert_eq!(
-            geocode_hover_place(&us, false, false, false, true, ""),
+            geocode_hover_place(&us, GeoSupplied::default(), true, ""),
             "Pittsburgh, Allegheny County, Pennsylvania, United States (FIPS 42003)"
         );
         // verbose but only a state FIPS -> the 2-digit state FIPS
@@ -42122,12 +42281,12 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            geocode_hover_place(&state_only, false, false, false, true, ""),
+            geocode_hover_place(&state_only, GeoSupplied::default(), true, ""),
             "Somewhere, Pennsylvania, United States (FIPS 42)"
         );
         // non-US place under verbose -> no FIPS tail
         assert_eq!(
-            geocode_hover_place(&label, false, false, false, true, ""),
+            geocode_hover_place(&label, GeoSupplied::default(), true, ""),
             "Kinshasa, Kinshasa City, Democratic Republic of Congo"
         );
     }

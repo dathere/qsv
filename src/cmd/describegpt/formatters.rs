@@ -504,6 +504,14 @@ fn build_x_qsv(
         if let Some(code) = &entry.currency {
             x_qsv.insert("currency".to_string(), json!(code));
         }
+        // The curated-UCUM physical unit of a numeric measure, already verified in
+        // `verify_unit` (so it is `Some` only on a numeric measure that is NOT money -- for
+        // money the currency IS the unit). Read back by `viz smart --dictionary` as
+        // `x-qsv.unit` to suffix axis titles, hovers and KPI tiles with the display symbol.
+        // Absent otherwise, keeping no-flag runs byte-identical.
+        if let Some(unit) = &entry.unit {
+            x_qsv.insert("unit".to_string(), json!(unit));
+        }
         // How this numeric measure combines across a group, already verified in
         // `verify_aggregation` (so it is only ever present on a numeric measure). Read by
         // `viz smart --dictionary` as `x-qsv.aggregation`, where it OVERRIDES the language-bound
@@ -1281,6 +1289,7 @@ mod tests {
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            unit:            None,
             aggregation:     None,
             denominator:     None,
         }
@@ -1840,6 +1849,79 @@ mod tests {
         );
     }
 
+    #[test]
+    fn jsonschema_x_qsv_carries_unit_for_non_money_measure() {
+        // A verified UCUM code emits as the bare string `viz smart --dictionary` reads back
+        // from `x-qsv.unit` — the CODE, never the display symbol (issue #4525).
+        let mut temp = sample_entry("air_temp_c", "");
+        temp.r#type = "Float".to_string();
+        temp.role = "measure".to_string();
+        temp.concept = "measure.amount".to_string();
+        temp.unit = Some("Cel".to_string());
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&temp),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert_eq!(
+            schema["properties"]["air_temp_c"]["x-qsv"]["unit"],
+            json!("Cel")
+        );
+
+        // flag off: unit absent (legacy schema stays byte-identical).
+        let off = format_dictionary_jsonschema(
+            std::slice::from_ref(&temp),
+            "test.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert!(
+            off["properties"]["air_temp_c"]["x-qsv"]
+                .get("unit")
+                .is_none(),
+            "unit leaked when flag off"
+        );
+
+        // None unit is omitted even with the flag on.
+        let mut plain = sample_entry("plain_measure", "");
+        plain.r#type = "Float".to_string();
+        plain.role = "measure".to_string();
+        let schema3 = format_dictionary_jsonschema(
+            std::slice::from_ref(&plain),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert!(
+            schema3["properties"]["plain_measure"]["x-qsv"]
+                .get("unit")
+                .is_none(),
+            "unit emitted when None"
+        );
+    }
+
     /// Issue #4394: the EMIT half of the denominator round-trip. The derivation is covered in
     /// `dictionary.rs`; this pins the SHAPE `viz smart --dictionary` parses back — an OBJECT
     /// under `x-qsv.denominator` with a `column` key, not a bare string. `viz`'s
@@ -2096,6 +2178,7 @@ mod tests {
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            unit:            None,
             aggregation:     None,
             denominator:     None,
         };

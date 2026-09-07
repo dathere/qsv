@@ -323,6 +323,85 @@ pub(super) const CADENCE_VOCAB: &[&str] = &["daily", "weekly", "monthly", "quart
 /// extensive-vs-intensive question this annotation exists to answer needs only these two.
 pub(super) const AGG_VOCAB: &[&str] = &["sum", "mean"];
 
+/// Curated UCUM subset for `x-qsv.unit` — the physical unit a numeric MEASURE is expressed in
+/// (issue #4525), as `(UCUM code, display symbol)`.
+///
+/// UCUM (<https://ucum.org/ucum>) is the unit standard behind FHIR/HL7, and what schema.org's
+/// `QuantitativeValue.unitCode` is most often mapped from. It is machine-parseable and
+/// unambiguous, unlike a free-text "degrees". This is a CURATED SUBSET, deliberately not a UCUM
+/// parser: a few dozen codes covering what a tabular dataset actually carries. An off-table code
+/// is DROPPED, never half-honored.
+///
+/// The display symbol is what a reader sees (`°C`, not `Cel`). It is also rendered into the prompt
+/// by [`unit_vocab_list`], which is what lets a model tell `[lb_av]` from `[oz_av]` without
+/// knowing UCUM's bracketed customary-unit notation.
+///
+/// ⚠️ **UCUM is CASE-SENSITIVE** — `m` is metre, `K` is kelvin, and the `k`/`M` prefixes differ by
+/// case alone. So unlike the `currency` (uppercased) and `aggregation` (lowercased) arms beside
+/// it, the parse-stage check for this vocabulary trims but MUST NOT case-fold. See
+/// [`is_ucum_unit`].
+///
+/// ⚠️ **INJECTED INTO THE DICTIONARY PROMPT**, so it joins `vocab_fingerprint` in `describegpt.rs`
+/// — editing this table must move the prompt cache key, or a warm cache serves an answer produced
+/// under the OLD vocabulary (issue #4538). This is the opposite of `CADENCE_VOCAB`, which is
+/// computed from stats, never injected, and correctly absent from that fingerprint.
+pub(super) const UCUM_UNIT_VOCAB: &[(&str, &str)] = &[
+    // temperature
+    ("Cel", "°C"),
+    ("[degF]", "°F"),
+    ("K", "K"),
+    // length / distance
+    ("m", "m"),
+    ("km", "km"),
+    ("cm", "cm"),
+    ("mm", "mm"),
+    ("[mi_i]", "mi"),
+    ("[ft_i]", "ft"),
+    ("[in_i]", "in"),
+    // mass
+    ("kg", "kg"),
+    ("g", "g"),
+    ("mg", "mg"),
+    ("t", "t"),
+    ("[lb_av]", "lb"),
+    ("[oz_av]", "oz"),
+    // time / duration
+    ("s", "s"),
+    ("min", "min"),
+    ("h", "h"),
+    ("d", "d"),
+    ("wk", "wk"),
+    ("mo", "mo"),
+    ("a", "yr"),
+    // energy
+    ("J", "J"),
+    ("kJ", "kJ"),
+    ("kW.h", "kWh"),
+    ("cal", "cal"),
+    ("kcal", "kcal"),
+    // power
+    ("W", "W"),
+    ("kW", "kW"),
+    ("MW", "MW"),
+    // speed
+    ("m/s", "m/s"),
+    ("km/h", "km/h"),
+    ("[mi_i]/h", "mph"),
+    // digital storage
+    ("By", "B"),
+    ("kBy", "kB"),
+    ("MBy", "MB"),
+    ("GBy", "GB"),
+    ("TBy", "TB"),
+    // dimensionless
+    ("%", "%"),
+    // volume
+    ("L", "L"),
+    ("mL", "mL"),
+    ("m3", "m³"),
+    ("[gal_us]", "gal"),
+];
+
 /// Render `CONCEPT_VOCAB` as a comma-separated string for prompt injection.
 pub(super) fn concept_vocab_list() -> String {
     CONCEPT_VOCAB.join(", ")
@@ -336,6 +415,36 @@ pub(super) fn role_vocab_list() -> String {
 /// Render `AGG_VOCAB` as a comma-separated string for prompt injection.
 pub(super) fn agg_vocab_list() -> String {
     AGG_VOCAB.join(", ")
+}
+
+/// Render `UCUM_UNIT_VOCAB` as a comma-separated string for prompt injection, glossing a code with
+/// its display symbol only when the two DIFFER (`Cel (°C)`, but a plain `km`). The gloss exists to
+/// disambiguate UCUM's bracketed customary codes; repeating an identical symbol would only pad the
+/// prompt.
+pub(super) fn unit_vocab_list() -> String {
+    UCUM_UNIT_VOCAB
+        .iter()
+        .map(|(code, symbol)| {
+            if code == symbol {
+                (*code).to_string()
+            } else {
+                format!("{code} ({symbol})")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Whether `code` is in the curated UCUM subset — the parse-stage membership test for
+/// `x-qsv.unit`.
+///
+/// Compared BYTE-EXACTLY after trimming, with no case folding, because UCUM is case-sensitive:
+/// `m` is metre, `K` is kelvin, and the `k` (kilo) / `M` (mega) prefixes are distinguished by case
+/// alone. Folding — as the `currency` and `aggregation` arms beside this one legitimately do for
+/// their own closed ASCII sets — would accept `CEL` or `KM` as though they were valid UCUM, which
+/// they are not.
+pub(super) fn is_ucum_unit(code: &str) -> bool {
+    UCUM_UNIT_VOCAB.iter().any(|(c, _)| *c == code)
 }
 
 /// Concept namespaces that denote a shared real-world entity an agent can join
@@ -706,6 +815,13 @@ pub(super) struct LlmDictField {
     /// measure + money-ish concept) is decided later by `verify_currency`, which alone sees
     /// the finalized role.
     pub(super) currency:     Option<String>,
+    /// RAW UCUM unit code proposed by the LLM for a numeric measure, already trimmed and checked
+    /// against `UCUM_UNIT_VOCAB` in `parse_llm_dictionary_response`. `None` unless the dictionary
+    /// prompt asked for it (under `--infer-content-type`). Whether the FIELD is really a numeric
+    /// measure — and whether it is a MONEY measure, whose unit is the currency instead — is
+    /// decided later by `verify_unit`, which alone sees the finalized role and the verified
+    /// currency.
+    pub(super) unit:         Option<String>,
     /// RAW aggregation token proposed by the LLM for a numeric measure, already trimmed,
     /// lower-cased and checked against `AGG_VOCAB` in `parse_llm_dictionary_response`. `None`
     /// unless the dictionary prompt asked for it (under `--infer-content-type`). Whether the FIELD
@@ -839,6 +955,14 @@ pub(super) struct DictionaryEntry {
     /// `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
     pub(super) currency:        Option<String>,
+    /// Optional curated-UCUM code (e.g. `Cel`, `kW.h`) naming the physical unit a numeric MEASURE
+    /// is expressed in. The LLM proposes it only under `--infer-content-type`; `verify_unit` then
+    /// keeps it ONLY when the column is a numeric measure that is not already denominated in a
+    /// currency — the same propose-then-verify discipline as `gauge_range` and `currency`.
+    /// Consumed by `viz smart --dictionary` (`x-qsv.unit`) to suffix axis titles, hovers and KPI
+    /// tiles with the unit's display symbol. `#[serde(default)]` for cache backward-compatibility.
+    #[serde(default)]
+    pub(super) unit:            Option<String>,
     /// Optional `AGG_VOCAB` token (`sum`/`mean`) declaring how this numeric MEASURE
     /// combines across a group. The LLM proposes it only under `--infer-content-type`;
     /// `verify_aggregation` then keeps it ONLY when the column is a numeric measure — the same
@@ -1281,6 +1405,10 @@ pub(super) fn generate_code_based_dictionary(
             // Likewise proposed by the LLM pass and verified in `verify_currency`. Nothing in
             // the stats can reveal the currency of a bare number, so there is no seed.
             currency: None,
+            // Likewise proposed by the LLM pass and verified in `verify_unit`. A unit is a fact
+            // about what the number MEASURES, and the stats see only its magnitude -- a column of
+            // values around 20 is as plausibly °C as it is km or kg.
+            unit: None,
             // Likewise proposed by the LLM pass and verified in `verify_aggregation`. Extensive
             // vs intensive is a question about what the number MEANS, which the stats cannot
             // answer -- `sum` is not a safe seed, since assuming additivity is the very bug
@@ -1511,6 +1639,7 @@ pub(super) fn combine_dictionary_entries(
             entry.role = merge_role(&entry.role, &llm.role, false);
             entry.gauge_range = llm.gauge_range;
             entry.currency = llm.currency.clone();
+            entry.unit = llm.unit.clone();
             entry.aggregation = llm.aggregation.clone();
         }
         if infer_content_type {
@@ -1524,6 +1653,10 @@ pub(super) fn combine_dictionary_entries(
             // AFTER role AND concept are finalized: keep the proposed currency only if the
             // column is a numeric measure that reads as money.
             verify_currency(entry);
+            // AFTER role is finalized AND the currency is verified: keep the proposed unit only
+            // if the column is a numeric measure that is not already money (currency IS the unit
+            // for money). Must follow `verify_currency` so a REJECTED currency cannot suppress it.
+            verify_unit(entry);
             // AFTER role is finalized: keep the proposed aggregation only if the column is a
             // numeric measure (the only thing an aggregation verb can describe).
             verify_aggregation(entry);
@@ -1720,6 +1853,69 @@ fn verify_currency(entry: &mut DictionaryEntry) {
         && money_ish)
     {
         entry.currency = None;
+    }
+}
+
+/// Verify (and otherwise drop) a proposed `unit`. A UCUM code only describes a column that holds
+/// a physical quantity:
+///
+///   1. the column's qsv `type` is numeric (`Integer`/`Float`) — a unit on a String column is
+///      describing the wrong thing; that column NAMES a unit, it is not a quantity in one;
+///   2. the column's FINALIZED `role` is `measure`; and
+///   3. the column is not MONEY. `x-qsv.currency` is the unit for money (issue #4525's precedence
+///      rule), so a money column carrying a physical unit too would hand `viz` two competing
+///      suffixes for one number — or, worse, a bare `kg` on an amount of dollars.
+///
+/// Requirement 3 asks about the column's money IDENTITY, not merely whether a currency code
+/// landed. A verified `currency` is one sufficient signal, but not the only one: the prompt
+/// explicitly permits omitting a currency that cannot be determined from the data, and an
+/// off-register proposal is dropped at parse — so a column can be unambiguously money and still
+/// carry no code (roborev 4573). Two positive signals therefore also disqualify a unit:
+/// `concept == "measure.money"`, and a `money` content-type base.
+///
+/// ⚠️ That positive test is deliberately NARROWER than `verify_currency`'s `money_ish`, which also
+/// admits the generic `measure.amount`. `measure.amount` is exactly the concept a temperature, a
+/// distance and an energy carry — the whole population this annotation exists for — so treating it
+/// as money would defeat the feature. For an ambiguous `measure.amount` the only money signal is a
+/// VERIFIED currency, which is why the `currency` arm is still read here, and read AFTER
+/// `verify_currency` has run: a currency the LLM proposed and verification REJECTED must not
+/// suppress a legitimate unit. That ordering is why this is called last of the three.
+///
+/// Beyond the money question this is NOT concept-gated the way `verify_currency` is: a physical
+/// unit is concept-independent by construction, so any non-money numeric measure may carry one.
+///
+/// ## Why this is propose-then-verify, when `--denominator-unit` is declare-only
+///
+/// The apparent inconsistency with `parse_denominator_unit`'s "qsv never infers a unit" rule
+/// (issue #4394, `viz.rs`) is deliberate, and the discriminator is whether the unit CHANGES
+/// NUMBERS. A denominator unit carries a conversion `factor` that multiplies the values, so a
+/// wrong token silently rescales a map by 1e6 — that one must be declared and an unknown token is
+/// a hard error. This unit only LABELS a number that is already correct, exactly like `currency`,
+/// so a wrong token mislabels rather than corrupts and an off-table code is silently dropped.
+/// The #4394 rule also governs qsv's own Rust code guessing from a column NAME, which is a
+/// different act from an LLM proposing a value that qsv then verifies.
+///
+/// The CODE was already validated against `UCUM_UNIT_VOCAB` in `parse_llm_dictionary_response`;
+/// this is the SEMANTIC check, because only here are the merged role, column type and verified
+/// currency all known. Anything that fails is reset to `None`.
+///
+/// Must be called AFTER `coerce_role_concept` (so `role` is final) and AFTER `verify_currency`
+/// (so `currency` is final).
+fn verify_unit(entry: &mut DictionaryEntry) {
+    if entry.unit.is_none() {
+        return;
+    }
+    // NOT `verify_currency`'s `money_ish`: that admits `measure.amount`, which is the concept a
+    // temperature/distance/energy carries. Only unambiguous money identifiers count here, plus a
+    // currency that actually verified.
+    let is_money = entry.concept == "measure.money"
+        || content_type_base(&entry.content_type) == "money"
+        || entry.currency.is_some();
+    if !(matches!(entry.r#type.as_str(), "Integer" | "Float")
+        && entry.role == "measure"
+        && !is_money)
+    {
+        entry.unit = None;
     }
 }
 
@@ -1933,6 +2129,7 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             entry.role = merge_role(&entry.role, &baseline.role, false);
             entry.gauge_range = baseline.gauge_range;
             entry.currency = baseline.currency.clone();
+            entry.unit = baseline.unit.clone();
             entry.aggregation = baseline.aggregation.clone();
         }
         // Stage 2: overlay refine-pass LLM values where present. Omitted fields keep their
@@ -1960,6 +2157,12 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             if refine.currency.is_some() {
                 entry.currency = refine.currency.clone();
             }
+            // Same rule for the unit, and for the same reason: the refine prompt never ASKS for
+            // one, so `None` here means "not restated", NOT "retracted". An unconditional
+            // assignment would wipe a verified baseline unit on every --two-pass run.
+            if refine.unit.is_some() {
+                entry.unit = refine.unit.clone();
+            }
             // Same rule again for the aggregation: overlay only when the refine pass actually
             // proposed one, so an omitted field never wipes a verified baseline value.
             if refine.aggregation.is_some() {
@@ -1975,6 +2178,7 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             coerce_role_concept(entry);
             verify_gauge_range(entry);
             verify_currency(entry);
+            verify_unit(entry);
             verify_aggregation(entry);
         }
     }
@@ -2418,6 +2622,23 @@ pub(super) fn parse_llm_dictionary_response(
                     None
                 };
 
+                // `unit` rides the same `infer_content_type` gate. VOCAB validation only: trim,
+                // then require a `UCUM_UNIT_VOCAB` code. Trimmed but NOT case-folded, unlike the
+                // two arms above — UCUM is case-sensitive (`m` metre vs the `M` mega prefix), so
+                // folding would accept `CEL`/`KM` as valid codes when they are not. Whether the
+                // FIELD is a non-money numeric measure is decided later by `verify_unit`, the only
+                // place that sees the finalized role and the VERIFIED currency.
+                let unit = if infer_content_type {
+                    field_map
+                        .get("unit")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|u| is_ucum_unit(u))
+                        .map(ToString::to_string)
+                } else {
+                    None
+                };
+
                 // `aggregation` rides the same `infer_content_type` gate. VOCAB validation only:
                 // trim, lower-case, require an `AGG_VOCAB` token. Whether the FIELD is an
                 // aggregatable numeric measure is decided later by `verify_aggregation`, the only
@@ -2446,6 +2667,7 @@ pub(super) fn parse_llm_dictionary_response(
                         null_values,
                         gauge_range,
                         currency,
+                        unit,
                         aggregation,
                     },
                 );
@@ -2755,6 +2977,7 @@ mod tests {
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            unit:            None,
             aggregation:     None,
             denominator:     None,
         }
@@ -3638,6 +3861,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -3722,6 +3946,179 @@ mod tests {
         let resp = r#"{"a":{"label":"A","description":"d","currency":"USD"}}"#;
         let got = parse_llm_dictionary_response(resp, &names, false).unwrap();
         assert_eq!(got["a"].currency, None);
+    }
+
+    #[test]
+    fn parse_llm_dictionary_response_validates_unit_codes() {
+        // Trimmed and checked against `UCUM_UNIT_VOCAB` — but deliberately NOT case-folded, unlike
+        // the `currency` and `aggregation` arms beside it. UCUM is case-sensitive, so accepting
+        // `cel` or `KM` would be inventing codes the standard does not define.
+        let names: Vec<String> = ["a", "b", "c", "d", "e", "f", "g", "h"]
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        let resp = r#"{
+            "a": {"label":"A","description":"d","unit":"  Cel "},
+            "b": {"label":"B","description":"d","unit":"[degF]"},
+            "c": {"label":"C","description":"d","unit":"cel"},
+            "d": {"label":"D","description":"d","unit":"KM"},
+            "e": {"label":"E","description":"d","unit":"°C"},
+            "f": {"label":"F","description":"d","unit":"furlong"},
+            "g": {"label":"G","description":"d","unit":42},
+            "h": {"label":"H","description":"d"}
+        }"#;
+        let got = parse_llm_dictionary_response(resp, &names, true).unwrap();
+        assert_eq!(
+            got["a"].unit.as_deref(),
+            Some("Cel"),
+            "trimmed, and kept in its original case"
+        );
+        assert_eq!(
+            got["b"].unit.as_deref(),
+            Some("[degF]"),
+            "a bracketed customary code is kept verbatim"
+        );
+        assert_eq!(
+            got["c"].unit, None,
+            "UCUM is case-sensitive: `cel` is not `Cel`"
+        );
+        assert_eq!(
+            got["d"].unit, None,
+            "UCUM is case-sensitive: `KM` is not `km`"
+        );
+        assert_eq!(
+            got["e"].unit, None,
+            "the DISPLAY SYMBOL is not the code — the prompt shows it only as a gloss"
+        );
+        assert_eq!(
+            got["f"].unit, None,
+            "an off-table code is dropped, never half-honored"
+        );
+        assert_eq!(got["g"].unit, None, "non-string rejected");
+        assert_eq!(got["h"].unit, None, "missing key -> None");
+    }
+
+    #[test]
+    fn parse_unit_gated_off_without_infer_content_type() {
+        let names = vec!["a".to_string()];
+        let resp = r#"{"a":{"label":"A","description":"d","unit":"Cel"}}"#;
+        let got = parse_llm_dictionary_response(resp, &names, false).unwrap();
+        assert_eq!(got["a"].unit, None);
+    }
+
+    #[test]
+    fn unit_vocab_list_glosses_only_divergent_symbols() {
+        let list = unit_vocab_list();
+        assert!(
+            list.contains("Cel (°C)"),
+            "a code that differs from its symbol is glossed so the model can read it: {list}"
+        );
+        assert!(list.contains("[mi_i] (mi)"), "{list}");
+        assert!(
+            !list.contains("km (km)"),
+            "an identical symbol must not be repeated back: {list}"
+        );
+        // every code in the table is accepted by the membership test the parse stage uses, and
+        // nothing outside it is
+        assert!(UCUM_UNIT_VOCAB.iter().all(|(c, _)| is_ucum_unit(c)));
+        assert!(!is_ucum_unit("furlong"));
+        assert!(!is_ucum_unit(""), "an empty code is not a unit");
+        // no duplicate codes: a repeat would make the injected prompt list ambiguous, and the
+        // first-match lookup would silently shadow the second symbol
+        let mut codes: Vec<&str> = UCUM_UNIT_VOCAB.iter().map(|(c, _)| *c).collect();
+        let n = codes.len();
+        codes.sort_unstable();
+        codes.dedup();
+        assert_eq!(codes.len(), n, "duplicate UCUM code in UCUM_UNIT_VOCAB");
+    }
+
+    /// Build an entry with the given signals, run the merge-path verification, and report whether
+    /// the proposed unit survived. `currency` rides along because `verify_unit`'s money rule reads
+    /// the VERIFIED currency, so the two can only be exercised together.
+    fn unit_survives(
+        qsv_type: &str,
+        role: &str,
+        concept: &str,
+        content_type: &str,
+        currency: Option<&str>,
+    ) -> bool {
+        let mut e = blank_entry("q");
+        e.r#type = qsv_type.to_string();
+        let mut llm = HashMap::new();
+        llm.insert(
+            "q".to_string(),
+            LlmDictField {
+                role: role.to_string(),
+                concept: concept.to_string(),
+                content_type: content_type.to_string(),
+                currency: currency.map(ToString::to_string),
+                unit: Some("Cel".to_string()),
+                ..Default::default()
+            },
+        );
+        combine_dictionary_entries(vec![e], &llm, true)[0]
+            .unit
+            .is_some()
+    }
+
+    #[test]
+    fn verify_unit_requires_non_money_numeric_measure() {
+        // a numeric measure keeps it, whatever the concept
+        assert!(unit_survives(
+            "Float",
+            "measure",
+            "measure.amount",
+            "unknown",
+            None
+        ));
+        assert!(unit_survives("Integer", "measure", "", "unknown", None));
+        assert!(
+            unit_survives("Float", "measure", "measure.ratio", "unknown", None),
+            "unlike `currency`, a physical unit is NOT gated on a money-ish concept — a \
+             temperature, a distance and an energy are all `measure.amount`"
+        );
+        // ...but not a non-numeric column, and not a dimension
+        assert!(
+            !unit_survives("String", "measure", "measure.amount", "unknown", None),
+            "a column of \"km\"/\"mi\" strings NAMES a unit; it is not a quantity in one"
+        );
+        assert!(!unit_survives("Float", "dimension", "", "category", None));
+        // ...and not a MONEY column: for money the currency IS the unit, and a field carrying
+        // both hands viz two competing suffixes for one number
+        assert!(!unit_survives(
+            "Float",
+            "measure",
+            "measure.money",
+            "money",
+            Some("USD")
+        ));
+        // roborev 4573: money identity is what disqualifies a unit, NOT merely the presence of a
+        // currency code. The prompt explicitly permits omitting a currency that cannot be
+        // determined from the data, so an unambiguously monetary column routinely carries none —
+        // and before this it kept a `kg` on an amount of dollars.
+        assert!(
+            !unit_survives("Float", "measure", "measure.money", "unknown", None),
+            "a `measure.money` column with no currency code is still money"
+        );
+        assert!(
+            !unit_survives("Float", "measure", "measure.amount", "money", None),
+            "a `money` content type is still money even when `coerce_role_concept` leaves the \
+             concept as the admissible generic `measure.amount`"
+        );
+        // ...but the money test stops there. `measure.amount` ALONE is the concept a temperature,
+        // a distance and an energy carry, so it must NOT read as money — this is the assertion
+        // that keeps the fix above from swallowing the whole feature.
+        assert!(
+            unit_survives("Float", "measure", "measure.amount", "unknown", None),
+            "`measure.amount` without a money signal is the ordinary physical-quantity case"
+        );
+        // ORDERING, and the reason `verify_unit` runs AFTER `verify_currency`: a currency the LLM
+        // proposed but verification REJECTED (here, a non-money concept) must not suppress a
+        // perfectly good unit. Reading the raw proposal instead of the verified value breaks this.
+        assert!(
+            unit_survives("Float", "measure", "measure.ratio", "unknown", Some("USD")),
+            "a currency that verification dropped must not suppress the unit"
+        );
     }
 
     /// Build an entry with the given signals, run the merge-path verification, and report
@@ -4189,6 +4586,79 @@ mod tests {
     }
 
     #[test]
+    fn money_field_with_a_rejected_currency_still_drops_its_unit() {
+        // roborev 4573, end-to-end through the real parse stage rather than a hand-built
+        // `LlmDictField`: an off-ISO-register currency is dropped by
+        // `parse_llm_dictionary_response`, so the entry reaches `verify_unit` as money carrying NO
+        // code. That is precisely the case the old `currency.is_none()` test let through.
+        let names = vec!["spent".to_string()];
+        let resp = r#"{"spent":{"label":"Spent","description":"d","role":"measure",
+            "concept":"measure.money","content_type":"money","currency":"ZZZ","unit":"kg"}}"#;
+        let llm = parse_llm_dictionary_response(resp, &names, true).unwrap();
+        assert_eq!(
+            llm["spent"].currency, None,
+            "precondition: an off-register code is dropped at parse"
+        );
+        assert_eq!(
+            llm["spent"].unit.as_deref(),
+            Some("kg"),
+            "precondition: the unit itself is a valid UCUM code, so only the SEMANTIC check can \
+             reject it"
+        );
+        let mut e = blank_entry("spent");
+        e.r#type = "Float".to_string();
+        let out = combine_dictionary_entries(vec![e], &llm, true);
+        assert_eq!(out[0].currency, None);
+        assert_eq!(
+            out[0].unit, None,
+            "a monetary column must not emit `x-qsv.unit: kg` just because its currency was \
+             rejected"
+        );
+    }
+
+    #[test]
+    fn two_pass_preserves_baseline_unit() {
+        // Same rule, same reason as the currency above: the refine prompt never asks for a unit,
+        // so its `None` means "not re-stated", NOT "retracted". An unconditional assignment would
+        // wipe the first pass's verified unit on every --two-pass run.
+        let mut e = blank_entry("temp");
+        e.r#type = "Float".to_string();
+        let mut baseline = HashMap::new();
+        baseline.insert(
+            "temp".to_string(),
+            LlmDictField {
+                role: "measure".to_string(),
+                concept: "measure.amount".to_string(),
+                unit: Some("Cel".to_string()),
+                ..Default::default()
+            },
+        );
+        let mut refine = HashMap::new();
+        refine.insert(
+            "temp".to_string(),
+            LlmDictField {
+                label: "Air Temperature".to_string(),
+                ..Default::default()
+            },
+        );
+        let out =
+            combine_dictionary_entries_with_baseline(vec![e.clone()], &baseline, &refine, true);
+        assert_eq!(out[0].unit.as_deref(), Some("Cel"));
+
+        // ...but a refine pass that DOES restate one overrides the baseline.
+        let mut refine2 = HashMap::new();
+        refine2.insert(
+            "temp".to_string(),
+            LlmDictField {
+                unit: Some("[degF]".to_string()),
+                ..Default::default()
+            },
+        );
+        let out2 = combine_dictionary_entries_with_baseline(vec![e], &baseline, &refine2, true);
+        assert_eq!(out2[0].unit.as_deref(), Some("[degF]"));
+    }
+
+    #[test]
     fn combine_keeps_gauge_range_for_measure_when_observed_fits() {
         let mut e = blank_entry("score");
         e.r#type = "Float".to_string();
@@ -4379,6 +4849,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -4413,6 +4884,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -4427,6 +4899,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -4457,6 +4930,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -4471,6 +4945,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -4745,6 +5220,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -4759,6 +5235,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -4776,6 +5253,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -4907,6 +5385,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -4922,6 +5401,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -4959,6 +5439,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -4975,6 +5456,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -5006,6 +5488,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -5388,6 +5871,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -5412,6 +5896,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -5436,6 +5921,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -5460,6 +5946,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -5475,6 +5962,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -6233,6 +6721,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -6258,6 +6747,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );
@@ -6281,6 +6771,7 @@ mod tests {
                 null_values:  Vec::new(),
                 gauge_range:  None,
                 currency:     None,
+                unit:         None,
                 aggregation:  None,
             },
         );

@@ -220,6 +220,19 @@ describegpt options:
                            with the "money" content type and the "measure.money" concept.
                            "qsv viz smart --dictionary" reads the code to prefix that column's
                            KPI tile with the currency's symbol.
+                           For a NON-MONETARY numeric measure the LLM also proposes an
+                           "x-qsv.unit": the UCUM code for the physical unit the values are
+                           expressed in ("Cel", "[degF]", "km", "kg", "kW.h", "m/s", "%", ...).
+                           UCUM (https://ucum.org/ucum) is the unit standard behind FHIR/HL7 and
+                           what schema.org's unitCode is usually mapped from, so the annotation is
+                           machine-parseable rather than free text. Codes are validated against a
+                           curated subset of a few dozen common units - qsv is not a UCUM parser,
+                           and an off-table code is dropped rather than half-honored. qsv keeps one
+                           only when the field is a numeric measure that is NOT already money: for
+                           money the "x-qsv.currency" above IS the unit, so a field never carries
+                           both. Unlike "--denominator-unit", this unit never CONVERTS a value -
+                           it only labels one - which is why it is proposed-and-verified rather
+                           than declare-only.
                            When the dictionary carries exactly ONE "measure.population" field
                            (a count of people or households IN a region that another column
                            names), qsv DERIVES an "x-qsv.denominator" of {"column": "<that
@@ -3000,6 +3013,7 @@ fn get_prompt(
         concept_vocab => dictionary::concept_vocab_list(),
         role_vocab => dictionary::role_vocab_list(),
         agg_vocab => dictionary::agg_vocab_list(),
+        unit_vocab => dictionary::unit_vocab_list(),
         // Empty string unless we're rendering PromptType::DictionaryRefine during a
         // --two-pass run, where run_dictionary_phase seeds FIRST_PASS_DICT_JSON with the
         // first-pass dictionary JSON before calling get_prompt.
@@ -3258,12 +3272,18 @@ fn prompt_template_fingerprint(resolved_source_fp: &str, refine_default: &str) -
     blake3::hash(joined.as_bytes()).to_hex()[..16].to_string()
 }
 
-/// BLAKE3 fingerprint of the four closed vocabularies that `get_prompt` renders into the
+/// BLAKE3 fingerprint of the five closed vocabularies that `get_prompt` renders into the
 /// prompts from Rust constants. Separated by the unit separator (U+001F), which cannot occur
 /// in a vocabulary token, so two different sets of vocabularies can never re-split to the
 /// same joined string (`["a,b"], []` vs `["a"], ["b"]` stay distinct).
-fn vocab_fingerprint(content_type: &str, concept: &str, role: &str, agg: &str) -> String {
-    let joined = format!("{content_type}\x1f{concept}\x1f{role}\x1f{agg}");
+fn vocab_fingerprint(
+    content_type: &str,
+    concept: &str,
+    role: &str,
+    agg: &str,
+    unit: &str,
+) -> String {
+    let joined = format!("{content_type}\x1f{concept}\x1f{role}\x1f{agg}\x1f{unit}");
     blake3::hash(joined.as_bytes()).to_hex()[..16].to_string()
 }
 
@@ -3397,20 +3417,28 @@ fn get_cache_key_with_flag(
     // when the file it points at is edited in place.
     let stats_options_fp = file_option_fingerprint(&args.flag_stats_options);
     let freq_options_fp = file_option_fingerprint(&args.flag_freq_options);
-    // The four closed vocabularies are rendered into the prompts from Rust constants
-    // (`content_type_vocab` / `concept_vocab` / `role_vocab` / `agg_vocab` in `get_prompt`'s
-    // context), not from the template file, so the template fingerprint above does NOT cover
-    // them. Adding a token to `CONCEPT_VOCAB` changes what the LLM is asked to choose from
-    // and must invalidate; without this, a cached completion keyed on unchanged file content
-    // is replayed and the new token can never be emitted (#4538). `CADENCE_VOCAB` is
-    // deliberately absent: it is computed deterministically from stats and never injected
-    // into a prompt. The unit separator can't occur in a vocabulary token, so distinct
-    // vocabularies can't collide by re-splitting across the joins.
+    // The five closed vocabularies are rendered into the prompts from Rust constants
+    // (`content_type_vocab` / `concept_vocab` / `role_vocab` / `agg_vocab` / `unit_vocab` in
+    // `get_prompt`'s context), not from the template file, so the template fingerprint above
+    // does NOT cover them. Adding a token to `CONCEPT_VOCAB` changes what the LLM is asked to
+    // choose from and must invalidate; without this, a cached completion keyed on unchanged
+    // file content is replayed and the new token can never be emitted (#4538). Likewise for
+    // `UCUM_UNIT_VOCAB` (#4525), whose rendering also carries each code's DISPLAY SYMBOL, so a
+    // symbol-only edit moves the key too -- correctly, since the symbol is part of the prompt.
+    // `CADENCE_VOCAB` is deliberately absent: it is computed deterministically from stats and
+    // never injected into a prompt. The unit separator can't occur in a vocabulary token, so
+    // distinct vocabularies can't collide by re-splitting across the joins.
+    //
+    // Only the COMPLETION key carries this. `get_analysis_cache_key` deliberately does NOT: it
+    // keys the cached stats/frequency `AnalysisResults`, which no vocabulary can shape. The two
+    // keys overlap only on the `file:` option fingerprints (roborev 4556) -- do not "restore"
+    // symmetry here.
     let vocab_fp = vocab_fingerprint(
         &dictionary::content_type_vocab_list(),
         &dictionary::concept_vocab_list(),
         &dictionary::role_vocab_list(),
         &dictionary::agg_vocab_list(),
+        &dictionary::unit_vocab_list(),
     );
 
     format!(
@@ -8335,23 +8363,34 @@ mod tests {
 
     #[test]
     fn cache_key_reflects_the_injected_vocabularies() {
-        // The four vocabularies are injected into the prompts from Rust constants, not from
+        // The five vocabularies are injected into the prompts from Rust constants, not from
         // the template file, so the template fingerprint does not cover them. Adding a token
         // to CONCEPT_VOCAB changes what the LLM may choose from and must invalidate (#4538);
         // otherwise the cached completion is replayed and the new token can never appear.
+        // `UCUM_UNIT_VOCAB` joined them in #4525 for the same reason.
         // Exercises the production `vocab_fingerprint` rather than restating its formula.
-        let base = vocab_fingerprint("ct", "concept", "role", "agg");
+        let base = vocab_fingerprint("ct", "concept", "role", "agg", "unit");
         for (label, changed) in [
             (
                 "content_type",
-                vocab_fingerprint("ct2", "concept", "role", "agg"),
+                vocab_fingerprint("ct2", "concept", "role", "agg", "unit"),
             ),
             (
                 "concept",
-                vocab_fingerprint("ct", "concept2", "role", "agg"),
+                vocab_fingerprint("ct", "concept2", "role", "agg", "unit"),
             ),
-            ("role", vocab_fingerprint("ct", "concept", "role2", "agg")),
-            ("agg", vocab_fingerprint("ct", "concept", "role", "agg2")),
+            (
+                "role",
+                vocab_fingerprint("ct", "concept", "role2", "agg", "unit"),
+            ),
+            (
+                "agg",
+                vocab_fingerprint("ct", "concept", "role", "agg2", "unit"),
+            ),
+            (
+                "unit",
+                vocab_fingerprint("ct", "concept", "role", "agg", "unit2"),
+            ),
         ] {
             assert_ne!(
                 base, changed,
@@ -8360,9 +8399,14 @@ mod tests {
         }
         // The joins must not let one vocabulary's tokens migrate into another's slot.
         assert_ne!(
-            vocab_fingerprint("a,b", "", "role", "agg"),
-            vocab_fingerprint("a", "b", "role", "agg"),
+            vocab_fingerprint("a,b", "", "role", "agg", "unit"),
+            vocab_fingerprint("a", "b", "role", "agg", "unit"),
             "vocabularies must not collide by re-splitting across the separator"
+        );
+        assert_ne!(
+            vocab_fingerprint("ct", "concept", "role", "agg,unit", ""),
+            vocab_fingerprint("ct", "concept", "role", "agg", "unit"),
+            "the unit vocabulary must not collide with the agg vocabulary either"
         );
 
         // And the key must actually carry it — this is the wiring that makes the above matter.
@@ -8372,6 +8416,7 @@ mod tests {
             &dictionary::concept_vocab_list(),
             &dictionary::role_vocab_list(),
             &dictionary::agg_vocab_list(),
+            &dictionary::unit_vocab_list(),
         );
         let key = get_cache_key_with_flag(&args, PromptType::Dictionary, "gpt-x", "valid");
         assert!(
@@ -8841,6 +8886,7 @@ p_fewshot_examples = ""
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            unit:            None,
             aggregation:     None,
             denominator:     None,
         }];
@@ -9048,6 +9094,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9074,6 +9121,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9162,6 +9210,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9201,6 +9250,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9305,6 +9355,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9331,6 +9382,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9410,6 +9462,7 @@ p_fewshot_examples = ""
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            unit:            None,
             aggregation:     None,
             denominator:     None,
         }];
@@ -9503,6 +9556,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9530,6 +9584,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9557,6 +9612,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9635,6 +9691,7 @@ p_fewshot_examples = ""
             null_candidates: Vec::new(),
             gauge_range:     None,
             currency:        None,
+            unit:            None,
             aggregation:     None,
             denominator:     None,
         }];
@@ -9800,6 +9857,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9826,6 +9884,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9896,6 +9955,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9923,6 +9983,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9950,6 +10011,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -9977,6 +10039,7 @@ p_fewshot_examples = ""
                 null_candidates: Vec::new(),
                 gauge_range:     None,
                 currency:        None,
+                unit:            None,
                 aggregation:     None,
                 denominator:     None,
             },
@@ -10104,6 +10167,7 @@ p_fewshot_examples = ""
                     concept_vocab => dictionary::concept_vocab_list(),
                     role_vocab => dictionary::role_vocab_list(),
                     agg_vocab => dictionary::agg_vocab_list(),
+                    unit_vocab => dictionary::unit_vocab_list(),
                 },
             )
             .unwrap()
@@ -10150,11 +10214,12 @@ p_fewshot_examples = ""
             on.contains(
                 "\"content_type\", \"role\", \"concept\" and (for canonical-scale numeric \
                  measures only) an optional \"gauge_range\", plus (for monetary measures only) an \
-                 optional \"currency\" and (for numeric measures only) an optional \
-                 \"aggregation\" properties"
+                 optional \"currency\", (for non-monetary numeric measures only) an optional \
+                 \"unit\" and (for numeric measures only) an optional \"aggregation\" properties"
             ),
-            "flag-on prompt must list content_type/role/concept/gauge_range/currency/aggregation \
-             in the properties sentence:\n{on}"
+            "flag-on prompt must list \
+             content_type/role/concept/gauge_range/currency/unit/aggregation in the properties \
+             sentence:\n{on}"
         );
         // The Aggregation instruction, its vocabulary and its worked example (issue #4401).
         assert!(
@@ -10185,6 +10250,20 @@ p_fewshot_examples = ""
         assert!(
             !off.contains("Currency (OPTIONAL"),
             "flag-off prompt must NOT mention currency:\n{off}"
+        );
+        // The Unit instruction and its injected UCUM vocabulary (issue #4525).
+        assert!(
+            on.contains("- Unit (OPTIONAL, non-monetary numeric MEASURE fields only)"),
+            "flag-on prompt must include the Unit instruction:\n{on}"
+        );
+        assert!(
+            on.contains("Cel (°C)") && on.contains("[mi_i] (mi)"),
+            "flag-on prompt must inject the curated UCUM vocabulary WITH its display-symbol \
+             glosses — without them a model cannot tell the bracketed codes apart:\n{on}"
+        );
+        assert!(
+            !off.contains("Unit (OPTIONAL"),
+            "flag-off prompt must NOT mention the unit:\n{off}"
         );
         // The Gauge Range instruction is injected when the flag is on.
         assert!(

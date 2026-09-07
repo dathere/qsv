@@ -184,6 +184,26 @@ For each field, provide:
   If you cannot determine the currency from the data, OMIT "currency" entirely - do NOT guess, and
   do NOT default to "USD". qsv drops any currency on a field that is not a numeric measure, so a
   wrong guess is silently discarded rather than corrected.
+- Unit (OPTIONAL, non-monetary numeric MEASURE fields only): if - and ONLY if - this field's values
+  are a PHYSICAL QUANTITY in a known unit, add a "unit" giving its UCUM code, chosen from exactly
+  this list: {{ unit_vocab }}.
+  Copy the code EXACTLY as written BEFORE the parenthesis. The codes are case-sensitive and the
+  bracketed forms are literal: "unit": "Cel" for Celsius, "unit": "[degF]" for Fahrenheit,
+  "unit": "kW.h" for kilowatt-hours, "unit": "[mi_i]" for miles. The parenthesised symbol is shown
+  only so you can tell what a code means - NEVER emit the symbol as the value. Base the choice on
+  evidence: the field name (`temp_c`, `distance_km`, `weight_lbs`), the Description, a unit stated
+  in a sibling column, or the observed magnitudes.
+  Do NOT add a "unit" to:
+    - a MONEY field - the "currency" above is already its unit, and a field carrying both is
+      contradictory; or
+    - a dimensionless count, an identifier, a rating, or a bare ratio or index - a 0-1 proportion
+      has no unit. "%" is the ONE exception, and ONLY when the values are literally expressed in
+      PERCENT (0-100, where 12.5 means 12.5%) - never for a 0-1 proportion; or
+    - the column that NAMES a unit (a column of "km"/"mi" strings). That column is a dimension.
+  If this field's unit is not in the list above, or you cannot determine it, OMIT "unit" entirely -
+  do NOT guess and do NOT invent a code. qsv drops any unit that is not in the list, or that is on
+  a non-numeric field, a non-measure field, or a field that already has a currency - so a wrong
+  guess is silently discarded rather than corrected.
 - Aggregation (OPTIONAL, numeric MEASURE fields only): declare how this field combines across a
   GROUP of rows, by choosing exactly ONE of: {{ agg_vocab }}. The distinction that matters is
   EXTENSIVE vs INTENSIVE:
@@ -335,7 +355,7 @@ to THIS Dataset. Never state numbers that are not in the Summary Statistics or F
 Distribution.
 {%- endif %}
 
-Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role", "concept" and (for canonical-scale numeric measures only) an optional "gauge_range", plus (for monetary measures only) an optional "currency" and (for numeric measures only) an optional "aggregation"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string, a top-level "grain_unit" string and an optional "relationships" array{% endif %}{% if tour_audience %}, plus a top-level "tour" object{% endif %}:
+Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role", "concept" and (for canonical-scale numeric measures only) an optional "gauge_range", plus (for monetary measures only) an optional "currency", (for non-monetary numeric measures only) an optional "unit" and (for numeric measures only) an optional "aggregation"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string, a top-level "grain_unit" string and an optional "relationships" array{% endif %}{% if tour_audience %}, plus a top-level "tour" object{% endif %}:
 {% raw %}{
   "field_name_1": {
     "label": "Human-friendly label",

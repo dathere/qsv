@@ -31082,8 +31082,9 @@ struct RegionDedupe {
 /// `conflict` and the tile is omitted, which is safe; when they are EXACTLY equal the two regions
 /// merge into one key and the total silently undercounts by one of them. Closing it needs a
 /// composite identity, and choosing the enclosing column to qualify by is the same granularity
-/// question issue #4526 records as unanswerable from cardinality — so this is scoped there rather
-/// than guessed at here. `measure_by_dim_panel` keys its own dedupe the same way.
+/// question issue #4526 records as unanswerable from cardinality — so this is tracked on its own
+/// (issue #4548) rather than guessed at here. `measure_by_dim_panel` keys its own dedupe the same
+/// way.
 ///
 /// This both VERIFIES and COMPUTES. The ownership guard cannot prove constancy from the stats
 /// cache, so a measure that disagrees with itself inside one region sets `conflict` — which the

@@ -47782,21 +47782,30 @@ mod tests {
             "an axis title is not a hovertemplate and must not be `%`-doubled: {json}"
         );
 
-        // ...and an unannotated triple is byte-for-byte unmarked
+        // ...and an unannotated triple is byte-for-byte unmarked. Its x LABEL carries the `%`
+        // this time: a raw CSV header can hold one, and this template interpolates headers too.
+        // The sibling bubble template has always doubled its labels; this one did not, and the
+        // inconsistency became reachable once a `%` unit could land here.
         let bare = Panel::new(
             "triple".to_string(),
             PanelKind::Scatter3D {
                 xs:     vec![1.0],
                 ys:     vec![2.0],
                 zs:     vec![3.0],
-                labels: ("A".to_string(), "B".to_string(), "C".to_string()),
+                labels: ("pct % done".to_string(), "B".to_string(), "C".to_string()),
                 units:  (None, None, None),
             },
         );
         let json = inline_panel_plot_scatter3d(&bare, "#4c78a8", None).to_json();
         assert!(
-            json.contains(r"A: %{x:,.3f}<br>"),
-            "bare hover changed: {json}"
+            json.contains(r"pct %% done: %{x:,.3f}<br>"),
+            "a `%` in the HEADER must be doubled inside the hovertemplate, and an unannotated \
+             column must stay unmarked: {json}"
+        );
+        // ...but not in that column's axis TITLE, which is not a template
+        assert!(
+            json.contains("\"text\":\"pct % done\""),
+            "an axis title must not be `%`-doubled: {json}"
         );
     }
 

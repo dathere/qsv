@@ -724,7 +724,7 @@ smart options:
                            describegpt's completion cache, forcing a genuinely fresh inference
                            that overwrites the sidecar on success.
                            Generation/read failures soft-fall back to the stats-only Data Schematic.
-                           The dictionary also drives the KPI overview row via four optional
+                           The dictionary also drives the KPI overview row via five optional
                            per-field hints in a property's "x-qsv" object (edit them in the saved
                            schema to fine-tune). A "gauge_range" of [min, max] on a continuous
                            numeric measure renders its KPI tile as a GAUGE on that canonical scale
@@ -739,6 +739,15 @@ smart options:
                            names the currency in the panel subtitle; an unrecognized code renders
                            verbatim ("XOF 1.2B"). "infer" emits it for money columns, which it
                            also tags with the "measure.money" concept.
+                           A "unit" UCUM code (e.g. "Cel", "km", "kW.h") on a NON-monetary numeric
+                           measure suffixes its KPI tile with the unit's display symbol ("18.4 °C")
+                           and names that symbol in the panel subtitle. Codes are checked
+                           CASE-SENSITIVELY against a curated table of ~44 common units - UCUM
+                           distinguishes "m" (metre) from the "M" (mega) prefix - and an off-table
+                           code is dropped rather than rendered, since an unrecognized unit string
+                           is not self-describing the way an ISO currency code is. Mutually
+                           exclusive with "currency": for money the currency IS the unit, so a
+                           sidecar declaring both keeps only the currency.
                            An "aggregation" of "sum" or "mean" on a numeric measure declares how
                            that column combines across a group, and OVERRIDES qsv's own
                            extensive-vs-intensive guess in both directions. Use it when a measure
@@ -7789,6 +7798,21 @@ fn axis_exponent_format() -> ExponentFormat {
 fn currency_prefix(code: &str) -> String {
     iso_currency::Currency::from_code(code)
         .map_or_else(|| format!("{code} "), |c| c.symbol().to_string())
+}
+
+/// Display suffix for a curated UCUM code: the reader-facing symbol with a leading space
+/// (`Cel` -> `" °C"`, `kW.h` -> `" kWh"`), or `None` when the code is off-table.
+///
+/// The symmetric opposite of [`currency_prefix`] in placement, but NOT in its fallback: an
+/// unrecognized currency still renders as a bare code because a 3-letter code is self-describing,
+/// whereas an off-table `unit` string is not — `qty (furlong)` on an axis asserts a unit qsv cannot
+/// vouch for. Unknown codes therefore vanish, which is also what `describegpt`'s parse stage does
+/// with them.
+///
+/// The symbol is resolved HERE from the authoritative table rather than read out of the sidecar, so
+/// a hand-edited dictionary cannot invent its own symbol for a real code.
+fn unit_suffix(code: &str) -> Option<String> {
+    crate::cmd::describegpt::dictionary::ucum_display_symbol(code).map(|sym| format!(" {sym}"))
 }
 
 /// Insert `,` thousands separators into the integer part of a formatted number string, preserving
@@ -20404,6 +20428,10 @@ struct ColSemantics {
     /// pass — which sees `ColSemantics`, not the `DictData` — can name the currency in the
     /// column's subtitle.
     currency:         Option<String>,
+    /// Curated-UCUM code from the dictionary (`x-qsv.unit`), carried here for the same reason as
+    /// `currency` and mutually exclusive with it (for money the currency IS the unit). Rendered
+    /// via [`unit_suffix`], never read as a symbol from the sidecar.
+    unit:             Option<String>,
     /// Denominator column NAME from the dictionary (`x-qsv.denominator.column`), carried here so
     /// the region-choropleth builder — which sees `ColSemantics`, not the `DictData` — can turn a
     /// raw-count region map into a rate map (issue #4394). Still just a name at this point: it is
@@ -20438,6 +20466,12 @@ struct DictRow {
     /// currency in its panel subtitle. Normalized (trimmed/uppercased/shape-checked) on read,
     /// because a hand-edited sidecar never passed through describegpt's validator.
     currency:         Option<String>,
+    /// Optional curated-UCUM code (`x-qsv.unit`, issue #4525) naming the physical unit a
+    /// NON-MONETARY numeric measure is expressed in. Suffixes the column's KPI tile with the
+    /// unit's display symbol and names it in the panel subtitle. Validated against the curated
+    /// table on read — case-sensitively, and rejected on a money column — because a hand-edited
+    /// sidecar never passed through describegpt's `verify_unit`.
+    unit:             Option<String>,
     /// Optional explicit aggregation (`x-qsv.aggregation`, `sum`|`mean`) declaring how this
     /// numeric measure combines across a group. The language-neutral, authoritative answer to a
     /// question `is_intensive_measure` can only guess at from the column NAME (issue #4401), so it
@@ -21045,6 +21079,9 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     // legitimately monetary. Do NOT re-gate on route: the panel subtitle consults this for every
     // charted column, not just the ones that end up as measures.
     let currency = row.currency.clone();
+    // Carried through unconditionally for the same reason as `currency`, and gated at the same two
+    // sources (`verify_unit` on emit, `xq_unit` on read).
+    let unit = row.unit.clone();
     // Carried through unconditionally like `currency`: it is declared on the REGION column (a
     // dimension), so gating it on a measure route would drop every legitimate use.
     let denominator = row.denominator.clone();
@@ -21081,6 +21118,7 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
                 concept: concept.to_string(),
                 label: label.clone(),
                 currency: currency.clone(),
+                unit: unit.clone(),
                 denominator: denominator.clone(),
                 denominator_unit: denominator_unit.clone(),
             },
@@ -21113,6 +21151,7 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
         concept: String::new(),
         label,
         currency,
+        unit,
         denominator,
         denominator_unit,
     }
@@ -21466,6 +21505,76 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 let measure = role.is_empty() || role == "measure";
                 (numeric && measure && money_ish).then_some(code)
             };
+            // `x-qsv.unit`: a curated-UCUM physical unit (issue #4525). Re-verified here for the
+            // same reason as the currency above — a hand-edited sidecar never passed through
+            // `describegpt`'s `verify_unit`, so its guarantees cannot be assumed at this
+            // consumption site:
+            //
+            //   * shape — trimmed, then required to be IN the curated table. Unlike the currency's
+            //     shape check this IS a table lookup, because `unit_suffix` has no bare-code
+            //     fallback: an unknown unit string cannot be rendered without asserting something
+            //     qsv can't vouch for.
+            //   * CASE-SENSITIVE, deliberately. UCUM distinguishes `m` (metre) from the `M` (mega)
+            //     prefix, so unlike `xq_currency`'s `to_ascii_uppercase` this must not fold.
+            //   * semantics — an AFFIRMATIVE numeric MEASURE, and NOT money. For money the currency
+            //     IS the unit (#4525's precedence rule), so a sidecar hand-authored with both would
+            //     otherwise print a currency symbol AND a unit symbol on one number.
+            //
+            // ⚠️ The measure test must be POSITIVE, not merely "not money" (roborev 4586).
+            // `xq_currency` above can afford permissive `role.is_empty()` / absent-`qsv_type` arms
+            // because its `money_ish` requirement is itself positive — a `category` concept fails
+            // it outright. Inverting that into a bare `!is_money` requires nothing at all, so
+            // `{"concept": "category", "unit": "kg"}` (or an `x-qsv` carrying ONLY a unit) sailed
+            // through and printed "(kg)" under a category panel.
+            //
+            // So the route is resolved here with `derive_semantics`'s own concept -> role ->
+            // content_type precedence, and the FIRST signal that resolves must say `Measure`.
+            // Walking the same ladder (rather than testing each signal independently) matters: a
+            // dictionary whose concept routes to `Dimension` must not be rescued by a
+            // `content_type` further down, which is exactly how `derive_semantics` will route it.
+            // An all-absent `x-qsv` resolves to nothing and is therefore not a measure — the
+            // statistics floor `Defer`s such a column, and a `Defer` is not a promise of numbers.
+            //
+            // The money test mirrors `verify_unit`'s, including its narrowness: `measure.amount`
+            // alone does NOT read as money here, because that is the concept a temperature, a
+            // distance and an energy carry — the population this annotation exists for.
+            let xq_unit = || -> Option<String> {
+                let code = xq
+                    .and_then(|x| x.get("unit"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|u| {
+                        crate::cmd::describegpt::dictionary::ucum_display_symbol(u).is_some()
+                    })
+                    .map(ToString::to_string)?;
+                // Trimmed at every comparison, for the reason spelled out in `xq_currency`.
+                let concept_raw = from_xq("concept");
+                let concept = concept_raw.trim();
+                let ct_raw = from_xq("content_type");
+                let is_money = concept == "measure.money"
+                    || crate::cmd::describegpt::dictionary::content_type_base(ct_raw.trim())
+                        == "money"
+                    || xq_currency().is_some();
+                let type_raw = from_xq("qsv_type");
+                let numeric = match type_raw.trim() {
+                    "" => true,
+                    t => matches!(t, "Integer" | "Float"),
+                };
+                let role_raw = from_xq("role");
+                let role = role_raw.trim();
+                let ct = ct_raw.trim();
+                let measure = if !concept.is_empty() && concept != "unknown" {
+                    route_from_concept(concept)
+                } else {
+                    None
+                }
+                .or_else(|| route_from_role(role))
+                .or_else(|| {
+                    (!ct.is_empty() && ct != "unknown").then(|| route_from_content_type(ct))
+                })
+                .is_some_and(|(route, _)| route == Route::Measure);
+                (numeric && measure && !is_money).then_some(code)
+            };
             // `x-qsv.aggregation`: an explicit `sum`|`mean` for a numeric measure (issue #4401).
             // describegpt's `verify_aggregation` already gated this on emit, but a hand-edited
             // sidecar never passed through that validator, so viz re-applies the same check:
@@ -21545,6 +21654,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     gauge_range: xq_range("gauge_range"),
                     target: xq_num("target"),
                     currency: xq_currency(),
+                    unit: xq_unit(),
                     aggregation: xq_aggregation(),
                     denominator: xq_denominator(),
                     denominator_unit: xq_denominator_unit(),
@@ -21617,11 +21727,12 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 concept:          from_field("concept"),
                 label:            from_field("label"),
                 description:      from_field("description"),
-                // legacy plain-json dictionaries don't carry KPI gauge/target/currency,
+                // legacy plain-json dictionaries don't carry KPI gauge/target/currency/unit,
                 // aggregation or denominator hints
                 gauge_range:      None,
                 target:           None,
                 currency:         None,
+                unit:             None,
                 aggregation:      None,
                 denominator:      None,
                 denominator_unit: None,
@@ -31257,6 +31368,10 @@ fn build_kpi_row(
         let target = row.and_then(|r| r.target).filter(|t| t.is_finite());
         // A monetary measure headlines with its currency's symbol: "$192B", not "192B".
         let prefix = row.and_then(|r| r.currency.as_deref()).map(currency_prefix);
+        // ...and a non-monetary one headlines with its unit's symbol: "18.4 °C". Mutually
+        // exclusive with `prefix` at both gates (`verify_unit` on emit, `xq_unit` on read), so a
+        // tile can never carry a currency AND a unit.
+        let unit_sfx = row.and_then(|r| r.unit.as_deref()).and_then(unit_suffix);
         // Scale the headline into a magnitude suffix ("$192B" rather than d3's "$192G") ONLY on
         // a plain-number tile. A gauge draws its needle against the UNSCALED `[lo, hi]` axis and
         // a delta carries its own independent format, so scaling the number without also scaling
@@ -31266,7 +31381,8 @@ fn build_kpi_row(
         // The `>= 10_000` floor is `kpi_number_format`'s own SI threshold, kept verbatim: below
         // it a KPI has always rendered as a grouped number ("5,000", not "5k"), and this change
         // is about WHICH suffix large numbers get, not about suffixing more of them.
-        let (value, suffix) = if gauge.is_none() && target.is_none() && value.abs() >= 10_000.0 {
+        let (value, mag_suffix) = if gauge.is_none() && target.is_none() && value.abs() >= 10_000.0
+        {
             let (div, sfx) = magnitude_scale(value);
             (value / div, (!sfx.is_empty()).then(|| sfx.to_string()))
         } else {
@@ -31274,10 +31390,23 @@ fn build_kpi_row(
         };
         // a scaled value is already 3 significant digits by construction, so `.3~g` renders it
         // ("192", "2.4", "1.05"); the unscaled path keeps the existing small-magnitude rules.
-        let format = if suffix.is_some() {
+        //
+        // ⚠️ Keyed on the MAGNITUDE suffix alone, deliberately, and resolved BEFORE the unit is
+        // folded in below. This branch asks "was the value rescaled?" — a unit-only tile was not,
+        // so letting a unit reach this test would silently switch an 18.4 °C reading from
+        // `kpi_number_format`'s small-magnitude rules to `.3~g`.
+        let format = if mag_suffix.is_some() {
             ".3~g".to_string()
         } else {
             kpi_number_format(value)
+        };
+        // Compose the two suffixes into plotly's single `suffix` slot: "1.2B kWh", "18.4 °C".
+        // `unit_suffix` already carries its leading space, so the magnitude glyph abuts the number
+        // exactly as it always has ("1.2B") and the unit stands off it.
+        let suffix = match (mag_suffix, unit_sfx) {
+            (Some(mag), Some(unit)) => Some(format!("{mag}{unit}")),
+            (Some(mag), None) => Some(mag),
+            (None, unit) => unit,
         };
         // A collapsed figure covers only the regions that could be identified, so when some rows
         // carried no owning region the tile says so in place rather than only on stderr — the same
@@ -32108,9 +32237,24 @@ impl<'a> SmartCtx<'a> {
             // Name the currency ONCE per panel rather than repeating a glyph on every mark: the
             // KPI tile carries the symbol, the panel says which currency it is. Appended to the
             // dictionary label when there is one, else it stands alone as the subtitle.
-            let subtitle = match (&sem.currency, subtitle) {
-                (Some(code), Some(label)) => Some(format!("{label} ({code})")),
-                (Some(code), None) => Some(format!("({code})")),
+            //
+            // A unit rides the SAME slot, and can never collide with the currency: for money the
+            // currency IS the unit, so `verify_unit` drops one on emit and `xq_unit` drops one on
+            // read. The currency prints its CODE here ("(USD)") because a bare "$" is ambiguous
+            // across currencies; a unit prints its SYMBOL ("(°C)") because that is the form a
+            // reader knows — "(Cel)" would be machine notation leaking into the page.
+            //
+            // This subtitle is `viz smart`'s answer to an axis title: distribution panels are
+            // deliberately title-less on both axes to keep the cells compact, so the panel
+            // title + subtitle is where a column's identity — and its unit — is stated.
+            let annotation = sem.currency.clone().or_else(|| {
+                sem.unit
+                    .as_deref()
+                    .and_then(|code| unit_suffix(code).map(|sym| sym.trim().to_string()))
+            });
+            let subtitle = match (&annotation, subtitle) {
+                (Some(note), Some(label)) => Some(format!("{label} ({note})")),
+                (Some(note), None) => Some(format!("({note})")),
                 (None, sub) => sub,
             };
             // --dict-info: the column's dictionary description + pre-computed anchor.
@@ -42577,6 +42721,147 @@ mod tests {
     }
 
     #[test]
+    fn xq_unit_is_reverified_against_the_curated_table() {
+        // Issue #4525. A hand-edited sidecar never passed through describegpt's `verify_unit`, so
+        // viz re-applies BOTH halves of it here — the same discipline as `xq_currency`. Every row
+        // below is one a hand-authored dictionary can trivially contain.
+        let schema = r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "air_temp": { "type": "number", "title": "Air Temp",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount",
+                         "unit": "  Cel " } },
+            "padded_role": { "type": "number", "title": "Padded",
+              "x-qsv": { "qsv_type": "Float", "role": "measure ", "concept": "measure.amount",
+                         "unit": "km" } },
+            "no_role": { "type": "number", "title": "No Role",
+              "x-qsv": { "qsv_type": "Float", "concept": "measure.amount", "unit": "kg" } },
+            "lowercased": { "type": "number", "title": "Lowercased",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount",
+                         "unit": "cel" } },
+            "offtable": { "type": "number", "title": "Off Table",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount",
+                         "unit": "furlong" } },
+            "symbol": { "type": "number", "title": "Symbol",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount",
+                         "unit": "°C" } },
+            "unit_name": { "type": "string", "title": "Unit Name",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category",
+                         "unit": "km" } },
+            "a_count": { "type": "integer", "title": "Count",
+              "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "category",
+                         "unit": "kg" } },
+            "money_concept": { "type": "number", "title": "Spent",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.money",
+                         "unit": "kg" } },
+            "money_ct": { "type": "number", "title": "Cost",
+              "x-qsv": { "qsv_type": "Float", "content_type": "money", "role": "measure",
+                         "concept": "measure.amount", "unit": "kg" } },
+            "both": { "type": "number", "title": "Both",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount",
+                         "currency": "USD", "unit": "kg" } },
+            "cat_concept": { "type": "string", "title": "Category",
+              "x-qsv": { "concept": "category", "unit": "kg" } },
+            "cat_ct": { "type": "string", "title": "Category CT",
+              "x-qsv": { "content_type": "category", "unit": "kg" } },
+            "bare": { "type": "string", "title": "Bare", "x-qsv": { "unit": "kg" } },
+            "ladder": { "type": "string", "title": "Ladder",
+              "x-qsv": { "concept": "category", "role": "measure", "unit": "kg" } }
+          }
+        }"#;
+        let data = parse_dictionary_semantics(schema).expect("parsed");
+        let u = |k: &str| data.rows.get(k).expect("row").unit.clone();
+
+        // KEPT: trimmed, and the ordinary physical-quantity cases
+        assert_eq!(u("air_temp").as_deref(), Some("Cel"), "trimmed, not folded");
+        assert_eq!(
+            u("padded_role").as_deref(),
+            Some("km"),
+            "a padded role still routes as a measure everywhere else, so it must here too (the \
+             roborev 4203 lesson, applied to this gate)"
+        );
+        assert_eq!(
+            u("no_role").as_deref(),
+            Some("kg"),
+            "an empty role is admissible: concept alone establishes the measure"
+        );
+
+        // DROPPED on shape
+        assert_eq!(
+            u("lowercased"),
+            None,
+            "UCUM is case-sensitive: `cel` != `Cel`"
+        );
+        assert_eq!(
+            u("offtable"),
+            None,
+            "off-table codes are dropped, not rendered"
+        );
+        assert_eq!(
+            u("symbol"),
+            None,
+            "the display SYMBOL is not the code — accepting it would let a sidecar bypass the \
+             table"
+        );
+
+        // DROPPED on semantics
+        assert_eq!(
+            u("unit_name"),
+            None,
+            "a String column of unit names NAMES a unit; it is not a quantity in one"
+        );
+        assert_eq!(u("a_count"), None, "a dimension is not a measure");
+
+        // DROPPED on the money precedence — the currency IS the unit for money, so these would
+        // otherwise print a currency symbol AND a unit symbol on one number
+        assert_eq!(u("money_concept"), None, "measure.money is money");
+        assert_eq!(
+            u("money_ct"),
+            None,
+            "a `money` content type is money even when the concept stays the admissible generic"
+        );
+        assert_eq!(
+            u("both"),
+            None,
+            "a sidecar carrying both keeps only the currency"
+        );
+        assert_eq!(
+            data.rows.get("both").expect("row").currency.as_deref(),
+            Some("USD"),
+            "...and the currency itself is unaffected"
+        );
+
+        // roborev 4586: the measure test is POSITIVE, so ABSENT metadata is not proof of one.
+        // `xq_currency` can afford permissive absent-role/type arms because its `money_ish`
+        // requirement is itself positive; a bare `!is_money` requires nothing at all.
+        assert_eq!(
+            u("cat_concept"),
+            None,
+            "a `category` concept with no role/type must not keep a unit"
+        );
+        assert_eq!(
+            u("cat_ct"),
+            None,
+            "...nor a `category` content_type, the third rung of the ladder"
+        );
+        assert_eq!(
+            u("bare"),
+            None,
+            "an x-qsv carrying NOTHING but a unit resolves to no route at all, and a statistics \
+             floor `Defer` is not a promise of numbers"
+        );
+        // The signals are walked as a LADDER, not tested independently: a concept that routes to
+        // Dimension decides, and a later `role: measure` must not rescue it -- because that is
+        // exactly how `derive_semantics` will route the column.
+        assert_eq!(
+            u("ladder"),
+            None,
+            "a Dimension-routing concept must not be overridden by a lower-precedence role"
+        );
+    }
+
+    #[test]
     fn xq_denominator_is_shape_checked_only() {
         // issue #4394. `x-qsv.denominator` is validated for SHAPE here and for VALIDITY at the
         // consumption site, so this test pins exactly where that line falls: a well-formed hint
@@ -47330,6 +47615,68 @@ mod tests {
     }
 
     #[test]
+    fn build_kpi_row_suffixes_unit_symbol() {
+        // issue #4525. A non-monetary measure headlines with its unit's SYMBOL as a suffix, the
+        // mirror of the currency's symbol prefix above.
+        let quantity = |unit: Option<&str>| DictRow {
+            role: "measure".to_string(),
+            concept: "measure.amount".to_string(),
+            unit: unit.map(ToString::to_string),
+            ..DictRow::default()
+        };
+
+        // UNSCALED (|v| < 10_000): no magnitude suffix, so the unit stands alone -> "18.4 °C".
+        // No locale guard needed — nothing here is locale-dependent.
+        let (stats, panels, dict) = kpi_fixture(18.4, Some(quantity(Some("Cel"))));
+        let row = build_kpi_row(&stats, &panels, dict.as_ref(), &[], 0, None).expect("KPI row");
+        let tile = only_tile(&row);
+        assert_eq!(tile.suffix.as_deref(), Some(" °C"));
+        assert_eq!(tile.prefix, None, "a unit never sets the currency prefix");
+        // ...and the number format is still the small-magnitude one. This is the assertion that
+        // catches folding the unit into `mag_suffix` before the format branch reads it: doing so
+        // silently switches an 18.4 °C reading to `.3~g`.
+        assert_ne!(
+            tile.format, ".3~g",
+            "a unit-only tile was never rescaled, so it must keep `kpi_number_format`'s rules"
+        );
+
+        // an off-table code is dropped rather than rendered, so the tile is simply unmarked
+        let (s2, p2, d2) = kpi_fixture(18.4, Some(quantity(Some("furlong"))));
+        let row2 = build_kpi_row(&s2, &p2, d2.as_ref(), &[], 0, None).expect("KPI row");
+        assert_eq!(only_tile(&row2).suffix, None);
+
+        // no unit -> unmarked, exactly as before this feature
+        let (s3, p3, d3) = kpi_fixture(18.4, Some(quantity(None)));
+        let row3 = build_kpi_row(&s3, &p3, d3.as_ref(), &[], 0, None).expect("KPI row");
+        assert_eq!(only_tile(&row3).suffix, None);
+    }
+
+    #[test]
+    fn build_kpi_row_composes_magnitude_and_unit_suffixes() {
+        // The two suffixes share plotly's single `suffix` slot, so a SCALED unit tile must carry
+        // both: "1.2B kWh", not one or the other. Locale-guarded because the magnitude glyph is
+        // "B" only under English (SI "G" elsewhere) — the same reason
+        // `build_kpi_row_prefixes_currency_symbol` takes the guard.
+        let _locale = english_locale();
+        let energy = DictRow {
+            role: "measure".to_string(),
+            concept: "measure.amount".to_string(),
+            unit: Some("kW.h".to_string()),
+            ..DictRow::default()
+        };
+        let (stats, panels, dict) = kpi_fixture(1.2e9, Some(energy));
+        let row = build_kpi_row(&stats, &panels, dict.as_ref(), &[], 0, None).expect("KPI row");
+        let tile = only_tile(&row);
+        assert_eq!(
+            tile.suffix.as_deref(),
+            Some("B kWh"),
+            "the magnitude glyph abuts the number and the unit stands off it"
+        );
+        // the magnitude scaling still drives the format, unchanged by the unit riding along
+        assert_eq!(tile.format, ".3~g");
+    }
+
+    #[test]
     fn kpi_and_bar_label_agree_for_the_same_value() {
         // The KPI path scales in Rust then hands d3 `.3~g`, while bar labels are rendered wholly
         // in Rust by `fmt_magnitude`. Two different rounding rules for the same number would put
@@ -50010,6 +50357,27 @@ mod tests {
         viz_i18n::set_active(viz_i18n::parse_lang("ja").unwrap());
         assert_eq!(fmt(), "\"SI\"");
         viz_i18n::reset_active();
+    }
+
+    #[test]
+    fn unit_suffix_renders_the_symbol_and_drops_unknown_codes() {
+        // NO `english_locale()` guard, deliberately, mirroring `currency_prefix_falls_back_to_code`
+        // below: a UCUM symbol is a locale-neutral glyph from an authoritative table, like a
+        // currency symbol. Only the MAGNITUDE suffix is locale-gated ("B" vs SI "G"), which is why
+        // `build_kpi_row_composes_magnitude_and_unit_suffixes` takes the guard.
+        assert_eq!(unit_suffix("Cel").as_deref(), Some(" °C"));
+        assert_eq!(unit_suffix("kW.h").as_deref(), Some(" kWh"));
+        // a bracketed customary code renders as the form a reader knows
+        assert_eq!(unit_suffix("[mi_i]").as_deref(), Some(" mi"));
+        // the leading space is part of the contract: it separates the symbol from the number, and
+        // lets the KPI composer abut a magnitude glyph ("1.2B kWh") without inserting one itself
+        assert!(unit_suffix("km").unwrap().starts_with(' '));
+        // UNLIKE `currency_prefix`, there is no bare-code fallback: an off-table string is not
+        // self-describing, so "qty (furlong)" would assert a unit qsv cannot vouch for
+        assert_eq!(unit_suffix("furlong"), None);
+        // and the lookup is case-sensitive, because UCUM is
+        assert_eq!(unit_suffix("cel"), None);
+        assert_eq!(unit_suffix("KM"), None);
     }
 
     #[test]

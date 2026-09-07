@@ -444,7 +444,24 @@ pub(super) fn unit_vocab_list() -> String {
 /// their own closed ASCII sets — would accept `CEL` or `KM` as though they were valid UCUM, which
 /// they are not.
 pub(super) fn is_ucum_unit(code: &str) -> bool {
-    UCUM_UNIT_VOCAB.iter().any(|(c, _)| *c == code)
+    ucum_display_symbol(code).is_some()
+}
+
+/// The display symbol for a curated UCUM code (`Cel` → `°C`, `[mi_i]` → `mi`), or `None` when the
+/// code is off-table.
+///
+/// `pub(crate)` because `viz smart` resolves the symbol at its own consumption site rather than
+/// having describegpt bake it into the sidecar: an `x-qsv.unit` is hand-editable and may never have
+/// passed through this crate's verification at all, so viz re-derives the symbol from the same
+/// authoritative table — the discipline `xq_currency`/`currency_prefix` already follow for
+/// `x-qsv.currency`. Storing the symbol in the dictionary instead would let the two drift.
+///
+/// Matched byte-exactly, for the case-sensitivity reason in [`UCUM_UNIT_VOCAB`].
+pub(crate) fn ucum_display_symbol(code: &str) -> Option<&'static str> {
+    UCUM_UNIT_VOCAB
+        .iter()
+        .find(|(c, _)| *c == code)
+        .map(|(_, symbol)| *symbol)
 }
 
 /// Concept namespaces that denote a shared real-world entity an agent can join
@@ -959,8 +976,11 @@ pub(super) struct DictionaryEntry {
     /// is expressed in. The LLM proposes it only under `--infer-content-type`; `verify_unit` then
     /// keeps it ONLY when the column is a numeric measure that is not already denominated in a
     /// currency — the same propose-then-verify discipline as `gauge_range` and `currency`.
-    /// Consumed by `viz smart --dictionary` (`x-qsv.unit`) to suffix axis titles, hovers and KPI
-    /// tiles with the unit's display symbol. `#[serde(default)]` for cache backward-compatibility.
+    /// Consumed by `viz smart --dictionary` (`x-qsv.unit`), which names the unit in the column's
+    /// panel SUBTITLE and suffixes its KPI tile with the display symbol. Not an axis title:
+    /// `viz smart`'s distribution panels are deliberately title-less on both axes to keep the
+    /// cells compact, so the panel title + subtitle is where a column's identity is stated.
+    /// `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
     pub(super) unit:            Option<String>,
     /// Optional `AGG_VOCAB` token (`sum`/`mean`) declaring how this numeric MEASURE

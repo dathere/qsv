@@ -17896,6 +17896,60 @@ fn viz_smart_money_currency_prefix_and_b_suffix() {
     );
 }
 
+#[test]
+fn viz_smart_unit_symbol_suffix_and_subtitle() {
+    // issue #4525, viz consumption. A non-monetary measure carrying `x-qsv.unit` headlines with
+    // the unit's SYMBOL and names it in the panel subtitle -- the mirror of the currency test
+    // above, and the reason `x-qsv.unit` exists: a temperature panel that says "°C".
+    let wrk = Workdir::new("viz_smart_unit_symbol_suffix_and_subtitle");
+    let mut csv = String::from("station,air_temp\n");
+    for i in 0..40 {
+        csv.push_str(&format!("S{},{}\n", i % 5, 10 + (i % 17)));
+    }
+    wrk.create_from_string("temp.csv", &csv);
+    // NOTE the dictionary carries the UCUM CODE ("Cel"), never the symbol -- viz resolves the
+    // glyph from the curated table so a sidecar cannot invent its own.
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"type":"object","properties":{"air_temp":{"title":"Air Temperature","type":"number","x-qsv":{"role":"measure","concept":"measure.amount","unit":"Cel"}}}}"#,
+    );
+
+    let out_html = wrk.path("t.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "temp.csv",
+        "--dictionary",
+        "dict.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("t.html").unwrap();
+
+    // the KPI tile suffixes the symbol, with its leading space
+    assert!(
+        html.contains(r#""suffix":" °C""#),
+        "KPI tile must carry the unit symbol; html: {html}"
+    );
+    // ...and never the raw UCUM code, which is machine notation
+    assert!(
+        !html.contains(r#""suffix":" Cel""#) && !html.contains("(Cel)"),
+        "the UCUM code must not leak into the page; html: {html}"
+    );
+    // the unit is named once per panel, in the subtitle -- `viz smart`'s stand-in for an axis
+    // title, since distribution panels are deliberately title-less on both axes
+    assert!(
+        html.contains("(°C)"),
+        "the panel subtitle must name the unit; html: {html}"
+    );
+    // a unit is not a currency: no symbol prefix is introduced
+    assert!(
+        !html.contains(r#""prefix":"$""#),
+        "a unit must not produce a currency prefix; html: {html}"
+    );
+}
+
 // The twin of the test above: every suffix decision is locale-gated off ONE helper, so a non-en
 // page must flip ALL of them back to SI together. A half-converted page (B tiles, G axes) is the
 // exact defect issue #4393 reports.

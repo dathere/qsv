@@ -724,7 +724,7 @@ smart options:
                            describegpt's completion cache, forcing a genuinely fresh inference
                            that overwrites the sidecar on success.
                            Generation/read failures soft-fall back to the stats-only Data Schematic.
-                           The dictionary also drives the KPI overview row via four optional
+                           The dictionary also drives the KPI overview row via five optional
                            per-field hints in a property's "x-qsv" object (edit them in the saved
                            schema to fine-tune). A "gauge_range" of [min, max] on a continuous
                            numeric measure renders its KPI tile as a GAUGE on that canonical scale
@@ -21516,9 +21516,24 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
             //     qsv can't vouch for.
             //   * CASE-SENSITIVE, deliberately. UCUM distinguishes `m` (metre) from the `M` (mega)
             //     prefix, so unlike `xq_currency`'s `to_ascii_uppercase` this must not fold.
-            //   * semantics — a numeric MEASURE, and NOT money. For money the currency IS the unit
-            //     (#4525's precedence rule), so a sidecar hand-authored with both would otherwise
-            //     print a currency symbol AND a unit symbol on one number.
+            //   * semantics — an AFFIRMATIVE numeric MEASURE, and NOT money. For money the currency
+            //     IS the unit (#4525's precedence rule), so a sidecar hand-authored with both would
+            //     otherwise print a currency symbol AND a unit symbol on one number.
+            //
+            // ⚠️ The measure test must be POSITIVE, not merely "not money" (roborev 4586).
+            // `xq_currency` above can afford permissive `role.is_empty()` / absent-`qsv_type` arms
+            // because its `money_ish` requirement is itself positive — a `category` concept fails
+            // it outright. Inverting that into a bare `!is_money` requires nothing at all, so
+            // `{"concept": "category", "unit": "kg"}` (or an `x-qsv` carrying ONLY a unit) sailed
+            // through and printed "(kg)" under a category panel.
+            //
+            // So the route is resolved here with `derive_semantics`'s own concept -> role ->
+            // content_type precedence, and the FIRST signal that resolves must say `Measure`.
+            // Walking the same ladder (rather than testing each signal independently) matters: a
+            // dictionary whose concept routes to `Dimension` must not be rescued by a
+            // `content_type` further down, which is exactly how `derive_semantics` will route it.
+            // An all-absent `x-qsv` resolves to nothing and is therefore not a measure — the
+            // statistics floor `Defer`s such a column, and a `Defer` is not a promise of numbers.
             //
             // The money test mirrors `verify_unit`'s, including its narrowness: `measure.amount`
             // alone does NOT read as money here, because that is the concept a temperature, a
@@ -21547,7 +21562,17 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 };
                 let role_raw = from_xq("role");
                 let role = role_raw.trim();
-                let measure = role.is_empty() || role == "measure";
+                let ct = ct_raw.trim();
+                let measure = if !concept.is_empty() && concept != "unknown" {
+                    route_from_concept(concept)
+                } else {
+                    None
+                }
+                .or_else(|| route_from_role(role))
+                .or_else(|| {
+                    (!ct.is_empty() && ct != "unknown").then(|| route_from_content_type(ct))
+                })
+                .is_some_and(|(route, _)| route == Route::Measure);
                 (numeric && measure && !is_money).then_some(code)
             };
             // `x-qsv.aggregation`: an explicit `sum`|`mean` for a numeric measure (issue #4401).
@@ -42735,7 +42760,14 @@ mod tests {
                          "concept": "measure.amount", "unit": "kg" } },
             "both": { "type": "number", "title": "Both",
               "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount",
-                         "currency": "USD", "unit": "kg" } }
+                         "currency": "USD", "unit": "kg" } },
+            "cat_concept": { "type": "string", "title": "Category",
+              "x-qsv": { "concept": "category", "unit": "kg" } },
+            "cat_ct": { "type": "string", "title": "Category CT",
+              "x-qsv": { "content_type": "category", "unit": "kg" } },
+            "bare": { "type": "string", "title": "Bare", "x-qsv": { "unit": "kg" } },
+            "ladder": { "type": "string", "title": "Ladder",
+              "x-qsv": { "concept": "category", "role": "measure", "unit": "kg" } }
           }
         }"#;
         let data = parse_dictionary_semantics(schema).expect("parsed");
@@ -42798,6 +42830,34 @@ mod tests {
             data.rows.get("both").expect("row").currency.as_deref(),
             Some("USD"),
             "...and the currency itself is unaffected"
+        );
+
+        // roborev 4586: the measure test is POSITIVE, so ABSENT metadata is not proof of one.
+        // `xq_currency` can afford permissive absent-role/type arms because its `money_ish`
+        // requirement is itself positive; a bare `!is_money` requires nothing at all.
+        assert_eq!(
+            u("cat_concept"),
+            None,
+            "a `category` concept with no role/type must not keep a unit"
+        );
+        assert_eq!(
+            u("cat_ct"),
+            None,
+            "...nor a `category` content_type, the third rung of the ladder"
+        );
+        assert_eq!(
+            u("bare"),
+            None,
+            "an x-qsv carrying NOTHING but a unit resolves to no route at all, and a statistics \
+             floor `Defer` is not a promise of numbers"
+        );
+        // The signals are walked as a LADDER, not tested independently: a concept that routes to
+        // Dimension decides, and a later `role: measure` must not rescue it -- because that is
+        // exactly how `derive_semantics` will route the column.
+        assert_eq!(
+            u("ladder"),
+            None,
+            "a Dimension-routing concept must not be overridden by a lower-precedence role"
         );
     }
 

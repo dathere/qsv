@@ -741,7 +741,11 @@ smart options:
                            also tags with the "measure.money" concept.
                            A "unit" UCUM code (e.g. "Cel", "km", "kW.h") on a NON-monetary numeric
                            measure suffixes its KPI tile with the unit's display symbol ("18.4 °C")
-                           and names that symbol in the panel subtitle. Codes are checked
+                           and names that symbol in the panel subtitle. On the scatter/bubble/3D
+                           panels - the only ones with real axis titles - it also suffixes each
+                           per-point hover reading ("air_temp: 18.4 °C") and parenthesizes each
+                           axis title ("air_temp (°C)"); a declared pipeline's hover is marked too
+                           when its stages are rows of ONE measure column. Codes are checked
                            CASE-SENSITIVELY against a curated table of ~44 common units - UCUM
                            distinguishes "m" (metre) from the "M" (mega) prefix - and an off-table
                            code is dropped rather than rendered, since an unrecognized unit string
@@ -3374,7 +3378,16 @@ fn build_slider_bubble_plot(args: &Args, slider_col: &SelectColumns) -> CliResul
     let frame_label = col_label(&headers, frame_idx, nh);
 
     let mut plot = Plot::new();
-    add_bubble_traces_and_frames(&mut plot, &data, &x_label, &y_label, &size_label);
+    // no units: this is the standalone `viz scatter --slider` path, which never loads a data
+    // dictionary (`--dictionary` is a `viz smart` option), so no column here carries an
+    // `x-qsv.unit` to state.
+    add_bubble_traces_and_frames(
+        &mut plot,
+        &data,
+        (&x_label, None),
+        (&y_label, None),
+        (&size_label, None),
+    );
 
     let mut layout = Layout::new().show_legend(true);
     if let Some(title) = &args.flag_title {
@@ -7813,6 +7826,30 @@ fn currency_prefix(code: &str) -> String {
 /// a hand-edited dictionary cannot invent its own symbol for a real code.
 fn unit_suffix(code: &str) -> Option<String> {
     crate::cmd::describegpt::dictionary::ucum_display_symbol(code).map(|sym| format!(" {sym}"))
+}
+
+/// The VALUE-SUFFIX form of a column's unit, for a hover line that states a reading: `" °C"`, or
+/// `""` when the column has no unit (or carries an off-table code). Composes as `Air Temp: 18.4
+/// °C` — the same shape the KPI tile renders, and deliberately not the parenthesized form: a
+/// hover line is a reading, and a reading wears its unit after the number.
+///
+/// Takes an `Option` because every call site reads a `PanelKind`'s optional unit field, and the
+/// unmarked case is by far the common one.
+fn unit_value_suffix(code: Option<&str>) -> String {
+    code.and_then(unit_suffix).unwrap_or_default()
+}
+
+/// The NAME-PARENTHESIS form, for a real axis title: `" (°C)"`, or `""`. Composes as
+/// `Air Temp (°C)`, mirroring what the panel subtitle does for the distribution panels.
+///
+/// Only the scatter/bubble/3D family has axis titles at all — `viz smart`'s distribution panels
+/// are deliberately title-less on both axes to keep the cells compact, which is precisely why
+/// #4552 put their unit in the panel subtitle. So this is the axis-title half of the same idea,
+/// applied to the panels that DO have one and get no unit subtitle (`classify_columns` writes
+/// that subtitle only in its per-column loop, which the pair/3D panels never enter).
+fn unit_axis_note(code: Option<&str>) -> String {
+    code.and_then(crate::cmd::describegpt::dictionary::ucum_display_symbol)
+        .map_or_else(String::new, |sym| format!(" ({sym})"))
 }
 
 /// Insert `,` thousands separators into the integer part of a formatted number string, preserving
@@ -19828,6 +19865,12 @@ enum PanelKind {
         frame_label:   String,
         x_range:       (f64, f64),
         y_range:       (f64, f64),
+        /// Curated-UCUM CODES for the two axes (`x-qsv.unit`, issue #4551). Consumed by the AXIS
+        /// TITLES only: unlike its static `ScatterPair` sibling this panel builds no per-point
+        /// hover text, so plotly's default `(x, y)` readout is the only other surface and it names
+        /// no columns to hang a unit on.
+        x_unit:        Option<String>,
+        y_unit:        Option<String>,
     },
     /// Animated geographic point map: dated points on a `ScatterGeo` projection basemap, revealed
     /// CUMULATIVELY over time buckets (dated events accumulating across the map reads naturally).
@@ -19857,6 +19900,14 @@ enum PanelKind {
         y_label:     String,
         size_label:  String,
         frame_label: String,
+        /// Curated-UCUM CODES for the three encoded columns (`x-qsv.unit`, issue #4551). Like
+        /// `Scatter3D`, this panel names its columns in both the axis titles and the hover
+        /// template, so both are marked. ⚠️ `size_unit` is `None` whenever the bubble falls back
+        /// to the per-cell ROW COUNT (`viz.chart.records`) rather than a third measure column —
+        /// a count is not a reading of anything, so it must stay unmarked.
+        x_unit:      Option<String>,
+        y_unit:      Option<String>,
+        size_unit:   Option<String>,
     },
     /// Cyclic "seasonality" profile: a date/datetime column folded onto a repeating phase —
     /// hour-of-day, day-of-week, or month-of-year — with record volume as the radial value. Exposes
@@ -19924,6 +19975,14 @@ enum PanelKind {
         x_label:    String,
         y_label:    String,
         size_label: Option<String>,
+        /// Each label's curated-UCUM CODE from the dictionary (`x-qsv.unit`, issue #4551), so the
+        /// hover can suffix that column's reading with its symbol. The code, not the symbol: it is
+        /// resolved through the authoritative table at render (`unit_value_suffix`), exactly as
+        /// `ColSemantics.unit` is, so a hand-edited sidecar cannot invent a glyph. `None` for an
+        /// unannotated, monetary or off-table column.
+        x_unit:     Option<String>,
+        y_unit:     Option<String>,
+        size_unit:  Option<String>,
     },
     /// Lorenz curve for an additive measure with income/wealth-style inequality — the plot whose
     /// geometry IS the Gini coefficient (Gini = 2× the area between the curve and the equality
@@ -20012,6 +20071,12 @@ enum PanelKind {
         ys:     Vec<f64>,
         zs:     Vec<f64>,
         labels: (String, String, String),
+        /// The three labels' curated-UCUM CODES (`x-qsv.unit`, issue #4551), parallel to `labels`.
+        /// This panel names its columns TWICE — in the scene axis titles and again in the hover
+        /// template — so both get the unit, in their respective forms (`unit_axis_note` /
+        /// `unit_value_suffix`). See `ScatterPair::x_unit` for why the code travels, not the
+        /// symbol.
+        units:  (Option<String>, Option<String>, Option<String>),
     },
     /// Histogram of a continuous numeric column, chosen INSTEAD of a box plot when moarstats
     /// flagged the column as bimodal/multimodal (a box plot would hide the multiple peaks).
@@ -20537,7 +20602,17 @@ enum FunnelShape {
     /// Stages are separate measure COLUMNS; counts are complete-case rows with a positive value.
     Columns,
     /// Stages are row values; `totals` are sums of the named measure column.
-    RowsMeasure { value_label: String },
+    ///
+    /// `value_unit` is that column's curated-UCUM CODE (`x-qsv.unit`, issue #4551), carried HERE
+    /// rather than on `PanelKind::Funnel` on purpose: this is the only shape whose numbers are
+    /// readings of one measure column, so binding the unit to the variant makes leaking it onto
+    /// the other two a type error rather than a review catch. `Columns` totals span several
+    /// differently-named stage columns and `RowsCount` totals ARE row counts — neither has a
+    /// single unit to state.
+    RowsMeasure {
+        value_label: String,
+        value_unit:  Option<String>,
+    },
     /// Stages are row values; `totals` ARE the row counts, so they equal `reached`.
     RowsCount,
 }
@@ -27421,10 +27496,14 @@ fn bubble_size_px(sizes: &[Vec<f64>]) -> impl Fn(f64) -> usize {
 fn add_bubble_traces_and_frames(
     plot: &mut Plot,
     data: &EntityBucketAgg,
-    x_label: &str,
-    y_label: &str,
-    size_label: &str,
+    // each encoded column as `(label, curated-UCUM unit code)` — the unit suffixes that column's
+    // reading in the per-point hover (issue #4551). Grouped into pairs rather than added as three
+    // more positional `&str`s so a label can never be paired with the wrong column's unit.
+    x: (&str, Option<&str>),
+    y: (&str, Option<&str>),
+    size: (&str, Option<&str>),
 ) {
+    let ((x_label, x_unit), (y_label, y_unit), (size_label, size_unit)) = (x, y, size);
     let EntityBucketAgg {
         entities,
         xs,
@@ -27459,11 +27538,14 @@ fn add_bubble_traces_and_frames(
             // a hovertemplate additionally parses `%{...}`, so every interpolated string needs
             // its literal `%` doubled.
             .hover_template(format!(
-                "{}<br>{}: %{{x}}<br>{}: %{{y}}<br>{}: {size_disp}<extra></extra>",
+                "{}<br>{}: %{{x}}{}<br>{}: %{{y}}{}<br>{}: {size_disp}{}<extra></extra>",
                 escape_template_pct(&entities[e]),
                 escape_template_pct(&escape_hover(x_label)),
+                escape_template_pct(&unit_value_suffix(x_unit)),
                 escape_template_pct(&escape_hover(y_label)),
+                escape_template_pct(&unit_value_suffix(y_unit)),
                 escape_template_pct(&escape_hover(size_label)),
+                escape_template_pct(&unit_value_suffix(size_unit)),
             ))
     };
     // base = bucket 0 positions (one trace per entity, in entity order)
@@ -32764,6 +32846,11 @@ impl<'a> SmartCtx<'a> {
                             frame_label,
                             x_range: data.x_range,
                             y_range: data.y_range,
+                            // `labels`/`columns` are indexed by POSITION in the kept set;
+                            // `kept_indices` maps that back to the source column the dictionary
+                            // was keyed by. Issue #4551.
+                            x_unit: self.col_unit(kept_indices[i]),
+                            y_unit: self.col_unit(kept_indices[j]),
                         },
                     );
                     Some((i, j, panel))
@@ -32866,6 +32953,14 @@ impl<'a> SmartCtx<'a> {
                                         y_label,
                                         size_label,
                                         frame_label,
+                                        x_unit: self.col_unit(kept_indices[i]),
+                                        y_unit: self.col_unit(kept_indices[j]),
+                                        // `None` when there is no third numeric: the bubble
+                                        // sizes are then the per-cell ROW COUNT and `size_label`
+                                        // fell back to "records" above. A count is a reading of
+                                        // nothing, so it must stay unmarked (#4551).
+                                        size_unit: size_k
+                                            .and_then(|k| self.col_unit(kept_indices[k])),
                                     },
                                 ));
                             }
@@ -32966,7 +33061,7 @@ impl<'a> SmartCtx<'a> {
                             // view that, unlike the HTML-only 3D panel, also survives
                             // static image export. Aligned to xs/ys because
                             // `downsample_pair` picks the same row indices for the same (n, cap).
-                            let (name, sizes, size_label) =
+                            let (name, sizes, size_label, size_unit) =
                                 match most_associated_third(&matrix, i, j) {
                                     Some(k) => {
                                         let (_, sizes) = downsample_pair(
@@ -32983,9 +33078,10 @@ impl<'a> SmartCtx<'a> {
                                             .into_owned(),
                                             Some(sizes),
                                             Some(labels[k].clone()),
+                                            self.col_unit(kept_indices[k]),
                                         )
                                     },
-                                    None => (name, None, None),
+                                    None => (name, None, None, None),
                                 };
                             // These panels carry no axis titles (the pair is named in the panel
                             // title), so the log cue goes in the title too — naming WHICH axis,
@@ -33012,6 +33108,9 @@ impl<'a> SmartCtx<'a> {
                                         x_label: labels[i].clone(),
                                         y_label: labels[j].clone(),
                                         size_label,
+                                        x_unit: self.col_unit(kept_indices[i]),
+                                        y_unit: self.col_unit(kept_indices[j]),
+                                        size_unit,
                                     },
                                 )
                                 .with_axis_log(axis_log),
@@ -33077,6 +33176,11 @@ impl<'a> SmartCtx<'a> {
                                         labels[i].clone(),
                                         labels[j].clone(),
                                         labels[k].clone(),
+                                    ),
+                                    units: (
+                                        self.col_unit(kept_indices[i]),
+                                        self.col_unit(kept_indices[j]),
+                                        self.col_unit(kept_indices[k]),
                                     ),
                                 },
                             ))
@@ -33186,6 +33290,16 @@ impl<'a> SmartCtx<'a> {
     /// Resolve a declared column name to its stats index.
     fn stage_index(&self, name: &str) -> Option<usize> {
         self.stats.iter().position(|s| s.field == name)
+    }
+
+    /// The curated-UCUM code a column was annotated with (`x-qsv.unit`), or `None` when it has no
+    /// dictionary row, no unit, or is monetary (the currency IS the unit — `xq_unit` already drops
+    /// one in that case, so nothing extra is re-checked here).
+    ///
+    /// The panel builders carry this CODE onto the `PanelKind`; the render sites resolve it to a
+    /// symbol through the authoritative table. Issue #4551.
+    fn col_unit(&self, idx: usize) -> Option<String> {
+        self.col_sems.get(idx).and_then(|s| s.unit.clone())
     }
 
     /// A stage column's display label — the dictionary `title` when it supplied one.
@@ -33404,6 +33518,7 @@ impl<'a> SmartCtx<'a> {
         let shape = match value_idx {
             Some(vi) => FunnelShape::RowsMeasure {
                 value_label: self.stage_label(vi),
+                value_unit:  self.col_unit(vi),
             },
             None => FunnelShape::RowsCount,
         };
@@ -35065,6 +35180,9 @@ fn panel_trace_scatter_pair(
         x_label,
         y_label,
         size_label,
+        x_unit,
+        y_unit,
+        size_unit,
     } = &panel.kind
     else {
         unreachable!("panel_trace dispatches on panel.kind")
@@ -35080,15 +35198,26 @@ fn panel_trace_scatter_pair(
         let xl = escape_hover(x_label);
         let yl = escape_hover(y_label);
         let sl = size_label.as_deref().map(escape_hover);
+        // Each line's number is a reading of ITS OWN column, so each takes ITS OWN unit — the
+        // three axes here are three different columns and can carry three different units (issue
+        // #4551). Resolved once, outside the per-point loop. `hover_text_array` is data, not a
+        // hovertemplate, so a `%` symbol needs no doubling on this trace.
+        let xu = unit_value_suffix(x_unit.as_deref());
+        let yu = unit_value_suffix(y_unit.as_deref());
+        let su = unit_value_suffix(size_unit.as_deref());
         let hover: Vec<String> = xs
             .iter()
             .zip(ys.iter())
             .enumerate()
             .map(|(pt, (x, y))| {
-                let mut label = format!("{xl}: {}<br>{yl}: {}", fmt_measure(*x), fmt_measure(*y));
+                let mut label = format!(
+                    "{xl}: {}{xu}<br>{yl}: {}{yu}",
+                    fmt_measure(*x),
+                    fmt_measure(*y)
+                );
                 if let (Some(sl), Some(s)) = (sl.as_ref(), sizes.as_ref().and_then(|sz| sz.get(pt)))
                 {
-                    label.push_str(&format!("<br>{sl}: {}", fmt_measure(*s)));
+                    label.push_str(&format!("<br>{sl}: {}{su}", fmt_measure(*s)));
                 }
                 label
             })
@@ -35198,13 +35327,21 @@ fn panel_trace_funnel_bridge(
                     HumanCount(reached[k] as u64),
                     HumanCount(*n_complete as u64),
                 ),
-                FunnelShape::RowsMeasure { value_label } => format!(
-                    "{}<br>Stage: {}<br>{}: {}<br>Rows in stage: {} of {} ({pct:.0}% of rows in \
+                // The ONLY arm that states a reading of ONE measure column, so the only one
+                // whose number can wear a unit (issue #4551) — `Columns` totals span several
+                // differently-named stage columns and `RowsCount` totals ARE row counts.
+                // Binding `value_unit` to this variant is what makes that structural.
+                FunnelShape::RowsMeasure {
+                    value_label,
+                    value_unit,
+                } => format!(
+                    "{}<br>Stage: {}<br>{}: {}{}<br>Rows in stage: {} of {} ({pct:.0}% of rows in \
                      declared stages)",
                     escape_hover(&labels[k]),
                     escape_hover(&stages[k]),
                     escape_hover(value_label),
                     fmt_measure(totals[k]),
+                    unit_value_suffix(value_unit.as_deref()),
                     HumanCount(reached[k] as u64),
                     HumanCount(*n_complete as u64),
                 ),
@@ -35334,13 +35471,18 @@ fn panel_trace_funnel(
                         HumanCount(reached[k] as u64),
                         HumanCount(*n_complete as u64),
                     ),
-                    FunnelShape::RowsMeasure { value_label } => format!(
-                        "{}<br>Stage: {}<br>{}: {}<br>Rows in stage: {} of {} ({pct:.0}% of rows \
-                         in declared stages)",
+                    // as in the bridge arm: only a single-measure-column shape has a unit
+                    FunnelShape::RowsMeasure {
+                        value_label,
+                        value_unit,
+                    } => format!(
+                        "{}<br>Stage: {}<br>{}: {}{}<br>Rows in stage: {} of {} ({pct:.0}% of \
+                         rows in declared stages)",
                         escape_hover(&labels[k]),
                         escape_hover(&stages[k]),
                         escape_hover(value_label),
                         fmt_measure(totals[k]),
+                        unit_value_suffix(value_unit.as_deref()),
                         HumanCount(reached[k] as u64),
                         HumanCount(*n_complete as u64),
                     ),
@@ -36986,19 +37128,33 @@ fn inline_panel_plot_scatter3d(
 ) -> Plot {
     let themed = theme.is_some();
     let row_height = panel_render_height(&panel.kind, panel.axis_log);
-    let PanelKind::Scatter3D { xs, ys, zs, labels } = &panel.kind else {
+    let PanelKind::Scatter3D {
+        xs,
+        ys,
+        zs,
+        labels,
+        units,
+    } = &panel.kind
+    else {
         unreachable!("smart_inline_panel_plot dispatches on panel.kind")
     };
     let (x_label, y_label, z_label) = labels;
+    let (x_unit, y_unit, z_unit) = units;
     // plotly's default 3D hover labels the coordinates with the bare axis letters x/y/z (it
     // does NOT read the scene axis titles), so name each dimension explicitly. escape: this
     // is a hoverTEMPLATE — a raw header containing `<extra>`/`<b>` would otherwise
-    // terminate/format the template instead of displaying literally.
+    // terminate/format the template instead of displaying literally, and a literal `%`
+    // (in a header, or in the `%` UNIT itself) would be misparsed as the start of a `%{...}`
+    // token, so every interpolated string is `escape_template_pct`ed as well. The unit rides
+    // AFTER the placeholder, so it suffixes the formatted reading: "Air Temp: 18.4 °C".
     let hover = format!(
-        "{}: %{{x:,.3f}}<br>{}: %{{y:,.3f}}<br>{}: %{{z:,.3f}}<extra></extra>",
-        escape_hover(x_label),
-        escape_hover(y_label),
-        escape_hover(z_label)
+        "{}: %{{x:,.3f}}{}<br>{}: %{{y:,.3f}}{}<br>{}: %{{z:,.3f}}{}<extra></extra>",
+        escape_template_pct(&escape_hover(x_label)),
+        escape_template_pct(&unit_value_suffix(x_unit.as_deref())),
+        escape_template_pct(&escape_hover(y_label)),
+        escape_template_pct(&unit_value_suffix(y_unit.as_deref())),
+        escape_template_pct(&escape_hover(z_label)),
+        escape_template_pct(&unit_value_suffix(z_unit.as_deref())),
     );
     let mut plot = Plot::new();
     plot.add_trace(
@@ -37007,12 +37163,21 @@ fn inline_panel_plot_scatter3d(
             .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY))
             .hover_template(hover),
     );
+    // axis titles render plotly pseudo-HTML just like hovers and panel titles, and these labels
+    // are raw CSV headers (so they are NOT localized, unlike the log-axis cue). An axis names a
+    // column rather than stating a reading, so its unit is PARENTHESIZED here — "Air Temp (°C)" —
+    // where the hover above suffixes the number. Titles are not hovertemplates, so no `%` doubling.
+    let axis_title = |label: &str, unit: &Option<String>| {
+        Axis::new().title(Title::with_text(format!(
+            "{}{}",
+            escape_hover(label),
+            unit_axis_note(unit.as_deref())
+        )))
+    };
     let scene = LayoutScene::new()
-        // axis titles render plotly pseudo-HTML just like hovers and panel titles, and
-        // these labels are raw CSV headers
-        .x_axis(Axis::new().title(Title::with_text(escape_hover(x_label))))
-        .y_axis(Axis::new().title(Title::with_text(escape_hover(y_label))))
-        .z_axis(Axis::new().title(Title::with_text(escape_hover(z_label))));
+        .x_axis(axis_title(x_label, x_unit))
+        .y_axis(axis_title(y_label, y_unit))
+        .z_axis(axis_title(z_label, z_unit));
     let mut layout = Layout::new()
         .show_legend(false)
         .height(row_height)
@@ -37363,6 +37528,9 @@ fn inline_panel_plot_animated_bubble(panel: &Panel, theme: Option<BuiltinTheme>)
         y_label,
         size_label,
         frame_label,
+        x_unit,
+        y_unit,
+        size_unit,
     } = &panel.kind
     else {
         unreachable!("smart_inline_panel_plot dispatches on panel.kind")
@@ -37371,14 +37539,30 @@ fn inline_panel_plot_animated_bubble(panel: &Panel, theme: Option<BuiltinTheme>)
     let bucket_labels = &data.bucket_labels;
     let (x_range, y_range) = (data.x_range, data.y_range);
     let mut plot = Plot::new();
-    add_bubble_traces_and_frames(&mut plot, data, x_label, y_label, size_label);
+    add_bubble_traces_and_frames(
+        &mut plot,
+        data,
+        (x_label, x_unit.as_deref()),
+        (y_label, y_unit.as_deref()),
+        (size_label, size_unit.as_deref()),
+    );
     // pin axes globally so bubbles don't reframe as they move
     let x_axis = Axis::new()
-        // axis titles are a plotly markup sink; these labels are raw CSV headers
-        .title(Title::with_text(escape_hover(x_label)))
+        // axis titles are a plotly markup sink; these labels are raw CSV headers. An axis NAMES a
+        // column, so its unit is parenthesized (issue #4551) — the hover, which states readings,
+        // suffixes them instead.
+        .title(Title::with_text(format!(
+            "{}{}",
+            escape_hover(x_label),
+            unit_axis_note(x_unit.as_deref())
+        )))
         .range(vec![x_range.0, x_range.1]);
     let y_axis = Axis::new()
-        .title(Title::with_text(escape_hover(y_label)))
+        .title(Title::with_text(format!(
+            "{}{}",
+            escape_hover(y_label),
+            unit_axis_note(y_unit.as_deref())
+        )))
         .range(vec![y_range.0, y_range.1]);
     let mut layout = Layout::new()
         .show_legend(true)
@@ -37422,6 +37606,8 @@ fn inline_panel_plot_animated_scatter_pair(panel: &Panel, theme: Option<BuiltinT
         frame_label,
         x_range,
         y_range,
+        x_unit,
+        y_unit,
     } = &panel.kind
     else {
         unreachable!("smart_inline_panel_plot dispatches on panel.kind")
@@ -37477,11 +37663,21 @@ fn inline_panel_plot_animated_scatter_pair(panel: &Panel, theme: Option<BuiltinT
     }
     // pin axes globally so the cloud doesn't reframe as points accumulate
     let x_axis = Axis::new()
-        // axis titles are a plotly markup sink; these labels are raw CSV headers
-        .title(Title::with_text(escape_hover(x_label)))
+        // axis titles are a plotly markup sink; these labels are raw CSV headers. This panel
+        // builds no per-point hover text, so the parenthesized axis title is the ONLY place its
+        // columns can state a unit (issue #4551).
+        .title(Title::with_text(format!(
+            "{}{}",
+            escape_hover(x_label),
+            unit_axis_note(x_unit.as_deref())
+        )))
         .range(vec![x_range.0, x_range.1]);
     let y_axis = Axis::new()
-        .title(Title::with_text(escape_hover(y_label)))
+        .title(Title::with_text(format!(
+            "{}{}",
+            escape_hover(y_label),
+            unit_axis_note(y_unit.as_deref())
+        )))
         .range(vec![y_range.0, y_range.1]);
     let mut layout = Layout::new()
         .show_legend(false)
@@ -47414,6 +47610,266 @@ mod tests {
     }
 
     #[test]
+    fn scatter_pair_hover_suffixes_each_column_with_its_own_unit() {
+        // issue #4551. A `ScatterPair` cell has NO axis titles (the pair is named in the panel
+        // title), so its hover is the only place the three encoded columns can state a unit --
+        // and they are three DIFFERENT columns, so each line takes its own.
+        let panel = Panel::new(
+            "pair".to_string(),
+            PanelKind::ScatterPair {
+                xs:         vec![1.0, 2.0],
+                ys:         vec![10.0, 20.0],
+                sizes:      Some(vec![100.0, 200.0]),
+                x_label:    "Air Temp".to_string(),
+                y_label:    "Distance".to_string(),
+                size_label: "Load".to_string().into(),
+                x_unit:     Some("Cel".to_string()),
+                y_unit:     Some("km".to_string()),
+                size_unit:  Some("kg".to_string()),
+            },
+        );
+        let (trace, ..) = panel_trace_scatter_pair(&panel, "#4c78a8", None);
+        let json = trace.to_json();
+        assert!(json.contains("Air Temp: 1 °C"), "x line unmarked: {json}");
+        assert!(json.contains("Distance: 10 km"), "y line unmarked: {json}");
+        assert!(json.contains("Load: 100 kg"), "size line unmarked: {json}");
+        // ...and no line borrowed a neighbour's unit. This is the assertion that fails if the
+        // three suffixes are resolved from one shared code.
+        assert!(!json.contains("Air Temp: 1 km"), "x wears y's unit: {json}");
+        assert!(
+            !json.contains("Distance: 10 °C"),
+            "y wears x's unit: {json}"
+        );
+
+        // an OFF-TABLE code renders nothing rather than asserting a unit qsv cannot vouch for --
+        // the same no-bare-code-fallback rule the KPI tile follows
+        let offtable = Panel::new(
+            "pair".to_string(),
+            PanelKind::ScatterPair {
+                xs:         vec![1.0],
+                ys:         vec![10.0],
+                sizes:      None,
+                x_label:    "Air Temp".to_string(),
+                y_label:    "Distance".to_string(),
+                size_label: None,
+                x_unit:     Some("furlong".to_string()),
+                y_unit:     None,
+                size_unit:  None,
+            },
+        );
+        let (trace, ..) = panel_trace_scatter_pair(&offtable, "#4c78a8", None);
+        let json = trace.to_json();
+        assert!(
+            json.contains("Air Temp: 1<"),
+            "an off-table code must leave the reading bare: {json}"
+        );
+        assert!(!json.contains("furlong"), "off-table code leaked: {json}");
+    }
+
+    #[test]
+    fn funnel_hover_marks_only_the_single_measure_shape() {
+        // issue #4551. `value_unit` lives on `FunnelShape::RowsMeasure` -- not on the panel --
+        // because it is the ONLY shape whose numbers are readings of ONE measure column.
+        // `Columns` totals span several differently-named stage columns and `RowsCount` totals
+        // ARE row counts; a unit on either would be a fabricated claim.
+        let funnel = |shape: FunnelShape, form: PipelineForm| {
+            Panel::new(
+                "pipeline".to_string(),
+                PanelKind::Funnel {
+                    stages: vec!["intake".to_string(), "shipped".to_string()],
+                    labels: vec!["Status".to_string(), "Status".to_string()],
+                    totals: vec![500.0, 300.0],
+                    reached: vec![5, 3],
+                    n_complete: 8,
+                    shape,
+                    form,
+                },
+            )
+        };
+        let measure = || FunnelShape::RowsMeasure {
+            value_label: "Load".to_string(),
+            value_unit:  Some("kg".to_string()),
+        };
+
+        // both render arms carry the same rule, so both are pinned: `PipelineForm::Funnel`
+        // dispatches to `panel_trace_funnel`, `Bridge` to `panel_trace_funnel_bridge`.
+        let (trace, ..) =
+            panel_trace_funnel(&funnel(measure(), PipelineForm::Funnel), "#4c78a8", None);
+        let json = trace.to_json();
+        assert!(json.contains("Load: 500 kg"), "funnel arm unmarked: {json}");
+
+        let (trace, ..) =
+            panel_trace_funnel_bridge(&funnel(measure(), PipelineForm::Bridge), "#4c78a8", None);
+        let json = trace.to_json();
+        assert!(json.contains("Load: 500 kg"), "bridge arm unmarked: {json}");
+        // the bridge's DELTA line is an arithmetic difference between two independent totals of
+        // the SAME column, and it deliberately stays unmarked: it is not a reading, it is the gap
+        // between two. (Also the assertion that fails if a unit is bolted onto every fmt_measure
+        // in this builder.)
+        assert!(
+            json.contains("Difference: -200<"),
+            "the delta line must stay bare: {json}"
+        );
+
+        // the two shapes with no single measure column get nothing at all
+        let (trace, ..) = panel_trace_funnel(
+            &funnel(FunnelShape::RowsCount, PipelineForm::Funnel),
+            "#4c78a8",
+            None,
+        );
+        assert!(
+            !trace.to_json().contains("kg"),
+            "a RowsCount total is a row count, not a reading"
+        );
+        let (trace, ..) = panel_trace_funnel(
+            &funnel(FunnelShape::Columns, PipelineForm::Funnel),
+            "#4c78a8",
+            None,
+        );
+        assert!(
+            !trace.to_json().contains("kg"),
+            "a Columns total spans several differently-named stage columns"
+        );
+    }
+
+    #[test]
+    fn scatter3d_marks_both_its_axis_titles_and_its_hover() {
+        // issue #4551. Scatter3D names its columns TWICE, and the two surfaces take DIFFERENT
+        // forms: an axis NAMES a column, so it parenthesizes ("Air Temp (°C)"); a hover line
+        // STATES a reading, so it suffixes ("Air Temp: 18.4 °C"). Same split as #4552's panel
+        // subtitle vs KPI tile.
+        let panel = Panel::new(
+            "triple".to_string(),
+            PanelKind::Scatter3D {
+                xs:     vec![1.0],
+                ys:     vec![2.0],
+                zs:     vec![3.0],
+                labels: (
+                    "Air Temp".to_string(),
+                    "Distance".to_string(),
+                    "Share".to_string(),
+                ),
+                units:  (
+                    Some("Cel".to_string()),
+                    Some("km".to_string()),
+                    // `%` IS in the curated UCUM table, and this is a hoverTEMPLATE: a bare `%`
+                    // would be misparsed as the start of a `%{...}` token, so it must be doubled.
+                    Some("%".to_string()),
+                ),
+            },
+        );
+        let json = inline_panel_plot_scatter3d(&panel, "#4c78a8", None).to_json();
+
+        // hover template: unit AFTER the placeholder, so it suffixes the formatted reading
+        assert!(
+            json.contains(r"Air Temp: %{x:,.3f} °C"),
+            "3D hover x unmarked: {json}"
+        );
+        assert!(
+            json.contains(r"Distance: %{y:,.3f} km"),
+            "3D hover y unmarked: {json}"
+        );
+        assert!(
+            json.contains(r"Share: %{z:,.3f} %%"),
+            "a `%` unit must be doubled inside a hovertemplate: {json}"
+        );
+        // scene axis titles: parenthesized, and NOT `%`-doubled -- a title is not a template
+        assert!(json.contains("Air Temp (°C)"), "3D x axis unmarked: {json}");
+        assert!(json.contains("Distance (km)"), "3D y axis unmarked: {json}");
+        assert!(json.contains("Share (%)"), "3D z axis unmarked: {json}");
+        assert!(
+            !json.contains("Share (%%)"),
+            "an axis title is not a hovertemplate and must not be `%`-doubled: {json}"
+        );
+
+        // ...and an unannotated triple is byte-for-byte unmarked
+        let bare = Panel::new(
+            "triple".to_string(),
+            PanelKind::Scatter3D {
+                xs:     vec![1.0],
+                ys:     vec![2.0],
+                zs:     vec![3.0],
+                labels: ("A".to_string(), "B".to_string(), "C".to_string()),
+                units:  (None, None, None),
+            },
+        );
+        let json = inline_panel_plot_scatter3d(&bare, "#4c78a8", None).to_json();
+        assert!(
+            json.contains(r"A: %{x:,.3f}<br>"),
+            "bare hover changed: {json}"
+        );
+    }
+
+    #[test]
+    fn animated_pair_and_bubble_mark_their_axis_titles() {
+        // issue #4551. `AnimatedScatterPair` builds no per-point hover text at all -- plotly's
+        // default `(x, y)` readout names no columns -- so the parenthesized axis title is the
+        // ONLY surface its units can reach.
+        let pair = Panel::new(
+            "drift".to_string(),
+            PanelKind::AnimatedScatterPair {
+                xs:            vec![1.0],
+                ys:            vec![2.0],
+                bucket:        vec![0],
+                bucket_labels: vec!["2024".to_string()],
+                x_label:       "Air Temp".to_string(),
+                y_label:       "Distance".to_string(),
+                frame_label:   "Year".to_string(),
+                x_range:       (0.0, 2.0),
+                y_range:       (0.0, 3.0),
+                x_unit:        Some("Cel".to_string()),
+                y_unit:        Some("km".to_string()),
+            },
+        );
+        let json = inline_panel_plot_animated_scatter_pair(&pair, None).to_json();
+        assert!(json.contains("Air Temp (°C)"), "x axis unmarked: {json}");
+        assert!(json.contains("Distance (km)"), "y axis unmarked: {json}");
+
+        // The bubble panel has BOTH surfaces. Its size encoding is the trap: when no third
+        // numeric exists the sizes are the per-cell ROW COUNT and `size_label` falls back to
+        // "records", so `size_unit` must be None -- pinned here as an explicitly unmarked size
+        // line beside two marked axes.
+        let bubble = Panel::new(
+            "gapminder".to_string(),
+            PanelKind::AnimatedBubble {
+                data:        EntityBucketAgg {
+                    entities:      vec!["Ohio".to_string()],
+                    xs:            vec![vec![1.0]],
+                    ys:            vec![vec![2.0]],
+                    sizes:         vec![vec![7.0]],
+                    bucket_labels: vec!["2024".to_string()],
+                    x_range:       (0.0, 2.0),
+                    y_range:       (0.0, 3.0),
+                },
+                x_label:     "Air Temp".to_string(),
+                y_label:     "Distance".to_string(),
+                size_label:  "records".to_string(),
+                frame_label: "Year".to_string(),
+                x_unit:      Some("Cel".to_string()),
+                y_unit:      Some("km".to_string()),
+                size_unit:   None,
+            },
+        );
+        let json = inline_panel_plot_animated_bubble(&bubble, None).to_json();
+        assert!(
+            json.contains("Air Temp (°C)"),
+            "bubble x axis unmarked: {json}"
+        );
+        assert!(
+            json.contains("Distance (km)"),
+            "bubble y axis unmarked: {json}"
+        );
+        assert!(
+            json.contains(r"Air Temp: %{x} °C"),
+            "bubble hover x unmarked: {json}"
+        );
+        assert!(
+            json.contains("records: 7<"),
+            "a row-count size line must stay bare: {json}"
+        );
+    }
+
+    #[test]
     fn log_safe_values_drops_non_positive_only_on_log_axis() {
         // issue #4219, raw-value half: `box_log_skew_fallback` grants a log axis to a skewed
         // column that still holds a few zeros/negatives. BoxRaw/Violin hand these values to
@@ -48560,6 +49016,9 @@ mod tests {
             sizes:      None,
             x_label:    "x".to_string(),
             y_label:    "y".to_string(),
+            x_unit:     None,
+            y_unit:     None,
+            size_unit:  None,
             size_label: None,
         };
         // a well-filled ScatterPair keeps its full overview-panel height
@@ -48585,6 +49044,9 @@ mod tests {
             sizes:      None,
             x_label:    "x".to_string(),
             y_label:    "y".to_string(),
+            x_unit:     None,
+            y_unit:     None,
+            size_unit:  None,
             size_label: None,
         };
         assert_eq!(
@@ -48619,6 +49081,9 @@ mod tests {
             sizes:      None,
             x_label:    "x".to_string(),
             y_label:    "y".to_string(),
+            x_unit:     None,
+            y_unit:     None,
+            size_unit:  None,
             size_label: None,
         };
         assert_eq!(

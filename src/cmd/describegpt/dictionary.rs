@@ -1862,17 +1862,27 @@ fn verify_currency(entry: &mut DictionaryEntry) {
 ///   1. the column's qsv `type` is numeric (`Integer`/`Float`) — a unit on a String column is
 ///      describing the wrong thing; that column NAMES a unit, it is not a quantity in one;
 ///   2. the column's FINALIZED `role` is `measure`; and
-///   3. the column is not already denominated in a CURRENCY. `x-qsv.currency` is the unit for money
-///      (issue #4525's precedence rule), so a money column carrying both would hand `viz` two
-///      competing suffixes for one number.
+///   3. the column is not MONEY. `x-qsv.currency` is the unit for money (issue #4525's precedence
+///      rule), so a money column carrying a physical unit too would hand `viz` two competing
+///      suffixes for one number — or, worse, a bare `kg` on an amount of dollars.
 ///
-/// Requirement 3 reads `entry.currency` AFTER `verify_currency` has run, so it tests the VERIFIED
-/// currency, not the raw proposal — a currency the LLM proposed and verification rejected must not
-/// suppress a legitimate unit. That ordering is the reason this is called last of the three.
+/// Requirement 3 asks about the column's money IDENTITY, not merely whether a currency code
+/// landed. A verified `currency` is one sufficient signal, but not the only one: the prompt
+/// explicitly permits omitting a currency that cannot be determined from the data, and an
+/// off-register proposal is dropped at parse — so a column can be unambiguously money and still
+/// carry no code (roborev 4573). Two positive signals therefore also disqualify a unit:
+/// `concept == "measure.money"`, and a `money` content-type base.
 ///
-/// Deliberately NOT gated on a money-ish concept the way `verify_currency` is: a physical unit is
-/// concept-independent by construction — a temperature, a distance and an energy are all
-/// `measure.amount` — so requiring a concept here would defeat the point.
+/// ⚠️ That positive test is deliberately NARROWER than `verify_currency`'s `money_ish`, which also
+/// admits the generic `measure.amount`. `measure.amount` is exactly the concept a temperature, a
+/// distance and an energy carry — the whole population this annotation exists for — so treating it
+/// as money would defeat the feature. For an ambiguous `measure.amount` the only money signal is a
+/// VERIFIED currency, which is why the `currency` arm is still read here, and read AFTER
+/// `verify_currency` has run: a currency the LLM proposed and verification REJECTED must not
+/// suppress a legitimate unit. That ordering is why this is called last of the three.
+///
+/// Beyond the money question this is NOT concept-gated the way `verify_currency` is: a physical
+/// unit is concept-independent by construction, so any non-money numeric measure may carry one.
 ///
 /// ## Why this is propose-then-verify, when `--denominator-unit` is declare-only
 ///
@@ -1895,9 +1905,15 @@ fn verify_unit(entry: &mut DictionaryEntry) {
     if entry.unit.is_none() {
         return;
     }
+    // NOT `verify_currency`'s `money_ish`: that admits `measure.amount`, which is the concept a
+    // temperature/distance/energy carries. Only unambiguous money identifiers count here, plus a
+    // currency that actually verified.
+    let is_money = entry.concept == "measure.money"
+        || content_type_base(&entry.content_type) == "money"
+        || entry.currency.is_some();
     if !(matches!(entry.r#type.as_str(), "Integer" | "Float")
         && entry.role == "measure"
-        && entry.currency.is_none())
+        && !is_money)
     {
         entry.unit = None;
     }
@@ -4067,8 +4083,8 @@ mod tests {
             "a column of \"km\"/\"mi\" strings NAMES a unit; it is not a quantity in one"
         );
         assert!(!unit_survives("Float", "dimension", "", "category", None));
-        // ...and not a column already denominated in a currency: for money the currency IS the
-        // unit, and a field carrying both hands viz two competing suffixes for one number
+        // ...and not a MONEY column: for money the currency IS the unit, and a field carrying
+        // both hands viz two competing suffixes for one number
         assert!(!unit_survives(
             "Float",
             "measure",
@@ -4076,6 +4092,26 @@ mod tests {
             "money",
             Some("USD")
         ));
+        // roborev 4573: money identity is what disqualifies a unit, NOT merely the presence of a
+        // currency code. The prompt explicitly permits omitting a currency that cannot be
+        // determined from the data, so an unambiguously monetary column routinely carries none —
+        // and before this it kept a `kg` on an amount of dollars.
+        assert!(
+            !unit_survives("Float", "measure", "measure.money", "unknown", None),
+            "a `measure.money` column with no currency code is still money"
+        );
+        assert!(
+            !unit_survives("Float", "measure", "measure.amount", "money", None),
+            "a `money` content type is still money even when `coerce_role_concept` leaves the \
+             concept as the admissible generic `measure.amount`"
+        );
+        // ...but the money test stops there. `measure.amount` ALONE is the concept a temperature,
+        // a distance and an energy carry, so it must NOT read as money — this is the assertion
+        // that keeps the fix above from swallowing the whole feature.
+        assert!(
+            unit_survives("Float", "measure", "measure.amount", "unknown", None),
+            "`measure.amount` without a money signal is the ordinary physical-quantity case"
+        );
         // ORDERING, and the reason `verify_unit` runs AFTER `verify_currency`: a currency the LLM
         // proposed but verification REJECTED (here, a non-money concept) must not suppress a
         // perfectly good unit. Reading the raw proposal instead of the verified value breaks this.
@@ -4547,6 +4583,37 @@ mod tests {
         );
         let out2 = combine_dictionary_entries_with_baseline(vec![e], &baseline, &refine2, true);
         assert_eq!(out2[0].currency.as_deref(), Some("EUR"));
+    }
+
+    #[test]
+    fn money_field_with_a_rejected_currency_still_drops_its_unit() {
+        // roborev 4573, end-to-end through the real parse stage rather than a hand-built
+        // `LlmDictField`: an off-ISO-register currency is dropped by
+        // `parse_llm_dictionary_response`, so the entry reaches `verify_unit` as money carrying NO
+        // code. That is precisely the case the old `currency.is_none()` test let through.
+        let names = vec!["spent".to_string()];
+        let resp = r#"{"spent":{"label":"Spent","description":"d","role":"measure",
+            "concept":"measure.money","content_type":"money","currency":"ZZZ","unit":"kg"}}"#;
+        let llm = parse_llm_dictionary_response(resp, &names, true).unwrap();
+        assert_eq!(
+            llm["spent"].currency, None,
+            "precondition: an off-register code is dropped at parse"
+        );
+        assert_eq!(
+            llm["spent"].unit.as_deref(),
+            Some("kg"),
+            "precondition: the unit itself is a valid UCUM code, so only the SEMANTIC check can \
+             reject it"
+        );
+        let mut e = blank_entry("spent");
+        e.r#type = "Float".to_string();
+        let out = combine_dictionary_entries(vec![e], &llm, true);
+        assert_eq!(out[0].currency, None);
+        assert_eq!(
+            out[0].unit, None,
+            "a monetary column must not emit `x-qsv.unit: kg` just because its currency was \
+             rejected"
+        );
     }
 
     #[test]

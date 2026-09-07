@@ -741,11 +741,13 @@ smart options:
                            also tags with the "measure.money" concept.
                            A "unit" UCUM code (e.g. "Cel", "km", "kW.h") on a NON-monetary numeric
                            measure suffixes its KPI tile with the unit's display symbol ("18.4 °C")
-                           and names that symbol in the panel subtitle. On the scatter/bubble/3D
-                           panels - the only ones with real axis titles - it also suffixes each
-                           per-point hover reading ("air_temp: 18.4 °C") and parenthesizes each
-                           axis title ("air_temp (°C)"); a declared pipeline's hover is marked too
-                           when its stages are rows of ONE measure column. Codes are checked
+                           and names that symbol in the panel subtitle. The scatter/bubble/3D
+                           panels are the only ones with real axis titles, and each parenthesizes
+                           its unit there ("air_temp (°C)"); those of them that build a per-point
+                           hover also suffix each reading in it ("air_temp: 18.4 °C"). The
+                           animated scatter-pair panel builds no per-point hover, so it states its
+                           units in the axis titles alone. A declared pipeline's hover is marked
+                           too, when its stages are rows of ONE measure column. Codes are checked
                            CASE-SENSITIVELY against a curated table of ~44 common units - UCUM
                            distinguishes "m" (metre) from the "M" (mega) prefix - and an off-table
                            code is dropped rather than rendered, since an unrecognized unit string
@@ -4317,7 +4319,7 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
         let weight_values: Option<Vec<String>> = weight_label.as_ref().map(|label| {
             template.push_str(&format!(
                 "<br>{}: %{{customdata}}",
-                escape_template_pct(&escape_hover(label))
+                escape_template_token(&escape_hover(label))
             ));
             z.iter().map(|&v| fmt_measure(v)).collect()
         });
@@ -7629,12 +7631,29 @@ fn escape_hover(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Escape a literal `%` for embedding inside a plotly `hovertemplate` (a bare `%` would be
-/// misparsed as the start of a `%{...}` template token, so it's doubled). Feed already
-/// `escape_hover`-ed text; per-point values referenced via `%{text}`/`%{customdata}` are data,
-/// not template, and need no such escaping.
-fn escape_template_pct(text: &str) -> String {
-    text.replace('%', "%%")
+/// Neutralize a literal `%{` so text embedded in a plotly `hovertemplate` cannot be read as a
+/// template token. Feed already `escape_hover`-ed text; per-point values referenced via
+/// `%{text}`/`%{customdata}` are data, not template, and need no such escaping.
+///
+/// ⚠️ This function used to double every `%`, on the theory that a bare `%` starts a token. Both
+/// halves of that were wrong, verified against plotly 3.7.0 in a browser (roborev 4591):
+///
+/// | literal text | doubled (old) renders as | this (new) renders as |
+/// |---|---|---|
+/// | `50% done`   | `50%% done` ✗            | `50% done` ✓          |
+/// | `%{evil}`    | `%-` ✗                   | `%{evil}` ✓           |
+///
+/// plotly's token regex requires the BRACE (`%{...}`); it has no `%%` escape, so a doubled percent
+/// reaches the reader as two percent signs — and doubling did not even neutralize the one
+/// dangerous sequence, since `%%{evil}` still contains `%{evil}` and is still interpolated away,
+/// now with a stray `%` in front of the hole.
+///
+/// So only the brace is escaped, as a numeric character reference. Hover text renders as
+/// pseudo-HTML, so `&#123;` displays as `{` while no longer matching the token regex. The `&` is
+/// inserted AFTER `escape_hover` has run (that is the fixed composition order at every sink), so
+/// it stays a live entity rather than being flattened to `&amp;`.
+fn escape_template_token(text: &str) -> String {
+    text.replace("%{", "%&#123;")
 }
 
 /// Trace-level hovertemplate for smart map/geo point traces: the per-point `text` payload (see
@@ -12348,8 +12367,8 @@ fn log_contour_panel(xs: &[f64], ys: &[f64], name: &str, labels: (&str, &str)) -
 fn contour_hover_template(x_label: &str, y_label: &str) -> String {
     t!(
         "viz.hover.contour",
-        q_x = escape_template_pct(&escape_hover(x_label)),
-        q_y = escape_template_pct(&escape_hover(y_label))
+        q_x = escape_template_token(&escape_hover(x_label)),
+        q_y = escape_template_token(&escape_hover(y_label))
     )
     .into_owned()
 }
@@ -12357,7 +12376,7 @@ fn contour_hover_template(x_label: &str, y_label: &str) -> String {
 fn lorenz_hover_template(label: &str, gini: f64) -> String {
     t!(
         "viz.hover.lorenz",
-        q_label = escape_template_pct(&escape_hover(label)),
+        q_label = escape_template_token(&escape_hover(label)),
         q_gini = format!("{gini:.2}")
     )
     .into_owned()
@@ -27491,7 +27510,7 @@ fn bubble_size_px(sizes: &[Vec<f64>]) -> impl Fn(f64) -> usize {
 ///   index; a varying count leaves stale traces on screen);
 /// - the hover escaping is deliberately asymmetric — entities are already `escape_hover`'d at read
 ///   time and must NOT be escaped twice (-> "&amp;amp;"), while the three labels are raw CSV
-///   headers and take the full `escape_template_pct(escape_hover(..))` composition. Pinned by the
+///   headers and take the full `escape_template_token(escape_hover(..))` composition. Pinned by the
 ///   `escape_composition_is_once_per_sink` unit test.
 fn add_bubble_traces_and_frames(
     plot: &mut Plot,
@@ -27535,17 +27554,17 @@ fn add_bubble_traces_and_frames(
             // literally, so it needs no further escaping here
             .name(entities[e].clone())
             .marker(Marker::new().size(size_px(sz)).opacity(MAP_POINT_OPACITY))
-            // a hovertemplate additionally parses `%{...}`, so every interpolated string needs
-            // its literal `%` doubled.
+            // a hovertemplate additionally parses `%{...}`, so every interpolated string has
+            // any token-shaped run neutralized at the brace (a lone `%` is harmless).
             .hover_template(format!(
                 "{}<br>{}: %{{x}}{}<br>{}: %{{y}}{}<br>{}: {size_disp}{}<extra></extra>",
-                escape_template_pct(&entities[e]),
-                escape_template_pct(&escape_hover(x_label)),
-                escape_template_pct(&unit_value_suffix(x_unit)),
-                escape_template_pct(&escape_hover(y_label)),
-                escape_template_pct(&unit_value_suffix(y_unit)),
-                escape_template_pct(&escape_hover(size_label)),
-                escape_template_pct(&unit_value_suffix(size_unit)),
+                escape_template_token(&entities[e]),
+                escape_template_token(&escape_hover(x_label)),
+                escape_template_token(&unit_value_suffix(x_unit)),
+                escape_template_token(&escape_hover(y_label)),
+                escape_template_token(&unit_value_suffix(y_unit)),
+                escape_template_token(&escape_hover(size_label)),
+                escape_template_token(&unit_value_suffix(size_unit)),
             ))
     };
     // base = bucket 0 positions (one trace per entity, in entity order)
@@ -35122,7 +35141,7 @@ fn panel_trace_histogram(
         let values = hist.get(idx).cloned().unwrap_or_default();
         // the cell has no x-axis title (panel.name is only a cell annotation), so name the
         // binned value and its count in the hover, both comma-grouped.
-        // NOTE: `escape_hover` only, no `escape_template_pct` -- preserved from before this
+        // NOTE: `escape_hover` only, no `escape_template_token` -- preserved from before this
         // string was localized. A `%` in the panel name is mis-read by plotly here, unlike in
         // the contour/Lorenz hovers which take the full composition. Pre-existing; changing it
         // would be a behavior change, not a translation.
@@ -35201,7 +35220,7 @@ fn panel_trace_scatter_pair(
         // Each line's number is a reading of ITS OWN column, so each takes ITS OWN unit — the
         // three axes here are three different columns and can carry three different units (issue
         // #4551). Resolved once, outside the per-point loop. `hover_text_array` is data, not a
-        // hovertemplate, so a `%` symbol needs no doubling on this trace.
+        // hovertemplate, so no token neutralization is needed on this trace.
         let xu = unit_value_suffix(x_unit.as_deref());
         let yu = unit_value_suffix(y_unit.as_deref());
         let su = unit_value_suffix(size_unit.as_deref());
@@ -35446,7 +35465,7 @@ fn panel_trace_funnel(
         // The bar text is left to plotly's own `textinfo`: it computes "percent previous"
         // from the values themselves, so the conversion figures can never drift from the
         // bars. The hover is fully pre-rendered into `hover_text`, which keeps every literal
-        // `%` in DATA rather than in the template — so `escape_template_pct` is unnecessary
+        // `%` in DATA rather than in the template — so `escape_template_token` is unnecessary
         // here and only the column label needs `escape_hover`.
         let hover: Vec<String> = (0..stages.len())
             .map(|k| {
@@ -37143,18 +37162,19 @@ fn inline_panel_plot_scatter3d(
     // plotly's default 3D hover labels the coordinates with the bare axis letters x/y/z (it
     // does NOT read the scene axis titles), so name each dimension explicitly. escape: this
     // is a hoverTEMPLATE — a raw header containing `<extra>`/`<b>` would otherwise
-    // terminate/format the template instead of displaying literally, and a literal `%`
-    // (in a header, or in the `%` UNIT itself) would be misparsed as the start of a `%{...}`
-    // token, so every interpolated string is `escape_template_pct`ed as well. The unit rides
+    // terminate/format the template instead of displaying literally, and a header shaped like
+    // `%{...}` would be interpolated AWAY, so every interpolated string is
+    // `escape_template_token`ed as well. A lone `%` — in a header, or the `%` UNIT itself —
+    // needs nothing: plotly's token regex requires the brace (roborev 4591). The unit rides
     // AFTER the placeholder, so it suffixes the formatted reading: "Air Temp: 18.4 °C".
     let hover = format!(
         "{}: %{{x:,.3f}}{}<br>{}: %{{y:,.3f}}{}<br>{}: %{{z:,.3f}}{}<extra></extra>",
-        escape_template_pct(&escape_hover(x_label)),
-        escape_template_pct(&unit_value_suffix(x_unit.as_deref())),
-        escape_template_pct(&escape_hover(y_label)),
-        escape_template_pct(&unit_value_suffix(y_unit.as_deref())),
-        escape_template_pct(&escape_hover(z_label)),
-        escape_template_pct(&unit_value_suffix(z_unit.as_deref())),
+        escape_template_token(&escape_hover(x_label)),
+        escape_template_token(&unit_value_suffix(x_unit.as_deref())),
+        escape_template_token(&escape_hover(y_label)),
+        escape_template_token(&unit_value_suffix(y_unit.as_deref())),
+        escape_template_token(&escape_hover(z_label)),
+        escape_template_token(&unit_value_suffix(z_unit.as_deref())),
     );
     let mut plot = Plot::new();
     plot.add_trace(
@@ -47254,16 +47274,36 @@ mod tests {
     }
 
     #[test]
-    fn escape_template_pct_doubles_literal_percent() {
-        // a hovertemplate parses `%{...}`, so a literal `%` in an interpolated label must be
-        // doubled or plotly swallows the following text as a data token
-        assert_eq!(escape_template_pct("50% of total"), "50%% of total");
-        assert_eq!(escape_template_pct("Pct % complete"), "Pct %% complete");
-        // a value that already looks like a token is neutralized rather than honored
-        assert_eq!(escape_template_pct("%{x}"), "%%{x}");
-        // no-op on percent-free text
-        assert_eq!(escape_template_pct("plain label"), "plain label");
-        assert_eq!(escape_template_pct(""), "");
+    fn escape_template_token_neutralizes_only_the_brace() {
+        // roborev 4591, verified against plotly 3.7.0 in a browser. A hovertemplate parses
+        // `%{...}` — the BRACE is what makes a token, and plotly has no `%%` escape.
+        //
+        // A lone `%` is therefore already safe and must be left ALONE. This helper used to double
+        // every one of them, which reached the reader as two percent signs ("18.4 %%", "50%% of
+        // total") — the bug that made a `%` UNIT unrenderable.
+        assert_eq!(escape_template_token("50% of total"), "50% of total");
+        assert_eq!(escape_template_token("Pct % complete"), "Pct % complete");
+        assert_eq!(escape_template_token("18.4 %"), "18.4 %");
+
+        // ...while a value that already looks like a token IS neutralized, via the brace. Doubling
+        // never achieved this: `%%{x}` still contains `%{x}`, so plotly still interpolated it away
+        // and merely left a stray `%` in front of the hole.
+        assert_eq!(escape_template_token("%{x}"), "%&#123;x}");
+        assert_eq!(
+            escape_template_token("hdr %{evil} name"),
+            "hdr %&#123;evil} name"
+        );
+        // the closing brace needs no escape: with the opener broken there is no token to close,
+        // and a bare `}` is ordinary text to plotly
+        assert!(!escape_template_token("%{x}").contains("%{"));
+
+        // no-op on text that carries no token opener at all
+        assert_eq!(escape_template_token("plain label"), "plain label");
+        assert_eq!(
+            escape_template_token("braces {x} alone"),
+            "braces {x} alone"
+        );
+        assert_eq!(escape_template_token(""), "");
     }
 
     #[test]
@@ -47271,10 +47311,17 @@ mod tests {
         // the two helpers compose in one fixed order for template sinks (see the choropleth hover
         // and the AnimatedBubble template); markup first, then `%`-doubling
         let nasty = "R&D <b>50%</b>";
-        let composed = escape_template_pct(&escape_hover(nasty));
-        assert_eq!(composed, "R&amp;D &lt;b&gt;50%%&lt;/b&gt;");
-        // a legend name renders markup but does NOT parse `%`, so it takes escape_hover ALONE —
-        // `%`-doubling there would surface a literal "%%" to the reader
+        let composed = escape_template_token(&escape_hover(nasty));
+        // the lone `%` survives untouched — it was never dangerous (roborev 4591)
+        assert_eq!(composed, "R&amp;D &lt;b&gt;50%&lt;/b&gt;");
+        // ORDER MATTERS, and this is the assertion that pins it: the entity this helper inserts
+        // must not be flattened to `&amp;#123;` by a later `escape_hover`, or the reader sees the
+        // entity source instead of a brace.
+        let token = escape_template_token(&escape_hover("R&D %{x}"));
+        assert_eq!(token, "R&amp;D %&#123;x}");
+        assert!(!escape_hover(&token).contains("&#123;"));
+        // a legend name renders markup but does NOT parse templates, so it takes escape_hover
+        // ALONE — neutralizing a brace there would surface the entity source to the reader
         assert_eq!(escape_hover(nasty), "R&amp;D &lt;b&gt;50%&lt;/b&gt;");
         // escaping twice is the bug this ordering guards against
         assert_ne!(escape_hover(&escape_hover(nasty)), escape_hover(nasty));
@@ -47289,23 +47336,25 @@ mod tests {
         let _locale = english_locale();
 
         // the labels are raw column headers dropped into a template that parses `%{...}`, so a
-        // header carrying `%` -- or one that already looks like a token -- must be neutralized
-        // rather than honored, and markup must be escaped before the `%`-doubling
+        // header that already looks like a TOKEN must be neutralized rather than honored -- while
+        // a header merely carrying a `%` must be left alone, since a lone `%` is not a token
+        // opener and doubling it reached the reader as "%%" (roborev 4591)
         let t = contour_hover_template("% of total", "%{x}");
         assert!(
-            t.starts_with("%% of total: %{x:,.3~f}"),
-            "a literal `%` in a header must be doubled, got: {t}"
+            t.starts_with("% of total: %{x:,.3~f}"),
+            "a lone `%` in a header must survive untouched, got: {t}"
         );
         assert!(
-            t.contains("%%{x}: %{y:,.3~f}"),
+            t.contains("%&#123;x}: %{y:,.3~f}"),
             "a token-shaped header must be neutralized, got: {t}"
         );
         // the template's OWN tokens survive intact, and the trace-name box stays suppressed
         assert!(t.ends_with("%{z:,} rows<extra></extra>"), "got: {t}");
 
-        // markup first, then `%`-doubling -- the same one-order composition as the other sinks
+        // markup first, then token neutralization -- the same one-order composition as the other
+        // sinks
         let m = contour_hover_template("R&D 50%", "plain");
-        assert!(m.starts_with("R&amp;D 50%%: "), "got: {m}");
+        assert!(m.starts_with("R&amp;D 50%: "), "got: {m}");
     }
 
     #[test]
@@ -47320,18 +47369,19 @@ mod tests {
         // panel and really can carry a `%` into the template
         let t = lorenz_hover_template("% of total", 0.87);
         assert!(
-            t.starts_with("%% of total (Gini 0.87)"),
-            "a literal `%` in the label must be doubled, got: {t}"
+            t.starts_with("% of total (Gini 0.87)"),
+            "a lone `%` in the label is not a token opener and must survive, got: {t}"
         );
-        // a token-shaped label is neutralized rather than honored
+        // a token-shaped label IS neutralized rather than honored -- at the brace, since that is
+        // what plotly's regex requires (roborev 4591)
         assert!(
-            lorenz_hover_template("%{x}", 0.5).starts_with("%%{x} (Gini 0.50)"),
+            lorenz_hover_template("%{x}", 0.5).starts_with("%&#123;x} (Gini 0.50)"),
             "a token-shaped label must be neutralized"
         );
-        // markup first, then `%`-doubling -- the one fixed order shared by every template sink
+        // markup first, then token neutralization -- the one fixed order shared by every sink
         assert!(
-            lorenz_hover_template("R&D 50%", 0.5).starts_with("R&amp;D 50%% "),
-            "markup must be escaped before the `%`-doubling"
+            lorenz_hover_template("R&D 50%", 0.5).starts_with("R&amp;D 50% "),
+            "markup must be escaped first, and the lone `%` left alone"
         );
         // the template's OWN tokens survive intact, and the trace-name box stays suppressed
         assert!(
@@ -47361,11 +47411,11 @@ mod tests {
             "Revenue: %{x:.3s}<br>%{z:,} rows"
         );
 
-        // 2. a doubled literal `%` -- what `escape_template_pct` emits -- passes through untouched,
-        //    so the existing `%`-escaping composition still means what it meant before.
+        // 2. a literal `%` that is NOT a token opener passes through untouched, so the escaping
+        //    composition at the template sinks still means what it means there.
         assert_eq!(
-            replace_patterns("50%% of %{q_col}", &["q_col"], &["total".to_string()]),
-            "50%% of total"
+            replace_patterns("50% of %{q_col}", &["q_col"], &["total".to_string()]),
+            "50% of total"
         );
 
         // 3. an argument VALUE is never re-scanned, so a token-shaped column header interpolated as
@@ -47752,8 +47802,10 @@ mod tests {
                 units:  (
                     Some("Cel".to_string()),
                     Some("km".to_string()),
-                    // `%` IS in the curated UCUM table, and this is a hoverTEMPLATE: a bare `%`
-                    // would be misparsed as the start of a `%{...}` token, so it must be doubled.
+                    // `%` IS in the curated UCUM table, and this is a hoverTEMPLATE. A lone `%`
+                    // is NOT a token opener though (plotly's regex needs the brace), so it must
+                    // reach the reader as ONE percent sign -- doubling it printed "%%" to the
+                    // reader, which is what roborev 4591 caught.
                     Some("%".to_string()),
                 ),
             },
@@ -47770,42 +47822,55 @@ mod tests {
             "3D hover y unmarked: {json}"
         );
         assert!(
-            json.contains(r"Share: %{z:,.3f} %%"),
-            "a `%` unit must be doubled inside a hovertemplate: {json}"
+            json.contains(r"Share: %{z:,.3f} %<"),
+            "a `%` unit must render as ONE percent sign, not a doubled one: {json}"
+        );
+        assert!(
+            !json.contains("%%"),
+            "nothing in this template may be percent-doubled (roborev 4591): {json}"
         );
         // scene axis titles: parenthesized, and NOT `%`-doubled -- a title is not a template
         assert!(json.contains("Air Temp (°C)"), "3D x axis unmarked: {json}");
         assert!(json.contains("Distance (km)"), "3D y axis unmarked: {json}");
         assert!(json.contains("Share (%)"), "3D z axis unmarked: {json}");
         assert!(
-            !json.contains("Share (%%)"),
-            "an axis title is not a hovertemplate and must not be `%`-doubled: {json}"
+            json.contains("Share (%)"),
+            "the axis title's `%` is likewise a single sign: {json}"
         );
 
-        // ...and an unannotated triple is byte-for-byte unmarked. Its x LABEL carries the `%`
-        // this time: a raw CSV header can hold one, and this template interpolates headers too.
-        // The sibling bubble template has always doubled its labels; this one did not, and the
-        // inconsistency became reachable once a `%` unit could land here.
+        // ...and an unannotated triple is unmarked. The labels carry the two shapes a raw CSV
+        // header can hold that this template interpolates: a lone `%`, which is ordinary text,
+        // and a full `%{...}`, which is NOT -- plotly would interpolate it away, eating the
+        // header. The sibling bubble template has always neutralized its labels; this one did
+        // not until #4551.
         let bare = Panel::new(
             "triple".to_string(),
             PanelKind::Scatter3D {
                 xs:     vec![1.0],
                 ys:     vec![2.0],
                 zs:     vec![3.0],
-                labels: ("pct % done".to_string(), "B".to_string(), "C".to_string()),
+                labels: (
+                    "pct % done".to_string(),
+                    "hdr %{evil}".to_string(),
+                    "C".to_string(),
+                ),
                 units:  (None, None, None),
             },
         );
         let json = inline_panel_plot_scatter3d(&bare, "#4c78a8", None).to_json();
         assert!(
-            json.contains(r"pct %% done: %{x:,.3f}<br>"),
-            "a `%` in the HEADER must be doubled inside the hovertemplate, and an unannotated \
+            json.contains(r"pct % done: %{x:,.3f}<br>"),
+            "a lone `%` in a HEADER is not a token opener and must survive, and an unannotated \
              column must stay unmarked: {json}"
         );
-        // ...but not in that column's axis TITLE, which is not a template
         assert!(
-            json.contains("\"text\":\"pct % done\""),
-            "an axis title must not be `%`-doubled: {json}"
+            json.contains(r"hdr %&#123;evil}: %{y:,.3f}<br>"),
+            "a token-shaped HEADER must be neutralized at the brace, or plotly eats it: {json}"
+        );
+        // ...but the axis TITLE is not a template, so it neutralizes nothing
+        assert!(
+            json.contains(r#""text":"hdr %{evil}""#),
+            "an axis title must keep the header verbatim: {json}"
         );
     }
 

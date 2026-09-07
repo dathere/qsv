@@ -18653,6 +18653,57 @@ fn viz_smart_non_constant_hint_denominator_degrades_to_caveated_counts() {
 }
 
 #[test]
+fn viz_smart_uniform_hint_denominator_skips_the_rate_panel() {
+    // issue #4547: when the hinted denominator resolves to ONE distinct value across the matched
+    // regions (D == 1, R >= 2), the rate panel is the count panel rescaled by a constant -- same
+    // ranks, same shape, only the axis label changes -- so it is skipped with a note, degrading
+    // exactly like every other denominator problem. Whatever caused it (a placeholder column, a
+    // join that collapsed, a genuinely uniform denominator) is not told apart: the panel is
+    // uninformative in all of them.
+    let wrk = Workdir::new("viz_smart_uniform_hint_denominator_skips_the_rate_panel");
+    // same shape as `denom_csv`, but every region carries the SAME population
+    let mut csv = String::from("region,pop\n");
+    for (r, n) in [("A", 30), ("B", 300), ("C", 60)] {
+        for _ in 0..n {
+            csv.push_str(&format!("{r},100000\n"));
+        }
+    }
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", &denom_dictionary(true));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "a degenerate hint is not a hard error"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("holds a single value across all 3 matched regions"),
+        "the reason must say the denominator is uniform and count the regions: {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains("count by Region"), "the count panel stays");
+    assert!(
+        !html.contains("per 1,000 residents"),
+        "no rate panel -- it would only rescale the count panel: {html}"
+    );
+    assert!(
+        html.contains("add --denominator-key for a rate"),
+        "the count panel must fall back to its caveat: {html}"
+    );
+}
+
+#[test]
 fn viz_smart_consistently_zero_hint_denominator_is_an_exclusion() {
     // the other side of the line, on the hint path: a region whose denominator is CONSISTENTLY
     // unusable is not a conflict — the rate panel still renders for the regions that do have one,

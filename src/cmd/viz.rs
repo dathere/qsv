@@ -7892,6 +7892,38 @@ struct RateSeries {
     excluded:     usize,
 }
 
+/// Whether a per-region denominator map resolves to ONE distinct value across the regions it
+/// covers (issue #4547): the `D == 1 && R >= 2` degenerate case.
+///
+/// A rate panel over such a map is the count panel rescaled by a constant — every rank, every
+/// relative comparison and the shape of the map identical, only the axis label and the magnitude
+/// change — so it carries no information a reader can act on. Several unrelated causes produce it
+/// (a placeholder column, a join that collapsed, a genuinely uniform denominator) and they are
+/// deliberately not told apart: the panel is uninformative in all of them.
+///
+/// `R` counts the regions the map holds a reading FOR, not every matched region — those are the
+/// regions a rate panel would rate. A map with a single reading is not a rescaled count panel at
+/// all (one rated region is a number, not a map, and never charts), so it must not be reported
+/// under this banner.
+///
+/// Threshold-free by design, and it must stay that way: `D == 1` is a statement about the PANEL
+/// being degenerate, not about which geography the denominator describes. The generalization to a
+/// distinct-values/regions RATIO was investigated on #4526 and disproved with measured data (a
+/// legitimate per-city denominator scores 0.227 while the coarse-geography bug scores 0.500 — the
+/// classes are inverted, so no threshold separates them).
+///
+/// Equality reuses the constancy tolerance of the row pass (`denom_conflict`): two readings that
+/// the row pass itself would not call a conflict must not reappear here as "distinct" values.
+fn denominator_takes_one_value(denoms: &HashMap<String, f64>) -> bool {
+    let Some(&first) = denoms.values().next() else {
+        return false;
+    };
+    denoms.len() >= 2
+        && denoms
+            .values()
+            .all(|&d| (d - first).abs() <= f64::EPSILON * first.abs().max(1.0))
+}
+
 /// Pair each region with its denominator and compute the raw per-region ratio, dropping regions
 /// with no usable denominator. `locs`/`values` are aligned 1:1 (region key, numerator); `denoms`
 /// maps region key -> positive denominator. Order is preserved, so the caller's first-seen region
@@ -28754,6 +28786,22 @@ fn build_smart_summary_choropleth_panels(
                     q_reason = "it holds no positive numbers for the matched regions"
                 );
                 None
+            } else if denominator_takes_one_value(&denom_by_cand[ci]) {
+                // Degenerate single-value denominator (issue #4547): the rate panel would be the
+                // count panel rescaled by a constant, so it is skipped the same way every other
+                // denominator problem is — a note, never an error, and the count panel keeps its
+                // raw-count caveat. See `denominator_takes_one_value` for why this stays at
+                // D == 1 and never becomes a ratio.
+                viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.denominator_invalid",
+                    q_col = name,
+                    q_reason = format!(
+                        "it holds a single value across all {} matched regions",
+                        denom_by_cand[ci].len()
+                    )
+                );
+                None
             } else {
                 Some(DenominatorSource::Column(*idx))
             }
@@ -43374,6 +43422,47 @@ mod tests {
         assert_eq!(s.denominators, vec![10_000.0, 50_000.0]);
         assert_eq!(s.rates, vec![0.003, 0.0012]);
         assert_eq!(s.excluded, 2, "B and D have no denominator");
+    }
+
+    #[test]
+    fn denominator_takes_one_value_detects_the_degenerate_case() {
+        // issue #4547: D == 1 && R >= 2 -- the rate panel would be the count panel rescaled by a
+        // constant. One distinct value across several regions is the skip condition...
+        let uniform: HashMap<String, f64> = [
+            ("A".to_string(), 10_000.0),
+            ("B".to_string(), 10_000.0),
+            ("C".to_string(), 10_000.0),
+        ]
+        .into_iter()
+        .collect();
+        assert!(denominator_takes_one_value(&uniform));
+
+        // ...while two distinct values across the same regions is a legitimate rate panel, whose
+        // ranks differ from the count panel's. The boundary must sit exactly at one value: the
+        // D/R-ratio generalization was disproved with measured data on #4526.
+        let varying: HashMap<String, f64> =
+            [("A".to_string(), 10_000.0), ("B".to_string(), 200_000.0)]
+                .into_iter()
+                .collect();
+        assert!(!denominator_takes_one_value(&varying));
+
+        // a single reading is not the degenerate case: one rated region is a number, not a map,
+        // so that panel never charts and must not be reported under this banner
+        let single: HashMap<String, f64> = [("A".to_string(), 10_000.0)].into_iter().collect();
+        assert!(!denominator_takes_one_value(&single));
+
+        // no readings at all
+        assert!(!denominator_takes_one_value(&HashMap::new()));
+
+        // readings the row pass itself would not call a conflict (equal to within its tolerance)
+        // are ONE value here too -- the two checks cannot disagree about what "distinct" means
+        let jittered: HashMap<String, f64> = [
+            ("A".to_string(), 10_000.0),
+            ("B".to_string(), 10_000.0 + f64::EPSILON),
+        ]
+        .into_iter()
+        .collect();
+        assert!(denominator_takes_one_value(&jittered));
     }
 
     #[test]

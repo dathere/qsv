@@ -20818,6 +20818,30 @@ fn dict_dmy_preference(row: Option<&DictRow>) -> Option<bool> {
     strftime_dmy_preference(fmt)
 }
 
+/// Downgrade a `Measure` to a `Dimension` because the column is not a quantity at all — the
+/// dictionary misread a discrete code as a measure — and drop the denomination annotations that
+/// reading carried.
+///
+/// `currency` and `unit` are both claims *about a number*: "this amount is in USD", "this
+/// magnitude is in kg". A column that is not a quantity has no denomination, so leaving them set
+/// prints a nonsense panel subtitle — a zip-code bar captioned `Padded Code (USD)`, or a
+/// zero-padded ICD-9 column captioned `(kg)`. They are cleared here rather than at the rendering
+/// site because this is where the evidence lives: `guardrail` sees the observed `StatsData` that
+/// contradicts the dictionary, which `parse_dictionary_semantics` (shape only, no stats in scope)
+/// never does.
+///
+/// `denominator`/`denominator_unit` are deliberately NOT cleared: they are declared on the REGION
+/// column, which is a dimension by nature (see `derive_semantics`), so clearing them on a
+/// route downgrade would break every legitimate rate map.
+///
+/// Only for the arms that reject the measure READING. The ordinal-rating arm in `guardrail` keeps
+/// its annotations — that column is a genuine measure that merely charts better as a bar.
+fn demote_miscast_measure(sem: &mut ColSemantics) {
+    sem.route = Route::Dimension;
+    sem.currency = None;
+    sem.unit = None;
+}
+
 /// Defend against describegpt's numeric `role` defaulting to `measure` (see
 /// `describegpt::dictionary::coerce_role_concept`): downgrade a `Measure` verdict to a `Dimension`
 /// (bar) when the column is really a discrete code or ordinal scale — few distinct integer values
@@ -20836,6 +20860,9 @@ fn dict_dmy_preference(row: Option<&DictRow>) -> Option<bool> {
 ///   a frequency bar of the levels is far more honest. (Tradeoff: a genuine small-range count
 ///   tagged `measure.count`, e.g. items-per-order 1-6, is also charted as a bar — which is arguably
 ///   an improvement anyway.)
+///
+/// The two kinds of downgrade differ in what they say about the column, and therefore in what they
+/// do to its denomination annotations — see `demote_miscast_measure`.
 fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSemantics {
     // a zero-padded numeric code (zip/FIPS/ICD-9, per stats' zero_padded_numeric detection) can
     // never be a measure, whatever the dictionary said: leading zeros only survive in codes,
@@ -20846,7 +20873,7 @@ fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSema
     // (`classify_measure` finds no quartiles on a String column); with it, the column charts as
     // the frequency bar it deserves.
     if sem.route == Route::Measure && s.zero_padded_numeric == Some(true) {
-        sem.route = Route::Dimension;
+        demote_miscast_measure(&mut sem);
         return sem;
     }
     if sem.route != Route::Measure || s.r#type.as_str() != "Integer" {
@@ -20862,10 +20889,16 @@ fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSema
     let explicit_measure = sem.concept.starts_with("measure.");
     // role-defaulted numeric measure on a categorical-cardinality integer code -> bar.
     if !explicit_measure && s.cardinality <= CATEGORICAL_MAX_CARDINALITY && spread_over_many {
-        sem.route = Route::Dimension;
+        demote_miscast_measure(&mut sem);
         return sem;
     }
     // a tiny fixed integer scale (ordinal rating) -> bar, even with an explicit measure.* concept.
+    //
+    // Unlike the two arms above, this does NOT reject the measure reading: the column really is a
+    // quantity, it merely charts more honestly as a frequency bar of its levels. So its
+    // denomination annotations are KEPT — the bar's categories are still amounts in that currency
+    // or values in that unit, and a 5-level price ladder that lost its "(USD)" would be worse off.
+    // Do not "finish the job" by routing this arm through `demote_miscast_measure`.
     if s.cardinality <= RATING_MAX_CARDINALITY && spread_over_many {
         sem.route = Route::Dimension;
     }
@@ -21076,8 +21109,12 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     // Carried through unconditionally, because it is already gated at the SOURCE: describegpt's
     // `verify_currency` on emit, and `parse_dictionary_semantics` on read for hand-edited
     // sidecars. Both require a numeric measure that reads as money, so anything reaching here is
-    // legitimately monetary. Do NOT re-gate on route: the panel subtitle consults this for every
-    // charted column, not just the ones that end up as measures.
+    // legitimately monetary. Do NOT re-gate on route HERE: the panel subtitle consults this for
+    // every charted column, not just the ones that end up as measures, and a `Defer` column that
+    // never becomes a `Measure` still deserves its "(USD)". That is about a route this code merely
+    // failed to assert; it is NOT a licence to keep the annotation when something downstream has
+    // POSITIVE evidence against the measure reading — `guardrail`'s `demote_miscast_measure` sees
+    // the observed stats and clears it there.
     let currency = row.currency.clone();
     // Carried through unconditionally for the same reason as `currency`, and gated at the same two
     // sources (`verify_unit` on emit, `xq_unit` on read).
@@ -47784,6 +47821,65 @@ mod tests {
         assert_eq!(
             derive_semantics(&plain, Some(&dict_row("", "measure", "measure.amount", ""))).route,
             Route::Measure
+        );
+    }
+
+    #[test]
+    fn guardrail_clears_denomination_when_it_rejects_the_measure_reading() {
+        // A `currency`/`unit` annotation is a claim ABOUT A NUMBER. When the guardrail concludes
+        // the column is not a quantity at all, the claim has to go with it — `derive_semantics`
+        // carries both unconditionally and has no stats with which to contradict the dictionary,
+        // so without this a hand-edited sidecar renders a zip-code bar captioned `(USD)`/`(kg)`.
+        let money_row = |concept: &str| {
+            let mut r = dict_row("", "measure", concept, "");
+            r.currency = Some("USD".to_string());
+            r
+        };
+        let mass_row = |concept: &str| {
+            let mut r = dict_row("", "measure", concept, "");
+            r.unit = Some("kg".to_string());
+            r
+        };
+
+        // arm 1 — zero-padded numeric: leading zeros are hard evidence of a code, not a quantity.
+        let mut padded = stat("String", 200, Some(0.2));
+        padded.zero_padded_numeric = Some(true);
+        let ccy = derive_semantics(&padded, Some(&money_row("measure.amount")));
+        assert_eq!(ccy.route, Route::Dimension);
+        assert_eq!(ccy.currency, None, "a zip code is not an amount in USD");
+        let mass = derive_semantics(&padded, Some(&mass_row("measure.amount")));
+        assert_eq!(mass.route, Route::Dimension);
+        assert_eq!(mass.unit, None, "a zip code is not a mass in kg");
+
+        // arm 2 — role-defaulted integer on a categorical-cardinality code (no measure.* concept).
+        let code = stat("Integer", 6, Some(0.00001));
+        let ward = derive_semantics(&code, Some(&money_row("")));
+        assert_eq!(ward.route, Route::Dimension);
+        assert_eq!(ward.currency, None, "a ward number is not an amount in USD");
+
+        // arm 3 — an ordinal rating is a GENUINE measure that merely charts more honestly as a bar,
+        // so it KEEPS its denomination: the rungs of a 5-level price ladder are still amounts in
+        // USD. This is the assertion that stops the two arms above from being over-applied.
+        let rating = stat("Integer", 5, Some(0.01));
+        let kept = derive_semantics(&rating, Some(&money_row("measure.amount")));
+        assert_eq!(
+            kept.route,
+            Route::Dimension,
+            "the ordinal rating still bars"
+        );
+        assert_eq!(
+            kept.currency.as_deref(),
+            Some("USD"),
+            "the rating arm rejects the CHART KIND, not the measure reading"
+        );
+
+        // a measure the guardrail never touches at all keeps everything.
+        let genuine = stat("Float", 200, Some(0.2));
+        assert_eq!(
+            derive_semantics(&genuine, Some(&money_row("measure.amount")))
+                .currency
+                .as_deref(),
+            Some("USD")
         );
     }
 

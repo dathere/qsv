@@ -16744,6 +16744,59 @@ fn viz_smart_follows_dictionary_detected_language() {
     );
 }
 
+/// End-to-end wiring for the DATA-language lexicon (issue #4559).
+///
+/// The unit tests in viz.rs drive `viz_i18n::set_data_locale` directly, so they cannot notice if
+/// the production call before `derive_semantics` is removed or reordered — the data locale would
+/// stay English, every non-English lexicon would silently never fire, and every unit test would
+/// still pass. This proves the dictionary's detected language actually reaches
+/// `is_intensive_measure`: `precio_unitario` is a per-unit price, so its KPI tile must headline
+/// the MEAN ("Media de …"), not the meaningless sum ("Total de …").
+#[test]
+fn viz_smart_detected_language_reaches_the_intensive_measure_lexicon() {
+    let wrk = Workdir::new("viz_smart_detected_language_reaches_the_intensive_measure_lexicon");
+    wrk.create_from_string(
+        "precios.csv",
+        "region,precio_unitario\nNorte,100\nSur,220\nEste,150\nOeste,90\nNorte,180\nSur,130\nEste,\
+         175\nOeste,142\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "x-qsv": {
+        "detected_language": "Spanish",
+        "detected_language_code": "spa",
+        "detected_language_confidence": 0.9912
+      },
+      "properties": {
+        "region": { "type": "string", "title": "Region",
+          "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+        "precio_unitario": { "type": "integer", "title": "Precio Unitario",
+          "x-qsv": { "qsv_type": "Integer", "role": "measure" } }
+      }
+    }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "precios.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("Media de Precio Unitario"),
+        "a Spanish per-unit price must headline its MEAN -- the detected data language did not \
+         reach the intensive-measure lexicon"
+    );
+    assert!(
+        !html.contains("Total de Precio Unitario"),
+        "summing a per-unit price produces a meaningless headline"
+    );
+}
+
 /// The same dictionary plus the `x-qsv.generated_by` attribution block describegpt bakes in.
 /// `\n` is JSON's own escape here, so the parsed value is the multi-line block the drawer
 /// renders in its `qsv-dict-prov` footer.

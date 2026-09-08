@@ -10,7 +10,12 @@
 //!   process-global [`active_locale`] the HTML assemblers read.
 //!
 //! Adding a language is: one `src/cmd/locales/<tag>.yml` + one [`LOCALES`] row
-//! (+ the two vendored asset files once those land).
+//! (+ the two vendored asset files once those land), and — to teach the extensive-vs-intensive
+//! guess that language's column-name vocabulary — one `LEXICONS` row in `src/cmd/viz.rs`, keyed
+//! off [`data_locale`] rather than [`active_locale`] (issue #4559). That last step is optional:
+//! a language without one still renders fully translated chrome, it just falls back to the
+//! ENGLISH vocabulary when deciding whether a measure headlines a Total or a Mean. Adding one is
+//! gated on the cross-language collision audit documented beside the table.
 //!
 //! # Localizing more of `viz`: four rules that were learned expensively
 //!

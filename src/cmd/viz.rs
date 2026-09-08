@@ -21088,15 +21088,35 @@ fn is_identifier_name(label: &str, field: &str) -> bool {
 struct Lexicon {
     /// Whole-token matches, the same discipline as `INTENSIVE_TOKENS`: explicit plurals, no
     /// stemming, never a substring test.
-    tokens:      &'static [&'static str],
+    tokens:           &'static [&'static str],
     /// Substring matches, for what tokenization cannot reach: multi-word phrases, and languages
     /// that do not word-separate (CJK) or that compound (German `Stückpreis`).
-    substrings:  &'static [&'static str],
+    substrings:       &'static [&'static str],
     /// Nouns denoting money, matched only in conjunction with `per_unit` (see
     /// `is_per_unit_money`).
-    money_nouns: &'static [&'static str],
+    money_nouns:      &'static [&'static str],
     /// Per-single-item qualifiers that make a money noun intensive.
-    per_unit:    &'static [&'static str],
+    per_unit:         &'static [&'static str],
+    /// Whole-token COUNT markers — the localized twins of English `count`/`num`/`tally`.
+    ///
+    /// Without these the union is asymmetric and REGRESSES the language it was added for: a
+    /// localized count-of-an-intensive-thing (`número_de_puntuaciones`, `anzahl_der_bewertungen`)
+    /// matches the new intensive vocabulary, nothing vetoes it, and a real total is averaged.
+    /// English has been guarded against exactly this since the tables were written
+    /// (`index_count`, `num_ratings` are pinned), so a lexicon owes its language the same veto.
+    ///
+    /// A marker that is a SUBSTRING of one of this language's own intensive entries would
+    /// silently disable that entry, so none may be — pinned by
+    /// `locale_lexicon_counts_do_not_shadow_intensive_entries`. That is why German lists
+    /// `anzahl` but never bare `zahl`, which sits inside the intensive `punktzahl`.
+    count_tokens:     &'static [&'static str],
+    /// Substring COUNT markers, for the languages `count_tokens` cannot reach (CJK).
+    ///
+    /// Deliberately NOT a bare `数`/`数`: it is a substring of the intensive `指数`/`中位数`, so
+    /// admitting it would turn every index and median into a count. The cost is that a bare
+    /// `数` SUFFIX (`スコア数`, `评分数`) stays unguarded — a missed veto, which degrades to the
+    /// pre-lexicon behavior for that one shape, rather than a false positive.
+    count_substrings: &'static [&'static str],
 }
 
 /// Data-language lexicons, keyed by the bcp47 tag `viz_i18n::data_locale()` reports.
@@ -21118,7 +21138,7 @@ static LEXICONS: &[(&str, Lexicon)] = &[
     (
         "es",
         Lexicon {
-            tokens:      &[
+            tokens:           &[
                 "promedio",
                 "promedios",
                 "mediana",
@@ -21155,9 +21175,16 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "duracion",
                 "latencia",
             ],
-            substrings:  &["por unidad", "por_unidad", "per cápita", "por habitante"],
-            money_nouns: &["precio", "precios", "costo", "costos", "coste", "costes"],
-            per_unit:    &[
+            substrings:       &[
+                "por unidad",
+                "por_unidad",
+                "per cápita",
+                "por habitante",
+                "per_cápita",
+                "por_habitante",
+            ],
+            money_nouns:      &["precio", "precios", "costo", "costos", "coste", "costes"],
+            per_unit:         &[
                 "unitario",
                 "unitaria",
                 "unitarios",
@@ -21165,12 +21192,23 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "unidad",
                 "cada",
             ],
+            count_tokens:     &[
+                "número",
+                "numero",
+                "números",
+                "numeros",
+                "cantidad",
+                "cantidades",
+                "conteo",
+                "recuento",
+            ],
+            count_substrings: &[],
         },
     ),
     (
         "fr",
         Lexicon {
-            tokens:      &[
+            tokens:           &[
                 "moyenne",
                 "moyennes",
                 "moyen",
@@ -21199,21 +21237,37 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "duree",
                 "latence",
             ],
-            substrings:  &[
+            substrings:       &[
                 "par unité",
                 "par_unité",
                 "par unite",
                 "par habitant",
                 "par tête",
+                "par_unite",
+                "par_habitant",
+                "par_tête",
             ],
-            money_nouns: &["prix", "coût", "coûts", "cout", "couts"],
-            per_unit:    &["unitaire", "unitaires", "unité", "unite", "chaque"],
+            money_nouns:      &["prix", "coût", "coûts", "cout", "couts"],
+            per_unit:         &["unitaire", "unitaires", "unité", "unite", "chaque"],
+            count_tokens:     &[
+                "nombre",
+                "nombres",
+                "quantité",
+                "quantite",
+                "quantités",
+                "quantites",
+                "effectif",
+                "effectifs",
+                "décompte",
+                "decompte",
+            ],
+            count_substrings: &[],
         },
     ),
     (
         "de",
         Lexicon {
-            tokens:      &[
+            tokens:           &[
                 "durchschnitt",
                 "durchschnittlich",
                 "median",
@@ -21243,7 +21297,7 @@ static LEXICONS: &[(&str, Lexicon)] = &[
             // the English `per` this design already refuses to treat as a qualifier.
             // "Preis pro Bestellung" on a one-row-per-order dataset sums perfectly
             // well.
-            substrings:  &[
+            substrings:       &[
                 "stückpreis",
                 "stueckpreis",
                 "einzelpreis",
@@ -21254,15 +21308,22 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "pro stück",
                 "pro stueck",
                 "pro kopf",
+                "pro_einheit",
+                "je_einheit",
+                "pro_stück",
+                "pro_stueck",
+                "pro_kopf",
             ],
-            money_nouns: &[],
-            per_unit:    &[],
+            money_nouns:      &[],
+            per_unit:         &[],
+            count_tokens:     &["anzahl", "stückzahl", "stueckzahl", "menge"],
+            count_substrings: &[],
         },
     ),
     (
         "it",
         Lexicon {
-            tokens:      &[
+            tokens:           &[
                 // "medio" only: "media" collides with English (see the exclusion list above), and
                 // "medi"/"medie" are two- and three-letter-stem plurals with no observed use in a
                 // column name — surface with no payoff.
@@ -21286,18 +21347,29 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "latenza",
                 "punteggio",
             ],
-            substrings:  &["per unità", "per unita", "pro capite", "a testa"],
-            money_nouns: &["prezzo", "prezzi", "costo", "costi"],
-            per_unit:    &[
+            substrings:       &[
+                "per unità",
+                "per unita",
+                "pro capite",
+                "a testa",
+                "per_unità",
+                "per_unita",
+                "pro_capite",
+                "a_testa",
+            ],
+            money_nouns:      &["prezzo", "prezzi", "costo", "costi"],
+            per_unit:         &[
                 "unitario", "unitaria", "unitari", "unitarie", "unità", "unita", "ciascuno",
                 "cadauno",
             ],
+            count_tokens:     &["numero", "numeri", "quantità", "quantita", "conteggio"],
+            count_substrings: &[],
         },
     ),
     (
         "pt-BR",
         Lexicon {
-            tokens:      &[
+            tokens:           &[
                 // the accented form ONLY: bare "media" collides with English "media"
                 "média",
                 "médias",
@@ -21322,9 +21394,26 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "latência",
                 "pontuação",
             ],
-            substrings:  &["por unidade", "por_unidade", "por cabeça", "por habitante"],
-            money_nouns: &["preço", "preços", "preco", "precos", "custo", "custos"],
-            per_unit:    &["unitário", "unitario", "unitária", "unidade", "cada"],
+            substrings:       &[
+                "por unidade",
+                "por_unidade",
+                "por cabeça",
+                "por habitante",
+                "por_cabeça",
+                "por_habitante",
+            ],
+            money_nouns:      &["preço", "preços", "preco", "precos", "custo", "custos"],
+            per_unit:         &["unitário", "unitario", "unitária", "unidade", "cada"],
+            count_tokens:     &[
+                "número",
+                "numero",
+                "números",
+                "numeros",
+                "quantidade",
+                "quantidades",
+                "contagem",
+            ],
+            count_substrings: &[],
         },
     ),
     // CJK: SUBSTRINGS ONLY. `field_name_tokens` splits on non-alphanumerics, but Han/Kana are
@@ -21335,8 +21424,8 @@ static LEXICONS: &[(&str, Lexicon)] = &[
     (
         "ja",
         Lexicon {
-            tokens:      &[],
-            substrings:  &[
+            tokens:           &[],
+            substrings:       &[
                 "平均",
                 "中央値",
                 "割合",
@@ -21353,20 +21442,23 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "期間",
                 "所要時間",
                 "スコア",
-                // 単価 IS "unit price"; あたり/当たり is the per-unit marker (単位当たり)
+                "unit price",
                 "単価",
                 "あたり",
                 "当たり",
+                "unit_price",
             ],
-            money_nouns: &[],
-            per_unit:    &[],
+            money_nouns:      &[],
+            per_unit:         &[],
+            count_tokens:     &[],
+            count_substrings: &["件数", "人数", "回数", "個数", "カウント"],
         },
     ),
     (
         "zh-CN",
         Lexicon {
-            tokens:      &[],
-            substrings:  &[
+            tokens:           &[],
+            substrings:       &[
                 "平均",
                 "中位数",
                 "百分比",
@@ -21385,13 +21477,16 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "时长",
                 "评分",
                 "得分",
-                // 单价 IS "unit price"; 每 is the per-marker (每单位), 人均 is per-capita
+                "unit price",
                 "单价",
                 "每单位",
                 "人均",
+                "unit_price",
             ],
-            money_nouns: &[],
-            per_unit:    &[],
+            money_nouns:      &[],
+            per_unit:         &[],
+            count_tokens:     &[],
+            count_substrings: &["数量", "个数", "次数", "计数", "件数", "总数"],
         },
     ),
 ];
@@ -21448,10 +21543,23 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     // or "Duración de la Exposición" never matches a lower-cased phrase (issue #4559).
     let hay = format!("{label} {field}").to_lowercase();
     let tokens = field_name_tokens(label, field);
-    let is_count = tokens
-        .iter()
-        .any(|t| matches!(t.as_str(), "count" | "counts" | "cnt" | "num" | "tally"))
-        || hay.contains("number of");
+    // Resolved before the count guard, which is locale-aware too: a lexicon that teaches a
+    // language's intensive vocabulary without its COUNT vocabulary regresses that language --
+    // `numero_de_puntuaciones` would match `puntuaciones` with nothing left to veto it, and a
+    // real total would be averaged (issue #4559).
+    let lex = active_lexicon();
+    // A count VETOES an intensive reading, in every language: English `avg_order_count` is
+    // additive today for exactly this reason, and the localized markers inherit that precedence
+    // rather than inventing a new one. `number`/`numbers` join the English list so the guard is
+    // not weaker in English than in the languages a lexicon covers -- `number_of_scores` is a
+    // count whose `scores` token would otherwise carry it.
+    let is_count = tokens.iter().any(|t| {
+        matches!(
+            t.as_str(),
+            "count" | "counts" | "cnt" | "num" | "number" | "numbers" | "tally"
+        ) || lex.is_some_and(|l| l.count_tokens.contains(&t.as_str()))
+    }) || hay.contains("number of")
+        || lex.is_some_and(|l| l.count_substrings.iter().any(|kw| hay.contains(kw)));
     if is_count {
         return false;
     }
@@ -21536,8 +21644,7 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     // The data-language lexicon is a UNION with the English tables, never a replacement: a
     // dictionary `label` follows describegpt's `--language` while `field` is the raw CSV header,
     // so the two can be in different languages, and non-English datasets very often keep English
-    // column names.
-    let lex = active_lexicon();
+    // column names. (`lex` is resolved above, for the count guard.)
     tokens.iter().any(|t| {
         INTENSIVE_TOKENS.contains(&t.as_str())
             || lex.is_some_and(|l| l.tokens.contains(&t.as_str()))
@@ -46657,6 +46764,123 @@ mod tests {
                     "{additive} must stay additive under {lang}"
                 );
             }
+        }
+        viz_i18n::reset_active();
+    }
+
+    /// A lexicon that teaches a language's INTENSIVE vocabulary without its COUNT vocabulary
+    /// regresses that language: the localized name for "number of <intensive thing>" matches the
+    /// new entry with nothing left to veto it, and a real total is silently averaged. English has
+    /// been guarded against this shape since the tables were written (`index_count` is pinned
+    /// above), so every lexicon owes its own language the same veto (issue #4595).
+    #[test]
+    fn locale_lexicons_guard_localized_counts() {
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+        // English first, in its own right: `scores` is intensive, so the count marker is the only
+        // thing keeping a count of them additive -- and `number of` cannot see the snake_case form.
+        assert!(!is_intensive_measure("", "number_of_scores"));
+        assert!(!is_intensive_measure("", "numberOfScores"));
+        for (lang, counts) in [
+            (
+                "spa",
+                &["numero_de_puntuaciones", "cantidad_de_calificaciones"][..],
+            ),
+            ("fra", &["nombre_de_notes", "quantite_de_indices"][..]),
+            (
+                "deu",
+                &["anzahl_der_punktzahl", "stueckzahl_temperatur"][..],
+            ),
+            ("ita", &["numero_di_punteggio", "conteggio_indice"][..]),
+            ("por", &["numero_de_pontuacao", "quantidade_de_indices"][..]),
+            (
+                "jpn",
+                &[
+                    "\u{4ef6}\u{6570}\u{5e73}\u{5747}",
+                    "\u{56de}\u{6570}\u{6e29}\u{5ea6}",
+                ][..],
+            ),
+            (
+                "zho",
+                &[
+                    "\u{6570}\u{91cf}\u{5e73}\u{5747}",
+                    "\u{6b21}\u{6570}\u{6e29}\u{5ea6}",
+                ][..],
+            ),
+        ] {
+            viz_i18n::set_data_locale(Some(lang));
+            for name in counts {
+                assert!(
+                    !is_intensive_measure(name, name),
+                    "{name} is a COUNT under {lang}; it must stay additive"
+                );
+            }
+        }
+        viz_i18n::reset_active();
+    }
+
+    /// The count markers are vetoes, so one that sits INSIDE an intensive entry of the same
+    /// language would silently disable that entry. Mechanically pinned rather than reviewed by
+    /// eye: this is what keeps German off a bare `zahl` (inside `punktzahl`) and CJK off a bare
+    /// `\u{6570}` (inside `\u{6307}\u{6570}`/`\u{4e2d}\u{4f4d}\u{6570}`) (issue #4595).
+    #[test]
+    fn locale_lexicon_counts_do_not_shadow_intensive_entries() {
+        for (lang, lex) in LEXICONS {
+            for marker in lex.count_tokens.iter().chain(lex.count_substrings.iter()) {
+                for intensive in lex.tokens.iter().chain(lex.substrings.iter()) {
+                    assert!(
+                        !intensive.contains(marker),
+                        "{lang}: count marker {marker:?} is inside intensive entry {intensive:?}; \
+                         it would disable it"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Multi-word phrases are substring-matched against the lowercased name, so the space form
+    /// alone never matches a snake_case column -- `kosten_pro_einheit` is the shape real headers
+    /// take. English ships `per capita` AND `per_capita` for exactly this reason; every lexicon
+    /// phrase owes the same pair, mechanically rather than per-review (issue #4595).
+    #[test]
+    fn locale_lexicon_phrases_have_underscore_twins() {
+        for (lang, lex) in LEXICONS {
+            for phrase in lex.substrings {
+                if phrase.contains(' ') {
+                    let twin = phrase.replace(' ', "_");
+                    assert!(
+                        lex.substrings.contains(&twin.as_str()),
+                        "{lang}: phrase {phrase:?} has no snake_case twin {twin:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The behavioral half of the twin rule: the snake_case names the space-only tables missed.
+    ///
+    /// Only the SPACE-vs-underscore axis. Accent-stripped spellings are a separate, pre-existing
+    /// inconsistency (`\u{ed}ndice`/`indice` are both listed, `por cabe\u{e7}a` has no bare-c twin)
+    /// and are deliberately not widened here.
+    #[test]
+    fn locale_lexicon_phrases_match_snake_case_names() {
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+        for (lang, name) in [
+            ("deu", "kosten_pro_einheit"),
+            ("deu", "umsatz_pro_kopf"),
+            ("ita", "ricavo_per_unita"),
+            ("ita", "reddito_pro_capite"),
+            ("fra", "revenu_par_unite"),
+            ("fra", "revenu_par_habitant"),
+            ("spa", "ingreso_por_habitante"),
+            ("por", "receita_por_cabe\u{e7}a"),
+        ] {
+            viz_i18n::set_data_locale(Some(lang));
+            assert!(
+                is_intensive_measure(name, name),
+                "{name} is a per-unit rate under {lang}"
+            );
         }
         viz_i18n::reset_active();
     }

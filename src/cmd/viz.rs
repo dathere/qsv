@@ -21120,7 +21120,7 @@ struct Lexicon {
     /// Leaving those compounds out does not "degrade to pre-lexicon behavior" — it INVENTS a
     /// false positive. Before the lexicons existed `スコア`/`评分` were not intensive entries at
     /// all, so `スコア数` matched nothing and summed correctly; making the stem intensive without
-    /// its count compound is what turns a real total into a mean (issue #4596).
+    /// its count compound is what turns a real total into a mean (roborev 4596).
     ///
     /// The enumeration is targeted, not general: a `数` suffix on an intensive entry not listed
     /// here stays unguarded. That is the price of keeping standalone `指数`/`中位数` intensive,
@@ -21128,7 +21128,7 @@ struct Lexicon {
     ///
     /// Matching is NOT a plain `contains`. `数` heads its own words (`数据`, `数値`, `数字`), so a
     /// listed marker whose trailing `数` is followed by one of those is rejected — `评分数据` is
-    /// "rating DATA" and stays intensive. See `count_substring_hit` (issue #4597).
+    /// "rating DATA" and stays intensive. See `count_substring_hit` (roborev 4597).
     count_substrings: &'static [&'static str],
 }
 
@@ -21528,7 +21528,7 @@ fn active_lexicon() -> Option<&'static Lexicon> {
 ///
 /// The membership rule, so this list does not grow by accretion: a `数X` word belongs here only
 /// if it denotes A NUMBER, because that is what lands in a measure column. `数据`/`数値`/`数值`/
-/// `数字` all do. Deliberately OUT, and to be declined rather than re-argued (issue #4599):
+/// `数字` all do. Deliberately OUT, and to be declined rather than re-argued (roborev 4599):
 ///
 /// - `数量`/`数目` — count words in their own right, so `スコア数量` and `评分数目` ("number of
 ///   scores"/"of ratings") must keep matching. Both are pinned by mutation-tested assertions.
@@ -21549,14 +21549,14 @@ const COUNT_HEAD_CHARS: &[char] = &['据', '値', '值', '字'];
 /// Applied to every count substring that ENDS IN `数`, not just the `数`-suffixed compounds: a
 /// boundary test restricted to those would have to reject a following letter outright, which
 /// breaks `评分数平均` exactly the way it would break the `件数平均` this suite already pins as
-/// additive. The head-character test is what separates `数据` from `平均` (issue #4597).
+/// additive. The head-character test is what separates `数据` from `平均` (roborev 4597).
 ///
 /// The `ends_with` gate is load-bearing, not decoration. The whole rationale is that the marker's
 /// TRAILING `数` was re-parsed as the head of the next word — a marker that does not end in `数`
 /// has no such `数` to re-parse, and rejecting it on the following character is meaningless.
 /// Without the gate, `カウント値平均` lost its `カウント` to a `値` that was never part of it, and
-/// `数量字段评分` lost its `数量` to a `字`; both then read as intensive (issue #4599). Exactly two
-/// markers are affected — `カウント` and `数量` — every other entry in both CJK tables ends in
+/// `数量字段评分` lost its `数量` to a `字`; both then read as intensive (roborev 4599). Exactly
+/// two markers are affected — `カウント` and `数量` — every other entry in both CJK tables ends in
 /// `数`.
 fn count_substring_hit(hay: &str, kw: &str) -> bool {
     if !kw.ends_with('数') {
@@ -21622,7 +21622,7 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     // (`number_of_scores`, `numberOfScores`), which is what left that guard weaker in English
     // than in the languages a lexicon covers. Bare `number` is NOT a marker: it is the ordinary
     // English word for a scale point or an identifier, so vetoing on it alone would make
-    // `index_number` additive and sum an economic index (issue #4596).
+    // `index_number` additive and sum an economic index (roborev 4596).
     let is_count = tokens.iter().any(|t| {
         matches!(t.as_str(), "count" | "counts" | "cnt" | "num" | "tally")
             || lex.is_some_and(|l| l.count_tokens.contains(&t.as_str()))
@@ -46847,7 +46847,7 @@ mod tests {
     /// regresses that language: the localized name for "number of <intensive thing>" matches the
     /// new entry with nothing left to veto it, and a real total is silently averaged. English has
     /// been guarded against this shape since the tables were written (`index_count` is pinned
-    /// above), so every lexicon owes its own language the same veto (issue #4595).
+    /// above), so every lexicon owes its own language the same veto (roborev 4595).
     #[test]
     fn locale_lexicons_guard_localized_counts() {
         let _g = viz_i18n::lock_locale();
@@ -46875,7 +46875,7 @@ mod tests {
                     "\u{56de}\u{6570}\u{6e29}\u{5ea6}",
                     // the `\u{6570}`-SUFFIXED compound of this lexicon's own intensive stem:
                     // `\u{30b9}\u{30b3}\u{30a2}` is intensive, so a count OF scores is exactly the
-                    // shape that regresses without an enumerated compound (issue #4596).
+                    // shape that regresses without an enumerated compound (roborev 4596).
                     "\u{30b9}\u{30b3}\u{30a2}\u{6570}",
                 ][..],
             ),
@@ -46919,7 +46919,7 @@ mod tests {
     /// `number` is too broad to pay that: it is the ordinary English word for a scale point, and
     /// an `index_number` is an index (CPI, a price index number), not a tally. Only the adjacent
     /// pair `number of` -- the snake_case/camelCase shape the `hay` substring test cannot see --
-    /// is a count marker (issue #4596).
+    /// is a count marker (roborev 4596).
     #[test]
     fn count_guard_does_not_veto_on_bare_number() {
         let _g = viz_i18n::lock_locale();
@@ -46948,7 +46948,7 @@ mod tests {
     /// `\u{6570}\u{5024}`/`\u{6570}\u{503c}` (value) and `\u{6570}\u{5b57}` (figure). A count
     /// substring matched by a plain `contains` swallows all of them, so
     /// `\u{8bc4}\u{5206}\u{6570}\u{636e}` -- "rating DATA", an intensive rating -- read as a count
-    /// and was summed (issue #4597).
+    /// and was summed (roborev 4597).
     ///
     /// The reject is on the FOLLOWING character, not on word boundaries: a boundary test would
     /// also reject `\u{8bc4}\u{5206}\u{6570}\u{5e73}\u{5747}`, which is a count for exactly the
@@ -47003,7 +47003,7 @@ mod tests {
     /// such character, so rejecting it on what follows is meaningless -- and destructive:
     /// `\u{30ab}\u{30a6}\u{30f3}\u{30c8}` lost its match to a `\u{5024}` that was never part of
     /// it, and `\u{6570}\u{91cf}` to a `\u{5b57}`, leaving `\u{5e73}\u{5747}`/`\u{8bc4}\u{5206}`
-    /// to route both counts to Mean (issue #4599).
+    /// to route both counts to Mean (roborev 4599).
     ///
     /// Exactly two markers are affected; every other CJK entry ends in `\u{6570}`.
     #[test]
@@ -47039,7 +47039,7 @@ mod tests {
     /// English phrase listed there fabricates an adjacency across the label/field seam that
     /// `is_per_unit_money` deliberately refuses to see (it evaluates the two sides separately).
     /// English `unit price` is already covered by that adjacency rule in every locale, so the
-    /// phrase must not be duplicated into a CJK substring table (issue #4596).
+    /// phrase must not be duplicated into a CJK substring table (roborev 4596).
     #[test]
     fn cjk_lexicons_do_not_fabricate_english_phrases_across_the_seam() {
         let _g = viz_i18n::lock_locale();
@@ -47067,7 +47067,7 @@ mod tests {
     /// The count markers are vetoes, so one that sits INSIDE an intensive entry of the same
     /// language would silently disable that entry. Mechanically pinned rather than reviewed by
     /// eye: this is what keeps German off a bare `zahl` (inside `punktzahl`) and CJK off a bare
-    /// `\u{6570}` (inside `\u{6307}\u{6570}`/`\u{4e2d}\u{4f4d}\u{6570}`) (issue #4595).
+    /// `\u{6570}` (inside `\u{6307}\u{6570}`/`\u{4e2d}\u{4f4d}\u{6570}`) (roborev 4595).
     #[test]
     fn locale_lexicon_counts_do_not_shadow_intensive_entries() {
         for (lang, lex) in LEXICONS {
@@ -47086,7 +47086,7 @@ mod tests {
     /// Multi-word phrases are substring-matched against the lowercased name, so the space form
     /// alone never matches a snake_case column -- `kosten_pro_einheit` is the shape real headers
     /// take. English ships `per capita` AND `per_capita` for exactly this reason; every lexicon
-    /// phrase owes the same pair, mechanically rather than per-review (issue #4595).
+    /// phrase owes the same pair, mechanically rather than per-review (roborev 4595).
     #[test]
     fn locale_lexicon_phrases_have_underscore_twins() {
         for (lang, lex) in LEXICONS {

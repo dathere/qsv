@@ -46844,6 +46844,21 @@ mod tests {
                 );
             }
         }
+        // The other half of the enumerated `\u{6570}` compounds: a count marker built ON an
+        // intensive stem must not shadow that stem. `locale_lexicon_counts_do_not_shadow_...`
+        // only checks that no intensive entry CONTAINS a marker; this is the reverse direction,
+        // which is the one a `\u{6570}`-suffixed compound could plausibly break.
+        for (lang, stem) in [
+            ("jpn", "\u{30b9}\u{30b3}\u{30a2}"),
+            ("zho", "\u{8bc4}\u{5206}"),
+            ("zho", "\u{5f97}\u{5206}"),
+        ] {
+            viz_i18n::set_data_locale(Some(lang));
+            assert!(
+                is_intensive_measure(stem, stem),
+                "{stem} is the intensive STEM under {lang}; its count compound must not shadow it"
+            );
+        }
         viz_i18n::reset_active();
     }
 

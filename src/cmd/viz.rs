@@ -759,8 +759,9 @@ smart options:
                            extensive-vs-intensive guess in both directions. Use it when a measure
                            does not add up - a unit price, a temperature, a rating - or when a
                            measure whose NAME reads non-additive genuinely does sum. qsv's guess
-                           reads column names and is English-first, so this hint is the reliable
-                           way to state it, in any language. "infer" emits it for numeric measures.
+                           reads column names, in English plus a curated vocabulary for the
+                           language the dictionary detected, so this hint is still the reliable
+                           way to state it. "infer" emits it for numeric measures.
                            A "denominator" of {"column": "<name>"} on a REGION-CODE column (a zip,
                            county, state or fips column) names the column holding each region's
                            population - or households, area, fleet size - and adds a RATE panel
@@ -21042,8 +21043,19 @@ fn field_name_tokens(label: &str, field: &str) -> Vec<String> {
         if c.is_uppercase() && prev_lower_or_digit && !cur.is_empty() {
             tokens.push(std::mem::take(&mut cur));
         }
-        cur.push(c.to_ascii_lowercase());
-        prev_lower_or_digit = c.is_ascii_lowercase() || c.is_ascii_digit();
+        // Unicode case folding, NOT `to_ascii_lowercase`: the ASCII-only fold left every accented
+        // capital untouched, so "Índice"/"Máximo"/"Duración" tokenized to `Índice`/`Máximo`/
+        // `Duración` and could never match a lower-cased entry in any token table (issue #4559).
+        // `char::to_lowercase` yields an ITERATOR because one char can fold to several (`İ` ->
+        // `i` + U+0307), so `extend`, not `push`. ASCII input is byte-identical to before, so
+        // `is_identifier_name` -- the other caller of this tokenizer -- is unaffected: its table
+        // is entirely ASCII, and a non-ASCII token could never equal an entry either way.
+        cur.extend(c.to_lowercase());
+        // `is_lowercase` (Unicode) rather than `is_ascii_lowercase`, else the camelCase split is
+        // suppressed for the char AFTER any accented letter -- "precioÚnico" would not split.
+        // Digits stay ASCII-only on purpose: `is_numeric` would admit `½`/`Ⅶ`, which are not
+        // camelCase boundaries.
+        prev_lower_or_digit = c.is_lowercase() || c.is_ascii_digit();
     }
     if !cur.is_empty() {
         tokens.push(cur);
@@ -21067,6 +21079,333 @@ fn is_identifier_name(label: &str, field: &str) -> bool {
     })
 }
 
+/// Extra intensive-measure vocabulary for one non-English DATA language (issue #4559).
+///
+/// Every list here is matched IN ADDITION TO the English tables in `is_intensive_measure`, never
+/// instead of them. That union is load-bearing in both directions: a dictionary `label` follows
+/// describegpt's `--language` while `field` is the raw CSV header, so the two can be in DIFFERENT
+/// languages, and non-English datasets very often keep English column names.
+struct Lexicon {
+    /// Whole-token matches, the same discipline as `INTENSIVE_TOKENS`: explicit plurals, no
+    /// stemming, never a substring test.
+    tokens:      &'static [&'static str],
+    /// Substring matches, for what tokenization cannot reach: multi-word phrases, and languages
+    /// that do not word-separate (CJK) or that compound (German `Stückpreis`).
+    substrings:  &'static [&'static str],
+    /// Nouns denoting money, matched only in conjunction with `per_unit` (see
+    /// `is_per_unit_money`).
+    money_nouns: &'static [&'static str],
+    /// Per-single-item qualifiers that make a money noun intensive.
+    per_unit:    &'static [&'static str],
+}
+
+/// Data-language lexicons, keyed by the bcp47 tag `viz_i18n::data_locale()` reports.
+///
+/// **Every entry passed a cross-language collision audit**, and that audit is a hard requirement
+/// for any future addition, not a review nicety. A token that is intensive in one language but a
+/// common ADDITIVE word in another silently turns a real total into a meaningless average — a
+/// strictly worse failure than the missed match it was added to fix. When in doubt, omit.
+///
+/// Deliberately excluded, and why:
+///   * es/it `media` — collides with English "media" (`media_spend` is additive).
+///   * fr `note`, `cote` — both are English words.
+///   * pt `taxa` — means BOTH "rate" (intensive) and "fee" (additive); `taxa_total` is real.
+///   * pt `nota` — "nota fiscal" is an invoice, an additive amount.
+///   * fr `tarif`, es `tarifa` — a tariff/fare is routinely a per-record charge that sums.
+///   * de `quote` — German for a rate/quota, but `quote` is an ordinary English noun and a sales
+///     quote AMOUNT is additive; a German-locale dataset routinely keeps English headers.
+static LEXICONS: &[(&str, Lexicon)] = &[
+    (
+        "es",
+        Lexicon {
+            tokens:      &[
+                "promedio",
+                "promedios",
+                "mediana",
+                "medianas",
+                "porcentaje",
+                "porcentajes",
+                "tasa",
+                "tasas",
+                // both spellings: the accent is routinely dropped in machine-generated headers
+                "índice",
+                "índices",
+                "indice",
+                "indices",
+                "puntuación",
+                "puntuaciones",
+                "puntaje",
+                "calificación",
+                "calificaciones",
+                "temperatura",
+                "temperaturas",
+                "altitud",
+                "altitudes",
+                "elevación",
+                "profundidad",
+                "densidad",
+                "densidades",
+                "magnitud",
+                "magnitudes",
+                "edad",
+                "edades",
+                "antigüedad",
+                "duración",
+                "duraciones",
+                "duracion",
+                "latencia",
+            ],
+            substrings:  &["por unidad", "por_unidad", "per cápita", "por habitante"],
+            money_nouns: &["precio", "precios", "costo", "costos", "coste", "costes"],
+            per_unit:    &[
+                "unitario",
+                "unitaria",
+                "unitarios",
+                "unitarias",
+                "unidad",
+                "cada",
+            ],
+        },
+    ),
+    (
+        "fr",
+        Lexicon {
+            tokens:      &[
+                "moyenne",
+                "moyennes",
+                "moyen",
+                "médiane",
+                "médianes",
+                "mediane",
+                "pourcentage",
+                "pourcentages",
+                "taux",
+                "indice",
+                "indices",
+                "température",
+                "températures",
+                "temperature",
+                "altitude",
+                "altitudes",
+                "élévation",
+                "profondeur",
+                "densité",
+                "densités",
+                "âge",
+                "ages",
+                "ancienneté",
+                "durée",
+                "durées",
+                "duree",
+                "latence",
+            ],
+            substrings:  &[
+                "par unité",
+                "par_unité",
+                "par unite",
+                "par habitant",
+                "par tête",
+            ],
+            money_nouns: &["prix", "coût", "coûts", "cout", "couts"],
+            per_unit:    &["unitaire", "unitaires", "unité", "unite", "chaque"],
+        },
+    ),
+    (
+        "de",
+        Lexicon {
+            tokens:      &[
+                "durchschnitt",
+                "durchschnittlich",
+                "median",
+                "prozent",
+                "prozentsatz",
+                "anteil",
+                "index",
+                "indizes",
+                "temperatur",
+                "temperaturen",
+                "höhe",
+                "hoehe",
+                "tiefe",
+                "dichte",
+                "alter",
+                "dauer",
+                "laufzeit",
+                "latenz",
+                "punktzahl",
+            ],
+            // German COMPOUNDS, so the money rule cannot be a token conjunction: "Stückpreis" and
+            // "Einzelpreis" are single tokens. These carry the per-unit money case for `de`, and
+            // every one of them names an EXPLICIT unit.
+            //
+            // "preis pro"/"kosten pro" are deliberately absent, and `money_nouns`/`per_unit` are
+            // deliberately empty: `pro` and `je` are bare prepositions, exactly as ambiguous as
+            // the English `per` this design already refuses to treat as a qualifier.
+            // "Preis pro Bestellung" on a one-row-per-order dataset sums perfectly
+            // well.
+            substrings:  &[
+                "stückpreis",
+                "stueckpreis",
+                "einzelpreis",
+                "stückkosten",
+                "stueckkosten",
+                "pro einheit",
+                "je einheit",
+                "pro stück",
+                "pro stueck",
+                "pro kopf",
+            ],
+            money_nouns: &[],
+            per_unit:    &[],
+        },
+    ),
+    (
+        "it",
+        Lexicon {
+            tokens:      &[
+                // "medio" only: "media" collides with English (see the exclusion list above), and
+                // "medi"/"medie" are two- and three-letter-stem plurals with no observed use in a
+                // column name — surface with no payoff.
+                "medio",
+                "mediana",
+                "percentuale",
+                "percentuali",
+                "tasso",
+                "indice",
+                "indici",
+                "temperatura",
+                "temperature",
+                "altitudine",
+                "profondità",
+                "densità",
+                "magnitudo",
+                "età",
+                "anzianità",
+                "durata",
+                "durate",
+                "latenza",
+                "punteggio",
+            ],
+            substrings:  &["per unità", "per unita", "pro capite", "a testa"],
+            money_nouns: &["prezzo", "prezzi", "costo", "costi"],
+            per_unit:    &[
+                "unitario", "unitaria", "unitari", "unitarie", "unità", "unita", "ciascuno",
+                "cadauno",
+            ],
+        },
+    ),
+    (
+        "pt-BR",
+        Lexicon {
+            tokens:      &[
+                // the accented form ONLY: bare "media" collides with English "media"
+                "média",
+                "médias",
+                "mediana",
+                "percentual",
+                "percentuais",
+                "percentagem",
+                "porcentagem",
+                "índice",
+                "índices",
+                "indice",
+                "indices",
+                "temperatura",
+                "temperaturas",
+                "altitude",
+                "profundidade",
+                "densidade",
+                "idade",
+                "idades",
+                "duração",
+                "duracao",
+                "latência",
+                "pontuação",
+            ],
+            substrings:  &["por unidade", "por_unidade", "por cabeça", "por habitante"],
+            money_nouns: &["preço", "preços", "preco", "precos", "custo", "custos"],
+            per_unit:    &["unitário", "unitario", "unitária", "unidade", "cada"],
+        },
+    ),
+    // CJK: SUBSTRINGS ONLY. `field_name_tokens` splits on non-alphanumerics, but Han/Kana are
+    // alphanumeric and caseless, so a CJK column name is ONE undifferentiated token that could
+    // never equal a dictionary entry. Substring matching is also SAFER here than in a European
+    // language: these are distinct morphemes, none of them a fragment of an additive word, so the
+    // `ratio`-inside-`duration` hazard the English table warns about does not arise.
+    (
+        "ja",
+        Lexicon {
+            tokens:      &[],
+            substrings:  &[
+                "平均",
+                "中央値",
+                "割合",
+                "比率",
+                "率",
+                "指数",
+                "指標",
+                "温度",
+                "気温",
+                "標高",
+                "高度",
+                "密度",
+                "年齢",
+                "期間",
+                "所要時間",
+                "スコア",
+                // 単価 IS "unit price"; あたり/当たり is the per-unit marker (単位当たり)
+                "単価",
+                "あたり",
+                "当たり",
+            ],
+            money_nouns: &[],
+            per_unit:    &[],
+        },
+    ),
+    (
+        "zh-CN",
+        Lexicon {
+            tokens:      &[],
+            substrings:  &[
+                "平均",
+                "中位数",
+                "百分比",
+                "比率",
+                "比例",
+                "率",
+                "指数",
+                "指标",
+                "温度",
+                "气温",
+                "海拔",
+                "高度",
+                "深度",
+                "密度",
+                "年龄",
+                "时长",
+                "评分",
+                "得分",
+                // 单价 IS "unit price"; 每 is the per-marker (每单位), 人均 is per-capita
+                "单价",
+                "每单位",
+                "人均",
+            ],
+            money_nouns: &[],
+            per_unit:    &[],
+        },
+    ),
+];
+
+/// The lexicon for the active DATA language, or `None` for English (whose vocabulary is the
+/// built-in one) and for any language with no curated table.
+fn active_lexicon() -> Option<&'static Lexicon> {
+    let tag = viz_i18n::data_locale().bcp47;
+    LEXICONS
+        .iter()
+        .find(|(lang, _)| *lang == tag)
+        .map(|(_, lex)| lex)
+}
+
 fn is_per_unit_money(tokens: &[String]) -> bool {
     const MONEY_NOUNS: &[&str] = &["price", "prices", "cost", "costs"];
     const PER_UNIT: &[&str] = &["unit", "units", "unitary", "each", "apiece"];
@@ -21074,11 +21413,18 @@ fn is_per_unit_money(tokens: &[String]) -> bool {
     // `cost_of_units_sold` and `unit_sales_cost` are both additive totals, and both contain a
     // money noun AND a unit token. Adjacency is what separates the compound noun "unit price"
     // from a sentence that merely mentions units and cost.
+    //
+    // The active data-language lexicon EXTENDS each side of the pair; it never relaxes the
+    // adjacency requirement. `precio unitario` matches, a Spanish `costo_de_unidades_vendidas`
+    // does not — the same discipline the English lists get.
+    let lex = active_lexicon();
+    let money =
+        |t: &str| MONEY_NOUNS.contains(&t) || lex.is_some_and(|l| l.money_nouns.contains(&t));
+    let per_unit = |t: &str| PER_UNIT.contains(&t) || lex.is_some_and(|l| l.per_unit.contains(&t));
     tokens.windows(2).any(|w| {
         let [a, b] = w else { return false };
         let (a, b) = (a.as_str(), b.as_str());
-        (MONEY_NOUNS.contains(&a) && PER_UNIT.contains(&b))
-            || (PER_UNIT.contains(&a) && MONEY_NOUNS.contains(&b))
+        (money(a) && per_unit(b)) || (per_unit(a) && money(b))
     })
 }
 
@@ -21098,7 +21444,9 @@ fn has_per_unit_phrase(tokens: &[String]) -> bool {
 }
 
 fn is_intensive_measure(label: &str, field: &str) -> bool {
-    let hay = format!("{label} {field}").to_ascii_lowercase();
+    // `to_lowercase`, not `to_ascii_lowercase`: the substring arm must fold accented capitals too,
+    // or "Duración de la Exposición" never matches a lower-cased phrase (issue #4559).
+    let hay = format!("{label} {field}").to_lowercase();
     let tokens = field_name_tokens(label, field);
     let is_count = tokens
         .iter()
@@ -21185,10 +21533,16 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     let label_tokens = field_name_tokens(label, "");
     let field_tokens = field_name_tokens("", field);
     let per_unit = |t: &[String]| is_per_unit_money(t) || has_per_unit_phrase(t);
-    tokens
-        .iter()
-        .any(|t| INTENSIVE_TOKENS.contains(&t.as_str()))
-        || INTENSIVE_SUBSTRINGS.iter().any(|kw| hay.contains(kw))
+    // The data-language lexicon is a UNION with the English tables, never a replacement: a
+    // dictionary `label` follows describegpt's `--language` while `field` is the raw CSV header,
+    // so the two can be in different languages, and non-English datasets very often keep English
+    // column names.
+    let lex = active_lexicon();
+    tokens.iter().any(|t| {
+        INTENSIVE_TOKENS.contains(&t.as_str())
+            || lex.is_some_and(|l| l.tokens.contains(&t.as_str()))
+    }) || INTENSIVE_SUBSTRINGS.iter().any(|kw| hay.contains(kw))
+        || lex.is_some_and(|l| l.substrings.iter().any(|kw| hay.contains(kw)))
         || per_unit(&label_tokens)
         || per_unit(&field_tokens)
 }
@@ -32030,6 +32384,20 @@ impl<'a> SmartCtx<'a> {
             // Already rejected in run() before any work started.
             viz_i18n::Resolution::UnknownRequested(_) => {},
         }
+        // The DATA language, which is NOT the presentation language just resolved above: `viz
+        // smart --language es` on an English-headed dataset renders Spanish chrome but must still
+        // match column names against the ENGLISH lexicon (issue #4559). The dictionary's detected
+        // language is authoritative for matching; with no dictionary this falls back to the
+        // presentation locale, so the two coincide exactly when there is nothing better to say.
+        //
+        // MUST precede `col_sems` below: `derive_semantics` -> `is_intensive_measure` reads this
+        // global, and a data locale still set to English there would silently defeat every
+        // non-English lexicon with no test noticing.
+        viz_i18n::set_data_locale(
+            dict_data
+                .as_ref()
+                .and_then(|d| d.detected_language.as_deref()),
+        );
         let col_sems: Vec<ColSemantics> = stats
             .iter()
             .map(|s| derive_semantics(s, dict_data.as_ref().and_then(|d| d.rows.get(&s.field))))
@@ -41388,6 +41756,10 @@ mod tests {
 
     #[test]
     fn intensive_measure_detection() {
+        // `is_intensive_measure` now reads the process-global DATA locale, so every test
+        // that exercises it must serialize against the locale-mutating tests.
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
         // intensive quantities -> averaged, matched by label or field
         assert!(is_intensive_measure(
             "Average Annual Temperature (\u{b0}C)",
@@ -46040,6 +46412,10 @@ mod tests {
 
     #[test]
     fn is_intensive_measure_matches_tokens_not_substrings() {
+        // `is_intensive_measure` now reads the process-global DATA locale, so every test
+        // that exercises it must serialize against the locale-mutating tests.
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
         // the -ration word family all CONTAIN "ratio"; a substring test silently downgraded these
         // additive amounts from Sum to Mean, and also dropped them from the inequality overview.
         // ("duration" belongs to this family too, but it is now intensive on its own merits as a
@@ -46140,9 +46516,158 @@ mod tests {
         ));
     }
 
+    /// Issue #4559: the tokenizer must fold NON-ASCII case, or no accented header can ever match a
+    /// lower-cased table entry.
+    #[test]
+    fn field_name_tokens_folds_non_ascii_case() {
+        assert!(field_name_tokens("Índice", "").contains(&"índice".to_string()));
+        assert!(field_name_tokens("Duración", "").contains(&"duración".to_string()));
+        assert!(field_name_tokens("MÁXIMO", "").contains(&"máximo".to_string()));
+        // the camelCase split must survive an accented letter immediately before the boundary:
+        // `prev_lower_or_digit` was `is_ascii_lowercase`, which is false for 'í'/'ó'.
+        assert_eq!(
+            field_name_tokens("precioÚnico", ""),
+            vec!["precio".to_string(), "único".to_string()]
+        );
+        // ASCII is byte-identical to the previous behavior -- no English regression, and
+        // `is_identifier_name` (the other caller of this tokenizer) is untouched.
+        assert_eq!(
+            field_name_tokens("reviewScoreCount", "order_count"),
+            vec![
+                "review".to_string(),
+                "score".to_string(),
+                "count".to_string(),
+                "order".to_string(),
+                "count".to_string(),
+            ]
+        );
+        assert!(is_identifier_name("Customer ID", "customer_id"));
+    }
+
+    /// Issue #4559: the intensive lexicon follows the DATA language, and English always applies.
+    #[test]
+    fn is_intensive_measure_is_locale_aware() {
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+
+        // English-only: the Spanish/Japanese vocabulary is invisible
+        assert!(!is_intensive_measure("Precio Unitario", "precio_unitario"));
+        assert!(!is_intensive_measure("Índice", "indice"));
+        assert!(!is_intensive_measure("平均気温", "平均気温"));
+
+        viz_i18n::set_data_locale(Some("spa"));
+        assert!(is_intensive_measure("Precio Unitario", "precio_unitario"));
+        assert!(is_intensive_measure(
+            "Índice de Representatividad",
+            "indice"
+        ));
+        assert!(is_intensive_measure("Duración", "duracion"));
+        assert!(is_intensive_measure("Ingreso per cápita", "ingreso"));
+        // ...and Spanish additive money is still additive
+        assert!(!is_intensive_measure("Costo de Envío", "costo_envio"));
+        assert!(!is_intensive_measure("Precio Total", "precio_total"));
+        // English NEVER stops applying: a Spanish dataset routinely keeps English headers, and
+        // `label` (translated) and `field` (raw header) can be in different languages outright.
+        assert!(is_intensive_measure("Precio Unitario", "unit_price"));
+        assert!(is_intensive_measure("", "failure_rate"));
+
+        // CJK routes through the SUBSTRING arm -- `field_name_tokens` cannot split it
+        viz_i18n::set_data_locale(Some("jpn"));
+        assert!(is_intensive_measure("平均気温", "平均気温"));
+        assert!(is_intensive_measure("単価", "単価")); // "unit price"
+        viz_i18n::set_data_locale(Some("zho"));
+        assert!(is_intensive_measure("单价", "单价"));
+        assert!(is_intensive_measure("平均温度", "平均温度"));
+
+        // German COMPOUNDS, so its per-unit money case is substring-carried
+        viz_i18n::set_data_locale(Some("deu"));
+        assert!(is_intensive_measure("Stückpreis", "stueckpreis"));
+        assert!(is_intensive_measure(
+            "Kosten pro Einheit",
+            "kosten_pro_einheit"
+        ));
+        assert!(is_intensive_measure("Durchschnittsalter", "alter"));
+        assert!(!is_intensive_measure("Versandkosten", "versandkosten"));
+        // `pro`/`je` are bare prepositions, as ambiguous as the English `per` this design already
+        // refuses as a qualifier: "Preis pro Bestellung" on a one-row-per-order dataset sums.
+        // Only an EXPLICIT unit ("pro Einheit", "pro Stück") is conclusive.
+        assert!(!is_intensive_measure(
+            "Preis pro Bestellung",
+            "preis_pro_bestellung"
+        ));
+        assert!(!is_intensive_measure(
+            "Kosten je Abteilung",
+            "kosten_je_abteilung"
+        ));
+
+        viz_i18n::reset_active();
+    }
+
+    /// The lexicon EXTENDS each side of the money/per-unit pair; it must not relax the adjacency
+    /// rule that `per_unit_rules_require_adjacency_not_mere_co_occurrence` pins for English.
+    ///
+    /// This is the discriminating test for the port: the original locale branch matched the two
+    /// sides by mere CO-OCCURRENCE anywhere in the name, so every `costo_*_unidades_*` shape below
+    /// was averaged. Wiring the lexicon into the adjacency window instead is what keeps them
+    /// additive.
+    #[test]
+    fn locale_lexicons_preserve_the_adjacency_requirement() {
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+        viz_i18n::set_data_locale(Some("spa"));
+        // adjacent, either order => intensive
+        assert!(is_intensive_measure("Precio Unitario", "precio_unitario"));
+        assert!(is_intensive_measure("Costo Cada", "costo_cada"));
+        // both words present but NOT adjacent => an additive total, exactly as in English
+        // every one of these carries BOTH a lexicon money noun and a lexicon per-unit noun, but
+        // never adjacently -- the exact shape mere co-occurrence gets wrong.
+        for additive in [
+            "unidad_vendida_costo_total",
+            "precio_final_de_cada_pedido",
+            "cada_pedido_precio",
+        ] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} must stay additive: the money noun and the unit noun are not adjacent"
+            );
+        }
+        viz_i18n::reset_active();
+    }
+
+    /// The cross-language collision audit, pinned. Each of these is intensive in SOME language but
+    /// a common ADDITIVE word in another, so none may enter a lexicon — a false positive silently
+    /// turns a real total into a meaningless average.
+    #[test]
+    fn locale_lexicons_exclude_cross_language_collisions() {
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+        for lang in ["spa", "fra", "por", "ita", "deu"] {
+            viz_i18n::set_data_locale(Some(lang));
+            for additive in [
+                "media_spend",  // es/it "media" = mean, but English media spend ADDS
+                "note_total",   // fr "note" = score, but English "note" is not intensive
+                "taxa_total",   // pt "taxa" = rate AND fee
+                "nota_fiscal",  // pt "nota" = invoice, an additive amount
+                "tarifa_total", // es "tarifa"/fr "tarif" = a per-record charge that sums
+                "valor_total",  // pt/es "valor" = amount, additive
+                "quote_amount", // de "Quote" = rate, but an English sales quote AMOUNT adds
+            ] {
+                assert!(
+                    !is_intensive_measure(additive, additive),
+                    "{additive} must stay additive under {lang}"
+                );
+            }
+        }
+        viz_i18n::reset_active();
+    }
+
     /// Issue #4401: a per-unit price is intensive, but a money noun ALONE never is.
     #[test]
     fn is_intensive_measure_needs_a_qualifier_before_averaging_money() {
+        // `is_intensive_measure` now reads the process-global DATA locale, so every test
+        // that exercises it must serialize against the locale-mutating tests.
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
         // the whole point of the qualified rule: these are genuinely additive and a bare
         // `INTENSIVE_TOKENS += "price"|"cost"` would have broken every one of them. `shipping_cost`
         // is the live canary -- it renders as "Total Shipping Cost" in the committed gallery.
@@ -46203,6 +46728,10 @@ mod tests {
     /// substring-matched, which fired inside `upper_unit`/`super_item`.
     #[test]
     fn per_unit_rules_require_adjacency_not_mere_co_occurrence() {
+        // `is_intensive_measure` now reads the process-global DATA locale, so every test
+        // that exercises it must serialize against the locale-mutating tests.
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
         // a money noun and a unit token both present, but NOT adjacent: additive totals
         for additive in [
             "cost_of_units_sold",

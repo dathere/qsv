@@ -4889,7 +4889,14 @@ impl Stats {
         // internal caller that constructs `WhichStats { approx_quantiles: true,
         // .. }` directly (bypassing the CLI rejection in `run()`) takes the
         // exact path. This is stronger than gating only the allocation expression
-        // with `cfg_select!`+`unreachable!()` — there is no runtime panic path.
+        // with `cfg_select!`+`unreachable!()` — on big-endian there is no runtime
+        // panic path at all, since the branch does not exist.
+        //
+        // On little-endian, `TDigestMut::new` is fallible as of datasketches 0.5
+        // (it rejects k < 10). k is the literal 200 below, so the error arm is
+        // unreachable and we `.expect()` it: `Stats::new` returns `Stats`, not a
+        // `Result`, and the same is true of the `HllUnion` construction in
+        // `Commute::merge`, whose trait signature cannot propagate an error either.
         let needs_quantiles = which.quartiles || which.median || which.mad || which.percentiles;
         #[cfg_attr(target_endian = "big", allow(unused_mut))]
         let mut tdigest = TDigestSlot::default();
@@ -4897,7 +4904,10 @@ impl Stats {
             #[cfg(not(target_endian = "big"))]
             if which.approx_quantiles {
                 // k=200 is the upstream default; ~1% rank error, more accurate at the tails.
-                tdigest = TDigestSlot(Some(datasketches::tdigest::TDigestMut::new(200)));
+                tdigest = TDigestSlot(Some(
+                    datasketches::tdigest::TDigestMut::new(200)
+                        .expect("t-digest k=200 is >= the minimum of 10"),
+                ));
             } else {
                 unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
                 if use_weights {
@@ -4923,10 +4933,10 @@ impl Stats {
         // unit-like ZST on big-endian).
         #[cfg(not(target_endian = "big"))]
         let hll = if which.cardinality && which.approx_cardinality {
-            HllSlot(Some(datasketches::hll::HllSketch::new(
-                HLL_LG_K,
-                datasketches::hll::HllType::Hll8,
-            )))
+            HllSlot(Some(
+                datasketches::hll::HllSketch::new(HLL_LG_K, datasketches::hll::HllType::Hll8)
+                    .expect("HLL_LG_K is within the supported lg_config_k range of [4, 21]"),
+            ))
         } else {
             HllSlot::default()
         };
@@ -6313,7 +6323,8 @@ impl Commute for Stats {
         #[cfg(not(target_endian = "big"))]
         match (&mut self.hll.0, other.hll.0) {
             (Some(s), Some(o)) => {
-                let mut union = datasketches::hll::HllUnion::new(HLL_LG_K);
+                let mut union = datasketches::hll::HllUnion::new(HLL_LG_K)
+                    .expect("HLL_LG_K is within the supported lg_max_k range of [4, 21]");
                 union.update(s);
                 union.update(&o);
                 *s = union.to_sketch(datasketches::hll::HllType::Hll8);

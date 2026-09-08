@@ -21125,6 +21125,10 @@ struct Lexicon {
     /// The enumeration is targeted, not general: a `数` suffix on an intensive entry not listed
     /// here stays unguarded. That is the price of keeping standalone `指数`/`中位数` intensive,
     /// and it is a missed veto rather than a fabricated one.
+    ///
+    /// Matching is NOT a plain `contains`. `数` heads its own words (`数据`, `数値`, `数字`), so a
+    /// listed marker whose trailing `数` is followed by one of those is rejected — `评分数据` is
+    /// "rating DATA" and stays intensive. See `count_substring_hit` (issue #4597).
     count_substrings: &'static [&'static str],
 }
 
@@ -21517,6 +21521,28 @@ fn active_lexicon() -> Option<&'static Lexicon> {
         .map(|(_, lex)| lex)
 }
 
+/// CJK `数` is a productive word HEAD as well as a count suffix: `数据` (data), `数値`/`数值`
+/// (value) and `数字` (figure) all begin with it. When a count substring's trailing `数` is
+/// immediately followed by one of these, the `数` belongs to the NEXT word and the match is a
+/// mirage — `评分数据` is "rating DATA", an intensive rating, not a count of ratings.
+///
+/// Only these four. `量` and `目` are deliberately absent: `数量` and `数目` are themselves count
+/// words, so `スコア数量` and `评分数目` ("number of scores"/"of ratings") must keep matching.
+const COUNT_HEAD_CHARS: &[char] = &['据', '値', '值', '字'];
+
+/// Match a lexicon count substring, rejecting the occurrences where its trailing `数` is really
+/// the head of a following word (see `COUNT_HEAD_CHARS`). Evaluated per OCCURRENCE, so a name
+/// that contains both a mirage and a real count still reads as a count.
+///
+/// Applied to every count substring, not just the `数`-suffixed compounds: a boundary test
+/// restricted to those would have to reject a following letter outright, which breaks
+/// `评分数平均` exactly the way it would break the `件数平均` this suite already pins as
+/// additive. The head-character test is what separates `数据` from `平均` (issue #4597).
+fn count_substring_hit(hay: &str, kw: &str) -> bool {
+    hay.match_indices(kw)
+        .any(|(i, _)| !hay[i + kw.len()..].starts_with(COUNT_HEAD_CHARS))
+}
+
 fn is_per_unit_money(tokens: &[String]) -> bool {
     const MONEY_NOUNS: &[&str] = &["price", "prices", "cost", "costs"];
     const PER_UNIT: &[&str] = &["unit", "units", "unitary", "each", "apiece"];
@@ -21581,7 +21607,11 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
         let [a, b] = w else { return false };
         matches!(a.as_str(), "number" | "numbers") && b == "of"
     }) || hay.contains("number of")
-        || lex.is_some_and(|l| l.count_substrings.iter().any(|kw| hay.contains(kw)));
+        || lex.is_some_and(|l| {
+            l.count_substrings
+                .iter()
+                .any(|kw| count_substring_hit(&hay, kw))
+        });
     if is_count {
         return false;
     }
@@ -46888,6 +46918,60 @@ mod tests {
                 "{intensive} is an intensive measure; a bare `number` must not veto it"
             );
         }
+        viz_i18n::reset_active();
+    }
+
+    /// `\u{6570}` heads its own words as readily as it suffixes a stem: `\u{6570}\u{636e}` (data),
+    /// `\u{6570}\u{5024}`/`\u{6570}\u{503c}` (value) and `\u{6570}\u{5b57}` (figure). A count
+    /// substring matched by a plain `contains` swallows all of them, so
+    /// `\u{8bc4}\u{5206}\u{6570}\u{636e}` -- "rating DATA", an intensive rating -- read as a count
+    /// and was summed (issue #4597).
+    ///
+    /// The reject is on the FOLLOWING character, not on word boundaries: a boundary test would
+    /// also reject `\u{8bc4}\u{5206}\u{6570}\u{5e73}\u{5747}`, which is a count for exactly the
+    /// reason `\u{4ef6}\u{6570}\u{5e73}\u{5747}` is one two tests above.
+    #[test]
+    fn cjk_count_markers_reject_a_following_number_headed_word() {
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+        for (lang, name) in [
+            // 数-HEADED continuations: the marker is a mirage, the stem carries the reading
+            ("zho", "\u{8bc4}\u{5206}\u{6570}\u{636e}"),
+            ("zho", "\u{5f97}\u{5206}\u{6570}\u{636e}"),
+            ("zho", "\u{8bc4}\u{5206}\u{6570}\u{503c}"),
+            ("jpn", "\u{30b9}\u{30b3}\u{30a2}\u{6570}\u{5024}"),
+            ("jpn", "\u{30b9}\u{30b3}\u{30a2}\u{6570}\u{5b57}"),
+        ] {
+            viz_i18n::set_data_locale(Some(lang));
+            assert!(
+                is_intensive_measure(name, name),
+                "{name} is a \u{6570}-HEADED word under {lang}; the count marker must not eat it"
+            );
+        }
+        // ...while an ordinary following character leaves the count standing. `量`/`目` are kept
+        // OUT of the reject list precisely so `\u{6570}\u{91cf}`/`\u{6570}\u{76ee}` stay count
+        // words themselves. Both fixtures below are chosen to REACH that decision: no other
+        // marker in their lexicon matches them, so admitting `\u{91cf}`/`\u{76ee}` to the reject
+        // list flips each one. (`\u{8bc4}\u{5206}\u{6570}\u{91cf}` would NOT reach it -- `zh-CN`
+        // lists `\u{6570}\u{91cf}` itself, which carries the count either way.)
+        for (lang, name) in [
+            ("zho", "\u{8bc4}\u{5206}\u{6570}\u{5e73}\u{5747}"),
+            ("zho", "\u{8bc4}\u{5206}\u{6570}\u{76ee}"),
+            ("jpn", "\u{30b9}\u{30b3}\u{30a2}\u{6570}\u{91cf}"),
+            ("jpn", "\u{30b9}\u{30b3}\u{30a2}\u{6570}\u{5e73}\u{5747}"),
+        ] {
+            viz_i18n::set_data_locale(Some(lang));
+            assert!(
+                !is_intensive_measure(name, name),
+                "{name} is a COUNT under {lang}; only a \u{6570}-headed word may veto the marker"
+            );
+        }
+        // per-OCCURRENCE, not per-name: a mirage does not disarm a real count later in the name
+        viz_i18n::set_data_locale(Some("zho"));
+        assert!(!is_intensive_measure(
+            "\u{8bc4}\u{5206}\u{6570}\u{636e}\u{8bc4}\u{5206}\u{6570}",
+            ""
+        ));
         viz_i18n::reset_active();
     }
 

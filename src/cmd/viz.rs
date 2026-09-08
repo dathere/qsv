@@ -21112,10 +21112,19 @@ struct Lexicon {
     count_tokens:     &'static [&'static str],
     /// Substring COUNT markers, for the languages `count_tokens` cannot reach (CJK).
     ///
-    /// Deliberately NOT a bare `数`/`数`: it is a substring of the intensive `指数`/`中位数`, so
-    /// admitting it would turn every index and median into a count. The cost is that a bare
-    /// `数` SUFFIX (`スコア数`, `评分数`) stays unguarded — a missed veto, which degrades to the
-    /// pre-lexicon behavior for that one shape, rather than a false positive.
+    /// Deliberately NOT a bare `数`: it is a substring of the intensive `指数`/`中位数`, so
+    /// admitting it would turn every index and median into a count. The `数`-suffixed COMPOUNDS
+    /// of this language's OWN intensive entries are therefore enumerated one by one instead
+    /// (`スコア数`, `评分数`, `得分数`, alongside the standalone `件数`/`数量` family).
+    ///
+    /// Leaving those compounds out does not "degrade to pre-lexicon behavior" — it INVENTS a
+    /// false positive. Before the lexicons existed `スコア`/`评分` were not intensive entries at
+    /// all, so `スコア数` matched nothing and summed correctly; making the stem intensive without
+    /// its count compound is what turns a real total into a mean (issue #4596).
+    ///
+    /// The enumeration is targeted, not general: a `数` suffix on an intensive entry not listed
+    /// here stays unguarded. That is the price of keeping standalone `指数`/`中位数` intensive,
+    /// and it is a missed veto rather than a fabricated one.
     count_substrings: &'static [&'static str],
 }
 
@@ -21442,16 +21451,15 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "期間",
                 "所要時間",
                 "スコア",
-                "unit price",
+                // 単価 IS "unit price"; あたり/当たり is the per-unit marker (単位当たり)
                 "単価",
                 "あたり",
                 "当たり",
-                "unit_price",
             ],
             money_nouns:      &[],
             per_unit:         &[],
             count_tokens:     &[],
-            count_substrings: &["件数", "人数", "回数", "個数", "カウント"],
+            count_substrings: &["件数", "人数", "回数", "個数", "カウント", "スコア数"],
         },
     ),
     (
@@ -21477,16 +21485,24 @@ static LEXICONS: &[(&str, Lexicon)] = &[
                 "时长",
                 "评分",
                 "得分",
-                "unit price",
+                // 单价 IS "unit price"; 每 is the per-marker (每单位), 人均 is per-capita
                 "单价",
                 "每单位",
                 "人均",
-                "unit_price",
             ],
             money_nouns:      &[],
             per_unit:         &[],
             count_tokens:     &[],
-            count_substrings: &["数量", "个数", "次数", "计数", "件数", "总数"],
+            count_substrings: &[
+                "数量",
+                "个数",
+                "次数",
+                "计数",
+                "件数",
+                "总数",
+                "评分数",
+                "得分数",
+            ],
         },
     ),
 ];
@@ -21550,14 +21566,20 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     let lex = active_lexicon();
     // A count VETOES an intensive reading, in every language: English `avg_order_count` is
     // additive today for exactly this reason, and the localized markers inherit that precedence
-    // rather than inventing a new one. `number`/`numbers` join the English list so the guard is
-    // not weaker in English than in the languages a lexicon covers -- `number_of_scores` is a
-    // count whose `scores` token would otherwise carry it.
+    // rather than inventing a new one.
+    //
+    // English `number`/`numbers` count ONLY as the adjacent pair `number of` -- the shape the
+    // `hay` substring test below cannot see once a name is snake_case or camelCase
+    // (`number_of_scores`, `numberOfScores`), which is what left that guard weaker in English
+    // than in the languages a lexicon covers. Bare `number` is NOT a marker: it is the ordinary
+    // English word for a scale point or an identifier, so vetoing on it alone would make
+    // `index_number` additive and sum an economic index (issue #4596).
     let is_count = tokens.iter().any(|t| {
-        matches!(
-            t.as_str(),
-            "count" | "counts" | "cnt" | "num" | "number" | "numbers" | "tally"
-        ) || lex.is_some_and(|l| l.count_tokens.contains(&t.as_str()))
+        matches!(t.as_str(), "count" | "counts" | "cnt" | "num" | "tally")
+            || lex.is_some_and(|l| l.count_tokens.contains(&t.as_str()))
+    }) || tokens.windows(2).any(|w| {
+        let [a, b] = w else { return false };
+        matches!(a.as_str(), "number" | "numbers") && b == "of"
     }) || hay.contains("number of")
         || lex.is_some_and(|l| l.count_substrings.iter().any(|kw| hay.contains(kw)));
     if is_count {
@@ -46798,6 +46820,10 @@ mod tests {
                 &[
                     "\u{4ef6}\u{6570}\u{5e73}\u{5747}",
                     "\u{56de}\u{6570}\u{6e29}\u{5ea6}",
+                    // the `\u{6570}`-SUFFIXED compound of this lexicon's own intensive stem:
+                    // `\u{30b9}\u{30b3}\u{30a2}` is intensive, so a count OF scores is exactly the
+                    // shape that regresses without an enumerated compound (issue #4596).
+                    "\u{30b9}\u{30b3}\u{30a2}\u{6570}",
                 ][..],
             ),
             (
@@ -46805,6 +46831,8 @@ mod tests {
                 &[
                     "\u{6570}\u{91cf}\u{5e73}\u{5747}",
                     "\u{6b21}\u{6570}\u{6e29}\u{5ea6}",
+                    "\u{8bc4}\u{5206}\u{6570}",
+                    "\u{5f97}\u{5206}\u{6570}",
                 ][..],
             ),
         ] {
@@ -46816,6 +46844,64 @@ mod tests {
                 );
             }
         }
+        viz_i18n::reset_active();
+    }
+
+    /// The count guard is a VETO, so every marker it admits costs an intensive reading. Bare
+    /// `number` is too broad to pay that: it is the ordinary English word for a scale point, and
+    /// an `index_number` is an index (CPI, a price index number), not a tally. Only the adjacent
+    /// pair `number of` -- the snake_case/camelCase shape the `hay` substring test cannot see --
+    /// is a count marker (issue #4596).
+    #[test]
+    fn count_guard_does_not_veto_on_bare_number() {
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+        // still guarded: the pair, in every casing the tokenizer produces
+        assert!(!is_intensive_measure("", "number_of_scores"));
+        assert!(!is_intensive_measure("", "numberOfScores"));
+        assert!(!is_intensive_measure("Number of Scores", ""));
+        assert!(!is_intensive_measure("", "numbers_of_indices"));
+        // no longer vetoed: `number` with no `of` after it leaves the intensive token standing
+        for intensive in [
+            "index_number",
+            "indexNumber",
+            "score_number",
+            "ratio_number",
+        ] {
+            assert!(
+                is_intensive_measure("", intensive),
+                "{intensive} is an intensive measure; a bare `number` must not veto it"
+            );
+        }
+        viz_i18n::reset_active();
+    }
+
+    /// CJK lexicons are SUBSTRING-matched against the `"<label> <field>"` concatenation, so an
+    /// English phrase listed there fabricates an adjacency across the label/field seam that
+    /// `is_per_unit_money` deliberately refuses to see (it evaluates the two sides separately).
+    /// English `unit price` is already covered by that adjacency rule in every locale, so the
+    /// phrase must not be duplicated into a CJK substring table (issue #4596).
+    #[test]
+    fn cjk_lexicons_do_not_fabricate_english_phrases_across_the_seam() {
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+        // the seam: "Unit" + "price_total" is `... unit | price ...` only once concatenated.
+        // Additive in English, and it must stay additive under every locale.
+        assert!(!is_intensive_measure("Unit", "price_total"));
+        for lang in ["jpn", "zho"] {
+            viz_i18n::set_data_locale(Some(lang));
+            assert!(
+                !is_intensive_measure("Unit", "price_total"),
+                "{lang} must not fabricate `unit price` across the label/field seam"
+            );
+            // the genuine article still reads intensive, from both the English adjacency rule
+            // and the lexicon's own compound
+            assert!(is_intensive_measure("", "unit_price"), "{lang}");
+        }
+        viz_i18n::set_data_locale(Some("jpn"));
+        assert!(is_intensive_measure("\u{5358}\u{4fa1}", "\u{5358}\u{4fa1}"));
+        viz_i18n::set_data_locale(Some("zho"));
+        assert!(is_intensive_measure("\u{5355}\u{4ef7}", "\u{5355}\u{4ef7}"));
         viz_i18n::reset_active();
     }
 

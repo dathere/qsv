@@ -1577,6 +1577,55 @@ fn viz_scatter3d_hover_labels_columns() {
 }
 
 #[test]
+fn viz_scatter3d_hover_neutralizes_token_shaped_headers() {
+    // roborev 4593. `viz scatter3d` builds the same explicit hover template as `viz smart`'s 3D
+    // panel, from the same kind of raw CSV header -- but was left on `escape_hover` alone when
+    // that one was hardened. A header shaped like `%{...}` is a live plotly token, so plotly
+    // interpolated it AWAY and the reader lost the column name entirely.
+    let wrk = Workdir::new("viz_scatter3d_hover_neutralizes_token_shaped_headers");
+    // three headers covering the two shapes that matter: a token-shaped one, a lone `%` (which
+    // is NOT a token opener and must survive verbatim), and an ordinary one.
+    wrk.create_from_string(
+        "cube.csv",
+        "%{x},pct % done,c\n1000,2,3\n4,5000,6\n7,8,9000\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter3d",
+        "cube.csv",
+        "--x",
+        "%{x}",
+        "--y",
+        "pct % done",
+        "--z",
+        "c",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // The token opener is broken with a numeric character reference, which renders as a literal
+    // `{` in plotly's pseudo-HTML while no longer matching its `%{...}` regex.
+    // NOTE the `\u0026`: plotly's JSON serialization unicode-escapes `&` (and `<`) on the way
+    // into the page, so the emitted HTML never contains a bare `&#123;` to match on.
+    assert!(
+        html.contains(r"%\u0026#123;x}: %{x:,.3f}"),
+        "a token-shaped header must be neutralized at the brace; html: {html}"
+    );
+    // ...and a lone `%` is left completely alone -- doubling it reached the reader as "%%"
+    assert!(
+        html.contains(r"pct % done: %{y:,.3f}"),
+        "a lone `%` in a header must survive verbatim; html: {html}"
+    );
+    // the template's own tokens are untouched, and the trace-name box stays suppressed
+    assert!(
+        html.contains(r"c: %{z:,.3f}\u003cextra\u003e\u003c/extra\u003e"),
+        "the template's own tokens must survive; html: {html}"
+    );
+}
+
+#[test]
 fn viz_radar_hover_shows_axis_means() {
     // Without a hover template plotly shows only "trace 0"; we attach per-vertex hovertext naming
     // each axis with its ACTUAL (comma-grouped) mean.

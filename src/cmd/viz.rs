@@ -10704,12 +10704,18 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
     // NOT read the scene axis titles), so build an explicit template naming each dimension with
     // comma-grouped values. escape: this is a hoverTEMPLATE — a raw header containing
     // `<extra>`/`<b>` would otherwise terminate/format the template instead of displaying
-    // literally.
+    // literally, and one shaped like `%{...}` would be INTERPOLATED away, so the token opener is
+    // neutralized too.
+    //
+    // This is the standalone twin of `inline_panel_plot_scatter3d`'s template — same shape, same
+    // three labels, built from the same kind of raw header. It was left behind when that one was
+    // hardened (roborev 4593); the two must escape identically or a `%{...}` header renders one
+    // way in `viz smart` and another in `viz scatter3d`.
     let hover = format!(
         "{}: %{{x:,.3f}}<br>{}: %{{y:,.3f}}<br>{}: %{{z:,.3f}}<extra></extra>",
-        escape_hover(&x_title),
-        escape_hover(&y_title),
-        escape_hover(&z_title)
+        escape_template_token(&escape_hover(&x_title)),
+        escape_template_token(&escape_hover(&y_title)),
+        escape_template_token(&escape_hover(&z_title))
     );
 
     let mut plot = Plot::new();
@@ -35141,11 +35147,19 @@ fn panel_trace_histogram(
         let values = hist.get(idx).cloned().unwrap_or_default();
         // the cell has no x-axis title (panel.name is only a cell annotation), so name the
         // binned value and its count in the hover, both comma-grouped.
-        // NOTE: `escape_hover` only, no `escape_template_token` -- preserved from before this
-        // string was localized. A `%` in the panel name is mis-read by plotly here, unlike in
-        // the contour/Lorenz hovers which take the full composition. Pre-existing; changing it
-        // would be a behavior change, not a translation.
-        let hover = t!("viz.hover.histogram", q_col = escape_hover(&panel.name)).into_owned();
+        //
+        // This sink used to take `escape_hover` alone, exempted by a NOTE reading "a `%` in the
+        // panel name is mis-read by plotly here ... changing it would be a behavior change". That
+        // was true only while the helper DOUBLED every `%`: applying it would have turned a
+        // header's `50%` into `50%%`. Now that it neutralizes the BRACE and nothing else
+        // (roborev 4591), applying it is a no-op for every header except a `%{...}`-shaped one --
+        // which plotly currently interpolates AWAY, eating the header. So the exemption's own
+        // rationale is gone and the composition is now the same as every other template sink.
+        let hover = t!(
+            "viz.hover.histogram",
+            q_col = escape_template_token(&escape_hover(&panel.name))
+        )
+        .into_owned();
         let mut h = Histogram::new(values)
             .name(escape_hover(&panel.name))
             .marker(Marker::new().color(color))
@@ -47656,6 +47670,48 @@ mod tests {
         assert!(
             !json.contains(r"&amp;amp;"),
             "trace name must not be double-escaped, got: {json}"
+        );
+    }
+
+    #[test]
+    fn histogram_hover_neutralizes_a_token_shaped_header() {
+        // roborev 4593. This sink was exempted from token escaping by a NOTE whose rationale --
+        // "changing it would be a behavior change" -- held only while the helper doubled every
+        // `%`. Once it neutralized the brace alone (roborev 4591), the exemption cost a real bug
+        // and bought nothing.
+        //
+        // The catalog string is `%{q_col}: %{x:,.3f}<br>count: %{y:,}`, so the header is
+        // interpolated into a live hovertemplate.
+        let _locale = english_locale();
+        let hist: HashMap<usize, Vec<f64>> = HashMap::from([(0, vec![1.0, 2.0, 3.0])]);
+
+        // a token-shaped header must be neutralized rather than interpolated away by plotly
+        let panel = Panel::new("%{x}".to_string(), PanelKind::Histogram { idx: 0 });
+        let (trace, ..) = panel_trace_histogram(&panel, "#4c78a8", &hist, None);
+        let json = trace.to_json();
+        assert!(
+            json.contains(r"%&#123;x}: %{x:,.3f}"),
+            "a token-shaped header must be neutralized at the brace: {json}"
+        );
+
+        // ...while a LONE `%` is not a token opener and must survive untouched. This is the
+        // assertion that fails if the old doubling helper is ever restored here.
+        let pct = Panel::new("pct % done".to_string(), PanelKind::Histogram { idx: 0 });
+        let (trace, ..) = panel_trace_histogram(&pct, "#4c78a8", &hist, None);
+        let json = trace.to_json();
+        assert!(
+            json.contains(r"pct % done: %{x:,.3f}"),
+            "a lone `%` in a header must survive: {json}"
+        );
+        assert!(
+            !json.contains("%%"),
+            "nothing may be percent-doubled: {json}"
+        );
+
+        // the template's OWN tokens survive the substitution intact
+        assert!(
+            json.contains(r"count: %{y:,}<extra></extra>"),
+            "the catalog template's own tokens must be preserved: {json}"
         );
     }
 

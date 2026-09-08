@@ -21526,19 +21526,42 @@ fn active_lexicon() -> Option<&'static Lexicon> {
 /// immediately followed by one of these, the `数` belongs to the NEXT word and the match is a
 /// mirage — `评分数据` is "rating DATA", an intensive rating, not a count of ratings.
 ///
-/// Only these four. `量` and `目` are deliberately absent: `数量` and `数目` are themselves count
-/// words, so `スコア数量` and `评分数目` ("number of scores"/"of ratings") must keep matching.
+/// The membership rule, so this list does not grow by accretion: a `数X` word belongs here only
+/// if it denotes A NUMBER, because that is what lands in a measure column. `数据`/`数値`/`数值`/
+/// `数字` all do. Deliberately OUT, and to be declined rather than re-argued (issue #4599):
+///
+/// - `数量`/`数目` — count words in their own right, so `スコア数量` and `评分数目` ("number of
+///   scores"/"of ratings") must keep matching. Both are pinned by mutation-tested assertions.
+/// - `数式` (formula), `数列` (sequence), `数学` (mathematics) — a formula or an ordinal is not a
+///   measure, so the Sum-vs-Mean routing of a column named for one does not matter.
+/// - `数十`/`数百`/`数人`/`数日`/`数回` — the Japanese `数` = "several" prefix, a productive and
+///   effectively open set. No enumeration terminates here.
+///
+/// Every addition is a two-sided bet, and the asymmetry favors a short list: a missed veto
+/// mis-routes one obscure name, while a wrong reject silently averages a real count column.
+/// `量` and `目` both looked plausible and both would have done exactly that.
 const COUNT_HEAD_CHARS: &[char] = &['据', '値', '值', '字'];
 
 /// Match a lexicon count substring, rejecting the occurrences where its trailing `数` is really
 /// the head of a following word (see `COUNT_HEAD_CHARS`). Evaluated per OCCURRENCE, so a name
 /// that contains both a mirage and a real count still reads as a count.
 ///
-/// Applied to every count substring, not just the `数`-suffixed compounds: a boundary test
-/// restricted to those would have to reject a following letter outright, which breaks
-/// `评分数平均` exactly the way it would break the `件数平均` this suite already pins as
+/// Applied to every count substring that ENDS IN `数`, not just the `数`-suffixed compounds: a
+/// boundary test restricted to those would have to reject a following letter outright, which
+/// breaks `评分数平均` exactly the way it would break the `件数平均` this suite already pins as
 /// additive. The head-character test is what separates `数据` from `平均` (issue #4597).
+///
+/// The `ends_with` gate is load-bearing, not decoration. The whole rationale is that the marker's
+/// TRAILING `数` was re-parsed as the head of the next word — a marker that does not end in `数`
+/// has no such `数` to re-parse, and rejecting it on the following character is meaningless.
+/// Without the gate, `カウント値平均` lost its `カウント` to a `値` that was never part of it, and
+/// `数量字段评分` lost its `数量` to a `字`; both then read as intensive (issue #4599). Exactly two
+/// markers are affected — `カウント` and `数量` — every other entry in both CJK tables ends in
+/// `数`.
 fn count_substring_hit(hay: &str, kw: &str) -> bool {
+    if !kw.ends_with('数') {
+        return hay.contains(kw);
+    }
     hay.match_indices(kw)
         .any(|(i, _)| !hay[i + kw.len()..].starts_with(COUNT_HEAD_CHARS))
 }
@@ -46971,6 +46994,43 @@ mod tests {
         assert!(!is_intensive_measure(
             "\u{8bc4}\u{5206}\u{6570}\u{636e}\u{8bc4}\u{5206}\u{6570}",
             ""
+        ));
+        viz_i18n::reset_active();
+    }
+
+    /// The head-character reject only makes sense for a marker whose TRAILING `\u{6570}` can be
+    /// re-parsed as the head of the next word. A marker that does not end in `\u{6570}` has no
+    /// such character, so rejecting it on what follows is meaningless -- and destructive:
+    /// `\u{30ab}\u{30a6}\u{30f3}\u{30c8}` lost its match to a `\u{5024}` that was never part of
+    /// it, and `\u{6570}\u{91cf}` to a `\u{5b57}`, leaving `\u{5e73}\u{5747}`/`\u{8bc4}\u{5206}`
+    /// to route both counts to Mean (issue #4599).
+    ///
+    /// Exactly two markers are affected; every other CJK entry ends in `\u{6570}`.
+    #[test]
+    fn head_char_reject_applies_only_to_markers_ending_in_a_count_char() {
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+        for (lang, name) in [
+            // `カウント` + 値, then an intensive `平均` waiting to claim it
+            (
+                "jpn",
+                "\u{30ab}\u{30a6}\u{30f3}\u{30c8}\u{5024}\u{5e73}\u{5747}",
+            ),
+            // `数量` + 字, then an intensive `评分`
+            ("zho", "\u{6570}\u{91cf}\u{5b57}\u{6bb5}\u{8bc4}\u{5206}"),
+        ] {
+            viz_i18n::set_data_locale(Some(lang));
+            assert!(
+                !is_intensive_measure(name, name),
+                "{name} is a COUNT under {lang}; the head-char reject must not touch a marker \
+                 that does not end in \u{6570}"
+            );
+        }
+        // the gate must not disarm the reject for the markers it IS for
+        viz_i18n::set_data_locale(Some("zho"));
+        assert!(is_intensive_measure(
+            "\u{8bc4}\u{5206}\u{6570}\u{636e}",
+            "\u{8bc4}\u{5206}\u{6570}\u{636e}"
         ));
         viz_i18n::reset_active();
     }

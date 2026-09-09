@@ -7985,11 +7985,24 @@ struct RateSeries {
 /// comparison at all, and the rate panel already declines to draw it (`series.locs.len() >= 2`).
 /// Reporting it as degenerate would tell the reader something false.
 ///
-/// Equality here is the exact negation of the row pass's within-region constancy test
-/// (`(prev - d).abs() > f64::EPSILON * prev.abs().max(1.0)`), so a pair that check calls equal can
-/// never read as distinct here. The anchor is the MINIMUM rather than whichever entry the map
-/// happens to yield first: `HashMap` iteration order is nondeterministic, and under a tolerance
-/// predicate the choice of anchor is observable.
+/// Equality here mirrors the row pass's within-region constancy test
+/// (`(prev - d).abs() > f64::EPSILON * prev.abs().max(1.0)`) and is never more PERMISSIVE than it:
+/// a pair this predicate calls equal is one the row pass would also call constant.
+///
+/// The converse does NOT hold, and an earlier version of this comment claimed it did. The two
+/// scale their tolerance by different operands — the row pass by whichever value it saw first,
+/// this by the minimum — so a pair the row pass called constant can still read as distinct here.
+/// `x = 2^n - 2 ULP` against `y = 2^n` disagrees for every `n >= 1`, e.g. `3.999999999999999`
+/// against `4.0`; at or below 1 the shared `.max(1.0)` floor pins both tolerances to `f64::EPSILON`
+/// and the disagreement cannot arise. Nothing can observe it either way: the row
+/// pass compares ROWS WITHIN a region and leaves exactly one value per region behind, while this
+/// compares those survivors ACROSS regions, so the two never judge the same pair. The gap also
+/// errs in the safe direction — toward "distinct", which DRAWS the panel rather than suppressing
+/// one the reader wanted.
+///
+/// The anchor is the MINIMUM rather than whichever entry the map happens to yield first:
+/// `HashMap` iteration order is nondeterministic, and under a tolerance predicate the choice of
+/// anchor is observable.
 ///
 /// Deliberately threshold-free, and deliberately NOT a ratio of distinct values to regions. The
 /// ratio form was investigated on issue #4526 and disproved with measured data — a legitimate
@@ -44653,12 +44666,28 @@ mod tests {
 
     #[test]
     fn single_distinct_denominator_agrees_with_the_row_pass_constancy_test() {
-        // Equality here is the exact negation of the within-region constancy test in the row pass
-        // (`(prev - d).abs() > f64::EPSILON * prev.abs().max(1.0)`). If the two ever disagree, a
-        // pair the row pass calls constant would read as two distinct values here and the panel
-        // would survive as a rate that is really a rescaled count.
+        // Equality here mirrors the within-region constancy test in the row pass
+        // (`(prev - d).abs() > f64::EPSILON * prev.abs().max(1.0)`), in the direction that
+        // matters: a pair this predicate calls equal is one the row pass would also call
+        // constant. It is NOT a symmetric equivalence — the two anchor their tolerance on
+        // different operands, and `x = 2^n - 2 ULP` against `y = 2^n` disagrees for every
+        // `n >= 1` (at or below 1 the shared `.max(1.0)` floor pins both tolerances to
+        // `f64::EPSILON`, so it cannot arise there) — but the two never judge the same pair, and
+        // the gap errs toward "distinct", which draws the panel rather than suppressing one the
+        // reader wanted. See `single_distinct_denominator`'s doc comment.
         let a = 50_000.0_f64;
         let b = a + a * f64::EPSILON * 0.5; // within the row pass's tolerance
+        // The fixture must actually be JITTERED, and this is the only assertion that can say so:
+        // the tolerance check below passes trivially when `b == a`, so an inert fixture would sail
+        // through it and the test would silently stop exercising the epsilon at all. `b` differs
+        // from `a` by one ULP only because 50,000 sits where `a * EPSILON * 0.5` exceeds half an
+        // ULP and rounds up; at an exact power of two the same expression is exactly half an ULP,
+        // ties-to-even rounds it back down, and it becomes a no-op.
+        assert_ne!(
+            a.to_bits(),
+            b.to_bits(),
+            "fixture check: b must differ from a by one ULP, or this test asserts nothing"
+        );
         assert!(
             (a - b).abs() <= f64::EPSILON * a.abs().max(1.0),
             "fixture check: the row pass must consider these constant"
@@ -44669,7 +44698,29 @@ mod tests {
         assert_eq!(
             single_distinct_denominator(&near),
             Some(a),
-            "a pair the row pass calls constant must not read as two distinct values"
+            "the helper must carry a TOLERANCE rather than testing exact equality — this pair is \
+             one ULP apart. Note this does not establish the converse implication, which does not \
+             hold; it only pins that the epsilon is here and is roughly the row pass's size"
+        );
+
+        // The direction that DOES hold — helper-equal implies row-pass-constant — asserted as its
+        // contrapositive, since that is the form a single pair can witness: a pair the row pass
+        // rejects must be rejected here too. Two ULP is the boundary, because the row pass's
+        // tolerance at 50,000 is EPSILON * 50_000, about 1.5 ULP: one ULP is inside it (above),
+        // two is outside.
+        let past = f64::from_bits(a.to_bits() + 2);
+        assert!(
+            (a - past).abs() > f64::EPSILON * a.abs().max(1.0),
+            "fixture check: the row pass must consider these a CONFLICT"
+        );
+        let apart: HashMap<String, f64> = [("A".to_string(), a), ("B".to_string(), past)]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            single_distinct_denominator(&apart),
+            None,
+            "a pair the row pass calls a conflict must never read as one value here — a rate \
+             panel would then be suppressed over denominators the row pass itself calls distinct"
         );
     }
 

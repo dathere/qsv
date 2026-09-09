@@ -4259,6 +4259,135 @@ fn describegpt_infer_null_values_confirms_strings_and_demotes_numerics() {
     );
 }
 
+/// End-to-end proof of the geo-level chain WITHOUT an LLM (issue #4571): a canned response tags a
+/// state population with `geo_level: geo.state`, and the emitted JSON Schema must carry that level
+/// on the DERIVED denominator hint of the region column — `{"column": "state_pop", "level":
+/// "geo.state"}`.
+///
+/// Asserts PROVENANCE, not just shape. `geo_level` is verified but never emitted on the field
+/// itself, so the sidecar is the only place the level appears and nothing records where it came
+/// from. This pins that the level on the hint is the level of the column the hint NAMES — the one
+/// property a reader cannot check for themselves, and the one a future refactor could silently
+/// break by copying some other column's level.
+///
+/// `#4550` shipped `x-qsv.unit` with no end-to-end test at all; this closes that gap for the
+/// sibling key.
+#[test]
+fn describegpt_geo_level_rides_the_derived_denominator_hint() {
+    use std::{io::Write, process::Stdio};
+
+    let wrk = Workdir::new("describegpt_geo_level_denominator");
+    // The shape #4526's repro turns on: a county-keyed extract that joined in STATE population and
+    // carries no `state` column, so cardinality alone cannot tell the level.
+    let mut rows = vec![svec!["county_fips", "state_pop", "calls"]];
+    for i in 0..40 {
+        rows.push(vec![
+            format!("060{:02}", i % 8),
+            // repeats, so it is constant within each county and its cardinality stays under the
+            // region's -- the `>=` half of verify_denominators' rule
+            format!("{}", 1_000_000 + (i % 4) * 500_000),
+            format!("{}", i % 9),
+        ]);
+    }
+    wrk.create_indexed("data.csv", rows);
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context")
+        .arg("--dictionary")
+        .arg("--infer-content-type")
+        .arg("--no-cache")
+        .arg("data.csv");
+    let prep: serde_json::Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+
+    let llm_response = serde_json::json!({
+        "county_fips": {"label": "County FIPS", "description": "County code.",
+                        "content_type": "unknown", "role": "dimension",
+                        "concept": "geo.county_fips"},
+        // the level the model reads off the COLUMN's own values -- geo.state, not the
+        // geo.county_fips of the column the hint will land on
+        "state_pop":   {"label": "State Population", "description": "Population of the state.",
+                        "content_type": "unknown", "role": "measure",
+                        "concept": "measure.population", "geo_level": "geo.state"},
+        "calls":       {"label": "Calls", "description": "Calls logged.",
+                        "content_type": "unknown", "role": "measure",
+                        "concept": "measure.count", "geo_level": "geo.county"},
+    })
+    .to_string();
+
+    let phases: Vec<serde_json::Value> = prep["phases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "kind": p["kind"],
+                "response": llm_response,
+                "reasoning": "",
+                "token_usage": {"prompt": 1, "completion": 1, "total": 2, "elapsed": 1}
+            })
+        })
+        .collect();
+    let process_input = serde_json::json!({
+        "phases": phases,
+        "analysis_results": prep["analysis_results"],
+        "model": prep["model"],
+    });
+
+    let mut cmd_2 = wrk.command("describegpt");
+    cmd_2
+        .arg("--process-response")
+        .arg("--dictionary")
+        .arg("--infer-content-type")
+        .arg("--no-cache")
+        .arg("--format")
+        .arg("JSONSchema")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd_2.spawn().unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(process_input.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "process-response failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let schema: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).unwrap();
+
+    let hint = &schema["properties"]["county_fips"]["x-qsv"]["denominator"];
+    assert_eq!(
+        hint["column"], "state_pop",
+        "fixture check: the hint must be derived at all, or the level assertion below is vacuous"
+    );
+    assert_eq!(
+        hint["level"], "geo.state",
+        "the hint carries the level of the column it NAMES -- not the level of the region column \
+         it sits on (geo.county_fips), and not the level proposed on the unrelated `calls` \
+         measure (geo.county). Both wrong answers are present in this fixture on purpose."
+    );
+
+    // the level is never emitted on the field that declared it: one copy, in the hint
+    assert!(
+        schema["properties"]["state_pop"]["x-qsv"]
+            .get("geo_level")
+            .is_none(),
+        "geo_level is a parse-stage input, not part of the sidecar contract -- a second copy \
+         could drift from the first under hand-editing"
+    );
+    assert!(
+        schema["properties"]["calls"]["x-qsv"]
+            .get("geo_level")
+            .is_none(),
+        "not emitted even on a measure that never became a denominator"
+    );
+}
+
 /// End-to-end proof of the money/currency chain WITHOUT an LLM: a canned response claims
 /// `content_type: money` but contradicts itself with `role: dimension`, and proposes a lowercase
 /// currency code. The emitted JSON Schema must show the role COERCED to `measure` (the

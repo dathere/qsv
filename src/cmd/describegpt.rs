@@ -246,6 +246,20 @@ describegpt options:
                            still outranks the hint. "measure.area" is a sibling concept the LLM
                            may tag, but qsv does not derive an area denominator from it yet - an
                            area divisor is unreadable without its unit.
+                           For a numeric measure the LLM also proposes an "x-qsv.geo_level": the
+                           AREAL unit its values are measured over ("geo.state" on a state
+                           population), which is a different question from the field's own
+                           "concept" ("measure.population" - what the values ARE, not the area
+                           each covers). Only areal "geo." tokens are accepted; a latitude, a
+                           street address, a timezone or a gazetteer id points at a spot rather
+                           than bounding a region, so none of them can be a level. It is kept
+                           only on a numeric measure, and it is never emitted on the field
+                           itself: qsv copies the level of the field it DERIVED a denominator
+                           from onto that hint, as {"column": "<field>", "level": "<token>"}.
+                           This is what lets a consumer reject a denominator declared from a
+                           COARSER geography than the region it is charted against - county
+                           counts over state populations is a confidently wrong rate map, and no
+                           amount of counting distinct values can tell it from a correct one.
                            The LLM also infers dataset-level INTER-COLUMN RELATIONSHIPS, emitted
                            as a "relationships" array (top-level in the JSON dictionary, and in
                            the dataset-level "x-qsv" object of the JSON Schema one). Each entry
@@ -8882,13 +8896,15 @@ p_fewshot_examples = ""
             concept:       String::new(),
             role:          String::new(),
 
-            null_values:     Vec::new(),
-            null_candidates: Vec::new(),
-            gauge_range:     None,
-            currency:        None,
-            unit:            None,
-            aggregation:     None,
-            denominator:     None,
+            null_values:           Vec::new(),
+            null_candidates:       Vec::new(),
+            gauge_range:           None,
+            currency:              None,
+            unit:                  None,
+            aggregation:           None,
+            denominator:           None,
+            geo_level:             None,
+            denominator_geo_level: None,
         }];
         let first = build_first_pass_dictionary_json_string(&args, &entries);
         sleep(Duration::from_millis(10));
@@ -9090,13 +9106,15 @@ p_fewshot_examples = ""
                 concept:       String::new(),
                 role:          String::new(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
             dictionary::DictionaryEntry {
                 name:          "category|raw".to_string(),
@@ -9117,13 +9135,15 @@ p_fewshot_examples = ""
                 concept:       String::new(),
                 role:          String::new(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
         ];
 
@@ -9206,13 +9226,15 @@ p_fewshot_examples = ""
                 concept:       "id.surrogate_key".to_string(),
                 role:          "identifier".to_string(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
             dictionary::DictionaryEntry {
                 name:          "Status".to_string(),
@@ -9246,13 +9268,15 @@ p_fewshot_examples = ""
                 concept:       "category.status".to_string(),
                 role:          "dimension".to_string(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
         ];
 
@@ -9351,13 +9375,15 @@ p_fewshot_examples = ""
                 concept:       "id.surrogate_key".to_string(),
                 role:          "identifier".to_string(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
             dictionary::DictionaryEntry {
                 name:          "Status".to_string(),
@@ -9378,13 +9404,15 @@ p_fewshot_examples = ""
                 concept:       "category.status".to_string(),
                 role:          "dimension".to_string(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
         ];
 
@@ -9458,13 +9486,15 @@ p_fewshot_examples = ""
             concept:       "id.surrogate_key".to_string(),
             role:          "identifier".to_string(),
 
-            null_values:     Vec::new(),
-            null_candidates: Vec::new(),
-            gauge_range:     None,
-            currency:        None,
-            unit:            None,
-            aggregation:     None,
-            denominator:     None,
+            null_values:           Vec::new(),
+            null_candidates:       Vec::new(),
+            gauge_range:           None,
+            currency:              None,
+            unit:                  None,
+            aggregation:           None,
+            denominator:           None,
+            geo_level:             None,
+            denominator_geo_level: None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -9552,13 +9582,15 @@ p_fewshot_examples = ""
                 concept:       String::new(),
                 role:          String::new(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
             // Text column with only `min_length` retained.
             dictionary::DictionaryEntry {
@@ -9580,13 +9612,15 @@ p_fewshot_examples = ""
                 concept:       String::new(),
                 role:          String::new(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
             // Text column with only `max_length` retained.
             dictionary::DictionaryEntry {
@@ -9608,13 +9642,15 @@ p_fewshot_examples = ""
                 concept:       String::new(),
                 role:          String::new(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
         ];
 
@@ -9687,13 +9723,15 @@ p_fewshot_examples = ""
             concept:       String::new(),
             role:          String::new(),
 
-            null_values:     Vec::new(),
-            null_candidates: Vec::new(),
-            gauge_range:     None,
-            currency:        None,
-            unit:            None,
-            aggregation:     None,
-            denominator:     None,
+            null_values:           Vec::new(),
+            null_candidates:       Vec::new(),
+            gauge_range:           None,
+            currency:              None,
+            unit:                  None,
+            aggregation:           None,
+            denominator:           None,
+            geo_level:             None,
+            denominator_geo_level: None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -9853,13 +9891,15 @@ p_fewshot_examples = ""
                 concept:       String::new(),
                 role:          String::new(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
             dictionary::DictionaryEntry {
                 name:          "category".to_string(),
@@ -9880,13 +9920,15 @@ p_fewshot_examples = ""
                 concept:       String::new(),
                 role:          String::new(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
         ];
 
@@ -9951,13 +9993,15 @@ p_fewshot_examples = ""
                 concept:       String::new(),
                 role:          String::new(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
             // datetime with an inferred format (contains colons) over an RFC3339 min/max.
             dictionary::DictionaryEntry {
@@ -9979,13 +10023,15 @@ p_fewshot_examples = ""
                 concept:       String::new(),
                 role:          String::new(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
             // bare `date` token (no inferred fmt) — Min/Max stay as-is.
             dictionary::DictionaryEntry {
@@ -10007,13 +10053,15 @@ p_fewshot_examples = ""
                 concept:       String::new(),
                 role:          String::new(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
             // non-date content type — Min/Max untouched even though numeric.
             dictionary::DictionaryEntry {
@@ -10035,13 +10083,15 @@ p_fewshot_examples = ""
                 concept:       String::new(),
                 role:          String::new(),
 
-                null_values:     Vec::new(),
-                null_candidates: Vec::new(),
-                gauge_range:     None,
-                currency:        None,
-                unit:            None,
-                aggregation:     None,
-                denominator:     None,
+                null_values:           Vec::new(),
+                null_candidates:       Vec::new(),
+                gauge_range:           None,
+                currency:              None,
+                unit:                  None,
+                aggregation:           None,
+                denominator:           None,
+                geo_level:             None,
+                denominator_geo_level: None,
             },
         ];
 
@@ -10215,11 +10265,36 @@ p_fewshot_examples = ""
                 "\"content_type\", \"role\", \"concept\" and (for canonical-scale numeric \
                  measures only) an optional \"gauge_range\", plus (for monetary measures only) an \
                  optional \"currency\", (for non-monetary numeric measures only) an optional \
-                 \"unit\" and (for numeric measures only) an optional \"aggregation\" properties"
+                 \"unit\" and (for numeric measures only) an optional \"aggregation\" and an \
+                 optional \"geo_level\" properties"
             ),
             "flag-on prompt must list \
-             content_type/role/concept/gauge_range/currency/unit/aggregation in the properties \
-             sentence:\n{on}"
+             content_type/role/concept/gauge_range/currency/unit/aggregation/geo_level in the \
+             properties sentence:\n{on}"
+        );
+        // The Geo Level instruction and its worked example (issue #4571). Unlike Unit, it injects
+        // NO vocabulary of its own: the acceptable tokens are the areal `geo.` members of the
+        // Concept list already rendered above, so there is no second list here to drift out of
+        // step with `DENOMINATOR_REGION_CONCEPTS`. The prose must therefore stay generic — assert
+        // that it POINTS at the concept list rather than restating any token set.
+        assert!(
+            on.contains("- Geo Level (OPTIONAL, numeric MEASURE fields only)"),
+            "flag-on prompt must include the Geo Level instruction:\n{on}"
+        );
+        assert!(
+            on.contains("\"geo.\" token from the Concept list above that names an AREAL UNIT"),
+            "the Geo Level instruction must point at the already-injected Concept list rather \
+             than enumerating its own tokens — an enumeration here can drift from \
+             DENOMINATOR_REGION_CONCEPTS and nothing would catch it:\n{on}"
+        );
+        assert!(
+            on.contains("\"geo_level\": \"geo.state\""),
+            "flag-on prompt must show geo_level in the worked JSON example — the example is what \
+             a model copies, and `unit` shipped without one:\n{on}"
+        );
+        assert!(
+            !off.contains("Geo Level (OPTIONAL"),
+            "flag-off prompt must NOT mention the geo level:\n{off}"
         );
         // The Aggregation instruction, its vocabulary and its worked example (issue #4401).
         assert!(

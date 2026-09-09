@@ -10223,6 +10223,25 @@ p_fewshot_examples = ""
             .unwrap()
         };
 
+        // Extract the worked JSON example from a rendered prompt. The block opens on the line
+        // that is exactly `{` following the "Return the results in JSON format" marker, and
+        // closes on the first line after that which is exactly `}`.
+        let example_block = |rendered: &str| -> String {
+            let after_marker = rendered
+                .split_once("Return the results in JSON format")
+                .expect("rendered prompt must contain the JSON-example marker")
+                .1;
+            let mut block = String::new();
+            for line in after_marker.lines().skip_while(|l| *l != "{") {
+                block.push_str(line);
+                block.push('\n');
+                if line == "}" {
+                    return block;
+                }
+            }
+            panic!("could not delimit the worked JSON example:\n{after_marker}");
+        };
+
         let off = render(false);
         assert!(
             !off.contains("Content Type:"),
@@ -10246,6 +10265,24 @@ p_fewshot_examples = ""
             off.contains("\"label\" and \"description\" properties"),
             "flag-off prompt must keep the legacy properties sentence:\n{off}"
         );
+        assert!(
+            !off.contains("\"unit\":"),
+            "flag-off prompt must NOT include the unit JSON key:\n{off}"
+        );
+        // The example is hand-fenced - {% raw %}/{% endraw %} interleaved with
+        // {% if infer_content_type %} guards - and the comma separating the last field from
+        // "grain" lives INSIDE that guard, so it moves whenever a field is appended. A misplaced
+        // comma there ships a worked example that is not valid JSON, and no substring assertion
+        // would notice. Parse it instead.
+        //
+        // NOTE: this test's `context!` omits `tour_audience` and `infer_null_values`, so those
+        // arms render empty. This is a faithful check of the FENCING, not a byte-for-byte
+        // stand-in for the prompt a production run sends.
+        //
+        // The parse IS the assertion here; the annotations' absence from this arm is already
+        // pinned by the `!off.contains(...)` negatives above.
+        serde_json::from_str::<serde_json::Value>(&example_block(&off))
+            .unwrap_or_else(|e| panic!("flag-off worked example must be valid JSON: {e}\n{off}"));
 
         let on = render(true);
         assert!(
@@ -10336,6 +10373,24 @@ p_fewshot_examples = ""
             "flag-on prompt must inject the curated UCUM vocabulary WITH its display-symbol \
              glosses — without them a model cannot tell the bracketed codes apart:\n{on}"
         );
+        // ... and its worked example (issue #4573). #4550 shipped the instruction and the
+        // vocabulary without one, and the example is the part of the prompt a model imitates most
+        // literally - which matters more for UCUM than for the other annotations, since a model
+        // left to itself writes "degC"/"°C" rather than the case-sensitive "Cel".
+        //
+        // There is deliberately NO `on.contains("\"unit\": \"Cel\"")` here to match the sibling
+        // annotations' style: the Unit INSTRUCTION itself spells out `"unit": "Cel" for Celsius`,
+        // so that substring is present whether or not the example carries a unit and the
+        // assertion would pass vacuously (verified - it passes on the pre-#4573 file). The unit
+        // is pinned structurally at the end of this test instead, against the parsed example.
+        //
+        // `mean` IS safe as a substring - it appears nowhere but the two new example fields - and
+        // it doubles as the check that the example no longer implies every measure sums.
+        assert!(
+            on.contains("\"aggregation\": \"mean\""),
+            "flag-on prompt must exercise BOTH aggregation tokens in the worked example - a \
+             temperature that sums is nonsense:\n{on}"
+        );
         assert!(
             !off.contains("Unit (OPTIONAL"),
             "flag-off prompt must NOT mention the unit:\n{off}"
@@ -10344,6 +10399,12 @@ p_fewshot_examples = ""
         assert!(
             on.contains("- Gauge Range (OPTIONAL, CONTINUOUS numeric MEASURE fields only)"),
             "flag-on prompt must include the Gauge Range instruction:\n{on}"
+        );
+        // ... and its worked example (issue #4573), on the canonical percentage scale the
+        // instruction leads with.
+        assert!(
+            on.contains("\"gauge_range\": [0, 100]"),
+            "flag-on prompt must show a gauge_range in the worked JSON example:\n{on}"
         );
         // Concept + Role instructions and vocabularies are injected when the flag is on.
         assert!(
@@ -10361,6 +10422,34 @@ p_fewshot_examples = ""
         assert!(
             on.contains("\"concept\": \"geo.city\""),
             "flag-on prompt must include the concept JSON example key:\n{on}"
+        );
+
+        // Same structural check as the flag-off arm, and the stronger half of the #4573
+        // assertions: the annotations are read out of a PARSED object rather than matched as
+        // substrings, so they are pinned to the field that carries them.
+        let on_example: serde_json::Value = serde_json::from_str(&example_block(&on))
+            .unwrap_or_else(|e| panic!("flag-on worked example must be valid JSON: {e}\n{on}"));
+        assert_eq!(
+            on_example["field_name_5"]["unit"], "Cel",
+            "the UCUM unit must sit on the non-monetary numeric measure:\n{on_example:#}"
+        );
+        assert_eq!(
+            on_example["field_name_6"]["gauge_range"],
+            serde_json::json!([0, 100]),
+            "the gauge_range must sit on the canonical-scale measure:\n{on_example:#}"
+        );
+        assert_eq!(
+            on_example["field_name_6"]["unit"], "%",
+            "the worked example must exercise the \"%\" carve-out the Unit instruction spells \
+             out. It sits in a template-ACTIVE region (outside the {{% raw %}} fence), where a \
+             bare `%` is literal text because minijinja's delimiter is `{{%` - verified by \
+             rendering. Unrelated to plotly's hovertemplate `%{{...}}`, which is a different \
+             layer:\n{on_example:#}"
+        );
+        assert!(
+            on_example["field_name_3"]["unit"].is_null(),
+            "the money field must NOT carry a unit - `currency` IS the unit for money, and the \
+             example is what a model copies:\n{on_example:#}"
         );
     }
 

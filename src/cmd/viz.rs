@@ -7985,11 +7985,22 @@ struct RateSeries {
 /// comparison at all, and the rate panel already declines to draw it (`series.locs.len() >= 2`).
 /// Reporting it as degenerate would tell the reader something false.
 ///
-/// Equality here is the exact negation of the row pass's within-region constancy test
-/// (`(prev - d).abs() > f64::EPSILON * prev.abs().max(1.0)`), so a pair that check calls equal can
-/// never read as distinct here. The anchor is the MINIMUM rather than whichever entry the map
-/// happens to yield first: `HashMap` iteration order is nondeterministic, and under a tolerance
-/// predicate the choice of anchor is observable.
+/// Equality here mirrors the row pass's within-region constancy test
+/// (`(prev - d).abs() > f64::EPSILON * prev.abs().max(1.0)`) and is never more PERMISSIVE than it:
+/// a pair this predicate calls equal is one the row pass would also call constant.
+///
+/// The converse does NOT hold, and an earlier version of this comment claimed it did. The two
+/// scale their tolerance by different operands — the row pass by whichever value it saw first,
+/// this by the minimum — so a pair the row pass called constant can still read as distinct here.
+/// `x = 2^n - 2 ULP` against `y = 2^n` disagrees in every binade. Nothing can observe it: the row
+/// pass compares ROWS WITHIN a region and leaves exactly one value per region behind, while this
+/// compares those survivors ACROSS regions, so the two never judge the same pair. The gap also
+/// errs in the safe direction — toward "distinct", which DRAWS the panel rather than suppressing
+/// one the reader wanted.
+///
+/// The anchor is the MINIMUM rather than whichever entry the map happens to yield first:
+/// `HashMap` iteration order is nondeterministic, and under a tolerance predicate the choice of
+/// anchor is observable.
 ///
 /// Deliberately threshold-free, and deliberately NOT a ratio of distinct values to regions. The
 /// ratio form was investigated on issue #4526 and disproved with measured data — a legitimate
@@ -44653,10 +44664,14 @@ mod tests {
 
     #[test]
     fn single_distinct_denominator_agrees_with_the_row_pass_constancy_test() {
-        // Equality here is the exact negation of the within-region constancy test in the row pass
-        // (`(prev - d).abs() > f64::EPSILON * prev.abs().max(1.0)`). If the two ever disagree, a
-        // pair the row pass calls constant would read as two distinct values here and the panel
-        // would survive as a rate that is really a rescaled count.
+        // Equality here mirrors the within-region constancy test in the row pass
+        // (`(prev - d).abs() > f64::EPSILON * prev.abs().max(1.0)`), in the direction that
+        // matters: a pair this predicate calls equal is one the row pass would also call
+        // constant. It is NOT a symmetric equivalence — the two anchor their tolerance on
+        // different operands, and `x = 2^n - 2 ULP` against `y = 2^n` disagrees in every binade —
+        // but the two never judge the same pair, and the gap errs toward "distinct", which draws
+        // the panel rather than suppressing one the reader wanted. See
+        // `single_distinct_denominator`'s doc comment.
         let a = 50_000.0_f64;
         let b = a + a * f64::EPSILON * 0.5; // within the row pass's tolerance
         // The fixture must actually be JITTERED, and this is the only assertion that can say so:

@@ -45,14 +45,17 @@ jobs:
     # "Failed to extract static image from browser session", which reads like a code bug.
     # setup-chrome + setup-chromedriver pin them together.
     - name: Install Chrome + matching chromedriver
+      id: chrome
       uses: browser-actions/setup-chrome@v2
       with:
         install-chromedriver: true
         install-dependencies: true
     - name: Report browser/driver versions
       run: |
-        chromedriver --version
-        (chrome --version || google-chrome --version) || echo "chrome not on PATH under that name"
+        echo "chrome:       ${{ steps.chrome.outputs.chrome-path }} (${{ steps.chrome.outputs.chrome-version }})"
+        echo "chromedriver: ${{ steps.chrome.outputs.chromedriver-path }} (${{ steps.chrome.outputs.chromedriver-version }})"
+        # the runner also ships its OWN Chrome; print it so a future mismatch is obvious in the log
+        (/opt/google/chrome/chrome --version || true) 2>/dev/null | sed 's/^/system chrome: /'
     - name: Installing Rust toolchain
       uses: dtolnay/rust-toolchain@master
       with:
@@ -64,5 +67,13 @@ jobs:
         key: qsv-viz-static-cache
     # feature_capable + viz_static only — `all_features` would drag in python, magika,
     # self_update and ui for no benefit on a job that already carries webdriver latency.
+    # The hover rendering-contract test (issue #4557) drives a browser itself rather than going
+    # through plotly's exporter, so it must be told WHICH Chrome to launch. Installing a matched
+    # pair is not enough on its own: chromedriver otherwise starts the runner's pre-installed
+    # /opt/google/chrome/chrome and reports a version mismatch against a correctly matched driver.
+    # The other viz_static tests are unaffected — plotly_static fetches its own matched driver.
     - name: Run the browser-gated viz tests
+      env:
+        QSV_TEST_CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        QSV_TEST_CHROMEDRIVER: ${{ steps.chrome.outputs.chromedriver-path }}
       run: cargo test --verbose --locked --features=feature_capable,viz_static viz_static -- --ignored --test-threads=1

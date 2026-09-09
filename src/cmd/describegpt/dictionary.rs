@@ -2974,6 +2974,48 @@ pub(super) fn parse_llm_grain_unit(llm_response: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Every UCUM DISPLAY symbol must be inert inside a plotly hovertemplate (roborev 4611).
+    ///
+    /// `viz.rs`'s `unit_suffix` looks a symbol up here and interpolates it straight into a
+    /// hovertemplate, so a symbol carrying `<`, `>`, `&` or `%{` would be read as MARKUP or as a
+    /// plotly TOKEN rather than shown to the reader — the `<b>` renders, or `%{x}` is substituted
+    /// away, and the unit silently disappears from the chart.
+    ///
+    /// This is a TABLE-WIDE invariant, checked on every entry, and that is the point. The browser
+    /// rendering-contract test (`viz_static_hover_rendering_contract`) can only exercise the units
+    /// its fixture happens to use — today just `%` — so it samples one row and cannot speak for
+    /// the other 43. Running that browser job whenever this file changes does NOT close the gap
+    /// either: it re-renders the fixture's `%`, not the symbol somebody just added. Only a check
+    /// over the whole table does, and it needs no browser to do it.
+    ///
+    /// A bare `%` is deliberately allowed: plotly's tokens require the BRACE, so `%` alone is
+    /// literal text. `%{` is what would be interpolated, and that is what this forbids.
+    #[test]
+    fn ucum_display_symbols_are_inert_in_a_hovertemplate() {
+        let offenders: Vec<(&str, &str)> = UCUM_UNIT_VOCAB
+            .iter()
+            .filter(|(_, sym)| {
+                sym.contains('<') || sym.contains('>') || sym.contains('&') || sym.contains("%{")
+            })
+            .copied()
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "these UCUM display symbols would be read as markup or as a plotly token instead of \
+             being shown to the reader: {offenders:?}. Either pick a plain-text symbol, or teach \
+             `unit_suffix` in src/cmd/viz.rs to escape it the way every other hovertemplate sink \
+             does (`escape_template_token(&escape_hover(..))`)."
+        );
+        // guard the guard: if the table is ever emptied or renamed out from under this test, an
+        // all-clear here would be meaningless
+        assert!(
+            UCUM_UNIT_VOCAB.len() >= 40,
+            "the UCUM table shrank unexpectedly ({} entries); this invariant may be scanning \
+             nothing",
+            UCUM_UNIT_VOCAB.len()
+        );
+    }
+
     fn blank_entry(name: &str) -> DictionaryEntry {
         DictionaryEntry {
             name:            name.to_string(),

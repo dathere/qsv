@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "tristate_county_incidents",
+  "type": "object",
+  "description": "Synthetic infrastructure incidents on REAL counties, one row per incident, used to demonstrate a denominator-aware region map on recognizable geography. The 210 counties of Ohio, Pennsylvania and West Virginia are real and keyed by 5-digit FIPS; the incident rows are generated (see gen_tristate_county_incidents.py). No population column is carried on purpose: the rate panel's denominator is FETCHED by --denominator census@2024, not shipped in this file.",
+  "x-qsv": {
+    "grain": "one row = one reported incident",
+    "grain_unit": "incident"
+  },
+  "properties": {
+    "county_fips": {
+      "type": "string",
+      "title": "County FIPS",
+      "description": "5-digit county GEOID. The ONLY geo concept in this dictionary, deliberately: `county` and `state` below are both names that appear in viz's REGION_CODE_LEAVES, so tagging either of them geo.* would create a competing choropleth candidate that scores ~0 coverage against 5-digit GEOIDs and can also perturb --geojson auto's scope resolution.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "role": "dimension",
+        "concept": "geo.county_fips",
+        "content_type": "category"
+      }
+    },
+    "county": {
+      "type": "string",
+      "title": "County",
+      "description": "TIGER properties.NAME, carried for human auditability of the committed CSV. Its ~200 distinct values exceed CATEGORICAL_MAX_CARDINALITY, so viz skips it as a frequency bar rather than drawing a 210-bar panel.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "role": "dimension",
+        "concept": "category.type",
+        "content_type": "category"
+      }
+    },
+    "state": {
+      "type": "string",
+      "title": "State",
+      "x-qsv": {
+        "qsv_type": "String",
+        "role": "dimension",
+        "concept": "category.type",
+        "content_type": "category"
+      }
+    },
+    "incident_type": {
+      "type": "string",
+      "title": "Incident Type",
+      "x-qsv": {
+        "qsv_type": "String",
+        "role": "dimension",
+        "concept": "category.type",
+        "content_type": "category"
+      }
+    },
+    "severity": {
+      "type": "string",
+      "title": "Severity",
+      "x-qsv": {
+        "qsv_type": "String",
+        "role": "dimension",
+        "concept": "category.type",
+        "content_type": "category"
+      }
+    }
+  }
+}

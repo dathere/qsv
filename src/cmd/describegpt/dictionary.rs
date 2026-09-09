@@ -1046,6 +1046,16 @@ pub(super) struct DictionaryEntry {
     /// from a COARSER geography than the region key produces a confident, wrong rate map, and
     /// cardinality cannot tell that case from a legitimate one (issue #4526).
     ///
+    /// ⚠️ NOT CANONICALIZED. This is the raw accepted token, so encoding-equivalent spellings of
+    /// one areal unit stay distinct — a `geo.state` level against a `geo.state_fips` region names
+    /// the same geography and must still compare equal. Collapsing them HERE would not help: the
+    /// region side of that comparison is the column's own concept, which this producer does not
+    /// author, so the consumer needs an alias map either way and a producer-side collapse would
+    /// only discard what the model actually said (never emitted anywhere else) while sharpening
+    /// nothing. #4526 owns that map — deliberately, because the pairs are not all obvious:
+    /// `geo.zip_code` and `geo.zcta` are NOT interchangeable, and issue #4524 split them for
+    /// exactly that reason.
+    ///
     /// DERIVED, not proposed, and written by the same sole-writer pass as `denominator` — the two
     /// are cleared and set together, so a region can never carry a level for a hint it no longer
     /// has. `#[serde(default)]` for cache backward-compatibility.
@@ -2800,8 +2810,14 @@ pub(super) fn parse_llm_dictionary_response(
                 // trim, then require a `DENOMINATOR_REGION_CONCEPTS` token — the areal units a
                 // per-region denominator can hang on, which is why `geo.latitude`,
                 // `geo.street_address`, `geo.timezone` and `geo.geonames_id` are absent from it.
-                // Trimmed but NOT case-folded: these are the same lower-case tokens `concept`
-                // carries, and folding would accept spellings the concept arm itself rejects.
+                // Trimmed AND ASCII-lower-cased, mirroring the `concept` arm above, which folds
+                // before testing `CONCEPT_VOCAB`. These are the SAME tokens, so `GEO.STATE` has
+                // to resolve here exactly as it does there; an earlier version of this comment
+                // claimed folding would accept spellings `concept` rejects, which was simply
+                // wrong. ASCII-only folding is correct BY CONSTRUCTION — the list is a closed set
+                // of ASCII tokens with no case-distinct members — the same reasoning as
+                // `AGG_VOCAB` above, and the OPPOSITE of `unit`, whose UCUM codes are
+                // case-SENSITIVE by the standard (`m` metre vs the `M` mega prefix).
                 //
                 // That list is an ACCEPTANCE list, not a prompt input, which is why — unlike
                 // `CONCEPT_VOCAB` and `UCUM_UNIT_VOCAB` — it does NOT join `vocab_fingerprint`.
@@ -2819,9 +2835,8 @@ pub(super) fn parse_llm_dictionary_response(
                     field_map
                         .get("geo_level")
                         .and_then(|v| v.as_str())
-                        .map(str::trim)
-                        .filter(|g| DENOMINATOR_REGION_CONCEPTS.contains(g))
-                        .map(ToString::to_string)
+                        .map(|s| s.trim().to_ascii_lowercase())
+                        .filter(|g| DENOMINATOR_REGION_CONCEPTS.contains(&g.as_str()))
                 } else {
                     None
                 };
@@ -4158,9 +4173,10 @@ mod tests {
 
     #[test]
     fn parse_geo_level_validates_region_concepts() {
-        // Trimmed and checked against `DENOMINATOR_REGION_CONCEPTS` — the areal units a per-region
-        // denominator can hang on. Not case-folded: these are the same lower-case tokens the
-        // `concept` arm carries, so folding would accept spellings that arm itself rejects.
+        // Trimmed, ASCII-lower-cased and checked against `DENOMINATOR_REGION_CONCEPTS` — the areal
+        // units a per-region denominator can hang on. Folded because the `concept` arm folds
+        // before testing `CONCEPT_VOCAB` and these are the SAME tokens; an unfolded `GEO.STATE`
+        // would be dropped here while the identical spelling under `concept` was accepted.
         let names: Vec<String> = ["a", "b", "c", "d", "e", "f", "g", "h"]
             .iter()
             .map(ToString::to_string)
@@ -4191,9 +4207,11 @@ mod tests {
             "a street address is not an areal unit"
         );
         assert_eq!(
-            got["e"].geo_level, None,
-            "NOT case-folded — the concept vocabulary is lower-case, so an upper-case spelling is \
-             not a token the model was shown"
+            got["e"].geo_level.as_deref(),
+            Some("geo.state"),
+            "ASCII-folded, exactly as the `concept` arm folds before testing `CONCEPT_VOCAB` — \
+             the two read the same token space, so one must not reject a spelling the other \
+             accepts"
         );
         assert_eq!(
             got["f"].geo_level, None,

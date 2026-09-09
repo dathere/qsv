@@ -29597,17 +29597,22 @@ fn build_smart_summary_choropleth_panels(
                     );
                     None
                 } else if let Some(constant) = single_distinct_denominator(usable) {
-                    // Name both numbers, the way the constancy note names its region: the constant
-                    // tells the reader whether this is a placeholder or a genuinely uniform
-                    // denominator, and the region count shows the check had something to compare.
-                    let n_regions = usable.len();
+                    // Name the constant AND both region counts. The constant tells the reader
+                    // whether this is a placeholder or a genuinely uniform denominator. The counts
+                    // must be reported as "N of M": the check ranges over the regions that HAVE a
+                    // usable denominator, which is not always every matched region, and calling
+                    // that subset "all M matched regions" overstates it (roborev 4605). The `N of
+                    // M` shape matches the `denominator_excluded` note's own vocabulary.
+                    let n_usable = usable.len();
+                    let n_matched = count_locs.len();
                     viz_skip_note!(
                         VIZ_SMART_PREFIX,
                         "viz.omit.denominator_invalid",
                         q_col = name,
                         q_reason = format!(
-                            "it takes a single distinct value ({constant}) across all {n_regions} \
-                             matched regions, so a rate would be the count rescaled by a constant"
+                            "it takes a single distinct value ({constant}) across the {n_usable} \
+                             of {n_matched} matched regions that have one, so a rate would be the \
+                             count rescaled by a constant"
                         )
                     );
                     None

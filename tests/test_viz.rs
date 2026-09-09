@@ -18881,15 +18881,66 @@ fn viz_smart_single_value_hint_denominator_skips_the_rate_panel() {
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("single distinct value (50000) across all 3 matched regions"),
-        "the note must name the constant AND the region count — the constant tells the reader \
-         whether this is a placeholder or a genuinely uniform denominator, the count shows the \
-         check had something to compare: {stderr}"
+        stderr.contains("single distinct value (50000) across the 3 of 3 matched regions"),
+        "the note must name the constant AND both region counts — the constant tells the reader \
+         whether this is a placeholder or a genuinely uniform denominator, and `N of M` says how \
+         much of the map the check actually ranged over: {stderr}"
     );
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(
         !html.contains("per 1,000 residents"),
         "no rate panel: {html}"
+    );
+    assert!(
+        html.contains("add --denominator-key for a rate"),
+        "the count panel must fall back to its caveat: {html}"
+    );
+}
+
+// roborev 4605. A region EXCLUDED for want of a usable denominator does not disable the check:
+// the panel that would be drawn still covers only the regions that have one, and over that domain
+// it is still the count panel rescaled by a constant. A placeholder or collapsed-join denominator
+// — the very shape this check exists to catch — routinely carries blanks and zeros, so requiring
+// every matched region to be usable would disable the check on its primary target.
+//
+// It also pins the note's `N of M` wording, which is why this case matters: the check ranges over
+// the USABLE regions, and calling that subset "all M matched regions" overstates it.
+#[test]
+fn viz_smart_single_value_denominator_still_fires_when_a_region_is_excluded() {
+    let wrk =
+        Workdir::new("viz_smart_single_value_denominator_still_fires_when_a_region_is_excluded");
+    let mut csv = String::from("region,pop\n");
+    csv.push_str(&"A,50000\n".repeat(30));
+    csv.push_str(&"B,50000\n".repeat(300));
+    csv.push_str(&"C,50000\n".repeat(60));
+    // consistently zero, so it is an EXCLUSION rather than a within-region conflict
+    csv.push_str(&"D,0\n".repeat(90));
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", &denom_dictionary(true));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("single distinct value (50000) across the 3 of 4 matched regions"),
+        "the check must still fire with a region excluded, and must report the USABLE count \
+         against the MATCHED count rather than calling 3 regions 'all 4': {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains("residents"),
+        "no rate panel — a constant denominator over 3 of 4 regions is still a rescaled count \
+         over those 3: {html}"
     );
     assert!(
         html.contains("add --denominator-key for a rate"),

@@ -21629,15 +21629,23 @@ fn is_per_unit_money(tokens: &[String]) -> bool {
     })
 }
 
-/// Recognize the per-single-item PHRASE `per unit` / `per item` as adjacent TOKENS.
+/// Recognize a per-single-item PHRASE — `per unit` / `per item` / `per capita` — as adjacent
+/// TOKENS.
 ///
 /// Deliberately not a substring test. `per_unit` is a substring of `upper_unit_sales`
 /// (`up + per_unit`) and `per_item` of `super_item_revenue` (`su + per_item`), both of which are
 /// additive — the same hazard this file already records for `ratio` inside `duration`. Token
 /// windows also pick up camelCase (`pricePerUnit`), which a substring test never could, since
 /// the tokenizer splits on case transitions.
+///
+/// `capita` joined the list for exactly that camelCase reason (issue #4561): `per capita` was
+/// matched only as a substring of the label+field text, so `per_capita_income` was averaged while
+/// `perCapitaIncome` — no literal space to match — kept a Total. Note that testing the phrase
+/// against a token JOIN instead would reintroduce the hazard above in a new place:
+/// `upperCapitalLimit` tokenizes to `upper capital limit`, which CONTAINS `per capita`, since
+/// `per capital` has it as a prefix. Adjacency is what makes this safe.
 fn has_per_unit_phrase(tokens: &[String]) -> bool {
-    const UNIT_NOUNS: &[&str] = &["unit", "units", "item", "items"];
+    const UNIT_NOUNS: &[&str] = &["unit", "units", "item", "items", "capita"];
     tokens.windows(2).any(|w| {
         let [a, b] = w else { return false };
         a.as_str() == "per" && UNIT_NOUNS.contains(&b.as_str())
@@ -21747,9 +21755,19 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
         "uptime",
         "latency",
     ];
-    // phrases and symbols can't survive tokenization (which splits on non-alphanumerics), so
-    // these stay substring tests — none of them is a substring of a common additive word.
-    const INTENSIVE_SUBSTRINGS: &[&str] = &["\u{b0}c", "\u{b0}f", "per capita", "per_capita"];
+    // Symbols can't survive tokenization (which splits on non-alphanumerics), so these stay
+    // substring tests. Neither is a substring of a common additive word.
+    //
+    // `per capita`/`per_capita` used to live here and were REMOVED in issue #4561, because that
+    // claim was false for them: `per_capita` is a substring of `upper_capital_limit`,
+    // `hyper_capital_reserve` and `super_capital_gain`, every one of which is additive and every
+    // one of which was silently averaged. The phrase is matched as an adjacent-token window in
+    // `has_per_unit_phrase` instead — which also reaches the camelCase spellings a substring test
+    // never could. Do not re-add them: the tokenizer splits on both space and underscore, so any
+    // genuine `per capita` inside a label or a field already reaches the window, and the only
+    // thing a substring test adds back is a match across the label/field SEAM, which this
+    // function's own rules call an artifact rather than a signal.
+    const INTENSIVE_SUBSTRINGS: &[&str] = &["\u{b0}c", "\u{b0}f"];
     // The per-unit rules are evaluated over the label and the field SEPARATELY, never over the
     // concatenation. Both are adjacency-based, and joining the two strings fabricates an
     // adjacency across the seam that exists in neither: a column labelled "Total Cost" whose
@@ -46847,11 +46865,15 @@ mod tests {
                 "{additive} merely contains 'age' and must stay additive"
             );
         }
-        // phrases/symbols stay substring-matched (they can't survive tokenization)
+        // `per capita` is matched as an adjacent-TOKEN window, not a substring (issue #4561) --
+        // both spellings here tokenize to `.. per capita ..`, so both still hold. See
+        // `per_capita_is_intensive_in_camel_case_too` for the camelCase spellings a substring
+        // test could not reach, and for the additive words a substring test wrongly matched.
         assert!(is_intensive_measure(
             "income per capita",
             "income_per_capita"
         ));
+        // SYMBOLS stay substring-matched: they cannot survive tokenization at all.
         assert!(is_intensive_measure("temp \u{b0}C", "temp_c"));
         // the count guard still wins over an embedded intensive token
         assert!(!is_intensive_measure(
@@ -47398,6 +47420,57 @@ mod tests {
         // ...but each side is still checked on its own merits
         assert!(is_intensive_measure("Unit Price", "up"));
         assert!(is_intensive_measure("", "unit_price"));
+    }
+
+    // issue #4561: `per capita` was matched only as a SUBSTRING of the label+field text, so a
+    // camelCase name — which has no literal space or underscore — never matched it, and
+    // `perCapitaIncome` kept a Total while `per_capita_income` was correctly averaged. Promoted to
+    // an adjacent-token window, the way `per unit`/`per item` already were in #4404.
+    #[test]
+    fn per_capita_is_intensive_in_camel_case_too() {
+        let _g = viz_i18n::lock_locale();
+        viz_i18n::reset_active();
+        for intensive in [
+            "per_capita_income",
+            "perCapitaIncome",
+            "PerCapitaIncome",
+            "gdp per capita",
+            "incomePerCapita",
+        ] {
+            assert!(
+                is_intensive_measure(intensive, intensive),
+                "{intensive} is a per-capita quantity and must not be summed"
+            );
+        }
+
+        // THE HAZARD the token window exists to avoid, and the reason the obvious one-line fix
+        // (testing the phrase against `tokens.join(" ")`) is wrong: `upperCapitalLimit` tokenizes
+        // to `upper capital limit`, which CONTAINS the substring `per capita` — `per capital` has
+        // `per capita` as a prefix. A join-based test would silently average an additive limit.
+        // Same family as `per_unit` inside `upper_unit_sales` and `ratio` inside `duration`.
+        // The snake_case spellings are the REGRESSION GUARDS: `per_capita` was in
+        // `INTENSIVE_SUBSTRINGS` and is a literal substring of all three, so on master every one
+        // of them was silently AVERAGED. That is the wrong-number direction of the same defect —
+        // matching a phrase as a substring instead of as tokens — and re-adding the substring
+        // entry fails right here.
+        for additive in [
+            "upper_capital_limit",
+            "hyper_capital_reserve",
+            "super_capital_gain",
+            "upperCapitalLimit",
+            "hyperCapitalReserve",
+        ] {
+            assert!(
+                !is_intensive_measure(additive, additive),
+                "{additive} merely CONTAINS 'per capita' as a substring and must stay additive"
+            );
+        }
+
+        // the label/field seam must not fabricate the adjacency, exactly as for per_unit above
+        assert!(
+            !is_intensive_measure("Revenue per", "capita_bracket"),
+            "adjacency across the label/field boundary is an artifact, not a signal"
+        );
     }
 
     #[test]

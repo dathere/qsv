@@ -410,6 +410,25 @@ Return the results in JSON format where each field name is a key, and the value 
     "concept": "measure.population",
     "geo_level": "geo.state",
     "aggregation": "sum"{% endif %}{% raw %}
+  },
+  "field_name_5": {
+    "label": "Air Temperature",
+    "description": "Ambient air temperature recorded at the station"{% endraw %}{% if infer_content_type %},
+    "content_type": "unknown",
+    "role": "measure",
+    "concept": "measure.amount",
+    "unit": "Cel",
+    "aggregation": "mean"{% endif %}{% raw %}
+  },
+  "field_name_6": {
+    "label": "On-Time Delivery Rate",
+    "description": "Share of shipments delivered on or before the promised date"{% endraw %}{% if infer_content_type %},
+    "content_type": "unknown",
+    "role": "measure",
+    "concept": "measure.ratio",
+    "gauge_range": [0, 100],
+    "unit": "%",
+    "aggregation": "mean"{% endif %}{% raw %}
   }{% endraw %}{% if infer_content_type %},
   "grain": "one row = one record",
   "grain_unit": "record",

@@ -15,12 +15,30 @@ on:
     paths:
       - 'src/cmd/viz.rs'
       - 'tests/test_viz.rs'
+      # The UCUM display table feeds the hover rendering contract (issue #4557):
+      # viz.rs's `unit_suffix` calls `describegpt::dictionary::ucum_display_symbol`, so a
+      # symbol edited here lands in a hovertemplate. Note the browser is NOT the first line
+      # of defence for that — `viz_smart_hover_contract_fixture_reaches_the_bubble_template`
+      # is browser-free, carries no `viz_static` in its name, and so already catches a table
+      # change that alters the EMITTED template in every viz job. This entry covers the
+      # narrower case that guard cannot see: a symbol that emits fine but RENDERS wrong,
+      # i.e. one containing `<`, `&` or `%{`.
+      - 'src/cmd/describegpt/dictionary.rs'
       - '.github/workflows/rust-viz-static.yml'
   pull_request:
     branches: [ master ]
     paths:
       - 'src/cmd/viz.rs'
       - 'tests/test_viz.rs'
+      # The UCUM display table feeds the hover rendering contract (issue #4557):
+      # viz.rs's `unit_suffix` calls `describegpt::dictionary::ucum_display_symbol`, so a
+      # symbol edited here lands in a hovertemplate. Note the browser is NOT the first line
+      # of defence for that — `viz_smart_hover_contract_fixture_reaches_the_bubble_template`
+      # is browser-free, carries no `viz_static` in its name, and so already catches a table
+      # change that alters the EMITTED template in every viz job. This entry covers the
+      # narrower case that guard cannot see: a symbol that emits fine but RENDERS wrong,
+      # i.e. one containing `<`, `&` or `%{`.
+      - 'src/cmd/describegpt/dictionary.rs'
       - '.github/workflows/rust-viz-static.yml'
   schedule:
     # weekly, so driver/browser drift is caught even when viz.rs is untouched

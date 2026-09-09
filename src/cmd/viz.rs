@@ -7992,7 +7992,9 @@ struct RateSeries {
 /// The converse does NOT hold, and an earlier version of this comment claimed it did. The two
 /// scale their tolerance by different operands — the row pass by whichever value it saw first,
 /// this by the minimum — so a pair the row pass called constant can still read as distinct here.
-/// `x = 2^n - 2 ULP` against `y = 2^n` disagrees in every binade. Nothing can observe it: the row
+/// `x = 2^n - 2 ULP` against `y = 2^n` disagrees for every `n >= 1`, e.g. `3.999999999999999`
+/// against `4.0`; at or below 1 the shared `.max(1.0)` floor pins both tolerances to `f64::EPSILON`
+/// and the disagreement cannot arise. Nothing can observe it either way: the row
 /// pass compares ROWS WITHIN a region and leaves exactly one value per region behind, while this
 /// compares those survivors ACROSS regions, so the two never judge the same pair. The gap also
 /// errs in the safe direction — toward "distinct", which DRAWS the panel rather than suppressing
@@ -44668,10 +44670,11 @@ mod tests {
         // (`(prev - d).abs() > f64::EPSILON * prev.abs().max(1.0)`), in the direction that
         // matters: a pair this predicate calls equal is one the row pass would also call
         // constant. It is NOT a symmetric equivalence — the two anchor their tolerance on
-        // different operands, and `x = 2^n - 2 ULP` against `y = 2^n` disagrees in every binade —
-        // but the two never judge the same pair, and the gap errs toward "distinct", which draws
-        // the panel rather than suppressing one the reader wanted. See
-        // `single_distinct_denominator`'s doc comment.
+        // different operands, and `x = 2^n - 2 ULP` against `y = 2^n` disagrees for every
+        // `n >= 1` (at or below 1 the shared `.max(1.0)` floor pins both tolerances to
+        // `f64::EPSILON`, so it cannot arise there) — but the two never judge the same pair, and
+        // the gap errs toward "distinct", which draws the panel rather than suppressing one the
+        // reader wanted. See `single_distinct_denominator`'s doc comment.
         let a = 50_000.0_f64;
         let b = a + a * f64::EPSILON * 0.5; // within the row pass's tolerance
         // The fixture must actually be JITTERED, and this is the only assertion that can say so:
@@ -44695,7 +44698,29 @@ mod tests {
         assert_eq!(
             single_distinct_denominator(&near),
             Some(a),
-            "a pair the row pass calls constant must not read as two distinct values"
+            "the helper must carry a TOLERANCE rather than testing exact equality — this pair is \
+             one ULP apart. Note this does not establish the converse implication, which does not \
+             hold; it only pins that the epsilon is here and is roughly the row pass's size"
+        );
+
+        // The direction that DOES hold — helper-equal implies row-pass-constant — asserted as its
+        // contrapositive, since that is the form a single pair can witness: a pair the row pass
+        // rejects must be rejected here too. Two ULP is the boundary, because the row pass's
+        // tolerance at 50,000 is EPSILON * 50_000, about 1.5 ULP: one ULP is inside it (above),
+        // two is outside.
+        let past = f64::from_bits(a.to_bits() + 2);
+        assert!(
+            (a - past).abs() > f64::EPSILON * a.abs().max(1.0),
+            "fixture check: the row pass must consider these a CONFLICT"
+        );
+        let apart: HashMap<String, f64> = [("A".to_string(), a), ("B".to_string(), past)]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            single_distinct_denominator(&apart),
+            None,
+            "a pair the row pass calls a conflict must never read as one value here — a rate \
+             panel would then be suppressed over denominators the row pass itself calls distinct"
         );
     }
 

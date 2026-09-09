@@ -845,6 +845,16 @@ pub(super) struct LlmDictField {
     /// is really an aggregatable measure is decided later by `verify_aggregation`, which alone
     /// sees the finalized role.
     pub(super) aggregation:  Option<String>,
+    /// RAW `DENOMINATOR_REGION_CONCEPTS` token proposed by the LLM for a numeric measure, naming
+    /// the geography this column's VALUES describe — `geo.state` for a `state_pop` column (issue
+    /// #4571). Already trimmed and checked against that list in `parse_llm_dictionary_response`.
+    /// `None` unless the dictionary prompt asked for it (under `--infer-content-type`).
+    ///
+    /// Note this is a different question from the column's own `concept`, which for that same
+    /// column is `measure.population` — the concept says what the values ARE, this says what
+    /// geography they are defined AT. Whether the FIELD is really a numeric measure is decided
+    /// later by `verify_geo_level`, which alone sees the finalized role.
+    pub(super) geo_level:    Option<String>,
 }
 
 pub(crate) struct StatsRecord {
@@ -885,21 +895,23 @@ pub(super) struct FreqDetail {
 /// deterministically from `StatsRecord` + `FrequencyRecord`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct DictionaryEntry {
-    pub(super) name:            String,
-    pub(super) r#type:          String,
-    pub(super) label:           String,
-    pub(super) description:     String,
-    pub(super) content_type:    String, /* Curated semantic token; empty unless
-                                         * --infer-content-type */
-    pub(super) min:             String, // Empty string if not available
-    pub(super) max:             String, // Empty string if not available
-    pub(super) cardinality:     u64,
-    pub(super) enumeration:     String, // Empty if not enumerable, otherwise one value per line
-    pub(super) null_count:      u64,
-    pub(super) addl_cols:       IndexMap<String, String>, // Preserves column order
-    pub(super) examples:        String,                   /* Format: "val1 [cnt1]\nval2 [cnt2]…"
-                                                           * or
-                                                           * "<ALL_UNIQUE>" */
+    pub(super) name:                  String,
+    pub(super) r#type:                String,
+    pub(super) label:                 String,
+    pub(super) description:           String,
+    pub(super) content_type:          String, /* Curated semantic token; empty unless
+                                               * --infer-content-type */
+    pub(super) min:                   String, // Empty string if not available
+    pub(super) max:                   String, // Empty string if not available
+    pub(super) cardinality:           u64,
+    pub(super) enumeration:           String, /* Empty if not enumerable, otherwise one value
+                                               * per line */
+    pub(super) null_count:            u64,
+    pub(super) addl_cols:             IndexMap<String, String>, // Preserves column order
+    pub(super) examples:              String,                   /* Format: "val1 [cnt1]\nval2
+                                                                 * [cnt2]…"
+                                                                 * or
+                                                                 * "<ALL_UNIQUE>" */
     /// `examples` without the `--truncate-str` truncation (bucket "…" suffixes and the
     /// `<ALL_UNIQUE>` sentinel are identical in both). Truncation exists to bound the LLM
     /// prompt, so it still governs `examples` — which feeds the prompt and the CSV/JSON/
@@ -907,12 +919,12 @@ pub(super) struct DictionaryEntry {
     /// exact values. `#[serde(default)]` keeps older cached dictionaries (written before this
     /// field existed) deserializable; an empty value falls back to `examples`.
     #[serde(default)]
-    pub(super) examples_full:   String,
+    pub(super) examples_full:         String,
     /// Structured counterpart to `examples`, retaining per-value percentage and rank.
     /// `#[serde(default)]` keeps older cached dictionaries (written before this field
     /// existed) deserializable.
     #[serde(default)]
-    pub(super) freq_details:    Vec<FreqDetail>,
+    pub(super) freq_details:          Vec<FreqDetail>,
     /// Structural "every row carries a distinct non-null value" flag (`cardinality ==
     /// rowcount`, no nulls), computed deterministically at generation time. Distinct
     /// from the overloaded `examples == "<ALL_UNIQUE>"` sentinel (which is also set for
@@ -920,18 +932,18 @@ pub(super) struct DictionaryEntry {
     /// `SemanticMd` formatter for primary-key inference. `#[serde(default)]` for cache
     /// backward-compatibility.
     #[serde(default)]
-    pub(super) is_unique_id:    bool,
+    pub(super) is_unique_id:          bool,
     /// Catalog-wide semantic identity used for cross-dataset join discovery
     /// (e.g. `geo.zip_code`). Deterministically seeded from `content_type` and
     /// refined by the LLM; empty unless content-type/concept inference is on.
     /// `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
-    pub(super) concept:         String,
+    pub(super) concept:               String,
     /// Analytical role: `dimension`, `measure`, `identifier`, or `timestamp`.
     /// `identifier`/`timestamp` are deterministic; the rest are LLM-filled with a
     /// type-based fallback. `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
-    pub(super) role:            String,
+    pub(super) role:                  String,
     /// Null sentinels the LLM proposed AND that qsv independently confirmed are
     /// present as literal values in this `String` column. The confirmation is one
     /// of PRESENCE, not of meaning: qsv verifies the literal occurs here; that it
@@ -943,7 +955,7 @@ pub(super) struct DictionaryEntry {
     /// column (`status` = ok/pending/NULL) is confirmed here and ignored there.
     /// `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
-    pub(super) null_values:     Vec<String>,
+    pub(super) null_values:           Vec<String>,
     /// Null sentinels the LLM proposed that qsv CANNOT confirm by scanning —
     /// numeric/date placeholders (`-999`, `9999`, `9999-12-31`) that parse as
     /// valid values of the column's type, or tokens never observed in the data.
@@ -952,7 +964,7 @@ pub(super) struct DictionaryEntry {
     /// `confirm_required: true` so no consumer can auto-apply a guess.
     /// `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
-    pub(super) null_candidates: Vec<String>,
+    pub(super) null_candidates:       Vec<String>,
     /// Optional `[min, max]` canonical scale for a KPI gauge on a numeric MEASURE
     /// (e.g. `[0, 100]` for a percent, `[0, 5]` for a rating). The LLM proposes it
     /// only under `--infer-content-type`; `combine_dictionary_entries` then keeps it
@@ -962,7 +974,7 @@ pub(super) struct DictionaryEntry {
     /// of `null_values`. Consumed by `viz smart --dictionary` to draw a gauge tile
     /// (`x-qsv.gauge_range`). `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
-    pub(super) gauge_range:     Option<[f64; 2]>,
+    pub(super) gauge_range:           Option<[f64; 2]>,
     /// Optional ISO-4217 alpha-3 code (e.g. `USD`) naming the currency a monetary MEASURE is
     /// denominated in. The LLM proposes it only under `--infer-content-type`;
     /// `verify_currency` then keeps it ONLY when the column is a numeric measure that reads as
@@ -971,7 +983,7 @@ pub(super) struct DictionaryEntry {
     /// currency symbol and name the currency in its panel subtitle.
     /// `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
-    pub(super) currency:        Option<String>,
+    pub(super) currency:              Option<String>,
     /// Optional curated-UCUM code (e.g. `Cel`, `kW.h`) naming the physical unit a numeric MEASURE
     /// is expressed in. The LLM proposes it only under `--infer-content-type`; `verify_unit` then
     /// keeps it ONLY when the column is a numeric measure that is not already denominated in a
@@ -982,7 +994,7 @@ pub(super) struct DictionaryEntry {
     /// cells compact, so the panel title + subtitle is where a column's identity is stated.
     /// `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
-    pub(super) unit:            Option<String>,
+    pub(super) unit:                  Option<String>,
     /// Optional `AGG_VOCAB` token (`sum`/`mean`) declaring how this numeric MEASURE
     /// combines across a group. The LLM proposes it only under `--infer-content-type`;
     /// `verify_aggregation` then keeps it ONLY when the column is a numeric measure — the same
@@ -992,7 +1004,7 @@ pub(super) struct DictionaryEntry {
     /// price must not be summed (issue #4401). `#[serde(default)]` for cache
     /// backward-compatibility.
     #[serde(default)]
-    pub(super) aggregation:     Option<String>,
+    pub(super) aggregation:           Option<String>,
     /// Optional name of the column holding this REGION column's denominator, emitted as
     /// `x-qsv.denominator.column` and read by `viz smart --dictionary` to chart a rate map
     /// beside the raw count map (issue #4394).
@@ -1005,7 +1017,40 @@ pub(super) struct DictionaryEntry {
     /// final) and instead runs as a second pass that is the field's SOLE writer.
     /// `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
-    pub(super) denominator:     Option<String>,
+    pub(super) denominator:           Option<String>,
+    /// On a MEASURE column: the geography this column's own VALUES describe, as a
+    /// `DENOMINATOR_REGION_CONCEPTS` token — `geo.state` on a `state_pop` column (issue #4571).
+    ///
+    /// Distinct from `concept`, which on that same column is `measure.population`: the concept
+    /// says what the values ARE, this says what geography they are defined AT. There was no slot
+    /// for the latter before this field, which is why `verify_denominators` had to infer
+    /// granularity from cardinality — the KNOWN HOLE its doc comment describes.
+    ///
+    /// The LLM proposes it only under `--infer-content-type`; `verify_geo_level` then keeps it
+    /// ONLY when the column is a numeric measure — the same propose-then-verify discipline as
+    /// `gauge_range`, `currency` and `unit`.
+    ///
+    /// NEVER EMITTED. It exists to be read by `verify_denominators`, which copies it onto the
+    /// REGION columns as `denominator_geo_level`; that copy is what reaches the sidecar. A level
+    /// on the measure column would be a second copy of the same fact, free to drift from the
+    /// first under hand-editing.
+    /// `#[serde(default)]` for cache backward-compatibility.
+    #[serde(default)]
+    pub(super) geo_level:             Option<String>,
+    /// On a REGION column: the geography the column named by `denominator` is defined at, copied
+    /// from that column's `geo_level` and emitted as `x-qsv.denominator.level` (issue #4571).
+    ///
+    /// Same value as `geo_level` above, on a different row and meaning a different thing — there
+    /// it is the measure's own level, here it is the level of the measure this region points at.
+    /// Read `viz smart --dictionary`-side against the region column's own concept: a denominator
+    /// from a COARSER geography than the region key produces a confident, wrong rate map, and
+    /// cardinality cannot tell that case from a legitimate one (issue #4526).
+    ///
+    /// DERIVED, not proposed, and written by the same sole-writer pass as `denominator` — the two
+    /// are cleared and set together, so a region can never carry a level for a hint it no longer
+    /// has. `#[serde(default)]` for cache backward-compatibility.
+    #[serde(default)]
+    pub(super) denominator_geo_level: Option<String>,
 }
 
 /// Parse the `stats` CSV into structured records, returning the records plus
@@ -1437,6 +1482,8 @@ pub(super) fn generate_code_based_dictionary(
             // Derived, not proposed: `verify_denominators` is the sole writer, and it needs the
             // FINALIZED concepts of every column, which do not exist yet at this point.
             denominator: None,
+            geo_level: None,
+            denominator_geo_level: None,
         });
     }
 
@@ -2689,6 +2736,8 @@ pub(super) fn parse_llm_dictionary_response(
                         currency,
                         unit,
                         aggregation,
+                        // parse arm lands here in the behaviour commit (issue #4571)
+                        geo_level: None,
                     },
                 );
             }
@@ -3018,30 +3067,32 @@ mod tests {
 
     fn blank_entry(name: &str) -> DictionaryEntry {
         DictionaryEntry {
-            name:            name.to_string(),
-            r#type:          "String".to_string(),
-            label:           String::new(),
-            description:     String::new(),
-            content_type:    String::new(),
-            min:             String::new(),
-            max:             String::new(),
-            cardinality:     0,
-            enumeration:     String::new(),
-            null_count:      0,
-            addl_cols:       IndexMap::new(),
-            examples:        String::new(),
-            examples_full:   String::new(),
-            freq_details:    Vec::new(),
-            is_unique_id:    false,
-            concept:         String::new(),
-            role:            String::new(),
-            null_values:     Vec::new(),
-            null_candidates: Vec::new(),
-            gauge_range:     None,
-            currency:        None,
-            unit:            None,
-            aggregation:     None,
-            denominator:     None,
+            name:                  name.to_string(),
+            r#type:                "String".to_string(),
+            label:                 String::new(),
+            description:           String::new(),
+            content_type:          String::new(),
+            min:                   String::new(),
+            max:                   String::new(),
+            cardinality:           0,
+            enumeration:           String::new(),
+            null_count:            0,
+            addl_cols:             IndexMap::new(),
+            examples:              String::new(),
+            examples_full:         String::new(),
+            freq_details:          Vec::new(),
+            is_unique_id:          false,
+            concept:               String::new(),
+            role:                  String::new(),
+            null_values:           Vec::new(),
+            null_candidates:       Vec::new(),
+            gauge_range:           None,
+            currency:              None,
+            unit:                  None,
+            aggregation:           None,
+            denominator:           None,
+            geo_level:             None,
+            denominator_geo_level: None,
         }
     }
 
@@ -3925,6 +3976,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -4913,6 +4965,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         // infer_content_type = false: pure copy, no "unknown" coercion.
@@ -4948,6 +5001,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         llm.insert(
@@ -4963,6 +5017,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         // "omitted" is intentionally absent from the LLM map.
@@ -4994,6 +5049,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         llm.insert(
@@ -5009,6 +5065,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -5284,6 +5341,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         baseline.insert(
@@ -5299,6 +5357,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
 
@@ -5317,6 +5376,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
 
@@ -5449,6 +5509,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         refine.insert(
@@ -5465,6 +5526,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
 
@@ -5503,6 +5565,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
 
@@ -5520,6 +5583,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
 
@@ -5552,6 +5616,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
 
@@ -5935,6 +6000,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -5960,6 +6026,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -5985,6 +6052,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -6010,6 +6078,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         let mut refine = HashMap::new();
@@ -6026,6 +6095,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         let combined = combine_dictionary_entries_with_baseline(code, &baseline, &refine, true);
@@ -6785,6 +6855,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -6811,6 +6882,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -6835,6 +6907,7 @@ mod tests {
                 currency:     None,
                 unit:         None,
                 aggregation:  None,
+                geo_level:    None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);

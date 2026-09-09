@@ -18847,6 +18847,110 @@ fn viz_smart_consistently_zero_hint_denominator_is_an_exclusion() {
     assert!(html.contains("1 of 3 without a denominator"), "{html}");
 }
 
+// issue #4547: a dictionary `x-qsv.denominator` that resolves to ONE distinct value across every
+// matched region makes the rate panel the count panel rescaled by a constant — same ranks, same
+// relative comparisons, same map shape, only the axis label and magnitude differ. It carries no
+// information a reader can act on, so the panel is skipped with a note rather than drawn.
+#[test]
+fn viz_smart_single_value_hint_denominator_skips_the_rate_panel() {
+    let wrk = Workdir::new("viz_smart_single_value_hint_denominator_skips_the_rate_panel");
+    // The row counts (30/300/60) are load-bearing — they are what the region panel is built from.
+    // Only the DENOMINATOR is flattened: every region reports the same population, as a collapsed
+    // join or a placeholder column would.
+    let mut csv = String::from("region,pop\n");
+    csv.push_str(&"A,50000\n".repeat(30));
+    csv.push_str(&"B,50000\n".repeat(300));
+    csv.push_str(&"C,50000\n".repeat(60));
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", &denom_dictionary(true));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "a degenerate hint is not a hard error"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("single distinct value (50000) across all 3 matched regions"),
+        "the note must name the constant AND the region count — the constant tells the reader \
+         whether this is a placeholder or a genuinely uniform denominator, the count shows the \
+         check had something to compare: {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains("per 1,000 residents"),
+        "no rate panel: {html}"
+    );
+    assert!(
+        html.contains("add --denominator-key for a rate"),
+        "the count panel must fall back to its caveat: {html}"
+    );
+}
+
+// The BOUNDARY of the check above, and the reason it is deliberately partial. Four regions
+// carrying two distinct STATE populations is the verified repro on issue #4526 — a real
+// coarse-geography bug that stays OPEN and silent. `D == 1` does not fire on it, and this test
+// exists to stop a future reviewer "finishing the job" by generalizing the check into a ratio:
+// that form was investigated on #4526 and disproved with measured data, because a legitimate
+// per-city denominator scores 0.227 while this bug scores 0.500 — the classes are inverted and no
+// threshold separates them.
+#[test]
+fn viz_smart_two_value_denominator_still_rates_the_coarse_geography_repro() {
+    let wrk =
+        Workdir::new("viz_smart_two_value_denominator_still_rates_the_coarse_geography_repro");
+    let mut csv = String::from("region,pop\n");
+    csv.push_str(&"A,1000000\n".repeat(30));
+    csv.push_str(&"B,1000000\n".repeat(300));
+    csv.push_str(&"C,2000000\n".repeat(60));
+    csv.push_str(&"D,2000000\n".repeat(90));
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", &denom_dictionary(true));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("single distinct value"),
+        "D=2/R=4 is issue #4526, NOT the degenerate-denominator check — it must not fire here: \
+         {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    // `per 100,000` rather than the `per 1,000` of the sibling fixtures: these are STATE-sized
+    // populations, and `rate_scale` picks the rung that keeps the rate readable. This assertion is
+    // therefore coupled to rung selection — if `rate_scale` is ever retuned it fails for a reason
+    // that has nothing to do with what this test is about. Re-aim it at the new rung; do NOT
+    // weaken it, and do not delete the caveat assertion below, which is the scale-independent one
+    // and carries the real signal that a rate panel was charted at all.
+    assert!(
+        html.contains("per 100,000 residents"),
+        "the rate panel still renders — this bug is not closed by #4547: {html}"
+    );
+    assert!(
+        !html.contains("add --denominator-key for a rate"),
+        "the count panel must NOT fall back to its raw-count caveat — a rate was charted: {html}"
+    );
+}
+
 // issue #4414: `--denominator-key` derived its label from the property path's last segment and
 // divided by the raw value, so real published boundary files — which carry land area in square
 // METRES — rendered "per 100,000 AREALAND" at a rate that clamped to the widest rung and still

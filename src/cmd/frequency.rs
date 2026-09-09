@@ -4281,9 +4281,18 @@ impl Args {
 
         let sel_len = sel.len();
         let map_size = self.flag_sketch_map_size;
+        // `new` rejects a map size outside the power-of-two range [8, 2^30].
+        // run()'s frequent_items dispatch already enforces power-of-two and >= 8,
+        // but NOT the 2^30 ceiling, so this arm is reachable on 64-bit
+        // (e.g. --sketch-map-size 2147483648).
         let mut sketches: Vec<FrequentItemsSketch<Vec<u8>>> = (0..sel_len)
             .map(|_| FrequentItemsSketch::<Vec<u8>>::new(map_size))
-            .collect();
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| {
+                crate::CliError::Other(format!(
+                    "--sketch-map-size {map_size} is not a valid Frequent Items map size: {e}"
+                ))
+            })?;
 
         // Per-column non-null observation count, used as the percentage denominator
         // when --pct-nulls is false (the default — null cells are excluded from the

@@ -44659,6 +44659,17 @@ mod tests {
         // would survive as a rate that is really a rescaled count.
         let a = 50_000.0_f64;
         let b = a + a * f64::EPSILON * 0.5; // within the row pass's tolerance
+        // The fixture must actually be JITTERED, and this is the only assertion that can say so:
+        // the tolerance check below passes trivially when `b == a`, so an inert fixture would sail
+        // through it and the test would silently stop exercising the epsilon at all. `b` differs
+        // from `a` by one ULP only because 50,000 sits where `a * EPSILON * 0.5` exceeds half an
+        // ULP and rounds up; at an exact power of two the same expression is exactly half an ULP,
+        // ties-to-even rounds it back down, and it becomes a no-op.
+        assert_ne!(
+            a.to_bits(),
+            b.to_bits(),
+            "fixture check: b must differ from a by one ULP, or this test asserts nothing"
+        );
         assert!(
             (a - b).abs() <= f64::EPSILON * a.abs().max(1.0),
             "fixture check: the row pass must consider these constant"

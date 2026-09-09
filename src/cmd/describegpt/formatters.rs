@@ -529,7 +529,21 @@ fn build_x_qsv(
         // per-field unit annotation could supply one. Absent otherwise, keeping no-flag runs
         // byte-identical.
         if let Some(col) = &entry.denominator {
-            x_qsv.insert("denominator".to_string(), json!({ "column": col }));
+            // `level` rides beside `column` when the denominator column declared one (issue
+            // #4571): the geography its VALUES describe, which `viz smart --dictionary` checks
+            // against this region column's own concept. A denominator from a COARSER geography
+            // than the region key draws a confident, wrong rate map, and the constant-within-
+            // region check cannot catch it — a state population really is constant within each of
+            // its counties (issue #4526).
+            //
+            // Built conditionally rather than always emitting a null, so a dictionary whose model
+            // proposed no level stays BYTE-IDENTICAL to what this emitted before #4571.
+            let mut denom = serde_json::Map::new();
+            denom.insert("column".to_string(), json!(col));
+            if let Some(level) = &entry.denominator_geo_level {
+                denom.insert("level".to_string(), json!(level));
+            }
+            x_qsv.insert("denominator".to_string(), Value::Object(denom));
         }
     }
     // Null sentinels. Deliberately NOT gated on the flag: emission keys off the lists being
@@ -1961,6 +1975,37 @@ mod tests {
                 .get("unit")
                 .is_none(),
             "no unit source exists yet, so none may be invented"
+        );
+        // ...and no `level` either, on THIS fixture: the entry declares none, and the object is
+        // built conditionally so a levelless hint stays byte-identical to pre-#4571 output. The
+        // whole-object equality above is what actually pins that; this names the reason.
+        assert!(
+            schema["properties"]["county_fips"]["x-qsv"]["denominator"]
+                .get("level")
+                .is_none(),
+            "an undeclared level must be absent, not null"
+        );
+
+        // ...and WITH a declared level it rides beside `column` (issue #4571).
+        let mut leveled = county.clone();
+        leveled.denominator_geo_level = Some("geo.state".to_string());
+        let with_level = format_dictionary_jsonschema(
+            std::slice::from_ref(&leveled),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert_eq!(
+            with_level["properties"]["county_fips"]["x-qsv"]["denominator"],
+            json!({ "column": "population", "level": "geo.state" }),
+            "a declared level rides beside `column` in the same hint"
         );
 
         // flag off: absent, keeping legacy schemas byte-identical.

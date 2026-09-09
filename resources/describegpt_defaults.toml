@@ -204,6 +204,26 @@ For each field, provide:
   do NOT guess and do NOT invent a code. qsv drops any unit that is not in the list, or that is on
   a non-numeric field, a non-measure field, or a field that already has a currency - so a wrong
   guess is silently discarded rather than corrected.
+- Geo Level (OPTIONAL, numeric MEASURE fields only): if - and ONLY if - this field's values are
+  measured OVER a geographic area rather than merely located at one, add a "geo_level" naming that
+  area, using a "geo." token from the Concept list above that names an AREAL UNIT - a region with
+  a boundary that things can be counted inside. Never a "geo." token that only points at a spot or
+  identifies a record: a latitude or longitude, a coordinate pair, a street address, a timezone or
+  a gazetteer id are not areal units.
+  This is NOT the same question as this field's own Concept. A "state_pop" column holding each
+  state's population has Concept "measure.population" - what the values ARE - and "geo_level"
+  "geo.state" - the area each value covers. Both, on the same field.
+  Base it on evidence that the values are per-area totals: the field name ("state_pop",
+  "county_households"), the Description, or a sibling column naming the same geography.
+  Do NOT add a "geo_level" to:
+    - a field that merely HAS a location - a temperature reading taken at a weather station is a
+      point measurement, not a quantity measured over an area; or
+    - the column that IDENTIFIES the region. That column's Concept already names the geography,
+      and it is a dimension, not a measure.
+  If you cannot tell which area the values cover, OMIT "geo_level" entirely - do NOT guess. A
+  wrong area is worse than none: qsv uses this to decide whether a per-capita rate map is honest,
+  so a mislabelled level either hides a correct map or blesses a misleading one. qsv drops any
+  value that is not an areal "geo." token, or that is on a non-numeric or non-measure field.
 - Aggregation (OPTIONAL, numeric MEASURE fields only): declare how this field combines across a
   GROUP of rows, by choosing exactly ONE of: {{ agg_vocab }}. The distinction that matters is
   EXTENSIVE vs INTENSIVE:
@@ -355,7 +375,7 @@ to THIS Dataset. Never state numbers that are not in the Summary Statistics or F
 Distribution.
 {%- endif %}
 
-Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role", "concept" and (for canonical-scale numeric measures only) an optional "gauge_range", plus (for monetary measures only) an optional "currency", (for non-monetary numeric measures only) an optional "unit" and (for numeric measures only) an optional "aggregation"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string, a top-level "grain_unit" string and an optional "relationships" array{% endif %}{% if tour_audience %}, plus a top-level "tour" object{% endif %}:
+Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role", "concept" and (for canonical-scale numeric measures only) an optional "gauge_range", plus (for monetary measures only) an optional "currency", (for non-monetary numeric measures only) an optional "unit" and (for numeric measures only) an optional "aggregation" and an optional "geo_level"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string, a top-level "grain_unit" string and an optional "relationships" array{% endif %}{% if tour_audience %}, plus a top-level "tour" object{% endif %}:
 {% raw %}{
   "field_name_1": {
     "label": "Human-friendly label",
@@ -380,6 +400,15 @@ Return the results in JSON format where each field name is a key, and the value 
     "role": "measure",
     "concept": "measure.money",
     "currency": "USD",
+    "aggregation": "sum"{% endif %}{% raw %}
+  },
+  "field_name_4": {
+    "label": "State Population",
+    "description": "Resident population of the state the record belongs to"{% endraw %}{% if infer_content_type %},
+    "content_type": "unknown",
+    "role": "measure",
+    "concept": "measure.population",
+    "geo_level": "geo.state",
     "aggregation": "sum"{% endif %}{% raw %}
   }{% endraw %}{% if infer_content_type %},
   "grain": "one row = one record",

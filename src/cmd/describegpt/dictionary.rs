@@ -1708,6 +1708,7 @@ pub(super) fn combine_dictionary_entries(
             entry.currency = llm.currency.clone();
             entry.unit = llm.unit.clone();
             entry.aggregation = llm.aggregation.clone();
+            entry.geo_level = llm.geo_level.clone();
         }
         if infer_content_type {
             if entry.content_type.is_empty() {
@@ -1727,6 +1728,9 @@ pub(super) fn combine_dictionary_entries(
             // AFTER role is finalized: keep the proposed aggregation only if the column is a
             // numeric measure (the only thing an aggregation verb can describe).
             verify_aggregation(entry);
+            // AFTER role is finalized: keep the proposed geo level only if the column is a
+            // numeric measure (the only thing that can be measured over a geography).
+            verify_geo_level(entry);
         }
     }
     // AFTER every entry's role and concept are final: a denominator is a statement about a PAIR
@@ -2012,6 +2016,43 @@ fn verify_aggregation(entry: &mut DictionaryEntry) {
     }
 }
 
+/// Verify (and otherwise drop) a proposed `geo_level` (issue #4571). The annotation names the
+/// geography a numeric measure's VALUES are defined at — `geo.state` on a `state_pop` column — so
+/// it only describes a column that holds a per-region quantity:
+///
+///   1. the column's qsv `type` is numeric (`Integer`/`Float`) — a level on a String column is
+///      describing the wrong thing; that column NAMES a geography, it is not a quantity measured
+///      over one, and its own `concept` already says so; and
+///   2. the column's FINALIZED `role` is `measure`.
+///
+/// This is a POSITIVE ladder, and must stay one. The tempting formulation — "keep it unless the
+/// column is obviously not geographic" — requires nothing at all, so an `x-qsv` carrying only a
+/// `geo_level` would sail through. That is exactly how `xq_unit` v1 shipped a `(kg)` under a
+/// category panel (roborev 4586): it inverted a positive requirement into a negative one and
+/// inherited permissive arms that were only safe because the requirement they rested on was
+/// positive.
+///
+/// Deliberately NOT gated on `concept == "measure.population"`, though that is the only concept
+/// `verify_denominators` derives a hint from today. A land-area column is the other denominator
+/// this family wants and it is blocked on a unit source, not on a level (issue #4525); gating to
+/// population here would mean revisiting this function rather than just unblocking that one.
+/// Nothing is emitted for a level `verify_denominators` does not select, so a level on a measure
+/// that never becomes a denominator costs an unused field, not a wrong sidecar.
+///
+/// The TOKEN was already validated against `DENOMINATOR_REGION_CONCEPTS` in
+/// `parse_llm_dictionary_response`; this is the SEMANTIC check, because only here is the merged
+/// role known. Anything that fails is reset to `None`.
+///
+/// Must be called AFTER `coerce_role_concept`, so `role` is final.
+fn verify_geo_level(entry: &mut DictionaryEntry) {
+    if entry.geo_level.is_none() {
+        return;
+    }
+    if !(matches!(entry.r#type.as_str(), "Integer" | "Float") && entry.role == "measure") {
+        entry.geo_level = None;
+    }
+}
+
 /// describegpt concepts naming a REGION a denominator can hang on — the dictionary-side mirror of
 /// `viz`'s `REGION_CODE_LEAVES`, plus `geo.city` (which `viz smart` unions in as a GEOCODABLE
 /// candidate). An explicit list rather than a `geo.` prefix test, because most `geo.*` concepts are
@@ -2079,15 +2120,26 @@ const DENOMINATOR_REGION_CONCEPTS: &[&str] = &[
 /// fewer distinct values than there are counties, and an equality test would refuse the very
 /// dataset this feature exists for.
 ///
-/// KNOWN HOLE, deliberately left open: this closes the case where the coarser region column is
-/// PRESENT, not the case where it is absent. A county extract that joined in state population for
-/// normalization but carries no `state` column (the state code being the first two digits of the
-/// county FIPS) still gets the hint on `county_fips`. Cardinality cannot express the difference:
-/// telling a coarser denominator from a tied finer one needs the count of DISTINCT
+/// The emitted hint also carries the candidate's `geo_level` as `denominator_geo_level`, whenever
+/// the model supplied one (issue #4571). PROVENANCE, since nothing else records it: that level is
+/// copied verbatim from the DENOMINATOR column's own `geo_level`, which is verified but never
+/// itself emitted — so a sidecar reading `"level": "geo.county"` reports what the model said about
+/// the column named in `"column"`, not anything this function inferred.
+///
+/// KNOWN HOLE, narrowed by #4571 but not closed: this closes the case where the coarser region
+/// column is PRESENT, not the case where it is absent. A county extract that joined in state
+/// population for normalization but carries no `state` column (the state code being the first two
+/// digits of the county FIPS) still gets the hint on `county_fips`. Cardinality cannot express the
+/// difference: telling a coarser denominator from a tied finer one needs the count of DISTINCT
 /// (region, denominator) PAIRS, which only a data pass can produce. `viz` already materializes
 /// exactly that while reading rows (`denom_by_cand`), so that is where the check belongs, under
 /// the project's "validity at the consumption site" discipline — issue #4526. This function is
 /// the best answer available WITHOUT a data pass, not a sound one.
+///
+/// What #4571 changed is that the answer need not be inferred at all when the model supplies a
+/// level: a DECLARED `geo.state` on the denominator column, checked against the region column's
+/// own concept, catches the case cardinality cannot. That check is viz's to make and is not
+/// written yet — this function only carries the declaration to it.
 ///
 /// `measure.area` is NOT wired in. An area denominator is only readable once its unit is known
 /// (`x-qsv.denominator.unit`) and nothing in the dictionary supplies one yet, so an emitted area
@@ -2102,9 +2154,14 @@ const DENOMINATOR_REGION_CONCEPTS: &[&str] = &[
 fn verify_denominators(entries: &mut [DictionaryEntry]) {
     for entry in entries.iter_mut() {
         entry.denominator = None;
+        // Cleared with `denominator`, always: a region carrying a level for a hint it no longer
+        // has would describe the geography of nothing.
+        entry.denominator_geo_level = None;
     }
 
-    let mut candidate: Option<(String, u64)> = None;
+    // The candidate's own `geo_level` rides along, because the write loop below needs it and the
+    // entry itself does not survive selection (issue #4571).
+    let mut candidate: Option<(String, u64, Option<String>)> = None;
     for entry in entries.iter() {
         if entry.concept != "measure.population"
             || !matches!(entry.r#type.as_str(), "Integer" | "Float")
@@ -2130,9 +2187,13 @@ fn verify_denominators(entries: &mut [DictionaryEntry]) {
             // ambiguous: the clearing pass above already left every entry without a hint
             return;
         }
-        candidate = Some((entry.name.clone(), entry.cardinality));
+        candidate = Some((
+            entry.name.clone(),
+            entry.cardinality,
+            entry.geo_level.clone(),
+        ));
     }
-    let Some((denom_name, denom_cardinality)) = candidate else {
+    let Some((denom_name, denom_cardinality, denom_geo_level)) = candidate else {
         return;
     };
 
@@ -2161,6 +2222,9 @@ fn verify_denominators(entries: &mut [DictionaryEntry]) {
             continue;
         }
         entry.denominator = Some(denom_name.clone());
+        // Copied from the candidate, never re-derived: the level is a property of the DENOMINATOR
+        // column, and this region column is only borrowing it to state what its rate would be per.
+        entry.denominator_geo_level = denom_geo_level.clone();
     }
 }
 
@@ -2198,6 +2262,7 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             entry.currency = baseline.currency.clone();
             entry.unit = baseline.unit.clone();
             entry.aggregation = baseline.aggregation.clone();
+            entry.geo_level = baseline.geo_level.clone();
         }
         // Stage 2: overlay refine-pass LLM values where present. Omitted fields keep their
         // baseline values from stage 1 — this is the whole point of the baseline merge.
@@ -2235,6 +2300,13 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             if refine.aggregation.is_some() {
                 entry.aggregation = refine.aggregation.clone();
             }
+            // Same rule again for the geo level: the refine prompt never ASKS for one, so `None`
+            // here means "not restated", NOT "retracted". An unconditional assignment would wipe
+            // a verified baseline level on every --two-pass run, and with it the
+            // `x-qsv.denominator.level` that `verify_denominators` copies from it.
+            if refine.geo_level.is_some() {
+                entry.geo_level = refine.geo_level.clone();
+            }
         }
         // Stage 3: same final "unknown"/fallback coercion as `combine_dictionary_entries` so
         // the two-pass output matches single-pass invariants.
@@ -2247,6 +2319,7 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             verify_currency(entry);
             verify_unit(entry);
             verify_aggregation(entry);
+            verify_geo_level(entry);
         }
     }
     // Same second pass as the single-pass path, for the same reason: the denominator depends on
@@ -2723,6 +2796,36 @@ pub(super) fn parse_llm_dictionary_response(
                     None
                 };
 
+                // `geo_level` rides the same `infer_content_type` gate. VOCAB validation only:
+                // trim, then require a `DENOMINATOR_REGION_CONCEPTS` token — the areal units a
+                // per-region denominator can hang on, which is why `geo.latitude`,
+                // `geo.street_address`, `geo.timezone` and `geo.geonames_id` are absent from it.
+                // Trimmed but NOT case-folded: these are the same lower-case tokens `concept`
+                // carries, and folding would accept spellings the concept arm itself rejects.
+                //
+                // That list is an ACCEPTANCE list, not a prompt input, which is why — unlike
+                // `CONCEPT_VOCAB` and `UCUM_UNIT_VOCAB` — it does NOT join `vocab_fingerprint`.
+                // The fingerprint exists because an INJECTED vocabulary changes what the model is
+                // asked, so a warm cache would replay an answer produced under a different
+                // question. Nothing here reaches the prompt: the instruction points the model at
+                // the already-injected concept list. Re-parsing a cached completion under an
+                // edited acceptance list re-decides membership from the stored response text,
+                // which is correct in both directions — a widened list newly accepts a token it
+                // used to drop, a narrowed one drops a token it used to accept.
+                //
+                // Whether the FIELD is really a numeric measure is decided later by
+                // `verify_geo_level`, the only place that sees the finalized role.
+                let geo_level = if infer_content_type {
+                    field_map
+                        .get("geo_level")
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|g| DENOMINATOR_REGION_CONCEPTS.contains(g))
+                        .map(ToString::to_string)
+                } else {
+                    None
+                };
+
                 result.insert(
                     field_name.clone(),
                     LlmDictField {
@@ -2736,8 +2839,7 @@ pub(super) fn parse_llm_dictionary_response(
                         currency,
                         unit,
                         aggregation,
-                        // parse arm lands here in the behaviour commit (issue #4571)
-                        geo_level: None,
+                        geo_level,
                     },
                 );
             }
@@ -4055,6 +4157,186 @@ mod tests {
     }
 
     #[test]
+    fn parse_geo_level_validates_region_concepts() {
+        // Trimmed and checked against `DENOMINATOR_REGION_CONCEPTS` — the areal units a per-region
+        // denominator can hang on. Not case-folded: these are the same lower-case tokens the
+        // `concept` arm carries, so folding would accept spellings that arm itself rejects.
+        let names: Vec<String> = ["a", "b", "c", "d", "e", "f", "g", "h"]
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        let resp = r#"{
+            "a": {"label":"A","description":"d","geo_level":"geo.state"},
+            "b": {"label":"B","description":"d","geo_level":"  geo.county_fips  "},
+            "c": {"label":"C","description":"d","geo_level":"geo.latitude"},
+            "d": {"label":"D","description":"d","geo_level":"geo.street_address"},
+            "e": {"label":"E","description":"d","geo_level":"GEO.STATE"},
+            "f": {"label":"F","description":"d","geo_level":"measure.population"},
+            "g": {"label":"G","description":"d","geo_level":42},
+            "h": {"label":"H","description":"d"}
+        }"#;
+        let got = parse_llm_dictionary_response(resp, &names, true).unwrap();
+        assert_eq!(got["a"].geo_level.as_deref(), Some("geo.state"));
+        assert_eq!(
+            got["b"].geo_level.as_deref(),
+            Some("geo.county_fips"),
+            "trimmed"
+        );
+        assert_eq!(
+            got["c"].geo_level, None,
+            "a latitude points at a spot; it bounds no region and can hold no denominator"
+        );
+        assert_eq!(
+            got["d"].geo_level, None,
+            "a street address is not an areal unit"
+        );
+        assert_eq!(
+            got["e"].geo_level, None,
+            "NOT case-folded — the concept vocabulary is lower-case, so an upper-case spelling is \
+             not a token the model was shown"
+        );
+        assert_eq!(
+            got["f"].geo_level, None,
+            "a measure concept is not a geography"
+        );
+        assert_eq!(got["g"].geo_level, None, "non-string rejected");
+        assert_eq!(got["h"].geo_level, None, "missing key -> None");
+    }
+
+    #[test]
+    fn parse_geo_level_gated_off_without_infer_content_type() {
+        let names = vec!["a".to_string()];
+        let resp = r#"{"a":{"label":"A","description":"d","geo_level":"geo.state"}}"#;
+        let got = parse_llm_dictionary_response(resp, &names, false).unwrap();
+        assert_eq!(got["a"].geo_level, None);
+    }
+
+    #[test]
+    fn denominator_region_concepts_are_all_in_concept_vocab() {
+        // Reachability. `DENOMINATOR_REGION_CONCEPTS` is an ACCEPTANCE list and is deliberately
+        // never injected into the prompt — the Geo Level instruction points the model at the
+        // Concept list instead, which is what keeps this annotation out of `vocab_fingerprint`.
+        // That only holds if everything acceptable is visible there: a token in the acceptance
+        // list but absent from `CONCEPT_VOCAB` could never be proposed, so the accepting branch
+        // would be dead code that reads as coverage.
+        for token in DENOMINATOR_REGION_CONCEPTS {
+            assert!(
+                CONCEPT_VOCAB.contains(token),
+                "{token} is accepted as a geo_level but is not in CONCEPT_VOCAB, so the model is \
+                 never shown it and can never propose it"
+            );
+        }
+    }
+
+    /// Build an entry with the given signals, run the merge-path verification, and report whether
+    /// the proposed geo level survived.
+    fn geo_level_survives(qsv_type: &str, role: &str, concept: &str) -> bool {
+        let mut e = blank_entry("q");
+        e.r#type = qsv_type.to_string();
+        let mut llm = HashMap::new();
+        llm.insert(
+            "q".to_string(),
+            LlmDictField {
+                role: role.to_string(),
+                concept: concept.to_string(),
+                geo_level: Some("geo.state".to_string()),
+                ..Default::default()
+            },
+        );
+        combine_dictionary_entries(vec![e], &llm, true)[0]
+            .geo_level
+            .is_some()
+    }
+
+    #[test]
+    fn verify_geo_level_requires_a_numeric_measure() {
+        // A numeric measure keeps it, whatever the concept — a level is concept-independent, and
+        // gating it to `measure.population` would mean revisiting this the moment an area
+        // denominator becomes emittable (issue #4525).
+        assert!(geo_level_survives(
+            "Integer",
+            "measure",
+            "measure.population"
+        ));
+        assert!(
+            geo_level_survives("Float", "measure", "measure.amount"),
+            "not gated to population: an area or household divisor is the same shape"
+        );
+
+        // The POSITIVE half of the ladder. Each of these fails a requirement rather than merely
+        // not-being-something, which is the distinction roborev 4586 turned on: a gate phrased as
+        // "unless obviously wrong" requires nothing, and an x-qsv carrying only a geo_level walks
+        // straight through it.
+        assert!(
+            !geo_level_survives("String", "measure", "measure.population"),
+            "a String column NAMES a geography, it is not a quantity measured over one"
+        );
+        assert!(
+            !geo_level_survives("Integer", "dimension", "geo.state"),
+            "the column that identifies the region is a dimension; its concept already says so"
+        );
+        assert!(
+            !geo_level_survives("Integer", "identifier", "measure.population"),
+            "an identifier is not measured over anything"
+        );
+
+        // The ABSENT case, not just the wrong-value case: an entry carrying NO role and NO type
+        // signal at all. #4550's fixtures all supplied explicit role/qsv_type and so exercised
+        // only the guard that worked, which is how its hole shipped.
+        let mut bare = blank_entry("q");
+        bare.r#type = String::new();
+        let mut llm = HashMap::new();
+        llm.insert(
+            "q".to_string(),
+            LlmDictField {
+                geo_level: Some("geo.state".to_string()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            combine_dictionary_entries(vec![bare], &llm, true)[0].geo_level,
+            None,
+            "an x-qsv carrying ONLY a geo_level must not survive on the strength of carrying \
+             nothing that contradicts it"
+        );
+    }
+
+    #[test]
+    fn two_pass_preserves_baseline_geo_level() {
+        // Same rule, same reason as the currency and unit above: the refine prompt never asks for
+        // a geo level, so `None` on the refine side means "not restated", NOT "retracted". An
+        // unconditional overlay would wipe a verified baseline on every --two-pass run — and with
+        // it the `x-qsv.denominator.level` that `verify_denominators` copies from it.
+        let mut e = blank_entry("pop");
+        e.r#type = "Integer".to_string();
+        e.cardinality = 50;
+        let mut baseline = HashMap::new();
+        baseline.insert(
+            "pop".to_string(),
+            LlmDictField {
+                role: "measure".to_string(),
+                concept: "measure.population".to_string(),
+                geo_level: Some("geo.state".to_string()),
+                ..Default::default()
+            },
+        );
+        let mut refine = HashMap::new();
+        refine.insert(
+            "pop".to_string(),
+            LlmDictField {
+                label: "Population".to_string(),
+                ..Default::default()
+            },
+        );
+        let got = combine_dictionary_entries_with_baseline(vec![e], &baseline, &refine, true);
+        assert_eq!(
+            got[0].geo_level.as_deref(),
+            Some("geo.state"),
+            "a refine pass that does not restate the level must not retract it"
+        );
+    }
+
+    #[test]
     fn parse_currency_gated_off_without_infer_content_type() {
         let names = vec!["a".to_string()];
         let resp = r#"{"a":{"label":"A","description":"d","currency":"USD"}}"#;
@@ -4606,6 +4888,114 @@ mod tests {
         assert!(
             entries.iter().all(|e| e.denominator.is_none()),
             "no measure.population column remains, so no hint may survive"
+        );
+    }
+
+    #[test]
+    fn verify_denominators_carries_the_candidates_level() {
+        // issue #4571: the level is the DENOMINATOR column's, copied onto every region column that
+        // gets the hint. It is the only declared signal of the geography a denominator describes,
+        // and the reason it exists is that the region set below cannot be told apart from a
+        // correct one by counting anything.
+        let mut entries = vec![
+            denom_entry(
+                "county_fips",
+                "geo.county_fips",
+                "String",
+                "dimension",
+                "",
+                3143,
+            ),
+            denom_entry("state", "geo.state", "String", "dimension", "", 50),
+            denom_entry(
+                "state_pop",
+                "measure.population",
+                "Integer",
+                "measure",
+                "0",
+                50,
+            ),
+        ];
+        entries[2].geo_level = Some("geo.state".to_string());
+        verify_denominators(&mut entries);
+
+        assert_eq!(
+            entries[1].denominator.as_deref(),
+            Some("state_pop"),
+            "fixture check: the hint must land on `state`, or this test asserts nothing"
+        );
+        assert_eq!(
+            entries[1].denominator_geo_level.as_deref(),
+            Some("geo.state"),
+            "the region carrying the hint must also carry the denominator's declared level"
+        );
+        assert_eq!(
+            entries[0].denominator_geo_level, None,
+            "a region that got no hint must get no level either"
+        );
+        assert_eq!(
+            entries[2].denominator_geo_level, None,
+            "the denominator column keeps its own `geo_level`; it does not gain a \
+             `denominator_geo_level`, which is a statement about a DIFFERENT column"
+        );
+        assert_eq!(
+            entries[2].geo_level.as_deref(),
+            Some("geo.state"),
+            "the source annotation is read, not moved"
+        );
+    }
+
+    #[test]
+    fn verify_denominators_omits_the_level_when_none_was_declared() {
+        // The level is optional and its absence must stay invisible: a dictionary whose model
+        // proposed no level has to emit exactly what it emitted before #4571.
+        let mut entries = vec![
+            denom_entry("state", "geo.state", "String", "dimension", "", 50),
+            denom_entry(
+                "state_pop",
+                "measure.population",
+                "Integer",
+                "measure",
+                "0",
+                50,
+            ),
+        ];
+        verify_denominators(&mut entries);
+        assert_eq!(entries[0].denominator.as_deref(), Some("state_pop"));
+        assert_eq!(
+            entries[0].denominator_geo_level, None,
+            "no declared level means no level on the hint — not a guessed one"
+        );
+    }
+
+    #[test]
+    fn verify_denominators_clears_a_stale_level() {
+        // The sole-writer property, for the level as well as the hint. `denominator_geo_level` is
+        // `#[serde(default)]`, so a cached or round-tripped entry can arrive carrying one; if the
+        // clearing pass missed it, a region would advertise the geography of a denominator it no
+        // longer has — worse than the hint alone going stale, because a consumer checks the level
+        // to decide whether the rate is honest.
+        let mut entries = vec![
+            denom_entry(
+                "county_fips",
+                "geo.county_fips",
+                "String",
+                "dimension",
+                "",
+                100,
+            ),
+            denom_entry("revenue", "measure.amount", "Float", "measure", "0", 900),
+        ];
+        entries[0].denominator = Some("population".to_string());
+        entries[0].denominator_geo_level = Some("geo.state".to_string());
+        verify_denominators(&mut entries);
+        assert!(
+            entries.iter().all(|e| e.denominator.is_none()),
+            "no measure.population column remains, so no hint may survive"
+        );
+        assert!(
+            entries.iter().all(|e| e.denominator_geo_level.is_none()),
+            "and no level may survive its hint"
         );
     }
 

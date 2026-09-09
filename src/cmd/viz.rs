@@ -36320,6 +36320,13 @@ fn panel_trace_top_relationships(
         // hoverTEMPLATE, so a raw header containing `<extra>` or `<b>` would otherwise
         // terminate/format the template instead of displaying literally (matching the
         // escaped Histogram/ScatterPair hovers).
+        //
+        // The composition is `escape_template_token(&escape_hover(..))`, the same fixed order
+        // every other template sink uses. `escape_hover` alone was NOT enough here: it handles
+        // only `&`, `<` and `>`, so a header shaped like `%{x}` survived into the template and
+        // plotly INTERPOLATED it away rather than showing it (issue #4557). The order matters --
+        // `escape_template_token` emits an `&#123;` entity, and a second `escape_hover` pass would
+        // turn its `&` into `&amp;` and print the entity instead of a brace.
         let templates: Vec<String> = labels
             .iter()
             .rev()
@@ -36327,7 +36334,7 @@ fn panel_trace_top_relationships(
             .map(|(full, suffix)| {
                 format!(
                     "{}<br>NMI = %{{x:.3f}}{suffix}<extra></extra>",
-                    escape_hover(full)
+                    escape_template_token(&escape_hover(full))
                 )
             })
             .collect();
@@ -49003,6 +49010,67 @@ mod tests {
             "an off-table code must leave the reading bare: {json}"
         );
         assert!(!json.contains("furlong"), "off-table code leaked: {json}");
+    }
+
+    #[test]
+    fn top_relationships_hover_neutralizes_a_brace_token_in_a_pair_label() {
+        // issue #4557. The NMI dot plot builds a plotly hoverTEMPLATE but applied only
+        // `escape_hover`, which handles `&`, `<` and `>` and nothing else. A raw CSV header shaped
+        // like `%{x}` therefore survived into the template and plotly INTERPOLATED it -- the
+        // reader saw a number, or nothing, where the column's name should have been. Every other
+        // template sink already composes `escape_template_token(&escape_hover(..))`; this one did
+        // not, and its own comment says it is a hoverTEMPLATE, so the omission was an oversight
+        // rather than an exemption.
+        let panel = Panel::new(
+            "rel".to_string(),
+            PanelKind::TopRelationships {
+                labels:       vec![
+                    "%{x} vs plain".to_string(),
+                    "R&D <b>spend</b> vs rate".to_string(),
+                    "share % vs total".to_string(),
+                ],
+                values:       vec![0.9, 0.5, 0.3],
+                supports:     vec![100.0, 80.0, 60.0],
+                nonlinear:    vec![false, false, false],
+                hover_suffix: vec![String::new(), String::new(), String::new()],
+            },
+        );
+        let (trace, ..) = panel_trace_top_relationships(&panel, None);
+        let json = trace.to_json();
+
+        // Every assertion below is anchored on the `<br>NMI` that follows the label INSIDE the
+        // hovertemplate. Scoping matters: the same labels are also the y-axis category values,
+        // where they appear RAW and correctly so -- axis ticks are data that plotly renders
+        // literally, not a template it interpolates. An unanchored `json.contains` would read the
+        // y array and pass no matter what the template said.
+
+        // THE REGRESSION GUARD: the brace token must be neutralized, so plotly renders the header
+        // literally instead of substituting it away.
+        assert!(
+            json.contains("%&#123;x} vs plain<br>NMI"),
+            "a `%{{...}}`-shaped pair label must be neutralized in the TEMPLATE: {json}"
+        );
+        assert!(
+            !json.contains("%{x} vs plain<br>NMI"),
+            "the raw brace token reached the template and plotly will interpolate it: {json}"
+        );
+
+        // markup is still escaped exactly once by `escape_hover` -- the composition order must not
+        // have been swapped, and `escape_template_token` must not have replaced it.
+        assert!(
+            json.contains("R&amp;D &lt;b&gt;spend&lt;/b&gt; vs rate<br>NMI"),
+            "markup escaping regressed in the template: {json}"
+        );
+        // a LONE `%` is not a token and must pass through untouched -- the bug this whole issue
+        // grew out of was doubling exactly this.
+        assert!(
+            json.contains("share % vs total<br>NMI"),
+            "a lone % must survive as one %: {json}"
+        );
+        assert!(
+            !json.contains("share %% vs total"),
+            "a lone % was doubled: {json}"
+        );
     }
 
     #[test]

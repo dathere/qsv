@@ -3488,7 +3488,16 @@ impl ChromeDriver {
             let l = std::net::TcpListener::bind("127.0.0.1:0").expect("no free port");
             l.local_addr().unwrap().port()
         };
-        let child = std::process::Command::new("chromedriver")
+        // Both binaries are PINNED by path when the workflow supplies them, and neither is
+        // discovered. Installing a matched pair is NOT sufficient on its own: a GitHub runner
+        // ships its own Chrome at /opt/google/chrome/chrome, chromedriver launches that one by
+        // default, and the matched Chrome sits unused in the hosted tool cache. That is a real
+        // failure this test hit -- "only supports Chrome version 153 / current browser version is
+        // 152" -- with a correctly matched pair installed. `setup-chrome` reports both paths as
+        // step outputs; rust-viz-static.yml forwards them here.
+        let driver_bin =
+            std::env::var("QSV_TEST_CHROMEDRIVER").unwrap_or_else(|_| "chromedriver".to_string());
+        let child = std::process::Command::new(&driver_bin)
             .arg(format!("--port={port}"))
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -3499,9 +3508,10 @@ impl ChromeDriver {
                 // ever runs under `--ignored`, which happens in rust-viz-static.yml, and that job
                 // installs a matched Chrome + chromedriver pair.
                 panic!(
-                    "could not spawn `chromedriver` from PATH ({e}). This test is #[ignore]d and \
-                     is meant to run via .github/workflows/rust-viz-static.yml, which installs a \
-                     matched Chrome + chromedriver pair."
+                    "could not spawn chromedriver ({driver_bin}): {e}. This test is #[ignore]d \
+                     and is meant to run via .github/workflows/rust-viz-static.yml, which \
+                     installs a matched Chrome + chromedriver pair and forwards both paths as \
+                     QSV_TEST_CHROMEDRIVER / QSV_TEST_CHROME_BIN."
                 )
             });
         let http = reqwest::blocking::Client::builder()
@@ -3536,12 +3546,21 @@ impl ChromeDriver {
     }
 
     fn new_session(&mut self) {
+        let mut chrome_opts = serde_json::json!({"args": [
+            "--headless=new", "--disable-gpu", "--no-sandbox",
+            "--disable-dev-shm-usage", "--window-size=1400,1000"
+        ]});
+        // Name the browser explicitly when the workflow told us which one it installed. Without
+        // this, chromedriver picks whatever Chrome it finds first, which on a GitHub runner is the
+        // pre-installed system Chrome rather than the version-matched one.
+        if let Ok(bin) = std::env::var("QSV_TEST_CHROME_BIN")
+            && !bin.is_empty()
+        {
+            chrome_opts["binary"] = serde_json::Value::String(bin);
+        }
         let caps = serde_json::json!({"capabilities": {"alwaysMatch": {
             "browserName": "chrome",
-            "goog:chromeOptions": {"args": [
-                "--headless=new", "--disable-gpu", "--no-sandbox",
-                "--disable-dev-shm-usage", "--window-size=1400,1000"
-            ]}
+            "goog:chromeOptions": chrome_opts
         }}});
         let v: serde_json::Value = self
             .http
@@ -3555,8 +3574,11 @@ impl ChromeDriver {
             .as_str()
             .unwrap_or_else(|| {
                 panic!(
-                    "chromedriver refused a session — most often a Chrome/chromedriver MAJOR \
-                     version mismatch. Response: {v}"
+                    "chromedriver refused a session. The two causes seen in practice are a \
+                     Chrome/chromedriver MAJOR version mismatch — which happens even with a \
+                     matched pair installed, when chromedriver launches the runner's OWN Chrome \
+                     instead of the matched one — and a QSV_TEST_CHROME_BIN that does not exist. \
+                     Response: {v}"
                 )
             })
             .to_string();

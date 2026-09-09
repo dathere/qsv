@@ -7973,6 +7973,40 @@ struct RateSeries {
     excluded:     usize,
 }
 
+/// The single value a denominator map holds, when every matched region agrees on it (issue #4547).
+///
+/// A denominator that is constant across regions makes the rate panel the count panel rescaled by
+/// a constant: every rank, every relative comparison and the shape of the map are identical, and
+/// only the axis label and the magnitude change. That happens for unrelated reasons (a placeholder
+/// column, a join that collapsed, a genuinely uniform denominator) and the caller need not tell
+/// them apart — the panel carries no actionable information in any of them.
+///
+/// `None` for fewer than two regions: one region is not a degenerate comparison, it is not a
+/// comparison at all, and the rate panel already declines to draw it (`series.locs.len() >= 2`).
+/// Reporting it as degenerate would tell the reader something false.
+///
+/// Equality here is the exact negation of the row pass's within-region constancy test
+/// (`(prev - d).abs() > f64::EPSILON * prev.abs().max(1.0)`), so a pair that check calls equal can
+/// never read as distinct here. The anchor is the MINIMUM rather than whichever entry the map
+/// happens to yield first: `HashMap` iteration order is nondeterministic, and under a tolerance
+/// predicate the choice of anchor is observable.
+///
+/// Deliberately threshold-free, and deliberately NOT a ratio of distinct values to regions. The
+/// ratio form was investigated on issue #4526 and disproved with measured data — a legitimate
+/// per-city denominator scores 0.227 while the coarse-geography bug scores 0.500, so the classes
+/// are inverted and no threshold separates them. This says only that the panel is degenerate; it
+/// infers nothing about which geography the denominator describes.
+fn single_distinct_denominator(denoms: &HashMap<String, f64>) -> Option<f64> {
+    if denoms.len() < 2 {
+        return None;
+    }
+    let anchor = denoms.values().copied().fold(f64::INFINITY, f64::min);
+    denoms
+        .values()
+        .all(|d| (anchor - d).abs() <= f64::EPSILON * anchor.abs().max(1.0))
+        .then_some(anchor)
+}
+
 /// Pair each region with its denominator and compute the raw per-region ratio, dropping regions
 /// with no usable denominator. `locs`/`values` are aligned 1:1 (region key, numerator); `denoms`
 /// maps region key -> positive denominator. Order is preserved, so the caller's first-seen region
@@ -20496,6 +20530,13 @@ enum Route {
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum DenominatorSource {
     /// A dataset column index, whose value must be constant within a region.
+    ///
+    /// INVARIANT: this variant is constructed in exactly one place — the dictionary-hint arm of
+    /// `denom_source` — and that arm has already filtered `denom_by_cand[ci]` down to the POSITIVE
+    /// denominators before yielding it, because the degeneracy check there (issue #4547) has to
+    /// see the same map the panel is drawn from. Anything reading `denom_by_cand` for this variant
+    /// therefore gets pre-filtered values and must NOT filter again. A new variant that reads that
+    /// map from somewhere else does not inherit the filter and has to do its own.
     Column(usize),
     /// A dotted property path on each `--geojson` feature (e.g. `properties.POP2020`).
     GeojsonProperty(String),
@@ -29537,16 +29578,47 @@ fn build_smart_summary_choropleth_panels(
                     q_reason = format!("it is not constant within region '{region}'")
                 );
                 None
-            } else if !denom_by_cand[ci].values().any(|d| *d > 0.0) {
-                viz_skip_note!(
-                    VIZ_SMART_PREFIX,
-                    "viz.omit.denominator_invalid",
-                    q_col = name,
-                    q_reason = "it holds no positive numbers for the matched regions"
-                );
-                None
             } else {
-                Some(DenominatorSource::Column(*idx))
+                // Drop the unusable values HERE, once, and let every check below plus the
+                // consumption site read the same filtered map. They had to survive the constancy
+                // check to be compared against their region's other rows, but that check is
+                // already done — it ran during the row pass and its verdict is `denom_conflict`
+                // above. From this point down we are describing the panel that will ACTUALLY be
+                // drawn, and the rate panel only ever charts positive denominators, so a check
+                // that counted the others would describe a different panel than the reader sees.
+                denom_by_cand[ci].retain(|_, d| *d > 0.0);
+                let usable = &denom_by_cand[ci];
+                if usable.is_empty() {
+                    viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.denominator_invalid",
+                        q_col = name,
+                        q_reason = "it holds no positive numbers for the matched regions"
+                    );
+                    None
+                } else if let Some(constant) = single_distinct_denominator(usable) {
+                    // Name the constant AND both region counts. The constant tells the reader
+                    // whether this is a placeholder or a genuinely uniform denominator. The counts
+                    // must be reported as "N of M": the check ranges over the regions that HAVE a
+                    // usable denominator, which is not always every matched region, and calling
+                    // that subset "all M matched regions" overstates it (roborev 4605). The `N of
+                    // M` shape matches the `denominator_excluded` note's own vocabulary.
+                    let n_usable = usable.len();
+                    let n_matched = count_locs.len();
+                    viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.denominator_invalid",
+                        q_col = name,
+                        q_reason = format!(
+                            "it takes a single distinct value ({constant}) across the {n_usable} \
+                             of {n_matched} matched regions that have one, so a rate would be the \
+                             count rescaled by a constant"
+                        )
+                    );
+                    None
+                } else {
+                    Some(DenominatorSource::Column(*idx))
+                }
             }
         },
         (None, None) => None,
@@ -29573,10 +29645,10 @@ fn build_smart_summary_choropleth_panels(
                 ),
             ),
             DenominatorSource::Column(idx) => {
-                // drop the unusable values only now: they had to survive the constancy check
-                // above to be compared against their region's other rows.
-                let mut m = std::mem::take(&mut denom_by_cand[ci]);
-                m.retain(|_, d| *d > 0.0);
+                // Already filtered to the positive values by the `Ok(idx)` arm above, which had to
+                // see the same map this panel is drawn from for its degeneracy check to describe
+                // the right panel (issue #4547). Do NOT re-add a filter here: one source of truth.
+                let m = std::mem::take(&mut denom_by_cand[ci]);
                 let unit = resolve_denominator_unit(
                     args.flag_denominator_unit.as_deref(),
                     col_sems[region_idx].denominator_unit.as_deref(),
@@ -44480,6 +44552,96 @@ mod tests {
         assert_eq!(s.denominators, vec![10_000.0, 50_000.0]);
         assert_eq!(s.rates, vec![0.003, 0.0012]);
         assert_eq!(s.excluded, 2, "B and D have no denominator");
+    }
+
+    // issue #4547. The degeneracy check itself, away from the panel plumbing:
+    // `denominator_excluded` only ever fires INSIDE the `series.locs.len() >= 2` guard, so the
+    // one-region half of this rule has no end-to-end signal to assert against and would pass
+    // vacuously as an integration test. Pinned here instead, where the guard is directly
+    // observable.
+    #[test]
+    fn single_distinct_denominator_needs_two_regions_to_be_degenerate() {
+        let one: HashMap<String, f64> = [("A".to_string(), 50_000.0)].into_iter().collect();
+        assert_eq!(
+            single_distinct_denominator(&one),
+            None,
+            "one region is not a degenerate comparison, it is not a comparison at all — the rate \
+             panel already declines to draw it, and reporting it as degenerate would tell the \
+             reader something false"
+        );
+        assert_eq!(
+            single_distinct_denominator(&HashMap::new()),
+            None,
+            "no regions, nothing to compare"
+        );
+
+        let two_equal: HashMap<String, f64> =
+            [("A".to_string(), 50_000.0), ("B".to_string(), 50_000.0)]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            single_distinct_denominator(&two_equal),
+            Some(50_000.0),
+            "two regions agreeing on one value is the degenerate case, and the constant is \
+             reported so the reader can tell a placeholder from a uniform denominator"
+        );
+    }
+
+    #[test]
+    fn single_distinct_denominator_ignores_a_genuine_spread() {
+        // The MUTATION GUARD on the whole check: a denominator that actually varies must keep its
+        // rate panel. Without this, a `single_distinct_denominator` that always returned `Some`
+        // would still pass the degenerate-case test above.
+        let varied: HashMap<String, f64> = [
+            ("A".to_string(), 10_000.0),
+            ("B".to_string(), 200_000.0),
+            ("C".to_string(), 50_000.0),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(single_distinct_denominator(&varied), None);
+
+        // Two distinct values across four regions is the issue #4526 coarse-geography repro (four
+        // counties carrying two distinct STATE populations). It is a real bug and it stays open —
+        // this check deliberately does NOT fire on it. The ratio form that would was disproved
+        // with measured data on that issue: a legitimate per-city denominator scores 0.227 while
+        // this bug scores 0.500, so the classes are inverted and no threshold separates them.
+        // Do not "finish the job" by generalizing this into a ratio.
+        let coarse: HashMap<String, f64> = [
+            ("A".to_string(), 1_000_000.0),
+            ("B".to_string(), 1_000_000.0),
+            ("C".to_string(), 2_000_000.0),
+            ("D".to_string(), 2_000_000.0),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            single_distinct_denominator(&coarse),
+            None,
+            "D=2/R=4 is issue #4526, not this check"
+        );
+    }
+
+    #[test]
+    fn single_distinct_denominator_agrees_with_the_row_pass_constancy_test() {
+        // Equality here is the exact negation of the within-region constancy test in the row pass
+        // (`(prev - d).abs() > f64::EPSILON * prev.abs().max(1.0)`). If the two ever disagree, a
+        // pair the row pass calls constant would read as two distinct values here and the panel
+        // would survive as a rate that is really a rescaled count.
+        let a = 50_000.0_f64;
+        let b = a + a * f64::EPSILON * 0.5; // within the row pass's tolerance
+        assert!(
+            (a - b).abs() <= f64::EPSILON * a.abs().max(1.0),
+            "fixture check: the row pass must consider these constant"
+        );
+        let near: HashMap<String, f64> = [("A".to_string(), a), ("B".to_string(), b)]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            single_distinct_denominator(&near),
+            Some(a),
+            "a pair the row pass calls constant must not read as two distinct values"
+        );
     }
 
     #[test]

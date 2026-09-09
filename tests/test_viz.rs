@@ -3300,6 +3300,477 @@ fn viz_static_max_charts_caps_panels() {
     );
 }
 
+// ── issue #4557: the hover RENDERING contract ──────────────────────────────────────────────────
+//
+// Every other test in this file asserts the template string qsv EMITS. That is exactly how the
+// `%%` bug shipped: `escape_template_pct` doubled every `%` for the life of the function, and all
+// three of its unit tests pinned the doubled form as correct. A test that asserts what we emit
+// cannot discover that what we emit RENDERS wrong -- it is self-confirming. Only a browser can.
+//
+// The fixture below is `smart_gapminder_csv`'s trajectories with the three measure headers renamed
+// so that ONE hover carries every escaping edge case we rely on. Each header keeps the tokens the
+// name heuristics read (`gdp`, `wellbeing_index`, `population_m`), so panel selection is unchanged.
+fn hover_contract_csv() -> String {
+    let traj: [(&str, i32, [(i32, i32); 6]); 5] = [
+        (
+            "Northland",
+            12,
+            [(60, 55), (66, 62), (72, 68), (78, 71), (84, 72), (90, 73)],
+        ),
+        (
+            "Eastmark",
+            30,
+            [(50, 48), (58, 50), (67, 53), (76, 60), (83, 70), (88, 80)],
+        ),
+        (
+            "Sudland",
+            48,
+            [(45, 40), (48, 50), (50, 60), (52, 69), (55, 77), (58, 84)],
+        ),
+        (
+            "Westfall",
+            9,
+            [(70, 58), (64, 61), (60, 63), (63, 66), (70, 70), (78, 74)],
+        ),
+        (
+            "Centra",
+            22,
+            [(55, 52), (61, 57), (66, 63), (71, 66), (75, 71), (80, 75)],
+        ),
+    ];
+    let q = [
+        "2023-01-01",
+        "2023-04-01",
+        "2023-07-01",
+        "2023-10-01",
+        "2024-01-01",
+        "2024-04-01",
+    ];
+    // a lone `%`; a `%{...}`-shaped name; markup plus a `<extra></extra>` sentinel
+    let mut rows = String::from(
+        "region,quarter_date,gdp % index,%{y} wellbeing_index,R&D <b>x</b><extra></extra> \
+         population_m\n",
+    );
+    for (region, pop, path) in &traj {
+        for (qi, (gx, wy)) in path.iter().enumerate() {
+            for k in -1..=1 {
+                rows.push_str(&format!("{region},{},{},{},{pop}\n", q[qi], gx + k, wy + k));
+            }
+        }
+    }
+    rows
+}
+
+// ONE property. `derive_semantics` matches on the RAW header, and keeping `<`, `>` and `{` out of
+// the sidecar avoids the `<script type="text/html" id="qsv-dict-src">` embedding entirely.
+fn hover_contract_dictionary() -> &'static str {
+    r#"{"type":"object","properties":{"gdp % index":{"title":"GDP","type":"number","x-qsv":{"role":"measure","concept":"measure.amount","unit":"%"}}}}"#
+}
+
+// The FIXTURE-PREMISE guard for the browser test below -- deliberately NOT the contract.
+//
+// This asserts emitted template strings, the very shape issue #4557 calls self-confirming, and it
+// is kept for one narrow reason the viz-static workflow states in its own header: "Fixture premises
+// that can be checked without a browser belong in a normal `#[test]`." It proves the animated
+// bubble panel was selected at all and that all five cases reached its template. Without it, "the
+// heuristic didn't pick my panel" and "the hover never fired" are indistinguishable failures, and
+// only one of them needs a browser to diagnose.
+//
+// Note the name has NO `viz_static`, so this runs in every viz job while the contract test runs
+// only in the browser workflow.
+#[test]
+fn viz_smart_hover_contract_fixture_reaches_the_bubble_template() {
+    let wrk = Workdir::new("viz_smart_hover_contract_fixture_reaches_the_bubble_template");
+    wrk.create_from_string("contract.csv", &hover_contract_csv());
+    wrk.create_from_string("d.schema.json", hover_contract_dictionary());
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1").args([
+        "smart",
+        "contract.csv",
+        "--dictionary",
+        "d.schema.json",
+        "--no-tour",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    // plotly serializes `<`, `>` and `&` as <, > and & inside the embedded figure
+    // JSON, so a raw substring match on the page never sees the template as written. Decode those
+    // three before asserting -- otherwise this test can only be written in an unreadable escaped
+    // form, and an unreadable assertion is one nobody will maintain correctly.
+    let html = String::from_utf8_lossy(&out.stdout)
+        .replace("\\u003c", "<")
+        .replace("\\u003e", ">")
+        .replace("\\u0026", "&");
+
+    // Pull out the ONE bubble hovertemplate and assert against that slice, never the whole page.
+    // Scoping is the difference between a real assertion and a phantom: a page-wide
+    // `contains("%%")` fails on the vendored plotly.js bundle, which uses `%%` in its own printf
+    // helper and colour parser, and a page-wide search for a header finds it in axis titles,
+    // legend names and drawer metadata, where it correctly appears RAW.
+    let Some(start) = html.find("Northland<br>") else {
+        let seen: Vec<&str> = html
+            .match_indices("hovertemplate")
+            .map(|(i, _)| &html[i..(i + 200).min(html.len())])
+            .take(6)
+            .collect();
+        panic!(
+            "no animated-bubble hovertemplate was emitted, so panel selection changed and the \
+             browser contract test has nothing to hover. Templates present:\n  {}",
+            seen.join("\n  ")
+        );
+    };
+    let end = html[start..]
+        .find("<extra></extra>")
+        .expect("the hovertemplate lost its trailing <extra></extra> sentinel");
+    let tpl = &html[start..start + end];
+
+    // ONE template carrying all five cases is what makes a single hover a contract rather than
+    // five separate ones.
+    let expected = "gdp % index: %{x} %<br>%&#123;y} wellbeing_index: %{y}<br>R&amp;D \
+                    &lt;b&gt;x&lt;/b&gt;&lt;extra&gt;&lt;/extra&gt; population_m: ";
+    assert!(
+        tpl.contains(expected),
+        "the bubble hovertemplate must carry every case in one label. Either panel selection \
+         changed or a sink stopped escaping.\nEXPECTED: {expected}\nACTUAL:   {tpl}"
+    );
+    // the bug that started all of this: a lone `%` must never be doubled IN THE TEMPLATE
+    assert!(!tpl.contains("%%"), "a literal % was doubled: {tpl}");
+}
+
+/// A chromedriver child process plus its WebDriver session, spoken to over the W3C HTTP protocol.
+///
+/// Deliberately NOT a WebDriver client crate. `fantoccini` is already in the tree transitively
+/// under `viz_static`, so naming it looked free — but its default features are `native-tls`, which
+/// pulls `openssl` UNCONDITIONALLY (unlike `native-tls` itself, which target-gates it off).
+/// Measured: adding it as a dev-dependency puts `openssl-sys` into the
+/// `x86_64-unknown-linux-musl` graph, where master has none and where `rust-musl.yml` runs
+/// `cargo test` with no musl OpenSSL available. Dev-dependencies are built regardless of
+/// `--features`, and musl is inside the existing arch allowlist, so no arch gate can express that
+/// exclusion. `reqwest` (already unconditional, `blocking` + `json`, rustls) plus `serde_json`
+/// costs nothing and adds no manifest change at all.
+///
+/// Every interaction here is `POST /session/{id}/execute/sync` anyway: a plotly hover has to be
+/// triggered through `Plotly.Fx.hover` and read back out of the SVG, so a client crate's element
+/// and actions API would go unused.
+#[cfg(feature = "viz_static")]
+struct ChromeDriver {
+    child: std::process::Child,
+    base:  String,
+    sid:   Option<String>,
+    http:  reqwest::blocking::Client,
+}
+
+#[cfg(feature = "viz_static")]
+impl Drop for ChromeDriver {
+    fn drop(&mut self) {
+        // a leaked session or driver poisons every later run on the same machine, and this must
+        // happen on the panic path too -- which is exactly why it lives in Drop and not at the
+        // end of the test body.
+        if let Some(sid) = &self.sid {
+            let _ = self
+                .http
+                .delete(format!("{}/session/{sid}", self.base))
+                .send();
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[cfg(feature = "viz_static")]
+impl ChromeDriver {
+    fn start() -> Self {
+        // OS-assigned port rather than a hardcoded one: a stale driver from an interrupted run
+        // would otherwise collide. The bind/drop/reuse window is acceptable because
+        // rust-viz-static.yml runs `--test-threads=1`.
+        let port = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").expect("no free port");
+            l.local_addr().unwrap().port()
+        };
+        let child = std::process::Command::new("chromedriver")
+            .arg(format!("--port={port}"))
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap_or_else(|e| {
+                // Fail loudly; do NOT skip. A test that silently passes when the browser is absent
+                // is the same self-confirming shape issue #4557 exists to remove. This test only
+                // ever runs under `--ignored`, which happens in rust-viz-static.yml, and that job
+                // installs a matched Chrome + chromedriver pair.
+                panic!(
+                    "could not spawn `chromedriver` from PATH ({e}). This test is #[ignore]d and \
+                     is meant to run via .github/workflows/rust-viz-static.yml, which installs a \
+                     matched Chrome + chromedriver pair."
+                )
+            });
+        let http = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap();
+        let base = format!("http://127.0.0.1:{port}");
+        let mut me = Self {
+            child,
+            base,
+            sid: None,
+            http,
+        };
+        me.await_ready();
+        me.new_session();
+        me
+    }
+
+    // poll, never a fixed sleep: a fixed sleep is either flaky or slow, and usually both
+    fn await_ready(&self) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        while std::time::Instant::now() < deadline {
+            if let Ok(r) = self.http.get(format!("{}/status", self.base)).send()
+                && let Ok(v) = r.json::<serde_json::Value>()
+                && v["value"]["ready"].as_bool() == Some(true)
+            {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        panic!("chromedriver never became ready within 15s");
+    }
+
+    fn new_session(&mut self) {
+        let caps = serde_json::json!({"capabilities": {"alwaysMatch": {
+            "browserName": "chrome",
+            "goog:chromeOptions": {"args": [
+                "--headless=new", "--disable-gpu", "--no-sandbox",
+                "--disable-dev-shm-usage", "--window-size=1400,1000"
+            ]}
+        }}});
+        let v: serde_json::Value = self
+            .http
+            .post(format!("{}/session", self.base))
+            .json(&caps)
+            .send()
+            .expect("POST /session failed")
+            .json()
+            .expect("POST /session returned non-JSON");
+        let sid = v["value"]["sessionId"]
+            .as_str()
+            .unwrap_or_else(|| {
+                panic!(
+                    "chromedriver refused a session — most often a Chrome/chromedriver MAJOR \
+                     version mismatch. Response: {v}"
+                )
+            })
+            .to_string();
+        self.sid = Some(sid);
+    }
+
+    fn goto(&self, url: &str) {
+        let sid = self.sid.as_ref().unwrap();
+        self.http
+            .post(format!("{}/session/{sid}/url", self.base))
+            .json(&serde_json::json!({ "url": url }))
+            .send()
+            .expect("navigation failed");
+    }
+
+    // W3C `execute/sync` requires the script body to `return` explicitly.
+    fn exec(&self, script: &str) -> serde_json::Value {
+        let sid = self.sid.as_ref().unwrap();
+        let v: serde_json::Value = self
+            .http
+            .post(format!("{}/session/{sid}/execute/sync", self.base))
+            .json(&serde_json::json!({"script": script, "args": []}))
+            .send()
+            .expect("execute/sync failed")
+            .json()
+            .expect("execute/sync returned non-JSON");
+        v["value"].clone()
+    }
+}
+
+// ── THE CONTRACT ──────────────────────────────────────────────────────────────────────────────
+//
+// Renders the page in a real browser, hovers a real point, and asserts the text a READER sees.
+// This is the assertion that would have caught the `%%` bug on day one, and the only one in this
+// repo that can: every other hover test pins the template we emit, which is precisely the artifact
+// that was wrong.
+//
+// The contract is memorable: **every column header reaches the reader byte-for-byte as it appears
+// in the CSV.** Hover text renders as pseudo-HTML, so `&amp;` -> `&`, `&lt;` -> `<` and `&#123;`
+// -> `{`; the escaping exists only to survive the trip, and must be invisible on arrival.
+//
+// Scope, stated plainly: one panel, one browser, one page, and it runs only in
+// .github/workflows/rust-viz-static.yml (pushes/PRs touching viz.rs or test_viz.rs, plus weekly).
+// rust.yml and rust-macos.yml build it on every PR without `--ignored`, so it is at least
+// compile-checked everywhere.
+#[cfg(feature = "viz_static")]
+#[test]
+#[ignore = "requires a browser/webdriver for plotly static export"]
+fn viz_static_hover_rendering_contract() {
+    let wrk = Workdir::new("viz_static_hover_rendering_contract");
+    wrk.create_from_string("contract.csv", &hover_contract_csv());
+    wrk.create_from_string("d.schema.json", hover_contract_dictionary());
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("viz");
+    // --no-tour is REQUIRED, not cosmetic: the driver.js tour auto-starts ~1.2s after load and
+    // overlays the page, intermittently eating the hover. QSV_VIZ_NO_COMPRESS removes the
+    // DecompressionStream inflate race, so panel scripts run inline at parse time.
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1").args([
+        "smart",
+        "contract.csv",
+        "--dictionary",
+        "d.schema.json",
+        "--no-tour",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let url = url::Url::from_file_path(wrk.path("dash.html")).expect("absolute path");
+    let drv = ChromeDriver::start();
+    drv.goto(url.as_str());
+
+    // Find the bubble graph div AND the trace index by the template's own text, not by position --
+    // panel order is heuristic and will drift.
+    const FIND: &str = r#"
+      var gds = Array.prototype.slice.call(document.querySelectorAll('.js-plotly-plot'));
+      for (var i = 0; i < gds.length; i++) {
+        var d = gds[i].data || [];
+        for (var c = 0; c < d.length; c++) {
+          var t = d[c].hovertemplate;
+          if (typeof t === 'string' && t.indexOf('wellbeing_index') !== -1) {
+            window.__qsvGd = gds[i]; window.__qsvCurve = c;
+            window.__qsvSub = (d[c].xaxis || 'x') + (d[c].yaxis || 'y');
+            return true;
+          }
+        }
+      }
+      return false;
+    "#;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let mut found = false;
+    while std::time::Instant::now() < deadline {
+        if drv.exec(FIND) == serde_json::Value::Bool(true) {
+            found = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    assert!(
+        found,
+        "no rendered panel carried a `wellbeing_index` hovertemplate within 20s. The \
+         fixture-premise test viz_smart_hover_contract_fixture_reaches_the_bubble_template proves \
+         the template is EMITTED, so a failure here is a rendering or hover-mechanics problem, \
+         not a fixture one."
+    );
+
+    // Address the point by INDEX via Plotly.Fx.hover. A synthetic mouse move would need pixel
+    // coordinates derived from the layout, coupling this test to fonts, margins and window size --
+    // the single largest source of flake in browser tests.
+    let how = drv.exec(
+        r#"
+          var gd = window.__qsvGd, c = window.__qsvCurve, sub = window.__qsvSub;
+          function shown() { return gd.querySelectorAll('.hoverlayer g.hovertext').length; }
+          // plotly's point-spec form takes an ARRAY; the object form expects {xval, yval}.
+          Plotly.Fx.hover(gd, [{curveNumber: c, pointNumber: 0}], sub);
+          if (shown()) { return 'points'; }
+          var t = gd.data[c];
+          Plotly.Fx.hover(gd, {xval: t.x[0], yval: t.y[0]}, sub);
+          if (shown()) { return 'xval'; }
+          return 'none';
+        "#,
+    );
+    assert_ne!(
+        how, "none",
+        "neither Plotly.Fx.hover form produced a hover label. The panel renders (it was found by \
+         its template above), so this is a plotly hover-API change, not a fixture problem."
+    );
+
+    // read the RENDERED label back
+    let res = drv.exec(
+        r#"
+          var boxes = window.__qsvGd.querySelectorAll('.hoverlayer g.hovertext');
+          if (!boxes.length) { return {count: 0, lines: []}; }
+          // Read the LINES, not textContent. plotly renders each `<br>` as its own tspan, and
+          // textContent concatenates them with no separator -- which fabricates character pairs
+          // that span a line boundary and that no reader ever sees.
+          var nodes = boxes[0].querySelectorAll('tspan, text');
+          var seen = {}, lines = [];
+          for (var i = 0; i < nodes.length; i++) {
+            var t = nodes[i].textContent;
+            // a <text> wrapping tspans repeats their concatenation; keep only leaf text
+            if (nodes[i].querySelector('tspan')) { continue; }
+            if (t && !seen[t]) { seen[t] = 1; lines.push(t); }
+          }
+          return {count: boxes.length, lines: lines};
+        "#,
+    );
+    let count = res["count"].as_u64().unwrap_or(0);
+    // Join with newline so a `%` ending one line and a `%` starting the next can never read as a
+    // doubled `%`. The first draft of this test asserted on `textContent` and failed exactly that
+    // way -- on output that was in fact rendering perfectly.
+    let lines: Vec<String> = res["lines"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let text = lines.join("\n");
+    assert!(count >= 1, "no hover label rendered (count={count})");
+
+    // ── the five cases, as a reader sees them ──
+    assert!(
+        text.contains("gdp % index"),
+        "a lone % must render as one %: {text:?}"
+    );
+    assert!(
+        !text.contains("%%"),
+        "THE BUG: a literal % rendered doubled: {text:?}"
+    );
+    // the unit reading: `18.4 %`, never `18.4 %%`
+    assert!(
+        regex_lite_pct(&text),
+        "the %-unit reading must render as `<number> %`: {text:?}"
+    );
+    assert!(
+        text.contains("%{y} wellbeing_index"),
+        "a `%{{...}}`-shaped header must render literally, not be interpolated away: {text:?}"
+    );
+    assert!(
+        text.contains("R&D <b>x</b><extra></extra> population_m"),
+        "markup and a <extra> sentinel must reach the reader as text: {text:?}"
+    );
+    // escaped exactly ONCE — an entity that survives to the reader means a double pass
+    for leaked in ["&amp;", "&lt;", "&gt;", "&#123;"] {
+        assert!(
+            !text.contains(leaked),
+            "{leaked} leaked to the reader, so something escaped twice: {text:?}"
+        );
+    }
+    // A LIVE `<extra>` mid-template makes plotly split the label into a primary and a secondary
+    // box. Exactly one box is the proof that the header's `<extra></extra>` was neutralized.
+    assert_eq!(
+        count, 1,
+        "expected exactly one hover box; a second means the header's <extra> terminated the \
+         template: {text:?}"
+    );
+}
+
+/// `<number> %` with a space, without pulling in a regex crate for one assertion.
+#[cfg(feature = "viz_static")]
+fn regex_lite_pct(text: &str) -> bool {
+    text.split("gdp % index: ").nth(1).is_some_and(|rest| {
+        let head: String = rest.chars().take_while(|c| !c.is_whitespace()).collect();
+        !head.is_empty()
+            && head
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == '.' || c == ',')
+            && rest[head.len()..].starts_with(" %")
+    })
+}
+
 #[test]
 fn viz_pie() {
     let wrk = Workdir::new("viz_pie");

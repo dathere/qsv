@@ -31962,10 +31962,14 @@ struct RegionDedupe {
 /// rows can be different cities in different states. When their values DIFFER that registers as a
 /// `conflict` and the tile is omitted, which is safe; when they are EXACTLY equal the two regions
 /// merge into one key and the total silently undercounts by one of them. Closing it needs a
-/// composite identity, and choosing the enclosing column to qualify by is the same granularity
-/// question issue #4526 records as unanswerable from cardinality — so this is tracked on its own
-/// (issue #4548) rather than guessed at here. `measure_by_dim_panel` keys its own dedupe the same
-/// way.
+/// composite identity. Cardinality cannot pick the column to qualify by (issue #4526), but it does
+/// not have to: [`smart_state_column`] already picks one by CONCEPT for this same ambiguity on the
+/// choropleth path (issue #4481), and qualifying is a no-op for a code-valued owning column, so it
+/// could apply unconditionally. What is still undecided is the BLANK qualifier cell, which would
+/// split one region into two keys and double-count it — the opposite error. Tracked on issue
+/// #4548. `measure_by_dim_panel` keys its own dedupe the same way, and must NOT read any ambiguity
+/// flag added here: it treats `conflict` as abandon-the-collapse, so an ambiguity signal would turn
+/// this undercount into an inflated row-wise total.
 ///
 /// This both VERIFIES and COMPUTES. The ownership guard cannot prove constancy from the stats
 /// cache, so a measure that disagrees with itself inside one region sets `conflict` — which the

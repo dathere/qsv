@@ -221,6 +221,18 @@ LINE_CLAIM_RE = re.compile(
 )
 
 
+def normalize_claim_path(path: str) -> str:
+    """Strip a leading ``/`` or ``./`` so a doc-relative flourish still resolves.
+
+    ``../`` is deliberately NOT stripped: it is a genuinely relative reference whose
+    target depends on the doc's own location, so resolving it against the repo root
+    would be a guess. It falls through to the near-miss guard instead.
+    """
+    if path.startswith("./"):
+        return path[2:]
+    return path.lstrip("/")
+
+
 def check_line_counts(report: Report, tolerance_pct: float) -> None:
     actual: dict[str, int] = {}
     for src_rel in LINE_COUNT_TARGETS:
@@ -243,9 +255,28 @@ def check_line_counts(report: Report, tolerance_pct: float) -> None:
         text = doc.read_text(encoding="utf-8")
         for lineno, line in enumerate(text.splitlines(), start=1):
             for m in LINE_CLAIM_RE.finditer(line):
-                claimed_path = m.group("path")
-                # Only audit known targets; ignore stray references.
+                claimed_path = normalize_claim_path(m.group("path"))
                 if claimed_path not in actual:
+                    # A claim that LOOKS audited but silently is not is worse than no
+                    # claim at all: `/tests/test_stats.rs` drifted to 10.5% unnoticed
+                    # because the leading slash made this lookup miss. So flag a path
+                    # that names a known target's file yet does not resolve to it.
+                    # A genuinely stray reference (different basename) is still ignored.
+                    suggestion = next(
+                        (t for t in actual if Path(t).name == Path(claimed_path).name),
+                        None,
+                    )
+                    if suggestion is not None:
+                        report.add(
+                            file=doc_rel,
+                            line=lineno,
+                            category="claim-path",
+                            message=(
+                                f"claimed path {m.group('path')!r} does not resolve, so "
+                                f"this line-count claim is NOT audited; "
+                                f"did you mean {suggestion!r}?"
+                            ),
+                        )
                     continue
                 claimed = int(m.group("count").replace(",", ""))
                 truth = actual[claimed_path]

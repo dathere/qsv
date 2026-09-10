@@ -278,6 +278,7 @@ viz:
     denominator_excluded: "%{q_total} 件中 %{q_n} 件の地域に使用可能な分母がないため、表示されません。"
     boundary_provenance: "境界: %{q_source}。"
     denominator_provenance: "分母: %{q_source}。"
+    denominator_level_unverified: "分母: %{q_col} — 地理的レベルが未検証のため、これらの地域と同じ範囲を表しているかを qsv は確認できません。"
     boundary_outliers: "%{q_n} 件の地域が他から大きく離れています (%{q_ids})。地図は残りに合わせて表示しています。"
     funnel_complete: "n = %{q_n} 件の完全なケース(全行の %{q_pct}%)"
     funnel_violation: "%{q_pct}% の行で %{q_here} が %{q_prev} を超過"

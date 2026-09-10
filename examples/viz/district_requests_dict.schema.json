@@ -17,7 +17,8 @@
         "concept": "geo.county",
         "content_type": "category",
         "denominator": {
-          "column": "population"
+          "column": "population",
+          "level": "geo.county"
         }
       }
     },

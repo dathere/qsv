@@ -278,6 +278,7 @@ viz:
     denominator_excluded: "nessun denominatore utilizzabile per %{q_n} regioni su %{q_total}; non vengono mostrate."
     boundary_provenance: "Confini: %{q_source}."
     denominator_provenance: "Denominatore: %{q_source}."
+    denominator_level_unverified: "Denominatore: %{q_col} — il suo livello geografico non è verificato, quindi qsv non può confermare che descriva le stesse aree di queste regioni."
     boundary_outliers: "%{q_n} regione/i si trovano molto lontano dalle altre (%{q_ids}); la mappa è inquadrata sulle restanti."
     funnel_complete: "n = %{q_n} casi completi (%{q_pct}% delle righe)"
     funnel_violation: "%{q_here} supera %{q_prev} nel %{q_pct}% delle righe"

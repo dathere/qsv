@@ -518,6 +518,7 @@ viz:
     denominator_excluded: "no usable denominator for %{q_n} of %{q_total} regions; they are not shown."
     boundary_provenance: "Boundaries: %{q_source}."
     denominator_provenance: "Denominator: %{q_source}."
+    denominator_level_unverified: "Denominator: %{q_col} — its geographic level is unverified, so qsv cannot confirm it describes the same areas as these regions."
     boundary_outliers: "%{q_n} region(s) lie far outside the rest (%{q_ids}); the map is framed to the others."
     # Funnel caveat clauses, joined with " · ". Each is a whole clause: the
     # stage names are slots, so word order is the translator's to choose.

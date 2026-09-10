@@ -37,14 +37,6 @@ ignore = [
     # Build/runtime path for static viz export; clears when plotly's deps move to
     # reqwest 0.12 (which dropped rustls-pemfile 1.x).
     "RUSTSEC-2025-0134",
-
-    # ---------------------------------------------------------------------
-    # vulnerabilities
-    # ---------------------------------------------------------------------
-
-    # RUSTSEC-2026-0194: quadratic run time when checking a start tag for
-    # duplicate attribute names in quick-xml.
-    "RUSTSEC-2026-0194",
 ]
 
 [yanked]

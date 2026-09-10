@@ -1052,9 +1052,10 @@ pub(super) struct DictionaryEntry {
     /// region side of that comparison is the column's own concept, which this producer does not
     /// author, so the consumer needs an alias map either way and a producer-side collapse would
     /// only discard what the model actually said (never emitted anywhere else) while sharpening
-    /// nothing. #4526 owns that map — deliberately, because the pairs are not all obvious:
+    /// nothing. That map now lives on the consumer as `viz::geo_level_class` (issue #4526), which
+    /// is the right home for it — deliberately, because the pairs are not all obvious:
     /// `geo.zip_code` and `geo.zcta` are NOT interchangeable, and issue #4524 split them for
-    /// exactly that reason.
+    /// exactly that reason, so `geo_level_class` keeps them in separate classes.
     ///
     /// DERIVED, not proposed, and written by the same sole-writer pass as `denominator` — the two
     /// are cleared and set together, so a region can never carry a level for a hint it no longer
@@ -2136,20 +2137,27 @@ const DENOMINATOR_REGION_CONCEPTS: &[&str] = &[
 /// itself emitted — so a sidecar reading `"level": "geo.county"` reports what the model said about
 /// the column named in `"column"`, not anything this function inferred.
 ///
-/// KNOWN HOLE, narrowed by #4571 but not closed: this closes the case where the coarser region
-/// column is PRESENT, not the case where it is absent. A county extract that joined in state
-/// population for normalization but carries no `state` column (the state code being the first two
-/// digits of the county FIPS) still gets the hint on `county_fips`. Cardinality cannot express the
+/// KNOWN HOLE, and it is still a hole HERE: this closes the case where the coarser region column
+/// is PRESENT, not the case where it is absent. A county extract that joined in state population
+/// for normalization but carries no `state` column (the state code being the first two digits of
+/// the county FIPS) still gets the hint on `county_fips`. Cardinality cannot express the
 /// difference: telling a coarser denominator from a tied finer one needs the count of DISTINCT
-/// (region, denominator) PAIRS, which only a data pass can produce. `viz` already materializes
-/// exactly that while reading rows (`denom_by_cand`), so that is where the check belongs, under
-/// the project's "validity at the consumption site" discipline — issue #4526. This function is
-/// the best answer available WITHOUT a data pass, not a sound one.
+/// (region, denominator) PAIRS, which no stats column carries. This function is the best answer
+/// available WITHOUT a data pass, not a sound one.
 ///
-/// What #4571 changed is that the answer need not be inferred at all when the model supplies a
-/// level: a DECLARED `geo.state` on the denominator column, checked against the region column's
-/// own concept, catches the case cardinality cannot. That check is viz's to make and is not
-/// written yet — this function only carries the declaration to it.
+/// What closes it downstream is the DECLARED level, not a count. A `geo.state` on the denominator
+/// column, checked against the region column's own concept, catches exactly the case cardinality
+/// cannot — and `viz` now makes that check (issue #4526, consuming the level #4571 emits): when
+/// both sides resolve to a known areal unit and DISAGREE, the rate panel is refused outright;
+/// when the level is undeclared or does not resolve, the panel still charts and says so in its
+/// subtitle. So the hint this function emits on `county_fips` is still wrong in that scenario, but
+/// it no longer draws a confident wrong map whenever the model supplied a level.
+///
+/// ⛔ Do NOT "finish" this with a data pass over `viz`'s `denom_by_cand`. A distinct-values /
+/// regions RATIO was investigated on #4526 and disproved with MEASURED data: a legitimate
+/// per-city denominator scores 0.227 while this bug scores 0.500, so the classes are INVERTED and
+/// no threshold separates them. Granularity is not a property of counts — three count-derived
+/// rules have now been tried on this problem family and every one was reviewed as a defect.
 ///
 /// `measure.area` is NOT wired in. An area denominator is only readable once its unit is known
 /// (`x-qsv.denominator.unit`) and nothing in the dictionary supplies one yet, so an emitted area
@@ -2157,10 +2165,11 @@ const DENOMINATOR_REGION_CONCEPTS: &[&str] = &[
 /// per-field unit annotation lands (issue #4525).
 ///
 /// What `viz` DOES re-check at the consumption site is that the named column exists, is numeric,
-/// and is constant within each region — degrading to a skip note rather than taking the Data
-/// Schematic down. Note that a denominator from a COARSER geography passes that constant-within-
-/// region test (a state population really is constant within each of its counties), which is why
-/// the hole above is a hole and not something the consumer already catches.
+/// is constant within each region, and — since #4526 — that a declared `level` names the same
+/// geography as the region column, degrading to a skip note rather than taking the Data Schematic
+/// down. Note that a denominator from a COARSER geography passes the constant-within-region test
+/// honestly (a state population really is constant within each of its counties), which is why the
+/// declared level, and not that test, is what catches it.
 fn verify_denominators(entries: &mut [DictionaryEntry]) {
     for entry in entries.iter_mut() {
         entry.denominator = None;

@@ -246,6 +246,7 @@ pub enum CliError {
     // An LLM inference/completion failure (HTTP/API error, empty response, etc.), as opposed
     // to an infrastructure error (cache backend, IO). Lets callers degrade gracefully on a
     // failed inference while still propagating infrastructure failures.
+    #[cfg(not(feature = "lite"))]
     Inference(String),
     Other(String),
 }
@@ -258,11 +259,12 @@ impl fmt::Display for CliError {
             CliError::Csv(e) => e.fmt(f),
             CliError::Io(e) => e.fmt(f),
             CliError::NoMatch() => f.write_str("no_match"),
+            #[cfg(not(feature = "lite"))]
+            CliError::Inference(s) => f.write_str(s),
             CliError::Other(s)
             | CliError::IncorrectUsage(s)
             | CliError::Encoding(s)
             | CliError::OutOfMemory(s)
-            | CliError::Inference(s)
             | CliError::Network(s) => f.write_str(s),
         }
     }

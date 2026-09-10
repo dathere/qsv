@@ -943,7 +943,19 @@ impl StatsData {
     pub fn mean_f64(&self) -> Option<f64> {
         stat_rendering_f64(self.mean.as_ref(), &self.r#type)
     }
+}
 
+/// The quartile and fence renderings as numbers.
+///
+/// Only `viz`, `frequency --filter` (luau) and the unit tests read these, so they are
+/// compiled out of builds that have neither (notably qsvlite). The two OUTER fences narrow
+/// this further - `viz` reads the quartiles and the inner fences, but never the outer pair.
+#[cfg(any(
+    feature = "luau",
+    all(feature = "viz", feature = "feature_capable"),
+    test
+))]
+impl StatsData {
     /// The numeric value of `q1`, or `None` when it is a date rendering.
     #[inline]
     pub fn q1_f64(&self) -> Option<f64> {
@@ -963,6 +975,7 @@ impl StatsData {
     }
 
     /// The numeric value of `lower_outer_fence`, or `None` when it is a date rendering.
+    #[cfg(any(feature = "luau", test))]
     #[inline]
     pub fn lower_outer_fence_f64(&self) -> Option<f64> {
         stat_rendering_f64(self.lower_outer_fence.as_ref(), &self.r#type)
@@ -981,6 +994,7 @@ impl StatsData {
     }
 
     /// The numeric value of `upper_outer_fence`, or `None` when it is a date rendering.
+    #[cfg(any(feature = "luau", test))]
     #[inline]
     pub fn upper_outer_fence_f64(&self) -> Option<f64> {
         stat_rendering_f64(self.upper_outer_fence.as_ref(), &self.r#type)

@@ -428,6 +428,7 @@ fn main() -> QsvExitCode {
                 util::log_end(qsv_args, now);
                 QsvExitCode::EncodingError
             },
+            #[cfg(not(feature = "lite"))]
             Err(CliError::Inference(msg)) => {
                 werr!("inference error: {msg}");
                 util::log_end(qsv_args, now);

@@ -112,6 +112,10 @@ struct Args {
     flag_all:         bool,
     flag_no_headers:  bool,
     flag_delimiter:   Option<Delimiter>,
+    #[cfg_attr(
+        not(any(feature = "feature_capable", feature = "lite")),
+        allow(dead_code)
+    )]
     flag_progressbar: bool,
     flag_json:        bool,
     flag_pretty_json: bool,
@@ -189,6 +193,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return Ok(());
     }
 
+    #[cfg(any(feature = "feature_capable", feature = "lite"))]
     let record_count;
 
     // prep progress bar
@@ -207,10 +212,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             progress.set_draw_target(ProgressDrawTarget::hidden());
             0
         };
-    }
-    #[cfg(feature = "datapusher_plus")]
-    {
-        record_count = 0;
     }
 
     let do_json = args.flag_json || args.flag_pretty_json;

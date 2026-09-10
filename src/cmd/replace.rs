@@ -123,6 +123,10 @@ struct Args {
     flag_size_limit:     usize,
     flag_dfa_size_limit: usize,
     flag_not_one:        bool,
+    #[cfg_attr(
+        not(any(feature = "feature_capable", feature = "lite")),
+        allow(dead_code)
+    )]
     flag_progressbar:    bool,
     flag_quiet:          bool,
     flag_jobs:           Option<usize>,

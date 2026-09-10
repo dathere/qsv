@@ -23,7 +23,9 @@ use csv_index::RandomAccessSimple;
 use docopt::Docopt;
 use filetime::FileTime;
 use human_panic::setup_panic;
-use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
+use indicatif::ProgressDrawTarget;
+use indicatif::{HumanCount, ProgressBar, ProgressStyle};
 use log::{info, log_enabled, warn};
 #[cfg(feature = "polars")]
 use polars::prelude::Schema;
@@ -190,6 +192,9 @@ const WHITESPACE_MARKERS: &[(char, &str)] = &[
 /// care?", not to be arithmetic. Days are the largest unit: `qsv get --older-than` also accepts
 /// weeks on INPUT, but "28d" reads more plainly in a cache listing than "4w", and no caller
 /// round-trips this back through that parser.
+// `diskcache::rich`'s stale-refresh warning and `get cache-list`'s AGE column are the only
+// callers, and both live under the `get` feature.
+#[cfg(any(feature = "get", test))]
 pub fn fmt_duration_compact(secs: i64) -> String {
     const MINUTE: i64 = 60;
     const HOUR: i64 = 60 * MINUTE;
@@ -5280,6 +5285,7 @@ pub fn run_qsv_cmd(
 /// success; use when the caller only needs the child's on-disk side effects (e.g. `moarstats`'
 /// stats/bivariate cache sidecars), not its stdout. Callers that render their own progress bar
 /// should suspend it around this call so the two don't collide.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub fn run_qsv_cmd_streaming(
     command: &str,
     args: &[&str],

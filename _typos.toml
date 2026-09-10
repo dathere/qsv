@@ -35,6 +35,7 @@ anual         = "anual"
 portugues     = "portugues"
 lits          = "lits"
 "SME"         = "SME"
+"sav"         = "sav"
 
 [files]
 extend-exclude = [

@@ -24,6 +24,7 @@
 * `geoconnex` - extends `profile` with the `geoconnex` profile for hydrologic/water-data federations (JSON-LD output).
 * `magika` - enable [Magika](https://github.com/google/magika)-powered, AI-based file type detection in the `sniff` command for enhanced MIME type identification. Falls back to the `file-format` crate in `qsvlite`/`qsvdp` variants. Not available on MUSL builds.
 * `mcp` - enable `log` command and MCP (Model Context Protocol) skill JSON generation for AI agent integration.
+* `readstat` - enable `readstat` command. Converts SAS, Stata & SPSS files to CSV. Implies `polars`.
 * `to` - enables the `to` command.
 * `self_update` - enable self-update engine, checking GitHub for the latest release. Note that if you manually built qsv, self-update will only alert you about new releases (when qsv is invoked with no command, it checks GitHub for the latest release at most twice a month — throttled by a persisted stamp file with a 15-day interval — unless the `QSV_NO_UPDATE` environment variable is set). It will NOT offer the choice to update itself to the prebuilt binaries published on GitHub.  
 You need not worry that your manually built qsv will be overwritten by a self-update.  
@@ -33,13 +34,13 @@ To check if your qsv build will have the option to self-update, run `qsv --versi
 ## Special Features for building qsv binary variants:
 
 * `feature_capable` - enable to build `qsv` binary variant which is feature-capable. Also used by `qsvmcp`. (mutually exclusive with `lite` and `datapusher_plus`)
-  * `all_features` - shortcut to build `qsv` binary variant with all features enabled (apply,fetch,foreach,geocode,geoconnex,get,get_cloud,luau,magika,mcp,polars,profile,synthesize,to,viz_static,self_update,ui).
+  * `all_features` - shortcut to build `qsv` binary variant with all features enabled (apply,fetch,foreach,geocode,geoconnex,get,get_cloud,luau,magika,mcp,polars,profile,readstat,synthesize,to,viz_static,self_update,ui).
 
-* `qsvmcp` - enable to build `qsvmcp` binary variant - optimized for [MCP](https://modelcontextprotocol.io/) server use with geocode, mcp, polars, profile, self_update, synthesize, to, and viz features. Shares `src/main.rs` with `qsv`. (mutually exclusive with `lite` and `datapusher_plus`). Uses `viz` rather than `viz_static` because viz over MCP is HTML-only by design - the MCP server rejects a non-HTML `--output` before qsv runs, so the browser/webdriver-backed static-export path was never reachable there.
+* `qsvmcp` - enable to build `qsvmcp` binary variant - optimized for [MCP](https://modelcontextprotocol.io/) server use with geocode, mcp, polars, profile, readstat, self_update, synthesize, to, and viz features. Shares `src/main.rs` with `qsv`. (mutually exclusive with `lite` and `datapusher_plus`). Uses `viz` rather than `viz_static` because viz over MCP is HTML-only by design - the MCP server rejects a non-HTML `--output` before qsv runs, so the browser/webdriver-backed static-export path was never reachable there.
 * `lite` - enable to build `qsvlite` binary variant with all features disabled. (mutually exclusive with `feature_capable` and `datapusher_plus`)
 * `datapusher_plus` - enable to build `qsvdp` binary variant - the [DataPusher+](https://github.com/dathere/datapusher-plus) optimized qsv binary. Pulls in `geocode`, `get`, `get_cloud`, `polars`, `profile`, and `self_update`. (mutually exclusive with `feature_capable` and `lite`)
 * `nightly` - enable to turn on nightly-only features when building with Rust nightly/unstable. Specifically: `crc32fast/nightly`, `pyo3/nightly`, `rand/simd_support`, `simd-json/hints` and `foldhash/nightly`. Note that Polars has its own separate `nightly-polars` feature.
-* `distrib_features` - enable to build `qsv` binary variant with the core distribution features enabled (apply, fetch, foreach, geocode, geoconnex, get, get_cloud, luau, mcp, polars, profile, synthesize, to, viz_static) - i.e. all features except `self_update`, `ui`, `magika`, and `python`. This should make it easier for distro packagers to build `qsv` as qsv removes and adds features over time.
+* `distrib_features` - enable to build `qsv` binary variant with the core distribution features enabled (apply, fetch, foreach, geocode, geoconnex, get, get_cloud, luau, mcp, polars, profile, readstat, synthesize, to, viz_static) - i.e. all features except `self_update`, `ui`, `magika`, and `python`. This should make it easier for distro packagers to build `qsv` as qsv removes and adds features over time.
 
 > [!NOTE]
 > `qsvlite`, as the name implies, always has **non-default features disabled**. `qsv` can be built with any combination of the above features using the cargo `--features` & `--no-default-features` flags. The prebuilt `qsv` binaries have **all applicable features valid for the target platform**.

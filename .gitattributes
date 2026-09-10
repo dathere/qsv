@@ -9,5 +9,11 @@
 # attribute that cannot match what the CDN serves, and the browser refuses to run the script.
 # `-text` pins them to their upstream bytes on every platform.
 src/cmd/assets/** -text
+# Statistical-package fixtures for `readstat`. Their exact bytes matter. SPSS portable
+# (.por) in particular is a printable-charset format with no NUL bytes, so the `* text=auto`
+# rule above classifies it as TEXT and a Windows checkout would rewrite its line endings,
+# corrupting the fixture. `-text` pins them all to their committed bytes on every platform.
+resources/test/readstat_* -text
+
 resources/test/test-windows1252.csv encoding=cp1252
 resources/test/test-utf16le.csv encoding=utf-16le

@@ -215,6 +215,9 @@ fn main() -> QsvExitCode {
     #[cfg(all(feature = "python", feature = "feature_capable"))]
     enabled_commands.push_str("    py          Evaluate a Python expression on CSV data\n");
 
+    #[cfg(all(feature = "readstat", feature = "feature_capable"))]
+    enabled_commands.push_str("    readstat    Convert SAS, Stata & SPSS files to CSV\n");
+
     enabled_commands.push_str(
         "    rename      Rename the columns of CSV data efficiently
     replace     Replace patterns in CSV data
@@ -513,6 +516,8 @@ enum Command {
     Pseudo,
     #[cfg(all(feature = "python", feature = "feature_capable"))]
     Py,
+    #[cfg(all(feature = "readstat", feature = "feature_capable"))]
+    Readstat,
     Rename,
     Replace,
     Reverse,
@@ -642,6 +647,8 @@ impl Command {
             Command::Pseudo => cmd::pseudo::run(argv),
             #[cfg(all(feature = "python", feature = "feature_capable"))]
             Command::Py => cmd::python::run(argv),
+            #[cfg(all(feature = "readstat", feature = "feature_capable"))]
+            Command::Readstat => cmd::readstat::run(argv),
             Command::Rename => cmd::rename::run(argv),
             Command::Replace => cmd::replace::run(argv),
             Command::Reverse => cmd::reverse::run(argv),

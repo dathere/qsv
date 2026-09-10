@@ -306,6 +306,21 @@ plotly = { version = "0.14.1", default-features = false, optional = true }
 # `t!` macro expands to `crate::_rust_i18n_t!`. See src/cmd/viz_i18n.rs.
 rust-i18n = { version = "4.2.1", optional = true }
 pragmastat = "14.0"
+# Pure-Rust SAS/Stata/SPSS readers powering the `readstat` command.
+# A DIRECT git dep, NOT a [patch.crates-io] entry: a patch only applies when its version
+# satisfies the requirement, so a `version = "x.y"` here that does not match the fork's own
+# version is SILENTLY ignored and Cargo resolves the crates.io release instead - which still
+# wants polars 0.53 and drags in a whole duplicate polars tree.
+#
+# This crate also depends on polars-core and polars-arrow directly, hence the matching
+# [patch.crates-io] entries below that redirect them onto the same git polars qsv pins.
+# Without those, they resolve from crates.io and the two arrow/error types fail to typecheck.
+# NOTE: once crates.io polars-* packages land in Cargo.lock they are sticky - Cargo will keep
+# them even after the manifest is corrected. Re-resolve (or check `cargo tree -d`) rather than
+# assuming a manifest fix took effect.
+# TRACKING: repoint at the upstream crate once jrothbaum/polars_readstat#59 (polars 0.55)
+# is merged and released.
+polars-readstat-rs = { git = "https://github.com/jqnatividad/polars_readstat", branch = "polars-0.55", optional = true }
 polars = { version = "0.55", features = [
     "asof_join",
     "avro",
@@ -468,6 +483,10 @@ quickcheck  = { version = "1", default-features = false }
 serial_test = { version = "4.0", features = ["file_locks"] }
 
 [patch.crates-io]
+# polars-readstat-rs depends on these directly; redirect them onto the same git polars
+# revision qsv pins, otherwise a second, incompatible polars tree resolves from crates.io.
+polars-core  = { git = "https://github.com/pola-rs/polars", tag = "py-1.44.2" }
+polars-arrow = { git = "https://github.com/pola-rs/polars", tag = "py-1.44.2" }
 # use our tweaked fork of csv crate
 # the csv crate underpins a lot of qsv's functionality, so every perf tweak helps
 # for details, see https://github.com/dathere/qsv/wiki/Tuned-csv-Fork-Benchmarks
@@ -603,6 +622,7 @@ distrib_features = [
     "mcp",
     "polars",
     "profile",
+    "readstat",
     "synthesize",
     "to",
     "viz_static",
@@ -614,7 +634,7 @@ all_features = ["distrib_features", "magika", "self_update", "ui"]
 # prebuilt `qsv` (object_store is in BOTH dependency graphs, so it never shows up in a crate
 # count - only in a resolved-feature comparison). Dropping it costs qsvmcp the `get` command,
 # `dc:` cache-prefix inputs, and s3:///gs://az:// sources.
-qsvmcp = ["feature_capable", "geocode", "mcp", "polars", "profile", "self_update", "synthesize", "to", "viz"]
+qsvmcp = ["feature_capable", "geocode", "mcp", "polars", "profile", "readstat", "self_update", "synthesize", "to", "viz"]
 apply = [
     "base62",
     "base64-simd",
@@ -664,6 +684,7 @@ luau = ["mlua", "sanitize-filename", "flate2", "zstd"]
 magika = ["dep:magika", "dep:ort"]
 mcp = []
 polars = ["dep:polars", "bytemuck"]
+readstat = ["dep:polars-readstat-rs", "polars"]
 
 prompt = ["rfd"]
 python = ["pyo3"]

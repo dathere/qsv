@@ -30,6 +30,7 @@ run `cargo tree` or a tool such as `cargo-about` for that inventory.
 | [GeoNames](https://www.geonames.org/) | `cities15000` + `countryInfo` | CC-BY-4.0 | powers the `geocode` command and source for the `examples/viz/world_cities.csv` sample |
 | [geoBoundaries](https://www.geoboundaries.org/) | COL ADM1, 33 departments | CC-BY-4.0 | `examples/viz/colombia_departments.geojson`; `viz` inlines the geometry into the HTML it generates |
 | [simplemaps](https://simplemaps.com/gis/country/jp) | free GIS Japan ADM1, 47 prefectures | CC-BY-4.0 | `examples/viz/japan_prefectures.geojson`; geometry inlined into the committed `examples/viz/smart_geospatial.html` dashboard |
+| [pandas](https://github.com/pandas-dev/pandas) SAS test data | `airline.sas7bdat` from `pandas/tests/io/sas/data` | BSD-3-Clause | committed as `resources/test/readstat_sample.sas7bdat`; test fixture only, not shipped in any binary |
 | OpenStreetMap / CARTO basemap tiles | n/a | ODbL 1.0 / CARTO terms | fetched at view time by MapLibre; not redistributed |
 
 ---

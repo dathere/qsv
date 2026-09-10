@@ -76,6 +76,7 @@
 | [prompt](docs/help/prompt.md)✨<br>🐻‍❄️🖥️ | Open a file dialog to either pick a file as input or save output to a file. |
 | [pseudo](docs/help/pseudo.md)<br>🔣👆 | [Pseudonymise](https://en.wikipedia.org/wiki/Pseudonymization) the value of the given column by replacing them with an incremental identifier.  |
 | [py](docs/help/py.md)✨<br>📇🔣 | Create a new computed column or filter rows by evaluating a Python expression on every row of a CSV file. Python's [f-strings](https://www.freecodecamp.org/news/python-f-strings-tutorial-how-to-use-f-strings-for-string-formatting/) is particularly useful for extended formatting, [with the ability to evaluate Python expressions as well](https://github.com/dathere/qsv/blob/4cd00dca88addf0d287247fa27d40563b6d46985/src/cmd/python.rs#L23-L31). [Requires Python 3.11 or greater](https://github.com/dathere/qsv/blob/master/docs/INTERPRETERS.md#building-qsv-with-python-feature). |
+| [readstat](docs/help/readstat.md)✨<br>🐻‍❄️🚀 | Convert SAS (`.sas7bdat`, `.xpt`), Stata (`.dta`) & SPSS (`.sav`, `.zsav`, `.por`) files to CSV, preserving the underlying codes of labelled values by default. Also dumps the rich variable metadata these formats carry - variable labels, value labels, missing-value codes, measure & display settings - with `--metadata`. |
 | [rename](docs/help/rename.md) |  Rename the columns of a CSV efficiently. |
 | [replace](docs/help/replace.md)<br>📇🏎️👆 | Replace CSV data using a regex. Applies the regex to each field individually. |
 | [reverse](docs/help/reverse.md)<br>📇🤯 | Reverse order of rows in a CSV. Unlike the `sort --reverse` command, it preserves the order of rows with the same key. If an index is present, it works with constant memory. Otherwise, it will load all the data into memory. |
@@ -297,7 +298,7 @@ There are five binary variants of qsv:
 
 * `qsv` - [feature](#feature-flags)-capable(✨), with the [prebuilt binaries](https://github.com/dathere/qsv/releases/latest) enabling all applicable features except Python [^3]
 * `qsvpy` - same as `qsv` but with the Python feature enabled. Three subvariants are available - qsvpy311, qsvpy312 & qsvpy313 - which are compiled with the latest patch version of Python 3.11, 3.12 & 3.13 respectively. We need to have a binary for each Python version as Python is dynamically linked ([more info](docs/INTERPRETERS.md#building-qsv-with-python-feature)).
-* `qsvmcp` - optimized for [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server use with geocode, mcp, polars, profile, self_update, synthesize, to, and viz features enabled. Shares `src/main.rs` with `qsv`.
+* `qsvmcp` - optimized for [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server use with geocode, mcp, polars, profile, readstat, self_update, synthesize, to, and viz features enabled. Shares `src/main.rs` with `qsv`.
 * `qsvlite` - all features disabled (~16% of the size of `qsv`). If you are migrating from [xsv](https://github.com/BurntSushi/xsv) and want the same experience and feature set, this is the variant for you.
 * `qsvdp` - optimized for use with [DataPusher+](https://github.com/dathere/datapusher-plus) with only DataPusher+ relevant commands; [`applydp`](#applydp_deeplink), a slimmed-down version of the `apply` feature; the `--progressbar` option disabled; and the self-update only checking for new releases, requiring an explicit `--update` (~16% of the size of `qsv`).
 
@@ -355,6 +356,8 @@ The `schema` command produces a [JSON Schema Validation (Draft 2020-12)](https:/
 The `describegpt` and `frequency` commands also both produce [TOON](https://toonformat.dev) files. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
 
 The `excel` command recognizes Excel & Open Document Spreadsheet(ODS) files (`.xls`, `.xlsx`, `.xlsm`, `.xlsb` & `.ods` files).
+
+The `readstat` command recognizes the binary formats of the major statistical packages - SAS (`.sas7bdat`, `.xpt`/`.xpt5`/`.xpt8`), Stata (`.dta`) and SPSS (`.sav`, `.zsav`, `.por`) - & converts them to CSV. It can also dump their variable metadata (labels, value labels & missing-value codes) instead of the data.
 
 Speaking of Excel, if you're having trouble opening qsv-generated CSV files in Excel, set the QSV_OUTPUT_BOM environment variable to add a [Byte Order Mark](https://en.wikipedia.org/wiki/Byte_order_mark) to the beginning of the generated CSV file. This is a workaround for [Excel's UTF-8 encoding detection bug](https://stackoverflow.com/questions/155097/microsoft-excel-mangles-diacritics-in-csv-files).
 

@@ -38,7 +38,7 @@ fn output_guard_error_message() {
         .args(["--output", "in.csv"]);
     let got = wrk.output_stderr(&mut cmd);
     assert!(
-        got.contains("is the same file as the input"),
+        got.contains("is the same file as an input"),
         "unexpected stderr: {got}"
     );
 }
@@ -146,4 +146,45 @@ fn output_guard_does_not_shadow_help() {
         got.contains("Select columns from CSV data"),
         "--help should print usage, got: {got}"
     );
+}
+
+/// An input supplied as an ATTACHED flag value must be caught too.
+///
+/// This is the case a raw-argv scan cannot see: docopt accepts `--flag value`,
+/// `--flag=value` and `-fvalue` interchangeably, but only the first spelling puts the path
+/// in an argv token of its own. Scanning tokens therefore reads `--payload-tpl=payload.tpl`
+/// as one opaque non-path string, misses that the template is an input, and lets the
+/// command zero it - the exact bug this guard exists to prevent. Reading docopt's PARSED
+/// values instead makes every spelling equivalent.
+///
+/// Gated on `fetch` because no command in every binary flavor takes an input via a flag;
+/// the guard itself is shared code, so the flavor does not affect what is being tested.
+#[cfg(all(feature = "fetch", feature = "feature_capable"))]
+#[test]
+fn output_guard_catches_an_input_passed_as_an_attached_flag_value() {
+    const TPL: &str = "{\"n\": {{ number }}}\n";
+
+    // long attached form: --payload-tpl=<file>
+    let wrk = setup("output_guard_catches_an_attached_long_flag_value");
+    wrk.create_from_string("payload.tpl", TPL);
+    let mut cmd = wrk.command("fetchpost");
+    cmd.arg("--payload-tpl=payload.tpl")
+        .args(["letter", "in.csv"])
+        .args(["--output", "payload.tpl"]);
+    wrk.assert_err(&mut cmd);
+    assert_eq!(
+        wrk.read_to_string("payload.tpl").unwrap(),
+        TPL,
+        "the template is an input; it must not be truncated"
+    );
+
+    // short attached form: -t<file>
+    let wrk = setup("output_guard_catches_an_attached_short_flag_value");
+    wrk.create_from_string("payload.tpl", TPL);
+    let mut cmd = wrk.command("fetchpost");
+    cmd.arg("-tpayload.tpl")
+        .args(["letter", "in.csv"])
+        .args(["--output", "payload.tpl"]);
+    wrk.assert_err(&mut cmd);
+    assert_eq!(wrk.read_to_string("payload.tpl").unwrap(), TPL);
 }

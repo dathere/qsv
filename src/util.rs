@@ -20,7 +20,7 @@ use std::{
 
 use csv::ByteRecord;
 use csv_index::RandomAccessSimple;
-use docopt::Docopt;
+use docopt::{ArgvMap, Docopt, Value};
 use filetime::FileTime;
 use human_panic::setup_panic;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -1123,79 +1123,74 @@ pub(crate) use update_cache_info;
 /// (`cmd f > f`), where the shell opens the file before qsv starts, `-o` is opened by qsv
 /// itself, so qsv can refuse.
 ///
-/// The scan is argv-level on purpose. The output `Config` is a separate instance that does
-/// not know the input path, and ~40 `File::create` sites across `src/cmd/` bypass
-/// `Config::io_writer` entirely — so there is no single writer chokepoint that has both
-/// paths in hand. `argv` does.
+/// This works off docopt's PARSED values rather than raw argv. It has to: docopt accepts
+/// `--flag value`, `--flag=value` and `-fvalue` interchangeably, so a raw-argv scan sees
+/// `--payload-tpl=payload.tpl` as one opaque token and misses that the template is an
+/// input — letting `fetchpost --payload-tpl=payload.tpl … -o payload.tpl` zero the
+/// template, which is the very bug being guarded against. The parsed map has each value
+/// already separated from its flag, in every spelling.
 ///
 /// Identity is tested with `same_file::is_same_file`, which compares inode/dev (file-id on
 /// Windows) and therefore catches `./data.csv`, symlinks AND hard links. Canonicalizing
 /// cannot: two hard links to one inode have two distinct canonical paths.
 ///
-/// Known bound: only argv tokens are examined, so an input named inside a query string —
-/// `qsv sqlp "select * from read_csv('data.csv')" -o data.csv` — is not caught.
-fn check_output_is_not_input(argv: &[&str]) -> CliResult<()> {
-    // Find the --output value, remembering which token indices spelled it so the output is
-    // never compared against itself. Last occurrence wins, matching docopt.
-    let mut output: Option<&str> = None;
-    let mut flag_idx = usize::MAX;
-    let mut value_idx = usize::MAX;
-
-    let mut i = 0;
-    while i < argv.len() {
-        let token = argv[i];
-        if token == "-o" || token == "--output" {
-            if let Some(value) = argv.get(i + 1) {
-                output = Some(value);
-                flag_idx = i;
-                value_idx = i + 1;
-                i += 2;
-                continue;
-            }
-        } else if let Some(value) = token.strip_prefix("--output=") {
-            output = Some(value);
-            flag_idx = i;
-            value_idx = i;
-        } else if !token.starts_with("--")
-            && token.len() > 2
-            && let Some(value) = token.strip_prefix("-o")
-        {
-            // attached short-option value, e.g. `-odata.csv`. `-o` always takes an
-            // argument in qsv, so this is never a bundle of short flags.
-            output = Some(value);
-            flag_idx = i;
-            value_idx = i;
-        }
-        i += 1;
-    }
-
-    let Some(output) = output else {
+/// Two known bounds, both accepted deliberately:
+///  - Docopt reports values, not their ROLE, so any argument that happens to name an existing file
+///    is treated as an input. `qsv select letter in.csv -o letter`, with a file named `letter`
+///    present, is refused even though the selector is not an input. Distinguishing them needs
+///    per-command schema knowledge that does not exist at this chokepoint, and the failure is a
+///    clear message rather than a destroyed file.
+///  - A path named inside a query string — `qsv sqlp "select * from read_csv('d.csv')" -o d.csv` —
+///    is not a value of its own and is not seen.
+fn check_output_is_not_input(vals: &ArgvMap) -> CliResult<()> {
+    let Some(out_val) = vals.find("--output") else {
+        // this command has no --output flag at all
         return Ok(());
     };
+    let output = out_val.as_str();
+    if output.is_empty() {
+        return Ok(());
+    }
 
     let out_path = Path::new(output);
     // An output that does not exist yet cannot be the same file as an existing input, and
     // a directory is never a valid --output (File::create reports that on its own). Both
-    // early exits are what keep this guard free of false positives.
+    // early exits are what keep the guard quiet on ordinary invocations.
     if !out_path.is_file() {
         return Ok(());
     }
 
-    for (idx, token) in argv.iter().enumerate() {
-        // argv[0] is the qsv binary and argv[1] the command name; neither is an input.
-        if idx <= 1 || idx == flag_idx || idx == value_idx {
+    // Compare by pointer, not by key or by string. Docopt stores `-o` and `--output` as
+    // synonyms of ONE entry and which key is canonical is an implementation detail; and
+    // skipping by string would be outright wrong, since `qsv fmt data.csv -o data.csv` is
+    // the flagship case and there the input and output strings are identical.
+    let out_ptr = std::ptr::from_ref(out_val);
+
+    let is_input = |candidate: &str| -> bool {
+        let in_path = Path::new(candidate);
+        in_path.is_file() && same_file::is_same_file(in_path, out_path).unwrap_or(false)
+    };
+
+    // `ArgvMap::map` is `pub` but `#[doc(hidden)]`: docopt exposes no iterator over parsed
+    // values, and a fixed list of key names cannot work because the keys differ per
+    // command. Revisit if a future qsv_docopt adds a public iterator.
+    for (_, value) in vals.map.iter() {
+        if std::ptr::from_ref(value) == out_ptr {
             continue;
         }
-        let in_path = Path::new(*token);
-        if !in_path.is_file() {
-            continue;
-        }
-        if same_file::is_same_file(in_path, out_path).unwrap_or(false) {
-            return fail_clierror!(
-                "--output ({output}) is the same file as the input ({token}). qsv would truncate \
-                 the input before reading it, losing the data. Pass a different --output."
-            );
-        }
+        // Switch/Counted/Plain(None) carry no path, so they are skipped.
+        let candidate = match value {
+            Value::Plain(Some(s)) if is_input(s) => s,
+            Value::List(list) => match list.iter().find(|s| is_input(s)) {
+                Some(s) => s,
+                None => continue,
+            },
+            _ => continue,
+        };
+        return fail_clierror!(
+            "--output ({output}) is the same file as an input ({candidate}). qsv would truncate \
+             the input before reading it, losing the data. Pass a different --output."
+        );
     }
 
     Ok(())
@@ -1205,19 +1200,20 @@ pub fn get_args<T>(usage: &str, argv: &[&str]) -> CliResult<T>
 where
     T: DeserializeOwned,
 {
-    let args = Docopt::new(usage)
+    // `Docopt::deserialize` is just `parse().and_then(ArgvMap::deserialize)`, so splitting
+    // it costs nothing and lets the guard see docopt's PARSED values. `parse` is also
+    // where --help/--version are detected, so both still short-circuit ahead of the guard.
+    let vals = Docopt::new(usage)
         .and_then(|d| {
             d.argv(argv.iter().copied())
                 .version(Some(version()))
-                .deserialize()
+                .parse()
         })
         .map_err(CliError::from)?;
 
-    // Deliberately AFTER deserialize, so --help/--version still short-circuit and a
-    // usage error is still reported as a usage error.
-    check_output_is_not_input(argv)?;
+    check_output_is_not_input(&vals)?;
 
-    Ok(args)
+    vals.deserialize().map_err(CliError::from)
 }
 
 #[inline]

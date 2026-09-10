@@ -225,11 +225,6 @@ fn main() -> QsvExitCode {
                 util::log_end(qsv_args, now);
                 QsvExitCode::EncodingError
             },
-            Err(CliError::Inference(msg)) => {
-                werr!("inference error: {msg}");
-                util::log_end(qsv_args, now);
-                QsvExitCode::Bad
-            },
         },
     }
 }

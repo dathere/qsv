@@ -464,6 +464,7 @@ struct FrequencyCacheMetadata {
 /// A neutral, read-only view of a frequency cache for consumers outside the
 /// `frequency` command (currently `viz smart`) that want each column's top
 /// value/count pairs without re-scanning the data.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub(crate) struct FreqCacheView {
     /// Map of column field name -> per-column data. For `--no-headers` caches the keys are
     /// 1-based positional strings ("1", "2", ...). The `<HIGH_CARDINALITY>` / `<ALL_UNIQUE>`
@@ -475,6 +476,7 @@ pub(crate) struct FreqCacheView {
 /// and the count of empty/null cells (the cache's empty-string bucket). Kept separate so a
 /// consumer can render the null bucket as its own bar (or drop it) rather than mixing it into
 /// the value list.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub(crate) struct FreqCacheColumn {
     /// Non-null `(value, count)` pairs, in the cache's stored order (count descending).
     pub pairs:      Vec<(String, u64)>,
@@ -487,6 +489,7 @@ pub(crate) struct FreqCacheColumn {
 /// Delegates to `Args::cache_path_for` so the path is derived EXACTLY as
 /// `read_frequency_cache_view` derives it — including its internal canonicalization, which is what
 /// makes `data.csv`, `./data.csv` and a symlink to it all resolve to the same cache file.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub(crate) fn frequency_cache_path(path: &std::path::Path) -> std::path::PathBuf {
     Args::cache_path_for(path)
 }
@@ -511,6 +514,7 @@ pub(crate) fn frequency_cache_path(path: &std::path::Path) -> std::path::PathBuf
 ///   reordering.
 /// - Duplicate column names (across ALL entries, including sentinels) would make a name-keyed
 ///   lookup return the wrong column's data, so such caches are refused.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub(crate) fn read_frequency_cache_view(
     path: &std::path::Path,
     no_nulls: bool,

@@ -531,6 +531,9 @@ impl Config {
         self
     }
 
+    // `color` and `transpose` are the only callers: `color` gates on the `color` feature,
+    // `transpose` on `feature_capable`/`lite`.
+    #[cfg(any(feature = "color", feature = "feature_capable", feature = "lite"))]
     pub fn set_write_buffer(mut self, buffer: usize) -> Config {
         self.write_buffer = u32::try_from(buffer).unwrap_or_else(|_| {
             warn!(

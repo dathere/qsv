@@ -10,7 +10,7 @@ The `stats` command in qsv is a high-performance CSV statistics engine that:
 - **Computes up to 48 summary statistics** per column (beyond the `field`/`type` identifiers)
 
 ## File Location
-`src/cmd/stats.rs` (~6,320 lines)
+`src/cmd/stats.rs` (~7,027 lines)
 
 ## Key Entry Points
 
@@ -175,7 +175,7 @@ Bob,25,87.2" | ./target/release/qsv stats
 - Full technical guide: `STATS_TECHNICAL_GUIDE.md` (this repo)
 - qsv wiki: https://github.com/dathere/qsv/wiki
 - stats command docs: `/docs/PERFORMANCE.md`
-- Test cases: `/tests/test_stats.rs` (~8,338 lines)
+- Test cases: `tests/test_stats.rs` (~9,319 lines)
 
 ## Quick Debugging
 
@@ -200,7 +200,7 @@ cat file.stats.csv.data.jsonl | jq . | head
 
 | File | Purpose |
 |------|---------|
-| `src/cmd/stats.rs` | Main implementation (~6,910 lines) |
+| `src/cmd/stats.rs` | Main implementation (~7,027 lines) |
 | `src/config.rs` | CSV reader configuration |
 | `src/select.rs` | Column selection logic |
 | `src/util.rs` | Utility functions |

@@ -105,10 +105,9 @@ pub mod safenames;
 pub mod sample;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod schema;
-#[cfg(all(
-    feature = "polars",
-    any(feature = "feature_capable", feature = "datapusher_plus")
-))]
+// qsvdp does not register `scoresql` (no Command variant, no dispatch arm, no usage-text
+// line), so it is gated to the binaries that actually expose it.
+#[cfg(all(feature = "polars", feature = "feature_capable"))]
 pub mod scoresql;
 pub mod search;
 pub mod searchset;

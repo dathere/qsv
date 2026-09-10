@@ -652,6 +652,10 @@ struct Args {
     flag_new_column:     Option<String>,
     flag_output:         Option<String>,
     flag_delimiter:      Option<Delimiter>,
+    #[cfg_attr(
+        not(any(feature = "feature_capable", feature = "lite")),
+        allow(dead_code)
+    )]
     flag_progressbar:    bool,
     flag_api_key:        Option<String>,
     flag_rate_limit:     u32,
@@ -3682,6 +3686,7 @@ fn resolve_geocode_cache_dir(fallback_cache_dir: &str) -> CliResult<PathBuf> {
 /// [`country_context`] lookup); `us_state_fips`/`us_county_fips` are the 2-digit state and 5-digit
 /// combined county FIPS codes for US matches. `Default` lets test literals spread `..`.
 #[derive(Clone, Debug, Default)]
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub struct GeoLabel {
     pub city:           String,
     pub admin1:         String,
@@ -3701,6 +3706,7 @@ pub struct GeoLabel {
 /// `lang` selects the language for the returned names (defaults to `"en"`); note the index must
 /// have been built with that language for non-English names to resolve.
 #[allow(clippy::cast_possible_truncation)]
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub fn reverse_geocode_points(
     points: &[(f64, f64)],
     lang: Option<&str>,
@@ -3807,18 +3813,21 @@ pub struct GeoRegion {
 /// no extra scanning or scoring. It has to be generous: a prefix match scores exactly 1.0 and ties
 /// break by population descending, so a small town in the hinted subdivision sits below every
 /// same-named larger city (measured: `Springfield` + `US.CO` needs far more than 10).
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 static SUGGEST_HINT_LIMIT: usize = 250;
 
 /// Matches a bare (unqualified) admin1 hint token, e.g. `AL`, `NYL`, `40`.
 ///
 /// Minimum 2 characters: the admin1 code scan is a `starts_with`, so a 1-character `A` would
 /// prefix-match `US.AK`, `US.AL`, `US.AR` and `US.AZ` alike.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 static ADMIN1_BARE_REGEX: fn() -> &'static Regex = || regex_oncelock!(r"^[A-Za-z0-9]{2,8}$");
 
 /// The outcome of resolving one place name, distinguishing "nothing matched" from "a place matched
 /// but the caller's hint excluded it" so a caller can report the difference instead of silently
 /// dropping the row (issue #4427).
 #[derive(Clone, Debug)]
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub enum ForwardMatch {
     /// A place matched, and satisfied the hint (if any).
     Matched(GeoRegion),
@@ -3835,11 +3844,13 @@ pub enum ForwardMatch {
 /// Fields are private because [`Admin1Filter`] is an internal detail; build one with
 /// [`RegionHint::parse`]. A default (empty) hint filters nothing, which is the pre-#4427 behavior.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub struct RegionHint {
     countries: Option<Vec<String>>,
     admin1:    Option<Vec<Admin1Filter>>,
 }
 
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 impl RegionHint {
     /// Parse one row's raw hint cells.
     ///
@@ -3922,6 +3933,7 @@ impl RegionHint {
 /// return its owned result. Centralizes the index-resolution + tokio + `as_engine` boilerplate so
 /// the engine (which borrows `EngineData`) stays alive for the whole batch and is dropped after
 /// `f` returns. Returns `Err` only on a hard setup failure (tokio runtime, index download/load).
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 fn with_geocode_engine<F, R>(f: F) -> CliResult<R>
 where
     F: FnOnce(&Engine) -> R,
@@ -3945,6 +3957,7 @@ where
 /// Derive a [`GeoRegion`] from a matched `CitiesRecord`. Returns `None` when the record has no
 /// country (the minimum needed for a region code). `iso3` is resolved via a country-info lookup;
 /// `us_state_code` is the 2-letter state code only when the country is the US.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 fn cityrecord_to_region(
     engine: &Engine,
     cityrecord: &CitiesRecord,
@@ -4002,6 +4015,7 @@ fn cityrecord_to_region(
 /// It does NOT fix county-level error either — the nearest populated place is not the containing
 /// region, which is why lat/lon is not a route to county resolution (see issue #4417).
 #[allow(clippy::cast_possible_truncation)]
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub fn reverse_geocode_regions(
     points: &[(f64, f64)],
     hints: &[RegionHint],
@@ -4042,6 +4056,7 @@ pub fn reverse_geocode_regions(
 /// matches nothing at all — so a typo like `UK` (for `GB`) resolves zero rows and reads as "none of
 /// your places exist". Shared by BOTH region resolvers: the forward path is not the only one that
 /// can be handed a bad code (roborev #4291).
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 fn validate_hint_countries<'a>(
     engine: &Engine,
     hints: impl IntoIterator<Item = &'a RegionHint>,
@@ -4078,6 +4093,7 @@ fn validate_hint_countries<'a>(
 ///
 /// `lang` selects the localized-name language. `Err` only on a hard setup failure, or on a hint the
 /// engine cannot honor.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub fn forward_geocode_regions(
     names: &[&str],
     hints: &[RegionHint],
@@ -4137,6 +4153,7 @@ pub fn forward_geocode_regions(
 /// names) with two deliberate differences: hint codes are compared for EQUALITY, since
 /// [`RegionHint::parse`] has already qualified them, and there is no `unwrap_or(first_result)` —
 /// an excluded candidate is reported, not substituted.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 fn resolve_hinted_name(
     engine: &Engine,
     name: &str,
@@ -4193,6 +4210,7 @@ fn resolve_hinted_name(
 /// map's spatial-extent summary. `continent` is the Geonames continent name (`""` when
 /// unavailable).
 #[derive(Clone, Debug, Default)]
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub struct CountryContext {
     pub continent: String,
 }
@@ -4201,6 +4219,7 @@ pub struct CountryContext {
 /// `None` for a code that doesn't resolve (or carries no continent). `Err` only on a hard setup
 /// failure — callers (like `viz smart`) treat `Err` as "no context" and degrade gracefully.
 /// `continent` is expanded to a human-readable name (Geonames stores a 2-letter continent code).
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub fn country_context(iso2s: &[&str]) -> CliResult<Vec<Option<CountryContext>>> {
     with_geocode_engine(|engine| {
         iso2s
@@ -4219,6 +4238,7 @@ pub fn country_context(iso2s: &[&str]) -> CliResult<Vec<Option<CountryContext>>>
 
 /// Expand a Geonames 2-letter continent code to its human-readable name; unknown codes pass through
 /// unchanged (so a future/unrecognized code still shows something rather than nothing).
+#[cfg(any(all(feature = "viz", feature = "feature_capable"), test))]
 fn continent_name(code: &str) -> &str {
     match code {
         "AF" => "Africa",
@@ -4240,6 +4260,7 @@ fn lookup_us_state_fips_code(state: &str) -> Option<&'static str> {
 /// Derive `(us_state_fips, us_county_fips)` string codes for a matched city, for the enriched
 /// [`GeoLabel`]. Thin wrapper over [`us_fips_from_codes`] that pulls the admin1/admin2 codes off
 /// the record.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 fn us_fips_strings(cityrecord: &CitiesRecord) -> (String, String) {
     us_fips_from_codes(
         cityrecord
@@ -4258,6 +4279,7 @@ fn us_fips_strings(cityrecord: &CitiesRecord) -> (String, String) {
 /// `us_county_fips` is the 5-digit combined state+county FIPS ("42003") or `""` when no valid US
 /// county code is present. The county segment is the LAST dotted component of the admin2 code (e.g.
 /// `US.NY.119` -> `119`), which is robust regardless of its leading digit.
+#[cfg(any(all(feature = "viz", feature = "feature_capable"), test))]
 fn us_fips_from_codes(admin1_code: Option<&str>, admin2_code: Option<&str>) -> (String, String) {
     let state_fips = admin1_code
         .and_then(|code| code.strip_prefix("US."))

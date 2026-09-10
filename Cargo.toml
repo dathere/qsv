@@ -6,7 +6,6 @@ description   = "A Blazing-Fast Data-wrangling toolkit."
 documentation = "https://github.com/dathere/qsv#qsv-ultra-fast-csv-data-wrangling-toolkit"
 homepage      = "https://qsv.dathere.com"
 repository    = "https://github.com/dathere/qsv"
-readme        = "README.md"
 keywords      = ["csv", "geocode", "data-engineering", "etl", "opendata"]
 categories    = ["command-line-utilities", "parser-implementations"]
 license       = "MIT"

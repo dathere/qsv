@@ -10,13 +10,13 @@
         "name": "input",
         "type": "file",
         "required": true,
-        "description": "Input CSV file."
+        "description": "The CSV file/s to query. Use '-' for standard input. If input is a directory, all files in the directory will be read as input. If the input is a file with a '.infile-list' extension, the file will be read as a list of files to use as input. If the input are snappy compressed file(s), it will be decompressed automatically. Column headers are required. Use 'qsv rename _all_generic --no-headers' to add generic column names (_col_N) to a CSV with no headers. If you are using Polars SQL's table functions like read_csv() & read_parquet() to read input files directly in the SQL statement, you can use the sentinel value 'SKIP_INPUT' to skip input preprocessing. If pschema.json file/s exists for the input file/s, they will automatically be used to optimize the query even if --cache-schema is not set."
       },
       {
         "name": "sql",
         "type": "string",
         "required": true,
-        "description": "The SQL query to execute, or the path to a file containing it."
+        "description": "The SQL query/ies to run. Each input file will be available as a table named after the file name (without the extension), or as \"_t_N\" where N is the 1-based index. If the query ends with \".sql\", it will be read as a SQL script file, with each SQL query separated by a semicolon. It will execute the queries in order, and the result of the LAST query will be returned as the result. SQL scripts support single-line comments starting with '--'."
       }
     ],
     "options": [

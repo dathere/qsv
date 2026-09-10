@@ -821,6 +821,86 @@ impl UsageParser {
             .then_some(flag)
     }
 
+    /// Recognize a line that opens with one or more `<name>` positional
+    /// declarations:
+    ///
+    /// ```text
+    ///     <input>...              The CSV file(s) to read.
+    ///     <columns1> & <columns2> are the columns to join on for each input.
+    /// ```
+    ///
+    /// Returns the declared names (brackets stripped) and the text that
+    /// follows them, or `None` for prose that merely happens to start with
+    /// `<`. The names are returned as a list because qsv's USAGE convention
+    /// allows one line to declare several - and reading only the first one
+    /// mangles the rest into the description (#4583).
+    fn parse_positional_declaration_line(trimmed: &str) -> Option<(Vec<&str>, &str)> {
+        let mut names = Vec::with_capacity(1);
+        let mut rest = trimmed;
+
+        loop {
+            let after_open = rest.strip_prefix('<')?;
+            let close = after_open.find('>')?;
+            let (name, tail) = after_open.split_at(close);
+            if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                return None;
+            }
+            names.push(name);
+
+            // docopt's repeating indicator belongs to the declaration, not to
+            // the description
+            let tail = &tail[1..];
+            rest = tail.strip_prefix("...").unwrap_or(tail).trim_start();
+
+            // `<columns1> & <columns2> ...` - a separator followed by another
+            // declaration continues the list; anything else begins the
+            // description. The `starts_with('<')` check is what keeps a
+            // description that merely opens with one of these words
+            // (e.g. "and the rest are ignored") from being eaten.
+            let Some(after_sep) = ["&", ",", "and"]
+                .iter()
+                .find_map(|sep| rest.strip_prefix(sep))
+                .map(str::trim_start)
+                .filter(|after| after.starts_with('<'))
+            else {
+                break;
+            };
+            rest = after_sep;
+        }
+
+        Some((names, rest))
+    }
+
+    /// Recognize a positional declared with a BARE name inside a
+    /// `<command> arguments:` block, which is how `sqlp` writes its USAGE:
+    ///
+    /// ```text
+    /// sqlp arguments:
+    ///     input                  The CSV file/s to query.
+    /// ```
+    ///
+    /// Every other command uses the `<angle>` form, but nothing enforces
+    /// that, and before #4583 a bare name silently lost its description to
+    /// the generic fallback. Only ever consulted *inside* such a block: the
+    /// two-space separator and the lowercase-identifier shape are what keep
+    /// the explanatory paragraphs that also live in these blocks out.
+    fn parse_bare_positional_declaration_line(trimmed: &str) -> Option<(&str, &str)> {
+        let (name, description) = trimmed.split_once("  ")?;
+        if !name.starts_with(|c: char| c.is_ascii_lowercase())
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return None;
+        }
+        let description = description.trim_start();
+        (!description.is_empty()).then_some((name, description))
+    }
+
     /// Recognize a line that consists *only* of a flag declaration, e.g.
     /// `-S, --bivariate-stats <stats>` or `--denominator-unit <u>`. qsv's
     /// USAGE convention wraps such a declaration's description onto the
@@ -865,10 +945,22 @@ impl UsageParser {
         let mut descriptions = HashMap::new();
         let lines: Vec<&str> = self.usage_text.lines().collect();
 
+        // `sqlp` declares its positionals with BARE names inside a
+        // `sqlp arguments:` block, where every other command writes `<input>`.
+        // Bare names are only honored inside such a block - outside one, a
+        // lowercase word followed by two spaces is just prose (#4583).
+        let mut in_arguments_block = false;
+
         let mut i = 0;
         while i < lines.len() {
             let line = lines[i];
             let trimmed = line.trim();
+
+            // section headers sit at column 0; any other unindented, non-empty
+            // line (e.g. `sqlp options:`) closes the block
+            if !trimmed.is_empty() && !line.starts_with([' ', '\t']) {
+                in_arguments_block = trimmed.ends_with("arguments:");
+            }
 
             // Look for option lines: "    -s, --select <arg>    Description"
             if trimmed.starts_with('-') {
@@ -941,17 +1033,9 @@ impl UsageParser {
                 }
             }
             // Look for argument lines: "    <input>    Description"
-            else if trimmed.starts_with('<')
-                && trimmed.contains('>')
-                && let Some(close_bracket) = trimmed.find('>')
+            else if let Some((names, desc_part)) =
+                Self::parse_positional_declaration_line(trimmed)
             {
-                let arg_name = trimmed[..=close_bracket].trim().to_string();
-                let desc_part = trimmed[close_bracket + 1..].trim();
-
-                // Strip leading "..." (docopt repeating indicator) from description
-                let desc_part = desc_part
-                    .strip_prefix("...")
-                    .map_or(desc_part, str::trim_start);
                 let mut description = desc_part.to_string();
 
                 // Collect multi-line description
@@ -971,7 +1055,51 @@ impl UsageParser {
                     j += 1;
                 }
 
-                descriptions.insert(arg_name, description);
+                // One line may declare several positionals - `join` writes
+                // `<columns1> & <columns2> are the columns to join on ...`.
+                // Reading only the first name used to hand `<columns1>` the
+                // mangled remainder ("& <columns2> are the columns to ...")
+                // while `<columns2>` got nothing. The shared text describes
+                // the PAIR, so it cannot be split between them and it names
+                // neither individually; dropping it lets both fall through to
+                // the generic per-argument descriptions, which are symmetric
+                // and carry the `qsv select --help` pointer this line lacks.
+                if let [name] = names[..] {
+                    descriptions.insert(format!("<{name}>"), description);
+                }
+
+                i = j;
+                continue;
+            }
+            // Look for bare argument lines inside a `<command> arguments:`
+            // block: "    input                  Description". Keyed under
+            // `<input>` so every lookup site stays unchanged.
+            else if in_arguments_block
+                && let Some((name, desc_part)) =
+                    Self::parse_bare_positional_declaration_line(trimmed)
+            {
+                let indent = line.len() - line.trim_start().len();
+                let mut description = desc_part.to_string();
+
+                // Indentation decides where the description ends, so the next
+                // declaration at the same column is not swallowed.
+                let mut j = i + 1;
+                while j < lines.len() {
+                    let next_line = lines[j];
+                    let next_trimmed = next_line.trim();
+                    if next_trimmed.is_empty()
+                        || next_line.len() - next_line.trim_start().len() <= indent
+                    {
+                        break;
+                    }
+                    if !next_trimmed.starts_with("Usage:") {
+                        description.push(' ');
+                        description.push_str(next_trimmed);
+                    }
+                    j += 1;
+                }
+
+                descriptions.insert(format!("<{name}>"), description);
                 i = j;
                 continue;
             }
@@ -1939,6 +2067,142 @@ mod tests {
         assert!(UsageParser::generic_positional_description("input", false).contains("stdin"));
         assert!(!UsageParser::generic_positional_description("output", true).contains("stdout"));
         assert!(UsageParser::generic_positional_description("output", false).contains("stdout"));
+    }
+
+    // ------------------------------------------------------------------
+    // #4583 - positional declaration lines
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn positional_declaration_line_shapes() {
+        let p = UsageParser::parse_positional_declaration_line;
+
+        assert_eq!(
+            p("<input>                The CSV file to read."),
+            Some((vec!["input"], "The CSV file to read."))
+        );
+        // docopt's repeat marker belongs to the declaration, not the text
+        assert_eq!(
+            p("<input>...              The CSV file(s) to read."),
+            Some((vec!["input"], "The CSV file(s) to read."))
+        );
+        // one line, two positionals - the text describes the pair
+        assert_eq!(
+            p("<columns1> & <columns2> are the columns to join on for each input."),
+            Some((
+                vec!["columns1", "columns2"],
+                "are the columns to join on for each input."
+            ))
+        );
+        assert_eq!(
+            p("<a>, <b> and <c>  some text"),
+            Some((vec!["a", "b", "c"], "some text"))
+        );
+        assert_eq!(
+            p("<index-file>           The alternate geonames index file."),
+            Some((vec!["index-file"], "The alternate geonames index file."))
+        );
+
+        // a description that merely opens with a separator word is not a
+        // continued declaration
+        assert_eq!(
+            p("<input>  and the rest are ignored"),
+            Some((vec!["input"], "and the rest are ignored"))
+        );
+
+        // prose that merely starts with '<'
+        assert_eq!(p("<not a name> text"), None);
+        assert_eq!(p("<> empty"), None);
+        assert_eq!(p("no brackets at all"), None);
+    }
+
+    /// The #4583 mangling: reading only the first name handed `<columns1>` the
+    /// remainder of a shared line ("& <columns2> are the columns to ...") and
+    /// left `<columns2>` with nothing.
+    #[test]
+    fn multi_name_declaration_is_not_mangled_into_the_first_name() {
+        let usage = "\nUsage:\n    qsv join [options] <columns1> <input1> <columns2> \
+                     <input2>\n\ninput arguments:\n    <input1>                is the first CSV \
+                     data set to join.\n    <columns1> & <columns2> are the columns to join on \
+                     for each input.\n";
+        let descs = UsageParser::new(usage.to_string(), "join".to_string())
+            .extract_descriptions_from_text();
+
+        assert_eq!(
+            descs.get("<input1>").map(String::as_str),
+            Some("is the first CSV data set to join.")
+        );
+        // neither name may claim the shared text, and nothing may carry the
+        // mangled remainder
+        assert!(!descs.contains_key("<columns1>"), "{descs:?}");
+        assert!(!descs.contains_key("<columns2>"), "{descs:?}");
+    }
+
+    #[test]
+    fn bare_positional_declaration_line_shapes() {
+        let p = UsageParser::parse_bare_positional_declaration_line;
+
+        assert_eq!(
+            p("input                  The CSV file/s to query."),
+            Some(("input", "The CSV file/s to query."))
+        );
+        assert_eq!(
+            p("on-cols   The column(s) to pivot on."),
+            Some(("on-cols", "The column(s) to pivot on."))
+        );
+
+        // the four prose shapes that share `join`'s arguments block - none of
+        // them may be captured as a declaration
+        assert_eq!(
+            p("The columns arguments specify the columns to join for each input."),
+            None
+        );
+        assert_eq!(p("be referenced by name or index, starting at 1."), None);
+        assert_eq!(
+            p("e.g. 'qsv frequency -s Agency nyc311.csv | qsv join value - id x.csv'"),
+            None
+        );
+        assert_eq!(
+            p("For <input1> and <input2>, specifying `-` indicates reading from stdin."),
+            None
+        );
+
+        // a bare name with no description is not a declaration
+        assert_eq!(p("input"), None);
+        assert_eq!(p("input  "), None);
+    }
+
+    /// Bare names are honored ONLY inside a `<command> arguments:` block, and
+    /// are keyed under `<name>` so every lookup site stays unchanged.
+    #[test]
+    fn bare_positionals_are_extracted_only_inside_an_arguments_block() {
+        let inside =
+            "\nUsage:\n    qsv sqlp [options] <input>... <sql>\n\nsqlp arguments:\n    input   \
+             The CSV file/s to query.\n                            Use '-' for standard \
+             input.\n\n    sql     The SQL query/ies to run.\n\nsqlp options:\n    -q, --quiet   \
+             Do not print.\n";
+        let descs = UsageParser::new(inside.to_string(), "sqlp".to_string())
+            .extract_descriptions_from_text();
+        assert_eq!(
+            descs.get("<input>").map(String::as_str),
+            Some("The CSV file/s to query. Use '-' for standard input.")
+        );
+        assert_eq!(
+            descs.get("<sql>").map(String::as_str),
+            Some("The SQL query/ies to run.")
+        );
+        // the options section closed the block, so its flag is still a flag
+        assert_eq!(
+            descs.get("--quiet").map(String::as_str),
+            Some("Do not print.")
+        );
+
+        // the same shape outside an arguments block is prose, not a positional
+        let outside = "\nSome prose about the command.\n    input   this looks like a declaration \
+                       but is not.\n\nUsage:\n    qsv thing [options]\n";
+        let descs = UsageParser::new(outside.to_string(), "thing".to_string())
+            .extract_descriptions_from_text();
+        assert!(!descs.contains_key("<input>"), "{descs:?}");
     }
 
     // ------------------------------------------------------------------

@@ -471,6 +471,12 @@ fn denull_apply_passes_data_through_when_nothing_is_confirmed() {
 #[test]
 fn denull_apply_refuses_to_overwrite_its_own_input() {
     // Two-pass: pass 2 would truncate the file pass 2 is still reading.
+    //
+    // The central --output-is-input guard in `util::get_args` (issue #4580) now intercepts
+    // this argv shape before denull's own check runs, so the message asserted here is the
+    // central one. denull keeps its own guard as defense in depth: it compares the
+    // RESOLVED `Config::path`, which an argv scan cannot see when the input is given by
+    // reference (a `dc:` diskcache key, say) rather than as a literal path.
     let wrk = Workdir::new("denull_apply_refuses_to_overwrite_its_own_input");
     wrk.create_from_string("d.csv", "depth\n1\n2\nNULL\n");
 
@@ -478,8 +484,13 @@ fn denull_apply_refuses_to_overwrite_its_own_input() {
     cmd.arg("--apply").arg("d.csv").args(["-o", "d.csv"]);
     assert!(
         wrk.stderr_on_error(&mut cmd)
-            .contains("cannot write to its own input"),
+            .contains("is the same file as an input"),
         "expected same-path refusal"
+    );
+    assert_eq!(
+        wrk.read_to_string("d.csv").unwrap(),
+        "depth\n1\n2\nNULL\n",
+        "the input must be left untouched"
     );
 }
 

@@ -20,7 +20,7 @@ use std::{
 
 use csv::ByteRecord;
 use csv_index::RandomAccessSimple;
-use docopt::Docopt;
+use docopt::{ArgvMap, Docopt, Value};
 use filetime::FileTime;
 use human_panic::setup_panic;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -1115,17 +1115,159 @@ macro_rules! update_cache_info {
 #[cfg(all(feature = "fetch", not(feature = "lite")))]
 pub(crate) use update_cache_info;
 
+/// Refuse to run when `--output` names one of the command's own inputs.
+///
+/// Most commands build the `--output` writer BEFORE opening the input reader, so
+/// `File::create` truncates the input to zero length and the command then reads an empty
+/// file and exits 0 — silent data loss (issue #4580). Unlike shell redirection
+/// (`cmd f > f`), where the shell opens the file before qsv starts, `-o` is opened by qsv
+/// itself, so qsv can refuse.
+///
+/// This works off docopt's PARSED values rather than raw argv. It has to: docopt accepts
+/// `--flag value`, `--flag=value` and `-fvalue` interchangeably, so a raw-argv scan sees
+/// `--payload-tpl=payload.tpl` as one opaque token and misses that the template is an
+/// input — letting `fetchpost --payload-tpl=payload.tpl … -o payload.tpl` zero the
+/// template, which is the very bug being guarded against. The parsed map has each value
+/// already separated from its flag, in every spelling.
+///
+/// Identity is tested with `same_file::is_same_file`, which compares inode/dev (file-id on
+/// Windows) and therefore catches `./data.csv`, symlinks AND hard links. Canonicalizing
+/// cannot: two hard links to one inode have two distinct canonical paths.
+///
+/// Two known bounds, both accepted deliberately:
+///  - Docopt reports values, not their ROLE, so any USER-SUPPLIED argument that happens to name an
+///    existing file is treated as an input. `qsv select letter in.csv -o letter`, with a file named
+///    `letter` present, is refused even though the selector is not an input. Distinguishing them
+///    needs per-command schema knowledge that does not exist at this chokepoint, and the failure is
+///    a clear message rather than a destroyed file. Note the scope: docopt-populated DEFAULTS are
+///    excluded, because a user can neither see nor avoid a collision with a value they never
+///    passed.
+///  - A path named inside a query string — `qsv sqlp "select * from read_csv('d.csv')" -o d.csv` —
+///    is not a value of its own and is not seen.
+fn check_output_is_not_input(vals: &ArgvMap, argv: &[&str]) -> CliResult<()> {
+    let Some(out_val) = vals.find("--output") else {
+        // this command has no --output flag at all
+        return Ok(());
+    };
+    let output = out_val.as_str();
+    if output.is_empty() {
+        return Ok(());
+    }
+
+    let out_path = Path::new(output);
+    // An output that does not exist yet cannot be the same file as an existing input, and
+    // a directory is never a valid --output (File::create reports that on its own). Both
+    // early exits are what keep the guard quiet on ordinary invocations.
+    if !out_path.is_file() {
+        return Ok(());
+    }
+
+    // Compare by pointer, not by key or by string. Docopt stores `-o` and `--output` as
+    // synonyms of ONE entry and which key is canonical is an implementation detail; and
+    // skipping by string would be outright wrong, since `qsv fmt data.csv -o data.csv` is
+    // the flagship case and there the input and output strings are identical.
+    let out_ptr = std::ptr::from_ref(out_val);
+
+    // Does `token` supply `value`? Covers docopt's three spellings: `--flag value` (the
+    // value is its own token), `--flag=value`, and `-fvalue`. Uses strip_prefix + chars
+    // rather than byte slicing, so a non-ASCII token cannot panic on a char boundary.
+    fn token_supplies(token: &str, value: &str) -> bool {
+        if token == value {
+            return true;
+        }
+        if let Some(long) = token.strip_prefix("--") {
+            return long.split_once('=').is_some_and(|(_, v)| v == value);
+        }
+        let Some(short) = token.strip_prefix('-') else {
+            return false;
+        };
+        // Short options CLUSTER: docopt reads `-ntpayload.tpl` as `-n -t payload.tpl`, so an
+        // attached value can begin after any run of single-char flags, not just the first.
+        // Consuming only one char missed exactly that, and let `fetchpost -ntpayload.tpl
+        // ... -o payload.tpl` zero the template. Flag characters are alphanumeric, so stop
+        // at the first character that cannot be one - that bounds the candidate suffixes to
+        // plausible split points instead of every suffix of the token.
+        let mut rest = short;
+        while rest
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric())
+        {
+            let mut chars = rest.chars();
+            chars.next();
+            rest = chars.as_str();
+            if rest == value {
+                return true;
+            }
+        }
+        false
+    }
+
+    let is_input = |candidate: &str| -> bool {
+        // Count only what the USER actually typed. The parsed map also carries
+        // docopt-populated DEFAULTS, which are not inputs: `frequency`'s `--sketch-method`
+        // defaults to `exact`, so an unfiltered scan refuses `qsv frequency in.csv -o exact`
+        // over a value nobody passed and nobody can see.
+        //
+        // Mere presence in argv is not enough, because when the candidate and the output
+        // are the same STRING, the --output spelling is itself an occurrence - which is how
+        // that same `-o exact` slipped through a presence check. So when the strings
+        // coincide, require a SECOND, independent occurrence; that is exactly the flagship
+        // case `qsv fmt data.csv -o data.csv`, where `data.csv` is typed twice.
+        let typed = argv
+            .iter()
+            .filter(|token| token_supplies(token, candidate))
+            .count();
+        if typed < usize::from(candidate == output) + 1 {
+            return false;
+        }
+        let in_path = Path::new(candidate);
+        in_path.is_file() && same_file::is_same_file(in_path, out_path).unwrap_or(false)
+    };
+
+    // `ArgvMap::map` is `pub` but `#[doc(hidden)]`: docopt exposes no iterator over parsed
+    // values, and a fixed list of key names cannot work because the keys differ per
+    // command. Revisit if a future qsv_docopt adds a public iterator.
+    for (_, value) in vals.map.iter() {
+        if std::ptr::from_ref(value) == out_ptr {
+            continue;
+        }
+        // Switch/Counted/Plain(None) carry no path, so they are skipped.
+        let candidate = match value {
+            Value::Plain(Some(s)) if is_input(s) => s,
+            Value::List(list) => match list.iter().find(|s| is_input(s)) {
+                Some(s) => s,
+                None => continue,
+            },
+            _ => continue,
+        };
+        return fail_clierror!(
+            "--output ({output}) is the same file as an input ({candidate}). qsv would truncate \
+             the input before reading it, losing the data. Pass a different --output."
+        );
+    }
+
+    Ok(())
+}
+
 pub fn get_args<T>(usage: &str, argv: &[&str]) -> CliResult<T>
 where
     T: DeserializeOwned,
 {
-    Docopt::new(usage)
+    // `Docopt::deserialize` is just `parse().and_then(ArgvMap::deserialize)`, so splitting
+    // it costs nothing and lets the guard see docopt's PARSED values. `parse` is also
+    // where --help/--version are detected, so both still short-circuit ahead of the guard.
+    let vals = Docopt::new(usage)
         .and_then(|d| {
             d.argv(argv.iter().copied())
                 .version(Some(version()))
-                .deserialize()
+                .parse()
         })
-        .map_err(From::from)
+        .map_err(CliError::from)?;
+
+    check_output_is_not_input(&vals, argv)?;
+
+    vals.deserialize().map_err(CliError::from)
 }
 
 #[inline]

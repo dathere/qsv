@@ -1351,8 +1351,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -6520,6 +6522,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-readstat-rs"
+version = "0.22.0"
+source = "git+https://github.com/jqnatividad/polars_readstat?rev=293af6358b8c5cca6b6df869e7b6044124dc1a56#293af6358b8c5cca6b6df869e7b6044124dc1a56"
+dependencies = [
+ "byteorder",
+ "chrono",
+ "encoding_rs",
+ "flate2",
+ "num_cpus",
+ "polars",
+ "polars-arrow",
+ "polars-core",
+ "rayon",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "polars-row"
 version = "0.55.1"
 source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
@@ -7005,6 +7025,7 @@ dependencies = [
  "phf 0.14.0",
  "plotly",
  "polars",
+ "polars-readstat-rs",
  "pragmastat",
  "pyo3",
  "qsv-dateparser",

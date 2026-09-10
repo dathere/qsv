@@ -98,6 +98,8 @@ pub mod prompt;
 pub mod pseudo;
 #[cfg(all(feature = "python", feature = "feature_capable"))]
 pub mod python;
+#[cfg(all(feature = "readstat", feature = "feature_capable"))]
+pub mod readstat;
 pub mod rename;
 pub mod replace;
 pub mod reverse;

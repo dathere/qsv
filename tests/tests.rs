@@ -130,6 +130,8 @@ mod test_prompt;
 mod test_pseudo;
 #[cfg(feature = "python")]
 mod test_py;
+#[cfg(all(feature = "readstat", feature = "feature_capable"))]
+mod test_readstat;
 mod test_rename;
 mod test_replace;
 mod test_reverse;

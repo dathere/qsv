@@ -187,6 +187,18 @@ fn output_guard_catches_an_input_passed_as_an_attached_flag_value() {
         .args(["--output", "payload.tpl"]);
     wrk.assert_err(&mut cmd);
     assert_eq!(wrk.read_to_string("payload.tpl").unwrap(), TPL);
+
+    // CLUSTERED short form: docopt reads `-ntpayload.tpl` as `-n -t payload.tpl`, so the
+    // attached value does not begin after the FIRST character. Consuming only one char
+    // missed this and let the template be truncated - verified as a real 0-byte loss.
+    let wrk = setup("output_guard_catches_a_clustered_short_flag_value");
+    wrk.create_from_string("payload.tpl", TPL);
+    let mut cmd = wrk.command("fetchpost");
+    cmd.arg("-ntpayload.tpl")
+        .args(["letter", "in.csv"])
+        .args(["--output", "payload.tpl"]);
+    wrk.assert_err(&mut cmd);
+    assert_eq!(wrk.read_to_string("payload.tpl").unwrap(), TPL);
 }
 
 /// A docopt-populated DEFAULT must not be mistaken for an input.

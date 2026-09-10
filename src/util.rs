@@ -1178,10 +1178,26 @@ fn check_output_is_not_input(vals: &ArgvMap, argv: &[&str]) -> CliResult<()> {
         if let Some(long) = token.strip_prefix("--") {
             return long.split_once('=').is_some_and(|(_, v)| v == value);
         }
-        if let Some(short) = token.strip_prefix('-') {
-            let mut chars = short.chars();
-            if chars.next().is_some() {
-                return chars.as_str() == value;
+        let Some(short) = token.strip_prefix('-') else {
+            return false;
+        };
+        // Short options CLUSTER: docopt reads `-ntpayload.tpl` as `-n -t payload.tpl`, so an
+        // attached value can begin after any run of single-char flags, not just the first.
+        // Consuming only one char missed exactly that, and let `fetchpost -ntpayload.tpl
+        // ... -o payload.tpl` zero the template. Flag characters are alphanumeric, so stop
+        // at the first character that cannot be one - that bounds the candidate suffixes to
+        // plausible split points instead of every suffix of the token.
+        let mut rest = short;
+        while rest
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric())
+        {
+            let mut chars = rest.chars();
+            chars.next();
+            rest = chars.as_str();
+            if rest == value {
+                return true;
             }
         }
         false

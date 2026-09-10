@@ -1115,17 +1115,109 @@ macro_rules! update_cache_info {
 #[cfg(all(feature = "fetch", not(feature = "lite")))]
 pub(crate) use update_cache_info;
 
+/// Refuse to run when `--output` names one of the command's own inputs.
+///
+/// Most commands build the `--output` writer BEFORE opening the input reader, so
+/// `File::create` truncates the input to zero length and the command then reads an empty
+/// file and exits 0 — silent data loss (issue #4580). Unlike shell redirection
+/// (`cmd f > f`), where the shell opens the file before qsv starts, `-o` is opened by qsv
+/// itself, so qsv can refuse.
+///
+/// The scan is argv-level on purpose. The output `Config` is a separate instance that does
+/// not know the input path, and ~40 `File::create` sites across `src/cmd/` bypass
+/// `Config::io_writer` entirely — so there is no single writer chokepoint that has both
+/// paths in hand. `argv` does.
+///
+/// Identity is tested with `same_file::is_same_file`, which compares inode/dev (file-id on
+/// Windows) and therefore catches `./data.csv`, symlinks AND hard links. Canonicalizing
+/// cannot: two hard links to one inode have two distinct canonical paths.
+///
+/// Known bound: only argv tokens are examined, so an input named inside a query string —
+/// `qsv sqlp "select * from read_csv('data.csv')" -o data.csv` — is not caught.
+fn check_output_is_not_input(argv: &[&str]) -> CliResult<()> {
+    // Find the --output value, remembering which token indices spelled it so the output is
+    // never compared against itself. Last occurrence wins, matching docopt.
+    let mut output: Option<&str> = None;
+    let mut flag_idx = usize::MAX;
+    let mut value_idx = usize::MAX;
+
+    let mut i = 0;
+    while i < argv.len() {
+        let token = argv[i];
+        if token == "-o" || token == "--output" {
+            if let Some(value) = argv.get(i + 1) {
+                output = Some(value);
+                flag_idx = i;
+                value_idx = i + 1;
+                i += 2;
+                continue;
+            }
+        } else if let Some(value) = token.strip_prefix("--output=") {
+            output = Some(value);
+            flag_idx = i;
+            value_idx = i;
+        } else if !token.starts_with("--")
+            && token.len() > 2
+            && let Some(value) = token.strip_prefix("-o")
+        {
+            // attached short-option value, e.g. `-odata.csv`. `-o` always takes an
+            // argument in qsv, so this is never a bundle of short flags.
+            output = Some(value);
+            flag_idx = i;
+            value_idx = i;
+        }
+        i += 1;
+    }
+
+    let Some(output) = output else {
+        return Ok(());
+    };
+
+    let out_path = Path::new(output);
+    // An output that does not exist yet cannot be the same file as an existing input, and
+    // a directory is never a valid --output (File::create reports that on its own). Both
+    // early exits are what keep this guard free of false positives.
+    if !out_path.is_file() {
+        return Ok(());
+    }
+
+    for (idx, token) in argv.iter().enumerate() {
+        // argv[0] is the qsv binary and argv[1] the command name; neither is an input.
+        if idx <= 1 || idx == flag_idx || idx == value_idx {
+            continue;
+        }
+        let in_path = Path::new(*token);
+        if !in_path.is_file() {
+            continue;
+        }
+        if same_file::is_same_file(in_path, out_path).unwrap_or(false) {
+            return fail_clierror!(
+                "--output ({output}) is the same file as the input ({token}). qsv would truncate \
+                 the input before reading it, losing the data. Pass a different --output."
+            );
+        }
+    }
+
+    Ok(())
+}
+
 pub fn get_args<T>(usage: &str, argv: &[&str]) -> CliResult<T>
 where
     T: DeserializeOwned,
 {
-    Docopt::new(usage)
+    let args = Docopt::new(usage)
         .and_then(|d| {
             d.argv(argv.iter().copied())
                 .version(Some(version()))
                 .deserialize()
         })
-        .map_err(From::from)
+        .map_err(CliError::from)?;
+
+    // Deliberately AFTER deserialize, so --help/--version still short-circuit and a
+    // usage error is still reported as a usage error.
+    check_output_is_not_input(argv)?;
+
+    Ok(args)
 }
 
 #[inline]

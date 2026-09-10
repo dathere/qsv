@@ -118,6 +118,7 @@ mod test_luau;
 #[cfg(feature = "mcp")]
 mod test_mcp_skills;
 mod test_moarstats;
+mod test_output_guard;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_partition;
 #[cfg(feature = "polars")]

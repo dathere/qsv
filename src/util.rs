@@ -1135,14 +1135,16 @@ pub(crate) use update_cache_info;
 /// cannot: two hard links to one inode have two distinct canonical paths.
 ///
 /// Two known bounds, both accepted deliberately:
-///  - Docopt reports values, not their ROLE, so any argument that happens to name an existing file
-///    is treated as an input. `qsv select letter in.csv -o letter`, with a file named `letter`
-///    present, is refused even though the selector is not an input. Distinguishing them needs
-///    per-command schema knowledge that does not exist at this chokepoint, and the failure is a
-///    clear message rather than a destroyed file.
+///  - Docopt reports values, not their ROLE, so any USER-SUPPLIED argument that happens to name an
+///    existing file is treated as an input. `qsv select letter in.csv -o letter`, with a file named
+///    `letter` present, is refused even though the selector is not an input. Distinguishing them
+///    needs per-command schema knowledge that does not exist at this chokepoint, and the failure is
+///    a clear message rather than a destroyed file. Note the scope: docopt-populated DEFAULTS are
+///    excluded, because a user can neither see nor avoid a collision with a value they never
+///    passed.
 ///  - A path named inside a query string — `qsv sqlp "select * from read_csv('d.csv')" -o d.csv` —
 ///    is not a value of its own and is not seen.
-fn check_output_is_not_input(vals: &ArgvMap) -> CliResult<()> {
+fn check_output_is_not_input(vals: &ArgvMap, argv: &[&str]) -> CliResult<()> {
     let Some(out_val) = vals.find("--output") else {
         // this command has no --output flag at all
         return Ok(());
@@ -1166,7 +1168,43 @@ fn check_output_is_not_input(vals: &ArgvMap) -> CliResult<()> {
     // the flagship case and there the input and output strings are identical.
     let out_ptr = std::ptr::from_ref(out_val);
 
+    // Does `token` supply `value`? Covers docopt's three spellings: `--flag value` (the
+    // value is its own token), `--flag=value`, and `-fvalue`. Uses strip_prefix + chars
+    // rather than byte slicing, so a non-ASCII token cannot panic on a char boundary.
+    fn token_supplies(token: &str, value: &str) -> bool {
+        if token == value {
+            return true;
+        }
+        if let Some(long) = token.strip_prefix("--") {
+            return long.split_once('=').is_some_and(|(_, v)| v == value);
+        }
+        if let Some(short) = token.strip_prefix('-') {
+            let mut chars = short.chars();
+            if chars.next().is_some() {
+                return chars.as_str() == value;
+            }
+        }
+        false
+    }
+
     let is_input = |candidate: &str| -> bool {
+        // Count only what the USER actually typed. The parsed map also carries
+        // docopt-populated DEFAULTS, which are not inputs: `frequency`'s `--sketch-method`
+        // defaults to `exact`, so an unfiltered scan refuses `qsv frequency in.csv -o exact`
+        // over a value nobody passed and nobody can see.
+        //
+        // Mere presence in argv is not enough, because when the candidate and the output
+        // are the same STRING, the --output spelling is itself an occurrence - which is how
+        // that same `-o exact` slipped through a presence check. So when the strings
+        // coincide, require a SECOND, independent occurrence; that is exactly the flagship
+        // case `qsv fmt data.csv -o data.csv`, where `data.csv` is typed twice.
+        let typed = argv
+            .iter()
+            .filter(|token| token_supplies(token, candidate))
+            .count();
+        if typed < usize::from(candidate == output) + 1 {
+            return false;
+        }
         let in_path = Path::new(candidate);
         in_path.is_file() && same_file::is_same_file(in_path, out_path).unwrap_or(false)
     };
@@ -1211,7 +1249,7 @@ where
         })
         .map_err(CliError::from)?;
 
-    check_output_is_not_input(&vals)?;
+    check_output_is_not_input(&vals, argv)?;
 
     vals.deserialize().map_err(CliError::from)
 }

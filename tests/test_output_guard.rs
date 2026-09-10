@@ -188,3 +188,50 @@ fn output_guard_catches_an_input_passed_as_an_attached_flag_value() {
     wrk.assert_err(&mut cmd);
     assert_eq!(wrk.read_to_string("payload.tpl").unwrap(), TPL);
 }
+
+/// A docopt-populated DEFAULT must not be mistaken for an input.
+///
+/// The parsed map carries defaults alongside user-supplied values, and `frequency`'s
+/// `--sketch-method` defaults to `exact` — so an unfiltered scan refuses to write a file
+/// named `exact` over a value nobody passed and nobody can see. Note that a mere
+/// presence-in-argv filter does NOT fix this: when the candidate and the output are the
+/// same string, the `-o` spelling is itself an occurrence. The guard therefore requires a
+/// second, independent occurrence when the strings coincide.
+///
+/// `frequency` is present in every binary flavor, so this needs no cfg gate.
+#[test]
+fn output_guard_ignores_docopt_defaults() {
+    let wrk = setup("output_guard_ignores_docopt_defaults");
+    wrk.create_from_string("exact", "stale\n");
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--output", "exact"]);
+    wrk.assert_success(&mut cmd);
+
+    assert_ne!(
+        wrk.read_to_string("exact").unwrap(),
+        "stale\n",
+        "the output should have been written"
+    );
+}
+
+/// The counterpart: the same string typed as a real argument still counts. This is
+/// documented limitation #1 (docopt reports values, not their role), pinned so the
+/// defaults filter above cannot quietly widen into ignoring user-supplied values.
+#[test]
+fn output_guard_still_catches_a_user_typed_value_matching_the_output() {
+    let wrk = setup("output_guard_still_catches_a_user_typed_value");
+    wrk.create_from_string("exact", "stale\n");
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--sketch-method", "exact"])
+        .args(["--output", "exact"]);
+    wrk.assert_err(&mut cmd);
+
+    assert_eq!(
+        wrk.read_to_string("exact").unwrap(),
+        "stale\n",
+        "a refusal must leave the file untouched"
+    );
+}

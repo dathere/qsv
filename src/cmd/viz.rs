@@ -5138,7 +5138,7 @@ const GEOJSON_AUTO_UNMATCHED_SAMPLE: usize = 5;
 ///
 /// Region spellings alone stopped being unique once aliases became qualified (issue #4481): both
 /// `42125` and `24043` are spelled `Washington County`, so a criterion on the region column alone
-/// would show Maryland's rows under Pennsylvania's polygon. The qualifier column is ANDed in to
+/// would show Maryland's rows under Pennsylvania's polygon. The qualifier column is `ANDed` in to
 /// separate them.
 #[derive(Clone, Debug)]
 struct RegionFilter {
@@ -25310,7 +25310,7 @@ const HOVER_EXCLUDED_CONTENT_TYPES: &[&str] = &["ip_address", "ipv6_address"];
 /// Are a column's values too sensitive to embed in a shareable artifact's map hover?
 ///
 /// A named predicate rather than an inline test so the exclusion is asserted directly, and so the
-/// concept and content_type routes to the same values stay in one place.
+/// concept and `content_type` routes to the same values stay in one place.
 fn is_hover_excluded(concept: &str, content_type: &str) -> bool {
     let ct_base = content_type
         .split_once(':')

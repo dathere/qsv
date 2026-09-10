@@ -44,21 +44,7 @@ ignore = [
 
     # RUSTSEC-2026-0194: quadratic run time when checking a start tag for
     # duplicate attribute names in quick-xml.
-    # RUSTSEC-2026-0195: unbounded namespace-declaration allocation in `NsReader`
-    # enables memory-exhaustion denial of service in quick-xml.
-    #   qsv (also via polars -> polars-io) -> object_store 0.13.2 -> quick-xml 0.39.4
-    # UNLIKE the entries above, this code IS compiled and linked; it is reachable
-    # when parsing XML responses from cloud object stores (s3://, az://).
-    # Both advisories need quick-xml >= 0.41.0. object_store already shipped that
-    # in 0.14.0 (0.14.1 requires quick-xml ^0.41.0) -- the blocker is POLARS, not
-    # object_store: polars-io 0.55.2 (latest) requires object_store ^0.13.1, and
-    # qsv must [patch.crates-io] the 0.13 line to a fork carrying polars' own
-    # `with_dns_resolver` addition (see the patch section in Cargo.toml). A patch
-    # must stay semver-compatible with the requirement, so 0.14 cannot be forced
-    # in. Clears when polars-io moves to object_store 0.14.
-    # See dathere/qsv#4131 / #4132.
     "RUSTSEC-2026-0194",
-    "RUSTSEC-2026-0195",
 ]
 
 [yanked]

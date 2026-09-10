@@ -1275,7 +1275,7 @@ dependencies = [
  "encoding_rs",
  "fast-float2",
  "log",
- "quick-xml 0.41.0",
+ "quick-xml",
  "serde",
  "zip",
 ]
@@ -1699,7 +1699,7 @@ dependencies = [
  "console_error_panic_hook",
  "fastnum",
  "js-sys",
- "reqwest 0.13.5",
+ "reqwest",
  "rustyline",
  "serde",
  "serde-wasm-bindgen",
@@ -3177,7 +3177,7 @@ dependencies = [
  "anyhow",
  "futures",
  "geosuggest-core",
- "reqwest 0.13.5",
+ "reqwest",
  "rkyv",
  "serde",
  "tokio",
@@ -3645,7 +3645,6 @@ dependencies = [
  "hyper",
  "hyper-util",
  "rustls",
- "rustls-native-certs",
  "tokio",
  "tokio-rustls",
  "tower-service",
@@ -4264,7 +4263,7 @@ dependencies = [
  "percent-encoding",
  "referencing",
  "regex",
- "reqwest 0.13.5",
+ "reqwest",
  "rustls",
  "serde",
  "serde_json",
@@ -5365,11 +5364,12 @@ dependencies = [
 
 [[package]]
 name = "object_store"
-version = "0.13.2"
-source = "git+https://github.com/kdn36/arrow-rs-object-store?rev=f50a6e5c564b2b5933eca15cd20ff9b5614374a1#f50a6e5c564b2b5933eca15cd20ff9b5614374a1"
+version = "0.14.1"
+source = "git+https://github.com/apache/arrow-rs-object-store?rev=b07471e2bc341278f86e30cf80a850d56cbe2c67#b07471e2bc341278f86e30cf80a850d56cbe2c67"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
+ "aws-lc-rs",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "crc-fast",
@@ -5382,15 +5382,14 @@ dependencies = [
  "httparse",
  "humantime",
  "hyper",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "md-5 0.11.0",
  "nix 0.31.3",
  "parking_lot",
  "percent-encoding",
- "quick-xml 0.39.4",
+ "quick-xml",
  "rand 0.10.2",
- "reqwest 0.12.28",
- "ring",
+ "reqwest",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -5953,7 +5952,7 @@ dependencies = [
  "fantoccini",
  "log",
  "rand 0.10.2",
- "reqwest 0.13.5",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
@@ -5965,7 +5964,7 @@ dependencies = [
 [[package]]
 name = "polars"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "getrandom 0.2.17",
  "getrandom 0.4.3",
@@ -5988,7 +5987,7 @@ dependencies = [
 [[package]]
 name = "polars-arrow"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "atoi_simd",
  "avro-schema",
@@ -6033,7 +6032,7 @@ dependencies = [
 [[package]]
 name = "polars-async"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "atomic-waker",
  "crossbeam-channel",
@@ -6052,7 +6051,7 @@ dependencies = [
 [[package]]
 name = "polars-buffer"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "bytemuck",
  "either",
@@ -6064,7 +6063,7 @@ dependencies = [
 [[package]]
 name = "polars-compute"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -6090,7 +6089,7 @@ dependencies = [
 [[package]]
 name = "polars-config"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "polars-error",
  "serde",
@@ -6099,7 +6098,7 @@ dependencies = [
 [[package]]
 name = "polars-core"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "bitflags 2.13.1",
  "boxcar",
@@ -6139,7 +6138,7 @@ dependencies = [
 [[package]]
 name = "polars-descriptions"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "serde",
  "strum_macros 0.28.0",
@@ -6148,7 +6147,7 @@ dependencies = [
 [[package]]
 name = "polars-dtype"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "boxcar",
  "hashbrown 0.17.1",
@@ -6162,7 +6161,7 @@ dependencies = [
 [[package]]
 name = "polars-error"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -6176,7 +6175,7 @@ dependencies = [
 [[package]]
 name = "polars-expr"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "bitflags 2.13.1",
  "hashbrown 0.17.1",
@@ -6202,7 +6201,7 @@ dependencies = [
 [[package]]
 name = "polars-io"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "async-trait",
  "atoi_simd",
@@ -6240,7 +6239,7 @@ dependencies = [
  "rand 0.10.2",
  "rayon",
  "regex",
- "reqwest 0.12.28",
+ "reqwest",
  "serde",
  "serde_json",
  "simd-json",
@@ -6255,7 +6254,7 @@ dependencies = [
 [[package]]
 name = "polars-json"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -6276,7 +6275,7 @@ dependencies = [
 [[package]]
 name = "polars-lazy"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "bitflags 2.13.1",
  "chrono",
@@ -6304,7 +6303,7 @@ dependencies = [
 [[package]]
 name = "polars-mem-engine"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "memmap2",
  "polars-arrow",
@@ -6324,7 +6323,7 @@ dependencies = [
 [[package]]
 name = "polars-observer"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "parking_lot",
  "polars-descriptions",
@@ -6334,7 +6333,7 @@ dependencies = [
 [[package]]
 name = "polars-ooc"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "async-trait",
  "boxcar",
@@ -6355,7 +6354,7 @@ dependencies = [
 [[package]]
 name = "polars-ops"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "argminmax",
  "base64 0.22.1",
@@ -6393,7 +6392,7 @@ dependencies = [
 [[package]]
 name = "polars-parquet"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "async-stream",
  "base64 0.22.1",
@@ -6433,7 +6432,7 @@ dependencies = [
 [[package]]
 name = "polars-plan"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "bitflags 2.13.1",
  "blake3",
@@ -6478,7 +6477,7 @@ dependencies = [
 [[package]]
 name = "polars-row"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "bitflags 2.13.1",
  "bytemuck",
@@ -6493,7 +6492,7 @@ dependencies = [
 [[package]]
 name = "polars-schema"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "indexmap 2.14.2",
  "polars-error",
@@ -6505,7 +6504,7 @@ dependencies = [
 [[package]]
 name = "polars-sql"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "bitflags 2.13.1",
  "hex",
@@ -6524,7 +6523,7 @@ dependencies = [
 [[package]]
 name = "polars-stream"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -6571,7 +6570,7 @@ dependencies = [
 [[package]]
 name = "polars-time"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -6594,7 +6593,7 @@ dependencies = [
 [[package]]
 name = "polars-utils"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?tag=py-1.44.1#e4ae5ead7c645d1eb01beebf53a3a0872734575e"
+source = "git+https://github.com/pola-rs/polars?tag=py-1.44.2#1bd8ec12f42d40fcec62badf32ef2177d2377d8d"
 dependencies = [
  "argminmax",
  "bincode",
@@ -6974,7 +6973,7 @@ dependencies = [
  "rayon",
  "redis",
  "regex",
- "reqwest 0.13.5",
+ "reqwest",
  "rfd",
  "rkyv",
  "rmp-serde",
@@ -7108,22 +7107,13 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.39.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
-dependencies = [
- "memchr",
- "serde",
-]
-
-[[package]]
-name = "quick-xml"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "encoding_rs",
  "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -7693,48 +7683,6 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "futures-core",
- "futures-util",
- "h2",
- "http 1.5.0",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-rustls",
- "hyper-util",
- "js-sys",
- "log",
- "percent-encoding",
- "pin-project-lite",
- "quinn",
- "rustls",
- "rustls-native-certs",
- "rustls-pki-types",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sync_wrapper",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "tower",
- "tower-http",
- "tower-service",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-streams 0.4.2",
- "web-sys",
-]
-
-[[package]]
-name = "reqwest"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "16a1cfa75cc186dd73d5818e510e042e40927bccc9c236b061cea97e1eb08029"
@@ -7767,6 +7715,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-native-tls",
@@ -7778,7 +7727,7 @@ dependencies = [
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-streams 0.5.0",
+ "wasm-streams",
  "web-sys",
 ]
 
@@ -8253,7 +8202,7 @@ dependencies = [
  "indicatif",
  "log",
  "regex",
- "reqwest 0.13.5",
+ "reqwest",
  "self-replace",
  "semver",
  "serde",
@@ -8754,7 +8703,7 @@ dependencies = [
  "lazy_static",
  "nom 7.1.3",
  "nom_locate",
- "quick-xml 0.41.0",
+ "quick-xml",
  "rust_decimal",
  "rust_decimal_macros",
  "string_cache",
@@ -10116,19 +10065,6 @@ dependencies = [
 
 [[package]]
 name = "wasm-streams"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
-dependencies = [
- "futures-util",
- "js-sys",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "wasm-streams"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d1ec4f6517c9e11ae630e200b2b65d193279042e28edd4a2cda233e46670bbb"
@@ -10198,7 +10134,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "338e30461b3a2b67d70eb30a6d89f8e0c93a833e07d2ae89085cd070c4a00ac0"
 dependencies = [
  "proc-macro2",
- "quick-xml 0.41.0",
+ "quick-xml",
  "quote",
 ]
 
@@ -10268,7 +10204,7 @@ dependencies = [
  "lenient_semver",
  "nix 0.31.3",
  "regex",
- "reqwest 0.13.5",
+ "reqwest",
  "semver",
  "serde",
  "serde_json",

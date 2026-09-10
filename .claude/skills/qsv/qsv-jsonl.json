@@ -10,7 +10,7 @@
         "name": "input",
         "type": "file",
         "required": false,
-        "description": "Input CSV file. If not specified, reads from stdin."
+        "description": "Input JSONL/NDJSON (newline-delimited JSON) file. If not specified, reads from stdin."
       }
     ],
     "options": [

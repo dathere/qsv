@@ -557,12 +557,18 @@ impl UsageParser {
 
                     // qsv's USAGE text describes positionals in prose rather
                     // than in an extractable `<name>  description` line, so
-                    // most of them have none. Fall back to a generic one so
-                    // MCP agents are not left with a bare name. Deliberately
-                    // applied *after* `infer_argument_type` so the synthesized
-                    // wording cannot change an inferred type.
+                    // most of them have none. Fall back to a per-command
+                    // description where the generic one would be wrong (#4581),
+                    // then to the generic one, so MCP agents are not left with
+                    // a bare name. Deliberately applied *after*
+                    // `infer_argument_type` so the synthesized wording cannot
+                    // change an inferred type.
                     let description = if description.is_empty() {
-                        Self::generic_positional_description(&arg_name, required)
+                        Self::command_positional_description(&self.command_name, &arg_name)
+                            .map_or_else(
+                                || Self::generic_positional_description(&arg_name, required),
+                                ToString::to_string,
+                            )
                     } else {
                         description
                     };
@@ -705,6 +711,59 @@ impl UsageParser {
         )
     }
 
+    /// Per-command descriptions for positional arguments whose generic
+    /// fallback (see `generic_positional_description`) would be *wrong* rather
+    /// than merely terse - commands that do not take CSV on that positional,
+    /// or that do not fall back to stdin at all.
+    ///
+    /// Consulted only when the USAGE text itself documents no description, and
+    /// applied *after* `infer_argument_type` for the same reason the generic
+    /// fallback is: the synthesized wording must not be able to change an
+    /// inferred type.
+    ///
+    /// Keyed on `(invocation name, positional)` - note `enumerate` is invoked
+    /// as `enum`, so an override for it must use `enum`.
+    /// `command_positional_overrides_are_live` keeps the keys honest.
+    fn command_positional_description(command: &str, name: &str) -> Option<&'static str> {
+        Some(match (command, name) {
+            // binary statistical-package formats, identified by their file
+            // extension - readstat rejects stdin outright (see src/cmd/readstat.rs),
+            // so the argument is only optional so the command can emit its own
+            // actionable error instead of docopt's generic one.
+            ("readstat", "input") => {
+                "Input SAS (.sas7bdat, .xpt, .xpt5, .xpt8), Stata (.dta) or SPSS (.sav, .zsav, \
+                 .por) file. Required - these are binary formats identified by their file \
+                 extension, so reading from stdin is NOT supported."
+            },
+            ("json", "input") => "Input JSON file. If not specified, reads from stdin.",
+            ("jsonl", "input") => {
+                "Input JSONL/NDJSON (newline-delimited JSON) file. If not specified, reads from \
+                 stdin."
+            },
+            // blake3 hashes arbitrary files, and its positional is variadic
+            // (`[<input>...]`), which the JSON schema has no way to express.
+            ("blake3", "input") => {
+                "File/s to hash - any file type, not just CSV. Multiple paths may be given, \
+                 space-separated. If not specified, or when \"-\" is given, reads from stdin."
+            },
+            // LINE MODE (no --select) works on any text file, not just CSV.
+            ("extsort" | "extdedup", "input") => {
+                "Input CSV file - or any text file when --select is not set (LINE MODE). If not \
+                 specified, reads from stdin."
+            },
+            // CSV MODE takes the output delimiter from THIS path's extension
+            // (`Config::new(arg_output)`), not from the input's, so the output
+            // format does not necessarily match the input's (roborev 4649).
+            ("extsort" | "extdedup", "output") => {
+                "Output file. If not specified, writes to stdout. In CSV MODE the output delimiter \
+                 comes from this filename's extension, NOT from the input's - a .tsv input written \
+                 to a .csv path becomes comma-delimited, and stdout uses QSV_DEFAULT_DELIMITER \
+                 (\",\" by default). In LINE MODE the input lines are written through unchanged."
+            },
+            _ => return None,
+        })
+    }
+
     /// Generic descriptions for the well-known positional arguments that
     /// qsv's USAGE text never documents in an extractable
     /// `<name>  description` line. Used only as a fallback.
@@ -768,6 +827,86 @@ impl UsageParser {
             .then_some(flag)
     }
 
+    /// Recognize a line that opens with one or more `<name>` positional
+    /// declarations:
+    ///
+    /// ```text
+    ///     <input>...              The CSV file(s) to read.
+    ///     <columns1> & <columns2> are the columns to join on for each input.
+    /// ```
+    ///
+    /// Returns the declared names (brackets stripped) and the text that
+    /// follows them, or `None` for prose that merely happens to start with
+    /// `<`. The names are returned as a list because qsv's USAGE convention
+    /// allows one line to declare several - and reading only the first one
+    /// mangles the rest into the description (#4583).
+    fn parse_positional_declaration_line(trimmed: &str) -> Option<(Vec<&str>, &str)> {
+        let mut names = Vec::with_capacity(1);
+        let mut rest = trimmed;
+
+        loop {
+            let after_open = rest.strip_prefix('<')?;
+            let close = after_open.find('>')?;
+            let (name, tail) = after_open.split_at(close);
+            if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                return None;
+            }
+            names.push(name);
+
+            // docopt's repeating indicator belongs to the declaration, not to
+            // the description
+            let tail = &tail[1..];
+            rest = tail.strip_prefix("...").unwrap_or(tail).trim_start();
+
+            // `<columns1> & <columns2> ...` - a separator followed by another
+            // declaration continues the list; anything else begins the
+            // description. The `starts_with('<')` check is what keeps a
+            // description that merely opens with one of these words
+            // (e.g. "and the rest are ignored") from being eaten.
+            let Some(after_sep) = ["&", ",", "and"]
+                .iter()
+                .find_map(|sep| rest.strip_prefix(sep))
+                .map(str::trim_start)
+                .filter(|after| after.starts_with('<'))
+            else {
+                break;
+            };
+            rest = after_sep;
+        }
+
+        Some((names, rest))
+    }
+
+    /// Recognize a positional declared with a BARE name inside a
+    /// `<command> arguments:` block, which is how `sqlp` writes its USAGE:
+    ///
+    /// ```text
+    /// sqlp arguments:
+    ///     input                  The CSV file/s to query.
+    /// ```
+    ///
+    /// Every other command uses the `<angle>` form, but nothing enforces
+    /// that, and before #4583 a bare name silently lost its description to
+    /// the generic fallback. Only ever consulted *inside* such a block: the
+    /// two-space separator and the lowercase-identifier shape are what keep
+    /// the explanatory paragraphs that also live in these blocks out.
+    fn parse_bare_positional_declaration_line(trimmed: &str) -> Option<(&str, &str)> {
+        let (name, description) = trimmed.split_once("  ")?;
+        if !name.starts_with(|c: char| c.is_ascii_lowercase())
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return None;
+        }
+        let description = description.trim_start();
+        (!description.is_empty()).then_some((name, description))
+    }
+
     /// Recognize a line that consists *only* of a flag declaration, e.g.
     /// `-S, --bivariate-stats <stats>` or `--denominator-unit <u>`. qsv's
     /// USAGE convention wraps such a declaration's description onto the
@@ -812,10 +951,22 @@ impl UsageParser {
         let mut descriptions = HashMap::new();
         let lines: Vec<&str> = self.usage_text.lines().collect();
 
+        // `sqlp` declares its positionals with BARE names inside a
+        // `sqlp arguments:` block, where every other command writes `<input>`.
+        // Bare names are only honored inside such a block - outside one, a
+        // lowercase word followed by two spaces is just prose (#4583).
+        let mut in_arguments_block = false;
+
         let mut i = 0;
         while i < lines.len() {
             let line = lines[i];
             let trimmed = line.trim();
+
+            // section headers sit at column 0; any other unindented, non-empty
+            // line (e.g. `sqlp options:`) closes the block
+            if !trimmed.is_empty() && !line.starts_with([' ', '\t']) {
+                in_arguments_block = trimmed.ends_with("arguments:");
+            }
 
             // Look for option lines: "    -s, --select <arg>    Description"
             if trimmed.starts_with('-') {
@@ -888,17 +1039,9 @@ impl UsageParser {
                 }
             }
             // Look for argument lines: "    <input>    Description"
-            else if trimmed.starts_with('<')
-                && trimmed.contains('>')
-                && let Some(close_bracket) = trimmed.find('>')
+            else if let Some((names, desc_part)) =
+                Self::parse_positional_declaration_line(trimmed)
             {
-                let arg_name = trimmed[..=close_bracket].trim().to_string();
-                let desc_part = trimmed[close_bracket + 1..].trim();
-
-                // Strip leading "..." (docopt repeating indicator) from description
-                let desc_part = desc_part
-                    .strip_prefix("...")
-                    .map_or(desc_part, str::trim_start);
                 let mut description = desc_part.to_string();
 
                 // Collect multi-line description
@@ -918,7 +1061,51 @@ impl UsageParser {
                     j += 1;
                 }
 
-                descriptions.insert(arg_name, description);
+                // One line may declare several positionals - `join` writes
+                // `<columns1> & <columns2> are the columns to join on ...`.
+                // Reading only the first name used to hand `<columns1>` the
+                // mangled remainder ("& <columns2> are the columns to ...")
+                // while `<columns2>` got nothing. The shared text describes
+                // the PAIR, so it cannot be split between them and it names
+                // neither individually; dropping it lets both fall through to
+                // the generic per-argument descriptions, which are symmetric
+                // and carry the `qsv select --help` pointer this line lacks.
+                if let [name] = names[..] {
+                    descriptions.insert(format!("<{name}>"), description);
+                }
+
+                i = j;
+                continue;
+            }
+            // Look for bare argument lines inside a `<command> arguments:`
+            // block: "    input                  Description". Keyed under
+            // `<input>` so every lookup site stays unchanged.
+            else if in_arguments_block
+                && let Some((name, desc_part)) =
+                    Self::parse_bare_positional_declaration_line(trimmed)
+            {
+                let indent = line.len() - line.trim_start().len();
+                let mut description = desc_part.to_string();
+
+                // Indentation decides where the description ends, so the next
+                // declaration at the same column is not swallowed.
+                let mut j = i + 1;
+                while j < lines.len() {
+                    let next_line = lines[j];
+                    let next_trimmed = next_line.trim();
+                    if next_trimmed.is_empty()
+                        || next_line.len() - next_line.trim_start().len() <= indent
+                    {
+                        break;
+                    }
+                    if !next_trimmed.starts_with("Usage:") {
+                        description.push(' ');
+                        description.push_str(next_trimmed);
+                    }
+                    j += 1;
+                }
+
+                descriptions.insert(format!("<{name}>"), description);
                 i = j;
                 continue;
             }
@@ -1367,6 +1554,84 @@ fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
 
 /// Public function to generate MCP skills JSON files
 /// Called via `qsv --update-mcp-skills` flag
+/// The curated set of qsv commands exposed as MCP skills, by source-file name.
+/// (`enumerate` is invoked as `enum`; the rename happens at generation time.)
+///
+/// Deliberately curated - see the exclusion notes on `generate_mcp_skills`.
+/// The `(command, positional)` pairs `UsageParser::command_positional_description`
+/// answers for. Kept in sync by hand so `command_positional_overrides_are_live`
+/// can prove every key names a command that is actually generated.
+#[cfg(test)]
+const COMMAND_POSITIONAL_OVERRIDES: &[(&str, &str)] = &[
+    ("readstat", "input"),
+    ("json", "input"),
+    ("jsonl", "input"),
+    ("blake3", "input"),
+    ("extsort", "input"),
+    ("extdedup", "input"),
+    ("extsort", "output"),
+    ("extdedup", "output"),
+];
+
+const MCP_SKILL_COMMANDS: &[&str] = &[
+    "blake3",
+    "cat",
+    "count",
+    "datefmt",
+    "dedup",
+    "describegpt",
+    "diff",
+    "enumerate",
+    "excel",
+    "exclude",
+    "explode",
+    "extdedup",
+    "extsort",
+    "fill",
+    "fixlengths",
+    "fmt",
+    "frequency",
+    "geocode",
+    "headers",
+    "implode",
+    "index",
+    "input",
+    "join",
+    "joinp",
+    "json",
+    "jsonl",
+    "moarstats",
+    "partition",
+    "pivotp",
+    "pragmastat",
+    "pseudo",
+    "readstat",
+    "rename",
+    "replace",
+    "reverse",
+    "safenames",
+    "sample",
+    "schema",
+    "search",
+    "searchset",
+    "select",
+    "slice",
+    "sniff",
+    "sort",
+    "sortcheck",
+    "split",
+    "sqlp",
+    "stats",
+    "synthesize",
+    "table",
+    "template",
+    "to",
+    "tojsonl",
+    "transpose",
+    "validate",
+    "viz",
+];
+
 pub fn generate_mcp_skills() -> CliResult<()> {
     // Get all commands from src/cmd/*.rs (excluding mod.rs and duplicates)
     // Note: "enumerate" command is invoked as "enum" in qsv
@@ -1392,64 +1657,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // - snappy: compression utility not needed for AI agents
     //
     // This list targets commands available in the qsvmcp binary variant.
-    let commands = vec![
-        "blake3",
-        "cat",
-        "count",
-        "datefmt",
-        "dedup",
-        "describegpt",
-        "diff",
-        "enumerate",
-        "excel",
-        "exclude",
-        "explode",
-        "extdedup",
-        "extsort",
-        "fill",
-        "fixlengths",
-        "fmt",
-        "frequency",
-        "geocode",
-        "headers",
-        "implode",
-        "index",
-        "input",
-        "join",
-        "joinp",
-        "json",
-        "jsonl",
-        "moarstats",
-        "partition",
-        "pivotp",
-        "pragmastat",
-        "pseudo",
-        "readstat",
-        "rename",
-        "replace",
-        "reverse",
-        "safenames",
-        "sample",
-        "schema",
-        "search",
-        "searchset",
-        "select",
-        "slice",
-        "sniff",
-        "sort",
-        "sortcheck",
-        "split",
-        "sqlp",
-        "stats",
-        "synthesize",
-        "table",
-        "template",
-        "to",
-        "tojsonl",
-        "transpose",
-        "validate",
-        "viz",
-    ];
+    let commands = MCP_SKILL_COMMANDS;
 
     // Determine repository root - look for Cargo.toml with src/cmd
     // This command must be run from within the qsv repository directory
@@ -1508,7 +1716,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     let mut success_count = 0;
     let mut error_count = 0;
 
-    for cmd_name in &commands {
+    for cmd_name in commands {
         eprintln!("Processing: {cmd_name}");
 
         // Find command file. Support both `src/cmd/<name>.rs` and module-dir
@@ -1865,5 +2073,202 @@ mod tests {
         assert!(UsageParser::generic_positional_description("input", false).contains("stdin"));
         assert!(!UsageParser::generic_positional_description("output", true).contains("stdout"));
         assert!(UsageParser::generic_positional_description("output", false).contains("stdout"));
+    }
+
+    // ------------------------------------------------------------------
+    // #4583 - positional declaration lines
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn positional_declaration_line_shapes() {
+        let p = UsageParser::parse_positional_declaration_line;
+
+        assert_eq!(
+            p("<input>                The CSV file to read."),
+            Some((vec!["input"], "The CSV file to read."))
+        );
+        // docopt's repeat marker belongs to the declaration, not the text
+        assert_eq!(
+            p("<input>...              The CSV file(s) to read."),
+            Some((vec!["input"], "The CSV file(s) to read."))
+        );
+        // one line, two positionals - the text describes the pair
+        assert_eq!(
+            p("<columns1> & <columns2> are the columns to join on for each input."),
+            Some((
+                vec!["columns1", "columns2"],
+                "are the columns to join on for each input."
+            ))
+        );
+        assert_eq!(
+            p("<a>, <b> and <c>  some text"),
+            Some((vec!["a", "b", "c"], "some text"))
+        );
+        assert_eq!(
+            p("<index-file>           The alternate geonames index file."),
+            Some((vec!["index-file"], "The alternate geonames index file."))
+        );
+
+        // a description that merely opens with a separator word is not a
+        // continued declaration
+        assert_eq!(
+            p("<input>  and the rest are ignored"),
+            Some((vec!["input"], "and the rest are ignored"))
+        );
+
+        // prose that merely starts with '<'
+        assert_eq!(p("<not a name> text"), None);
+        assert_eq!(p("<> empty"), None);
+        assert_eq!(p("no brackets at all"), None);
+    }
+
+    /// The #4583 mangling: reading only the first name handed `<columns1>` the
+    /// remainder of a shared line ("& <columns2> are the columns to ...") and
+    /// left `<columns2>` with nothing.
+    #[test]
+    fn multi_name_declaration_is_not_mangled_into_the_first_name() {
+        let usage = "\nUsage:\n    qsv join [options] <columns1> <input1> <columns2> \
+                     <input2>\n\ninput arguments:\n    <input1>                is the first CSV \
+                     data set to join.\n    <columns1> & <columns2> are the columns to join on \
+                     for each input.\n";
+        let descs = UsageParser::new(usage.to_string(), "join".to_string())
+            .extract_descriptions_from_text();
+
+        assert_eq!(
+            descs.get("<input1>").map(String::as_str),
+            Some("is the first CSV data set to join.")
+        );
+        // neither name may claim the shared text, and nothing may carry the
+        // mangled remainder
+        assert!(!descs.contains_key("<columns1>"), "{descs:?}");
+        assert!(!descs.contains_key("<columns2>"), "{descs:?}");
+    }
+
+    #[test]
+    fn bare_positional_declaration_line_shapes() {
+        let p = UsageParser::parse_bare_positional_declaration_line;
+
+        assert_eq!(
+            p("input                  The CSV file/s to query."),
+            Some(("input", "The CSV file/s to query."))
+        );
+        assert_eq!(
+            p("on-cols   The column(s) to pivot on."),
+            Some(("on-cols", "The column(s) to pivot on."))
+        );
+
+        // the four prose shapes that share `join`'s arguments block - none of
+        // them may be captured as a declaration
+        assert_eq!(
+            p("The columns arguments specify the columns to join for each input."),
+            None
+        );
+        assert_eq!(p("be referenced by name or index, starting at 1."), None);
+        assert_eq!(
+            p("e.g. 'qsv frequency -s Agency nyc311.csv | qsv join value - id x.csv'"),
+            None
+        );
+        assert_eq!(
+            p("For <input1> and <input2>, specifying `-` indicates reading from stdin."),
+            None
+        );
+
+        // a bare name with no description is not a declaration
+        assert_eq!(p("input"), None);
+        assert_eq!(p("input  "), None);
+    }
+
+    /// Bare names are honored ONLY inside a `<command> arguments:` block, and
+    /// are keyed under `<name>` so every lookup site stays unchanged.
+    #[test]
+    fn bare_positionals_are_extracted_only_inside_an_arguments_block() {
+        let inside =
+            "\nUsage:\n    qsv sqlp [options] <input>... <sql>\n\nsqlp arguments:\n    input   \
+             The CSV file/s to query.\n                            Use '-' for standard \
+             input.\n\n    sql     The SQL query/ies to run.\n\nsqlp options:\n    -q, --quiet   \
+             Do not print.\n";
+        let descs = UsageParser::new(inside.to_string(), "sqlp".to_string())
+            .extract_descriptions_from_text();
+        assert_eq!(
+            descs.get("<input>").map(String::as_str),
+            Some("The CSV file/s to query. Use '-' for standard input.")
+        );
+        assert_eq!(
+            descs.get("<sql>").map(String::as_str),
+            Some("The SQL query/ies to run.")
+        );
+        // the options section closed the block, so its flag is still a flag
+        assert_eq!(
+            descs.get("--quiet").map(String::as_str),
+            Some("Do not print.")
+        );
+
+        // the same shape outside an arguments block is prose, not a positional
+        let outside = "\nSome prose about the command.\n    input   this looks like a declaration \
+                       but is not.\n\nUsage:\n    qsv thing [options]\n";
+        let descs = UsageParser::new(outside.to_string(), "thing".to_string())
+            .extract_descriptions_from_text();
+        assert!(!descs.contains_key("<input>"), "{descs:?}");
+    }
+
+    // ------------------------------------------------------------------
+    // #4581 - per-command positional descriptions
+    // ------------------------------------------------------------------
+
+    /// Every command a `command_positional_description` arm is keyed on must
+    /// actually be generated, otherwise the arm is dead and the wrong generic
+    /// fallback ships silently.
+    #[test]
+    fn command_positional_overrides_are_live() {
+        for (cmd, arg) in COMMAND_POSITIONAL_OVERRIDES {
+            // `MCP_SKILL_COMMANDS` holds SOURCE-FILE names while the overrides
+            // are keyed on INVOCATION names, and the two differ for enumerate.
+            // Map here rather than loosening the check - an override written
+            // as `enumerate` would be dead code at generation time.
+            assert!(
+                MCP_SKILL_COMMANDS
+                    .iter()
+                    .any(|c| if *c == "enumerate" { "enum" } else { c } == *cmd),
+                "override keyed on <{arg}> of unknown/ungenerated command `{cmd}`"
+            );
+            assert!(
+                UsageParser::command_positional_description(cmd, arg).is_some(),
+                "no override for `{cmd}` <{arg}> - the match arm and this list have drifted"
+            );
+        }
+    }
+
+    /// The whole point of #4581: these positionals must not be described as
+    /// CSV, and `readstat` must not be described as reading from stdin.
+    #[test]
+    fn command_positional_overrides_correct_the_generic_fallback() {
+        let d = |cmd, arg| UsageParser::command_positional_description(cmd, arg).unwrap();
+
+        let readstat = d("readstat", "input");
+        assert!(!readstat.contains("CSV"), "{readstat}");
+        assert!(readstat.contains("NOT supported"), "{readstat}");
+        assert!(readstat.contains(".sas7bdat"), "{readstat}");
+
+        assert!(d("json", "input").starts_with("Input JSON file."));
+        assert!(d("jsonl", "input").starts_with("Input JSONL/NDJSON"));
+        assert!(!d("blake3", "input").contains("CSV file"));
+
+        // extsort/extdedup keep CSV but must not claim it is the only option
+        for cmd in ["extsort", "extdedup"] {
+            assert!(d(cmd, "input").contains("LINE MODE"), "{cmd}");
+            // the output format is NOT necessarily the input's - in CSV MODE the
+            // delimiter comes from the output path's extension (roborev 4649)
+            let output = d(cmd, "output");
+            assert!(
+                !output.contains("same format as the input"),
+                "{cmd}: {output}"
+            );
+            assert!(output.contains("NOT from the input"), "{cmd}: {output}");
+            assert!(output.contains("LINE MODE"), "{cmd}: {output}");
+        }
+
+        // unlisted pairs fall through to the generic description
+        assert!(UsageParser::command_positional_description("stats", "input").is_none());
+        assert!(UsageParser::command_positional_description("readstat", "output").is_none());
     }
 }

@@ -10,7 +10,7 @@
         "name": "input",
         "type": "file",
         "required": false,
-        "description": "Input CSV file. If not specified, reads from stdin."
+        "description": "File/s to hash - any file type, not just CSV. Multiple paths may be given, space-separated. If not specified, or when \"-\" is given, reads from stdin."
       }
     ],
     "options": [

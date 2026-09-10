@@ -10,13 +10,13 @@
         "name": "input",
         "type": "file",
         "required": false,
-        "description": "Input CSV file. If not specified, reads from stdin."
+        "description": "Input CSV file - or any text file when --select is not set (LINE MODE). If not specified, reads from stdin."
       },
       {
         "name": "output",
         "type": "string",
         "required": false,
-        "description": "Output CSV file. If not specified, writes to stdout."
+        "description": "Output file. If not specified, writes to stdout. In CSV MODE the output delimiter comes from this filename's extension, NOT from the input's - a .tsv input written to a .csv path becomes comma-delimited, and stdout uses QSV_DEFAULT_DELIMITER (\",\" by default). In LINE MODE the input lines are written through unchanged."
       }
     ],
     "options": [

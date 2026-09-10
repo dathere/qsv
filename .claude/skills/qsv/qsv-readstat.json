@@ -10,7 +10,7 @@
         "name": "input",
         "type": "file",
         "required": false,
-        "description": "Input CSV file. If not specified, reads from stdin."
+        "description": "Input SAS (.sas7bdat, .xpt, .xpt5, .xpt8), Stata (.dta) or SPSS (.sav, .zsav, .por) file. Required - these are binary formats identified by their file extension, so reading from stdin is NOT supported."
       }
     ],
     "options": [

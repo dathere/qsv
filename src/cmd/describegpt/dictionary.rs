@@ -2140,23 +2140,27 @@ const DENOMINATOR_REGION_CONCEPTS: &[&str] = &[
 /// KNOWN HOLE, and it is still a hole HERE: this closes the case where the coarser region column
 /// is PRESENT, not the case where it is absent. A county extract that joined in state population
 /// for normalization but carries no `state` column (the state code being the first two digits of
-/// the county FIPS) still gets the hint on `county_fips`. Cardinality cannot express the
-/// difference: telling a coarser denominator from a tied finer one needs the count of DISTINCT
-/// (region, denominator) PAIRS, which no stats column carries. This function is the best answer
-/// available WITHOUT a data pass, not a sound one.
+/// the county FIPS) still gets the hint on `county_fips`. NO count expresses the difference —
+/// not cardinality, and not a data pass either. The hint is only usable when the denominator is
+/// CONSTANT within each region, and under constancy the number of distinct (region, denominator)
+/// PAIRS is exactly the number of REGIONS, in the correct case and the coarse one alike: measured,
+/// the legitimate `district_requests` fixture is 6 regions / 6 pairs and the #4526
+/// coarse-geography repro is 4 regions / 4 pairs. Granularity is semantic information, and it is
+/// absent from the data precisely when the coarser column is. This function is the best answer
+/// available without that information, not a sound one.
 ///
 /// What closes it downstream is the DECLARED level, not a count. A `geo.state` on the denominator
-/// column, checked against the region column's own concept, catches exactly the case cardinality
-/// cannot — and `viz` now makes that check (issue #4526, consuming the level #4571 emits): when
+/// column, checked against the region column's own concept, catches exactly the case no count can
+/// — and `viz` now makes that check (issue #4526, consuming the level #4571 emits): when
 /// both sides resolve to a known areal unit and DISAGREE, the rate panel is refused outright;
 /// when the level is undeclared or does not resolve, the panel still charts and says so in its
 /// subtitle. So the hint this function emits on `county_fips` is still wrong in that scenario, but
 /// it no longer draws a confident wrong map whenever the model supplied a level.
 ///
-/// ⛔ Do NOT "finish" this with a data pass over `viz`'s `denom_by_cand`. A distinct-values /
-/// regions RATIO was investigated on #4526 and disproved with MEASURED data: a legitimate
-/// per-city denominator scores 0.227 while this bug scores 0.500, so the classes are INVERTED and
-/// no threshold separates them. Granularity is not a property of counts — three count-derived
+/// ⛔ Do NOT "finish" this with a fourth count-derived rule. The one that looks most promising —
+/// a distinct-values / regions RATIO over `viz`'s `denom_by_cand` — was investigated on #4526 and
+/// disproved with MEASURED data: a legitimate per-city denominator scores 0.227 while this bug
+/// scores 0.500, so the classes are INVERTED and no threshold separates them. Three count-derived
 /// rules have now been tried on this problem family and every one was reviewed as a defect.
 ///
 /// `measure.area` is NOT wired in. An area denominator is only readable once its unit is known

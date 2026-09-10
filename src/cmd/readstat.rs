@@ -50,6 +50,9 @@ readstat options:
                            buffered to keep the rows in source order. Row order
                            is preserved either way.
     -b, --batch <size>     Number of rows to read into memory at a time.
+                           Does not apply to SPSS portable (.por) files - they
+                           have no chunked reader upstream, so they are read
+                           whole & memory scales with the file.
                            [default: 50000]
 
 Common options:

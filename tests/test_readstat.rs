@@ -151,9 +151,7 @@ fn readstat_row_order_is_jobs_independent() {
 
     let run = |jobs: &str| -> Vec<Vec<String>> {
         let mut cmd = wrk.command("readstat");
-        cmd.args(["--jobs", jobs])
-            .args(["--batch", "100"])
-            .arg(&f);
+        cmd.args(["--jobs", jobs]).args(["--batch", "100"]).arg(&f);
         wrk.read_stdout(&mut cmd)
     };
 
@@ -220,7 +218,10 @@ fn readstat_rejects_catalog() {
     cmd.arg(wrk.path("fmts.sas7bcat"));
 
     let (_, stderr) = wrk.stdout_and_stderr_on_error::<String>(&mut cmd);
-    assert!(stderr.contains("is a SAS format catalog, not a dataset"), "{stderr}");
+    assert!(
+        stderr.contains("is a SAS format catalog, not a dataset"),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -240,7 +241,10 @@ fn readstat_rejects_stdin() {
     let mut cmd = wrk.command("readstat");
 
     let (_, stderr) = wrk.stdout_and_stderr_on_error::<String>(&mut cmd);
-    assert!(stderr.contains("reading from stdin is not supported"), "{stderr}");
+    assert!(
+        stderr.contains("reading from stdin is not supported"),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -251,5 +255,8 @@ fn readstat_rejects_bad_metadata_format() {
     cmd.args(["--metadata", "bogus"]).arg(f);
 
     let (_, stderr) = wrk.stdout_and_stderr_on_error::<String>(&mut cmd);
-    assert!(stderr.contains("is not a valid --metadata format"), "{stderr}");
+    assert!(
+        stderr.contains("is not a valid --metadata format"),
+        "{stderr}"
+    );
 }

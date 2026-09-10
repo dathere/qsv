@@ -1,8 +1,8 @@
 # readstat
 
-> Convert SAS (`.sas7bdat`, `.xpt`), Stata (`.dta`) & SPSS (`.sav`, `.zsav`, `.por`) files to CSV, preserving the underlying codes of labelled values by default. Also dumps the rich variable metadata these formats carry - variable labels, value labels, missing-value codes, measure & display settings - with `--metadata`.
+> Convert SAS (`.sas7bdat`, `.xpt`), Stata (`.dta`) & SPSS (`.sav`, `.zsav`, `.por`) files to CSV, preserving the underlying codes of labelled values by default. Also dumps the rich variable metadata these formats carry - variable labels, value labels, missing-value codes, measure & display settings - with `--metadata`. Only SPSS portable (`.por`) files are read whole - every other format streams with constant memory.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/readstat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/readstat.rs)** | [🐻‍❄️](TableOfContents.md#legend "command powered/accelerated by  vectorized query engine.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/readstat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/readstat.rs)** | [🤯](TableOfContents.md#legend "loads entire CSV into memory, though `dedup`, `stats` & `transpose` have \"streaming\" modes as well.")[🐻‍❄️](TableOfContents.md#legend "command powered/accelerated by  vectorized query engine.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Readstat Options](#readstat-options) | [Common Options](#common-options)
@@ -77,7 +77,7 @@ qsv readstat --help
 | &nbsp;`‑‑metadata`&nbsp; | string | Dump variable metadata instead of the data. Valid values: none, csv, json, pretty-json. | `none` |
 | &nbsp;`‑‑value‑labels`&nbsp; | flag | Decode coded values to their label strings (e.g. 1 becomes "Male") instead of writing the underlying codes. Stata & SPSS only - SAS keeps its value labels in a separate .sas7bcat catalog, which this command does not read yet. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | Number of reader threads. Raising it speeds up large uncompressed files at the cost of memory, as out-of-order chunks have to be buffered to keep the rows in source order. Row order is preserved either way. | `1` |
-| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | Number of rows to read into memory at a time. | `50000` |
+| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | Number of rows to read into memory at a time. Does not apply to SPSS portable (.por) files - they have no chunked reader upstream, so they are read whole & memory scales with the file. | `50000` |
 
 <a name="common-options"></a>
 

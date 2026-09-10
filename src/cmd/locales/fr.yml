@@ -278,6 +278,7 @@ viz:
     denominator_excluded: "aucun dénominateur exploitable pour %{q_n} régions sur %{q_total} ; elles ne sont pas affichées."
     boundary_provenance: "Limites : %{q_source}."
     denominator_provenance: "Dénominateur : %{q_source}."
+    denominator_level_unverified: "Dénominateur : %{q_col} — son niveau géographique n'est pas vérifié, donc qsv ne peut pas confirmer qu'il décrit les mêmes zones que ces régions."
     boundary_outliers: "%{q_n} région(s) se situent très loin des autres (%{q_ids}) ; la carte est cadrée sur les autres."
     funnel_complete: "n = %{q_n} cas complets (%{q_pct} % des lignes)"
     funnel_violation: "%{q_here} dépasse %{q_prev} dans %{q_pct} % des lignes"

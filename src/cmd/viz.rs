@@ -774,7 +774,18 @@ smart options:
                            the "column" - {"column": "land_area", "unit": "m2"} - when the values
                            are an area in square metres, so qsv converts them and names the rate
                            "per km2" instead of dividing by metres and printing the raw column
-                           name. Prefer the denominator-key flag when the boundary file already
+                           name. Add a "level" - {"column": "state_pop", "level": "geo.state"} -
+                           naming the AREAL unit those values describe, as a "geo." concept token.
+                           qsv checks it against the region column's own concept and refuses the
+                           rate panel when the two name different geographies: a denominator
+                           measured over a COARSER area than the map is keyed by (county counts
+                           over state populations) is constant within each region and positive, so
+                           every data-derived check passes while the map is confidently wrong. The
+                           two codings of one geography compare equal, so a per-county denominator
+                           is fine against either a "geo.county" or a "geo.county_fips" region.
+                           describegpt emits the level itself; a hint that declares none still
+                           charts, and says so in the rate panel's subtitle.
+                           Prefer the denominator-key flag when the boundary file already
                            carries the figure.
                            Note that on ENGLISH pages large numbers use the financial convention
                            (1e9 reads "1B", not the SI "1G") consistently across KPI tiles, bar
@@ -20565,73 +20576,84 @@ enum DenominatorSource {
 /// `derive_semantics`; `Agg` is the existing chart-aggregation enum, reused here.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 struct ColSemantics {
-    route:            Route,
-    agg:              Option<Agg>,
-    concept:          String,
-    label:            String,
+    route:             Route,
+    agg:               Option<Agg>,
+    concept:           String,
+    label:             String,
     /// ISO-4217 code from the dictionary (`x-qsv.currency`), carried here so the panel-building
     /// pass — which sees `ColSemantics`, not the `DictData` — can name the currency in the
     /// column's subtitle.
-    currency:         Option<String>,
+    currency:          Option<String>,
     /// Curated-UCUM code from the dictionary (`x-qsv.unit`), carried here for the same reason as
     /// `currency` and mutually exclusive with it (for money the currency IS the unit). Rendered
     /// via [`unit_suffix`], never read as a symbol from the sidecar.
-    unit:             Option<String>,
+    unit:              Option<String>,
     /// Denominator column NAME from the dictionary (`x-qsv.denominator.column`), carried here so
     /// the region-choropleth builder — which sees `ColSemantics`, not the `DictData` — can turn a
     /// raw-count region map into a rate map (issue #4394). Still just a name at this point: it is
     /// resolved against the actual columns, and validated as region-constant, at that site.
-    denominator:      Option<String>,
+    denominator:       Option<String>,
     /// `x-qsv.denominator.unit`: the unit that denominator column's values are IN, so an area
     /// denominator can be converted and named rather than divided in its raw unit and labelled
     /// with its raw field name (issue #4414). Only a declared unit is honored — never one guessed
     /// from a column name.
-    denominator_unit: Option<String>,
+    denominator_unit:  Option<String>,
+    /// `x-qsv.denominator.level`: the AREAL unit that denominator column's values describe, as a
+    /// `geo.*` concept token (issue #4526). Declared, never inferred — a denominator measured over
+    /// a COARSER geography than the region key (state populations against county regions) is
+    /// constant within each region and positive, so it passes every data-derived check honestly
+    /// while producing a confident, wrong rate map. Compared against the region column's own
+    /// concept through [`geo_level_class`]; absent, it costs only a caveat.
+    denominator_level: Option<String>,
 }
 
 /// One column's semantic signals parsed from a describegpt Data Dictionary.
 #[derive(Clone, Debug, Default)]
 struct DictRow {
-    content_type:     String,
-    role:             String,
-    concept:          String,
-    label:            String,
-    description:      String,
+    content_type:      String,
+    role:              String,
+    concept:           String,
+    label:             String,
+    description:       String,
     /// Optional `[min, max]` domain for a KPI gauge tile (`x-qsv.gauge_range`), set only for
     /// numeric measures whose concept implies a canonical scale (percent, ratio, rating, score).
     /// The KPI builder still validates that the observed value falls inside the range before
     /// drawing a gauge (else it falls back to a plain number tile).
-    gauge_range:      Option<[f64; 2]>,
+    gauge_range:       Option<[f64; 2]>,
     /// Optional KPI delta reference (`x-qsv.target`): a semantically-justified TARGET/goal (e.g.
     /// 100% completeness, 0 error-rate), never a fabricated prior-period baseline. Rendered as a
     /// "vs target" delta.
-    target:           Option<f64>,
+    target:            Option<f64>,
     /// Optional ISO-4217 alpha-3 code (`x-qsv.currency`) naming the currency a monetary measure
     /// is denominated in. Prefixes the column's KPI tile with the currency symbol and names the
     /// currency in its panel subtitle. Normalized (trimmed/uppercased/shape-checked) on read,
     /// because a hand-edited sidecar never passed through describegpt's validator.
-    currency:         Option<String>,
+    currency:          Option<String>,
     /// Optional curated-UCUM code (`x-qsv.unit`, issue #4525) naming the physical unit a
     /// NON-MONETARY numeric measure is expressed in. Suffixes the column's KPI tile with the
     /// unit's display symbol and names it in the panel subtitle. Validated against the curated
     /// table on read — case-sensitively, and rejected on a money column — because a hand-edited
     /// sidecar never passed through describegpt's `verify_unit`.
-    unit:             Option<String>,
+    unit:              Option<String>,
     /// Optional explicit aggregation (`x-qsv.aggregation`, `sum`|`mean`) declaring how this
     /// numeric measure combines across a group. The language-neutral, authoritative answer to a
     /// question `is_intensive_measure` can only guess at from the column NAME (issue #4401), so it
     /// OVERRIDES that heuristic in BOTH directions — it can force Mean on a name that reads as
     /// additive, and equally force Sum on one the heuristic would wrongly average. Re-verified on
     /// read, because a hand-edited sidecar never passed through describegpt's validator.
-    aggregation:      Option<Agg>,
+    aggregation:       Option<Agg>,
     /// Optional denominator column name (`x-qsv.denominator.column`) declared on a REGION-CODE
     /// column, naming the column that holds each region's denominator (its population, households,
     /// area) so a region map can chart a RATE beside the raw count (issue #4394). Shape-checked
     /// only on read; resolved and validated where it is consumed.
-    denominator:      Option<String>,
+    denominator:       Option<String>,
     /// `x-qsv.denominator.unit`: what unit those values are in (issue #4414). Shape-checked only,
     /// like its sibling; an unrecognized token simply declares nothing at the consumption site.
-    denominator_unit: Option<String>,
+    denominator_unit:  Option<String>,
+    /// `x-qsv.denominator.level`: the areal unit those values describe, as a `geo.*` token (issue
+    /// #4526). Shape-checked only here, like its siblings; the comparison against the region
+    /// column's own concept happens at the consumption site, where both are known.
+    denominator_level: Option<String>,
 }
 
 /// Which form a declared pipeline is drawn as (issue #4222).
@@ -21833,6 +21855,10 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     // carried unconditionally like `denominator`: it qualifies that hint, so gating it separately
     // could leave a converted denominator labelled in its raw unit
     let denominator_unit = row.denominator_unit.clone();
+    // carried unconditionally for the same reason (issue #4526): it qualifies the hint, and the
+    // check it feeds only ever REFUSES a rate panel, so dropping it here would silently restore
+    // the coarse-geography bug it exists to catch
+    let denominator_level = row.denominator_level.clone();
     // An explicit `x-qsv.aggregation` is the dictionary AUTHOR stating how the measure combines,
     // already re-verified in `parse_dictionary_semantics`. It outranks every heuristic below —
     // both the intensive downgrade and the `measure.count` exemption — because it is the one
@@ -21866,6 +21892,7 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
                 unit: unit.clone(),
                 denominator: denominator.clone(),
                 denominator_unit: denominator_unit.clone(),
+                denominator_level: denominator_level.clone(),
             },
             s,
         )
@@ -21899,6 +21926,7 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
         unit,
         denominator,
         denominator_unit,
+        denominator_level,
     }
 }
 
@@ -22378,6 +22406,10 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
             let xq_denominator = || xq_denominator_field("column");
             // `unit` rides beside `column` in the same object (issue #4414)
             let xq_denominator_unit = || xq_denominator_field("unit");
+            // ... and so does `level`, the areal unit the denominator's values describe (issue
+            // #4526). describegpt emits it from the column it derived the hint FROM (issue #4571);
+            // a hand-authored sidecar may write it directly.
+            let xq_denominator_level = || xq_denominator_field("level");
             let label = prop
                 .get("title")
                 .and_then(serde_json::Value::as_str)
@@ -22403,6 +22435,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     aggregation: xq_aggregation(),
                     denominator: xq_denominator(),
                     denominator_unit: xq_denominator_unit(),
+                    denominator_level: xq_denominator_level(),
                 },
             );
         }
@@ -22467,20 +22500,21 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
         rows.insert(
             name.to_string(),
             DictRow {
-                content_type:     from_field("content_type"),
-                role:             from_field("role"),
-                concept:          from_field("concept"),
-                label:            from_field("label"),
-                description:      from_field("description"),
+                content_type:      from_field("content_type"),
+                role:              from_field("role"),
+                concept:           from_field("concept"),
+                label:             from_field("label"),
+                description:       from_field("description"),
                 // legacy plain-json dictionaries don't carry KPI gauge/target/currency/unit,
                 // aggregation or denominator hints
-                gauge_range:      None,
-                target:           None,
-                currency:         None,
-                unit:             None,
-                aggregation:      None,
-                denominator:      None,
-                denominator_unit: None,
+                gauge_range:       None,
+                target:            None,
+                currency:          None,
+                unit:              None,
+                aggregation:       None,
+                denominator:       None,
+                denominator_unit:  None,
+                denominator_level: None,
             },
         );
     }
@@ -29582,6 +29616,14 @@ fn build_smart_summary_choropleth_panels(
     //
     // Precedence: the --denominator-key FLAG outranks the dictionary hint. A flag is the user
     // speaking now; the hint is the sidecar speaking from whenever it was written.
+    // Set alongside `denom_source` below when a DICTIONARY-HINT denominator's geographic level
+    // could not be verified (issue #4526). Carries the column name for the subtitle.
+    //
+    // Scoped to the hint deliberately. `--denominator` / `--denominator-key` are the user naming a
+    // column at invocation time and have nowhere to declare a level, so the caveat could never be
+    // satisfied there, only tolerated; `Census` knows its level by construction, being fetched by
+    // FIPS at the region's own layer.
+    let mut level_caveat: Option<String> = None;
     let denom_source: Option<DenominatorSource> = match (denom_flag, &hints[ci]) {
         // `--denominator census` outranks both: it is the user naming a source qsv fetches, which
         // neither the boundary file nor the dictionary can be speaking about (issue #4395)
@@ -29601,7 +29643,40 @@ fn build_smart_summary_choropleth_panels(
             None
         },
         (None, Some((name, Ok(idx)))) => {
-            if let Some(region) = &denom_conflict[ci] {
+            // The declared geographic level (issue #4526), checked BEFORE the data-derived checks
+            // below: it is the only one in this arm that needs no row pass, and when a sidecar
+            // fails both, the declaration is the root cause.
+            //
+            // First WITHIN this arm, not first overall — a hint naming a column that does not
+            // exist is reported by the `Err(reason)` arm above and never arrives here. That is
+            // right: a level declared against a missing column is not the useful fact.
+            //
+            // `Some((declared, region))` means BOTH sides resolved to a known areal unit, which is
+            // the only state in which a disagreement means anything. `None` covers both "no level
+            // declared" and "a side does not resolve" — a lenient `geo.fips` region alias, say,
+            // which may be a state, county, place or tract code. Those have NO answer, and
+            // asserting one would be the granularity inference this issue exists to refuse, so
+            // they fall through to the caveat rather than to a skip.
+            let declared_level = col_sems[region_idx].denominator_level.as_deref();
+            let region_concept = col_sems[region_idx].concept.as_str();
+            let levels = declared_level
+                .and_then(|d| Some((geo_level_class(d)?, geo_level_class(region_concept)?)));
+            if let Some((declared_class, region_class)) = levels
+                && declared_class != region_class
+            {
+                let declared = declared_level.unwrap_or_default();
+                viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.denominator_invalid",
+                    q_col = name,
+                    q_reason = format!(
+                        "it declares geographic level '{declared}', but the region column is \
+                         '{region_concept}' — a denominator must describe the same areas the map \
+                         is keyed by"
+                    )
+                );
+                None
+            } else if let Some(region) = &denom_conflict[ci] {
                 viz_skip_note!(
                     VIZ_SMART_PREFIX,
                     "viz.omit.denominator_invalid",
@@ -29648,6 +29723,13 @@ fn build_smart_summary_choropleth_panels(
                     );
                     None
                 } else {
+                    // The panel draws. If the level could not be verified above, say so in the
+                    // subtitle: absence of a declaration is not evidence of a mismatch, so it must
+                    // not cost the panel — but the harm this issue records is not the wrong
+                    // number, it is an empty stderr beside a confident map.
+                    if levels.is_none() {
+                        level_caveat = Some(name.clone());
+                    }
                     Some(DenominatorSource::Column(*idx))
                 }
             }
@@ -29750,9 +29832,20 @@ fn build_smart_summary_choropleth_panels(
                 hover,
                 title,
             );
+            // These two are mutually exclusive BY CONSTRUCTION, so neither needs to compose with
+            // the other and there is deliberately no join here: `census_provenance` is `Some` only
+            // for `DenominatorSource::Census`, while `level_caveat` is set only on the
+            // dictionary-hint `Column` path. A join over a set that can never hold two elements
+            // would be inventing a case to maintain. If a future source can set both, THAT change
+            // owns building the composition — the count panel's `auto_boundary_notes` join below
+            // is the pattern to follow when it does.
             if let Some(provenance) = census_provenance.take() {
                 rate_panel = rate_panel.with_subtitle(Some(
                     t!("viz.notes.denominator_provenance", q_source = provenance).into_owned(),
+                ));
+            } else if let Some(col) = level_caveat.take() {
+                rate_panel = rate_panel.with_subtitle(Some(
+                    t!("viz.notes.denominator_level_unverified", q_col = col).into_owned(),
                 ));
             }
             out.push(rate_panel);
@@ -31814,6 +31907,78 @@ fn is_region_concept(concept: &str) -> bool {
         },
         _ => false,
     }
+}
+
+/// The geographic LEVEL a `geo.*` concept names — the areal unit, independent of how that unit is
+/// ENCODED (issue #4526).
+///
+/// `geo.county` and `geo.county_fips` name the same geography and differ only in whether the
+/// column holds a name or a FIPS code, so a per-county denominator declared as one must compare
+/// equal to a region column tagged the other. `geo.state`/`geo.state_fips`,
+/// `geo.city`/`geo.place_fips` and `geo.country`/`geo.country_code` are the same pair-of-encodings
+/// relationship.
+///
+/// ⛔ `geo.zip_code` and `geo.zcta` are deliberately NOT such a pair, and merging them would undo
+/// the split issue #4524 made on purpose: a ZIP is a mail-delivery ROUTE set and a ZCTA is a
+/// TABULATION area. PO-box and point ZIPs have no ZCTA at all, and the boundaries differ where
+/// they do correspond. The cost of keeping them apart is that a sidecar declaring one against a
+/// region column tagged the other loses its rate panel — which is the safe direction: a skip
+/// falls back to raw counts with a caveat, a wrong rate does not announce itself.
+///
+/// Returns `None` for anything whose level is not determinable, and the callers MUST treat that as
+/// "no answer" rather than "mismatch". Two kinds of input land there:
+///
+/// * `geo.fips` — a lenient alias in [`REGION_CODE_LEAVES`] for hand-curated dictionaries. A bare
+///   FIPS code may be a state, county, place or tract code; guessing which is exactly the
+///   granularity inference this issue exists to refuse.
+/// * every `geo.*` that names a POINT or a record rather than an area (`geo.latitude`,
+///   `geo.street_address`, `geo.timezone`, `geo.geonames_id`, …), plus any unknown token.
+///
+/// The two sides of the comparison this feeds draw on DIFFERENT vocabularies, and the difference is
+/// intentional. The REGION side is a sidecar concept accepted by [`is_region_concept`], so the
+/// lenient aliases (`geo.zip`, `geo.postal_code`, `geo.town`, `geo.municipality`) are reachable
+/// there and are mapped here. The DECLARED-LEVEL side comes from describegpt, which validates
+/// against `DENOMINATOR_REGION_CONCEPTS` — 11 canonical `CONCEPT_VOCAB` tokens, no aliases — so a
+/// derived level can never be one of those. This map covers both because a HAND-authored sidecar
+/// may write either. ⛔ Do not "fix" the asymmetry by adding the aliases to
+/// `DENOMINATOR_REGION_CONCEPTS`: `denominator_region_concepts_are_all_in_concept_vocab` requires
+/// every member of that list to be in `CONCEPT_VOCAB`, and the aliases are not.
+///
+/// ASCII-case-folds, unlike [`is_region_concept`], which only trims. describegpt lowercases these
+/// tokens at parse so a DERIVED sidecar always arrives folded, but a hand-edited one need not — and
+/// two arms reading the same vocabulary must fold the same way or one silently rejects what the
+/// other accepts. Folding here is strictly wider than the caller needs and never turns a
+/// non-mismatch into a mismatch. Widening `is_region_concept` to match is a separate change.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum GeoLevelClass {
+    Zip,
+    Zcta,
+    CensusTract,
+    County,
+    State,
+    Place,
+    Country,
+}
+
+fn geo_level_class(concept: &str) -> Option<GeoLevelClass> {
+    // Fold BEFORE stripping, so an upper-cased namespace (`GEO.STATE`) strips too. Stripping first
+    // would require the prefix to be lower-case already, which is the very assumption a
+    // hand-edited sidecar breaks.
+    let leaf = concept
+        .trim()
+        .to_ascii_lowercase()
+        .strip_prefix("geo.")?
+        .to_string();
+    Some(match leaf.as_str() {
+        "zip_code" | "zip" | "postal_code" => GeoLevelClass::Zip,
+        "zcta" => GeoLevelClass::Zcta,
+        "census_tract" => GeoLevelClass::CensusTract,
+        "county" | "county_fips" => GeoLevelClass::County,
+        "state" | "state_fips" => GeoLevelClass::State,
+        "city" | "place_fips" | "town" | "municipality" => GeoLevelClass::Place,
+        "country" | "country_code" => GeoLevelClass::Country,
+        _ => return None,
+    })
 }
 
 /// The NEAREST ENCLOSING region column a REGION-LEVEL measure is constant within, or `None`
@@ -42946,6 +43111,104 @@ mod tests {
         // measure — which is why #4524's other two concepts stay out of the leaf lists.
         assert!(!is_region_concept("geo.timezone"));
         assert!(!is_region_concept("geo.geonames_id"));
+    }
+
+    /// The four encoding PAIRS (issue #4526). A geography named two ways is one level, and a
+    /// denominator declared as either form must compare equal to a region column tagged the other
+    /// — otherwise a correct per-county denominator loses its rate panel whenever the region
+    /// column happens to be FIPS-coded.
+    #[test]
+    fn geo_level_class_unifies_the_name_and_code_forms_of_one_geography() {
+        for (name_form, code_form) in [
+            ("geo.county", "geo.county_fips"),
+            ("geo.state", "geo.state_fips"),
+            ("geo.city", "geo.place_fips"),
+            ("geo.country", "geo.country_code"),
+        ] {
+            let (a, b) = (geo_level_class(name_form), geo_level_class(code_form));
+            assert!(a.is_some(), "{name_form} must resolve to a level");
+            assert_eq!(a, b, "{name_form} and {code_form} name the SAME geography");
+        }
+        // ... and the four levels are distinct from each other, or the equality above would be
+        // satisfied by a map that collapses everything into one class and verifies nothing.
+        let classes = [
+            geo_level_class("geo.county"),
+            geo_level_class("geo.state"),
+            geo_level_class("geo.city"),
+            geo_level_class("geo.country"),
+        ];
+        for (i, a) in classes.iter().enumerate() {
+            for b in &classes[i + 1..] {
+                assert_ne!(a, b, "distinct geographies must not share a level class");
+            }
+        }
+    }
+
+    /// ⛔ The one pair that looks equivalent and is NOT. Issue #4524 split `geo.zip_code` from
+    /// `geo.zcta` deliberately — a ZIP is a mail-delivery ROUTE set, a ZCTA is a TABULATION area,
+    /// PO-box and point ZIPs have no ZCTA at all — and merging them here would quietly undo that.
+    /// The cost is accepted and documented on `geo_level_class`: a sidecar declaring one against a
+    /// region tagged the other loses its rate panel, which is the safe direction.
+    #[test]
+    fn geo_level_class_keeps_zip_and_zcta_apart() {
+        let zip = geo_level_class("geo.zip_code");
+        let zcta = geo_level_class("geo.zcta");
+        assert!(zip.is_some() && zcta.is_some(), "both must resolve");
+        assert_ne!(zip, zcta, "a ZCTA is not a ZIP code — see issue #4524");
+        // the lenient mailing-ZIP aliases follow `zip_code`, NOT `zcta`
+        assert_eq!(geo_level_class("geo.zip"), zip);
+        assert_eq!(geo_level_class("geo.postal_code"), zip);
+    }
+
+    /// `None` means "no answer", never "mismatch" — the callers must not read it as disagreement.
+    /// `geo.fips` is the case that makes this load-bearing: it is a lenient alias in
+    /// `REGION_CODE_LEAVES` for hand-curated dictionaries, and a bare FIPS code may be a state,
+    /// county, place or tract code. Deciding which is precisely the granularity inference issue
+    /// #4526 refuses.
+    #[test]
+    fn geo_level_class_refuses_to_guess_an_ambiguous_or_pointlike_geo_token() {
+        assert!(
+            is_region_concept("geo.fips"),
+            "fixture check: `geo.fips` must still be an accepted REGION concept, or this test \
+             proves nothing about the ambiguous case"
+        );
+        assert_eq!(geo_level_class("geo.fips"), None, "state? county? tract?");
+        // names a POINT or a record, not an area
+        for pointlike in [
+            "geo.latitude",
+            "geo.longitude",
+            "geo.coordinate_pair",
+            "geo.street_address",
+            "geo.timezone",
+            "geo.geonames_id",
+            "geo.ip_address",
+        ] {
+            assert_eq!(
+                geo_level_class(pointlike),
+                None,
+                "{pointlike} is not an area"
+            );
+        }
+        // not a geo concept at all
+        assert_eq!(geo_level_class("measure.population"), None);
+        assert_eq!(geo_level_class(""), None);
+        assert_eq!(
+            geo_level_class("county"),
+            None,
+            "the `geo.` prefix is required"
+        );
+    }
+
+    /// Unlike `is_region_concept`, which only trims. describegpt lowercases these tokens at parse,
+    /// so a DERIVED sidecar always arrives folded — but a hand-edited one need not, and two arms
+    /// reading the same vocabulary must fold the same way (roborev 4622).
+    #[test]
+    fn geo_level_class_folds_case_and_trims() {
+        let want = geo_level_class("geo.state");
+        assert!(want.is_some());
+        for spelling in ["GEO.STATE", "Geo.State", "  geo.state  ", "geo.STATE_FIPS"] {
+            assert_eq!(geo_level_class(spelling), want, "{spelling}");
+        }
     }
 
     #[test]

@@ -19442,12 +19442,19 @@ fn viz_smart_single_value_denominator_still_fires_when_a_region_is_excluded() {
 }
 
 // The BOUNDARY of the check above, and the reason it is deliberately partial. Four regions
-// carrying two distinct STATE populations is the verified repro on issue #4526 — a real
-// coarse-geography bug that stays OPEN and silent. `D == 1` does not fire on it, and this test
-// exists to stop a future reviewer "finishing the job" by generalizing the check into a ratio:
-// that form was investigated on #4526 and disproved with measured data, because a legitimate
-// per-city denominator scores 0.227 while this bug scores 0.500 — the classes are inverted and no
-// threshold separates them.
+// carrying two distinct STATE populations is the verified repro on issue #4526, and `D == 1` does
+// not fire on it. This test exists to stop a future reviewer "finishing the job" by generalizing
+// the check into a ratio: that form was investigated on #4526 and disproved with measured data,
+// because a legitimate per-city denominator scores 0.227 while this bug scores 0.500 — the classes
+// are inverted and no threshold separates them.
+//
+// What #4526 changed, and what it did NOT: this fixture's sidecar declares no
+// `x-qsv.denominator.level`, so the rate panel is now CAVEATED (its subtitle says the geographic
+// level is unverified) but still drawn — an undeclared level is not evidence of a mismatch. The
+// bug is therefore disclosed rather than silent. It is refused outright only once the level is
+// DECLARED and disagrees, which is
+// `viz_smart_mismatched_denominator_level_skips_the_rate_panel`. The assertions below are about
+// the degeneracy check's boundary and are unaffected either way.
 #[test]
 fn viz_smart_two_value_denominator_still_rates_the_coarse_geography_repro() {
     let wrk =
@@ -19492,6 +19499,182 @@ fn viz_smart_two_value_denominator_still_rates_the_coarse_geography_repro() {
     assert!(
         !html.contains("add --denominator-key for a rate"),
         "the count panel must NOT fall back to its raw-count caveat — a rate was charted: {html}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// issue #4526: a denominator declared from a COARSER geography than the region key.
+//
+// A state population is constant within each of its counties and is positive, so it passes every
+// data-derived check honestly while dividing county counts by state populations. No count-derived
+// rule separates the classes -- three have been tried and reviewed as defects -- so the level is
+// DECLARED (`x-qsv.denominator.level`, produced by describegpt in issue #4571) and compared
+// against the region column's own concept.
+// ---------------------------------------------------------------------------
+
+/// `denom_dictionary` with the region column's own concept and the denominator's declared
+/// geographic level both parameterized. A separate builder rather than more parameters on
+/// `denom_dictionary`: that one has ten callers, and widening its signature would edit ten tests
+/// to say nothing new.
+fn denom_dictionary_leveled(region_concept: &str, level: Option<&str>) -> String {
+    let level = level.map_or(String::new(), |l| format!(r#", "level": "{l}""#));
+    format!(
+        r#"{{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object",
+ "x-qsv":{{"grain_unit":"service request"}},
+ "properties":{{
+   "region":{{"type":"string","title":"Region","x-qsv":{{"concept":"{region_concept}","role":"dimension", "denominator": {{"column": "pop"{level}}}}}}},
+   "pop":{{"type":"integer","title":"Population","x-qsv":{{"concept":"measure.count","role":"measure","qsv_type":"Integer"}}}}
+ }}}}"#
+    )
+}
+
+/// Part (a): a hint that declares no level still charts -- absence of a declaration is not
+/// evidence of a mismatch -- but the panel says so. The harm this issue records is not the wrong
+/// number, it is an empty stderr beside a confident map.
+#[test]
+fn viz_smart_undeclared_denominator_level_is_caveated() {
+    let wrk = Workdir::new("viz_smart_undeclared_denominator_level_is_caveated");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    // `denom_dictionary(true)` carries `{"column": "pop"}` with no `level` -- the shape of every
+    // sidecar written before issue #4571
+    wrk.create_from_string("d.schema.json", &denom_dictionary(true));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("service request per 1,000 residents by Region"),
+        "the rate panel still draws -- an undeclared level must not cost it: {html}"
+    );
+    assert!(
+        html.contains("geographic level is unverified"),
+        "the rate panel must disclose that the level was never checked: {html}"
+    );
+}
+
+/// The other side of (a): a level that matches the region column leaves the panel clean. Without
+/// this, the caveat assertion above would pass just as well against code that caveats every rate
+/// panel unconditionally.
+#[test]
+fn viz_smart_matching_denominator_level_renders_without_a_caveat() {
+    let wrk = Workdir::new("viz_smart_matching_denominator_level_renders_without_a_caveat");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string(
+        "d.schema.json",
+        &denom_dictionary_leveled("geo.zip_code", Some("geo.zip_code")),
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("service request per 1,000 residents by Region"),
+        "rate panel: {html}"
+    );
+    assert!(
+        !html.contains("geographic level is unverified"),
+        "a level that matches the region is verified -- no caveat belongs here: {html}"
+    );
+}
+
+/// Part (b), and THE ISSUE'S OWN REPRO: county-shaped regions whose denominator is declared at
+/// state level. The rate panel is refused rather than drawn wrong, and the count panel falls back
+/// to its "add a flag" caveat because no rate was charted.
+#[test]
+fn viz_smart_mismatched_denominator_level_skips_the_rate_panel() {
+    let wrk = Workdir::new("viz_smart_mismatched_denominator_level_skips_the_rate_panel");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string(
+        "d.schema.json",
+        &denom_dictionary_leveled("geo.zip_code", Some("geo.state")),
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success(), "a bad hint never fails the run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("it declares geographic level 'geo.state'"),
+        "the skip note must name the declared level: {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains("per 1,000 residents"),
+        "the rate panel must NOT be drawn: {html}"
+    );
+    assert!(
+        html.contains("add --denominator-key for a rate"),
+        "no rate was charted, so the count panel takes its raw-count caveat: {html}"
+    );
+}
+
+/// The POSITIVE-MISMATCH invariant, and the assertion that stops this becoming the fourth failed
+/// granularity inference. `geo.fips` is a lenient region alias for hand-curated dictionaries and a
+/// bare FIPS code may be a state, county, place or tract code -- so the comparison has NO answer,
+/// and "no answer" must degrade to the caveat, never to a refusal.
+#[test]
+fn viz_smart_ambiguous_region_level_caveats_rather_than_skipping() {
+    let wrk = Workdir::new("viz_smart_ambiguous_region_level_caveats_rather_than_skipping");
+    wrk.create_from_string("rg.csv", &denom_csv());
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string(
+        "d.schema.json",
+        &denom_dictionary_leveled("geo.fips", Some("geo.state")),
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("it declares geographic level"),
+        "an unresolvable region level is not a mismatch and must not be reported as one: {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("per 1,000 residents"),
+        "the rate panel still draws: {html}"
+    );
+    assert!(
+        html.contains("geographic level is unverified"),
+        "...but unverified, which is exactly what the caveat says: {html}"
     );
 }
 

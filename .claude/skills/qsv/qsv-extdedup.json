@@ -16,7 +16,7 @@
         "name": "output",
         "type": "string",
         "required": false,
-        "description": "Output file, in the same format as the input. If not specified, writes to stdout."
+        "description": "Output file. If not specified, writes to stdout. In CSV MODE the output delimiter comes from this filename's extension, NOT from the input's - a .tsv input written to a .csv path becomes comma-delimited, and stdout uses QSV_DEFAULT_DELIMITER (\",\" by default). In LINE MODE the input lines are written through unchanged."
       }
     ],
     "options": [

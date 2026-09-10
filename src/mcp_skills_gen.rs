@@ -751,8 +751,14 @@ impl UsageParser {
                 "Input CSV file - or any text file when --select is not set (LINE MODE). If not \
                  specified, reads from stdin."
             },
+            // CSV MODE takes the output delimiter from THIS path's extension
+            // (`Config::new(arg_output)`), not from the input's, so the output
+            // format does not necessarily match the input's (roborev 4649).
             ("extsort" | "extdedup", "output") => {
-                "Output file, in the same format as the input. If not specified, writes to stdout."
+                "Output file. If not specified, writes to stdout. In CSV MODE the output delimiter \
+                 comes from this filename's extension, NOT from the input's - a .tsv input written \
+                 to a .csv path becomes comma-delimited, and stdout uses QSV_DEFAULT_DELIMITER \
+                 (\",\" by default). In LINE MODE the input lines are written through unchanged."
             },
             _ => return None,
         })
@@ -2250,7 +2256,15 @@ mod tests {
         // extsort/extdedup keep CSV but must not claim it is the only option
         for cmd in ["extsort", "extdedup"] {
             assert!(d(cmd, "input").contains("LINE MODE"), "{cmd}");
-            assert!(!d(cmd, "output").contains("CSV"), "{cmd}");
+            // the output format is NOT necessarily the input's - in CSV MODE the
+            // delimiter comes from the output path's extension (roborev 4649)
+            let output = d(cmd, "output");
+            assert!(
+                !output.contains("same format as the input"),
+                "{cmd}: {output}"
+            );
+            assert!(output.contains("NOT from the input"), "{cmd}: {output}");
+            assert!(output.contains("LINE MODE"), "{cmd}: {output}");
         }
 
         // unlisted pairs fall through to the generic description

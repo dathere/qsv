@@ -36,7 +36,7 @@ jobs:
             os-name: linux
             target: x86_64-unknown-linux-gnu
             architecture: x86_64
-            addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,to,python,lens,prompt,magika,color,viz_static,viz,profile,synthesize
+            addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,readstat,to,python,lens,prompt,magika,color,viz_static,viz,profile,synthesize
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
@@ -54,7 +54,7 @@ jobs:
             architecture: x86_64
             # viz_static deliberately absent on Windows - it does not finish a release
             # build inside the 6h job cap. See Cargo.toml's viz_static note.
-            addl-build-args: --features=apply,luau,fetch,self_update,polars,geocode,to,python,lens,foreach,prompt,magika,color,viz
+            addl-build-args: --features=apply,luau,fetch,self_update,polars,readstat,geocode,to,python,lens,foreach,prompt,magika,color,viz
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:

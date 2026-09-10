@@ -557,12 +557,18 @@ impl UsageParser {
 
                     // qsv's USAGE text describes positionals in prose rather
                     // than in an extractable `<name>  description` line, so
-                    // most of them have none. Fall back to a generic one so
-                    // MCP agents are not left with a bare name. Deliberately
-                    // applied *after* `infer_argument_type` so the synthesized
-                    // wording cannot change an inferred type.
+                    // most of them have none. Fall back to a per-command
+                    // description where the generic one would be wrong (#4581),
+                    // then to the generic one, so MCP agents are not left with
+                    // a bare name. Deliberately applied *after*
+                    // `infer_argument_type` so the synthesized wording cannot
+                    // change an inferred type.
                     let description = if description.is_empty() {
-                        Self::generic_positional_description(&arg_name, required)
+                        Self::command_positional_description(&self.command_name, &arg_name)
+                            .map_or_else(
+                                || Self::generic_positional_description(&arg_name, required),
+                                ToString::to_string,
+                            )
                     } else {
                         description
                     };
@@ -703,6 +709,53 @@ impl UsageParser {
             "Subcommand to execute. Valid values: {}",
             subcommands.join(", ")
         )
+    }
+
+    /// Per-command descriptions for positional arguments whose generic
+    /// fallback (see `generic_positional_description`) would be *wrong* rather
+    /// than merely terse - commands that do not take CSV on that positional,
+    /// or that do not fall back to stdin at all.
+    ///
+    /// Consulted only when the USAGE text itself documents no description, and
+    /// applied *after* `infer_argument_type` for the same reason the generic
+    /// fallback is: the synthesized wording must not be able to change an
+    /// inferred type.
+    ///
+    /// Keyed on `(invocation name, positional)` - note `enumerate` is invoked
+    /// as `enum`, so an override for it must use `enum`.
+    /// `command_positional_overrides_are_live` keeps the keys honest.
+    fn command_positional_description(command: &str, name: &str) -> Option<&'static str> {
+        Some(match (command, name) {
+            // binary statistical-package formats, identified by their file
+            // extension - readstat rejects stdin outright (see src/cmd/readstat.rs),
+            // so the argument is only optional so the command can emit its own
+            // actionable error instead of docopt's generic one.
+            ("readstat", "input") => {
+                "Input SAS (.sas7bdat, .xpt, .xpt5, .xpt8), Stata (.dta) or SPSS (.sav, .zsav, \
+                 .por) file. Required - these are binary formats identified by their file \
+                 extension, so reading from stdin is NOT supported."
+            },
+            ("json", "input") => "Input JSON file. If not specified, reads from stdin.",
+            ("jsonl", "input") => {
+                "Input JSONL/NDJSON (newline-delimited JSON) file. If not specified, reads from \
+                 stdin."
+            },
+            // blake3 hashes arbitrary files, and its positional is variadic
+            // (`[<input>...]`), which the JSON schema has no way to express.
+            ("blake3", "input") => {
+                "File/s to hash - any file type, not just CSV. Multiple paths may be given, \
+                 space-separated. If not specified, or when \"-\" is given, reads from stdin."
+            },
+            // LINE MODE (no --select) works on any text file, not just CSV.
+            ("extsort" | "extdedup", "input") => {
+                "Input CSV file - or any text file when --select is not set (LINE MODE). If not \
+                 specified, reads from stdin."
+            },
+            ("extsort" | "extdedup", "output") => {
+                "Output file, in the same format as the input. If not specified, writes to stdout."
+            },
+            _ => return None,
+        })
     }
 
     /// Generic descriptions for the well-known positional arguments that
@@ -1367,6 +1420,84 @@ fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
 
 /// Public function to generate MCP skills JSON files
 /// Called via `qsv --update-mcp-skills` flag
+/// The curated set of qsv commands exposed as MCP skills, by source-file name.
+/// (`enumerate` is invoked as `enum`; the rename happens at generation time.)
+///
+/// Deliberately curated - see the exclusion notes on `generate_mcp_skills`.
+/// The `(command, positional)` pairs `UsageParser::command_positional_description`
+/// answers for. Kept in sync by hand so `command_positional_overrides_are_live`
+/// can prove every key names a command that is actually generated.
+#[cfg(test)]
+const COMMAND_POSITIONAL_OVERRIDES: &[(&str, &str)] = &[
+    ("readstat", "input"),
+    ("json", "input"),
+    ("jsonl", "input"),
+    ("blake3", "input"),
+    ("extsort", "input"),
+    ("extdedup", "input"),
+    ("extsort", "output"),
+    ("extdedup", "output"),
+];
+
+const MCP_SKILL_COMMANDS: &[&str] = &[
+    "blake3",
+    "cat",
+    "count",
+    "datefmt",
+    "dedup",
+    "describegpt",
+    "diff",
+    "enumerate",
+    "excel",
+    "exclude",
+    "explode",
+    "extdedup",
+    "extsort",
+    "fill",
+    "fixlengths",
+    "fmt",
+    "frequency",
+    "geocode",
+    "headers",
+    "implode",
+    "index",
+    "input",
+    "join",
+    "joinp",
+    "json",
+    "jsonl",
+    "moarstats",
+    "partition",
+    "pivotp",
+    "pragmastat",
+    "pseudo",
+    "readstat",
+    "rename",
+    "replace",
+    "reverse",
+    "safenames",
+    "sample",
+    "schema",
+    "search",
+    "searchset",
+    "select",
+    "slice",
+    "sniff",
+    "sort",
+    "sortcheck",
+    "split",
+    "sqlp",
+    "stats",
+    "synthesize",
+    "table",
+    "template",
+    "to",
+    "tojsonl",
+    "transpose",
+    "validate",
+    "viz",
+];
+
 pub fn generate_mcp_skills() -> CliResult<()> {
     // Get all commands from src/cmd/*.rs (excluding mod.rs and duplicates)
     // Note: "enumerate" command is invoked as "enum" in qsv
@@ -1392,64 +1523,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // - snappy: compression utility not needed for AI agents
     //
     // This list targets commands available in the qsvmcp binary variant.
-    let commands = vec![
-        "blake3",
-        "cat",
-        "count",
-        "datefmt",
-        "dedup",
-        "describegpt",
-        "diff",
-        "enumerate",
-        "excel",
-        "exclude",
-        "explode",
-        "extdedup",
-        "extsort",
-        "fill",
-        "fixlengths",
-        "fmt",
-        "frequency",
-        "geocode",
-        "headers",
-        "implode",
-        "index",
-        "input",
-        "join",
-        "joinp",
-        "json",
-        "jsonl",
-        "moarstats",
-        "partition",
-        "pivotp",
-        "pragmastat",
-        "pseudo",
-        "readstat",
-        "rename",
-        "replace",
-        "reverse",
-        "safenames",
-        "sample",
-        "schema",
-        "search",
-        "searchset",
-        "select",
-        "slice",
-        "sniff",
-        "sort",
-        "sortcheck",
-        "split",
-        "sqlp",
-        "stats",
-        "synthesize",
-        "table",
-        "template",
-        "to",
-        "tojsonl",
-        "transpose",
-        "validate",
-        "viz",
-    ];
+    let commands = MCP_SKILL_COMMANDS;
 
     // Determine repository root - look for Cargo.toml with src/cmd
     // This command must be run from within the qsv repository directory
@@ -1508,7 +1582,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     let mut success_count = 0;
     let mut error_count = 0;
 
-    for cmd_name in &commands {
+    for cmd_name in commands {
         eprintln!("Processing: {cmd_name}");
 
         // Find command file. Support both `src/cmd/<name>.rs` and module-dir
@@ -1865,5 +1939,58 @@ mod tests {
         assert!(UsageParser::generic_positional_description("input", false).contains("stdin"));
         assert!(!UsageParser::generic_positional_description("output", true).contains("stdout"));
         assert!(UsageParser::generic_positional_description("output", false).contains("stdout"));
+    }
+
+    // ------------------------------------------------------------------
+    // #4581 - per-command positional descriptions
+    // ------------------------------------------------------------------
+
+    /// Every command a `command_positional_description` arm is keyed on must
+    /// actually be generated, otherwise the arm is dead and the wrong generic
+    /// fallback ships silently.
+    #[test]
+    fn command_positional_overrides_are_live() {
+        for (cmd, arg) in COMMAND_POSITIONAL_OVERRIDES {
+            // `MCP_SKILL_COMMANDS` holds SOURCE-FILE names while the overrides
+            // are keyed on INVOCATION names, and the two differ for enumerate.
+            // Map here rather than loosening the check - an override written
+            // as `enumerate` would be dead code at generation time.
+            assert!(
+                MCP_SKILL_COMMANDS
+                    .iter()
+                    .any(|c| if *c == "enumerate" { "enum" } else { c } == *cmd),
+                "override keyed on <{arg}> of unknown/ungenerated command `{cmd}`"
+            );
+            assert!(
+                UsageParser::command_positional_description(cmd, arg).is_some(),
+                "no override for `{cmd}` <{arg}> - the match arm and this list have drifted"
+            );
+        }
+    }
+
+    /// The whole point of #4581: these positionals must not be described as
+    /// CSV, and `readstat` must not be described as reading from stdin.
+    #[test]
+    fn command_positional_overrides_correct_the_generic_fallback() {
+        let d = |cmd, arg| UsageParser::command_positional_description(cmd, arg).unwrap();
+
+        let readstat = d("readstat", "input");
+        assert!(!readstat.contains("CSV"), "{readstat}");
+        assert!(readstat.contains("NOT supported"), "{readstat}");
+        assert!(readstat.contains(".sas7bdat"), "{readstat}");
+
+        assert!(d("json", "input").starts_with("Input JSON file."));
+        assert!(d("jsonl", "input").starts_with("Input JSONL/NDJSON"));
+        assert!(!d("blake3", "input").contains("CSV file"));
+
+        // extsort/extdedup keep CSV but must not claim it is the only option
+        for cmd in ["extsort", "extdedup"] {
+            assert!(d(cmd, "input").contains("LINE MODE"), "{cmd}");
+            assert!(!d(cmd, "output").contains("CSV"), "{cmd}");
+        }
+
+        // unlisted pairs fall through to the generic description
+        assert!(UsageParser::command_positional_description("stats", "input").is_none());
+        assert!(UsageParser::command_positional_description("readstat", "output").is_none());
     }
 }

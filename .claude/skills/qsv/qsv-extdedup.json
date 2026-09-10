@@ -10,13 +10,13 @@
         "name": "input",
         "type": "file",
         "required": false,
-        "description": "Input CSV file. If not specified, reads from stdin."
+        "description": "Input CSV file - or any text file when --select is not set (LINE MODE). If not specified, reads from stdin."
       },
       {
         "name": "output",
         "type": "string",
         "required": false,
-        "description": "Output CSV file. If not specified, writes to stdout."
+        "description": "Output file, in the same format as the input. If not specified, writes to stdout."
       }
     ],
     "options": [

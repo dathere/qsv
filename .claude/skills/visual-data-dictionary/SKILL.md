@@ -532,6 +532,13 @@ There is no join to test on this path (rows are binned by geometry), so the ques
 property makes a good **label**. That is a judgement about the boundary file alone, which the
 script below answers.
 
+It mirrors exactly one rule from `viz`: `build_pip_features` skips features without
+Polygon/MultiPolygon geometry, so the script ranks over those features only. Rank over every
+raw feature instead and a skipped point that duplicates an id makes that id look non-unique,
+which reports a file as unkeyable on a key that would have labelled every binned region. That
+one geometry check is the only parity this script needs — the *match tiers* it used to
+reimplement now live behind `--check-geojson-key` above.
+
 It accepts the same **file** source forms `--geojson` does — a local path,
 an `http(s)` URL, or a `QSV_GEOJSON_SHORTCUTS` name. If you only handle local
 paths here, a URL or shortcut fails at discovery even though `viz` would have
@@ -575,6 +582,14 @@ g, resolved, hint = load_geojson(sys.argv[1])
 feats = g.get("features", [])
 if not feats:
     sys.exit("no features")
+# Rank over the features viz will actually BIN. build_pip_features skips anything without
+# Polygon/MultiPolygon geometry, so ranking over every raw feature reports a key as non-unique
+# whenever a skipped point duplicates it - and then declares the file unusable on a key that
+# would have labelled every binned region perfectly.
+feats = [f for f in feats
+         if (f.get("geometry") or {}).get("type") in ("Polygon", "MultiPolygon")]
+if not feats:
+    sys.exit("no Polygon/MultiPolygon features - viz cannot bin rows into this file")
 print(f"source: {resolved}")
 if hint:
     print(f"shortcut supplies --feature-id-key {hint} (override below if you prefer)")
@@ -611,7 +626,7 @@ def show(title, rows):
     for key, sample in rows:
         print(f"  {key:<32} e.g. {sample}")
 
-print(f"{len(feats)} features")
+print(f"{len(feats)} usable (polygon) features")
 
 show("RECOMMENDED feature-id-key (unique, meaningful):", good)
 show("Unique but geometry/bookkeeping - avoid:", other)

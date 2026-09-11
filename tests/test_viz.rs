@@ -20300,3 +20300,39 @@ fn viz_check_geojson_key_requires_concrete_source() {
         "{got}"
     );
 }
+
+// Both the USAGE text and the refusal message promise the mode on `viz smart` as well as
+// `viz choropleth`, so the smart path with a CONCRETE --geojson must actually reach the check
+// (only the `auto` refusal is covered above).
+#[test]
+fn viz_check_geojson_key_works_on_smart() {
+    let wrk = Workdir::new("viz_check_geojson_key_works_on_smart");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","id":"A","properties":{"name":"A"},
+           "geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+          {"type":"Feature","id":"B","properties":{"name":"B"},
+           "geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--check-geojson-key",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let report = String::from_utf8_lossy(&out.stdout);
+    // the sweep ran and ranked, rather than falling through to dashboard rendering
+    assert!(report.contains("2/2 100.0%  id"), "{report}");
+    assert!(report.contains("Use: --feature-id-key id"), "{report}");
+    // check mode short-circuits BEFORE any plotting work
+    assert!(!report.contains("plotly"), "{report}");
+}

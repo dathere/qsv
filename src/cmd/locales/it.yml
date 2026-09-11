@@ -348,6 +348,14 @@ viz:
     panels_intro_body: "Ogni pannello è stato scelto per adattarsi ai dati della sua colonna. I prossimi passi spiegano le scelte fatte per questo dataset."
     conclusion_title: "Il tour finisce qui"
     conclusion_body: "Riavvialo quando vuoi con il pulsante Tour in cima alla pagina. Buona esplorazione!"
+    # First-visit beacon hints on the page pills (rendered by the hints widget).
+    hint_button: "Ho capito"
+    hint_dict_title: "Il tuo Data Schematic"
+    hint_dict_body: "Il pannello del dizionario documenta ogni colonna - significato, tipo, intervallo e come è stata classificata - oltre ai file scaricabili."
+    hint_tour_title: "Rifai il tour"
+    hint_tour_body: "Riavvia quando vuoi la visita guidata di questa pagina da qui."
+    hint_data_title: "Vedi le righe"
+    hint_data_body: "Apri il visualizzatore dati per cercare, filtrare ed esportare le righe dietro questi grafici."
     explain:
       kpi: "Queste tessere KPI aprono il Data Schematic con le sue cifre principali — numero di record e di campi, completezza e le misure di spicco."
       box: "%{q_col} è una colonna numerica continua, quindi la sua distribuzione è disegnata come box plot dai suoi quartili — la scatola è la metà centrale dei valori."
@@ -376,6 +384,7 @@ viz:
       animated_geo: "I punti mappati sono datati, quindi la mappa è animata — premi Play per vedere gli eventi accumularsi sulla mappa nel tempo."
       animated_bubble: "Ogni bolla è una categoria che traccia il suo percorso attraverso due misure nel tempo — premi Play per far partire l'orologio."
       log_axis: "Il suo asse dei valori è logaritmico, perché i valori coprono diversi ordini di grandezza."
+      log_axis_count: "Il suo asse dei conteggi è logaritmico, perché i conteggi delle categorie coprono diversi ordini di grandezza."
       sampled: "Disegnato da un campione deterministico delle righe, per restare reattivo."
     meta_heading: "Narrazione del tour"
     meta_audience: "Pubblico:"

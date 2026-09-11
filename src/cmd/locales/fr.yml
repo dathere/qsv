@@ -348,6 +348,14 @@ viz:
     panels_intro_body: "Chaque panneau a été choisi pour s'adapter aux données de sa colonne. Les étapes suivantes expliquent les choix faits pour ce jeu de données."
     conclusion_title: "Fin de la visite"
     conclusion_body: "Relancez-la à tout moment avec le bouton Visite en haut de la page. Bonne exploration !"
+    # First-visit beacon hints on the page pills (rendered by the hints widget).
+    hint_button: "Compris"
+    hint_dict_title: "Votre Data Schematic"
+    hint_dict_body: "Le panneau du dictionnaire documente chaque colonne - sa signification, son type, son étendue et son classement - ainsi que les fichiers associés à télécharger."
+    hint_tour_title: "Refaire la visite"
+    hint_tour_body: "Relancez à tout moment la visite guidée de cette page depuis ici."
+    hint_data_title: "Voir les lignes"
+    hint_data_body: "Ouvrez la visionneuse de données pour rechercher, filtrer et exporter les lignes derrière ces graphiques."
     explain:
       kpi: "Ces vignettes KPI ouvrent le Data Schematic avec ses chiffres clés : nombre d'enregistrements et de champs, complétude et mesures marquantes."
       box: "%{q_col} est une colonne numérique continue : sa distribution est dessinée en boîte à moustaches à partir de ses quartiles — la boîte est la moitié centrale des valeurs."
@@ -376,6 +384,7 @@ viz:
       animated_geo: "Les points cartographiés sont datés : la carte est animée — appuyez sur Lecture pour voir les événements s'accumuler sur la carte au fil du temps."
       animated_bubble: "Chaque bulle est une catégorie traçant son chemin à travers deux mesures au fil du temps — appuyez sur Lecture pour lancer l'horloge."
       log_axis: "Son axe des valeurs est logarithmique, car les valeurs couvrent plusieurs ordres de grandeur."
+      log_axis_count: "Son axe des effectifs est logarithmique, car les effectifs des catégories couvrent plusieurs ordres de grandeur."
       sampled: "Dessiné à partir d'un échantillon déterministe des lignes, pour rester réactif."
     meta_heading: "Narration de la visite"
     meta_audience: "Public :"

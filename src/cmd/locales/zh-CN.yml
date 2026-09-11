@@ -353,6 +353,14 @@ viz:
     panels_intro_body: "每个面板都是为其列的数据量身挑选的。接下来的步骤将解释针对此数据集所做的选择。"
     conclusion_title: "导览到此结束"
     conclusion_body: "随时可通过页面顶部的导览按钮重新开始。祝您探索愉快!"
+    # First-visit beacon hints on the page pills (rendered by the hints widget).
+    hint_button: "知道了"
+    hint_dict_title: "您的 Data Schematic"
+    hint_dict_body: "字典面板记录了每一列的含义、类型、取值范围及其分类方式,并提供可下载的附属文件。"
+    hint_tour_title: "再看一次导览"
+    hint_tour_body: "可随时从这里重新播放本页的导览。"
+    hint_data_title: "查看数据行"
+    hint_data_body: "打开数据查看器,可搜索、筛选并导出这些图表背后的数据行。"
     explain:
       kpi: "这些 KPI 磁贴以核心数字领衔 Data Schematic — 记录数与字段数、完整度,以及最突出的度量。"
       box: "%{q_col} 是连续数值列,因此其分布由四分位数绘制为箱线图 — 箱体是数值的中间一半。"
@@ -381,6 +389,7 @@ viz:
       animated_geo: "地图上的点带有日期,因此地图是动画的 — 按播放键可观看事件随时间在地图上累积。"
       animated_bubble: "每个气泡是一个类别,随时间在两个度量之间描绘自己的轨迹 — 按播放键让时钟转动。"
       log_axis: "其数值轴为对数刻度,因为数值跨越多个数量级。"
+      log_axis_count: "其计数轴为对数刻度,因为各类别的计数跨越多个数量级。"
       sampled: "为保持流畅,由行的确定性抽样绘制。"
     meta_heading: "导览解说"
     meta_audience: "目标读者:"

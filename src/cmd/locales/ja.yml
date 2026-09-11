@@ -346,6 +346,14 @@ viz:
     panels_intro_body: "各パネルは、その列のデータに合わせて選ばれています。次のステップで、このデータセットに対する選択理由を説明します。"
     conclusion_title: "ツアーは以上です"
     conclusion_body: "ページ上部のツアーボタンからいつでも再開できます。探索をお楽しみください!"
+    # First-visit beacon hints on the page pills (rendered by the hints widget).
+    hint_button: "了解"
+    hint_dict_title: "Data Schematic"
+    hint_dict_body: "辞書パネルには、各列の意味・型・値の範囲・分類方法に加え、ダウンロード可能な付随ファイルがまとめられています。"
+    hint_tour_title: "ツアーをもう一度"
+    hint_tour_body: "このページのガイドツアーは、ここからいつでも再生できます。"
+    hint_data_title: "行データを見る"
+    hint_data_body: "データビューアーを開くと、グラフの元になっている行を検索・絞り込み・エクスポートできます。"
     explain:
       kpi: "これらの KPI タイルは、レコード数・フィールド数・完全性・主要なメジャーといった要となる数値で Data Schematic の先頭を飾ります。"
       box: "%{q_col} は連続的な数値列なので、その分布を四分位数から箱ひげ図として描いています。箱は値の中央半分です。"
@@ -374,6 +382,7 @@ viz:
       animated_geo: "地図上の点には日付があるため、地図をアニメーションにしました。Play を押すと、出来事が時間とともに地図上へ積み重なります。"
       animated_bubble: "各バブルはひとつのカテゴリで、2 つのメジャーの間を時間とともに移動します。Play で時計を回してください。"
       log_axis: "値が数桁にわたるため、値軸は対数です。"
+      log_axis_count: "カテゴリの件数が数桁にわたるため、件数軸は対数です。"
       sampled: "応答性を保つため、行の決定的なサンプルから描いています。"
     meta_heading: "ツアーのナレーション"
     meta_audience: "対象読者:"

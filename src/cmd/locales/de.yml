@@ -348,6 +348,14 @@ viz:
     panels_intro_body: "Jedes Panel wurde passend zu den Daten seiner Spalte gewählt. Die nächsten Schritte erklären die Entscheidungen für diesen Datensatz."
     conclusion_title: "Das war die Tour"
     conclusion_body: "Starten Sie sie jederzeit neu über den Tour-Button oben auf der Seite. Viel Freude beim Erkunden!"
+    # First-visit beacon hints on the page pills (rendered by the hints widget).
+    hint_button: "Verstanden"
+    hint_dict_title: "Ihr Data Schematic"
+    hint_dict_body: "Die Wörterbuch-Leiste dokumentiert jede Spalte - Bedeutung, Typ, Wertebereich und Klassifizierung - samt herunterladbarer Begleitdateien."
+    hint_tour_title: "Tour erneut starten"
+    hint_tour_body: "Starten Sie die geführte Tour dieser Seite jederzeit von hier aus neu."
+    hint_data_title: "Die Zeilen ansehen"
+    hint_data_body: "Öffnen Sie den Datenbetrachter, um die Zeilen hinter diesen Diagrammen zu durchsuchen, zu filtern und zu exportieren."
     explain:
       kpi: "Diese KPI-Kacheln eröffnen das Data Schematic mit seinen Kernzahlen — Datensatz- und Feldzahl, Vollständigkeit und den herausragenden Kennzahlen."
       box: "%{q_col} ist eine kontinuierliche numerische Spalte, daher wird ihre Verteilung als Boxplot aus ihren Quartilen gezeichnet — die Box ist die mittlere Hälfte der Werte."
@@ -376,6 +384,7 @@ viz:
       animated_geo: "Die kartierten Punkte sind datiert, daher ist die Karte animiert — mit Play sehen Sie die Ereignisse sich über die Zeit auf der Karte ansammeln."
       animated_bubble: "Jede Blase ist eine Kategorie, die ihren Weg durch zwei Kennzahlen über die Zeit zieht — mit Play läuft die Uhr."
       log_axis: "Ihre Werteachse ist logarithmisch, weil die Werte mehrere Größenordnungen umspannen."
+      log_axis_count: "Ihre Anzahlachse ist logarithmisch, weil die Kategorienhäufigkeiten mehrere Größenordnungen umspannen."
       sampled: "Aus einer deterministischen Stichprobe der Zeilen gezeichnet, um reaktionsschnell zu bleiben."
     meta_heading: "Tour-Erzählung"
     meta_audience: "Zielgruppe:"

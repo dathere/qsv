@@ -354,6 +354,14 @@ viz:
     panels_intro_body: "Cada painel foi escolhido para se ajustar aos dados de sua coluna. Os próximos passos explicam as escolhas feitas para este conjunto de dados."
     conclusion_title: "Fim do tour"
     conclusion_body: "Reinicie-o quando quiser pelo botão Tour no topo da página. Boa exploração!"
+    # First-visit beacon hints on the page pills (rendered by the hints widget).
+    hint_button: "Entendi"
+    hint_dict_title: "Seu Data Schematic"
+    hint_dict_body: "O painel do dicionário documenta cada coluna - significado, tipo, intervalo e como foi classificada - além de arquivos para download."
+    hint_tour_title: "Refazer o tour"
+    hint_tour_body: "Reinicie quando quiser o tour guiado desta página a partir daqui."
+    hint_data_title: "Ver as linhas"
+    hint_data_body: "Abra o visualizador de dados para pesquisar, filtrar e exportar as linhas por trás destes gráficos."
     explain:
       kpi: "Estes cartões de KPI abrem o Data Schematic com seus números principais — contagens de registros e campos, completude e as medidas de destaque."
       box: "%{q_col} é uma coluna numérica contínua, então sua distribuição é desenhada como box plot a partir dos quartis — a caixa é a metade central dos valores."
@@ -382,6 +390,7 @@ viz:
       animated_geo: "Os pontos mapeados têm data, então o mapa é animado — aperte Play para ver os eventos se acumularem no mapa ao longo do tempo."
       animated_bubble: "Cada bolha é uma categoria traçando seu caminho por duas medidas ao longo do tempo — aperte Play para rodar o relógio."
       log_axis: "Seu eixo de valores é logarítmico, porque os valores abrangem várias ordens de grandeza."
+      log_axis_count: "Seu eixo de contagens é logarítmico, porque as contagens das categorias abrangem várias ordens de grandeza."
       sampled: "Desenhado a partir de uma amostra determinística das linhas, para manter a fluidez."
     meta_heading: "Narração do tour"
     meta_audience: "Público:"

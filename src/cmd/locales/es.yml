@@ -358,6 +358,14 @@ viz:
     panels_intro_body: "Cada panel se eligió para ajustarse a los datos de su columna. Los siguientes pasos explican las decisiones tomadas para este conjunto de datos."
     conclusion_title: "Fin del recorrido"
     conclusion_body: "Reinícielo cuando quiera con el botón Recorrido en la parte superior de la página. ¡Disfrute explorando!"
+    # First-visit beacon hints on the page pills (rendered by the hints widget).
+    hint_button: "Entendido"
+    hint_dict_title: "Su Data Schematic"
+    hint_dict_body: "El panel del diccionario documenta cada columna: su significado, tipo, rango y cómo se clasificó, además de archivos descargables."
+    hint_tour_title: "Repetir el recorrido"
+    hint_tour_body: "Vuelva a reproducir el recorrido guiado de esta página cuando quiera desde aquí."
+    hint_data_title: "Ver las filas"
+    hint_data_body: "Abra el visor de datos para buscar, filtrar y exportar las filas que hay detrás de estos gráficos."
     explain:
       kpi: "Estas fichas KPI encabezan el Data Schematic con sus cifras principales: recuentos de registros y campos, completitud y las medidas destacadas."
       box: "%{q_col} es una columna numérica continua, así que su distribución se dibuja como diagrama de caja a partir de sus cuartiles: la caja es la mitad central de los valores."
@@ -386,6 +394,7 @@ viz:
       animated_geo: "Los puntos del mapa tienen fecha, así que el mapa está animado: pulse Play para ver los eventos acumularse en el mapa con el tiempo."
       animated_bubble: "Cada burbuja es una categoría trazando su camino por dos medidas a lo largo del tiempo: pulse Play para poner en marcha el reloj."
       log_axis: "Su eje de valores es logarítmico, porque los valores abarcan varios órdenes de magnitud."
+      log_axis_count: "Su eje de recuentos es logarítmico, porque los recuentos de categorías abarcan varios órdenes de magnitud."
       sampled: "Dibujado a partir de una muestra determinista de las filas, para mantener la fluidez."
     meta_heading: "Narración del recorrido"
     meta_audience: "Audiencia:"

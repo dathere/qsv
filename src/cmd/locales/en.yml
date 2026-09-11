@@ -624,6 +624,14 @@ viz:
     panels_intro_body: "Each panel was picked to fit its column's data. The next steps explain the choices made for this dataset."
     conclusion_title: "That's the tour"
     conclusion_body: "Relaunch it anytime with the Tour button at the top of the page. Enjoy exploring!"
+    # First-visit beacon hints on the page pills (rendered by the hints widget).
+    hint_button: "Got it"
+    hint_dict_title: "Your Data Schematic"
+    hint_dict_body: "The dictionary drawer documents every column - its meaning, type, range and how it was classified - plus downloadable sidecars."
+    hint_tour_title: "Take the tour again"
+    hint_tour_body: "Replay the guided walkthrough of this page anytime from here."
+    hint_data_title: "See the rows"
+    hint_data_body: "Open the data viewer to search, filter and export the rows behind these charts."
     # Per-panel draft explanations. Deliberately context-bearing: each names the
     # concrete signal that selected the panel kind, so the tour never reads as
     # boilerplate. Values interpolate panel/stats facts computed at build time.
@@ -656,6 +664,7 @@ viz:
       animated_bubble: "Each bubble is one category tracing its path through two measures over time - press Play to run the clock."
       # appended fragments
       log_axis: "Its value axis is logarithmic, because the values span several orders of magnitude."
+      log_axis_count: "Its count axis is logarithmic, because the category counts span several orders of magnitude."
       sampled: "Drawn from a deterministic sample of the rows, to stay responsive."
     # The dictionary drawer's collapsed tour-metadata section (renders x-qsv.tour).
     meta_heading: "Tour narration"

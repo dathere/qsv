@@ -3390,7 +3390,8 @@ fn viz_smart_hover_contract_fixture_reaches_the_bubble_template() {
         "contract.csv",
         "--dictionary",
         "d.schema.json",
-        "--no-tour",
+        "--tour-steps",
+        "0",
     ]);
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
@@ -3634,7 +3635,7 @@ fn viz_static_hover_rendering_contract() {
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
 
     let mut cmd = wrk.command("viz");
-    // --no-tour is REQUIRED, not cosmetic: the driver.js tour auto-starts ~1.2s after load and
+    // --tour-steps 0 is REQUIRED, not cosmetic: the driver.js tour auto-starts ~1.2s after load and
     // overlays the page, intermittently eating the hover. QSV_VIZ_NO_COMPRESS removes the
     // DecompressionStream inflate race, so panel scripts run inline at parse time.
     cmd.env("QSV_VIZ_NO_COMPRESS", "1").args([
@@ -3642,7 +3643,8 @@ fn viz_static_hover_rendering_contract() {
         "contract.csv",
         "--dictionary",
         "d.schema.json",
-        "--no-tour",
+        "--tour-steps",
+        "0",
         "-o",
         &out_html,
     ]);
@@ -13080,7 +13082,7 @@ fn viz_single_chart_has_fullscreen_button() {
 }
 
 // The guided Data Schematic tour (issue #4389): on by default in every smart HTML page,
-// suppressed wholesale by --no-tour, with drawer chapters gated on their chrome and panel
+// suppressed wholesale by --tour-steps 0, with drawer chapters gated on their chrome and panel
 // steps anchored per render path (typed grid = paper-coordinate domains, inline = panel divs).
 
 #[test]
@@ -13138,12 +13140,12 @@ fn viz_smart_has_tour_by_default() {
 }
 
 #[test]
-fn viz_smart_no_tour_opts_out() {
-    let wrk = Workdir::new("viz_smart_no_tour_opts_out");
+fn viz_smart_tour_steps_zero_opts_out() {
+    let wrk = Workdir::new("viz_smart_tour_steps_zero_opts_out");
     fruits(&wrk);
 
     let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "fruits.csv", "--no-tour"]);
+    cmd.args(["smart", "fruits.csv", "--tour-steps", "0"]);
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
@@ -13151,11 +13153,11 @@ fn viz_smart_no_tour_opts_out() {
     // NOTHING of the tour ships: no payloads, no config, no engine, no pill, no attribution
     assert!(
         !html.contains("qsv-tour"),
-        "--no-tour must suppress every tour token"
+        "--tour-steps 0 must suppress every tour token"
     );
     assert!(
         !html.contains("driver.js"),
-        "--no-tour must suppress the driver.js attribution"
+        "--tour-steps 0 must suppress the driver.js attribution"
     );
 }
 
@@ -13178,6 +13180,91 @@ fn viz_smart_tour_skips_data_chapter_when_viewer_disabled() {
         !html.contains("qsvOpenData"),
         "data chapter must be gated on the viewer"
     );
+}
+
+#[test]
+fn viz_smart_tour_ships_hint_beacons() {
+    let wrk = Workdir::new("viz_smart_tour_ships_hint_beacons");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fruits.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the vendored hints bundle rides alongside the tour engine (gz payloads by default)
+    assert!(
+        html.contains(r#"id="qsv-tour-hints-lib""#),
+        "hints lib payload missing"
+    );
+    assert!(
+        html.contains(r#"id="qsv-tour-hints-css""#),
+        "hints css payload missing"
+    );
+    // the beacons are configured in the SAME payload as the steps, not a second tag
+    assert!(html.contains(r#""hints":["#), "hints config missing");
+    // the Tour pill always gets one; the data pill does too when the viewer is on
+    assert!(html.contains(".qsv-viz-tour-open"));
+    assert!(html.contains("a.qsv-data-link"));
+    // ...but the dictionary pill does not exist without --dict-info
+    assert!(
+        !html.contains(".qsv-viz-dict-link > a:first-child"),
+        "dict beacon must be gated on the Data Schematic pill"
+    );
+    // beacons are a FIRST-VISIT affordance and keep their own retirement key
+    assert!(html.contains("qsv-viz-hints-seen-"));
+}
+
+#[test]
+fn viz_smart_hints_skip_the_data_pill_when_viewer_disabled() {
+    let wrk = Workdir::new("viz_smart_hints_skip_the_data_pill_when_viewer_disabled");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fruits.csv", "--preview-threshold", "0"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the beacons still ship (the Tour pill is always there)...
+    assert!(html.contains(r#""hints":["#));
+    assert!(html.contains(".qsv-viz-tour-open"));
+    // ...but nothing may name the absent data viewer, by selector OR by drawer global
+    assert!(
+        !html.contains("qsv-data-link"),
+        "data beacon must be gated on the viewer"
+    );
+    assert!(!html.contains("qsvOpenData"));
+}
+
+#[test]
+fn viz_smart_tour_steps_caps_the_panel_walk() {
+    let wrk = Workdir::new("viz_smart_tour_steps_caps_the_panel_walk");
+    fruits(&wrk);
+
+    // an EXPLICIT budget is a hard cap: exactly n panel spotlights, chapters unaffected
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fruits.csv", "--tour-steps", "2"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    let cfg = html
+        .split(r#"id="qsv-tour-config">"#)
+        .nth(1)
+        .and_then(|rest| rest.split("</script>").next())
+        .expect("tour config payload");
+    let cfg: serde_json::Value = serde_json::from_str(cfg).expect("tour config is valid JSON");
+    let panel_steps = cfg["steps"]
+        .as_array()
+        .expect("steps")
+        .iter()
+        .filter(|s| s["id"] == "panel")
+        .count();
+    assert_eq!(panel_steps, 2, "--tour-steps is a hard cap when passed");
+    // the chapters are NOT part of that budget
+    assert!(cfg["steps"].as_array().unwrap().len() > panel_steps + 1);
 }
 
 #[test]

@@ -605,20 +605,32 @@ smart options:
                            proportion to rows x columns. Set to 0 to disable the data
                            viewer entirely (no link, no embedded data). Only affects
                            `smart` HTML output. [default: 50000]
-    --no-tour              Suppress the guided tour of `smart` HTML dashboards. By
-                           default every Data Schematic ships an interactive tour
+    --tour-steps <n>       How many chart panels the guided tour of a `smart` HTML
+                           dashboard spotlights (default: 8). This budgets the
+                           per-panel steps only - the introduction, the Data
+                           Dictionary drawer chapter, the data viewer chapter and
+                           the conclusion are always included. Set to 0 to suppress
+                           the guided tour entirely (no tour, no "Tour" button, and
+                           no first-visit hint beacons on the page's pills).
+                           By default every Data Schematic ships an interactive tour
                            (auto-started the first time a reader opens the page, and
                            relaunchable anytime from the "Tour" button) that walks
                            through the Data Dictionary drawer, the data viewer and
                            the summary panels, explaining why each chart was chosen
-                           for this data. A dictionary's dataset-level "x-qsv"
-                           "tour" object can refine the narration: its "overrides"
-                           map replaces step prose by step id, its "panels" map
-                           replaces per-panel explanations (keyed by raw field name,
-                           or by "@kind" tokens like "@kpi", "@correlation", "@map"
-                           for overview panels), and "panel_order" picks which
-                           panels the tour spotlights. Only affects `smart` HTML
-                           output.
+                           for this data. When left at its default, the budget is a
+                           soft one: a dashboard whose panels would otherwise all be
+                           overviews gets one extra step so a frequency distribution
+                           is always spotlighted. Passing an explicit value makes it
+                           a hard cap instead, substituting rather than adding.
+                           A dictionary's dataset-level "x-qsv" "tour" object can
+                           refine the narration: its "overrides" map replaces step
+                           prose by step id, its "panels" map replaces per-panel
+                           explanations (keyed by raw field name, or by "@kind"
+                           tokens like "@kpi", "@correlation", "@map" for overview
+                           panels), and "panel_order" picks which panels the tour
+                           spotlights (capped by this same budget, and never amended
+                           by the frequency-distribution guarantee). Only affects
+                           `smart` HTML output.
     --heatmap-density <n>  For the `viz smart` map panel: at or above <n> mappable
                            points, draw the core as a density heatmap (DensityMap)
                            instead of markers. The heatmap keeps per-point hover
@@ -635,10 +647,10 @@ smart options:
                            into individual, hoverable points on zoom-in). Hovering
                            a bubble shows its point count; clicking it zooms to
                            where that cluster breaks apart. The map always OPENS
-                           as individual points; the toggle switches clustering on. One of: auto, on, off. "auto" (the
-                           default) offers the toggle for a plain-marker core (no
-                           density heatmap, no bubble-size measure) once it
-                           reaches 1,000 points. "on" offers it whenever the core
+                           as individual points; the toggle switches clustering on.
+                           One of: auto, on, off. "auto" (the default) offers the toggle
+                           for a plain-marker core (no density heatmap, no bubble-size measure)
+                           once it reaches 1,000 points. "on" offers it whenever the core
                            draws as markers, regardless of point count or a
                            bubble-size measure. "off" omits the toggle, so points
                            are always drawn plainly. Only affects `smart`.
@@ -1918,7 +1930,7 @@ struct Args {
     flag_max_charts:         usize,
     flag_grid_cols:          usize,
     flag_preview_threshold:  usize,
-    flag_no_tour:            bool,
+    flag_tour_steps:         Option<usize>,
     flag_heatmap_density:    usize,
     flag_cluster:            String,
     flag_photos:             bool,
@@ -2363,7 +2375,7 @@ enum SmartRender {
         metadata:    Option<String>,
         /// The data viewer drawer chrome (issue #4283; HTML output only).
         data_chrome: Option<String>,
-        /// The guided-tour chrome (issue #4389; HTML output only, `None` under `--no-tour`).
+        /// The guided-tour chrome (issue #4389; HTML output only, `None` under `--tour-steps 0`).
         tour_chrome: Option<String>,
     },
     /// A fully-assembled Plotly JSON value (data + layout). Used only for static image export of
@@ -15454,7 +15466,7 @@ fn smart_html_page(
     // emitting. Still gated on the drawer actually being present (see `choro_filter_chrome`).
     choro_filter: Option<&RegionFilter>,
     // The guided-tour chrome (issue #4389): the vendored driver.js block + resolved step config
-    // + engine script. `None` under `--no-tour` (and on non-HTML paths), keeping those pages
+    // + engine script. `None` under `--tour-steps 0` (and on non-HTML paths), keeping those pages
     // byte-identical.
     tour_chrome: Option<&str>,
 ) -> String {
@@ -16189,6 +16201,47 @@ static DRIVERJS_GZ_B64: std::sync::LazyLock<String> =
 static DRIVERJS_CSS_GZ_B64: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| gzip_b64(DRIVERJS_CSS.as_bytes(), flate2::Compression::best()));
 
+/// Vendored driver.js HINTS bundle — the pulsing "feature beacon" widget, a SEPARATE dist file
+/// from the tour engine above (the core `driver.js.iife.js` carries no hints API at all). Same
+/// npm package, same `DRIVERJS_CDN_VERSION` pin, same MIT license (`assets/LICENSE-Driverjs.txt`)
+/// — so the shipped attribution (`third_party_comment`) and credits footer already cover it and
+/// need no new entry.
+///
+/// Two properties of the bundle that the surrounding code relies on:
+///   * it exposes `window.driverHints.hints` and never references `window.driver`, so it is
+///     load-order independent of the core engine (and inflates on its own, see `tour_script`);
+///   * `hints.css` is not a supplement but carries a byte-identical DUPLICATE of driver.css's whole
+///     `.driver-popover*` block, so loading both is safe in either order — and `TOUR_SCRIPT`'s
+///     higher-specificity `body.qsv-dark .driver-popover` rules re-theme the hint popovers for
+///     free.
+///
+/// To rebuild or bump, fetch the version `DRIVERJS_CDN_VERSION` pins:
+///
+/// ```text
+/// curl -sSL -o src/cmd/assets/driverjs-hints.min.js \
+///   https://cdn.jsdelivr.net/npm/driver.js@<VER>/dist/hints.iife.js
+/// curl -sSL -o src/cmd/assets/driverjs-hints.min.css \
+///   https://cdn.jsdelivr.net/npm/driver.js@<VER>/dist/hints.css
+/// echo "sha384-$(openssl dgst -sha384 -binary src/cmd/assets/driverjs-hints.min.js | openssl base64 -A)"
+/// echo "sha384-$(openssl dgst -sha384 -binary src/cmd/assets/driverjs-hints.min.css | openssl base64 -A)"
+/// ```
+const DRIVERJS_HINTS_JS: &str = include_str!("assets/driverjs-hints.min.js");
+const DRIVERJS_HINTS_CSS: &str = include_str!("assets/driverjs-hints.min.css");
+const DRIVERJS_HINTS_CDN_JS_SRI: &str =
+    "sha384-V6Z/uLTd410gfsytiH4lPk3vuHhB+37yhJ4lxOapeDC+qK2EbyJ2tdFlCFxlmNFl";
+const DRIVERJS_HINTS_CDN_CSS_SRI: &str =
+    "sha384-yeSemBGXuXICwjenwGUdbspDzk2rXGW5DlysCWH568VN3z5vEJ+b4Wue27IK64kJ";
+
+/// Like `DRIVERJS_GZ_B64` but for the hints bundle (~15 KB -> ~6.3 KB b64).
+static DRIVERJS_HINTS_GZ_B64: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    gzip_b64(DRIVERJS_HINTS_JS.as_bytes(), flate2::Compression::best())
+});
+
+/// Like `DRIVERJS_HINTS_GZ_B64` but for its stylesheet (~3.7 KB -> ~1.5 KB b64).
+static DRIVERJS_HINTS_CSS_GZ_B64: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    gzip_b64(DRIVERJS_HINTS_CSS.as_bytes(), flate2::Compression::best())
+});
+
 /// The driver.js library block for the Data Schematic Tour: under `QSV_VIZ_CDN` version-pinned
 /// `<link>`/`<script src>` tags with Subresource Integrity; under `QSV_VIZ_NO_COMPRESS` (or on
 /// gzip failure) the plain inline bundle; otherwise gzip+base64 payload tags that `TOUR_SCRIPT`
@@ -16229,10 +16282,64 @@ fn driverjs_lib_block() -> String {
     )
 }
 
-/// Cap on the number of per-panel spotlight steps in the guided tour. The dictionary's
-/// `x-qsv.tour.panel_order` can select any panels it likes but is capped to the same budget —
-/// a tour that walks all 40 panels of a wide Data Schematic stops being a tour.
-const TOUR_MAX_PANEL_STEPS: usize = 6;
+/// The driver.js HINTS library block — the beacon widget that pulses on the page's pills after a
+/// first-visit tour ends. Mirrors `driverjs_lib_block`'s three delivery modes exactly (CDN
+/// `<link>`/`<script src>` with Subresource Integrity, gzip-b64 payload tags, plain inline
+/// bundle), with its own payload ids `#qsv-tour-hints-lib` / `#qsv-tour-hints-css` that
+/// `TOUR_SCRIPT` inflates lazily the first time beacons are armed.
+///
+/// Those ids deliberately keep the `qsv-tour` prefix: the whole block is emitted only from
+/// `build_tour_chrome`, so `--tour-steps 0` drops it along with the rest of the tour, and
+/// `viz_smart_tour_steps_zero_opts_out`'s single `!contains("qsv-tour")` assertion covers it
+/// without needing to learn a second token.
+fn driverjs_hints_lib_block() -> String {
+    if viz_cdn() {
+        return format!(
+            "<link rel=\"stylesheet\" \
+             href=\"https://cdn.jsdelivr.net/npm/driver.js@{DRIVERJS_CDN_VERSION}/dist/hints.\
+             css\" integrity=\"{DRIVERJS_HINTS_CDN_CSS_SRI}\" \
+             crossorigin=\"anonymous\">\n<script \
+             src=\"https://cdn.jsdelivr.net/npm/driver.js@{DRIVERJS_CDN_VERSION}/dist/hints.iife.\
+             js\" integrity=\"{DRIVERJS_HINTS_CDN_JS_SRI}\" crossorigin=\"anonymous\"></script>"
+        );
+    }
+    if viz_compress() {
+        let js_b64 = DRIVERJS_HINTS_GZ_B64.as_str();
+        let css_b64 = DRIVERJS_HINTS_CSS_GZ_B64.as_str();
+        if !js_b64.is_empty() && !css_b64.is_empty() {
+            return format!(
+                "<script id=\"qsv-tour-hints-lib\" \
+                 type=\"application/gzip-b64\">{js_b64}</script>\n<script \
+                 id=\"qsv-tour-hints-css\" type=\"application/gzip-b64\">{css_b64}</script>"
+            );
+        }
+    }
+    // vendored bundle contains no `</script>`/`</style>` (asserted by unit tests), so plain
+    // inline embedding needs no escaping
+    format!(
+        "<script id=\"qsv-tour-hints-lib\" \
+         type=\"text/javascript\">{DRIVERJS_HINTS_JS}</script>\n<style \
+         id=\"qsv-tour-hints-css\">{DRIVERJS_HINTS_CSS}</style>"
+    )
+}
+
+/// Default number of per-panel spotlight steps in the guided tour, when `--tour-steps` is not
+/// given — a tour that walks all 40 panels of a wide Data Schematic stops being a tour. The
+/// dictionary's `x-qsv.tour.panel_order` can select any panels it likes but is capped to the
+/// same budget.
+///
+/// Whether the budget is HARD or SOFT depends on how it was set, and only
+/// `tour_panel_selection`'s frequency-bar guarantee can tell the difference:
+///   * left at this default (`--tour-steps` absent) — SOFT: a dashboard whose picks would otherwise
+///     be all overview panels gains one extra step so a frequency distribution is always
+///     spotlighted, rather than losing an overview panel to make room;
+///   * set explicitly (`--tour-steps <n>`, including a literal `8`) — HARD: the reader asked for
+///     exactly n, so the guarantee substitutes for the weakest pick instead of appending.
+///
+/// That distinction is why `Args::flag_tour_steps` is an `Option<usize>` with NO docopt
+/// `[default:]` — a docopt default would make an explicit `--tour-steps 8` indistinguishable
+/// from an absent flag. `--tour-steps 0` suppresses the tour (and its hint beacons) entirely.
+const DEFAULT_TOUR_PANEL_STEPS: usize = 8;
 
 /// The stable `@kind` token an OVERVIEW panel is keyed by in `x-qsv.tour.panels` /
 /// `panel_order`. `None` for the per-column distribution kinds, which are keyed by their RAW
@@ -16293,7 +16400,12 @@ fn tour_panel_key(panel: &Panel, stats: &[crate::cmd::stats::StatsData]) -> Stri
 /// `every_t_key_used_in_this_file_exists_in_the_catalog` bans computed keys (same discipline as
 /// `localize_skip_reason`).
 #[inline(never)]
-fn tour_panel_explanation(panel: &Panel, stats: &[crate::cmd::stats::StatsData]) -> String {
+fn tour_panel_explanation(
+    panel: &Panel,
+    stats: &[crate::cmd::stats::StatsData],
+    freq: &FreqMap,
+    log_scale: LogScale,
+) -> String {
     let col = || {
         panel
             .stat_idx
@@ -16368,9 +16480,21 @@ fn tour_panel_explanation(panel: &Panel, stats: &[crate::cmd::stats::StatsData])
         PanelKind::AnimatedGeo { .. } => t!("viz.tour.explain.animated_geo").into_owned(),
         PanelKind::AnimatedBubble { .. } => t!("viz.tour.explain.animated_bubble").into_owned(),
     };
-    if panel.value_log {
+    // `panel_is_log`, NOT `panel.value_log`: only box/violin panels bake their verdict into the
+    // Panel at classification time. Frequency bars and measure-by-dimension bars decide from
+    // their own values at RENDER time, so reading `value_log` silently described a logarithmic
+    // bar as if it were linear.
+    if panel_is_log(panel, freq, log_scale) {
         out.push(' ');
-        out.push_str(&t!("viz.tour.explain.log_axis"));
+        // Two spelled-out literals, never a computed key (see this fn's doc comment). A
+        // frequency bar's logged axis carries COUNTS — the chart itself titles it
+        // `viz.chart.log_axis_count` ("count (log)") — while every other logging kind logs a
+        // VALUE axis, which the original wording already describes correctly.
+        out.push_str(&if matches!(panel.kind, PanelKind::FreqBar { .. }) {
+            t!("viz.tour.explain.log_axis_count")
+        } else {
+            t!("viz.tour.explain.log_axis")
+        });
     }
     if let PanelKind::Violin { sample_stride, .. } = &panel.kind
         && *sample_stride > 1
@@ -16384,11 +16508,32 @@ fn tour_panel_explanation(panel: &Panel, stats: &[crate::cmd::stats::StatsData])
 /// Which panels get spotlight steps, in order. `x-qsv.tour.panel_order` wins when present
 /// (unknown keys ignored; each key claims the FIRST matching panel); otherwise the KPI row,
 /// then the first overview panel of each distinct kind, then the highest-`interest` per-column
-/// panels, in document order for ties — capped at `TOUR_MAX_PANEL_STEPS` either way.
+/// panels, in document order for ties — capped at `budget` either way.
+///
+/// `budget` is `--tour-steps` (or `DEFAULT_TOUR_PANEL_STEPS` when absent), and `explicit` says
+/// which of those it was. The deterministic path then GUARANTEES a frequency bar: bars are what
+/// readers ask about most, yet the build above can drop every one of them, because
+/// `extend(take(3))` runs BEFORE `truncate` — a dashboard with `budget` or more distinct
+/// overview kinds (21 `@kind` tokens exist) cuts all three per-column picks off. And even under
+/// the budget the bars lose the `take(3)` race on numeric-heavy data, since `panel_interest`
+/// tops a `FreqBar` out near 2.0 while a box/violin reaches 5.0 and a histogram starts at 2.5.
+/// On a default budget the rescued bar is APPENDED past it (costing no overview panel); on an
+/// explicit one it SUBSTITUTES for the weakest pick, so the reader gets exactly what they asked
+/// for. See `DEFAULT_TOUR_PANEL_STEPS`.
+///
+/// The guarantee deliberately does NOT apply to the `panel_order` path, which returns early: an
+/// author-supplied order is a complete, deliberate walk and is never amended.
+///
+/// One edge worth knowing: at `--tour-steps 1` the single pick IS the tail, so a page with a
+/// frequency bar spends its one step on the distribution rather than the KPI row. That falls out
+/// of the explicit-budget rule rather than being a special case — a reader who asks for exactly
+/// one panel gets the one this function is charged with never dropping.
 fn tour_panel_selection(
     panels: &[Panel],
     stats: &[crate::cmd::stats::StatsData],
     spec: Option<&TourSpec>,
+    budget: usize,
+    explicit: bool,
 ) -> Vec<usize> {
     if let Some(order) = spec.and_then(|s| s.panel_order.as_ref()) {
         let mut picked = Vec::new();
@@ -16397,7 +16542,7 @@ fn tour_panel_selection(
                 && !picked.contains(&idx)
             {
                 picked.push(idx);
-                if picked.len() == TOUR_MAX_PANEL_STEPS {
+                if picked.len() == budget {
                     break;
                 }
             }
@@ -16430,7 +16575,36 @@ fn tour_panel_selection(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     picked.extend(per_col.into_iter().take(3));
-    picked.truncate(TOUR_MAX_PANEL_STEPS);
+    picked.truncate(budget);
+    // The frequency-bar guarantee. A strict no-op when the dashboard has no frequency bar, or
+    // already spotlights one — which is why it never disturbs an all-numeric Data Schematic.
+    if !picked
+        .iter()
+        .any(|&i| matches!(panels[i].kind, PanelKind::FreqBar { .. }))
+    {
+        // highest interest, document order for ties — the same convention as the stable sort
+        // above. `>` is false for NaN, so a NaN score can never win.
+        let mut best: Option<usize> = None;
+        for (i, p) in panels.iter().enumerate() {
+            if matches!(p.kind, PanelKind::FreqBar { .. })
+                && best.is_none_or(|b| p.interest > panels[b].interest)
+            {
+                best = Some(i);
+            }
+        }
+        if let Some(best) = best {
+            if explicit && picked.len() >= budget {
+                // `picked` is still in PRIORITY order here (overviews in document order, then
+                // per-column by descending interest) — the tail is the weakest pick, so it is
+                // the one to give up. `last_mut` also covers a degenerate empty `picked`.
+                if let Some(last) = picked.last_mut() {
+                    *last = best;
+                }
+            } else {
+                picked.push(best);
+            }
+        }
+    }
     picked.sort_unstable();
     picked
 }
@@ -16457,24 +16631,34 @@ enum TourPanelTargets {
 
 /// Assemble the guided-tour chrome (issue #4389): the vendored driver.js library block, the
 /// `#qsv-tour-config` JSON payload of fully-resolved localized steps, and the `TOUR_SCRIPT`
-/// engine. Returns `None` under `--no-tour`. All prose (drafts and `x-qsv.tour` overrides
+/// engine. Returns `None` under `--tour-steps 0`. All prose (drafts and `x-qsv.tour` overrides
 /// alike) is HTML-escaped exactly once HERE — the popover renders description as HTML, so this
 /// sink is where plain text becomes safe markup (newlines become `<br>` client-side).
+///
+/// `budget`/`explicit` are the resolved `--tour-steps` pair (see `DEFAULT_TOUR_PANEL_STEPS`);
+/// `freq` and `log_scale` are needed only so `tour_panel_explanation` can ask `panel_is_log`
+/// whether a bar panel renders logarithmic — bars resolve that at render time, so unlike a box
+/// panel they carry no `Panel::value_log` to read.
 ///
 /// Its own `#[inline(never)]` fn: HTML assembly with many locals must not pile onto a caller's
 /// stack frame (Windows' 1 MB main-thread stack, issue #4328).
 #[inline(never)]
 fn build_tour_chrome(
-    no_tour: bool,
+    budget: usize,
+    explicit: bool,
     panels: &[Panel],
     stats: &[crate::cmd::stats::StatsData],
+    freq: &FreqMap,
+    log_scale: LogScale,
     dict: Option<&DictData>,
     has_dict_page: bool,
     has_data_drawer: bool,
     title_text: &str,
     targets: &TourPanelTargets,
 ) -> Option<String> {
-    if no_tour {
+    // `--tour-steps 0`: no tour chrome at all — no config, no driver.js payloads, no engine, and
+    // so no hint beacons either (they are armed only when a tour ends).
+    if budget == 0 {
         return None;
     }
     let spec = dict.and_then(|d| d.tour.as_ref());
@@ -16589,12 +16773,13 @@ fn build_tour_chrome(
         "title": html_escape(&t!("viz.tour.panels_intro_title")),
         "body": body("panels-intro", t!("viz.tour.panels_intro_body").into_owned()),
     }));
-    for idx in tour_panel_selection(panels, stats, spec) {
+    for idx in tour_panel_selection(panels, stats, spec, budget, explicit) {
         let panel = &panels[idx];
         let key = tour_panel_key(panel, stats);
-        let explanation = spec_prose
-            .and_then(|s| s.panels.get(&key))
-            .map_or_else(|| tour_panel_explanation(panel, stats), Clone::clone);
+        let explanation = spec_prose.and_then(|s| s.panels.get(&key)).map_or_else(
+            || tour_panel_explanation(panel, stats, freq, log_scale),
+            Clone::clone,
+        );
         let mut step = serde_json::json!({
             "id": "panel",
             // The panel's stable tour key (raw field name or @kind token) — the same key
@@ -16640,9 +16825,48 @@ fn build_tour_chrome(
         key_src.push('\n');
         key_src.push_str(&tour_panel_key(p, stats));
     }
+    // First-visit beacon hints on the page's pills, armed by `TOUR_SCRIPT` once the auto-started
+    // tour ends. Each entry is emitted ONLY when its pill is — the same gates the drawer chapters
+    // use — because the integration tests assert token ABSENCE: notably
+    // `viz_smart_tour_skips_data_chapter_when_viewer_disabled` requires that `--preview-threshold
+    // 0` emit no `qsvOpenData` anywhere, which is why the data entry names the anchor's CLASS and
+    // never the drawer global.
+    //
+    // Title/body are HTML-escaped HERE, the same single sink as the step prose: the hints widget
+    // assigns both through `innerHTML`.
+    let mut hints: Vec<serde_json::Value> = Vec::new();
+    if has_dict_page {
+        hints.push(serde_json::json!({
+            // the server-rendered dictionary anchor is CLASSLESS, and `injectButton()` appends
+            // the Tour pill into that same div — `> a:first-child` is what disambiguates them
+            "el": ".qsv-viz-dict-link > a:first-child",
+            "cls": "qsv-hint-pill",
+            "title": html_escape(&t!("viz.tour.hint_dict_title")),
+            "body": html_escape(&t!("viz.tour.hint_dict_body")),
+        }));
+    }
+    // the Tour pill is created client-side by `injectButton()`, so it always exists here
+    hints.push(serde_json::json!({
+        "el": ".qsv-viz-tour-open",
+        "cls": "qsv-hint-pill",
+        "title": html_escape(&t!("viz.tour.hint_tour_title")),
+        "body": html_escape(&t!("viz.tour.hint_tour_body")),
+    }));
+    if has_data_drawer {
+        hints.push(serde_json::json!({
+            // NOT `qsv-viz-data-link`: the data viewer's opener is `a.qsv-data-link`, and it
+            // lives inside the metadata table rather than the centered pill row — hence its own
+            // (smaller) beacon class.
+            "el": "a.qsv-data-link",
+            "cls": "qsv-hint-inline",
+            "title": html_escape(&t!("viz.tour.hint_data_title")),
+            "body": html_escape(&t!("viz.tour.hint_data_body")),
+        }));
+    }
     let config = serde_json::json!({
         "key": dict_short_hash(&key_src),
         "steps": steps,
+        "hints": hints,
     });
     // `</` must not appear inside a <script> payload (it would terminate the tag mid-JSON);
     // serde_json never escapes it, so do it here — JSON string escaping makes `<\/` read back
@@ -16652,6 +16876,8 @@ fn build_tour_chrome(
         .replace("</", "<\\/");
     let mut out = String::with_capacity(config_json.len() + 4096);
     out.push_str(&driverjs_lib_block());
+    out.push('\n');
+    out.push_str(&driverjs_hints_lib_block());
     out.push('\n');
     out.push_str("<script type=\"application/json\" id=\"qsv-tour-config\">");
     out.push_str(&config_json);
@@ -16693,8 +16919,39 @@ fn tour_script() -> String {
     } else {
         r#"Promise.reject(new Error("tour lib missing"))"#
     };
+    // Same story for the hints bundle, gated on ITS OWN payloads (same condition as
+    // `driverjs_hints_lib_block`'s middle branch) — a CDN or uncompressed page must carry no gz
+    // machinery at all, which `viz_cdn_uncompressed_has_no_gz_machinery` pins.
+    let hints_gz_loader = if !viz_cdn()
+        && viz_compress()
+        && !DRIVERJS_HINTS_GZ_B64.is_empty()
+        && !DRIVERJS_HINTS_CSS_GZ_B64.is_empty()
+    {
+        r#"(function () {
+      var lib = document.getElementById("qsv-tour-hints-lib");
+      var css = document.getElementById("qsv-tour-hints-css");
+      if (!lib || !window.__qsvGunzip) return Promise.reject(new Error("hints lib missing"));
+      var jobs = [window.__qsvGunzip(lib).then(function (src) { (0, eval)(src); })];
+      if (css) {
+        jobs.push(window.__qsvGunzip(css).then(function (src) {
+          var st = document.createElement("style");
+          st.id = "qsv-tour-hints-css-inflated";
+          st.textContent = src;
+          document.head.appendChild(st);
+        }));
+      }
+      return Promise.all(jobs);
+    })()"#
+    } else {
+        r#"Promise.reject(new Error("hints lib missing"))"#
+    };
     TOUR_SCRIPT
         .replace("__QSVTOURGZLOADER__", gz_loader)
+        .replace("__QSVTOURHINTSGZLOADER__", hints_gz_loader)
+        .replace(
+            "__QSVI18N_HINT_BUTTON__",
+            &js_string_literal(&t!("viz.tour.hint_button")),
+        )
         .replace(
             "__QSVI18N_TOUR_BUTTON__",
             &html_in_js_text(&t!("viz.tour.button")),
@@ -16749,6 +17006,19 @@ const TOUR_SCRIPT: &str = r##"<style>
   body.qsv-dark .driver-popover-navigation-btns button { background-color: #22272e; color: #adbac7; text-shadow: none; border-color: #444c56; }
   body.qsv-dark .driver-popover-progress-text { color: #768390; }
   body.qsv-dark .driver-popover-close-btn { color: #768390; }
+  /* Hint beacons, brand-colored off the page variables so they follow the Theme toggle just
+     like the popovers above. The hints widget has NO beacon offset option: it writes a bare
+     corner of the target's bounding rect into style.top/left and `.driver-hint` centers on it
+     with translate(-50%,-50%). It never touches `transform`, so a class-scoped transform
+     override is the stable way to nudge a beacon across repositions, and `--driver-hint-size`
+     the way to resize one. (Its stylesheet already stops the pulse under
+     prefers-reduced-motion.) */
+  .driver-hint { --driver-hint-color: var(--qsv-link, #0a5fb4); }
+  body.qsv-dark .driver-hint { --driver-hint-color: var(--qsv-link, #6cb6ff); }
+  /* the two 13px centered pills: tuck the dot inside the 999px rounded border */
+  .qsv-hint-pill { transform: translate(-50%, -50%) translate(-5px, 4px); }
+  /* the Explore/Preview pill is 0.85em inside the metadata table — smaller dot, tighter tuck */
+  .qsv-hint-inline { --driver-hint-size: 16px; transform: translate(-50%, -50%) translate(-4px, 3px); }
 </style>
 <script>
 (function () {
@@ -16767,6 +17037,20 @@ const TOUR_SCRIPT: &str = r##"<style>
   function store() { try { return window.localStorage; } catch (e) { return null; } }
   function markSeen() { var s = store(); if (s) { try { s.setItem(SEEN_KEY, "1"); } catch (e) {} } }
   function wasSeen() { var s = store(); if (!s) return true; try { return !!s.getItem(SEEN_KEY); } catch (e) { return true; } }
+
+  // The beacons get their OWN key. SEEN_KEY is written by markSeen() at tour LAUNCH as well as
+  // teardown, so it can never answer "has this reader just finished a tour" — and sharing it
+  // would let one completed tour suppress the beacons forever (or vice versa). Fails closed
+  // exactly like wasSeen(): a storage-less context is never nagged.
+  var HINTS_KEY = "qsv-viz-hints-seen-" + cfg.key + "-" +
+    ((window.location && window.location.pathname) || "");
+  function hintsRetired() { var s = store(); if (!s) return true; try { return !!s.getItem(HINTS_KEY); } catch (e) { return true; } }
+  // Latched synchronously in boot(), BEFORE any markSeen() call, and only ever read afterwards:
+  // re-evaluating !wasSeen() later would always be false. Beacons are a first-visit affordance,
+  // so a tour relaunched from the pill on a later visit must not resurrect them. It also sits
+  // inside boot()'s top-window check, so embedded gallery iframes never show beacons.
+  var firstRun = false;
+  var hintsObj = null;
 
   // lazily install the vendored driver.js payloads: CDN mode has window.driver already, plain
   // mode executed at load, and in gz mode `tour_script()` substitutes the inflate routine below
@@ -16850,6 +17134,51 @@ const TOUR_SCRIPT: &str = r##"<style>
     if (typeof closer === "function") closer();
   }
 
+  function ensureHintsLib() {
+    if (window.driverHints && window.driverHints.hints) return Promise.resolve();
+    return __QSVTOURHINTSGZLOADER__;
+  }
+
+  function retireHints() {
+    var s = store(); if (s) { try { s.setItem(HINTS_KEY, "1"); } catch (e) {} }
+    if (hintsObj) { hintsObj.hide(); hintsObj = null; }
+  }
+
+  // Mount the beacons. Called from endTour ONLY — the reader has just finished or dismissed the
+  // auto-started first-visit tour, which is the one moment a pulsing dot reads as a reminder
+  // rather than an interruption. Each config entry was emitted server-side only when its pill
+  // exists; resolving the element here too gives us something to hang the retire listener on.
+  function armHints() {
+    if (hintsObj || !firstRun || hintsRetired() || !cfg.hints || !cfg.hints.length) return;
+    var live = [];
+    for (var i = 0; i < cfg.hints.length; i++) {
+      var el = document.querySelector(cfg.hints[i].el);
+      if (el) live.push({ spec: cfg.hints[i], el: el });
+    }
+    if (!live.length) return;
+    ensureHintsLib().then(function () {
+      if (hintsObj || hintsRetired()) return;
+      hintsObj = window.driverHints.hints({
+        buttonText: __QSVI18N_HINT_BUTTON__,
+        hints: live.map(function (h, i) {
+          return {
+            id: "h" + i,
+            element: h.spec.el,
+            beacon: { className: h.spec.cls },
+            popover: { title: h.spec.title, description: h.spec.body, side: "bottom", align: "start" },
+          };
+        }),
+        // the default onButtonClick dismisses only the ONE beacon; these are a single
+        // first-visit gesture, so "Got it" retires the whole set permanently
+        onButtonClick: function () { retireHints(); },
+      });
+      hintsObj.show();
+      // ...and so does reaching for any pill: a beacon has done its job the moment the reader
+      // clicks the thing it points at.
+      live.forEach(function (h) { h.el.addEventListener("click", retireHints, { once: true }); });
+    }).catch(function (e) { console.error("qsv hints:", e); });
+  }
+
   // Tear the tour down through ONE path. driver only commits its active-step state when the
   // highlight animation completes, and on a heavy page (many plotly panels starving rAF) that
   // can take seconds — a dismissal before then would skip a config onDestroyed entirely. So
@@ -16866,6 +17195,11 @@ const TOUR_SCRIPT: &str = r##"<style>
     leaveChapter(cfg.steps[idx], null);
     navBusy = false;
     if (driverObj) driverObj.destroy();
+    // Hand off to the beacons. Deferred past destroy(): driver removes `body.driver-active`
+    // there, and the hints stylesheet hides every beacon under `.driver-active .driver-hint`
+    // (its own MutationObserver on the body class also closes any open hint popover the moment
+    // that class appears). Arming before the class drops would mount invisible beacons.
+    setTimeout(armHints, 400);
   }
 
   // One navigation at a time: driver animates each highlight in a rAF loop, and a second
@@ -17067,6 +17401,7 @@ const TOUR_SCRIPT: &str = r##"<style>
     // detectable by the missing .react), and starting the tour mid-replay both janks the
     // page and spotlights still-empty panels. Capped poll, then start regardless.
     if (window.self === window.top && !wasSeen()) {
+      firstRun = true;
       var tries = 0;
       (function whenReady() {
         var ready = !document.getElementById("qsv-plotly-gz") ||
@@ -17729,8 +18064,10 @@ fn wants_violin(
 /// Whether a panel will render with a logarithmic y-axis under the resolved `--log-scale` mode.
 /// Frequency bars and measure-by-dimension bars decide from their values (high dynamic range); box
 /// panels carry the verdict resolved at classification time (`Panel::value_log`, from the cached
-/// min/max — see `box_panel_logs`); every other panel kind is always linear. Used both to gate the
-/// panel's y-axis title cue and to size the Data Schematic's left margin to fit it.
+/// min/max — see `box_panel_logs`); every other panel kind is always linear. Three consumers:
+/// gating the panel's y-axis title cue, sizing the Data Schematic's left margin to fit it, and
+/// (since the bar kinds carry no `value_log` to read) deciding whether the guided tour narrates
+/// the panel as logarithmic — see `tour_panel_explanation`.
 fn panel_is_log(panel: &Panel, freq: &FreqMap, log_scale: LogScale) -> bool {
     match &panel.kind {
         PanelKind::FreqBar { idx } => {
@@ -35458,10 +35795,18 @@ impl<'a> SmartCtx<'a> {
                 let (geoms, _rows, _height) = smart_grid_layout(&self.panels, cols);
                 TourPanelTargets::Typed(geoms)
             };
+            // `--tour-steps`: absent means the default budget, which the frequency-bar guarantee
+            // may exceed by one; an explicit value (even a literal 8) is a hard cap. `0`
+            // suppresses the tour wholesale inside `build_tour_chrome`.
             build_tour_chrome(
-                self.args.flag_no_tour,
+                self.args
+                    .flag_tour_steps
+                    .unwrap_or(DEFAULT_TOUR_PANEL_STEPS),
+                self.args.flag_tour_steps.is_some(),
                 &self.panels,
                 &self.stats,
+                &freq,
+                self.log_scale,
                 self.dict_data.as_ref(),
                 dict_page.is_some(),
                 data_chrome.is_some(),
@@ -48590,6 +48935,62 @@ mod tests {
         );
     }
 
+    #[test]
+    fn driverjs_hints_cdn_sri_matches_the_vendored_bundle() {
+        use base64_simd::STANDARD as BASE64;
+        use sha2::{Digest, Sha384};
+
+        // Same oracle as the core bundle above, for the SEPARATE hints dist file. It rides the
+        // same DRIVERJS_CDN_VERSION pin, so bumping the version without refetching BOTH pairs of
+        // files fails here.
+        let js_digest = BASE64.encode_to_string(Sha384::digest(DRIVERJS_HINTS_JS.as_bytes()));
+        assert_eq!(
+            format!("sha384-{js_digest}"),
+            DRIVERJS_HINTS_CDN_JS_SRI,
+            "DRIVERJS_HINTS_CDN_JS_SRI is stale: the vendored driverjs-hints.min.js hashes to \
+             sha384-{js_digest}. Regenerate it (see the command on DRIVERJS_HINTS_JS)."
+        );
+        let css_digest = BASE64.encode_to_string(Sha384::digest(DRIVERJS_HINTS_CSS.as_bytes()));
+        assert_eq!(
+            format!("sha384-{css_digest}"),
+            DRIVERJS_HINTS_CDN_CSS_SRI,
+            "DRIVERJS_HINTS_CDN_CSS_SRI is stale: the vendored driverjs-hints.min.css hashes to \
+             sha384-{css_digest}. Regenerate it (see the command on DRIVERJS_HINTS_JS)."
+        );
+    }
+
+    #[test]
+    fn driverjs_hints_bundle_is_plain_embed_safe() {
+        assert!(
+            !DRIVERJS_HINTS_JS.contains("</script"),
+            "vendored driverjs-hints.min.js contains `</script` — plain inline embedding would \
+             truncate the tag"
+        );
+        assert!(
+            !DRIVERJS_HINTS_CSS.contains("</style"),
+            "vendored driverjs-hints.min.css contains `</style` — plain inline embedding would \
+             truncate the tag"
+        );
+        // the IIFE build installs the global TOUR_SCRIPT's armHints() dispatches on
+        assert!(
+            DRIVERJS_HINTS_JS.starts_with("var driverHints="),
+            "vendored driverjs-hints.min.js is not the dist/hints.iife.js build (missing the `var \
+             driverHints=` preamble armHints() depends on)"
+        );
+        // the beacon classes TOUR_SCRIPT re-themes, and the pulse it relies on
+        assert!(
+            DRIVERJS_HINTS_CSS.contains(".driver-hint-pulse"),
+            "vendored driverjs-hints.min.css lacks the .driver-hint-pulse rules"
+        );
+        // hint popovers reuse the CORE popover class, which is why TOUR_SCRIPT's
+        // `body.qsv-dark .driver-popover` rules re-theme them for free
+        assert!(
+            DRIVERJS_HINTS_CSS.contains(".driver-hint-popover.driver-popover"),
+            "vendored driverjs-hints.min.css no longer reuses .driver-popover — the dark-theme \
+             rules in TOUR_SCRIPT would stop covering hint popovers"
+        );
+    }
+
     /// Same discipline as `datatables_attribution_matches_the_pinned_combo`: the driver.js
     /// version is written out in places nothing else ties together, so a bump that skips one
     /// leaves the shipped attribution describing the wrong bundle.
@@ -48709,7 +49110,7 @@ mod tests {
         // overviews first (document order), then per-column by interest desc — result re-sorted
         // into document order for a front-to-back walk
         assert_eq!(
-            tour_panel_selection(&panels, &stats, None),
+            tour_panel_selection(&panels, &stats, None, DEFAULT_TOUR_PANEL_STEPS, false),
             vec![0, 1, 2, 3, 4]
         );
 
@@ -48719,7 +49120,13 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            tour_panel_selection(&panels, &stats, Some(&spec)),
+            tour_panel_selection(
+                &panels,
+                &stats,
+                Some(&spec),
+                DEFAULT_TOUR_PANEL_STEPS,
+                false
+            ),
             vec![3, 0]
         );
         // an all-unknown panel_order falls back to the deterministic selection
@@ -48728,9 +49135,220 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            tour_panel_selection(&panels, &stats, Some(&spec)),
+            tour_panel_selection(
+                &panels,
+                &stats,
+                Some(&spec),
+                DEFAULT_TOUR_PANEL_STEPS,
+                false
+            ),
             vec![0, 1, 2, 3, 4]
         );
+    }
+
+    #[test]
+    fn tour_panel_selection_always_keeps_a_frequency_bar() {
+        let stats = Vec::new();
+        // 8 DISTINCT overview kinds — exactly the default budget — so the deterministic build
+        // truncates every per-column pick away. This is the starvation case real dashboards hit:
+        // before the guarantee, a page like this spotlighted no distribution at all.
+        let mut panels = vec![
+            Panel::new("kpi".to_string(), PanelKind::KpiRow { tiles: Vec::new() }),
+            Panel::new(
+                "corr".to_string(),
+                PanelKind::CorrHeatmap {
+                    labels:   Vec::new(),
+                    matrix:   Vec::new(),
+                    spearman: false,
+                },
+            ),
+            Panel::new(
+                "assoc".to_string(),
+                PanelKind::AssocHeatmap {
+                    labels:       Vec::new(),
+                    matrix:       Vec::new(),
+                    hover_suffix: Vec::new(),
+                },
+            ),
+            Panel::new(
+                "rel".to_string(),
+                PanelKind::TopRelationships {
+                    labels:       Vec::new(),
+                    values:       Vec::new(),
+                    supports:     Vec::new(),
+                    nonlinear:    Vec::new(),
+                    hover_suffix: Vec::new(),
+                },
+            ),
+            Panel::new(
+                "mbd".to_string(),
+                PanelKind::MeasureByDim {
+                    labels: Vec::new(),
+                    values: Vec::new(),
+                },
+            ),
+            Panel::new(
+                "lorenz".to_string(),
+                PanelKind::Lorenz {
+                    pop:   Vec::new(),
+                    share: Vec::new(),
+                    gini:  0.5,
+                    label: "x".to_string(),
+                },
+            ),
+            Panel::new(
+                "sankey".to_string(),
+                PanelKind::Sankey {
+                    node_labels: Vec::new(),
+                    link_source: Vec::new(),
+                    link_target: Vec::new(),
+                    link_value:  Vec::new(),
+                    value_order: false,
+                },
+            ),
+            Panel::new(
+                "parcats".to_string(),
+                PanelKind::Parcats {
+                    dim_labels: Vec::new(),
+                    tuples:     Vec::new(),
+                    counts:     Vec::new(),
+                },
+            ),
+        ];
+        assert_eq!(
+            panels
+                .iter()
+                .filter_map(|p| tour_overview_key(&p.kind))
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            DEFAULT_TOUR_PANEL_STEPS,
+            "fixture must saturate the default budget with overview panels"
+        );
+
+        // no frequency bar on the page at all -> STRICT no-op, still exactly the budget
+        let without = tour_panel_selection(&panels, &stats, None, DEFAULT_TOUR_PANEL_STEPS, false);
+        assert_eq!(without, (0..DEFAULT_TOUR_PANEL_STEPS).collect::<Vec<_>>());
+
+        // two frequency bars, the LOWER-interest one first in document order
+        panels.push(
+            Panel::new("dim_lo".to_string(), PanelKind::FreqBar { idx: 0 }).with_interest(0.4),
+        );
+        panels.push(
+            Panel::new("dim_hi".to_string(), PanelKind::FreqBar { idx: 1 }).with_interest(1.9),
+        );
+        let (lo, hi) = (8_usize, 9_usize);
+
+        // DEFAULT budget -> the rescue APPENDS past it: a 9th step, no overview panel displaced
+        let soft = tour_panel_selection(&panels, &stats, None, DEFAULT_TOUR_PANEL_STEPS, false);
+        assert_eq!(soft.len(), DEFAULT_TOUR_PANEL_STEPS + 1);
+        assert!(
+            soft.contains(&hi),
+            "the highest-interest bar is the one rescued"
+        );
+        assert!(!soft.contains(&lo));
+        assert!(
+            (0..DEFAULT_TOUR_PANEL_STEPS).all(|i| soft.contains(&i)),
+            "appending must not cost an overview panel"
+        );
+        assert!(soft.windows(2).all(|w| w[0] < w[1]), "document order");
+
+        // EXPLICIT budget -> hard cap: the bar SUBSTITUTES for the weakest (last) pick
+        let hard = tour_panel_selection(&panels, &stats, None, DEFAULT_TOUR_PANEL_STEPS, true);
+        assert_eq!(hard.len(), DEFAULT_TOUR_PANEL_STEPS);
+        assert!(hard.contains(&hi));
+        assert!(
+            !hard.contains(&(DEFAULT_TOUR_PANEL_STEPS - 1)),
+            "the tail overview pick is the one given up"
+        );
+
+        // an explicit budget SMALLER than the overview count still gets its bar
+        let tiny = tour_panel_selection(&panels, &stats, None, 3, true);
+        assert_eq!(tiny.len(), 3);
+        assert!(tiny.contains(&hi));
+
+        // a page that ALREADY spotlights a bar is untouched
+        let already =
+            tour_panel_selection(&panels[8..], &stats, None, DEFAULT_TOUR_PANEL_STEPS, false);
+        assert_eq!(already, vec![0, 1]);
+
+        // an author-supplied panel_order is NEVER amended, even though it names no bar
+        let spec = TourSpec {
+            panel_order: Some(vec!["@kpi".into(), "@correlation".into()]),
+            ..Default::default()
+        };
+        assert_eq!(
+            tour_panel_selection(
+                &panels,
+                &stats,
+                Some(&spec),
+                DEFAULT_TOUR_PANEL_STEPS,
+                false
+            ),
+            vec![0, 1],
+            "panel_order is a complete author-chosen walk"
+        );
+    }
+
+    #[test]
+    fn tour_panel_explanation_narrates_a_log_axis_by_panel_kind() {
+        let _locale = english_locale();
+        let stats = Vec::new();
+        let log_txt = t!("viz.tour.explain.log_axis").into_owned();
+        let count_txt = t!("viz.tour.explain.log_axis_count").into_owned();
+
+        // A frequency bar resolves its log verdict at RENDER time from the bar counts, so it
+        // carries no `Panel::value_log` — reading that field described this panel as linear.
+        let bar = Panel::new("channel".to_string(), PanelKind::FreqBar { idx: 0 });
+        let mk_freq = |counts: &[u64]| -> FreqMap {
+            let mut m = FreqMap::new();
+            m.insert(
+                0,
+                counts
+                    .iter()
+                    .map(|&c| FreqBar {
+                        x_key: "x".to_string(),
+                        label: "x".to_string(),
+                        count: c,
+                        kind:  FreqBarKind::Category,
+                    })
+                    .collect(),
+            );
+            m
+        };
+        // high dynamic range (>= LOG_SCALE_MIN_RATIO across >= 3 positive bars) -> log
+        let wide = mk_freq(&[4000, 300, 60, 4]);
+        let got = tour_panel_explanation(&bar, &stats, &wide, LogScale::Auto);
+        assert!(
+            got.contains(&count_txt),
+            "a log frequency bar must say its COUNT axis is logarithmic: {got}"
+        );
+        assert!(
+            !got.contains(&log_txt),
+            "the value-axis wording contradicts the chart's own `count (log)` title"
+        );
+        // flat counts -> no log sentence at all
+        let flat = mk_freq(&[10, 11, 12, 13]);
+        let got = tour_panel_explanation(&bar, &stats, &flat, LogScale::Auto);
+        assert!(!got.contains(&count_txt) && !got.contains(&log_txt));
+        // --log-scale off overrides the dynamic range
+        let got = tour_panel_explanation(&bar, &stats, &wide, LogScale::Off);
+        assert!(!got.contains(&count_txt) && !got.contains(&log_txt));
+
+        // a box panel logs a VALUE axis and keeps the original wording
+        let boxed = Panel::new(
+            "amount".to_string(),
+            PanelKind::BoxStats {
+                q1:     2.0,
+                median: 3.0,
+                q3:     4.0,
+                lower:  Some(1.0),
+                upper:  Some(5.0),
+                mean:   Some(3.0),
+            },
+        )
+        .with_value_log(true);
+        let got = tour_panel_explanation(&boxed, &stats, &FreqMap::new(), LogScale::Auto);
+        assert!(got.contains(&log_txt) && !got.contains(&count_txt));
     }
 
     #[test]
@@ -48741,12 +49359,15 @@ mod tests {
             "kpi".to_string(),
             PanelKind::KpiRow { tiles: Vec::new() },
         )];
-        // --no-tour: nothing at all
+        // --tour-steps 0: nothing at all
         assert!(
             build_tour_chrome(
+                0,
                 true,
                 &panels,
                 &stats,
+                &FreqMap::new(),
+                LogScale::Auto,
                 None,
                 false,
                 false,
@@ -48757,9 +49378,12 @@ mod tests {
         );
         // default: config + engine + vendored lib present; no drawer chapters without drawers
         let chrome = build_tour_chrome(
+            DEFAULT_TOUR_PANEL_STEPS,
             false,
             &panels,
             &stats,
+            &FreqMap::new(),
+            LogScale::Auto,
             None,
             false,
             false,
@@ -48803,9 +49427,12 @@ mod tests {
             ..Default::default()
         };
         let with_en = build_tour_chrome(
+            DEFAULT_TOUR_PANEL_STEPS,
             false,
             &panels,
             &stats,
+            &FreqMap::new(),
+            LogScale::Auto,
             Some(&mk_dict("en")),
             false,
             false,
@@ -48815,9 +49442,12 @@ mod tests {
         .unwrap();
         assert!(with_en.contains("REFINED-INTRO"));
         let with_ja = build_tour_chrome(
+            DEFAULT_TOUR_PANEL_STEPS,
             false,
             &panels,
             &stats,
+            &FreqMap::new(),
+            LogScale::Auto,
             Some(&mk_dict("ja")),
             false,
             false,
@@ -48830,9 +49460,12 @@ mod tests {
         // drawer chapters appear when their chrome does; typed grids emit domains, not targets
         let geoms = smart_grid_layout(&panels, 1).0;
         let typed = build_tour_chrome(
+            DEFAULT_TOUR_PANEL_STEPS,
             false,
             &panels,
             &stats,
+            &FreqMap::new(),
+            LogScale::Auto,
             None,
             true,
             true,

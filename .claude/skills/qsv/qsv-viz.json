@@ -282,11 +282,6 @@
         "description": "For point-in-polygon binning (lat/lon points binned into a custom GeoJSON without geocoding): do not snap at all — drop every point that falls outside every region. By default an outside point instead snaps to its nearest region when within the snap-distance limit (see --snap-max-dist). Applies to both the `viz choropleth` command and the `viz smart` GeoJSON choropleth panel. A stderr note reports coverage either way; each snapping region's hover tallies the points it absorbed from outside, and snapped or dropped points are reported in a note beneath the map (or in the smart panel's title)."
       },
       {
-        "flag": "--no-tour",
-        "type": "flag",
-        "description": "Suppress the guided tour of `smart` HTML dashboards. By default every Data Schematic ships an interactive tour (auto-started the first time a reader opens the page, and relaunchable anytime from the \"Tour\" button) that walks through the Data Dictionary drawer, the data viewer and the summary panels, explaining why each chart was chosen for this data. A dictionary's dataset-level \"x-qsv\" \"tour\" object can refine the narration: its \"overrides\" map replaces step prose by step id, its \"panels\" map replaces per-panel explanations (keyed by raw field name, or by \"@kind\" tokens like \"@kpi\", \"@correlation\", \"@map\" for overview panels), and \"panel_order\" picks which panels the tour spotlights. Only affects `smart` HTML output."
-      },
-      {
         "flag": "--ohlc-open",
         "type": "string",
         "description": "Open-price column for candlestick/ohlc charts."
@@ -410,6 +405,11 @@
         "flag": "--tour-audience",
         "type": "string",
         "description": "Who the guided Tour should talk to. Forwarded to describegpt when `--dictionary infer` generates the dictionary, so the inferred dictionary carries an \"x-qsv.tour\" narration written for that audience (e.g. \"Explain like I'm 10\" - the default - or \"a board of directors\", \"data journalists\"). The audience shapes ONLY the tour prose; field labels & descriptions keep their normal register. Ignored unless a FRESH `--dictionary infer` actually runs: when an existing <stem>.schema.json sidecar is reused, delete it (or set QSV_VIZ_DICT_FRESH=1) to re-infer with a new audience. Only affects `smart`."
+      },
+      {
+        "flag": "--tour-steps",
+        "type": "string",
+        "description": "How many chart panels the guided tour of a `smart` HTML dashboard spotlights (default: 8). This budgets the per-panel steps only - the introduction, the Data Dictionary drawer chapter, the data viewer chapter and the conclusion are always included. Set to 0 to suppress the guided tour entirely (no tour, no \"Tour\" button, and no first-visit hint beacons on the page's pills). By default every Data Schematic ships an interactive tour (auto-started the first time a reader opens the page, and relaunchable anytime from the \"Tour\" button) that walks through the Data Dictionary drawer, the data viewer and the summary panels, explaining why each chart was chosen for this data. When left at its default, the budget is a soft one: a dashboard whose panels would otherwise all be overviews gets one extra step so a frequency distribution is always spotlighted. Passing an explicit value makes it a hard cap instead, substituting rather than adding. A dictionary's dataset-level \"x-qsv\" \"tour\" object can refine the narration: its \"overrides\" map replaces step prose by step id, its \"panels\" map replaces per-panel explanations (keyed by raw field name, or by \"@kind\" tokens like \"@kpi\", \"@correlation\", \"@map\" for overview panels), and \"panel_order\" picks which panels the tour spotlights (capped by this same budget, and never amended by the frequency-distribution guarantee). Only affects `smart` HTML output."
       },
       {
         "flag": "--value",

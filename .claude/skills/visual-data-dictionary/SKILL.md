@@ -417,14 +417,26 @@ identifies its region column from the dictionary's concepts, not from header spe
 `$SCHEMA` is the authoritative answer and a header regex is only a fallback:
 
 ```bash
-# authoritative: any geo.* concept is a region-key candidate (geo.county_fips, geo.zip_code,
-# geo.zcta, geo.census_tract, geo.state, geo.country_code, geo.city, geo.county, ...)
-python3 -c "import json; d=json.load(open('$SCHEMA'));\
-print([(k,(v.get('x-qsv') or {}).get('concept')) for k,v in d.get('properties',{}).items()\
-       if str((v.get('x-qsv') or {}).get('concept','')).startswith('geo.')] or 'no geo.* concept')"
-
-# fallback only, if no dictionary exists yet
-qsv headers "$WORK" | grep -iE 'lat|lon|lng|y_|x_|coord'   # point-in-polygon path
+# authoritative: only these geo.* leaves key a polygon. NOT every geo.* concept does -
+# geo.latitude/longitude/coordinate_pair/street_address/ip_address/timezone/geonames_id name a
+# point or an attribute, and treating them as region keys is the same false positive inverted.
+python3 - "$SCHEMA" <<'PROBE'
+import json, sys
+# mirrors viz.rs REGION_CODE_LEAVES + CITY_NAME_LEAVES
+CODE = {"zip_code","zip","postal_code","zcta","census_tract","county","county_fips","state",
+        "state_fips","country","country_code","place_fips","fips"}
+CITY = {"city","town","municipality"}           # need --geocode, ranked after every code column
+props = json.load(open(sys.argv[1])).get("properties", {})
+con = {k: str((v.get("x-qsv") or {}).get("concept", "")) for k, v in props.items()}
+leaf = lambda c: c.split(".", 1)[1] if c.startswith("geo.") else None
+code = [k for k, c in con.items() if leaf(c) in CODE]
+city = [k for k, c in con.items() if leaf(c) in CITY]
+pair = ([k for k, c in con.items() if leaf(c) == "latitude"],
+        [k for k, c in con.items() if leaf(c) == "longitude"])
+print("region-code columns :", code or "(none)")
+print("city-name columns   :", city or "(none)  # --geocode only")
+print("lat/lon PAIR        :", "yes" if all(pair) else "no  # a lone lat or lon bins nothing")
+PROBE
 ```
 
 Do not reach for a region-name regex: it cannot spell every geography (`tract`, `zcta`,
@@ -531,6 +543,14 @@ for f in feats:
         if isinstance(v, (str, int, float)):
             cands[f"properties.{k}"].append(v)
 
+# OPTIONAL argv[2]: a file of the region column's DISTINCT values, one per line. Supply it
+# whenever the map is keyed by a region column - then the winner is decided by OVERLAP, not by
+# readability, because on that path the key has to JOIN.
+want = None
+if len(sys.argv) > 2:
+    with open(sys.argv[2]) as fh:
+        want = {ln.strip() for ln in fh if ln.strip()}
+
 good, other = [], []
 for key, vals in cands.items():
     if len(vals) != len(feats):                    # missing on some feature
@@ -548,20 +568,57 @@ def show(title, rows):
         print(f"  {key:<32} e.g. {sample}")
 
 print(f"{len(feats)} features")
-show("RECOMMENDED feature-id-key (unique, meaningful):", good)
-show("Unique but geometry/bookkeeping - avoid:", other)
-if not good and not other:
-    print("\nNo property is unique across all features. This GeoJSON cannot key regions as-is.")
+
+if want is not None:
+    # Rank EVERY unique key by overlap - including ones readability demoted. A numeric
+    # OBJECTID/GEOID that joins beats a pretty name that does not.
+    scored = []
+    for key, _ in good + other:
+        have = {str(v) for v in cands[key]}
+        hit = len(want & have)
+        scored.append((hit, key, hit / len(want)))
+    scored.sort(key=lambda t: -t[0])
+    print(f"\nregion values to match: {len(want)}")
+    print("feature-id-key candidates by OVERLAP (this is the deciding test):")
+    for hit, key, frac in scored[:8]:
+        flag = "  <-- full match" if frac == 1.0 else ("" if hit else "  (joins nothing)")
+        print(f"  {key:<32} {hit}/{len(want)} = {frac:6.1%}{flag}")
+    if not scored or scored[0][0] == 0:
+        print("\nNo property joins the region column. Either the region values and the boundary")
+        print("file disagree (check zero-padding/case), or this GeoJSON cannot key them.")
+else:
+    show("RECOMMENDED feature-id-key (unique, meaningful):", good)
+    show("Unique but geometry/bookkeeping - avoid:", other)
+    if not good and not other:
+        print("\nNo property is unique across all features. This GeoJSON cannot key regions as-is.")
 PY
 ```
 
-Offer the **RECOMMENDED** keys via **AskUserQuestion**, favouring a short region
-code or name (`properties.nta2020`, `properties.hood`) over a surrogate key
-(`properties.OBJECTID`, a GUID) — the value is what the user reads on hover.
+On the region-key path, produce argv[2] from the column Stage 3a named, then re-run the same
+script with it:
+
+```bash
+qsv select "$REGION_COL" "$WORK" | qsv behead | qsv dedup > /tmp/region_values.txt
+python3 - "$GEOJSON" /tmp/region_values.txt <<'PY'
+# ... the identical script, now scored by overlap
+PY
+```
+
+Which ranking you offer via **AskUserQuestion** depends on the path Stage 3a identified:
+
+- **Region key or name path** — offer the **OVERLAP** ranking and take the highest scorer,
+  ideally a full match. Readability is irrelevant here and actively misleading: a numeric
+  `properties.GEOID`/`OBJECTID` that joins is correct, while a pretty `properties.hood` that
+  joins nothing renders an empty choropleth. Treat a partial match as a warning rather than a
+  pass — check zero-padding (`6` vs `06037`) and case before accepting it.
+- **Point-in-polygon path** — there is no join to test, so offer the **RECOMMENDED** keys and
+  favour a short region code or name (`properties.nta2020`, `properties.hood`) over a surrogate
+  key (`properties.OBJECTID`, a GUID): here the value really does label each binned region.
+
 If nothing is unique, say so plainly: the GeoJSON cannot key regions as-is.
 
-Optionally also pick `--feature-name-key` (e.g. `properties.name`) for
-human-readable hover labels. When omitted, common name keys are auto-detected.
+Then pick `--feature-name-key` (e.g. `properties.name`) for human-readable hover labels — that
+is where a readable property belongs. Stage 4 passes it only when you set `FEATURE_NAME_KEY`.
 
 ## Stage 4 — Render
 
@@ -574,6 +631,7 @@ qsv viz smart "$WORK" \
   --dictionary "$SCHEMA" --dict-info \
   ${GEOJSON:+--geojson "$GEOJSON"} \
   ${FEATURE_ID_KEY:+--feature-id-key "$FEATURE_ID_KEY"} \
+  ${FEATURE_NAME_KEY:+--feature-name-key "$FEATURE_NAME_KEY"} \
   ${DATASET_PID:+--dataset-pid "$DATASET_PID"} \
   -o "$OUT"
 ```

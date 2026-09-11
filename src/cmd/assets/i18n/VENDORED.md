@@ -15,7 +15,7 @@ with the library that consumes them:
 
 | Asset | Pinned to | Where the pin lives |
 |---|---|---|
-| `datatables/*.json` | DataTables combo `dt-3.0.1/b-4.0.1/cc-2.0.0/date-2.0.0/sb-2.0.0` | `DATATABLES_CDN_COMBO`, `src/cmd/viz.rs` |
+| `datatables/*.json` | DataTables combo `dt-3.0.3/b-4.0.2/cc-2.0.1/date-2.0.0/sb-2.0.0` | `DATATABLES_CDN_COMBO`, `src/cmd/viz.rs` |
 | `plotly/plotly-locale-*.js` | plotly.js **3.7.0** | `PLOTLY_CDN_VERSION`, `src/cmd/viz.rs` (and the bundle shipped by the `plotly` crate) |
 
 A bump does not always mean a re-download — it means a re-*check*. On **2026-08-02**, when the
@@ -24,6 +24,17 @@ files were compared by sha256 against `https://cdn.datatables.net/plug-ins/3.0.1
 and every one was **byte-identical** to the 3.0.0 plug-in locale already vendored here. The files
 below are therefore unchanged since the 2026-07-30 retrieval; only their documented source URLs
 moved to the new version path.
+
+The same held on **2026-09-10**, when the pin moved from `dt-3.0.1/b-4.0.1/cc-2.0.0` to
+`dt-3.0.3/b-4.0.2/cc-2.0.1`: all seven files were sha256-compared against
+`https://cdn.datatables.net/plug-ins/3.0.3/i18n/<code>.json` and every one was again
+**byte-identical**. Two consequences worth recording, because both are load-bearing elsewhere:
+the upstream `zh` SearchBuilder date-condition inversion is still unfixed at 3.0.3, so the
+splice-time override that `zh_date_condition_labels_are_corrected` pins must stay; and the
+`columnControl` coverage gaps below are unchanged by the ColumnControl 2.0.1 bump.
+
+**The 2026-08-02 paragraph above is a dated historical record.** It names `dt-3.0.0`/`dt-3.0.1`
+deliberately. A version-bump sweep that greps for the old pin will match it — leave it alone.
 
 The plotly version was confirmed from the **header banner** of the crate's bundled
 `plotly/resource/plotly.min.js` (`/** * plotly.js v3.7.0 ... */`), not by grepping for a
@@ -37,12 +48,12 @@ Note that plotly's locale files are genuinely version-specific: `plotly-locale-e
 
 ### `datatables/es.json` — 10,700 bytes
 
-* Source: <https://cdn.datatables.net/plug-ins/3.0.1/i18n/es-ES.json>
+* Source: <https://cdn.datatables.net/plug-ins/3.0.3/i18n/es-ES.json>
 * License: MIT, Copyright (C) 2008-2026 SpryMedia Ltd. Full text in
   `src/cmd/assets/LICENSE-DataTables.txt` (shared with the vendored DataTables bundle).
 * Supplies every DataTables-authored string in the data-viewer drawer: pagination, search,
   "no matching records", and the `columnControl` widget strings (the pinned combo includes
-  `cc-2.0.0`, and this file covers it).
+  `cc-2.0.1`, and this file covers it).
 * **qsv overrides `searchBuilder.button` in this file** at assembly time, as it does for every
   locale. The vendored file renders it literally as "Constructor de búsqueda"; qsv deliberately
   names that control "Advanced Filter" (translated from qsv's own catalog,
@@ -74,10 +85,10 @@ CDN name often is not** — DataTables region-qualifies most European languages:
 
 | Local file | Bytes | Fetched from |
 |---|---|---|
-| `datatables/fr.json` | 10,838 | `.../3.0.1/i18n/fr-FR.json` |
-| `datatables/de.json` | 10,523 | `.../3.0.1/i18n/de-DE.json` |
-| `datatables/it.json` | 10,443 | `.../3.0.1/i18n/it-IT.json` |
-| `datatables/pt-BR.json` | 8,659 | `.../3.0.1/i18n/pt-BR.json` |
+| `datatables/fr.json` | 10,838 | `.../3.0.3/i18n/fr-FR.json` |
+| `datatables/de.json` | 10,523 | `.../3.0.3/i18n/de-DE.json` |
+| `datatables/it.json` | 10,443 | `.../3.0.3/i18n/it-IT.json` |
+| `datatables/pt-BR.json` | 8,659 | `.../3.0.3/i18n/pt-BR.json` |
 | `plotly/plotly-locale-fr.js` | 3,505 | `plotly-locale-fr-3.7.0.js` |
 | `plotly/plotly-locale-de.js` | 3,225 | `plotly-locale-de-3.7.0.js` |
 | `plotly/plotly-locale-it.js` | 3,317 | `plotly-locale-it-3.7.0.js` |
@@ -101,14 +112,14 @@ DataTables falls back to its own English default for any key its language object
 
 * `it.json` omits `lengthLabels` and `orderClear`;
 * `pt-BR.json` omits the whole `columnControl` group, so the per-column search widgets
-  (ColumnControl 2.0.0) stay English in a Brazilian Portuguese drawer.
+  (ColumnControl 2.0.1) stay English in a Brazilian Portuguese drawer.
 
 ### ja, zh-CN — retrieved 2026-07-30
 
 | Local file | Bytes | Fetched from |
 |---|---|---|
-| `datatables/ja.json` | 8,845 | `.../3.0.1/i18n/ja.json` |
-| `datatables/zh-CN.json` | 7,844 | `.../3.0.1/i18n/**zh**.json` |
+| `datatables/ja.json` | 8,845 | `.../3.0.3/i18n/ja.json` |
+| `datatables/zh-CN.json` | 7,844 | `.../3.0.3/i18n/**zh**.json` |
 | `plotly/plotly-locale-ja.js` | 5,183 | `plotly-locale-ja-3.7.0.js` |
 | `plotly/plotly-locale-zh-CN.js` | 4,164 | `plotly-locale-**zh-cn**-3.7.0.js` |
 

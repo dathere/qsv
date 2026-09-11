@@ -353,7 +353,7 @@ route to an area/household denominator describegpt will not derive.)
 | `x-qsv.gauge_range` | per property, `[min, max]` | KPI tile becomes a **gauge**. `describegpt` proposes it for canonical-scale measures; qsv drops it if the data falls outside the range |
 | `x-qsv.target` | per property, a number | KPI tile gains a **"vs target" delta**. Never inferred — it is a goal only the user knows |
 | `x-qsv.currency` | per property, an ISO-4217 code (`"USD"`) | KPI tile is prefixed with the currency **symbol** (`$192B`) and the panel subtitle names the currency. `describegpt` proposes it for money columns; qsv drops it unless the column is a numeric measure that reads as money (concept `measure.money` or `measure.amount`, or content type `money`) |
-| `x-qsv.denominator` | per property on a REGION column, `{"column": "<name>", "level": "geo.county"}` | the region map gains a **rate panel** beside the raw count ("per 10,000 residents"). Normally **derived** by describegpt from a `measure.population` column (#4523); hand-edit to point at households/area, or to correct it. An explicit `--denominator`/`--denominator census` flag outranks it. The optional `level` names the geography the denominator column is defined AT (a `DENOMINATOR_REGION_CONCEPTS` token such as `geo.state`/`geo.county`); describegpt copies it from the measure's own `geo_level` proposal, so do not add a `geo_level` key to the measure column yourself - that second copy is free to drift. qsv refuses a hint three ways: more distinct values than the region key could hold constant, a `level` naming a **different geography** than the region key (#4526 - a coarser denominator makes a confident, wrong rate map that cardinality alone cannot detect), and a denominator that is **constant across every region** (#4547 - the rate panel would just be the count panel rescaled) |
+| `x-qsv.denominator` | per property on a REGION column, `{"column": "<name>", "level": "geo.county"}` | the region map gains a **rate panel** beside the raw count ("per 10,000 residents"). Normally **derived** by describegpt from a `measure.population` column (#4523); hand-edit to point at households/area, or to correct it. An explicit `--denominator census`/`--denominator-key` flag outranks it (plain `--denominator <col>` is `viz choropleth` only and is REJECTED by `viz smart` - in `smart` the column form IS this dictionary key). The optional `level` names the geography the denominator column is defined AT (a `DENOMINATOR_REGION_CONCEPTS` token such as `geo.state`/`geo.county`); describegpt copies it from the measure's own `geo_level` proposal, so do not add a `geo_level` key to the measure column yourself - that second copy is free to drift. qsv refuses a hint three ways: more distinct values than the region key could hold constant, a `level` naming a **different geography** than the region key (#4526 - a coarser denominator makes a confident, wrong rate map that cardinality alone cannot detect), and a denominator that is **constant across every region** (#4547 - the rate panel would just be the count panel rescaled) |
 | `x-qsv.unit` | per property, a curated UCUM code (`km`, `Cel`, `kWh`) | the KPI tile and panel subtitle name the **unit** (`18.4 °C`, `1.2B kWh`), and it follows the number into hover text and pair/3D axis titles. `describegpt` proposes it for numeric measures; qsv re-derives the display symbol from its own curated table, so an **off-table code silently vanishes** - and codes are matched **byte-exactly** (UCUM is case-sensitive: `Cel`, not `cel`). The guardrail also clears it when a measure is downgraded to a dimension, so a declared unit cannot sit on something that is not a quantity |
 | `x-qsv.relationships` | dataset level, `{"kind":"pipeline", …}` | draws the **pipeline** panel |
 | `x-qsv.tour` | dataset level | replaces the guided Tour's built-in narration: `overrides` keyed by step id, `panels` keyed by RAW field name or `@kind` token, `panel_order` picks/orders the panel spotlights (capped by `--tour-steps`, default 8). `version` MUST stay the **integer** `1` — viz silently discards the whole block on anything else. Plain text only; `language` (if present) is BCP-47 and must match the page locale or overrides are dropped. Written by `--tour-audience` (Stage 2), refined in Stage 6 |
@@ -412,16 +412,27 @@ If **yes**:
 - **Point-in-polygon** — `--lat`/`--lon`, each row's coordinates tested against
   the polygons.
 
-So probe for BOTH before concluding anything:
+Check BOTH before concluding anything, and check the **dictionary first** — `viz smart`
+identifies its region column from the dictionary's concepts, not from header spelling, so
+`$SCHEMA` is the authoritative answer and a header regex is only a fallback:
 
 ```bash
-qsv headers "$WORK" | grep -iE 'lat|lon|lng|y_|x_|coord'                        # point-in-polygon path
-qsv headers "$WORK" | grep -iE 'state|county|country|city|fips|geoid|zip|region' # region-key path
+# authoritative: any geo.* concept is a region-key candidate (geo.county_fips, geo.zip_code,
+# geo.zcta, geo.census_tract, geo.state, geo.country_code, geo.city, geo.county, ...)
+python3 -c "import json; d=json.load(open('$SCHEMA'));\
+print([(k,(v.get('x-qsv') or {}).get('concept')) for k,v in d.get('properties',{}).items()\
+       if str((v.get('x-qsv') or {}).get('concept','')).startswith('geo.')] or 'no geo.* concept')"
+
+# fallback only, if no dictionary exists yet
+qsv headers "$WORK" | grep -iE 'lat|lon|lng|y_|x_|coord'   # point-in-polygon path
 ```
 
-Only when **neither** exists does the GeoJSON have no effect — say so then, and
-offer to proceed without it. A dataset carrying county names (or FIPS codes) and
-no coordinates at all maps perfectly well, so do not talk the user out of it.
+Do not reach for a region-name regex: it cannot spell every geography (`tract`, `zcta`,
+`municipality`, `town`, `iso3` all miss a `state|county|country` pattern), and a false
+negative here is exactly the mistake this stage used to make. Only when **neither** a `geo.*`
+concept nor a coordinate pair exists does the GeoJSON have no effect — say so then, and offer
+to proceed without it. A dataset carrying county names (or FIPS codes) and no coordinates at
+all maps perfectly well, so do not talk the user out of it.
 
 ### 3b. Get the file
 
@@ -434,8 +445,12 @@ There is also a **fourth form, and for US data it is usually the right one**:
 census tract or place boundaries from the Census TIGERweb service, scoped to the
 states the data names, and sets `--feature-id-key` to `properties.GEOID` itself.
 The user supplies nothing but the CSV — no file to source, and Stage 3c below is
-unnecessary. Prefer it over hunting for a boundary file, and pair it with
-`--denominator census` when the map should chart a **rate** rather than a count.
+unnecessary. Prefer it over hunting for a boundary file. To chart a **rate** rather than a count, pair it
+with `--denominator census` **only for county or state maps** - Census denominators exist for
+those two geographies alone, and the fetch hard-errors without a free `QSV_CENSUS_API_KEY`.
+For a ZCTA, tract or place layer, get the denominator from the data instead: a
+`measure.population` column in the dictionary (describegpt derives `x-qsv.denominator` from
+it), or `--denominator-key` pointing at a boundary property the fetched features carry.
 
 ### 3c. Discover the feature id key — do not guess it
 
@@ -444,6 +459,14 @@ point-in-polygon mode the key **labels each binned region**, so it must be
 present on every feature, unique across all of them, and *meaningful to a human*.
 Uniqueness alone is not enough: `properties.shape_area` is perfectly unique and
 completely useless as a label.
+
+⚠️ That "meaningful to a human" rule is the **point-in-polygon** rule, where the key LABELS
+each binned region. On the **region-key** path it is the wrong test and will cost you the
+choropleth: there the key must *join* — its values have to overlap the distinct values of the
+region column. Pick the key whose values match the CSV (GEOIDs match GEOIDs, names match
+names), verify the overlap before rendering, and put the human-readable property in
+`--feature-name-key` instead, which exists precisely to supply hover labels. Choosing a
+display name here while the CSV holds GEOIDs resolves nothing and renders no map.
 
 The script accepts the same **file** source forms `--geojson` does — a local path,
 an `http(s)` URL, or a `QSV_GEOJSON_SHORTCUTS` name. If you only handle local
@@ -549,7 +572,8 @@ ARK, Handle, or a URL). It is optional; allow the user to skip it.
 qsv viz smart "$WORK" \
   --smarter --bivariate \
   --dictionary "$SCHEMA" --dict-info \
-  ${GEOJSON:+--geojson "$GEOJSON" --feature-id-key "$FEATURE_ID_KEY"} \
+  ${GEOJSON:+--geojson "$GEOJSON"} \
+  ${FEATURE_ID_KEY:+--feature-id-key "$FEATURE_ID_KEY"} \
   ${DATASET_PID:+--dataset-pid "$DATASET_PID"} \
   -o "$OUT"
 ```

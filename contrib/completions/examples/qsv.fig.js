@@ -13807,6 +13807,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -14366,6 +14369,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -14929,6 +14935,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -15488,6 +15497,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -16051,6 +16063,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -16610,6 +16625,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -17173,6 +17191,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -17732,6 +17753,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -18295,6 +18319,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -18854,6 +18881,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -19417,6 +19447,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -19976,6 +20009,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -20539,6 +20575,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -21098,6 +21137,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -21661,6 +21703,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -22220,6 +22265,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -22783,6 +22831,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -23342,6 +23393,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -23905,6 +23959,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -24464,6 +24521,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -25027,6 +25087,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -25586,6 +25649,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -26149,6 +26215,9 @@ const completion: Fig.Spec = {
               name: "--bivariate",
             },
             {
+              name: "--check-geojson-key",
+            },
+            {
               name: "--density",
             },
             {
@@ -26708,6 +26777,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
             },
             {
               name: "--density",
@@ -27350,6 +27422,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "--bivariate",
+        },
+        {
+          name: "--check-geojson-key",
         },
         {
           name: "--density",

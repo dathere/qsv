@@ -2321,6 +2321,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l donut
@@ -2426,6 +2427,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l donut
@@ -2506,6 +2508,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l donut
@@ -2586,6 +2589,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l donut
@@ -2666,6 +2670,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l donut
@@ -2746,6 +2751,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l donut
@@ -2826,6 +2832,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l donut
@@ -2906,6 +2913,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l donut
@@ -2986,6 +2994,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l donut
@@ -3066,6 +3075,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l donut
@@ -3146,6 +3156,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l donut
@@ -3226,6 +3237,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l donut
@@ -3306,6 +3318,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l donut
@@ -3386,6 +3399,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l donut
@@ -3466,6 +3480,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l donut
@@ -3546,6 +3561,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l donut
@@ -3626,6 +3642,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l donut
@@ -3706,6 +3723,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l donut
@@ -3786,6 +3804,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l donut
@@ -3866,6 +3885,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l donut
@@ -3946,6 +3966,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l donut
@@ -4026,6 +4047,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l donut
@@ -4106,6 +4128,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l donut
@@ -4186,6 +4209,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l donut
@@ -4266,6 +4290,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s z -l z -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l check-geojson-key
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l donut

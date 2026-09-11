@@ -496,7 +496,43 @@ names), verify the overlap before rendering, and put the human-readable property
 `--feature-name-key` instead, which exists precisely to supply hover labels. Choosing a
 display name here while the CSV holds GEOIDs resolves nothing and renders no map.
 
-The script accepts the same **file** source forms `--geojson` does — a local path,
+#### Region-key or name path — ask qsv, do not reimplement the match
+
+`qsv viz --check-geojson-key` scores **every** candidate feature-id path against the distinct
+values of the region column and ranks them by overlap. Use it and take its answer:
+
+```bash
+qsv viz choropleth "$WORK" --locations "$REGION_COL" --geojson "$GEOJSON" --check-geojson-key
+```
+
+```
+3221 distinct --locations values scored against --geojson 'counties.geojson':
+     3221/3221 100.0%  properties.GEOID
+        0/3221   0.0%  properties.NAME  (unmatched e.g. 01001, 01003, 01005)
+
+Use: --feature-id-key properties.GEOID
+```
+
+It scores through the same matcher the render path binds with, so a path it reports as a full
+match **will** bind at render time — zero-padding (`6` vs `06037`), ASCII case folding, and the
+refusal to guess between ambiguous folds (with features `CA` and `ca`, the value `Ca` matches
+neither) all come out identical by construction. That is why this replaced a hand-written
+scorer here: a reimplementation that is one tier more generous than `viz` reports a join you
+will not get.
+
+It reads the same `--geojson` sources `viz` does (local path, `http(s)` URL, or a
+`QSV_GEOJSON_SHORTCUTS` name) and needs no valid `--feature-id-key` to run — finding one is its
+job. Treat a partial match as a warning, not a pass. If nothing matches, the region values and
+the boundary file disagree, or that GeoJSON cannot key them; say so rather than rendering an
+empty map.
+
+#### Point-in-polygon path — rank by uniqueness and readability
+
+There is no join to test on this path (rows are binned by geometry), so the question is which
+property makes a good **label**. That is a judgement about the boundary file alone, which the
+script below answers.
+
+It accepts the same **file** source forms `--geojson` does — a local path,
 an `http(s)` URL, or a `QSV_GEOJSON_SHORTCUTS` name. If you only handle local
 paths here, a URL or shortcut fails at discovery even though `viz` would have
 accepted it.
@@ -559,17 +595,6 @@ for f in feats:
         if isinstance(v, (str, int, float)):
             cands[f"properties.{k}"].append(v)
 
-# OPTIONAL argv[2]: a file of the region column's DISTINCT values, one per line. Supply it
-# whenever the map is keyed by a region column - then the winner is decided by OVERLAP, not by
-# readability, because on that path the key has to JOIN.
-want = None
-if len(sys.argv) > 2:
-    # It is a one-column CSV, so parse it as one: a value containing a comma, quote or newline
-    # is quoted by the writer and reading raw lines would score it as a nonmatch.
-    import csv
-    with open(sys.argv[2], newline="") as fh:
-        want = {row[0].strip() for row in csv.reader(fh) if row and row[0].strip()}
-
 good, other = [], []
 for key, vals in cands.items():
     if len(vals) != len(feats):                    # missing on some feature
@@ -588,90 +613,22 @@ def show(title, rows):
 
 print(f"{len(feats)} features")
 
-if want is not None:
-    # Rank EVERY unique key by overlap - including ones readability demoted. A numeric
-    # OBJECTID/GEOID that joins beats a pretty name that does not.
-    def joins(want_vals, have_vals):
-        """Count matches the way viz.rs RegionMatcher::from_features + match_region_code do.
-        Mirrored deliberately, including the parts that REFUSE to match - a scorer that is
-        more generous than viz reports a join you will not get:
-          * feature ids are used RAW; only the CSV value is trimmed
-          * numeric widths and case folding are ASCII-only (Rust is_ascii_digit /
-            to_ascii_lowercase), not Python's Unicode-aware isdigit()/lower()
-          * a folded key that maps to >1 distinct id is AMBIGUOUS and is dropped, so with
-            features 'CA' and 'ca' the value 'Ca' matches NEITHER. An exact 'ca' still
-            matches, because the exact tier runs before folding."""
-        ascii_digits = lambda t: t != "" and all("0" <= c <= "9" for c in t)
-        afold = lambda t: "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in t)
-        have = {str(v) for v in have_vals}                       # RAW - no strip
-        widths = sorted({len(h) for h in have if ascii_digits(h)})
-        folded, ambiguous = {}, set()
-        for h in have:
-            k = afold(h)
-            if k in folded and folded[k] != h:
-                ambiguous.add(k)
-            else:
-                folded.setdefault(k, h)
-        for k in ambiguous:
-            folded.pop(k, None)
-        hits = 0
-        for w in want_vals:
-            w = w.strip()                                        # only the CSV side is trimmed
-            if not w:
-                continue
-            if w in have:
-                hits += 1
-            elif ascii_digits(w) and any(
-                width > len(w) and w.rjust(width, "0") in have for width in widths
-            ):
-                hits += 1
-            elif afold(w) in folded:
-                hits += 1
-        return hits
-
-    scored = []
-    for key, _ in good + other:
-        hit = joins(want, cands[key])
-        scored.append((hit, key, hit / len(want)))
-    scored.sort(key=lambda t: -t[0])
-    print(f"\nregion values to match: {len(want)}")
-    print("feature-id-key candidates by OVERLAP (this is the deciding test):")
-    for hit, key, frac in scored[:8]:
-        flag = "  <-- full match" if frac == 1.0 else ("" if hit else "  (joins nothing)")
-        print(f"  {key:<32} {hit}/{len(want)} = {frac:6.1%}{flag}")
-    if not scored or scored[0][0] == 0:
-        print("\nNo property joins the region column. Either the region values and the boundary")
-        print("file disagree (check zero-padding/case), or this GeoJSON cannot key them.")
-else:
-    show("RECOMMENDED feature-id-key (unique, meaningful):", good)
-    show("Unique but geometry/bookkeeping - avoid:", other)
-    if not good and not other:
-        print("\nNo property is unique across all features. This GeoJSON cannot key regions as-is.")
+show("RECOMMENDED feature-id-key (unique, meaningful):", good)
+show("Unique but geometry/bookkeeping - avoid:", other)
+if not good and not other:
+    print("\nNo property is unique across all features. This GeoJSON cannot key regions as-is.")
 PY
 ```
 
-On the region-key path, produce argv[2] from the column Stage 3a named, then re-run the same
-script with it:
+What you offer via **AskUserQuestion** depends on the path Stage 3a identified:
 
-```bash
-# full template, not `-t`: GNU mktemp REQUIRES the X run, BSD only appends to a bare prefix
-RV=$(mktemp "${TMPDIR:-/tmp}/qsv_region_values.XXXXXX") && trap 'rm -f "$RV"' EXIT
-qsv select "$REGION_COL" "$WORK" | qsv behead | qsv dedup > "$RV"
-python3 - "$GEOJSON" "$RV" <<'PY'
-# ... the identical script, now scored by overlap
-PY
-```
-
-Which ranking you offer via **AskUserQuestion** depends on the path Stage 3a identified:
-
-- **Region key or name path** — offer the **OVERLAP** ranking and take the highest scorer,
-  ideally a full match. Readability is irrelevant here and actively misleading: a numeric
-  `properties.GEOID`/`OBJECTID` that joins is correct, while a pretty `properties.hood` that
-  joins nothing renders an empty choropleth. Treat a partial match as a warning rather than a
-  pass — check zero-padding (`6` vs `06037`) and case before accepting it.
-- **Point-in-polygon path** — there is no join to test, so offer the **RECOMMENDED** keys and
-  favour a short region code or name (`properties.nta2020`, `properties.hood`) over a surrogate
-  key (`properties.OBJECTID`, a GUID): here the value really does label each binned region.
+- **Region key or name path** — do not offer this ranking at all. Take
+  `--check-geojson-key`'s highest scorer, ideally a full match. Readability is irrelevant here
+  and actively misleading: a numeric `properties.GEOID`/`OBJECTID` that joins is correct, while
+  a pretty `properties.hood` that joins nothing renders an empty choropleth.
+- **Point-in-polygon path** — offer the **RECOMMENDED** keys and favour a short region code or
+  name (`properties.nta2020`, `properties.hood`) over a surrogate key
+  (`properties.OBJECTID`, a GUID): here the value really does label each binned region.
 
 If nothing is unique, say so plainly: the GeoJSON cannot key regions as-is.
 

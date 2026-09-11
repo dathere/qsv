@@ -4111,6 +4111,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4210,6 +4211,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4301,6 +4303,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4392,6 +4395,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4483,6 +4487,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4574,6 +4579,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4665,6 +4671,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4756,6 +4763,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4847,6 +4855,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4938,6 +4947,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5029,6 +5039,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5120,6 +5131,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5211,6 +5223,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5302,6 +5315,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5393,6 +5407,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5484,6 +5499,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5575,6 +5591,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5666,6 +5683,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5757,6 +5775,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5848,6 +5867,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5939,6 +5959,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6030,6 +6051,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6121,6 +6143,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6212,6 +6235,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6303,6 +6327,7 @@ _arguments "${_arguments_options[@]}" : \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
 '--bivariate[]' \
+'--check-geojson-key[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \

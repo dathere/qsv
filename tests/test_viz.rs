@@ -20140,3 +20140,163 @@ fn viz_smart_draws_median_region_map_when_the_medians_differ() {
         "medians 2/20/6/50/80 vary, so the median region map must still be drawn: {html}"
     );
 }
+
+// `--check-geojson-key` sweeps every candidate feature-id path and ranks them by how many
+// distinct --locations values bind. The key property is that it scores through the SAME
+// RegionMatcher the render path uses, so a path it reports as a full match will actually bind.
+#[test]
+fn viz_check_geojson_key_ranks_candidates() {
+    let wrk = Workdir::new("viz_check_geojson_key_ranks_candidates");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","id":"A","properties":{"name":"A","pop":100},
+           "geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+          {"type":"Feature","id":"B","properties":{"name":"B","pop":200},
+           "geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--check-geojson-key",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let report = String::from_utf8_lossy(&out.stdout);
+
+    // both the feature id and properties.name carry A/B, so both bind fully; the population
+    // field is a scalar property (hence a candidate) that binds nothing
+    assert!(report.contains("2/2 100.0%  id"), "{report}");
+    assert!(report.contains("2/2 100.0%  properties.name"), "{report}");
+    assert!(report.contains("0/2   0.0%  properties.pop"), "{report}");
+    // a zero-scoring candidate names what failed to bind, capped at a small sample
+    assert!(report.contains("unmatched e.g. A, B"), "{report}");
+    // the sweep ends in an actionable recommendation, not just a table
+    assert!(report.contains("Use: --feature-id-key id"), "{report}");
+}
+
+// A candidate carried by no usable polygon must score 0 and let the sweep CONTINUE.
+// `RegionMatcher::new` errors in exactly that case, so a naive loop would abort on it — and the
+// whole point of a candidate sweep is trying keys that do not resolve.
+#[test]
+fn viz_check_geojson_key_scores_unusable_candidate_zero() {
+    let wrk = Workdir::new("viz_check_geojson_key_scores_unusable_candidate_zero");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    // `ptonly` appears ONLY on a Point feature, which build_pip_features skips; that same point
+    // also duplicates an existing feature id, so `id` must stay a full match despite it
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","id":"A","properties":{"name":"A"},
+           "geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+          {"type":"Feature","id":"B","properties":{"name":"B"},
+           "geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}},
+          {"type":"Feature","id":"A","properties":{"ptonly":"A"},
+           "geometry":{"type":"Point","coordinates":[0.5,0.5]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--check-geojson-key",
+    ]);
+    let out = wrk.output(&mut cmd);
+    // the unusable candidate is a failed CANDIDATE, not a failed run
+    assert!(out.status.success());
+    let report = String::from_utf8_lossy(&out.stdout);
+    assert!(report.contains("0/2   0.0%  properties.ptonly"), "{report}");
+    // the duplicate id on the skipped point does not cost `id` its match
+    assert!(report.contains("2/2 100.0%  id"), "{report}");
+}
+
+// The sweep inherits RegionMatcher's AMBIGUOUS-FOLD PRUNING: when two feature ids differ only by
+// ASCII case, the case-insensitive tier drops that key rather than guessing between them. This is
+// the behaviour a hand-written scorer cannot keep parity with, and the reason the check lives in
+// Rust beside the matcher.
+#[test]
+fn viz_check_geojson_key_prunes_ambiguous_fold() {
+    let wrk = Workdir::new("viz_check_geojson_key_prunes_ambiguous_fold");
+    wrk.create_from_string("rg.csv", "region\nCa\nTX\n");
+    // "CA" and "ca" fold to the same lowercase key -> the fold is pruned, so `Ca` cannot resolve
+    wrk.create_from_string(
+        "amb.geojson",
+        r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","id":"CA","properties":{},
+           "geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+          {"type":"Feature","id":"ca","properties":{},
+           "geometry":{"type":"Polygon","coordinates":[[[2,2],[2,3],[3,3],[3,2],[2,2]]]}},
+          {"type":"Feature","id":"TX","properties":{},
+           "geometry":{"type":"Polygon","coordinates":[[[4,4],[4,5],[5,5],[5,4],[4,4]]]}}]}"#,
+    );
+    // the CONTROL drops the ambiguity, leaving `Ca` free to fold onto "CA"
+    wrk.create_from_string(
+        "ctl.geojson",
+        r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","id":"CA","properties":{},
+           "geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+          {"type":"Feature","id":"TX","properties":{},
+           "geometry":{"type":"Polygon","coordinates":[[[4,4],[4,5],[5,5],[5,4],[4,4]]]}}]}"#,
+    );
+
+    let run = |geojson: &str| -> String {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "rg.csv",
+            "--locations",
+            "region",
+            "--geojson",
+            geojson,
+            "--check-geojson-key",
+        ]);
+        let out = wrk.output(&mut cmd);
+        assert!(out.status.success());
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+
+    // only TX binds: the CA/ca fold is ambiguous, so `Ca` is left unmatched
+    let amb = run("amb.geojson");
+    assert!(amb.contains("1/2  50.0%  id"), "{amb}");
+    assert!(amb.contains("unmatched e.g. Ca"), "{amb}");
+
+    // same CSV, same `Ca` value, unambiguous boundaries -> the fold resolves and both bind
+    let ctl = run("ctl.geojson");
+    assert!(ctl.contains("2/2 100.0%  id"), "{ctl}");
+}
+
+// The mode needs a concrete boundary source. `viz smart --geojson auto` picks its boundaries from
+// the data dictionary long after this check would run, so it is refused rather than silently
+// checking nothing.
+#[test]
+fn viz_check_geojson_key_requires_concrete_source() {
+    let wrk = Workdir::new("viz_check_geojson_key_requires_concrete_source");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "auto",
+        "--check-geojson-key",
+    ]);
+    let got = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        got.contains("--check-geojson-key needs a concrete --geojson source"),
+        "{got}"
+    );
+}

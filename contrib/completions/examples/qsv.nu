@@ -2652,6 +2652,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -2735,6 +2736,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -2818,6 +2820,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -2901,6 +2904,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -2984,6 +2988,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3067,6 +3072,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3150,6 +3156,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3233,6 +3240,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3316,6 +3324,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3399,6 +3408,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3482,6 +3492,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3565,6 +3576,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3648,6 +3660,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3731,6 +3744,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3814,6 +3828,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3897,6 +3912,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -3980,6 +3996,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -4063,6 +4080,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -4146,6 +4164,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -4229,6 +4248,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -4312,6 +4332,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -4395,6 +4416,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -4478,6 +4500,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -4561,6 +4584,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string
@@ -4644,6 +4668,7 @@ module completions {
     --bins: string
     --bivariate
     --box-points: string
+    --check-geojson-key
     --close: string
     --cluster: string
     --color: string

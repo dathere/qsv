@@ -464,6 +464,17 @@ choropleth options:
                            human-readable region label in choropleth hover (e.g.
                            properties.name). When omitted, common name keys are
                            auto-detected; falls back to the feature id when absent.
+    --check-geojson-key    Diagnostic mode. Instead of rendering, score EVERY candidate
+                           feature-id path in --geojson (its `id`, plus each
+                           `properties.*` field) against the distinct values of the
+                           locations column, and print them ranked by overlap. Use it
+                           to find the right --feature-id-key when a region map shades
+                           nothing. Scoring uses the same matcher the render path uses,
+                           so a path reported here as a full match will bind at render
+                           time. Requires --geojson and --locations, and a concrete
+                           source for the former (path, URL or shortcut): under
+                           `viz smart` the value `auto` picks its boundaries from the
+                           data dictionary too late for this check.
     --denominator-key <k>  GeoJSON property path holding each region's DENOMINATOR
                            (e.g. properties.POP2020), using the same addressing as
                            the --feature-id-key flag. Turns a raw-count region map
@@ -1915,6 +1926,7 @@ struct Args {
     flag_geojson:            Option<String>,
     flag_feature_id_key:     Option<String>,
     flag_feature_name_key:   Option<String>,
+    flag_check_geojson_key:  bool,
     flag_denominator_key:    Option<String>,
     flag_denominator:        Option<SelectColumns>,
     flag_denominator_unit:   Option<String>,
@@ -2218,6 +2230,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_geojson.is_some() && (args.cmd_choropleth || args.cmd_smart) {
         loaded_geojson =
             resolve_and_validate_geojson(&mut args, feature_id_key_explicit, &mut stdin_guard)?;
+    }
+
+    // `--check-geojson-key` is a diagnostic that answers "which --feature-id-key binds?", so it
+    // short-circuits here: AFTER the shortcut/auto resolution and load above (it must score the
+    // same document a render would draw), and BEFORE any plotting work.
+    if args.flag_check_geojson_key {
+        let Some(geojson) = loaded_geojson.as_ref() else {
+            // Either --geojson is absent / the subcommand does not consume it, or this is
+            // `viz smart --geojson auto`, whose boundaries are chosen from the data dictionary
+            // inside SmartCtx::new — far past this point, and by a resolver that already scores
+            // candidates itself.
+            return fail_incorrectusage_clierror!(
+                "--check-geojson-key needs a concrete --geojson source (path, URL or shortcut) on \
+                 `viz choropleth` or `viz smart`. `--geojson auto` under `viz smart` resolves its \
+                 boundaries later, from the data dictionary."
+            );
+        };
+        return check_geojson_key(&args, geojson);
     }
 
     let out_format = match args.flag_output.as_deref() {
@@ -7390,10 +7420,16 @@ fn validate_geojson_source(
         ))
     })?;
     let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
-    if !fc
-        .features
-        .iter()
-        .any(|f| feature_id_by_path(f, key).is_some())
+    // `--check-geojson-key` exists precisely FOR the user who does not yet know the right key, so
+    // the two id-key checks below would reject the very runs the mode serves (including the
+    // default `id` on a boundary file that keys off `properties.*`). Skip them and let the sweep
+    // report every candidate's overlap instead. Everything else here still applies — same
+    // shortcut/auto resolution, same load, same FeatureCollection parse the render path uses.
+    if !args.flag_check_geojson_key
+        && !fc
+            .features
+            .iter()
+            .any(|f| feature_id_by_path(f, key).is_some())
     {
         return fail_incorrectusage_clierror!(
             "--feature-id-key '{key}' resolves on no feature in --geojson '{resolved}'. Use e.g. \
@@ -7406,12 +7442,14 @@ fn validate_geojson_source(
     // here keeps this fail-fast check in exact parity with build_pip_features' late check, so a
     // geojson whose id only lands on non-polygon features is rejected up front rather than after
     // all the expensive stats/dictionary work.
-    if !fc.features.iter().any(|f| {
-        feature_id_by_path(f, key).is_some()
-            && f.geometry
-                .as_ref()
-                .is_some_and(|g| !geojson_value_to_polygons(&g.value).is_empty())
-    }) {
+    if !args.flag_check_geojson_key
+        && !fc.features.iter().any(|f| {
+            feature_id_by_path(f, key).is_some()
+                && f.geometry
+                    .as_ref()
+                    .is_some_and(|g| !geojson_value_to_polygons(&g.value).is_empty())
+        })
+    {
         return fail_incorrectusage_clierror!(
             "--geojson '{resolved}' has no usable Polygon/MultiPolygon features with a '{key}' \
              id. Check --feature-id-key (e.g. 'id' or 'properties.<name>')."
@@ -7441,6 +7479,115 @@ fn validate_geojson_source(
     // a non-deterministic URL made those loads disagree — points binned against one fetch while
     // the map drew another's geometry.
     Ok(geojson)
+}
+
+/// Candidate feature-id paths for `--check-geojson-key`: the top-level `id` when any feature
+/// carries one, then every `properties.<field>` holding a string or number somewhere in the
+/// collection (the only shapes `feature_id_by_path` can return an id from).
+///
+/// The `properties` names are sorted so the report order does not depend on whether
+/// `serde_json`'s map preserves insertion order.
+fn candidate_feature_id_keys(geojson: &serde_json::Value) -> Vec<String> {
+    let Ok(fc) = geojson::FeatureCollection::deserialize(geojson) else {
+        return Vec::new();
+    };
+    let mut props: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for feature in &fc.features {
+        let Some(properties) = feature.properties.as_ref() else {
+            continue;
+        };
+        for (key, value) in properties {
+            if matches!(
+                value,
+                serde_json::Value::String(_) | serde_json::Value::Number(_)
+            ) && seen.insert(key.clone())
+            {
+                props.push(format!("properties.{key}"));
+            }
+        }
+    }
+    props.sort_unstable();
+    let mut out = Vec::with_capacity(props.len() + 1);
+    if fc.features.iter().any(|f| f.id.is_some()) {
+        out.push("id".to_string());
+    }
+    out.extend(props);
+    out
+}
+
+/// `--check-geojson-key`: score every candidate feature-id path against the distinct values of
+/// the --locations column, and print them ranked by overlap (highest first).
+///
+/// Scoring runs through `score_region_code_coverage` -> `RegionMatcher` -> `build_pip_features`,
+/// i.e. the exact matcher the render path binds with — so a path this reports as a full match
+/// WILL bind at render time, and the two cannot drift. That parity is the whole point: this
+/// replaces a hand-maintained reimplementation of the match tiers that could (and did) disagree.
+fn check_geojson_key(args: &Args, geojson: &serde_json::Value) -> CliResult<()> {
+    let (_rdr, headers, no_headers) = reader_and_headers(args)?;
+    let loc_idx = resolve_one(
+        args.flag_locations.as_ref(),
+        &headers,
+        no_headers,
+        "locations",
+    )?;
+    let values = distinct_column_values(args, &[loc_idx])?.swap_remove(0);
+    if values.is_empty() {
+        return fail_incorrectusage_clierror!(
+            "the --locations column holds no non-empty values to check."
+        );
+    }
+
+    let candidates = candidate_feature_id_keys(geojson);
+    if candidates.is_empty() {
+        return fail_incorrectusage_clierror!(
+            "--geojson '{}' has no feature `id` and no scalar `properties` field to check.",
+            args.flag_geojson.as_deref().unwrap_or("-")
+        );
+    }
+
+    // A candidate carried by no usable polygon is a FAILED CANDIDATE, not a failed run —
+    // `RegionMatcher::new` errors in exactly that case, which is the common outcome when sweeping
+    // keys the user is still choosing between. Score it 0 and keep going. A network error is
+    // about the SOURCE rather than the candidate, so it still propagates.
+    let mut scored: Vec<(usize, Vec<String>, String)> = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        match score_region_code_coverage(geojson, &candidate, &values, None, None) {
+            Ok((matched, _total, unmatched)) => scored.push((matched, unmatched, candidate)),
+            Err(e @ crate::CliError::Network(_)) => return Err(e),
+            Err(_) => scored.push((0, Vec::new(), candidate)),
+        }
+    }
+    // highest overlap first; the sort is stable, so ties keep candidate order (`id` ahead of
+    // properties, then alphabetical) and the report is deterministic
+    scored.sort_by_key(|s| std::cmp::Reverse(s.0));
+
+    let total = values.len();
+    wout!(
+        "{total} distinct --locations values scored against --geojson '{}':",
+        args.flag_geojson.as_deref().unwrap_or("-")
+    );
+    for (matched, unmatched, candidate) in &scored {
+        #[allow(clippy::cast_precision_loss)]
+        let pct = *matched as f64 * 100.0 / total as f64;
+        let sample = if unmatched.is_empty() {
+            String::new()
+        } else {
+            format!("  (unmatched e.g. {})", unmatched.join(", "))
+        };
+        wout!("  {matched:>7}/{total} {pct:>5.1}%  {candidate}{sample}");
+    }
+    let best = &scored[0];
+    if best.0 == 0 {
+        wout!(
+            "\nNo candidate matched any value. The --locations column and '{}' may describe \
+             different things, or the boundaries may be a different vintage.",
+            args.flag_geojson.as_deref().unwrap_or("-")
+        );
+    } else {
+        wout!("\nUse: --feature-id-key {}", best.2);
+    }
+    Ok(())
 }
 
 /// Load a GeoJSON `FeatureCollection` from a local file path or an http(s) URL into a JSON value.

@@ -247,3 +247,30 @@ fn output_guard_still_catches_a_user_typed_value_matching_the_output() {
         "a refusal must leave the file untouched"
     );
 }
+
+/// A default must not be counted as supplied just because it is a SUFFIX of an unrelated
+/// option value.
+///
+/// Short options cluster, so an attached value need not begin after the first character —
+/// but resolving that by trying every alphanumeric suffix is a guess, and the guess
+/// misfires: `-snotexact` ends in `exact`, which is `frequency`'s `--sketch-method`
+/// default, so the default looked user-supplied and the guard refused an unrelated output
+/// named `exact`. The cluster is instead walked by ARITY, the way docopt resolves it —
+/// `-s` takes an argument, so the remainder is that argument and the walk stops there.
+#[test]
+fn output_guard_does_not_read_a_default_out_of_an_option_value_suffix() {
+    let wrk = Workdir::new("output_guard_default_is_not_a_suffix_of_an_option_value");
+    wrk.create_from_string("in.csv", "notexact,number\nalpha,13\nbeta,24\n");
+    wrk.create_from_string("exact", "stale\n");
+
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["-snotexact", "in.csv"])
+        .args(["--output", "exact"]);
+    wrk.assert_success(&mut cmd);
+
+    assert_ne!(
+        wrk.read_to_string("exact").unwrap(),
+        "stale\n",
+        "the output should have been written"
+    );
+}

@@ -1168,36 +1168,49 @@ fn check_output_is_not_input(vals: &ArgvMap, argv: &[&str]) -> CliResult<()> {
     // the flagship case and there the input and output strings are identical.
     let out_ptr = std::ptr::from_ref(out_val);
 
-    // Does `token` supply `value`? Covers docopt's three spellings: `--flag value` (the
-    // value is its own token), `--flag=value`, and `-fvalue`. Uses strip_prefix + chars
-    // rather than byte slicing, so a non-ASCII token cannot panic on a char boundary.
-    fn token_supplies(token: &str, value: &str) -> bool {
+    // Does `token` supply `value`? Covers docopt's spellings: `--flag value` (the value is
+    // its own token), `--flag=value`, and short options, which CLUSTER: `-ntpayload.tpl`
+    // is `-n -t payload.tpl`, so an attached value does not necessarily begin after the
+    // first character.
+    //
+    // The cluster is walked the way docopt itself resolves it, by ARITY. Docopt registers
+    // each short flag as a synonym of its long form (qsv_docopt parse.rs), and `find`
+    // resolves synonyms, so `find("-t")` returns the `--payload-tpl` entry: `Switch`/
+    // `Counted` is a boolean flag to step over, while `Plain`/`List` takes an argument and
+    // the whole remainder is that argument. Guessing instead - treating every alphanumeric
+    // suffix as a possible value - reintroduces false positives, because a default can be
+    // a suffix of an unrelated option value (`-snotexact` ends in `exact`, which is
+    // `frequency`'s `--sketch-method` default).
+    fn token_supplies(vals: &ArgvMap, token: &str, value: &str) -> bool {
         if token == value {
             return true;
         }
         if let Some(long) = token.strip_prefix("--") {
             return long.split_once('=').is_some_and(|(_, v)| v == value);
         }
-        let Some(short) = token.strip_prefix('-') else {
+        let Some(mut rest) = token.strip_prefix('-') else {
             return false;
         };
-        // Short options CLUSTER: docopt reads `-ntpayload.tpl` as `-n -t payload.tpl`, so an
-        // attached value can begin after any run of single-char flags, not just the first.
-        // Consuming only one char missed exactly that, and let `fetchpost -ntpayload.tpl
-        // ... -o payload.tpl` zero the template. Flag characters are alphanumeric, so stop
-        // at the first character that cannot be one - that bounds the candidate suffixes to
-        // plausible split points instead of every suffix of the token.
-        let mut rest = short;
-        while rest
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphanumeric())
-        {
+        while let Some(flag) = rest.chars().next() {
+            // A non-alphanumeric char cannot be a short flag, so this is not a cluster
+            // (a bare negative number, say).
+            if !flag.is_ascii_alphanumeric() {
+                return false;
+            }
             let mut chars = rest.chars();
             chars.next();
-            rest = chars.as_str();
-            if rest == value {
-                return true;
+            let after = chars.as_str();
+            match vals.find(&format!("-{flag}")) {
+                // takes an argument: the remainder IS that argument, so stop either way.
+                // An empty remainder means the argument is the next argv token, which the
+                // `token == value` check above already covers.
+                Some(Value::Plain(_) | Value::List(_)) => {
+                    return !after.is_empty() && after == value;
+                },
+                // boolean flag: step over it and keep walking the cluster
+                Some(Value::Switch(_) | Value::Counted(_)) => rest = after,
+                // not a declared short flag; docopt accepted this argv, so stop guessing
+                None => return false,
             }
         }
         false
@@ -1216,7 +1229,7 @@ fn check_output_is_not_input(vals: &ArgvMap, argv: &[&str]) -> CliResult<()> {
         // case `qsv fmt data.csv -o data.csv`, where `data.csv` is typed twice.
         let typed = argv
             .iter()
-            .filter(|token| token_supplies(token, candidate))
+            .filter(|token| token_supplies(vals, token, candidate))
             .count();
         if typed < usize::from(candidate == output) + 1 {
             return false;

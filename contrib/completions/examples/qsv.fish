@@ -34,11 +34,13 @@ complete -c qsv -n "__fish_qsv_needs_command" -f -a "apply"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "behead"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "blake3"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "cat"
+complete -c qsv -n "__fish_qsv_needs_command" -f -a "clean"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "clipboard"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "color"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "count"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "datefmt"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "dedup"
+complete -c qsv -n "__fish_qsv_needs_command" -f -a "denull"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "describegpt"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "diff"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "edit"
@@ -51,6 +53,7 @@ complete -c qsv -n "__fish_qsv_needs_command" -f -a "extsort"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "fetch"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "fetchpost"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "fill"
+complete -c qsv -n "__fish_qsv_needs_command" -f -a "fixedwidth"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "fixlengths"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "flatten"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "fmt"
@@ -79,6 +82,7 @@ complete -c qsv -n "__fish_qsv_needs_command" -f -a "profile"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "prompt"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "pseudo"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "py"
+complete -c qsv -n "__fish_qsv_needs_command" -f -a "readstat"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "rename"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "replace"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "reverse"
@@ -104,6 +108,7 @@ complete -c qsv -n "__fish_qsv_needs_command" -f -a "to"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "tojsonl"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "transpose"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "validate"
+complete -c qsv -n "__fish_qsv_needs_command" -f -a "viz"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l addl-props -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s k -l api-key -r
@@ -334,6 +339,19 @@ complete -c qsv -n "__fish_qsv_using_subcommand cat; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand cat; and __fish_seen_subcommand_from help" -f -a "rows"
 complete -c qsv -n "__fish_qsv_using_subcommand cat; and __fish_seen_subcommand_from help" -f -a "rowskey"
 complete -c qsv -n "__fish_qsv_using_subcommand cat; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -l all
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -s n -l dry-run
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -s f -l force
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -l frequency
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -l index
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -l moarstats
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -s r -l recursive
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -l schema
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -l stale
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -l stats
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -l validate
+complete -c qsv -n "__fish_qsv_using_subcommand clean" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand clipboard" -s s -l save
 complete -c qsv -n "__fish_qsv_using_subcommand clipboard" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand color" -s d -l delimiter -r
@@ -384,6 +402,17 @@ complete -c qsv -n "__fish_qsv_using_subcommand dedup" -s N -l numeric
 complete -c qsv -n "__fish_qsv_using_subcommand dedup" -s q -l quiet
 complete -c qsv -n "__fish_qsv_using_subcommand dedup" -l sorted
 complete -c qsv -n "__fish_qsv_using_subcommand dedup" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand denull" -l add-vocab -r
+complete -c qsv -n "__fish_qsv_using_subcommand denull" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand denull" -l max-distinct -r
+complete -c qsv -n "__fish_qsv_using_subcommand denull" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand denull" -s s -l select -r
+complete -c qsv -n "__fish_qsv_using_subcommand denull" -l vocab -r
+complete -c qsv -n "__fish_qsv_using_subcommand denull" -l all-columns
+complete -c qsv -n "__fish_qsv_using_subcommand denull" -l apply
+complete -c qsv -n "__fish_qsv_using_subcommand denull" -l json
+complete -c qsv -n "__fish_qsv_using_subcommand denull" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand denull" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l addl-cols-list -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l addl-props -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -s k -l api-key -r
@@ -406,6 +435,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -s t -l max-tokens 
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -s m -l model -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l num-examples -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l num-tags -r
+complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l okf-type -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -s p -l prompt -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l prompt-file -r
@@ -418,6 +448,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l sql-results -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l stats-options -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l tag-vocab -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l tour-audience -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l truncate-str -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l user-agent -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l addl-cols
@@ -430,6 +461,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l flush-cache
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l forget
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l fresh
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l infer-content-type
+complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l infer-null-values
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l no-cache
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l no-score-sql
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l prepare-context
@@ -579,6 +611,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand fill" -s b -l backfill
 complete -c qsv -n "__fish_qsv_using_subcommand fill" -s f -l first
 complete -c qsv -n "__fish_qsv_using_subcommand fill" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand fill" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand fixedwidth" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand fixedwidth" -l positions -r
+complete -c qsv -n "__fish_qsv_using_subcommand fixedwidth" -l widths -r
+complete -c qsv -n "__fish_qsv_using_subcommand fixedwidth" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand fixlengths" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand fixlengths" -l escape -r
 complete -c qsv -n "__fish_qsv_using_subcommand fixlengths" -s i -l insert -r
@@ -1177,32 +1213,33 @@ complete -c qsv -n "__fish_qsv_using_subcommand geoconvert" -s x -l longitude -r
 complete -c qsv -n "__fish_qsv_using_subcommand geoconvert" -s l -l max-length -r
 complete -c qsv -n "__fish_qsv_using_subcommand geoconvert" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand geoconvert" -s h -l help -d 'Print help'
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l cache-dir -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l ckan-api -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l ckan-token -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l cloud-opt -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l compress -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l name -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l offset -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l older-than -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -s o -l output -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l refresh -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l sample -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l timeout -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l ttl -r
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l force
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l json
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -s q -l quiet
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l random
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l verify
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -s h -l help -d 'Print help'
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-clear"
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-info"
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-list"
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-prune"
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-set-policy"
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-set-ttl"
-complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l cache-dir -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l ckan-api -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l ckan-token -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l cloud-opt -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l compress -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l name -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l offset -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l older-than -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l refresh -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l sample -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l force
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l json
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l random
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l verify
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-clear"
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-fetch"
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-info"
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-list"
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-prune"
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-set-policy"
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-set-ttl"
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-fetch cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l ckan-api -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l ckan-token -r
@@ -1222,6 +1259,25 @@ complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l random
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l verify
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l cache-dir -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l ckan-api -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l ckan-token -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l cloud-opt -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l compress -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l name -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l offset -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l older-than -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l refresh -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l sample -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l force
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l json
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l random
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -l verify
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-fetch" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l ckan-api -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l ckan-token -r
@@ -1318,6 +1374,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l verify
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from help" -f -a "cache-clear"
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from help" -f -a "cache-fetch"
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from help" -f -a "cache-info"
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from help" -f -a "cache-list"
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from help" -f -a "cache-prune"
@@ -1492,6 +1549,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand luau; and __fish_seen_subcommand
 complete -c qsv -n "__fish_qsv_using_subcommand luau; and __fish_seen_subcommand_from help" -f -a "filter"
 complete -c qsv -n "__fish_qsv_using_subcommand luau; and __fish_seen_subcommand_from help" -f -a "map"
 complete -c qsv -n "__fish_qsv_using_subcommand luau; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand moarstats" -l bivariate-batch -r
 complete -c qsv -n "__fish_qsv_using_subcommand moarstats" -s S -l bivariate-stats -r
 complete -c qsv -n "__fish_qsv_using_subcommand moarstats" -s C -l cardinality-threshold -r
 complete -c qsv -n "__fish_qsv_using_subcommand moarstats" -s e -l epsilon -r
@@ -1625,6 +1683,13 @@ complete -c qsv -n "__fish_qsv_using_subcommand py; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand py; and __fish_seen_subcommand_from help" -f -a "filter"
 complete -c qsv -n "__fish_qsv_using_subcommand py; and __fish_seen_subcommand_from help" -f -a "map"
 complete -c qsv -n "__fish_qsv_using_subcommand py; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand readstat" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand readstat" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand readstat" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand readstat" -l metadata -r
+complete -c qsv -n "__fish_qsv_using_subcommand readstat" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand readstat" -l value-labels
+complete -c qsv -n "__fish_qsv_using_subcommand readstat" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand rename" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand rename" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand rename" -s n -l no-headers
@@ -1912,6 +1977,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand stats" -s E -l everything
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l infer-boolean
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l infer-dates
+complete -c qsv -n "__fish_qsv_using_subcommand stats" -l jsonl
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l mad
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l median
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l memcheck
@@ -1920,6 +1986,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand stats" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l nulls
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l percentiles
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l prefer-dmy
+complete -c qsv -n "__fish_qsv_using_subcommand stats" -l pretty-json
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l quartiles
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l stats-jsonl
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l typesonly
@@ -2155,6 +2222,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_su
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l pretty-json
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -s p -l progressbar
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l split-ragged
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l trim
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -f -a "schema"
@@ -2184,85 +2252,2141 @@ complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcom
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l pretty-json
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -s p -l progressbar
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l split-ragged
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l trim
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from help" -f -a "schema"
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "apply"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "behead"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "blake3"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "cat"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "clipboard"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "color"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "count"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "datefmt"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "dedup"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "describegpt"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "diff"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "edit"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "enum"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "excel"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "exclude"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "explode"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "extdedup"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "extsort"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "fetch"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "fetchpost"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "fill"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "fixlengths"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "flatten"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "fmt"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "foreach"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "frequency"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "geocode"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "geoconvert"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "get"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "headers"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "implode"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "index"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "input"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "join"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "joinp"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "json"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "jsonl"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "lens"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "log"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "luau"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "moarstats"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "partition"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "pivotp"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "pragmastat"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "pro"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "profile"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "prompt"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "pseudo"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "py"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "rename"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "replace"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "reverse"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "safenames"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "sample"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "schema"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "scoresql"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "search"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "searchset"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "select"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "slice"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "snappy"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "sniff"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "sort"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "sortcheck"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "split"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "sqlp"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "stats"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "synthesize"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "table"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "template"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "to"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "tojsonl"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "transpose"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "validate"
-complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "bar"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "box"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "candlestick"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "choropleth"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "contour"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "funnel"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "geo"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "heatmap"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "histogram"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "icicle"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "line"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "map"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "ohlc"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "parcats"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "pie"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "radar"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "sankey"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "scatter"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "scatter3d"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "smart"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "splom"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "sunburst"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "treemap"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "violin"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "bar"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "box"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "candlestick"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "choropleth"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "contour"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "funnel"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "geo"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "heatmap"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "histogram"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "icicle"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "line"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "map"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "ohlc"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "parcats"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "pie"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "radar"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "sankey"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "scatter"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "scatter3d"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "smart"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "splom"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "sunburst"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "treemap"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "violin"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "apply"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "behead"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "blake3"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "cat"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "clean"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "clipboard"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "color"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "count"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "datefmt"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "dedup"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "denull"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "describegpt"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "diff"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "edit"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "enum"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "excel"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "exclude"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "explode"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "extdedup"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "extsort"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "fetch"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "fetchpost"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "fill"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "fixedwidth"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "fixlengths"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "flatten"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "fmt"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "foreach"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "frequency"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "geocode"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "geoconvert"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "get"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "headers"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "implode"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "index"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "input"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "join"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "joinp"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "json"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "jsonl"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "lens"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "log"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "luau"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "moarstats"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "partition"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "pivotp"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "pragmastat"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "pro"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "profile"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "prompt"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "pseudo"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "py"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "readstat"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "rename"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "replace"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "reverse"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "safenames"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "sample"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "schema"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "scoresql"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "search"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "searchset"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "select"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "slice"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "snappy"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "sniff"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "sort"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "sortcheck"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "split"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "sqlp"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "stats"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "synthesize"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "table"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "template"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "to"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "tojsonl"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "transpose"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "validate"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "viz"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and not __fish_seen_subcommand_from apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from apply" -f -a "calcconv"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from apply" -f -a "dynfmt"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from apply" -f -a "emptyreplace"
@@ -2289,6 +4413,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "suggest"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "suggestnow"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from get" -f -a "cache-clear"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from get" -f -a "cache-fetch"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from get" -f -a "cache-info"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from get" -f -a "cache-list"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from get" -f -a "cache-prune"
@@ -2311,3 +4436,27 @@ complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from to" -f -a "sqlite"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from to" -f -a "xlsx"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from validate" -f -a "schema"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "bar"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "box"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "candlestick"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "choropleth"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "contour"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "funnel"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "geo"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "heatmap"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "histogram"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "icicle"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "line"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "map"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "ohlc"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "parcats"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "pie"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "radar"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "sankey"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "scatter"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "scatter3d"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "smart"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "splom"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "sunburst"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "treemap"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "violin"

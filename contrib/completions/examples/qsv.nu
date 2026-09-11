@@ -294,6 +294,22 @@ module completions {
   export extern "qsv cat help help" [
   ]
 
+  export extern "qsv clean" [
+    --all
+    --dry-run(-n)
+    --force(-f)
+    --frequency
+    --index
+    --moarstats
+    --quiet(-q)
+    --recursive(-r)
+    --schema
+    --stale
+    --stats
+    --validate
+    --help(-h)                # Print help
+  ]
+
   export extern "qsv clipboard" [
     --save(-s)
     --help(-h)                # Print help
@@ -359,6 +375,20 @@ module completions {
     --help(-h)                # Print help
   ]
 
+  export extern "qsv denull" [
+    --add-vocab: string
+    --all-columns
+    --apply
+    --delimiter(-d): string
+    --json
+    --max-distinct: string
+    --no-headers(-n)
+    --output(-o): string
+    --select(-s): string
+    --vocab: string
+    --help(-h)                # Print help
+  ]
+
   export extern "qsv describegpt" [
     --addl-cols
     --addl-cols-list: string
@@ -386,6 +416,7 @@ module completions {
     --freq-options: string
     --fresh
     --infer-content-type
+    --infer-null-values
     --language: string
     --markdown-template: string
     --max-tokens(-t): string
@@ -394,6 +425,7 @@ module completions {
     --no-score-sql
     --num-examples: string
     --num-tags: string
+    --okf-type: string
     --output(-o): string
     --prepare-context
     --process-response
@@ -412,6 +444,7 @@ module completions {
     --tag-vocab: string
     --tags
     --timeout: string
+    --tour-audience: string
     --truncate-str: string
     --two-pass
     --user-agent: string
@@ -587,6 +620,13 @@ module completions {
     --groupby(-g): string
     --no-headers(-n)
     --output(-o): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv fixedwidth" [
+    --output(-o): string
+    --positions: string
+    --widths: string
     --help(-h)                # Print help
   ]
 
@@ -1327,6 +1367,28 @@ module completions {
     --help(-h)                # Print help
   ]
 
+  export extern "qsv get cache-fetch" [
+    --cache-dir: string
+    --ckan-api: string
+    --ckan-token: string
+    --cloud-opt: string
+    --compress: string
+    --force
+    --json
+    --name: string
+    --offset: string
+    --older-than: string
+    --output(-o): string
+    --quiet(-q)
+    --random
+    --refresh: string
+    --sample: string
+    --timeout: string
+    --ttl: string
+    --verify
+    --help(-h)                # Print help
+  ]
+
   export extern "qsv get cache-info" [
     --cache-dir: string
     --ckan-api: string
@@ -1442,6 +1504,9 @@ module completions {
   ]
 
   export extern "qsv get help cache-clear" [
+  ]
+
+  export extern "qsv get help cache-fetch" [
   ]
 
   export extern "qsv get help cache-info" [
@@ -1681,6 +1746,7 @@ module completions {
   export extern "qsv moarstats" [
     --advanced
     --bivariate(-B)
+    --bivariate-batch: string
     --bivariate-stats(-S): string
     --cardinality-threshold(-C): string
     --epsilon(-e): string
@@ -1864,6 +1930,16 @@ module completions {
 
   # Print this message or the help of the given subcommand(s)
   export extern "qsv py help help" [
+  ]
+
+  export extern "qsv readstat" [
+    --batch(-b): string
+    --delimiter(-d): string
+    --jobs(-j): string
+    --metadata: string
+    --output(-o): string
+    --value-labels
+    --help(-h)                # Print help
   ]
 
   export extern "qsv rename" [
@@ -2220,6 +2296,7 @@ module completions {
     --infer-boolean
     --infer-dates
     --jobs(-j): string
+    --jsonl
     --mad
     --median
     --memcheck
@@ -2231,6 +2308,7 @@ module completions {
     --percentile-list: string
     --percentiles
     --prefer-dmy
+    --pretty-json
     --quantile-method: string
     --quartiles
     --round: string
@@ -2518,6 +2596,7 @@ module completions {
     --progressbar(-p)
     --quiet(-q)
     --size-limit: string
+    --split-ragged
     --timeout: string
     --trim
     --valid: string
@@ -2548,6 +2627,7 @@ module completions {
     --progressbar(-p)
     --quiet(-q)
     --size-limit: string
+    --split-ragged
     --timeout: string
     --trim
     --valid: string
@@ -2564,6 +2644,2161 @@ module completions {
 
   # Print this message or the help of the given subcommand(s)
   export extern "qsv validate help help" [
+  ]
+
+  export extern "qsv viz" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz bar" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz box" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz candlestick" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz choropleth" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz contour" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz funnel" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz geo" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz heatmap" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz histogram" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz icicle" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz line" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz map" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz ohlc" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz parcats" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz pie" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz radar" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz sankey" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz scatter" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz scatter3d" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz smart" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz splom" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz sunburst" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz treemap" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz violin" [
+    --agg: string
+    --annotation: string
+    --bins: string
+    --bivariate
+    --box-points: string
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  # Print this message or the help of the given subcommand(s)
+  export extern "qsv viz help" [
+  ]
+
+  export extern "qsv viz help bar" [
+  ]
+
+  export extern "qsv viz help box" [
+  ]
+
+  export extern "qsv viz help candlestick" [
+  ]
+
+  export extern "qsv viz help choropleth" [
+  ]
+
+  export extern "qsv viz help contour" [
+  ]
+
+  export extern "qsv viz help funnel" [
+  ]
+
+  export extern "qsv viz help geo" [
+  ]
+
+  export extern "qsv viz help heatmap" [
+  ]
+
+  export extern "qsv viz help histogram" [
+  ]
+
+  export extern "qsv viz help icicle" [
+  ]
+
+  export extern "qsv viz help line" [
+  ]
+
+  export extern "qsv viz help map" [
+  ]
+
+  export extern "qsv viz help ohlc" [
+  ]
+
+  export extern "qsv viz help parcats" [
+  ]
+
+  export extern "qsv viz help pie" [
+  ]
+
+  export extern "qsv viz help radar" [
+  ]
+
+  export extern "qsv viz help sankey" [
+  ]
+
+  export extern "qsv viz help scatter" [
+  ]
+
+  export extern "qsv viz help scatter3d" [
+  ]
+
+  export extern "qsv viz help smart" [
+  ]
+
+  export extern "qsv viz help splom" [
+  ]
+
+  export extern "qsv viz help sunburst" [
+  ]
+
+  export extern "qsv viz help treemap" [
+  ]
+
+  export extern "qsv viz help violin" [
+  ]
+
+  # Print this message or the help of the given subcommand(s)
+  export extern "qsv viz help help" [
   ]
 
   # Print this message or the help of the given subcommand(s)
@@ -2606,6 +4841,9 @@ module completions {
   export extern "qsv help cat rowskey" [
   ]
 
+  export extern "qsv help clean" [
+  ]
+
   export extern "qsv help clipboard" [
   ]
 
@@ -2619,6 +4857,9 @@ module completions {
   ]
 
   export extern "qsv help dedup" [
+  ]
+
+  export extern "qsv help denull" [
   ]
 
   export extern "qsv help describegpt" [
@@ -2655,6 +4896,9 @@ module completions {
   ]
 
   export extern "qsv help fill" [
+  ]
+
+  export extern "qsv help fixedwidth" [
   ]
 
   export extern "qsv help fixlengths" [
@@ -2733,6 +4977,9 @@ module completions {
   ]
 
   export extern "qsv help get cache-clear" [
+  ]
+
+  export extern "qsv help get cache-fetch" [
   ]
 
   export extern "qsv help get cache-info" [
@@ -2826,6 +5073,9 @@ module completions {
   ]
 
   export extern "qsv help py map" [
+  ]
+
+  export extern "qsv help readstat" [
   ]
 
   export extern "qsv help rename" [
@@ -2934,6 +5184,81 @@ module completions {
   ]
 
   export extern "qsv help validate schema" [
+  ]
+
+  export extern "qsv help viz" [
+  ]
+
+  export extern "qsv help viz bar" [
+  ]
+
+  export extern "qsv help viz box" [
+  ]
+
+  export extern "qsv help viz candlestick" [
+  ]
+
+  export extern "qsv help viz choropleth" [
+  ]
+
+  export extern "qsv help viz contour" [
+  ]
+
+  export extern "qsv help viz funnel" [
+  ]
+
+  export extern "qsv help viz geo" [
+  ]
+
+  export extern "qsv help viz heatmap" [
+  ]
+
+  export extern "qsv help viz histogram" [
+  ]
+
+  export extern "qsv help viz icicle" [
+  ]
+
+  export extern "qsv help viz line" [
+  ]
+
+  export extern "qsv help viz map" [
+  ]
+
+  export extern "qsv help viz ohlc" [
+  ]
+
+  export extern "qsv help viz parcats" [
+  ]
+
+  export extern "qsv help viz pie" [
+  ]
+
+  export extern "qsv help viz radar" [
+  ]
+
+  export extern "qsv help viz sankey" [
+  ]
+
+  export extern "qsv help viz scatter" [
+  ]
+
+  export extern "qsv help viz scatter3d" [
+  ]
+
+  export extern "qsv help viz smart" [
+  ]
+
+  export extern "qsv help viz splom" [
+  ]
+
+  export extern "qsv help viz sunburst" [
+  ]
+
+  export extern "qsv help viz treemap" [
+  ]
+
+  export extern "qsv help viz violin" [
   ]
 
   # Print this message or the help of the given subcommand(s)

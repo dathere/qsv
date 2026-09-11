@@ -1,6 +1,6 @@
 {
   "name": "qsv-sortcheck",
-  "version": "22.0.1",
+  "version": "23.0.0",
   "description": "Check if a CSV is sorted. With the --json options, also retrieve record count, sort breaks & duplicate count.",
   "category": "utility",
   "command": {

@@ -518,6 +518,28 @@ esac
     ;;
 esac
 ;;
+(clean)
+_arguments "${_arguments_options[@]}" : \
+'--all[]' \
+'-n[]' \
+'--dry-run[]' \
+'-f[]' \
+'--force[]' \
+'--frequency[]' \
+'--index[]' \
+'--moarstats[]' \
+'-q[]' \
+'--quiet[]' \
+'-r[]' \
+'--recursive[]' \
+'--schema[]' \
+'--stale[]' \
+'--stats[]' \
+'--validate[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (clipboard)
 _arguments "${_arguments_options[@]}" : \
 '-s[]' \
@@ -622,6 +644,26 @@ _arguments "${_arguments_options[@]}" : \
 '--help[Print help]' \
 && ret=0
 ;;
+(denull)
+_arguments "${_arguments_options[@]}" : \
+'--add-vocab=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--max-distinct=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
+'--vocab=[]: :_default' \
+'--all-columns[]' \
+'--apply[]' \
+'--json[]' \
+'-n[]' \
+'--no-headers[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (describegpt)
 _arguments "${_arguments_options[@]}" : \
 '--addl-cols-list=[]: :_default' \
@@ -650,6 +692,7 @@ _arguments "${_arguments_options[@]}" : \
 '--model=[]: :_default' \
 '--num-examples=[]: :_default' \
 '--num-tags=[]: :_default' \
+'--okf-type=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '-p+[]: :_default' \
@@ -664,6 +707,7 @@ _arguments "${_arguments_options[@]}" : \
 '--stats-options=[]: :_default' \
 '--tag-vocab=[]: :_default' \
 '--timeout=[]: :_default' \
+'--tour-audience=[]: :_default' \
 '--truncate-str=[]: :_default' \
 '--user-agent=[]: :_default' \
 '--addl-cols[]' \
@@ -677,6 +721,7 @@ _arguments "${_arguments_options[@]}" : \
 '--forget[]' \
 '--fresh[]' \
 '--infer-content-type[]' \
+'--infer-null-values[]' \
 '--no-cache[]' \
 '--no-score-sql[]' \
 '--prepare-context[]' \
@@ -938,6 +983,16 @@ _arguments "${_arguments_options[@]}" : \
 '--first[]' \
 '-n[]' \
 '--no-headers[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(fixedwidth)
+_arguments "${_arguments_options[@]}" : \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--positions=[]: :_default' \
+'--widths=[]: :_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1998,6 +2053,32 @@ _arguments "${_arguments_options[@]}" : \
 '--help[Print help]' \
 && ret=0
 ;;
+(cache-fetch)
+_arguments "${_arguments_options[@]}" : \
+'--cache-dir=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cloud-opt=[]: :_default' \
+'--compress=[]: :_default' \
+'--name=[]: :_default' \
+'--offset=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--refresh=[]: :_default' \
+'--sample=[]: :_default' \
+'--timeout=[]: :_default' \
+'--ttl=[]: :_default' \
+'--force[]' \
+'--json[]' \
+'-q[]' \
+'--quiet[]' \
+'--random[]' \
+'--verify[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (cache-info)
 _arguments "${_arguments_options[@]}" : \
 '--cache-dir=[]: :_default' \
@@ -2141,6 +2222,10 @@ _arguments "${_arguments_options[@]}" : \
         curcontext="${curcontext%:*:*}:qsv-get-help-command-$line[1]:"
         case $line[1] in
             (cache-clear)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-fetch)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -2508,6 +2593,7 @@ esac
 ;;
 (moarstats)
 _arguments "${_arguments_options[@]}" : \
+'--bivariate-batch=[]: :_default' \
 '-S+[]: :_default' \
 '--bivariate-stats=[]: :_default' \
 '-C+[]: :_default' \
@@ -2828,6 +2914,22 @@ esac
         esac
     ;;
 esac
+;;
+(readstat)
+_arguments "${_arguments_options[@]}" : \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--metadata=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--value-labels[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
 ;;
 (rename)
 _arguments "${_arguments_options[@]}" : \
@@ -3381,6 +3483,7 @@ _arguments "${_arguments_options[@]}" : \
 '--force[]' \
 '--infer-boolean[]' \
 '--infer-dates[]' \
+'--jsonl[]' \
 '--mad[]' \
 '--median[]' \
 '--memcheck[]' \
@@ -3390,6 +3493,7 @@ _arguments "${_arguments_options[@]}" : \
 '--nulls[]' \
 '--percentiles[]' \
 '--prefer-dmy[]' \
+'--pretty-json[]' \
 '--quartiles[]' \
 '--stats-jsonl[]' \
 '--typesonly[]' \
@@ -3855,6 +3959,7 @@ _arguments "${_arguments_options[@]}" : \
 '--progressbar[]' \
 '-q[]' \
 '--quiet[]' \
+'--split-ragged[]' \
 '--trim[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -3901,6 +4006,7 @@ _arguments "${_arguments_options[@]}" : \
 '--progressbar[]' \
 '-q[]' \
 '--quiet[]' \
+'--split-ragged[]' \
 '--trim[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -3919,6 +4025,2409 @@ _arguments "${_arguments_options[@]}" : \
         curcontext="${curcontext%:*:*}:qsv-validate-help-command-$line[1]:"
         case $line[1] in
             (schema)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(viz)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+":: :_qsv__subcmd__viz_commands" \
+"*::: :->viz" \
+&& ret=0
+
+    case $state in
+    (viz)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:qsv-viz-command-$line[1]:"
+        case $line[1] in
+            (bar)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(box)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(candlestick)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(choropleth)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(contour)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(funnel)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(geo)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(heatmap)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(histogram)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(icicle)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(line)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(map)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(ohlc)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(parcats)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(pie)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(radar)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(sankey)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(scatter)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(scatter3d)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(smart)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(splom)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(sunburst)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(treemap)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(violin)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--bivariate[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_qsv__subcmd__viz__subcmd__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:qsv-viz-help-command-$line[1]:"
+        case $line[1] in
+            (bar)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(box)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(candlestick)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(choropleth)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(contour)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(funnel)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(geo)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(heatmap)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(histogram)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(icicle)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(line)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(map)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(ohlc)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(parcats)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(pie)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(radar)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(sankey)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(scatter)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(scatter3d)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(smart)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(splom)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(sunburst)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(treemap)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(violin)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -4018,6 +6527,10 @@ _arguments "${_arguments_options[@]}" : \
     ;;
 esac
 ;;
+(clean)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (clipboard)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -4035,6 +6548,10 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (dedup)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(denull)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -4083,6 +6600,10 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (fill)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(fixedwidth)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -4207,6 +6728,10 @@ _arguments "${_arguments_options[@]}" : \
         curcontext="${curcontext%:*:*}:qsv-help-get-command-$line[1]:"
         case $line[1] in
             (cache-clear)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-fetch)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -4373,6 +6898,10 @@ _arguments "${_arguments_options[@]}" : \
         esac
     ;;
 esac
+;;
+(readstat)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
 ;;
 (rename)
 _arguments "${_arguments_options[@]}" : \
@@ -4554,6 +7083,118 @@ _arguments "${_arguments_options[@]}" : \
     ;;
 esac
 ;;
+(viz)
+_arguments "${_arguments_options[@]}" : \
+":: :_qsv__subcmd__help__subcmd__viz_commands" \
+"*::: :->viz" \
+&& ret=0
+
+    case $state in
+    (viz)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:qsv-help-viz-command-$line[1]:"
+        case $line[1] in
+            (bar)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(box)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(candlestick)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(choropleth)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(contour)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(funnel)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(geo)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(heatmap)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(histogram)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(icicle)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(line)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(map)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(ohlc)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(parcats)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(pie)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(radar)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(sankey)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(scatter)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(scatter3d)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(smart)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(splom)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(sunburst)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(treemap)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(violin)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
 (help)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -4574,11 +7215,13 @@ _qsv_commands() {
 'behead:' \
 'blake3:' \
 'cat:' \
+'clean:' \
 'clipboard:' \
 'color:' \
 'count:' \
 'datefmt:' \
 'dedup:' \
+'denull:' \
 'describegpt:' \
 'diff:' \
 'edit:' \
@@ -4591,6 +7234,7 @@ _qsv_commands() {
 'fetch:' \
 'fetchpost:' \
 'fill:' \
+'fixedwidth:' \
 'fixlengths:' \
 'flatten:' \
 'fmt:' \
@@ -4619,6 +7263,7 @@ _qsv_commands() {
 'prompt:' \
 'pseudo:' \
 'py:' \
+'readstat:' \
 'rename:' \
 'replace:' \
 'reverse:' \
@@ -4644,6 +7289,7 @@ _qsv_commands() {
 'tojsonl:' \
 'transpose:' \
 'validate:' \
+'viz:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'qsv commands' commands "$@"
@@ -4792,6 +7438,11 @@ _qsv__subcmd__cat__subcmd__rowskey_commands() {
     local commands; commands=()
     _describe -t commands 'qsv cat rowskey commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__clean_commands] )) ||
+_qsv__subcmd__clean_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv clean commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__clipboard_commands] )) ||
 _qsv__subcmd__clipboard_commands() {
     local commands; commands=()
@@ -4816,6 +7467,11 @@ _qsv__subcmd__datefmt_commands() {
 _qsv__subcmd__dedup_commands() {
     local commands; commands=()
     _describe -t commands 'qsv dedup commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__denull_commands] )) ||
+_qsv__subcmd__denull_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv denull commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__describegpt_commands] )) ||
 _qsv__subcmd__describegpt_commands() {
@@ -4876,6 +7532,11 @@ _qsv__subcmd__fetchpost_commands() {
 _qsv__subcmd__fill_commands() {
     local commands; commands=()
     _describe -t commands 'qsv fill commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__fixedwidth_commands] )) ||
+_qsv__subcmd__fixedwidth_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv fixedwidth commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__fixlengths_commands] )) ||
 _qsv__subcmd__fixlengths_commands() {
@@ -5134,6 +7795,7 @@ _qsv__subcmd__geoconvert_commands() {
 _qsv__subcmd__get_commands() {
     local commands; commands=(
 'cache-clear:' \
+'cache-fetch:' \
 'cache-info:' \
 'cache-list:' \
 'cache-prune:' \
@@ -5147,6 +7809,11 @@ _qsv__subcmd__get_commands() {
 _qsv__subcmd__get__subcmd__cache-clear_commands() {
     local commands; commands=()
     _describe -t commands 'qsv get cache-clear commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__cache-fetch_commands] )) ||
+_qsv__subcmd__get__subcmd__cache-fetch_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get cache-fetch commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__get__subcmd__cache-info_commands] )) ||
 _qsv__subcmd__get__subcmd__cache-info_commands() {
@@ -5177,6 +7844,7 @@ _qsv__subcmd__get__subcmd__cache-set-ttl_commands() {
 _qsv__subcmd__get__subcmd__help_commands() {
     local commands; commands=(
 'cache-clear:' \
+'cache-fetch:' \
 'cache-info:' \
 'cache-list:' \
 'cache-prune:' \
@@ -5190,6 +7858,11 @@ _qsv__subcmd__get__subcmd__help_commands() {
 _qsv__subcmd__get__subcmd__help__subcmd__cache-clear_commands() {
     local commands; commands=()
     _describe -t commands 'qsv get help cache-clear commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__help__subcmd__cache-fetch_commands] )) ||
+_qsv__subcmd__get__subcmd__help__subcmd__cache-fetch_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get help cache-fetch commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__get__subcmd__help__subcmd__cache-info_commands] )) ||
 _qsv__subcmd__get__subcmd__help__subcmd__cache-info_commands() {
@@ -5233,11 +7906,13 @@ _qsv__subcmd__help_commands() {
 'behead:' \
 'blake3:' \
 'cat:' \
+'clean:' \
 'clipboard:' \
 'color:' \
 'count:' \
 'datefmt:' \
 'dedup:' \
+'denull:' \
 'describegpt:' \
 'diff:' \
 'edit:' \
@@ -5250,6 +7925,7 @@ _qsv__subcmd__help_commands() {
 'fetch:' \
 'fetchpost:' \
 'fill:' \
+'fixedwidth:' \
 'fixlengths:' \
 'flatten:' \
 'fmt:' \
@@ -5278,6 +7954,7 @@ _qsv__subcmd__help_commands() {
 'prompt:' \
 'pseudo:' \
 'py:' \
+'readstat:' \
 'rename:' \
 'replace:' \
 'reverse:' \
@@ -5303,6 +7980,7 @@ _qsv__subcmd__help_commands() {
 'tojsonl:' \
 'transpose:' \
 'validate:' \
+'viz:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'qsv help commands' commands "$@"
@@ -5377,6 +8055,11 @@ _qsv__subcmd__help__subcmd__cat__subcmd__rowskey_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help cat rowskey commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__help__subcmd__clean_commands] )) ||
+_qsv__subcmd__help__subcmd__clean_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help clean commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__help__subcmd__clipboard_commands] )) ||
 _qsv__subcmd__help__subcmd__clipboard_commands() {
     local commands; commands=()
@@ -5401,6 +8084,11 @@ _qsv__subcmd__help__subcmd__datefmt_commands() {
 _qsv__subcmd__help__subcmd__dedup_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help dedup commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__denull_commands] )) ||
+_qsv__subcmd__help__subcmd__denull_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help denull commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__describegpt_commands] )) ||
 _qsv__subcmd__help__subcmd__describegpt_commands() {
@@ -5461,6 +8149,11 @@ _qsv__subcmd__help__subcmd__fetchpost_commands() {
 _qsv__subcmd__help__subcmd__fill_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help fill commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__fixedwidth_commands] )) ||
+_qsv__subcmd__help__subcmd__fixedwidth_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help fixedwidth commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__fixlengths_commands] )) ||
 _qsv__subcmd__help__subcmd__fixlengths_commands() {
@@ -5604,6 +8297,7 @@ _qsv__subcmd__help__subcmd__geoconvert_commands() {
 _qsv__subcmd__help__subcmd__get_commands() {
     local commands; commands=(
 'cache-clear:' \
+'cache-fetch:' \
 'cache-info:' \
 'cache-list:' \
 'cache-prune:' \
@@ -5616,6 +8310,11 @@ _qsv__subcmd__help__subcmd__get_commands() {
 _qsv__subcmd__help__subcmd__get__subcmd__cache-clear_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help get cache-clear commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__get__subcmd__cache-fetch_commands] )) ||
+_qsv__subcmd__help__subcmd__get__subcmd__cache-fetch_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help get cache-fetch commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__get__subcmd__cache-info_commands] )) ||
 _qsv__subcmd__help__subcmd__get__subcmd__cache-info_commands() {
@@ -5785,6 +8484,11 @@ _qsv__subcmd__help__subcmd__py__subcmd__filter_commands() {
 _qsv__subcmd__help__subcmd__py__subcmd__map_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help py map commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__readstat_commands] )) ||
+_qsv__subcmd__help__subcmd__readstat_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help readstat commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__rename_commands] )) ||
 _qsv__subcmd__help__subcmd__rename_commands() {
@@ -5979,6 +8683,156 @@ _qsv__subcmd__help__subcmd__validate_commands() {
 _qsv__subcmd__help__subcmd__validate__subcmd__schema_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help validate schema commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz_commands] )) ||
+_qsv__subcmd__help__subcmd__viz_commands() {
+    local commands; commands=(
+'bar:' \
+'box:' \
+'candlestick:' \
+'choropleth:' \
+'contour:' \
+'funnel:' \
+'geo:' \
+'heatmap:' \
+'histogram:' \
+'icicle:' \
+'line:' \
+'map:' \
+'ohlc:' \
+'parcats:' \
+'pie:' \
+'radar:' \
+'sankey:' \
+'scatter:' \
+'scatter3d:' \
+'smart:' \
+'splom:' \
+'sunburst:' \
+'treemap:' \
+'violin:' \
+    )
+    _describe -t commands 'qsv help viz commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__bar_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__bar_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz bar commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__box_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__box_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz box commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__candlestick_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__candlestick_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz candlestick commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__choropleth_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__choropleth_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz choropleth commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__contour_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__contour_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz contour commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__funnel_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__funnel_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz funnel commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__geo_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__geo_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz geo commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__heatmap_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__heatmap_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz heatmap commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__histogram_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__histogram_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz histogram commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__icicle_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__icicle_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz icicle commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__line_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__line_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz line commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__map_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__map_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz map commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__ohlc_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__ohlc_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz ohlc commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__parcats_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__parcats_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz parcats commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__pie_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__pie_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz pie commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__radar_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__radar_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz radar commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__sankey_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__sankey_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz sankey commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__scatter_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__scatter_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz scatter commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__scatter3d_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__scatter3d_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz scatter3d commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__smart_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__smart_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz smart commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__splom_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__splom_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz splom commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__sunburst_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__sunburst_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz sunburst commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__treemap_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__treemap_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz treemap commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__violin_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__violin_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz violin commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__implode_commands] )) ||
 _qsv__subcmd__implode_commands() {
@@ -6188,6 +9042,11 @@ _qsv__subcmd__py__subcmd__help__subcmd__map_commands() {
 _qsv__subcmd__py__subcmd__map_commands() {
     local commands; commands=()
     _describe -t commands 'qsv py map commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__readstat_commands] )) ||
+_qsv__subcmd__readstat_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv readstat commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__rename_commands] )) ||
 _qsv__subcmd__rename_commands() {
@@ -6487,6 +9346,313 @@ _qsv__subcmd__validate__subcmd__help__subcmd__schema_commands() {
 _qsv__subcmd__validate__subcmd__schema_commands() {
     local commands; commands=()
     _describe -t commands 'qsv validate schema commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz_commands] )) ||
+_qsv__subcmd__viz_commands() {
+    local commands; commands=(
+'bar:' \
+'box:' \
+'candlestick:' \
+'choropleth:' \
+'contour:' \
+'funnel:' \
+'geo:' \
+'heatmap:' \
+'histogram:' \
+'icicle:' \
+'line:' \
+'map:' \
+'ohlc:' \
+'parcats:' \
+'pie:' \
+'radar:' \
+'sankey:' \
+'scatter:' \
+'scatter3d:' \
+'smart:' \
+'splom:' \
+'sunburst:' \
+'treemap:' \
+'violin:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'qsv viz commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__bar_commands] )) ||
+_qsv__subcmd__viz__subcmd__bar_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz bar commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__box_commands] )) ||
+_qsv__subcmd__viz__subcmd__box_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz box commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__candlestick_commands] )) ||
+_qsv__subcmd__viz__subcmd__candlestick_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz candlestick commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__choropleth_commands] )) ||
+_qsv__subcmd__viz__subcmd__choropleth_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz choropleth commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__contour_commands] )) ||
+_qsv__subcmd__viz__subcmd__contour_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz contour commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__funnel_commands] )) ||
+_qsv__subcmd__viz__subcmd__funnel_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz funnel commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__geo_commands] )) ||
+_qsv__subcmd__viz__subcmd__geo_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz geo commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__heatmap_commands] )) ||
+_qsv__subcmd__viz__subcmd__heatmap_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz heatmap commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help_commands] )) ||
+_qsv__subcmd__viz__subcmd__help_commands() {
+    local commands; commands=(
+'bar:' \
+'box:' \
+'candlestick:' \
+'choropleth:' \
+'contour:' \
+'funnel:' \
+'geo:' \
+'heatmap:' \
+'histogram:' \
+'icicle:' \
+'line:' \
+'map:' \
+'ohlc:' \
+'parcats:' \
+'pie:' \
+'radar:' \
+'sankey:' \
+'scatter:' \
+'scatter3d:' \
+'smart:' \
+'splom:' \
+'sunburst:' \
+'treemap:' \
+'violin:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'qsv viz help commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__bar_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__bar_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help bar commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__box_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__box_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help box commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__candlestick_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__candlestick_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help candlestick commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__choropleth_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__choropleth_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help choropleth commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__contour_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__contour_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help contour commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__funnel_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__funnel_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help funnel commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__geo_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__geo_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help geo commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__heatmap_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__heatmap_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help heatmap commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help help commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__histogram_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__histogram_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help histogram commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__icicle_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__icicle_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help icicle commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__line_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__line_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help line commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__map_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__map_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help map commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__ohlc_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__ohlc_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help ohlc commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__parcats_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__parcats_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help parcats commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__pie_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__pie_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help pie commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__radar_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__radar_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help radar commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__sankey_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__sankey_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help sankey commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__scatter_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__scatter_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help scatter commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__scatter3d_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__scatter3d_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help scatter3d commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__smart_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__smart_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help smart commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__splom_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__splom_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help splom commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__sunburst_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__sunburst_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help sunburst commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__treemap_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__treemap_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help treemap commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__violin_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__violin_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help violin commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__histogram_commands] )) ||
+_qsv__subcmd__viz__subcmd__histogram_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz histogram commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__icicle_commands] )) ||
+_qsv__subcmd__viz__subcmd__icicle_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz icicle commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__line_commands] )) ||
+_qsv__subcmd__viz__subcmd__line_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz line commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__map_commands] )) ||
+_qsv__subcmd__viz__subcmd__map_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz map commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__ohlc_commands] )) ||
+_qsv__subcmd__viz__subcmd__ohlc_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz ohlc commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__parcats_commands] )) ||
+_qsv__subcmd__viz__subcmd__parcats_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz parcats commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__pie_commands] )) ||
+_qsv__subcmd__viz__subcmd__pie_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz pie commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__radar_commands] )) ||
+_qsv__subcmd__viz__subcmd__radar_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz radar commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__sankey_commands] )) ||
+_qsv__subcmd__viz__subcmd__sankey_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz sankey commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__scatter_commands] )) ||
+_qsv__subcmd__viz__subcmd__scatter_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz scatter commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__scatter3d_commands] )) ||
+_qsv__subcmd__viz__subcmd__scatter3d_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz scatter3d commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__smart_commands] )) ||
+_qsv__subcmd__viz__subcmd__smart_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz smart commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__splom_commands] )) ||
+_qsv__subcmd__viz__subcmd__splom_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz splom commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__sunburst_commands] )) ||
+_qsv__subcmd__viz__subcmd__sunburst_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz sunburst commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__treemap_commands] )) ||
+_qsv__subcmd__viz__subcmd__treemap_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz treemap commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__violin_commands] )) ||
+_qsv__subcmd__viz__subcmd__violin_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz violin commands' commands "$@"
 }
 
 if [ "$funcstack[1]" = "_qsv" ]; then

@@ -465,16 +465,19 @@ choropleth options:
                            properties.name). When omitted, common name keys are
                            auto-detected; falls back to the feature id when absent.
     --check-geojson-key    Diagnostic mode. Instead of rendering, score EVERY candidate
-                           feature-id path in --geojson (its `id`, plus each
-                           `properties.*` field) against the distinct values of the
-                           locations column, and print them ranked by overlap. Use it
-                           to find the right --feature-id-key when a region map shades
+                           feature-id path in --geojson (its `id`, plus every scalar
+                           leaf under `properties` and every top-level foreign
+                           member) against the distinct values of the locations
+                           column, and print them ranked by overlap. Use it to find
+                           the right --feature-id-key when a region map shades
                            nothing. Scoring uses the same matcher the render path uses,
                            so a path reported here as a full match will bind at render
                            time. Requires --geojson and --locations, and a concrete
-                           source for the former (path, URL or shortcut): under
-                           `viz smart` the value `auto` picks its boundaries from the
-                           data dictionary too late for this check.
+                           source for the former (path, URL or shortcut). The value
+                           `auto` is refused: automatic Census resolution picks the
+                           key itself and may bind place NAMES through an alias map
+                           this check does not model, so it reports its own coverage
+                           instead.
     --denominator-key <k>  GeoJSON property path holding each region's DENOMINATOR
                            (e.g. properties.POP2020), using the same addressing as
                            the --feature-id-key flag. Turns a raw-count region map
@@ -2227,6 +2230,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Resolve --geojson (a direct path/URL, or a QSV_GEOJSON_SHORTCUTS alias) and validate it
     // up front — fail fast on a bad source, unknown shortcut, or unusable feature-id-key before
     // any plotting work. Only the choropleth & smart subcommands consume --geojson.
+    // `--check-geojson-key` answers "which --feature-id-key binds against MY boundary file?", a
+    // question automatic Census resolution does not have: it sets the key itself
+    // (properties.GEOID) and already scores every candidate region column's coverage, reporting
+    // it. Worse, a city/county-NAME column binds through the alias map `resolve_auto_geojson`
+    // publishes, and scoring raw names against GEOID feature ids would report 0% for every
+    // candidate on a configuration that renders correctly. Modelling the aliases here would mean
+    // rebuilding the resolvers' qualifier pairing — the drift this mode exists to avoid. So the
+    // combination is refused, before resolution rewrites the spec (and before it fetches).
+    if args.flag_check_geojson_key
+        && args
+            .flag_geojson
+            .as_deref()
+            .is_some_and(|spec| is_geojson_auto_spec(spec) && !std::path::Path::new(spec).is_file())
+    {
+        return fail_incorrectusage_clierror!(
+            "--check-geojson-key does not apply to `--geojson {}`. Automatic Census resolution \
+             picks the feature-id key itself (properties.GEOID) and reports its own region \
+             coverage, and a place-NAME column binds through an alias map this check does not \
+             model. Pass an explicit --geojson path, URL or shortcut to check one.",
+            args.flag_geojson.as_deref().unwrap_or("auto")
+        );
+    }
+
     if args.flag_geojson.is_some() && (args.cmd_choropleth || args.cmd_smart) {
         loaded_geojson =
             resolve_and_validate_geojson(&mut args, feature_id_key_explicit, &mut stdin_guard)?;
@@ -7481,38 +7507,75 @@ fn validate_geojson_source(
     Ok(geojson)
 }
 
+/// How deep `candidate_feature_id_keys` descends into nested objects. `feature_member_by_path`
+/// itself has no depth limit, but a candidate SWEEP has to terminate on adversarial input, and
+/// real boundary files nest a level or two at most.
+const CHECK_KEY_MAX_DEPTH: usize = 4;
+
+/// Collect dotted paths to every string/number leaf in `value`, which are the only shapes
+/// `feature_id_by_path` can return an id from.
+fn collect_scalar_paths(
+    value: &serde_json::Value,
+    prefix: &str,
+    depth: usize,
+    seen: &mut std::collections::HashSet<String>,
+    out: &mut Vec<String>,
+) {
+    let Some(map) = value.as_object() else {
+        return;
+    };
+    for (key, child) in map {
+        let path = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{prefix}.{key}")
+        };
+        match child {
+            serde_json::Value::String(_) | serde_json::Value::Number(_) => {
+                if seen.insert(path.clone()) {
+                    out.push(path);
+                }
+            },
+            serde_json::Value::Object(_) if depth < CHECK_KEY_MAX_DEPTH => {
+                collect_scalar_paths(child, &path, depth + 1, seen, out);
+            },
+            _ => {},
+        }
+    }
+}
+
 /// Candidate feature-id paths for `--check-geojson-key`: the top-level `id` when any feature
-/// carries one, then every `properties.<field>` holding a string or number somewhere in the
-/// collection (the only shapes `feature_id_by_path` can return an id from).
+/// carries one, then every scalar leaf reachable by the SAME path semantics
+/// `feature_member_by_path` accepts — nested paths under `properties` (`properties.region.code`)
+/// and top-level foreign members with no `properties.` prefix (`GEOID`), not just the immediate
+/// `properties.<field>` scalars. Enumerating less than the resolver accepts makes the sweep
+/// report a file as unkeyable when it has a perfectly good key.
 ///
-/// The `properties` names are sorted so the report order does not depend on whether
-/// `serde_json`'s map preserves insertion order.
+/// Paths are sorted so the report order does not depend on whether `serde_json`'s map preserves
+/// insertion order.
 fn candidate_feature_id_keys(geojson: &serde_json::Value) -> Vec<String> {
     let Ok(fc) = geojson::FeatureCollection::deserialize(geojson) else {
         return Vec::new();
     };
-    let mut props: Vec<String> = Vec::new();
+    let mut paths: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for feature in &fc.features {
-        let Some(properties) = feature.properties.as_ref() else {
-            continue;
-        };
-        for (key, value) in properties {
-            if matches!(
-                value,
-                serde_json::Value::String(_) | serde_json::Value::Number(_)
-            ) && seen.insert(key.clone())
-            {
-                props.push(format!("properties.{key}"));
-            }
+        if let Some(properties) = feature.properties.as_ref() {
+            let as_value = serde_json::Value::Object(properties.clone());
+            collect_scalar_paths(&as_value, "properties", 0, &mut seen, &mut paths);
+        }
+        // foreign members are addressed WITHOUT a `properties.` prefix, so they seed an empty one
+        if let Some(foreign) = feature.foreign_members.as_ref() {
+            let as_value = serde_json::Value::Object(foreign.clone());
+            collect_scalar_paths(&as_value, "", 0, &mut seen, &mut paths);
         }
     }
-    props.sort_unstable();
-    let mut out = Vec::with_capacity(props.len() + 1);
+    paths.sort_unstable();
+    let mut out = Vec::with_capacity(paths.len() + 1);
     if fc.features.iter().any(|f| f.id.is_some()) {
         out.push("id".to_string());
     }
-    out.extend(props);
+    out.extend(paths);
     out
 }
 
@@ -7524,14 +7587,32 @@ fn candidate_feature_id_keys(geojson: &serde_json::Value) -> Vec<String> {
 /// WILL bind at render time, and the two cannot drift. That parity is the whole point: this
 /// replaces a hand-maintained reimplementation of the match tiers that could (and did) disagree.
 fn check_geojson_key(args: &Args, geojson: &serde_json::Value) -> CliResult<()> {
-    let (_rdr, headers, no_headers) = reader_and_headers(args)?;
+    // ONE reader for both the header row and the values. Resolving the selector from one reader
+    // and then calling `distinct_column_values` (which opens its own) reads the input TWICE, and
+    // stdin does not survive that: the first reader drains it and the second sees EOF, so a piped
+    // CSV reported an empty locations column. `resolve_auto_geojson` solves its own double read by
+    // materializing stdin to a temp file, but a diagnostic that never renders has no need to copy
+    // the input at all — it only has to stop reading it twice.
+    let (mut rdr, headers, no_headers) = reader_and_headers(args)?;
     let loc_idx = resolve_one(
         args.flag_locations.as_ref(),
         &headers,
         no_headers,
         "locations",
     )?;
-    let values = distinct_column_values(args, &[loc_idx])?.swap_remove(0);
+    let mut seen = std::collections::HashSet::new();
+    let mut values: Vec<String> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let Some(cell) = record.get(loc_idx) else {
+            continue;
+        };
+        let cell = String::from_utf8_lossy(cell);
+        let cell = cell.trim();
+        if !cell.is_empty() && seen.insert(cell.to_string()) {
+            values.push(cell.to_string());
+        }
+    }
     if values.is_empty() {
         return fail_incorrectusage_clierror!(
             "the --locations column holds no non-empty values to check."

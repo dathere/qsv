@@ -522,9 +522,17 @@ will not get.
 
 It reads the same `--geojson` sources `viz` does (local path, `http(s)` URL, or a
 `QSV_GEOJSON_SHORTCUTS` name) and needs no valid `--feature-id-key` to run — finding one is its
-job. Treat a partial match as a warning, not a pass. If nothing matches, the region values and
-the boundary file disagree, or that GeoJSON cannot key them; say so rather than rendering an
-empty map.
+job. Candidates include nested paths under `properties` and top-level foreign members, not just
+`properties.<field>`, so a boundary file that keys off either is still scored. Treat a partial
+match as a warning, not a pass. If nothing matches, the region values and the boundary file
+disagree, or that GeoJSON cannot key them; say so rather than rendering an empty map.
+
+⚠️ **Skip this check entirely when `$GEOJSON` is `auto`/`census`** (Stage 3b's fourth form) — it
+is refused there, deliberately. Automatic Census resolution picks the feature-id key itself
+(`properties.GEOID`) and prints its own region coverage, so there is nothing to discover; and a
+place-NAME column binds through an alias map the check does not model, which would score every
+candidate at 0% on a setup that renders correctly. Go straight to Stage 4 and read the coverage
+line `viz` reports.
 
 #### Point-in-polygon path — rank by uniqueness and readability
 

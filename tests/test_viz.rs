@@ -20276,9 +20276,7 @@ fn viz_check_geojson_key_prunes_ambiguous_fold() {
     assert!(ctl.contains("2/2 100.0%  id"), "{ctl}");
 }
 
-// The mode needs a concrete boundary source. `viz smart --geojson auto` picks its boundaries from
-// the data dictionary long after this check would run, so it is refused rather than silently
-// checking nothing.
+// The mode needs a boundary source at all: with no --geojson there is nothing to sweep.
 #[test]
 fn viz_check_geojson_key_requires_concrete_source() {
     let wrk = Workdir::new("viz_check_geojson_key_requires_concrete_source");
@@ -20286,18 +20284,163 @@ fn viz_check_geojson_key_requires_concrete_source() {
 
     let mut cmd = wrk.command("viz");
     cmd.args([
-        "smart",
+        "choropleth",
         "rg.csv",
         "--locations",
         "region",
-        "--geojson",
-        "auto",
         "--check-geojson-key",
     ]);
     let got = wrk.stderr_on_error(&mut cmd);
     assert!(
         got.contains("--check-geojson-key needs a concrete --geojson source"),
         "{got}"
+    );
+}
+
+// `--geojson auto` is REFUSED rather than swept. Automatic Census resolution picks the feature-id
+// key itself, and a place-NAME column binds through the alias map resolve_auto_geojson publishes
+// — scoring raw names against GEOID feature ids would report 0% for every candidate on a setup
+// that renders correctly. Refused BEFORE resolution, so it also makes no network request.
+#[test]
+fn viz_check_geojson_key_refuses_auto() {
+    let wrk = Workdir::new("viz_check_geojson_key_refuses_auto");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+
+    let run = |spec: &str| -> String {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "rg.csv",
+            "--locations",
+            "region",
+            "--geojson",
+            spec,
+            "--check-geojson-key",
+        ]);
+        wrk.stderr_on_error(&mut cmd)
+    };
+
+    for spec in ["auto", "census"] {
+        let got = run(spec);
+        assert!(
+            got.contains("--check-geojson-key does not apply to `--geojson"),
+            "{spec}: {got}"
+        );
+        assert!(
+            got.contains("alias map this check does not model"),
+            "{spec}: {got}"
+        );
+    }
+}
+
+// Candidate enumeration must accept every path shape `feature_member_by_path` does: NESTED paths
+// under properties, and top-level FOREIGN MEMBERS with no `properties.` prefix. Enumerating only
+// immediate `properties.<field>` scalars reported this file as having no usable key at all.
+#[test]
+fn viz_check_geojson_key_finds_nested_and_foreign_paths() {
+    let wrk = Workdir::new("viz_check_geojson_key_finds_nested_and_foreign_paths");
+    wrk.create_from_string("rg.csv", "region,val\nA1,10\nB2,20\n");
+    // no feature `id` and no immediate scalar under `properties` - only a nested object and a
+    // top-level foreign member, both of which are valid --feature-id-key values
+    wrk.create_from_string(
+        "nested.geojson",
+        r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","properties":{"region":{"code":"A1","label":"Alpha"}},"GEOID":"A1",
+           "geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+          {"type":"Feature","properties":{"region":{"code":"B2","label":"Beta"}},"GEOID":"B2",
+           "geometry":{"type":"Polygon","coordinates":[[[2,2],[2,3],[3,3],[3,2],[2,2]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "nested.geojson",
+        "--check-geojson-key",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let report = String::from_utf8_lossy(&out.stdout);
+    // the top-level foreign member, addressed with NO `properties.` prefix
+    assert!(report.contains("2/2 100.0%  GEOID"), "{report}");
+    // the nested path under properties
+    assert!(
+        report.contains("2/2 100.0%  properties.region.code"),
+        "{report}"
+    );
+    // a sibling leaf that does not join is still enumerated, and scores zero
+    assert!(
+        report.contains("0/2   0.0%  properties.region.label"),
+        "{report}"
+    );
+}
+
+// The sweep reads the input ONCE. Resolving the selector from one reader and the values from
+// another drains stdin, so a piped CSV reported an empty locations column; the file and stdin
+// reports must be identical.
+#[test]
+fn viz_check_geojson_key_reads_stdin_once() {
+    use std::io::Write as _;
+
+    let wrk = Workdir::new("viz_check_geojson_key_reads_stdin_once");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","id":"A","properties":{"name":"A"},
+           "geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+          {"type":"Feature","id":"B","properties":{"name":"B"},
+           "geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}}]}"#,
+    );
+
+    let mut file_cmd = wrk.command("viz");
+    file_cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--check-geojson-key",
+    ]);
+    let from_file = wrk.stdout::<String>(&mut file_cmd);
+
+    let mut pipe_cmd = wrk.command("viz");
+    pipe_cmd
+        .args([
+            "choropleth",
+            "-",
+            "--locations",
+            "region",
+            "--geojson",
+            "regions.geojson",
+            "--check-geojson-key",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let piped = wrk.read_to_string("rg.csv").unwrap();
+    let mut child = pipe_cmd.spawn().unwrap();
+    let mut sink = child.stdin.take().unwrap();
+    std::thread::spawn(move || {
+        sink.write_all(piped.as_bytes()).unwrap();
+    });
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let from_stdin = String::from_utf8_lossy(&out.stdout);
+
+    assert!(from_stdin.contains("2/2 100.0%  id"), "{from_stdin}");
+    // the two paths must agree line for line, modulo the source name in the header
+    assert_eq!(
+        from_stdin.lines().skip(1).collect::<Vec<_>>(),
+        from_file.lines().skip(1).collect::<Vec<_>>(),
+        "stdin and file reports diverged"
     );
 }
 

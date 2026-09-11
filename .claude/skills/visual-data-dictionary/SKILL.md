@@ -408,12 +408,17 @@ If **yes**:
   identifies the region: an ISO-3 country code, a 2-letter US state code, a country name, a
   GeoJSON feature id, county FIPS/GEOID. **No coordinate pair required.** This is the path that
   works against a custom `--geojson` file, and the feature id must JOIN these values (Stage 3c).
-- **City NAME, `--geojson auto`/`census` only** — forward geocoding turns place names into
-  county FIPS, but the alias map that makes it work is built by automatic Census resolution. A
-  custom GeoJSON publishes no such aliases, so raw city names cannot join county-code feature
-  ids there. `--geocode` is also restricted to the `iso3`/`usa-states` location modes, and the
-  Stage 4 command does not pass it — so treat a city-name column as a region path only when you
-  are on `--geojson auto`, and otherwise require a real region-code column.
+- **Place NAME** — usable on two different routes, and it matters which you are on:
+  - *Direct*, with any `--geojson` file whose feature ids ARE those names. No geocoding and no
+    aliases involved — it is an ordinary join, so Stage 3c's overlap check settles it.
+    `examples/viz/nyc_neighborhoods.geojson` (keyed by `properties.name`) is exactly this shape.
+  - *Alias-based city → county FIPS*, which is `--geojson auto`/`census` only: the alias map is
+    synthesized by automatic Census resolution, so a custom file publishes none. `--geocode` is
+    additionally restricted to the `iso3`/`usa-states` location modes and the Stage 4 command
+    does not pass it.
+
+  So do not reject a name column against a custom file — test the overlap first. Require a
+  region-CODE column only when the names do not join and you are not on `--geojson auto`.
 - **Point-in-polygon** — `--lat`/`--lon`, each row's coordinates tested against
   the polygons.
 
@@ -583,25 +588,39 @@ if want is not None:
     # Rank EVERY unique key by overlap - including ones readability demoted. A numeric
     # OBJECTID/GEOID that joins beats a pretty name that does not.
     def joins(want_vals, have_vals):
-        """Count matches the way viz.rs match_region_code does, so the score is not a
-        false negative: trim, exact, zero-pad an all-digit code to each WIDER numeric
-        feature-id width, then ASCII-case-insensitive. Without this, 7936 vs 07936 and
-        ca vs CA read as 'joins nothing'."""
-        have = {str(v).strip() for v in have_vals}
-        widths = sorted({len(h) for h in have if h.isdigit()})
-        lower = {h.lower() for h in have}
+        """Count matches the way viz.rs RegionMatcher::from_features + match_region_code do.
+        Mirrored deliberately, including the parts that REFUSE to match - a scorer that is
+        more generous than viz reports a join you will not get:
+          * feature ids are used RAW; only the CSV value is trimmed
+          * numeric widths and case folding are ASCII-only (Rust is_ascii_digit /
+            to_ascii_lowercase), not Python's Unicode-aware isdigit()/lower()
+          * a folded key that maps to >1 distinct id is AMBIGUOUS and is dropped, so
+            features 'CA' and 'ca' make 'ca' match neither."""
+        ascii_digits = lambda t: t != "" and all("0" <= c <= "9" for c in t)
+        afold = lambda t: "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in t)
+        have = {str(v) for v in have_vals}                       # RAW - no strip
+        widths = sorted({len(h) for h in have if ascii_digits(h)})
+        folded, ambiguous = {}, set()
+        for h in have:
+            k = afold(h)
+            if k in folded and folded[k] != h:
+                ambiguous.add(k)
+            else:
+                folded.setdefault(k, h)
+        for k in ambiguous:
+            folded.pop(k, None)
         hits = 0
         for w in want_vals:
-            w = w.strip()
+            w = w.strip()                                        # only the CSV side is trimmed
             if not w:
                 continue
             if w in have:
                 hits += 1
-            elif w.isdigit() and any(
+            elif ascii_digits(w) and any(
                 width > len(w) and w.rjust(width, "0") in have for width in widths
             ):
                 hits += 1
-            elif w.lower() in lower:
+            elif afold(w) in folded:
                 hits += 1
         return hits
 
@@ -630,7 +649,8 @@ On the region-key path, produce argv[2] from the column Stage 3a named, then re-
 script with it:
 
 ```bash
-RV=$(mktemp -t qsv_region_values) && trap 'rm -f "$RV"' EXIT
+# full template, not `-t`: GNU mktemp REQUIRES the X run, BSD only appends to a bare prefix
+RV=$(mktemp "${TMPDIR:-/tmp}/qsv_region_values.XXXXXX") && trap 'rm -f "$RV"' EXIT
 qsv select "$REGION_COL" "$WORK" | qsv behead | qsv dedup > "$RV"
 python3 - "$GEOJSON" "$RV" <<'PY'
 # ... the identical script, now scored by overlap

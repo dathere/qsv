@@ -1,6 +1,6 @@
 [package]
 name          = "qsv"
-version       = "22.0.1"                                                                    #:version
+version       = "22.0.1"                                                                   #:version
 authors       = ["Joel Natividad <joel@datHere.com>"]
 description   = "A Blazing-Fast Data-wrangling toolkit."
 documentation = "https://github.com/dathere/qsv#qsv-ultra-fast-csv-data-wrangling-toolkit"
@@ -104,11 +104,11 @@ zero_prefixed_literal      = "allow"
 enum_glob_use   = "allow"
 result_unit_err = "allow"
 # not practical
-similar_names         = "allow"
-too_many_lines        = "allow"
+similar_names          = "allow"
+too_many_lines         = "allow"
 struct_excessive_bools = "allow"
 # preference
-unnecessary_wraps  = "allow"
+unnecessary_wraps = "allow"
 # false positive
 needless_doctest_main = "allow"
 # noisy
@@ -165,11 +165,7 @@ bytemuck = { version = "1.24", features = [
 ], optional = true }
 byteorder = "1.5"
 bytes = "1"
-cached = { version = "4", features = [
-    "ahash",
-    "redb_store",
-    "redis_store",
-] }
+cached = { version = "4", features = ["ahash", "redb_store", "redis_store"] }
 calamine = { version = "0.36", features = ["chrono"] }
 censor = { version = "0.3", optional = true }
 chrono = { version = "0.4", default-features = false }
@@ -258,7 +254,9 @@ log = "0.4"
 magika = { version = "1.1", optional = true }
 memchr = "2"
 memmap2 = "0.9"
-mimalloc = { version = "0.1", default-features = false, features = ["extended"], optional = true }
+mimalloc = { version = "0.1", default-features = false, features = [
+    "extended",
+], optional = true }
 minijinja = { version = "2.23", features = [
     "json",
     "loop_controls",
@@ -295,7 +293,10 @@ odht = "0.3"
 # HTML, image viewer for PNG/SVG/...) for `qsv viz --open`. See the `viz` feature.
 opener = { version = "0.8", optional = true }
 # ort is needed by magika for ONNX runtime; download-binaries fetches prebuilt binaries
-ort = { version = "2.0.0-rc.12", default-features = false, features = ["download-binaries", "tls-rustls"], optional = true }
+ort = { version = "2.0.0-rc.12", default-features = false, features = [
+    "download-binaries",
+    "tls-rustls",
+], optional = true }
 phf = { version = "0.14", features = ["macros"] }
 # plotly backs the `viz` command (charts + auto-dashboard). default-features=false
 # keeps the base `viz` build lean; `plotly_embed_js` (via the `viz` feature) makes the
@@ -307,7 +308,7 @@ plotly = { version = "0.14.1", default-features = false, optional = true }
 # resolves the path relative to CARGO_MANIFEST_DIR at compile time.
 # NOTE: the `i18n!` init MUST be invoked at a crate root (src/main.rs) because the
 # `t!` macro expands to `crate::_rust_i18n_t!`. See src/cmd/viz_i18n.rs.
-rust-i18n = { version = "4.2.1", optional = true }
+rust-i18n  = { version = "4.2.1", optional = true }
 pragmastat = "14.0"
 # Pure-Rust SAS/Stata/SPSS readers powering the `readstat` command.
 # A DIRECT git dep, NOT a [patch.crates-io] entry: a patch only applies when its version
@@ -475,8 +476,8 @@ rkyv = "0.8"
 # actually embeds (see cmd::viz plotly_cdn_sri_matches_the_embedded_bundle). A dev-dependency, not
 # the optional `profile` sha2, so the oracle runs for EVERY viz test feature set rather than only
 # the ones that happen to enable `profile`.
-sha2 = "0.11"
-flate2 = "1"
+sha2              = "0.11"
+flate2            = "1"
 newline-converter = "0.3"
 
 # disable these dev dependencies for testing the `to` command
@@ -639,7 +640,18 @@ all_features = ["distrib_features", "magika", "self_update", "ui"]
 # prebuilt `qsv` (object_store is in BOTH dependency graphs, so it never shows up in a crate
 # count - only in a resolved-feature comparison). Dropping it costs qsvmcp the `get` command,
 # `dc:` cache-prefix inputs, and s3:///gs://az:// sources.
-qsvmcp = ["feature_capable", "geocode", "mcp", "polars", "profile", "readstat", "self_update", "synthesize", "to", "viz"]
+qsvmcp = [
+    "feature_capable",
+    "geocode",
+    "mcp",
+    "polars",
+    "profile",
+    "readstat",
+    "self_update",
+    "synthesize",
+    "to",
+    "viz",
+]
 apply = [
     "base62",
     "base64-simd",
@@ -656,12 +668,7 @@ apply = [
 ]
 clipboard = ["arboard"]
 color = ["anstream", "crossterm", "terminal-colorsaurus", "unicode-width"]
-fetch = [
-    "console",
-    "flate2",
-    "governor",
-    "serde_urlencoded",
-]
+fetch = ["console", "flate2", "governor", "serde_urlencoded"]
 foreach = []
 # get: fetch tabular data from local/URL/CKAN/cloud sources into a managed,
 # zstd-compressed, BLAKE3-hashed, auto-indexed disk cache. Downloads use ETag/
@@ -685,10 +692,10 @@ geocode = [
 ]
 # luau lookup tables auto-decompress remote .gz/.zlib/.zst/.zip/.sz sources, so
 # luau pulls the flate2 + zstd codecs (.zip/.sz need no extra deps). See #1417.
-luau = ["mlua", "sanitize-filename", "flate2", "zstd"]
-magika = ["dep:magika", "dep:ort"]
-mcp = []
-polars = ["dep:polars", "bytemuck"]
+luau     = ["mlua", "sanitize-filename", "flate2", "zstd"]
+magika   = ["dep:magika", "dep:ort"]
+mcp      = []
+polars   = ["dep:polars", "bytemuck"]
 readstat = ["dep:polars-readstat-rs", "polars"]
 
 prompt = ["rfd"]
@@ -705,9 +712,9 @@ profile = ["dep:sha2", "polars", "yaml_serde"]
 # --validate` can spawn `pyshacl` without external file deps.
 # Requires `profile`. Available in qsv (via distrib_features) and as an
 # opt-in for qsvdp; NOT in qsvlite or qsvmcp.
-geoconnex = ["profile"]
+geoconnex  = ["profile"]
 synthesize = ["dep:fake", "dep:time"]
-to = ["csvs_convert", "dep:spreadsheet-ods"]
+to         = ["csvs_convert", "dep:spreadsheet-ods"]
 # viz: generate charts (bar/line/scatter/histogram/box) and an auto-dashboard
 # (`viz smart`) from CSV data via the plotly crate. Base feature = self-contained
 # interactive HTML output (plotly_embed_js); NO polars dependency. `viz smart`
@@ -763,10 +770,7 @@ nightly = [
     "foldhash/nightly",
 ]
 
-nightly-polars =[
-    "polars/nightly",
-    "polars/simd",
-]
+nightly-polars = ["polars/nightly", "polars/simd"]
 
 [package.metadata.deb]
 maintainer           = "Konstantin Sivakov <konstantin@datHere.com>"
@@ -781,9 +785,17 @@ priority             = "optional"
 # so the vendored MIT/BSD notices travel with the package, as those licenses
 # require; license-file above generates /usr/share/doc/qsv/copyright.
 features = ["feature_capable"]
-assets   = [
-    ["target/release/qsv", "/usr/local/bin/", "755"],
-    ["THIRD_PARTY_NOTICES.md", "/usr/share/doc/qsv/", "644"],
+assets = [
+    [
+        "target/release/qsv",
+        "/usr/local/bin/",
+        "755",
+    ],
+    [
+        "THIRD_PARTY_NOTICES.md",
+        "/usr/share/doc/qsv/",
+        "644",
+    ],
 ]
 
 # Conditional features and assets
@@ -801,7 +813,15 @@ assets   = [["target/release/qsvlite", "/usr/local/bin/", "755"]]
 # table's list rather than extending it, hence the explicit repeat.
 [package.metadata.deb.variants.datapusher_plus]
 features = ["datapusher_plus"]
-assets   = [
-    ["target/release/qsvdp", "/usr/local/bin/", "755"],
-    ["THIRD_PARTY_NOTICES.md", "/usr/share/doc/qsvdp/", "644"],
+assets = [
+    [
+        "target/release/qsvdp",
+        "/usr/local/bin/",
+        "755",
+    ],
+    [
+        "THIRD_PARTY_NOTICES.md",
+        "/usr/share/doc/qsvdp/",
+        "644",
+    ],
 ]

@@ -404,11 +404,16 @@ If **yes**:
 
 `viz smart` reaches a region **two** ways, and only one of them needs coordinates:
 
-- **Region key or name** — `--locations <col>` (with `--location-mode`) where the
-  column already identifies the region: an ISO-3 country code, a 2-letter US
-  state code, a country name, a GeoJSON feature id, county FIPS/GEOID, or — with
-  `--geocode` — a place-NAME column forward-geocoded into region codes.
-  **No coordinate pair required.**
+- **Region key** — `--locations <col>` (with `--location-mode`) where the column already
+  identifies the region: an ISO-3 country code, a 2-letter US state code, a country name, a
+  GeoJSON feature id, county FIPS/GEOID. **No coordinate pair required.** This is the path that
+  works against a custom `--geojson` file, and the feature id must JOIN these values (Stage 3c).
+- **City NAME, `--geojson auto`/`census` only** — forward geocoding turns place names into
+  county FIPS, but the alias map that makes it work is built by automatic Census resolution. A
+  custom GeoJSON publishes no such aliases, so raw city names cannot join county-code feature
+  ids there. `--geocode` is also restricted to the `iso3`/`usa-states` location modes, and the
+  Stage 4 command does not pass it — so treat a city-name column as a region path only when you
+  are on `--geojson auto`, and otherwise require a real region-code column.
 - **Point-in-polygon** — `--lat`/`--lon`, each row's coordinates tested against
   the polygons.
 
@@ -441,8 +446,10 @@ PROBE
 
 Do not reach for a region-name regex: it cannot spell every geography (`tract`, `zcta`,
 `municipality`, `town`, `iso3` all miss a `state|county|country` pattern), and a false
-negative here is exactly the mistake this stage used to make. Only when **neither** a `geo.*`
-concept nor a coordinate pair exists does the GeoJSON have no effect — say so then, and offer
+negative here is exactly the mistake this stage used to make. Only when the probe finds
+**neither** a region-code column (nor a geocodable city column on the `auto` path) **nor** a
+complete lat/lon pair does the GeoJSON have no effect — a lone `geo.timezone` or `geo.ip_address`
+is not a region key and does not count — say so then, and offer
 to proceed without it. A dataset carrying county names (or FIPS codes) and no coordinates at
 all maps perfectly well, so do not talk the user out of it.
 
@@ -548,8 +555,11 @@ for f in feats:
 # readability, because on that path the key has to JOIN.
 want = None
 if len(sys.argv) > 2:
-    with open(sys.argv[2]) as fh:
-        want = {ln.strip() for ln in fh if ln.strip()}
+    # It is a one-column CSV, so parse it as one: a value containing a comma, quote or newline
+    # is quoted by the writer and reading raw lines would score it as a nonmatch.
+    import csv
+    with open(sys.argv[2], newline="") as fh:
+        want = {row[0].strip() for row in csv.reader(fh) if row and row[0].strip()}
 
 good, other = [], []
 for key, vals in cands.items():
@@ -572,10 +582,32 @@ print(f"{len(feats)} features")
 if want is not None:
     # Rank EVERY unique key by overlap - including ones readability demoted. A numeric
     # OBJECTID/GEOID that joins beats a pretty name that does not.
+    def joins(want_vals, have_vals):
+        """Count matches the way viz.rs match_region_code does, so the score is not a
+        false negative: trim, exact, zero-pad an all-digit code to each WIDER numeric
+        feature-id width, then ASCII-case-insensitive. Without this, 7936 vs 07936 and
+        ca vs CA read as 'joins nothing'."""
+        have = {str(v).strip() for v in have_vals}
+        widths = sorted({len(h) for h in have if h.isdigit()})
+        lower = {h.lower() for h in have}
+        hits = 0
+        for w in want_vals:
+            w = w.strip()
+            if not w:
+                continue
+            if w in have:
+                hits += 1
+            elif w.isdigit() and any(
+                width > len(w) and w.rjust(width, "0") in have for width in widths
+            ):
+                hits += 1
+            elif w.lower() in lower:
+                hits += 1
+        return hits
+
     scored = []
     for key, _ in good + other:
-        have = {str(v) for v in cands[key]}
-        hit = len(want & have)
+        hit = joins(want, cands[key])
         scored.append((hit, key, hit / len(want)))
     scored.sort(key=lambda t: -t[0])
     print(f"\nregion values to match: {len(want)}")
@@ -598,8 +630,9 @@ On the region-key path, produce argv[2] from the column Stage 3a named, then re-
 script with it:
 
 ```bash
-qsv select "$REGION_COL" "$WORK" | qsv behead | qsv dedup > /tmp/region_values.txt
-python3 - "$GEOJSON" /tmp/region_values.txt <<'PY'
+RV=$(mktemp -t qsv_region_values) && trap 'rm -f "$RV"' EXIT
+qsv select "$REGION_COL" "$WORK" | qsv behead | qsv dedup > "$RV"
+python3 - "$GEOJSON" "$RV" <<'PY'
 # ... the identical script, now scored by overlap
 PY
 ```

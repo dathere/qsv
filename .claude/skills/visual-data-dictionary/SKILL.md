@@ -408,17 +408,21 @@ If **yes**:
   identifies the region: an ISO-3 country code, a 2-letter US state code, a country name, a
   GeoJSON feature id, county FIPS/GEOID. **No coordinate pair required.** This is the path that
   works against a custom `--geojson` file, and the feature id must JOIN these values (Stage 3c).
-- **Place NAME** — usable on two different routes, and it matters which you are on:
-  - *Direct*, with any `--geojson` file whose feature ids ARE those names. No geocoding and no
-    aliases involved — it is an ordinary join, so Stage 3c's overlap check settles it.
-    `examples/viz/nyc_neighborhoods.geojson` (keyed by `properties.name`) is exactly this shape.
-  - *Alias-based city → county FIPS*, which is `--geojson auto`/`census` only: the alias map is
-    synthesized by automatic Census resolution, so a custom file publishes none. `--geocode` is
-    additionally restricted to the `iso3`/`usa-states` location modes and the Stage 4 command
-    does not pass it.
+- **Place NAME** — two different routes, and one precondition that governs both. The
+  precondition: `geo.city`/`town`/`municipality` columns are nominated as region candidates only
+  on a **geocode-enabled build** (`geocodable_name_candidates` returns nothing otherwise, and
+  degrades silently). Check `qsv --version` for `geocode` before promising either route.
+  - *Direct*, with any `--geojson` file whose feature ids ARE those names: an ordinary join, no
+    aliases, so Stage 3c's overlap check settles it. `examples/viz/nyc_neighborhoods.geojson`
+    (keyed by `properties.name`) is exactly this shape.
+  - *Alias-based city → county FIPS*, `--geojson auto`/`census` only — the alias map is
+    synthesized by automatic Census resolution, so a custom file publishes none. `viz smart`
+    drives this itself: it forward-geocodes implicitly and does **not** need the `--geocode`
+    flag, which is why Stage 4 not passing `--geocode` is no obstacle. (The explicit flag is a
+    `viz choropleth` concern and is restricted to the `iso3`/`usa-states` location modes.)
 
   So do not reject a name column against a custom file — test the overlap first. Require a
-  region-CODE column only when the names do not join and you are not on `--geojson auto`.
+  region-CODE column only when the names do not join, or when the build has no geocode support.
 - **Point-in-polygon** — `--lat`/`--lon`, each row's coordinates tested against
   the polygons.
 
@@ -594,8 +598,9 @@ if want is not None:
           * feature ids are used RAW; only the CSV value is trimmed
           * numeric widths and case folding are ASCII-only (Rust is_ascii_digit /
             to_ascii_lowercase), not Python's Unicode-aware isdigit()/lower()
-          * a folded key that maps to >1 distinct id is AMBIGUOUS and is dropped, so
-            features 'CA' and 'ca' make 'ca' match neither."""
+          * a folded key that maps to >1 distinct id is AMBIGUOUS and is dropped, so with
+            features 'CA' and 'ca' the value 'Ca' matches NEITHER. An exact 'ca' still
+            matches, because the exact tier runs before folding."""
         ascii_digits = lambda t: t != "" and all("0" <= c <= "9" for c in t)
         afold = lambda t: "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in t)
         have = {str(v) for v in have_vals}                       # RAW - no strip

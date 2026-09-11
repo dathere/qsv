@@ -647,10 +647,10 @@ smart options:
                            into individual, hoverable points on zoom-in). Hovering
                            a bubble shows its point count; clicking it zooms to
                            where that cluster breaks apart. The map always OPENS
-                           as individual points; the toggle switches clustering on. One of: auto, on, off. "auto" (the
-                           default) offers the toggle for a plain-marker core (no
-                           density heatmap, no bubble-size measure) once it
-                           reaches 1,000 points. "on" offers it whenever the core
+                           as individual points; the toggle switches clustering on.
+                           One of: auto, on, off. "auto" (the default) offers the toggle
+                           for a plain-marker core (no density heatmap, no bubble-size measure)
+                           once it reaches 1,000 points. "on" offers it whenever the core
                            draws as markers, regardless of point count or a
                            bubble-size measure. "off" omits the toggle, so points
                            are always drawn plainly. Only affects `smart`.

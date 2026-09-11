@@ -30,7 +30,8 @@ order and no other:
 2. **describegpt** — infer a JSON Schema data dictionary from the *cleaned* data
    - **2.5 fine-tune** (optional) — hand-correct the dictionary in a terminal UI
      before it drives the Data Schematic
-3. **geojson** (optional) — pick a feature id key by inspecting the file
+3. **geojson** (optional) — fetch US boundaries with `--geojson auto`, or pick a
+     feature id key by inspecting a supplied file
 4. **viz smart** — render the Data Schematic, dictionary-driven, dictionary-embedded
    - **5 verify** — check the HTML, then report
    - **6 tour refinement** (optional, browser) — step through the guided Tour and
@@ -341,7 +342,7 @@ Scope note: the TUI deliberately does **not** edit null sentinels
 (`--infer-null-values` output). Those are reported-never-applied and have no
 `viz smart` effect, so editing them here would change nothing downstream.
 
-Six keys that *do* affect the Data Schematic are outside the TUI, and are
+Seven keys that *do* affect the Data Schematic are outside the TUI, and are
 **hand-edited in the JSON** — this is the supported path for them, not a
 violation of the "never hand-write the schema" rule. (`x-qsv.denominator` is the
 one qsv now normally fills in for you; hand-editing it is a correction, or the
@@ -352,9 +353,10 @@ route to an area/household denominator describegpt will not derive.)
 | `x-qsv.gauge_range` | per property, `[min, max]` | KPI tile becomes a **gauge**. `describegpt` proposes it for canonical-scale measures; qsv drops it if the data falls outside the range |
 | `x-qsv.target` | per property, a number | KPI tile gains a **"vs target" delta**. Never inferred — it is a goal only the user knows |
 | `x-qsv.currency` | per property, an ISO-4217 code (`"USD"`) | KPI tile is prefixed with the currency **symbol** (`$192B`) and the panel subtitle names the currency. `describegpt` proposes it for money columns; qsv drops it unless the column is a numeric measure that reads as money (concept `measure.money` or `measure.amount`, or content type `money`) |
-| `x-qsv.denominator` | per property on a REGION column, `{"column": "<name>"}` | the region map gains a **rate panel** beside the raw count ("per 10,000 residents"). Normally **derived** by describegpt from a `measure.population` column (#4523); hand-edit to point at households/area, or to correct it. An explicit `--denominator`/`--denominator census` flag outranks it. qsv rejects a hint whose named column has more distinct values than the region key could hold constant |
+| `x-qsv.denominator` | per property on a REGION column, `{"column": "<name>", "level": "geo.county"}` | the region map gains a **rate panel** beside the raw count ("per 10,000 residents"). Normally **derived** by describegpt from a `measure.population` column (#4523); hand-edit to point at households/area, or to correct it. An explicit `--denominator`/`--denominator census` flag outranks it. The optional `level` names the geography the denominator column is defined AT (a `DENOMINATOR_REGION_CONCEPTS` token such as `geo.state`/`geo.county`); describegpt copies it from the measure's own `geo_level` proposal, so do not add a `geo_level` key to the measure column yourself - that second copy is free to drift. qsv refuses a hint three ways: more distinct values than the region key could hold constant, a `level` naming a **different geography** than the region key (#4526 - a coarser denominator makes a confident, wrong rate map that cardinality alone cannot detect), and a denominator that is **constant across every region** (#4547 - the rate panel would just be the count panel rescaled) |
+| `x-qsv.unit` | per property, a curated UCUM code (`km`, `Cel`, `kWh`) | the KPI tile and panel subtitle name the **unit** (`18.4 °C`, `1.2B kWh`), and it follows the number into hover text and pair/3D axis titles. `describegpt` proposes it for numeric measures; qsv re-derives the display symbol from its own curated table, so an **off-table code silently vanishes** - and codes are matched **byte-exactly** (UCUM is case-sensitive: `Cel`, not `cel`). The guardrail also clears it when a measure is downgraded to a dimension, so a declared unit cannot sit on something that is not a quantity |
 | `x-qsv.relationships` | dataset level, `{"kind":"pipeline", …}` | draws the **pipeline** panel |
-| `x-qsv.tour` | dataset level | replaces the guided Tour's built-in narration: `overrides` keyed by step id, `panels` keyed by RAW field name or `@kind` token, `panel_order` picks/orders the panel spotlights (cap 6). `version` MUST stay the **integer** `1` — viz silently discards the whole block on anything else. Plain text only; `language` (if present) is BCP-47 and must match the page locale or overrides are dropped. Written by `--tour-audience` (Stage 2), refined in Stage 6 |
+| `x-qsv.tour` | dataset level | replaces the guided Tour's built-in narration: `overrides` keyed by step id, `panels` keyed by RAW field name or `@kind` token, `panel_order` picks/orders the panel spotlights (capped by `--tour-steps`, default 8). `version` MUST stay the **integer** `1` — viz silently discards the whole block on anything else. Plain text only; `language` (if present) is BCP-47 and must match the page locale or overrides are dropped. Written by `--tour-audience` (Stage 2), refined in Stage 6 |
 
 (`x-qsv.aggregation` used to be a fifth row here; it is now edited with `a` in
 the TUI above. Its meaning is unchanged: `sum` or `mean` on a numeric measure,
@@ -400,22 +402,40 @@ If **yes**:
 
 ### 3a. Check the data can actually be binned
 
-`viz smart`'s GeoJSON panel uses **point-in-polygon binning**: each row's
-`--lat`/`--lon` is tested against the polygons. Without a coordinate pair there
-is nothing to bin, and the flag will quietly produce no map panel.
+`viz smart` reaches a region **two** ways, and only one of them needs coordinates:
+
+- **Region key or name** — `--locations <col>` (with `--location-mode`) where the
+  column already identifies the region: an ISO-3 country code, a 2-letter US
+  state code, a country name, a GeoJSON feature id, county FIPS/GEOID, or — with
+  `--geocode` — a place-NAME column forward-geocoded into region codes.
+  **No coordinate pair required.**
+- **Point-in-polygon** — `--lat`/`--lon`, each row's coordinates tested against
+  the polygons.
+
+So probe for BOTH before concluding anything:
 
 ```bash
-qsv headers "$WORK" | grep -iE 'lat|lon|lng|y_|x_|coord'
+qsv headers "$WORK" | grep -iE 'lat|lon|lng|y_|x_|coord'                        # point-in-polygon path
+qsv headers "$WORK" | grep -iE 'state|county|country|city|fips|geoid|zip|region' # region-key path
 ```
 
-If no plausible pair exists, tell the user the GeoJSON will have no effect and
-offer to proceed without it. Do not pass `--geojson` into a dead end.
+Only when **neither** exists does the GeoJSON have no effect — say so then, and
+offer to proceed without it. A dataset carrying county names (or FIPS codes) and
+no coordinates at all maps perfectly well, so do not talk the user out of it.
 
 ### 3b. Get the file
 
 Accept a local path, an `http(s)` URL, or a shortcut name defined in
 `QSV_GEOJSON_SHORTCUTS` (a JSON map of `name` → `{path, id}`; the shortcut's `id`
 supplies `--feature-id-key` when you don't pass one).
+
+There is also a **fourth form, and for US data it is usually the right one**:
+`--geojson auto` (or `census`) fetches US county, ZIP Code Tabulation Area,
+census tract or place boundaries from the Census TIGERweb service, scoped to the
+states the data names, and sets `--feature-id-key` to `properties.GEOID` itself.
+The user supplies nothing but the CSV — no file to source, and Stage 3c below is
+unnecessary. Prefer it over hunting for a boundary file, and pair it with
+`--denominator census` when the map should chart a **rate** rather than a count.
 
 ### 3c. Discover the feature id key — do not guess it
 
@@ -425,7 +445,7 @@ present on every feature, unique across all of them, and *meaningful to a human*
 Uniqueness alone is not enough: `properties.shape_area` is perfectly unique and
 completely useless as a label.
 
-The script accepts the **same three source forms** `--geojson` does — a local path,
+The script accepts the same **file** source forms `--geojson` does — a local path,
 an `http(s)` URL, or a `QSV_GEOJSON_SHORTCUTS` name. If you only handle local
 paths here, a URL or shortcut fails at discovery even though `viz` would have
 accepted it.
@@ -667,7 +687,8 @@ selector/anchor, not by tool.
    keys. Unlike the Stage 2 LLM pass, you can now see which panels rendered, so
    you MAY also set `@kind`-token `panels` entries (`@kpi`, `@correlation`,
    `@timeseries`, `@map`, `@choropleth`, `@scatter`, …) and a `panel_order`
-   array to pick and order the spotlights (viz caps them at 6). Keep `version`
+   array to pick and order the spotlights (viz caps them at the `--tour-steps`
+   budget, default 8). Keep `version`
    the integer `1`; keep `language` BCP-47 matching the page locale.
 6. **Re-render and re-verify.** Stage 4 passes `--dictionary "$SCHEMA"` by
    path, so re-running it is cheap (no LLM call, no sidecar-reuse trap). Re-open

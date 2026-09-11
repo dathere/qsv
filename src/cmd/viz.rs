@@ -16523,6 +16523,11 @@ fn tour_panel_explanation(
 ///
 /// The guarantee deliberately does NOT apply to the `panel_order` path, which returns early: an
 /// author-supplied order is a complete, deliberate walk and is never amended.
+///
+/// One edge worth knowing: at `--tour-steps 1` the single pick IS the tail, so a page with a
+/// frequency bar spends its one step on the distribution rather than the KPI row. That falls out
+/// of the explicit-budget rule rather than being a special case — a reader who asks for exactly
+/// one panel gets the one this function is charged with never dropping.
 fn tour_panel_selection(
     panels: &[Panel],
     stats: &[crate::cmd::stats::StatsData],
@@ -18059,8 +18064,10 @@ fn wants_violin(
 /// Whether a panel will render with a logarithmic y-axis under the resolved `--log-scale` mode.
 /// Frequency bars and measure-by-dimension bars decide from their values (high dynamic range); box
 /// panels carry the verdict resolved at classification time (`Panel::value_log`, from the cached
-/// min/max — see `box_panel_logs`); every other panel kind is always linear. Used both to gate the
-/// panel's y-axis title cue and to size the Data Schematic's left margin to fit it.
+/// min/max — see `box_panel_logs`); every other panel kind is always linear. Three consumers:
+/// gating the panel's y-axis title cue, sizing the Data Schematic's left margin to fit it, and
+/// (since the bar kinds carry no `value_log` to read) deciding whether the guided tour narrates
+/// the panel as logarithmic — see `tour_panel_explanation`.
 fn panel_is_log(panel: &Panel, freq: &FreqMap, log_scale: LogScale) -> bool {
     match &panel.kind {
         PanelKind::FreqBar { idx } => {

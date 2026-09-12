@@ -263,7 +263,10 @@ if [[ "$minimal" -eq 0 ]]; then
   t sqlp "$data" "select \"Borough\", count(*) from _t_1 group by \"Borough\""
   t pivotp "Agency" --index "Borough" --values "Complaint Type" "$data"
   t pivotp "Agency" --index "Borough" --values "Complaint Type" --agg smart "$data"
-  t pivotp "Created Date" --index "Borough" --values "Complaint Type" --try-parsedates "$data"
+  # --try-parsedates is a READER option (with_try_parse_dates), independent of the pivot
+  # key, so pivot on a low-cardinality column: "Created Date" has 841,014 distinct values
+  # on this file and pivoting on it builds an 841k-column frame that OOM-kills the runner.
+  t pivotp "Agency" --index "Borough" --values "Complaint Type" --try-parsedates "$data"
   if [[ -r communityboards.csv ]]; then
     t joinp "Community Board" "$data" community_board communityboards.csv
     t joinp "Community Board" "$data" community_board communityboards.csv --streaming

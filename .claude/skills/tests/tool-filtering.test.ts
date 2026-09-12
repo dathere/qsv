@@ -7,24 +7,21 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { COMMON_COMMANDS } from '../src/mcp-tools.js';
+import { COMMON_COMMANDS, filterAvailableCommands } from '../src/mcp-tools.js';
 
-/**
- * Simulates the tool filtering logic from mcp-server.ts
- */
+// These tests drive the PRODUCTION filter (src/tool-constants.ts), which mcp-server.ts calls in
+// its deferred-loading path. A local `filterCommands` used to stand in for it here, under the
+// comment "Simulates the tool filtering logic from mcp-server.ts" -- a simulation can agree with
+// itself while production drifts, which is the one thing these tests exist to rule out.
+//
+// Production needs only the surviving list, so that is all the helper returns; the complement is
+// derived here rather than added to the production signature for the tests' benefit.
 function filterCommands(
   availableCommands: string[] | undefined,
-  commonCommands: readonly string[]
+  commonCommands: readonly string[] = COMMON_COMMANDS
 ): { filtered: string[]; skipped: string[] } {
-  const filtered = availableCommands
-    ? commonCommands.filter(cmd => availableCommands.includes(cmd))
-    : [...commonCommands]; // Fallback to all if availableCommands not detected
-
-  const skipped = availableCommands
-    ? commonCommands.filter(cmd => !availableCommands.includes(cmd))
-    : [];
-
-  return { filtered, skipped };
+  const filtered = filterAvailableCommands(availableCommands, commonCommands);
+  return { filtered, skipped: commonCommands.filter(cmd => !filtered.includes(cmd)) };
 }
 
 test('COMMON_COMMANDS is defined and non-empty', () => {

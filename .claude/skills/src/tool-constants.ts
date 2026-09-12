@@ -204,6 +204,27 @@ export const COMMON_COMMANDS = [
   "describegpt", // AI-powered data description and documentation
 ] as const;
 
+/**
+ * Keep only the commands the qsv binary on this host actually supports.
+ *
+ * `availableCommands` is `undefined` when binary probing did not produce a command list; in that
+ * case every command is kept, because suppressing all tools on a failed probe is worse than
+ * offering one that may error on use. An EMPTY array is a real answer ("no commands available")
+ * and filters everything out -- so the check is `undefined`, not falsiness.
+ *
+ * Order follows `commands`, not `availableCommands`: tool registration order is user-visible.
+ *
+ * Returns just the surviving list, which is all the server needs; a caller wanting the
+ * complement can filter `commands` against the result.
+ */
+export function filterAvailableCommands(
+  availableCommands: readonly string[] | undefined,
+  commands: readonly string[] = COMMON_COMMANDS,
+): string[] {
+  if (availableCommands === undefined) return [...commands];
+  return commands.filter((cmd) => availableCommands.includes(cmd));
+}
+
 /** Valid entry types for qsv_log */
 export const LOG_ENTRY_TYPES = new Set([
   "agent_reasoning",

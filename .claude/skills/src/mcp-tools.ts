@@ -20,6 +20,7 @@ export {
   MAX_LOG_MESSAGE_LEN,
   isBinaryOutputFormat,
   COMMON_COMMANDS,
+  filterAvailableCommands,
 } from "./tool-constants.js";
 export type { PipelineMetadata } from "./tool-constants.js";
 

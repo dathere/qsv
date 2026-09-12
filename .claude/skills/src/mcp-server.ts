@@ -68,6 +68,7 @@ import {
   normalizeForCaseFs,
   CORE_TOOLS,
   coreToolCount,
+  filterAvailableCommands,
 } from "./tool-constants.js";
 
 /**
@@ -504,9 +505,7 @@ class QsvMcpServer {
           // Deferred loading mode (default when exposeAllTools is undefined):
           // 1. Expose common command tools
           // 2. Include tools that have been loaded via qsv_search_tools
-          const filteredCommands = availableCommands
-            ? COMMON_COMMANDS.filter((cmd) => availableCommands.includes(cmd))
-            : COMMON_COMMANDS; // Fallback to all if availableCommands not detected
+          const filteredCommands = filterAvailableCommands(availableCommands);
 
           // Load only the skills we need (batch loading)
           const skillNames = filteredCommands.map((cmd) => `qsv-${cmd}`);

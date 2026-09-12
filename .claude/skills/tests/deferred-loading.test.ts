@@ -39,6 +39,33 @@ test('CORE_TOOLS has exactly 11 tools', () => {
   assert.strictEqual(CORE_TOOLS.length, 11, 'Should have exactly 11 core tools');
 });
 
+// The core-tool count reported in the mode logs is DERIVED from CORE_TOOLS minus the app-gated
+// entry, never written as a literal. A hardcoded 10 undercounted an app-capable client (MCP Apps
+// default to ON via QSV_MCP_ENABLE_APPS), recreating the log-vs-reality mismatch the logging
+// exists to prevent. This mirrors the production expression in mcp-server.ts.
+const APP_ONLY_CORE_TOOL = 'qsv_browse_directory';
+const coreToolCount = (appToolExposed: boolean) =>
+  CORE_TOOLS.filter((name) => name !== APP_ONLY_CORE_TOOL || appToolExposed).length;
+
+test('core-tool count is derived, and accounts for the app-gated tool', () => {
+  assert.ok(
+    CORE_TOOLS.includes(APP_ONLY_CORE_TOOL as typeof CORE_TOOLS[number]),
+    `${APP_ONLY_CORE_TOOL} must be in CORE_TOOLS for the derivation to mean anything`
+  );
+  // measured against a real binary: tools/list returns 10 with QSV_MCP_EXPOSE_ALL_TOOLS=false
+  // and 23 by default, both on a client that does NOT support MCP Apps
+  assert.strictEqual(coreToolCount(false), 10, 'without MCP Apps the core set is 10');
+  assert.strictEqual(coreToolCount(true), 11, 'with MCP Apps the core set is 11');
+  assert.strictEqual(
+    coreToolCount(false) + COMMON_COMMANDS.length, 23,
+    'deferred-mode startup total without MCP Apps'
+  );
+  assert.strictEqual(
+    coreToolCount(true) + COMMON_COMMANDS.length, 24,
+    'deferred-mode startup total with MCP Apps'
+  );
+});
+
 test('CORE_TOOLS includes all required utility tools', () => {
   const required = [
     'qsv_search_tools',

@@ -127,8 +127,8 @@ npm run mcpb:package
 
 | Category | Count | Skills |
 |----------|-------|--------|
-| **utility** | 24 | blake3, cat, dedup, diff, enum, exclude, explode, extdedup, extsort, fill, geocode, headers, implode, index, luau, partition, pivotp, pseudo, sniff, sort, sortcheck, split, sqlp, template |
-| **conversion** | 6 | excel, input, json, jsonl, to, tojsonl |
+| **utility** | 24 | blake3, cat, dedup, diff, enum, exclude, explode, extdedup, extsort, fill, geocode, headers, implode, index, partition, pivotp, pseudo, sniff, sort, sortcheck, split, sqlp, template, viz |
+| **conversion** | 7 | excel, input, json, jsonl, readstat, to, tojsonl |
 | **aggregation** | 5 | count, frequency, moarstats, pragmastat, stats |
 | **transformation** | 5 | datefmt, rename, replace, reverse, transpose |
 | **selection** | 3 | sample, select, slice |
@@ -141,9 +141,9 @@ npm run mcpb:package
 
 **Total Statistics:**
 - **Skills**: 56 commands
-- **Usage Examples**: 221 from documentation
-- **Options**: 658 command-line options
-- **Arguments**: 98 positional arguments
+- **Usage Examples**: 262 from documentation
+- **Options**: 760 command-line options
+- **Arguments**: 97 positional arguments
 
 ## Project Structure
 
@@ -471,7 +471,7 @@ MIT
 **Version**: 23.0.0
 **Generator**: `qsv --update-mcp-skills`
 **Skills**: 56 commands
-**Usage Examples**: 221 from documentation
+**Usage Examples**: 262 from documentation
 **Parsing**: qsv-docopt (robust, accurate)
 **Features**: MCP server, filesystem access, type-safe execution
 **Status**: ✅ Production Ready

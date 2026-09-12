@@ -84,6 +84,13 @@ const CORE_TOOLS = [
 ] as const;
 
 /**
+ * The one CORE_TOOLS entry that is NOT registered unconditionally: it appears only when MCP Apps
+ * are enabled AND the connected client supports them. Everything reporting a core-tool count has
+ * to account for it, which is why those counts are derived rather than written as literals.
+ */
+const APP_ONLY_CORE_TOOL = "qsv_browse_directory";
+
+/**
  * Default server instructions sent to MCP clients during initialization.
  * Injected into the system prompt by compatible clients (Claude Desktop, etc.).
  * Focuses on cross-tool workflows and operational constraints.
@@ -434,15 +441,24 @@ class QsvMcpServer {
 
         // Determine if we should expose all tools
         // - true: expose all tools immediately (no deferred loading)
-        // - false: expose only the 10 core tools (no common commands, no deferred additions)
-        // - undefined (default): deferred loading -- 10 core + the 13 common commands (23 at
-        //   startup), growing as qsv_search_tools discovers more
+        // - false: expose only the core tools (no common commands, no deferred additions)
+        // - undefined (default): deferred loading -- core tools + the common commands, growing
+        //   as qsv_search_tools discovers more
         //
-        // "10 core" is what registers UNCONDITIONALLY, and includes the promoted `index` and
-        // `stats` command tools. CORE_TOOLS lists 11 because qsv_browse_directory is registered
-        // on top of those when MCP Apps are available. Measured against a real binary:
-        // tools/list returns 10 with QSV_MCP_EXPOSE_ALL_TOOLS=false and 23 by default.
+        // The core count is DERIVED, never a literal. CORE_TOOLS holds 11 entries but only 10
+        // register unconditionally: APP_ONLY_CORE_TOOL needs MCP Apps, which are enabled by
+        // DEFAULT (QSV_MCP_ENABLE_APPS) and gated only on client support -- so an app-capable
+        // client really does get 11, and 24 in deferred mode. A hardcoded 10 recreated the very
+        // log-vs-reality mismatch this logging exists to prevent.
+        //
+        // These lines state the CONFIGURED baseline; counts are "up to" because `index`, `stats`
+        // and the common commands are each filtered against what the qsv binary actually
+        // supports. The authoritative number is the "Registered N tools" line at the end.
         const shouldExposeAll = config.exposeAllTools === true;
+        const appToolExposed = config.enableMcpApps && this.clientSupportsApps();
+        const coreToolCount = CORE_TOOLS.filter(
+          (name) => name !== APP_ONLY_CORE_TOOL || appToolExposed,
+        ).length;
 
         // Log tool mode once per session
         if (!this.loggedToolMode) {
@@ -452,11 +468,11 @@ class QsvMcpServer {
             );
           } else if (config.exposeAllTools === false) {
             console.error(
-              "[Server] Using 10 core tools only (QSV_MCP_EXPOSE_ALL_TOOLS=false)",
+              `[Server] Using up to ${coreToolCount} core tools only (QSV_MCP_EXPOSE_ALL_TOOLS=false)`,
             );
           } else {
             console.error(
-              "[Server] Using deferred loading (10 core + 13 common commands + search-discovered)",
+              `[Server] Using deferred loading (up to ${coreToolCount} core + ${COMMON_COMMANDS.length} common commands = ${coreToolCount + COMMON_COMMANDS.length} at startup, + search-discovered)`,
             );
           }
           this.loggedToolMode = true;
@@ -500,7 +516,7 @@ class QsvMcpServer {
             `[Server] ✓ Loaded ${loadedCount} tools (skipped ${skippedCount} unavailable commands)`,
           );
         } else if (config.exposeAllTools === false) {
-          // Core tools only mode: only expose the 10 core tools
+          // Core tools only mode: only expose the core tools
           // No COMMON_COMMANDS, no search-discovered tools
           console.error(
             `[Server] Core tools only mode - skipping command tools`,

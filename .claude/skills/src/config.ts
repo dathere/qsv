@@ -883,8 +883,9 @@ export const config = {
    * Expose all tools mode
    *
    * Three-state configuration:
-   * - true: Always expose all 54+ qsv command tools
-   * - false: Always expose only the 10 core tools (overrides auto-detect)
+   * - true: Always expose all 56 qsv command tools
+   * - false: Always expose only the core tools -- 10, or 11 when MCP Apps are
+   *   available (overrides auto-detect)
    * - undefined: Auto-detect based on client (Claude clients get all tools)
    *
    * Auto-detection is enabled for:

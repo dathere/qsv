@@ -121,3 +121,66 @@ fn every_skill_flag_is_well_formed() {
         bad.join("\n  ")
     );
 }
+
+/// #4596 - an option's type comes from its declared docopt placeholder, never
+/// from prose in its description. Pinned here on the SHIPPED JSONs, in both
+/// directions, so neither half of the regression can return silently.
+#[test]
+fn option_types_follow_placeholders_not_prose() {
+    // (skill, flag, expected type)
+    const PINNED: &[(&str, &str, &str)] = &[
+        // a numeric placeholder types `number` - none of these descriptions
+        // contains the `<number>` the old prose heuristic looked for
+        ("qsv-sample.json", "--seed", "number"),
+        ("qsv-viz.json", "--bins", "number"),
+        ("qsv-moarstats.json", "--epsilon", "number"),
+        // `<N>`, uppercase
+        ("qsv-pragmastat.json", "--subsample", "number"),
+        // a non-numeric placeholder stays a `string` even though its
+        // description says `<number>` - see the assert below
+        ("qsv-sample.json", "--ts-interval", "string"),
+        ("qsv-viz.json", "--dictionary", "string"),
+    ];
+
+    let find = |skill: &str, flag: &str| -> serde_json::Value {
+        let json = parse(&skills_dir().join(skill));
+        json["command"]["options"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|o| o["flag"].as_str() == Some(flag))
+            .unwrap_or_else(|| panic!("{skill} has no {flag}"))
+            .clone()
+    };
+
+    let mut wrong = Vec::new();
+    for &(skill, flag, expected) in PINNED {
+        let actual = find(skill, flag)["type"]
+            .as_str()
+            .unwrap_or("?")
+            .to_string();
+        if actual != expected {
+            wrong.push(format!(
+                "{skill}: {flag} is {actual:?}, expected {expected:?}"
+            ));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "option types no longer follow their placeholders (see #4596):\n  {}",
+        wrong.join("\n  ")
+    );
+
+    // The `--ts-interval` pin is only a test of direction 2 for as long as its
+    // description actually mentions `<number>`. If a reword drops that, the
+    // pin goes vacuous - move it to another option that still has the shape.
+    let desc = find("qsv-sample.json", "--ts-interval")["description"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        desc.contains("<number>"),
+        "--ts-interval no longer describes itself with `<number>`, so it no longer pins \
+         description prose out of type inference; pick another option: {desc:?}"
+    );
+}

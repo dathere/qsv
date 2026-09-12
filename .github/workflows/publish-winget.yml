@@ -1,0 +1,69 @@
+name: Publish WinGet Package
+
+# Opens a pull request at microsoft/winget-pkgs for datHere.qsv.
+#
+# DELIBERATELY workflow_dispatch-only — do NOT add a `push: tags` or
+# `release: published` trigger. publish-portable.yml and publish-qsvpy.yml
+# download the already-published qsv-<tag>-x86_64-pc-windows-msvc.zip, unsign it,
+# add the qsvp*/qsvpy* binaries, re-zipsign it and re-upload it under the SAME
+# filename — hours after the tag push. WinGet pins InstallerSha256, so a hash
+# captured at tag-push time is stale by the time a moderator looks at the PR.
+# Dispatch this only AFTER the portable and qsvpy runs have finished.
+#
+# Corollary: once a tag's manifest is MERGED into winget-pkgs, never re-dispatch
+# publish-portable/publish-qsvpy against that same tag — it invalidates the hash
+# already published in the WinGet catalog and breaks
+# `winget install datHere.qsv --version <tag>` for everyone. Cut a new version instead.
+#
+# One-time prerequisites (see qsv #4236):
+#   - a fork of microsoft/winget-pkgs under the `dathere` org
+#   - repo secret WINGET_PAT: a CLASSIC PAT with `public_repo` scope
+#     (Komac does not support fine-grained PATs). Watch its expiry.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish to WinGet (e.g. 22.0.0 — no 'v' prefix)"
+        required: true
+
+concurrency:
+  group: publish-winget
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    name: Submit datHere.qsv to winget-pkgs
+    runs-on: ubuntu-22.04
+    steps:
+      #▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
+      # Guard: the installer asset must exist. Its upload time is echoed so the
+      # operator can confirm it post-dates the last portable/qsvpy dispatch
+      # before a hash is committed to the WinGet catalog.
+      - name: Verify Windows asset exists and report when it settled
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          asset="qsv-${TAG}-x86_64-pc-windows-msvc.zip"
+          info=$(gh api "repos/${{ github.repository }}/releases/tags/${TAG}" \
+            --jq ".assets[] | select(.name==\"${asset}\") | \"\(.size) \(.updated_at)\"")
+          if [ -z "$info" ]; then
+            echo "::error::${asset} not found on release ${TAG}"
+            exit 1
+          fi
+          echo "::notice::${asset} — size/updated_at: ${info}"
+      #▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲#
+      # Komac inherits NestedInstallerFiles/PortableCommandAlias (qsv, qsvlite,
+      # qsvmcp) from the previously published manifest, so only the URL, hash and
+      # version change here. installers-regex is anchored to the x64 msvc zip so
+      # the windows-gnu and aarch64 assets are not picked up — aarch64 is
+      # workflow_dispatch-only and is built with -C target-cpu=native.
+      - name: Publish to WinGet
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: datHere.qsv
+          release-tag: ${{ inputs.tag }}
+          installers-regex: 'x86_64-pc-windows-msvc\.zip$'
+          max-versions-to-keep: "10"
+          token: ${{ secrets.WINGET_PAT }}

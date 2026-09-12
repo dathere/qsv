@@ -9,6 +9,13 @@
 # quick-reference docs that have drifted as the source files grew, and stale
 # version numbers in QSV_USER_AGENT examples.
 #
+# It also asserts the "Applies to qsv X.Y.Z" marker on hand-maintained docs that
+# opt into one (VERSION_MARKER_DOCS in the script). That check is DELIBERATELY
+# noisy at release time: bumping Cargo.toml's version reds it until someone
+# re-reads the doc against current behavior and bumps the marker. Bumping the
+# marker alone silences the check without doing the work it exists to prompt --
+# STATS_DEFINITIONS.md sat two releases out of date carrying no sign of it.
+#
 # Triggers:
 #   - PRs that touch any input the check reads (Cargo.toml, the audited .rs
 #     files, the audited docs, or the check script itself)

@@ -18,6 +18,8 @@ flags any documentation file that contradicts them:
      both docs must list the same commands.
   5. The qsv crate version referenced in dotenv.template's QSV_USER_AGENT
      example (source: Cargo.toml package.version).
+  6. The "Applies to qsv X.Y.Z" marker carried by hand-maintained docs that
+     opt into it (source: Cargo.toml package.version). See VERSION_MARKER_DOCS.
 
 Exit codes:
   0 — no drift detected
@@ -595,6 +597,56 @@ def check_user_agent_version(report: Report, cargo: dict) -> None:
         )
 
 
+# Docs that are hand-maintained (not generated) and carry an explicit
+# "Applies to qsv X.Y.Z" marker so a reader can tell how current they are.
+#
+# Unlike the QSV_USER_AGENT check above, a MISSING marker is a finding rather
+# than a silent pass: the marker exists precisely because these files drift
+# without leaving a trace, so deleting it re-opens the hole it was added to
+# close. STATS_DEFINITIONS.md went six weeks and two releases out of date with
+# nothing on its face to say so.
+VERSION_MARKER_DOCS: tuple[str, ...] = ("docs/STATS_DEFINITIONS.md",)
+
+APPLIES_TO_RE = re.compile(
+    r"^>?\s*\*\*Applies to qsv\s+(?P<version>\d+\.\d+\.\d+)\.?\*\*",
+    re.MULTILINE,
+)
+
+
+def check_version_markers(report: Report, cargo: dict) -> None:
+    truth = get_qsv_version(cargo)
+    for doc_rel in VERSION_MARKER_DOCS:
+        doc = REPO_ROOT / doc_rel
+        if not doc.exists():
+            continue
+        text = doc.read_text(encoding="utf-8")
+        m = APPLIES_TO_RE.search(text)
+        if not m:
+            report.add(
+                file=doc_rel,
+                line=1,
+                category="version",
+                message=(
+                    'missing its "**Applies to qsv X.Y.Z**" marker — this doc is '
+                    "hand-maintained and needs one so readers can spot staleness"
+                ),
+            )
+            continue
+        claimed = m.group("version")
+        if claimed != truth:
+            lineno = text[: m.start()].count("\n") + 1
+            report.add(
+                file=doc_rel,
+                line=lineno,
+                category="version",
+                message=(
+                    f"marker says it applies to qsv {claimed}; Cargo.toml is "
+                    f"{truth}. Re-read the doc against the current behavior, then "
+                    f"bump the marker — do not bump it on its own."
+                ),
+            )
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -623,6 +675,7 @@ def main(argv: list[str]) -> int:
         check_stat_columns(report)
         check_oom_lists_in_sync(report)
         check_user_agent_version(report, cargo)
+        check_version_markers(report, cargo)
     except (OSError, KeyError, RuntimeError) as exc:
         print(f"docs-drift-check: error: {exc}", file=sys.stderr)
         return 2

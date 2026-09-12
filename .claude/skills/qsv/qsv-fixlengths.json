@@ -26,13 +26,13 @@
       },
       {
         "flag": "--insert",
-        "type": "string",
+        "type": "number",
         "description": "If empty fields need to be inserted, insert them at <pos>. If <pos> is zero, then it is inserted at the end of each record. If <pos> is negative, it is inserted from the END of each record going backwards. If <pos> is positive, it is inserted from the BEGINNING of each record going forward.",
         "default": "0"
       },
       {
         "flag": "--length",
-        "type": "string",
+        "type": "number",
         "description": "Forcefully set the length of each record. If a record is not the size given, then it is truncated or expanded as appropriate."
       },
       {

@@ -21,12 +21,12 @@
       },
       {
         "flag": "--end",
-        "type": "string",
+        "type": "number",
         "description": "The index of the record to slice to."
       },
       {
         "flag": "--index",
-        "type": "string",
+        "type": "number",
         "description": "Slice a single record (shortcut for -s N -l 1). If negative, starts from the last record."
       },
       {
@@ -41,7 +41,7 @@
       },
       {
         "flag": "--len",
-        "type": "string",
+        "type": "number",
         "description": "The length of the slice (can be used instead of --end)."
       },
       {
@@ -56,7 +56,7 @@
       },
       {
         "flag": "--start",
-        "type": "string",
+        "type": "number",
         "description": "The index of the record to slice from. If negative, starts from the last record."
       }
     ]

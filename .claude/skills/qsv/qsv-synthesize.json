@@ -21,7 +21,7 @@
       },
       {
         "flag": "--correlation-threshold",
-        "type": "string",
+        "type": "number",
         "description": "Minimum absolute Spearman correlation for a pair of columns to stay in a `correlated` relationship. Weakly-correlated members are dropped.",
         "default": "0.3"
       },

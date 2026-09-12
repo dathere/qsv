@@ -32,7 +32,7 @@
       },
       {
         "flag": "--dfa-size-limit",
-        "type": "string",
+        "type": "number",
         "description": "Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. Modify this only if you're getting regular expression compilation errors.",
         "default": "10"
       },
@@ -98,7 +98,7 @@
       },
       {
         "flag": "--size-limit",
-        "type": "string",
+        "type": "number",
         "description": "Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. Modify this only if you're getting regular expression compilation errors.",
         "default": "50"
       },

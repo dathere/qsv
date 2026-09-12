@@ -60,7 +60,7 @@
       },
       {
         "flag": "--batch",
-        "type": "string",
+        "type": "number",
         "description": "The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch.",
         "default": "50000"
       },
@@ -72,7 +72,7 @@
       },
       {
         "flag": "--cache-ttl",
-        "type": "string",
+        "type": "number",
         "description": "Time-to-live for the persistent on-disk OpenCage result cache. A value of 0 disables time-based expiration (entries are cached indefinitely). Use --no-cache to disable caching entirely.",
         "default": "1209600"
       },
@@ -110,7 +110,7 @@
       },
       {
         "flag": "--k_weight",
-        "type": "string",
+        "type": "number",
         "description": "Use population-weighted distance for reverse subcommand. (i.e. nearest.distance - k * city.population) Larger values will favor more populated cities. If not set (default), the population is not used and the nearest city is returned."
       },
       {
@@ -127,7 +127,7 @@
       },
       {
         "flag": "--min-score",
-        "type": "string",
+        "type": "number",
         "description": "The minimum Jaro-Winkler distance score.",
         "default": "0.8"
       },
@@ -158,7 +158,7 @@
       },
       {
         "flag": "--rate-limit",
-        "type": "string",
+        "type": "number",
         "description": "Maximum number of OpenCage API requests per second. The free tier allows 1 request/second (2,500/day).",
         "default": "1"
       },
@@ -174,7 +174,7 @@
       },
       {
         "flag": "--timeout",
-        "type": "string",
+        "type": "number",
         "description": "Timeout for downloading Geonames cities index.",
         "default": "120"
       }

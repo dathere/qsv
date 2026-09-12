@@ -31,13 +31,13 @@
     "options": [
       {
         "flag": "--backtrack-limit",
-        "type": "string",
+        "type": "number",
         "description": "Set the approximate number of backtracking steps allowed. This is only used when --fancy-regex is set.",
         "default": "1000000"
       },
       {
         "flag": "--batch",
-        "type": "string",
+        "type": "number",
         "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows.",
         "default": "50000"
       },
@@ -60,7 +60,7 @@
       },
       {
         "flag": "--dfa-size-limit",
-        "type": "string",
+        "type": "number",
         "description": "Set the approximate capacity, in megabytes, of the cache of transitions used by the engine's lazy Discrete Finite Automata.",
         "default": "10"
       },
@@ -123,7 +123,7 @@
       },
       {
         "flag": "--size-limit",
-        "type": "string",
+        "type": "number",
         "description": "Set the approximate size limit, in megabytes, of a compiled regex.",
         "default": "50"
       },
@@ -134,7 +134,7 @@
       },
       {
         "flag": "--timeout",
-        "type": "string",
+        "type": "number",
         "description": "Timeout for downloading json-schemas on URLs and for 'dynamicEnum' lookups on URLs. If 0, no timeout is used.",
         "default": "30"
       },

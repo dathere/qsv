@@ -31,7 +31,7 @@
       },
       {
         "flag": "--length",
-        "type": "string",
+        "type": "number",
         "description": "The number of output bytes, before hex encoding.",
         "default": "32"
       },

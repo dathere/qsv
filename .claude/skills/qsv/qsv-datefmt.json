@@ -22,7 +22,7 @@
     "options": [
       {
         "flag": "--batch",
-        "type": "string",
+        "type": "number",
         "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows.",
         "default": "50000"
       },

@@ -41,7 +41,7 @@
       },
       {
         "flag": "--compress-level",
-        "type": "string",
+        "type": "number",
         "description": "Compression level (parquet only). For gzip: 1-9 (default: 6). For zstd: -7 to 22 (default: 3). Ignored for other codecs."
       },
       {
@@ -71,7 +71,7 @@
       },
       {
         "flag": "--infer-len",
-        "type": "string",
+        "type": "number",
         "description": "The number of rows to use for schema inference (parquet only). Note that even if a pschema.json file exists for an input file, explicitly specifying infer-len will cause qsv to ignore the pschema.json and infer the schema from the CSV data instead, including when set to 0. Set to 0 to infer from all rows (not recommended for large files)."
       },
       {

@@ -335,7 +335,7 @@
       },
       {
         "flag": "--scale",
-        "type": "string",
+        "type": "number",
         "description": "Image scale factor (static export).",
         "default": "1.0"
       },
@@ -361,7 +361,7 @@
       },
       {
         "flag": "--slider-speed",
-        "type": "string",
+        "type": "number",
         "description": "Milliseconds each animation frame is shown while playing.",
         "default": "800"
       },
@@ -372,7 +372,7 @@
       },
       {
         "flag": "--snap-max-dist",
-        "type": "string",
+        "type": "number",
         "description": "For point-in-polygon binning: the farthest (in km, an equirectangular approximation) an outside point may snap to a region's boundary; points with no region within it are dropped. When omitted the cap is AUTO-DERIVED from the GeoJSON's median region size and the lat/lon coordinate precision, clamped to 0.1-100 km; a fixed 10 km is used only when neither signal is available. The coverage notes state the cap and how it was derived. Pass a large value for effectively unbounded snapping; cannot be combined with --no-snap. See https://github.com/dathere/qsv/wiki/Visualization#point-in-polygon"
       },
       {

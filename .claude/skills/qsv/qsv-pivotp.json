@@ -59,7 +59,7 @@
       },
       {
         "flag": "--infer-len",
-        "type": "string",
+        "type": "number",
         "description": "Number of rows to scan when inferring schema. Set to 0 to scan entire file.",
         "default": "10000"
       },

@@ -122,26 +122,31 @@ fn every_skill_flag_is_well_formed() {
     );
 }
 
-/// #4596 - an option's type comes from its declared docopt placeholder, never
-/// from prose in its description. Pinned here on the SHIPPED JSONs, in both
-/// directions, so neither half of the regression can return silently.
+/// #4596 - types come from the struct the command deserializes its docopt
+/// arguments into, never from prose in the description. Pinned here on the
+/// SHIPPED JSONs, in both directions, so neither half can return silently.
 #[test]
-fn option_types_follow_placeholders_not_prose() {
+fn option_types_follow_the_args_struct_not_prose() {
     // (skill, flag, expected type)
     const PINNED: &[(&str, &str, &str)] = &[
-        // a numeric placeholder types `number` - none of these descriptions
-        // says `<number>`, so the old prose heuristic would have said `string`
+        // numeric fields whose descriptions never say `<number>`, so the old
+        // prose heuristic would have called every one of them a `string`
         ("qsv-sample.json", "--seed", "number"),
         ("qsv-viz.json", "--bins", "number"),
         ("qsv-moarstats.json", "--epsilon", "number"),
-        // `<N>`, uppercase
         ("qsv-pragmastat.json", "--subsample", "number"),
-        // a non-numeric placeholder stays a `string` even though its
-        // description DOES say `<number>` - `Format: <number><unit>`
+        // ... and these carry a GENERIC placeholder (`--pad <arg>`,
+        // `--chunks <arg>`, `--timeout <secs>`), so reading the placeholder
+        // rather than the field would still have missed them
+        ("qsv-table.json", "--pad", "number"),
+        ("qsv-split.json", "--chunks", "number"),
+        ("qsv-validate.json", "--timeout", "number"),
+        // a non-numeric field stays a `string` even though its description
+        // DOES say `<number>` - `Format: <number><unit>`
         ("qsv-sample.json", "--ts-interval", "string"),
     ];
 
-    let find = |skill: &str, flag: &str| -> serde_json::Value {
+    let option = |skill: &str, flag: &str| -> serde_json::Value {
         let json = parse(&skills_dir().join(skill));
         json["command"]["options"]
             .as_array()
@@ -155,7 +160,7 @@ fn option_types_follow_placeholders_not_prose() {
     let mut wrong = Vec::new();
     let mut vacuous = Vec::new();
     for &(skill, flag, expected) in PINNED {
-        let opt = find(skill, flag);
+        let opt = option(skill, flag);
         let actual = opt["type"].as_str().unwrap_or("?");
         if actual != expected {
             wrong.push(format!(
@@ -165,9 +170,9 @@ fn option_types_follow_placeholders_not_prose() {
 
         // Every pin must DISAGREE with the heuristic it exists to keep out:
         // the pre-#4596 generator typed an option `number` iff its description
-        // mentioned `<number>` or `<int>`. A pin the old heuristic would have
-        // got right proves nothing, and a reword can quietly turn a good pin
-        // into one - so the premise is asserted rather than assumed.
+        // mentioned `<number>` or `<int>`. A pin that heuristic would have got
+        // right proves nothing, and a reword can quietly turn a good pin into
+        // one - so the premise is asserted rather than assumed.
         let desc = opt["description"].as_str().unwrap_or_default();
         let prose_heuristic_says = if desc.contains("<number>") || desc.contains("<int>") {
             "number"
@@ -181,7 +186,7 @@ fn option_types_follow_placeholders_not_prose() {
 
     assert!(
         wrong.is_empty(),
-        "option types no longer follow their placeholders (see #4596):\n  {}",
+        "option types no longer follow their args struct fields (see #4596):\n  {}",
         wrong.join("\n  ")
     );
     assert!(
@@ -189,5 +194,50 @@ fn option_types_follow_placeholders_not_prose() {
         "these pins no longer discriminate against the pre-#4596 prose heuristic, so they no \
          longer test anything - reword the description back, or pin a different option:\n  {}",
         vacuous.join("\n  ")
+    );
+}
+
+/// The same rule applies to positionals, and used to be broken the same way:
+/// `select <selection>` typed `regex` purely because its description mentions
+/// selecting "by regex", while `fill <selection>` - the identical argument -
+/// typed `string`.
+#[test]
+fn positional_types_agree_across_commands() {
+    let arg = |skill: &str, name: &str| -> serde_json::Value {
+        parse(&skills_dir().join(skill))["command"]["args"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|a| a["name"].as_str() == Some(name))
+            .unwrap_or_else(|| panic!("{skill} has no <{name}>"))
+            .clone()
+    };
+
+    let select = arg("qsv-select.json", "selection");
+    assert_eq!(
+        select["type"].as_str(),
+        Some("string"),
+        "select <selection> is a column selector, not a regex"
+    );
+    assert_eq!(
+        arg("qsv-fill.json", "selection")["type"].as_str(),
+        select["type"].as_str(),
+        "the same positional must type the same way in every command"
+    );
+    // the pin is only meaningful while that description still mentions regex
+    assert!(
+        select["description"]
+            .as_str()
+            .unwrap_or_default()
+            .to_lowercase()
+            .contains("regex"),
+        "select <selection> no longer describes itself with \"regex\", so it no longer pins \
+         description prose out of type inference; pick another positional"
+    );
+
+    // a genuinely numeric positional: `arg_sample_size: f64`
+    assert_eq!(
+        arg("qsv-sample.json", "sample-size")["type"].as_str(),
+        Some("number")
     );
 }

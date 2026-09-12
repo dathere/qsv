@@ -13123,6 +13123,48 @@ monterrey,25.69,-100.32
     );
 }
 
+// An image export DISCARDS the companion choropleth, so it must not pay for the ~23 MB index load
+// (nor a cold-cache download) and must not announce a skipped panel it would never have drawn even
+// with a working engine. Regression guard for the asymmetry that made the notice misleading: a
+// healthy image export says nothing about this panel, so a broken one must not either.
+//
+// Needs NO webdriver despite the .png target, which is why it is not #[ignore]d like its
+// `viz_static_*` neighbours: the notice would be emitted while panels are being built, long before
+// the static render is attempted, so the assertion is decided either way. The positive half is
+// what keeps it from passing vacuously — "charting N column(s)" is printed AFTER panel selection,
+// so its presence proves the pipeline reached the point where the notice would have fired.
+#[cfg(all(feature = "geocode", feature = "viz_static"))]
+#[test]
+fn viz_smart_image_export_does_not_report_the_discarded_choropleth() {
+    let wrk = Workdir::new("viz_smart_image_export_does_not_report_the_discarded_choropleth");
+    quakes(&wrk);
+
+    let cache = wrk.path("gc-cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        cache.join("not-an-index.rkyv"),
+        b"this is not a Geonames index",
+    )
+    .unwrap();
+    let out_png = wrk.path("map.png").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "quakes.csv", "-o", &out_png])
+        .env("QSV_CACHE_DIR", &cache)
+        .env("QSV_GEOCODE_INDEX_FILENAME", "not-an-index.rkyv");
+    let out = wrk.output(&mut cmd);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("viz smart: charting "),
+        "the run never got as far as selecting panels, so this proves nothing: {stderr}"
+    );
+    assert!(
+        !stderr.contains("overview panel skipped"),
+        "an image export reported a panel it discards anyway: {stderr}"
+    );
+}
+
 // A network failure loading the index must be REPORTED, never fatal: this panel is an unrequested
 // companion to the point map, so a user who asked for a dashboard still gets one offline rather
 // than an exit 3 naming a GitHub URL they never mentioned. (`--geojson auto` and `viz choropleth`

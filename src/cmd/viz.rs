@@ -30940,6 +30940,16 @@ fn build_map_panel(
     // drawer can cross-link rows and map points. Off for image export (no JS) and when the drawer
     // is disabled (`--preview-threshold 0`), which keeps those payloads byte-identical.
     capture_row_ids: bool,
+    // Build the reverse-geocoded companion choropleth at all. False for image export, which
+    // DISCARDS it (see the `out_format.is_image()` branch at the call site) — so building it there
+    // loaded the ~23 MB Geonames index, and on a cold cache downloaded it, to produce a panel
+    // nothing renders; and once that engine started reporting its failures, an image export began
+    // announcing a skipped panel it would never have drawn even with a working index.
+    //
+    // Deliberately NOT `capture_row_ids`, which is also false for `--preview-threshold 0` on HTML
+    // — that page still wants the panel. And deliberately not applied to the `--geojson` branch:
+    // its overlay IS attached to the map panel and so is needed by the image path too.
+    wants_companion_choropleth: bool,
 ) -> CliResult<Option<(Panel, Option<Vec<Panel>>, (usize, usize), usize)>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
@@ -31394,16 +31404,22 @@ fn build_map_panel(
         let overlay = build_geojson_overlay(spec, key, name_key, loaded_geojson);
         (panel, overlay)
     } else {
-        // the span gate stays OUTSIDE the call: it is what short-circuits the expensive
-        // all-row reverse-geocode pass (and its index load) for the common metro-scale dataset,
-        // and a suppressed panel there is a design decision, not a failure worth reporting.
+        // both gates stay OUTSIDE the call. The span gate short-circuits the expensive all-row
+        // reverse-geocode pass (and its index load) for the common metro-scale dataset, and
+        // `wants_companion_choropleth` does the same for an output format that discards the panel;
+        // a panel suppressed by either is a design decision, not a failure worth reporting.
         #[cfg(feature = "geocode")]
-        let choropleth = (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG
-            || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
+        let choropleth = (wants_companion_choropleth
+            && (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG
+                || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG))
             .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
             .flatten();
         #[cfg(not(feature = "geocode"))]
         let choropleth = None;
+        // without the geocode feature there is no companion panel for the flag to gate, so it
+        // would read as an unused parameter
+        #[cfg(not(feature = "geocode"))]
+        let _ = wants_companion_choropleth;
         // the reverse-geocoded variant is a single panel; the --geojson branch above may return a
         // count panel plus a rate panel.
         let choropleth = choropleth.map(|p| vec![p]);
@@ -33587,6 +33603,9 @@ impl<'a> SmartCtx<'a> {
                 // `--preview-threshold 0` disables the drawer outright. Gating here keeps both
                 // payloads byte-identical to before the feature existed.
                 matches!(out_format, OutFormat::Html) && args.flag_preview_threshold != 0,
+                // the companion choropleth is discarded by the image branch below, so don't pay
+                // for it — or report its failure — on an export that cannot show it
+                !out_format.is_image(),
             )? {
                 None => (None, None),
                 Some((p, choro, cols, mappable_count)) => {

@@ -73,7 +73,7 @@
       },
       {
         "flag": "--outsubdir-size",
-        "type": "string",
+        "type": "number",
         "description": "The number of files per subdirectory in <outdir>.",
         "default": "1000"
       },

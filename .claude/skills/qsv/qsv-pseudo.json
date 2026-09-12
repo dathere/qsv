@@ -33,7 +33,7 @@
       },
       {
         "flag": "--increment",
-        "type": "string",
+        "type": "number",
         "description": "The increment for the incremental identifier. Must be greater than 0.",
         "default": "1"
       },
@@ -49,7 +49,7 @@
       },
       {
         "flag": "--start",
-        "type": "string",
+        "type": "number",
         "description": "The starting number for the incremental identifier.",
         "default": "0"
       }

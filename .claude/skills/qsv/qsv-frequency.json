@@ -165,7 +165,7 @@
       },
       {
         "flag": "--sketch-map-size",
-        "type": "string",
+        "type": "number",
         "description": "Maximum map size for the Frequent Items sketch. Must be a power of two and at least 8. Larger values tighten error bounds at the cost of more memory. Only used when sketch-method is frequent_items.",
         "default": "4096"
       },

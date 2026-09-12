@@ -68,7 +68,7 @@
       },
       {
         "flag": "--seed",
-        "type": "string",
+        "type": "number",
         "description": "Random Number Generator (RNG) seed."
       },
       {
@@ -120,7 +120,7 @@
       },
       {
         "flag": "--ts-interval",
-        "type": "number",
+        "type": "string",
         "description": "Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). Examples: \"1h\", \"1d\", \"1w\", \"2d\" (every 2 days). If not specified, <sample-size> is treated as hours."
       },
       {

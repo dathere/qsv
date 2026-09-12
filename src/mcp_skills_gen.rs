@@ -285,6 +285,7 @@ impl UsageParser {
 
         // Also parse manually to get descriptions
         let manual_descriptions = self.extract_descriptions_from_text();
+        let placeholders = self.extract_placeholders_from_text();
 
         // Per-command option skip list for MCP
         // These options are not relevant when using the command through MCP
@@ -388,12 +389,13 @@ impl UsageParser {
                     let option_type = match &opts.arg {
                         DocoptArgument::Zero => "flag",
                         DocoptArgument::One(_) => {
-                            // Check if it's a number type
-                            let desc = manual_descriptions
+                            // the DECLARED placeholder decides the type, never
+                            // prose in the description (#4596)
+                            if placeholders
                                 .get(&primary_flag)
-                                .or_else(|| manual_descriptions.get(&flag_str))
-                                .map_or("", std::string::String::as_str);
-                            if desc.contains("<number>") || desc.contains("<int>") {
+                                .or_else(|| placeholders.get(&flag_str))
+                                .is_some_and(|p| Self::placeholder_is_numeric(p))
+                            {
                                 "number"
                             } else {
                                 "string"
@@ -498,10 +500,12 @@ impl UsageParser {
                     let option_type = match &opts.arg {
                         DocoptArgument::Zero => "flag",
                         DocoptArgument::One(_) => {
-                            let desc = manual_descriptions
+                            // the DECLARED placeholder decides the type, never
+                            // prose in the description (#4596)
+                            if placeholders
                                 .get(&flag_str)
-                                .map_or("", std::string::String::as_str);
-                            if desc.contains("<number>") || desc.contains("<int>") {
+                                .is_some_and(|p| Self::placeholder_is_numeric(p))
+                            {
                                 "number"
                             } else {
                                 "string"
@@ -931,18 +935,89 @@ impl UsageParser {
         (!flags.is_empty()).then_some(flags)
     }
 
-    /// A single, whitespace-free angle-bracketed argument placeholder:
-    /// `<arg>`, `=<arg>`, `[<arg>]` or `[=<arg>]`.
     fn is_arg_placeholder(rest: &str) -> bool {
+        Self::placeholder_name(rest).is_some()
+    }
+
+    /// The bare name inside a single, whitespace-free argument placeholder:
+    /// `<arg>`, `=<arg>`, `[<arg>]` and `[=<arg>]` all yield `arg`. Returns
+    /// `None` for prose and for anything that is not exactly one placeholder.
+    fn placeholder_name(rest: &str) -> Option<&str> {
         let inner = rest
             .strip_prefix('[')
             .map_or(rest, |r| r.strip_suffix(']').unwrap_or(r));
         let inner = inner.strip_prefix('=').unwrap_or(inner);
-        inner.len() > 2
-            && inner.starts_with('<')
-            && inner.ends_with('>')
-            && !inner[1..inner.len() - 1].contains(['<', '>'])
-            && !inner.contains(char::is_whitespace)
+        let name = inner.strip_prefix('<')?.strip_suffix('>')?;
+        (!name.is_empty() && !name.contains(['<', '>']) && !name.contains(char::is_whitespace))
+            .then_some(name)
+    }
+
+    /// Whether an argument placeholder names a numeric value - the `<number>`
+    /// of `--seed <number>`, the `<n>` of `--bins <n>`.
+    ///
+    /// An option's type must be decided by its declared placeholder and never
+    /// by prose in its description (#4596). A description that merely mentions
+    /// `<number>` says nothing about the value the option accepts - `sample
+    /// --ts-interval <intvl>` is documented as `Format: <number><unit>` and
+    /// takes `1h` - and every option whose placeholder IS numeric carries that
+    /// placeholder outside its description, where prose-sniffing cannot see it.
+    fn placeholder_is_numeric(name: &str) -> bool {
+        ["n", "num", "number", "int", "integer"]
+            .iter()
+            .any(|numeric| name.eq_ignore_ascii_case(numeric))
+    }
+
+    /// Harvest each flag's declared argument placeholder from the USAGE text,
+    /// keyed by every alias on the declaration line.
+    ///
+    /// docopt's own parse cannot supply this: `Argument::One`'s payload is the
+    /// option's DEFAULT VALUE, not its placeholder name, and
+    /// `normalize_flag_token` deliberately truncates the placeholder off the
+    /// flag. So the placeholder is read back out of the USAGE text, off the
+    /// same option-declaration lines `extract_descriptions_from_text` walks -
+    /// both the `--flag <arg>  Description` form and the wrapped form whose
+    /// description starts on the following line.
+    fn extract_placeholders_from_text(&self) -> HashMap<String, String> {
+        let mut placeholders = HashMap::new();
+
+        for line in self.usage_text.lines() {
+            let trimmed = line.trim();
+            if !trimmed.starts_with('-') {
+                continue;
+            }
+            // the declaration is whatever precedes the description column
+            let decl = trimmed.split_once("  ").map_or(trimmed, |(decl, _)| decl);
+
+            let mut flags = Vec::with_capacity(2);
+            let mut placeholder = None;
+            for token in decl.split(',') {
+                let token = token.trim();
+                let Some(flag) = Self::normalize_flag_token(token) else {
+                    flags.clear();
+                    break;
+                };
+                let rest = token[flag.len()..].trim();
+                if !rest.is_empty() {
+                    // prose that merely opens with a flag, not a declaration
+                    let Some(name) = Self::placeholder_name(rest) else {
+                        flags.clear();
+                        break;
+                    };
+                    placeholder = Some(name);
+                }
+                flags.push(flag);
+            }
+
+            // `-s, --select <arg>` declares the placeholder on its last alias
+            // only, yet both aliases take it
+            if let Some(name) = placeholder {
+                for flag in flags {
+                    placeholders.insert(flag.to_string(), name.to_string());
+                }
+            }
+        }
+
+        placeholders
     }
 
     /// Extract descriptions from the usage text manually
@@ -2004,6 +2079,79 @@ mod tests {
     // ------------------------------------------------------------------
     // flag-token normalization helper
     // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // #4596 - an option's type comes from its placeholder, not its prose
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn placeholder_name_shapes() {
+        let p = UsageParser::placeholder_name;
+        assert_eq!(p("<arg>"), Some("arg"));
+        assert_eq!(p("=<string>"), Some("string"));
+        assert_eq!(p("[<n>]"), Some("n"));
+        assert_eq!(p("[=<num>]"), Some("num"));
+        assert_eq!(p("<number> and then some prose"), None);
+        assert_eq!(p("<>"), None);
+        assert_eq!(p("not a placeholder"), None);
+    }
+
+    #[test]
+    fn numeric_placeholders_are_recognized_case_insensitively() {
+        let n = UsageParser::placeholder_is_numeric;
+        assert!(n("n") && n("N") && n("num") && n("number") && n("int") && n("integer"));
+        // `pragmastat --subsample <N>` is why the check is case-insensitive
+        assert!(!n("intvl"));
+        assert!(!n("arg"));
+        assert!(!n("name"));
+        assert!(!n(""));
+    }
+
+    #[test]
+    fn placeholders_are_keyed_on_every_alias_and_survive_wrapping() {
+        let p = UsageParser::new(
+            "\ntest options:\n    -s, --seed <number>    RNG seed.\n                 --wrapped-threshold <n>\n                           Wrapped description.\n                 --formatstr=<string>   Date format.\n    --lat and --lon are exclusive.\n"
+                .to_string(),
+            "test".to_string(),
+        )
+        .extract_placeholders_from_text();
+        // the placeholder rides the last alias, but both aliases take it
+        assert_eq!(p.get("-s").map(String::as_str), Some("number"));
+        assert_eq!(p.get("--seed").map(String::as_str), Some("number"));
+        // a declaration whose description wraps onto the next line
+        assert_eq!(p.get("--wrapped-threshold").map(String::as_str), Some("n"));
+        assert_eq!(p.get("--formatstr").map(String::as_str), Some("string"));
+        // prose that merely opens with a flag declares nothing
+        assert_eq!(p.get("--lat"), None);
+    }
+
+    #[test]
+    fn option_type_follows_the_placeholder_not_the_description() {
+        let usage = "\nTest command.\n\nUsage:\n    qsv test [options] [<input>]\n\ntest                      options:\n    --seed <number>         RNG seed to use.\n                         --ts-interval <intvl>   Time interval. Format: <number><unit>.\n                         -S, --subsample <N>     Randomly subsample N values.\n                         --wrapped-threshold <n>\n                            Too wide for the                      description column.\n    --plain <arg>           An ordinary string                      option.\n    --switch                A boolean flag.\n\nCommon                      options:\n    -h, --help              Display this message\n";
+        let (_, options) = UsageParser::new(usage.to_string(), "test".to_string())
+            .parse_with_docopt()
+            .unwrap();
+        let type_of = |flag: &str| {
+            options
+                .iter()
+                .find(|o| o.flag == flag)
+                .unwrap_or_else(|| panic!("{flag} missing"))
+                .option_type
+                .clone()
+        };
+
+        // direction 1: a numeric placeholder types number, whatever the prose
+        assert_eq!(type_of("--seed"), "number");
+        assert_eq!(type_of("--subsample"), "number");
+        assert_eq!(type_of("--wrapped-threshold"), "number");
+
+        // direction 2: a non-numeric placeholder stays a string, even though
+        // this description mentions `<number>` - the regression #4596 fixed
+        assert_eq!(type_of("--ts-interval"), "string");
+
+        assert_eq!(type_of("--plain"), "string");
+        assert_eq!(type_of("--switch"), "flag");
+    }
 
     #[test]
     fn normalize_flag_token_shapes() {

@@ -42,7 +42,7 @@
       },
       {
         "flag": "--seed",
-        "type": "string",
+        "type": "number",
         "description": "Seed for the random number generator."
       },
       {

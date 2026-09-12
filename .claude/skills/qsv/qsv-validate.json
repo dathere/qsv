@@ -76,7 +76,7 @@
       },
       {
         "flag": "--email-min-subdomains",
-        "type": "string",
+        "type": "number",
         "description": "Minimum number of subdomains required in the email. e.g. \"jdoe@example.com\" is INVALID if this option is set to 3, but \"jdoe@sub.example.com\" is VALID.",
         "default": "2"
       },

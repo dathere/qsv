@@ -37,7 +37,7 @@
       },
       {
         "flag": "--freq-limit",
-        "type": "string",
+        "type": "number",
         "description": "Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited.",
         "default": "100"
       },
@@ -48,7 +48,7 @@
       },
       {
         "flag": "--joint-cardinality-cap",
-        "type": "string",
+        "type": "number",
         "description": "Maximum number of distinct value-tuples a `joint` relationship may have. A joint group above this cap falls back to independent generation (or aborts under --strict-relationships). 0 means unlimited.",
         "default": "100000"
       },
@@ -70,13 +70,13 @@
       },
       {
         "flag": "--rows",
-        "type": "string",
+        "type": "number",
         "description": "Number of synthetic rows to generate.",
         "default": "100"
       },
       {
         "flag": "--seed",
-        "type": "string",
+        "type": "number",
         "description": "RNG seed for fully reproducible output."
       },
       {

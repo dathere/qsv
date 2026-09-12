@@ -58,7 +58,7 @@
       },
       {
         "flag": "--bins",
-        "type": "string",
+        "type": "number",
         "description": "Number of bins. For histogram: bins along the x-axis (default: auto). For contour: the per-axis resolution of the density grid (default: 20)."
       },
       {
@@ -186,19 +186,19 @@
       },
       {
         "flag": "--grid-cols",
-        "type": "string",
+        "type": "number",
         "description": "Number of columns in the Data Schematic grid for the per-column distribution panels. Overview panels (map/geo, correlation, time-series) always span the full width.",
         "default": "2"
       },
       {
         "flag": "--heatmap-density",
-        "type": "string",
+        "type": "number",
         "description": "For the `viz smart` map panel: at or above <n> mappable points, draw the core as a density heatmap (DensityMap) instead of markers, keeping per-point hover. Defaults to 0 (disabled): dense point maps instead open as individual points with an in-map \"Clusters/Points\" toggle rather than aggregating into a static heat surface. Set a positive <n> to opt back in.",
         "default": "0"
       },
       {
         "flag": "--height",
-        "type": "string",
+        "type": "number",
         "description": "Image height in pixels for static export. Default 600; for `smart`, auto-scaled to the number of panel rows."
       },
       {
@@ -224,7 +224,7 @@
       },
       {
         "flag": "--limit",
-        "type": "string",
+        "type": "number",
         "description": "Top-N categories per frequency bar chart.",
         "default": "10"
       },
@@ -262,7 +262,7 @@
       },
       {
         "flag": "--max-charts",
-        "type": "string",
+        "type": "number",
         "description": "Maximum number of panels in the Data Schematic. 0 (the default) means auto: draw every eligible column (up to 64), for both HTML and static image export. Up to 8 cartesian panels render as one typed subplot grid; beyond 8, HTML switches to an inline-div grid and static export uses domain-positioned axes to fit one image. Set a positive <n> to cap the panel count instead; eligible columns beyond the cap are reported but not drawn.",
         "default": "0"
       },
@@ -308,7 +308,7 @@
       },
       {
         "flag": "--preview-threshold",
-        "type": "string",
+        "type": "number",
         "description": "Row threshold for the interactive data viewer drawer of HTML dashboards. Next to the row count in the metadata table, an \"(Explore)\" link opens the underlying table in a bottom drawer (with global, per-column and builder search) when the dataset has at most <n> rows and ALL rows are embedded; above <n>, only the first <n> rows are embedded and the link reads \"(Preview)\". Embedded rows grow the HTML file, and browser memory, in proportion to rows x columns. Set to 0 to disable the data viewer entirely (no link, no embedded data). `smart` HTML only.",
         "default": "50000"
       },
@@ -413,7 +413,7 @@
       },
       {
         "flag": "--tour-steps",
-        "type": "string",
+        "type": "number",
         "description": "How many chart panels the guided tour of a `smart` HTML dashboard spotlights. This budgets the per-panel steps only - the introduction, the Data Dictionary drawer chapter, the data viewer chapter and the conclusion are always included. Set to 0 to suppress the tour entirely - no tour, no \"Tour\" button, no first-visit hint beacons. Left at its default (8) the budget is SOFT: an all-overview dashboard gains one extra step so a frequency distribution is always spotlighted. An explicit value makes it a HARD cap, substituting rather than adding. A dictionary's dataset-level \"x-qsv\" \"tour\" object can refine the narration - see https://github.com/dathere/qsv/wiki/Visualization#guided-tour `smart` HTML only."
       },
       {
@@ -429,7 +429,7 @@
       },
       {
         "flag": "--width",
-        "type": "string",
+        "type": "number",
         "description": "Image width in pixels for static export. Default 1000; for `smart`, auto-scaled to the grid's column count."
       },
       {

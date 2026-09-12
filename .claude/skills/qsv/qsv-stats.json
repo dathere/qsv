@@ -95,7 +95,7 @@
       },
       {
         "flag": "--mode-cardinality-cap",
-        "type": "string",
+        "type": "number",
         "description": "Bound mode-tracking memory on high-cardinality columns. When > 0, if a column's mode tracker grows past <n> UNIQUE values (true cardinality, for both unweighted and weighted runs), qsv drops it and emits sentinel values instead of exact modes and cardinality. The cap is a direct memory bound on the tracker, which stores one entry per unique value. Sentinel output: * mode columns: \"*HIGH_CARDINALITY\" * cardinality column: \">=<n>\" (the \">=\" prefix DOES break downstream parsers expecting a plain integer; cap is opt-in only). Under --cardinality-method approx, the cardinality column ignores this cap (HLL gives an approximate estimate at fixed memory, ~1.5% RSE) — only mode/antimode columns are gated. Useful on wide tables with many ID/UUID/timestamp columns where tracking exact cardinality is wasted work.",
         "default": "0"
       },

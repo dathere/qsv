@@ -30940,15 +30940,20 @@ fn build_map_panel(
     // drawer can cross-link rows and map points. Off for image export (no JS) and when the drawer
     // is disabled (`--preview-threshold 0`), which keeps those payloads byte-identical.
     capture_row_ids: bool,
-    // Build the reverse-geocoded companion choropleth at all. False for image export, which
-    // DISCARDS it (see the `out_format.is_image()` branch at the call site) — so building it there
-    // loaded the ~23 MB Geonames index, and on a cold cache downloaded it, to produce a panel
-    // nothing renders; and once that engine started reporting its failures, an image export began
-    // announcing a skipped panel it would never have drawn even with a working index.
+    // Build a companion choropleth beside the point map at all — BOTH kinds: the reverse-geocoded
+    // country/US-state panel and the `--geojson` point-in-polygon one. False for image export,
+    // which DISCARDS either of them (see the `out_format.is_image()` branch at the call site), so
+    // building one there cost a ~23 MB Geonames index load (a download, on a cold cache) or a
+    // point-in-polygon pass over every core point to produce a panel nothing renders — and, once
+    // those builders started reporting their own failures, made an image export announce a skipped
+    // panel it would never have drawn even when healthy.
+    //
+    // What it does NOT suppress is the `--geojson` boundary OVERLAY: that is attached to the map
+    // panel itself, so the image path wants it, and it is built independently of the panel.
+    // Nor does it weaken `--geojson` validation, which runs upstream in `validate_geojson_source`.
     //
     // Deliberately NOT `capture_row_ids`, which is also false for `--preview-threshold 0` on HTML
-    // — that page still wants the panel. And deliberately not applied to the `--geojson` branch:
-    // its overlay IS attached to the map panel and so is needed by the image path too.
+    // — that page still wants the panel.
     wants_companion_choropleth: bool,
 ) -> CliResult<Option<(Panel, Option<Vec<Panel>>, (usize, usize), usize)>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {

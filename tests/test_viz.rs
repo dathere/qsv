@@ -13123,11 +13123,77 @@ monterrey,25.69,-100.32
     );
 }
 
+// A GeoJSON whose two regions sit at lon 0..4 and 16..20, so points placed far away fall inside
+// neither. Shape borrowed from the `smart_pip_panel_caps_snap` unit test.
+fn pip_regions_geojson(wrk: &Workdir) -> String {
+    // real newlines so rustfmt's string wrapping cannot corrupt the JSON at a line boundary
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0.0,0.0],[0.0,10.0],[4.0,10.0],[4.0,0.0],[0.0,0.0]]]}},
+{"type":"Feature","properties":{"id":"C"},"geometry":{"type":"Polygon","coordinates":[[[16.0,0.0],[16.0,10.0],[20.0,10.0],[20.0,0.0],[16.0,0.0]]]}}]}
+"#,
+    );
+    wrk.path("regions.geojson").to_string_lossy().to_string()
+}
+
+// Points nowhere near `pip_regions_geojson`'s regions, so with `--no-snap` every one is dropped and
+// the point-in-polygon builder reports `region_no_points_inside`.
+fn pip_outside_points(wrk: &Workdir) {
+    wrk.create_from_string(
+        "far.csv",
+        "place,lat,lon,val
+far1,-40.0,-120.0,1
+far2,-41.0,-121.0,2
+far3,-42.0,-122.0,3
+far4,-43.0,-123.0,4
+far5,-44.0,-124.0,5
+far6,-45.0,-125.0,6
+far7,-46.0,-127.0,7
+far8,-47.0,-128.0,8
+",
+    );
+}
+
+// The anchor for the image-export test below, and the only coverage `region_no_points_inside` has:
+// an HTML run with the same inputs MUST emit the notice. Without this, the ignored test's
+// "no notice on an image export" assertion could pass for the boring reason that these inputs never
+// produce a notice at all — which is precisely how a gate test rots into a no-op.
+//
+// Browser-free, so unlike the image test it runs in the ordinary suite.
+#[test]
+fn viz_smart_geojson_no_points_inside_is_reported() {
+    let wrk = Workdir::new("viz_smart_geojson_no_points_inside_is_reported");
+    pip_outside_points(&wrk);
+    let gj = pip_regions_geojson(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "far.csv",
+        "--geojson",
+        &gj,
+        "--feature-id-key",
+        "properties.id",
+        "--no-snap",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("none of the 8 points fell inside any --geojson region"),
+        "the point-in-polygon builder did not report the total miss: {stderr}"
+    );
+}
+
 // An image export DISCARDS both companion choropleths — the reverse-geocoded one and the
 // `--geojson` point-in-polygon one — so neither should be built there: the geocode path would load
 // the ~23 MB index (and download it on a cold cache), the PIP path would bin every core point, and
-// both would announce a skipped panel an image export never draws even when healthy. This asserts
-// the geocode half; the PIP half shares the one `wants_companion_choropleth` flag.
+// both would announce a skipped panel an image export never draws even when healthy.
+//
+// Both halves are asserted, because sharing one flag is not evidence that both branches consult it
+// — a gate applied to only one of them is exactly the bug the previous commit shipped.
 //
 // The ASSERTIONS need no webdriver — the notice is emitted while panels are being built, long
 // before the static render is attempted, so they are decided either way. The COMMAND still runs
@@ -13168,7 +13234,38 @@ fn viz_smart_image_export_does_not_report_the_discarded_choropleth() {
     );
     assert!(
         !stderr.contains("overview panel skipped"),
-        "an image export reported a panel it discards anyway: {stderr}"
+        "an image export reported a geocoded panel it discards anyway: {stderr}"
+    );
+
+    // ...and the `--geojson` point-in-polygon branch, which honors the SAME flag but through its
+    // own call. `viz_smart_geojson_no_points_inside_is_reported` above proves these inputs really
+    // do produce the notice on an HTML run, so its absence here is the gate and not the fixture.
+    pip_outside_points(&wrk);
+    let gj = pip_regions_geojson(&wrk);
+    let pip_png = wrk.path("pip.png").to_string_lossy().to_string();
+
+    let mut pip_cmd = wrk.command("viz");
+    pip_cmd.args([
+        "smart",
+        "far.csv",
+        "--geojson",
+        &gj,
+        "--feature-id-key",
+        "properties.id",
+        "--no-snap",
+        "-o",
+        &pip_png,
+    ]);
+    let pip_out = wrk.output(&mut pip_cmd);
+
+    let pip_stderr = String::from_utf8_lossy(&pip_out.stderr);
+    assert!(
+        pip_stderr.contains("viz smart: charting "),
+        "the --geojson run never got as far as selecting panels: {pip_stderr}"
+    );
+    assert!(
+        !pip_stderr.contains("fell inside any --geojson region"),
+        "an image export reported a point-in-polygon panel it discards anyway: {pip_stderr}"
     );
 }
 

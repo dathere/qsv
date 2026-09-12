@@ -1,5 +1,14 @@
 # qsv Stats Definitions
 
+> **Applies to qsv 23.0.0.** This file is **hand-maintained** — it is not generated from the
+> source, so it can drift silently when a statistic's behavior or output changes. If you are
+> reading it against a newer qsv, treat the column *set* as authoritative only up to the
+> version above, and check `qsv stats --help` for anything that looks off.
+>
+> Two facts here are machine-checked by `scripts/docs-drift-check.py` (CI job **Docs drift
+> check**): the documented stat-column total, and the feature-set memberships. Everything
+> else — every definition, formula and example below — is checked by humans only.
+
 
 ## Table of Contents
 
@@ -1076,7 +1085,7 @@ The `--json` or `--pretty-json` flags output frequency tables as nested JSON. Th
         {"name": "min", "value": "A"},
         {"name": "max", "value": "Z"},
         {"name": "range", "value": null},
-        {"name": "sort_order", "value": "UNSORTED"},
+        {"name": "sort_order", "value": "Unsorted"},
         {"name": "min_length", "value": 1},
         {"name": "max_length", "value": 1},
         {"name": "avg_length", "value": 1},
@@ -1102,7 +1111,7 @@ When `--no-stats` is NOT set and the column type is not empty, NULL, or Boolean,
 2. `min` — Minimum value
 3. `max` — Maximum value
 4. `range` — Range (max - min)
-5. `sort_order` — ASCENDING, DESCENDING, or UNSORTED
+5. `sort_order` — `Ascending`, `Descending`, or `Unsorted`
 6. `min_length` — Shortest string length (String types)
 7. `max_length` — Longest string length (String types)
 8. `sum_length` — Total of all string lengths (String types)
@@ -1218,7 +1227,7 @@ What this gives you, in order of memory savings:
 
 1. **Indexed parallel processing.** Without an index, `stats` runs sequentially; with an index, work is split into memory-aware chunks (sized by `QSV_STATS_CHUNK_MEMORY_MB`) processed in parallel and merged.
 2. **t-digest for quantiles.** Median, q1/q2/q3, IQR, fences, skewness, and `--percentiles` all read from a ~200-centroid t-digest per column instead of sorting the full column. Error is ~1% rank error, more accurate at the tails. **Caveat:** `TDigestMut::merge` is associative but not chunk-count-invariant, so different `--jobs` values can yield ~1% differences across runs. Pin `--jobs 1` for run-to-run determinism. `--mad` is auto-disabled with a warning.
-3. **HLL for cardinality.** `cardinality` and `uniqueness_ratio` come from a ~5 KB HyperLogLog per column. ~1.5% RSE. The HLL union is associative and order-invariant, so the estimate **is** reproducible across `--jobs` values.
+3. **HLL for cardinality.** `cardinality` and `uniqueness_ratio` come from a ~5 KB HyperLogLog per column. ~1.5% RSE. The HLL union is associative and order-invariant, so the estimate is stable across *parallel* `--jobs` values — `--jobs 2`, `4` and `8` agree exactly. **Caveat:** `--jobs 1` is NOT in that set. Only the chunked parallel path merges per-chunk sketches through the HLL union, and a single-threaded run never reaches it, so it yields a different estimate from every parallel run. Measured on a 39,627-row indexed fixture, one column read 39,215 at `--jobs 1` and 38,524 at `--jobs 2/4/8` (exact: 39,627). Both are within tolerance and each is deterministic; they are simply not the same number. Pin `--jobs` for run-to-run comparability.
 4. **Cap on mode/antimode tracker.** Without this, the unweighted mode tracker grows linearly with row count. With it set to, e.g., `1000000`, columns whose tracker exceeds that drop to `*HIGH_CARDINALITY` for mode/antimode while every other statistic remains valid.
 
 **Flags that block this recipe** (you must drop them or fall back to exact mode):

@@ -12,6 +12,7 @@ import { describe, test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { ELICITATION_EXEMPT_TOOLS } from "../src/tool-constants.js";
 import { createTestDir, cleanupTestDir } from "./test-helpers.js";
 
 describe("MCP App tool definitions", () => {
@@ -268,19 +269,15 @@ describe("scanDirectory (extracted from qsv_browse_directory handler)", () => {
 });
 
 describe("ELICITATION_EXEMPT_TOOLS includes browse_directory", () => {
-  test("qsv_browse_directory should be exempt from first-use elicitation", () => {
-    // Mirror the server's exempt tools set
-    const exemptTools = new Set([
-      "qsv_config",
-      "qsv_log",
-      "qsv_search_tools",
-      "qsv_set_working_dir",
-      "qsv_get_working_dir",
-      "qsv_browse_directory",
-    ]);
-
-    assert.ok(exemptTools.has("qsv_browse_directory"), "browse_directory should be exempt");
-    // Data tools should NOT be exempt
-    assert.ok(!exemptTools.has("qsv_stats"), "data tools should not be exempt");
+  // This asserted against a locally declared Set under the comment "Mirror the server's exempt
+  // tools set" -- so it confirmed only that the copy contained what the copy had just listed, and
+  // the copy had already drifted out of qsv_setup. It now reads the production set.
+  test("qsv_browse_directory is exempt from first-use elicitation", () => {
+    // browse_directory is the MCP Apps directory picker: prompting for a working directory before
+    // the user may browse for one is circular, which is why this tool in particular is exempt.
+    assert.ok(
+      ELICITATION_EXEMPT_TOOLS.has("qsv_browse_directory"),
+      "the app-mode directory picker must not itself trigger the directory prompt",
+    );
   });
 });

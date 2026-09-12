@@ -124,6 +124,8 @@ viz:
     map_animation_over_budget: "carte animée ignorée : %{q_buckets} intervalles temporels dépasseraient le budget de %{q_budget} points même entièrement sous-échantillonnés. Utilisez une colonne de date plus grossière pour l'animer."
     region_no_points_inside: "aucun des %{q_total} points ne tombe dans une région --geojson ; aucun panneau de régions n'a été construit. Vérifiez que le fichier de limites couvre ces données et que --lat/--lon ne sont pas inversés."
     choropleth_no_id_overlap: "--geojson fourni mais aucune colonne de code de région ne recoupe les ids des limites (meilleur %{q_pct}%) ; la choroplèthe de synthèse est ignorée."
+    choropleth_geocode_failed: "panneau de synthèse par pays/État des États-Unis ignoré — le moteur de géocodage n'a pas pu être chargé (%{q_err})"
+    choropleth_no_regions_resolved: "panneau de synthèse par pays/État des États-Unis ignoré — le moteur de géocodage n'a résolu aucun des %{q_total} points cartographiés en pays ou en État des États-Unis ; l'index Geonames est peut-être incomplet (vérifiez-le avec qsv geocode index-check)."
     denominator_invalid: "la colonne '%{q_col}' de x-qsv.denominator du Data Schematic est inutilisable (%{q_reason}) ; les effectifs bruts sont représentés."
     denominator_excluded: "aucun dénominateur exploitable pour %{q_n} régions sur %{q_total} ; elles sont omises du panneau de taux."
     bivariate_column_cap: "%{q_ncols} colonnes dépassent le plafond de %{q_cap} colonnes (~%{q_pairs} paires au plafond) ; les panneaux d'association bivariée sont ignorés. Lancez `qsv moarstats --bivariate` directement pour la sortie complète par paires."

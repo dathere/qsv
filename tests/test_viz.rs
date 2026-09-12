@@ -13054,6 +13054,288 @@ monterrey,25.69,-100.32
     assert!(!html.contains(r#""locationmode":"USA-states""#));
 }
 
+// Issue #4591: the reverse-geocoded country/US-state overview panel used to vanish on ANY
+// geocode-engine failure with no stderr line, no omissions entry and exit 0 — which is how a
+// dropped panel got committed to the published gallery and stayed unnoticed for months.
+//
+// Unlike its sibling above, this needs no real index and is therefore NOT #[ignore]d: a poisoned
+// index makes the failure deterministic AND offline. Both properties of that file are load-bearing
+// — it must EXIST, or `load_engine_data_resolved` downloads the real index instead, and it must not
+// begin with the snappy magic, or it goes to the decompressor rather than to the rkyv loader.
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_smart_choropleth_reports_geocode_engine_failure() {
+    let wrk = Workdir::new("viz_smart_choropleth_reports_geocode_engine_failure");
+    // same multi-country fixture as the test above (lon span ~31° clears
+    // SMART_CHOROPLETH_MIN_SPAN_DEG, so the engine load is actually attempted)
+    wrk.create_from_string(
+        "pts.csv",
+        "n,lat,lon
+nyc,40.71,-74.01
+la,34.05,-118.24
+chicago,41.88,-87.63
+mexicocity,19.43,-99.13
+guadalajara,20.67,-103.35
+monterrey,25.69,-100.32
+",
+    );
+
+    let cache = wrk.path("gc-cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        cache.join("not-an-index.rkyv"),
+        b"this is not a Geonames index",
+    )
+    .unwrap();
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv"])
+        .env("QSV_CACHE_DIR", &cache)
+        .env("QSV_GEOCODE_INDEX_FILENAME", "not-an-index.rkyv");
+    let out = wrk.output(&mut cmd);
+
+    // the Data Schematic still renders: this panel is a companion to the point map, so a broken
+    // geocode engine degrades it rather than failing the whole page
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains("Plotly.newPlot"));
+    // ...the choropleth really is absent...
+    assert!(!html.contains(r#""locationmode":"ISO-3""#));
+    // ...and the run SAYS so, carrying the underlying error text — which is the only diagnostic
+    // for a failure that has so far resisted reproduction.
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("viz smart: country/US-state overview panel skipped"),
+        "stderr did not report the skipped choropleth: {stderr}"
+    );
+    // The error CLAUSE must be non-empty, rather than a pinned message: which layer rejects the
+    // poisoned file is geosuggest's business (today `as_engine()` fails validating the rkyv, not
+    // `load_from` reading it), and pinning that text would make this test a change-detector for
+    // an upstream string. What matters is that SOME error text reached the user — an empty `()`
+    // would be the silent drop wearing a note.
+    let clause = stderr
+        .split_once("could not be loaded (")
+        .map(|(_, rest)| rest.split(')').next().unwrap_or_default().trim())
+        .unwrap_or_default();
+    assert!(
+        !clause.is_empty(),
+        "the engine's own error text was not carried through: {stderr}"
+    );
+}
+
+// A GeoJSON whose two regions sit at lon 0..4 and 16..20, so points placed far away fall inside
+// neither. Shape borrowed from the `smart_pip_panel_caps_snap` unit test.
+fn pip_regions_geojson(wrk: &Workdir) -> String {
+    // real newlines so rustfmt's string wrapping cannot corrupt the JSON at a line boundary
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0.0,0.0],[0.0,10.0],[4.0,10.0],[4.0,0.0],[0.0,0.0]]]}},
+{"type":"Feature","properties":{"id":"C"},"geometry":{"type":"Polygon","coordinates":[[[16.0,0.0],[16.0,10.0],[20.0,10.0],[20.0,0.0],[16.0,0.0]]]}}]}
+"#,
+    );
+    wrk.path("regions.geojson").to_string_lossy().to_string()
+}
+
+// Points nowhere near `pip_regions_geojson`'s regions, so with `--no-snap` every one is dropped and
+// the point-in-polygon builder reports `region_no_points_inside`.
+fn pip_outside_points(wrk: &Workdir) {
+    wrk.create_from_string(
+        "far.csv",
+        "place,lat,lon,val
+far1,-40.0,-120.0,1
+far2,-41.0,-121.0,2
+far3,-42.0,-122.0,3
+far4,-43.0,-123.0,4
+far5,-44.0,-124.0,5
+far6,-45.0,-125.0,6
+far7,-46.0,-127.0,7
+far8,-47.0,-128.0,8
+",
+    );
+}
+
+// The anchor for the image-export test below, and the only coverage `region_no_points_inside` has:
+// an HTML run with the same inputs MUST emit the notice. Without this, the ignored test's
+// "no notice on an image export" assertion could pass for the boring reason that these inputs never
+// produce a notice at all — which is precisely how a gate test rots into a no-op.
+//
+// Browser-free, so unlike the image test it runs in the ordinary suite.
+#[test]
+fn viz_smart_geojson_no_points_inside_is_reported() {
+    let wrk = Workdir::new("viz_smart_geojson_no_points_inside_is_reported");
+    pip_outside_points(&wrk);
+    let gj = pip_regions_geojson(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "far.csv",
+        "--geojson",
+        &gj,
+        "--feature-id-key",
+        "properties.id",
+        "--no-snap",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("none of the 8 points fell inside any --geojson region"),
+        "the point-in-polygon builder did not report the total miss: {stderr}"
+    );
+}
+
+// An image export DISCARDS both companion choropleths — the reverse-geocoded one and the
+// `--geojson` point-in-polygon one — so neither should be built there: the geocode path would load
+// the ~23 MB index (and download it on a cold cache), the PIP path would bin every core point, and
+// both would announce a skipped panel an image export never draws even when healthy.
+//
+// This covers the GEOCODED half only. Both branches consult one flag, but sharing a flag is not
+// evidence that both consult it — a gate applied to only one of them is exactly the bug two
+// commits ago — so the `--geojson` half has its own test,
+// `viz_static_smart_image_export_skips_the_geojson_companion`, below.
+//
+// ⚠️ This test runs in NO CI job, and cannot: it needs `geocode`, which the only job that runs
+// ignored tests (`rust-viz-static.yml`, `--features=feature_capable,viz_static`) does not enable.
+// Its `--geojson` sibling was split out precisely so that half does reach that job. Run this one
+// with `cargo test -F all_features -- --ignored`.
+//
+// The ASSERTIONS need no webdriver — the notice is emitted while panels are being built, long
+// before the static render is attempted, so they are decided either way. The COMMAND still runs
+// the exporter to completion, and `viz_static` pulls in `webdriver-downloader`, so in an
+// environment without a browser this would download one. That is exactly what every `viz_static_*`
+// neighbour is #[ignore]d to avoid, so this is ignored on the same terms rather than putting a
+// browser download in the ordinary suite. Run it with `cargo test -- --ignored`.
+//
+// The "charting N column(s)" assertion is what keeps it from passing vacuously: that line is
+// printed AFTER panel selection, so its presence proves the pipeline reached the point where the
+// notice would have fired.
+#[cfg(all(feature = "geocode", feature = "viz_static"))]
+#[test]
+#[ignore = "runs plotly's webdriver-based static export (see viz_static_* neighbours)"]
+fn viz_smart_image_export_does_not_report_the_discarded_choropleth() {
+    let wrk = Workdir::new("viz_smart_image_export_does_not_report_the_discarded_choropleth");
+    quakes(&wrk);
+
+    let cache = wrk.path("gc-cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        cache.join("not-an-index.rkyv"),
+        b"this is not a Geonames index",
+    )
+    .unwrap();
+    let out_png = wrk.path("map.png").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "quakes.csv", "-o", &out_png])
+        .env("QSV_CACHE_DIR", &cache)
+        .env("QSV_GEOCODE_INDEX_FILENAME", "not-an-index.rkyv");
+    let out = wrk.output(&mut cmd);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("viz smart: charting "),
+        "the run never got as far as selecting panels, so this proves nothing: {stderr}"
+    );
+    assert!(
+        !stderr.contains("overview panel skipped"),
+        "an image export reported a geocoded panel it discards anyway: {stderr}"
+    );
+}
+
+// The `--geojson` point-in-polygon half of the same gate, split out as its own test for a reason
+// that is pure CI mechanics: `.github/workflows/rust-viz-static.yml` is the ONLY job that runs
+// ignored tests, and it runs `cargo test --features=feature_capable,viz_static viz_static --
+// --ignored`. So a browser-gated test reaches CI only if it (a) compiles without `geocode`, which
+// that feature list omits, and (b) carries `viz_static` in its NAME, which is the filter. Its
+// geocoded sibling above satisfies neither and runs only by hand; this half needs no geocode
+// engine (`build_smart_pip_choropleth_panel`'s own doc says so), so it can satisfy both.
+//
+// `viz_smart_geojson_no_points_inside_is_reported` is the non-vacuity anchor: it proves these exact
+// inputs DO emit the notice on an HTML run, so its absence here is the gate and not the fixture.
+#[cfg(feature = "viz_static")]
+#[test]
+#[ignore = "runs plotly's webdriver-based static export (see viz_static_* neighbours)"]
+fn viz_static_smart_image_export_skips_the_geojson_companion() {
+    let wrk = Workdir::new("viz_static_smart_image_export_skips_the_geojson_companion");
+    pip_outside_points(&wrk);
+    let gj = pip_regions_geojson(&wrk);
+    let out_png = wrk.path("pip.png").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "far.csv",
+        "--geojson",
+        &gj,
+        "--feature-id-key",
+        "properties.id",
+        "--no-snap",
+        "-o",
+        &out_png,
+    ]);
+    let out = wrk.output(&mut cmd);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("viz smart: charting "),
+        "the run never got as far as selecting panels, so this proves nothing: {stderr}"
+    );
+    assert!(
+        !stderr.contains("fell inside any --geojson region"),
+        "an image export reported a point-in-polygon panel it discards anyway: {stderr}"
+    );
+}
+
+// A network failure loading the index must be REPORTED, never fatal: this panel is an unrequested
+// companion to the point map, so a user who asked for a dashboard still gets one offline rather
+// than an exit 3 naming a GitHub URL they never mentioned. (`--geojson auto` and `viz choropleth`
+// DO abort on a `Network` error — there it decides which candidate column wins the region contest,
+// and here there is no contest.) The fixture is `quakes()`, whose globe-spanning extent clears the
+// span gate, so `viz_smart_with_coords_has_map_panel` above asserts the very same success
+// property; this test pins the REASON so it cannot be relaxed by accident.
+//
+// An unroutable proxy makes the download fail without touching the real network. Deliberately
+// asserting the two things that hold whichever way the environment resolves the proxy — an
+// environment that ignores it downloads the real index and simply draws the panel — rather than a
+// panel-absence assertion that would only hold where the proxy is honored.
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_smart_choropleth_network_failure_is_not_fatal() {
+    let wrk = Workdir::new("viz_smart_choropleth_network_failure_is_not_fatal");
+    quakes(&wrk);
+
+    // an EMPTY cache plus a filename that is not in it, so the engine has to reach the network
+    let cache = wrk.path("gc-cache");
+    std::fs::create_dir_all(&cache).unwrap();
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "quakes.csv"])
+        .env("QSV_CACHE_DIR", &cache)
+        .env("QSV_GEOCODE_INDEX_FILENAME", "not-cached.rkyv")
+        .env("HTTP_PROXY", "http://127.0.0.1:1")
+        .env("HTTPS_PROXY", "http://127.0.0.1:1")
+        .env("ALL_PROXY", "http://127.0.0.1:1")
+        .env("NO_PROXY", "");
+    let out = wrk.output(&mut cmd);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "an unreachable index must not fail the dashboard: {stderr}"
+    );
+    // `network error: ` is the top-level CliError::Network prefix — its presence would mean the
+    // failure propagated out of the panel builder instead of being reported by it.
+    assert!(
+        !stderr.contains("network error: "),
+        "the network failure escaped as a fatal error: {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains("Plotly.newPlot"));
+}
+
 // The fullscreen modebar button is injected as client-side JS (the plotly-rs `Configuration` can't
 // carry a JS `click` handler). These assert the injected chrome is present in both HTML paths: the
 // plain single-chart document (`Plot::to_html`) and the hand-assembled `viz smart` dashboard.

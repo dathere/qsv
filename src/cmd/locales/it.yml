@@ -124,6 +124,8 @@ viz:
     map_animation_over_budget: "mappa animata omessa: %{q_buckets} intervalli temporali supererebbero il budget di %{q_budget} punti anche con sottocampionamento completo. Usa una colonna di data più grossolana per animarla."
     region_no_points_inside: "nessuno dei %{q_total} punti ricade in una regione --geojson, quindi non è stato costruito alcun pannello delle regioni. Verifica che il file dei confini copra questi dati e che --lat/--lon non siano invertiti."
     choropleth_no_id_overlap: "--geojson fornito ma nessuna colonna di codice regione corrisponde agli id dei confini (migliore %{q_pct}%); la coropleta di sintesi viene omessa."
+    choropleth_geocode_failed: "pannello di sintesi per paese/stato USA omesso — non è stato possibile caricare il motore di geocodifica (%{q_err})"
+    choropleth_no_regions_resolved: "pannello di sintesi per paese/stato USA omesso — il motore di geocodifica non ha risolto nessuno dei %{q_total} punti mappati in un paese o stato USA; l'indice Geonames potrebbe essere incompleto (verificalo con qsv geocode index-check)."
     denominator_invalid: "la colonna '%{q_col}' di x-qsv.denominator del Data Schematic non è utilizzabile (%{q_reason}); vengono rappresentati conteggi grezzi."
     denominator_excluded: "nessun denominatore utilizzabile per %{q_n} regioni su %{q_total}; sono omesse dal pannello dei tassi."
     bivariate_column_cap: "%{q_ncols} colonne superano il limite di %{q_cap} colonne (~%{q_pairs} coppie al limite); i pannelli di associazione bivariata vengono omessi. Esegui `qsv moarstats --bivariate` direttamente per l'output completo a coppie."

@@ -185,6 +185,14 @@ viz:
     map_animation_over_budget: "skipped the animated map — %{q_buckets} time buckets would embed more than the %{q_budget} point budget even fully downsampled. Use a coarser date column to animate it."
     region_no_points_inside: "none of the %{q_total} points fell inside any --geojson region, so no region panel was built. Check that the boundary file covers this data and that --lat/--lon are not swapped."
     choropleth_no_id_overlap: "--geojson supplied but no region-code column overlapped the boundary ids (best %{q_pct}%); skipping the summary choropleth."
+    # The reverse-geocoded per-country / per-US-state overview panel drawn beside the point
+    # map (issue #4591). It used to disappear on ANY geocode-engine failure with no stderr
+    # line, no omissions entry and exit 0. Two distinct outcomes: an engine that could not be
+    # loaded at all (including offline, where the index download fails), and an engine that
+    # loaded yet resolved nothing usable. A single resolved region is NOT one of them -- that is
+    # the documented point-only case and stays silent.
+    choropleth_geocode_failed: "country/US-state overview panel skipped — the geocode engine could not be loaded (%{q_err})"
+    choropleth_no_regions_resolved: "country/US-state overview panel skipped — the geocode engine resolved none of the %{q_total} mapped points to a country or US state; the Geonames index may be incomplete (check it with qsv geocode index-check)."
     # A dictionary `x-qsv.denominator` hint that did not survive validation
     # (issue #4394). Unlike the --denominator-key FLAG (whose violations are hard
     # errors), a bad hint only costs the rate panel: the count panel still renders,

@@ -13270,7 +13270,7 @@ const THIRD_PARTY_NOTICES_URL: &str =
 /// artifact. This comment (and `third_party_footer`) restore that visibility.
 fn third_party_comment(datatables: bool, driverjs: bool, basemap: bool) -> String {
     let datatables_line = if datatables {
-        "\n     DataTables 3.0.3 + Buttons/ColumnControl/DateTime/SearchBuilder\n       (c) \
+        "\n     DataTables 3.0.4 + Buttons/ColumnControl/DateTime/SearchBuilder\n       (c) \
          SpryMedia Ltd - MIT"
     } else {
         ""
@@ -16321,9 +16321,9 @@ fn plotly_locale_suffix() -> String {
 const DATATABLES_JS: &str = include_str!("assets/datatables.min.js");
 const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
 
-/// The download-builder combination the vendored bundle was built from: DataTables core 3.0.3 +
-/// Buttons 4.0.2 (for the popover SearchBuilder "Filter" button) + `ColumnControl` 2.0.1 (the
-/// in-header per-column search widgets) + `DateTime` 2.0.0 + SearchBuilder 2.0.0, default
+/// The download-builder combination the vendored bundle was built from: DataTables core 3.0.4 +
+/// Buttons 4.0.3 (for the popover SearchBuilder "Filter" button) + `ColumnControl` 2.0.2 (the
+/// in-header per-column search widgets) + `DateTime` 2.0.0 + SearchBuilder 2.0.1, default
 /// DataTables styling. Also the path segment of the version-pinned CDN URLs.
 ///
 /// Two components are deliberately ABSENT and must not be added back when re-fetching:
@@ -16339,11 +16339,11 @@ const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
 ///   the out-of-range index guard, and `__qsvDataPageTo` — while adding ~21 KB to the bundle and
 ///   re-testing the rows <-> map cross-link. Row selection therefore stays hand-rolled in
 ///   `DATA_DRAWER_SCRIPT`; revisit if Select grows a feature that seam needs.
-const DATATABLES_CDN_COMBO: &str = "dt-3.0.3/b-4.0.2/cc-2.0.1/date-2.0.0/sb-2.0.0";
+const DATATABLES_CDN_COMBO: &str = "dt-3.0.4/b-4.0.3/cc-2.0.2/date-2.0.0/sb-2.0.1";
 const DATATABLES_CDN_JS_SRI: &str =
-    "sha384-jHFeoMdQuc9UZshG+gewBPK/3l1nxw1GOrchF5S+6UDUtTkOaVzI5EbufLrpujyr";
+    "sha384-/7l1sx0Wj26wOCI1vzMedEjk0XYcpN8PuoQcjgH40WmPGtMfCxIy6fyAch1dyr0R";
 const DATATABLES_CDN_CSS_SRI: &str =
-    "sha384-NUgT1mWrhrmZW/oGi7Kjwy1S9LdCiUKNcXxKFNZ3MkonxQKg1PIyWCJafoqin3E9";
+    "sha384-2SdhBguOT4zAauPMdM5ftcu6P+okEJnxT7dGs1pIJmnfOzReioMI2Mbe9kcn3tiF";
 
 /// The DataTables bundle gzipped at max compression + base64 (~300 KB -> ~112 KB b64), computed
 /// once per process like `PLOTLY_GZ_B64`. Empty on (never-expected) gzip failure — callers then
@@ -23941,10 +23941,11 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       table.id = "qsv-data-table";
       table.className = "display compact";
       table.style.width = "100%";
-      // ONE header row: ColumnControl puts the ordering and per-column search widgets inside the
-      // title cell itself, so there is no second filter row to build, keep aligned with
-      // offset for sticky positioning, or strip back out of the
-      // CSV export.
+      // qsv builds ONE header row here — the titles. ColumnControl adds the SECOND row itself at
+      // init (`{ target: 1, content: ["search"] }` below), so the rendered thead is two rows deep.
+      // That is not cosmetic: the sticky-thead offset, the tour's
+      // `#qsv-data-drawer thead tr:nth-child(2)` selector and the CSV export's `headerStructure`
+      // filter all assume row 1 exists and is ColumnControl's. Do not "simplify" this to one row.
       var thead = document.createElement("thead");
       var titleRow = document.createElement("tr");
       cols.forEach(function (c) {

@@ -16941,10 +16941,10 @@ fn viz_smart_data_viewer_cdn_tags_carry_sri() {
     let html = String::from_utf8_lossy(&out.stdout);
 
     assert!(html.contains(
-        "https://cdn.datatables.net/v/dt/dt-3.0.3/b-4.0.2/cc-2.0.1/date-2.0.0/sb-2.0.0/datatables.min.js"
+        "https://cdn.datatables.net/v/dt/dt-3.0.4/b-4.0.3/cc-2.0.2/date-2.0.0/sb-2.0.1/datatables.min.js"
     ));
     assert!(html.contains(
-        "https://cdn.datatables.net/v/dt/dt-3.0.3/b-4.0.2/cc-2.0.1/date-2.0.0/sb-2.0.0/datatables.min.css"
+        "https://cdn.datatables.net/v/dt/dt-3.0.4/b-4.0.3/cc-2.0.2/date-2.0.0/sb-2.0.1/datatables.min.css"
     ));
     // both tags carry integrity + crossorigin; no embedded library payloads remain
     assert_eq!(html.matches("cdn.datatables.net").count(), 2);
@@ -16953,6 +16953,209 @@ fn viz_smart_data_viewer_cdn_tags_carry_sri() {
     // the rows/cols payloads still embed (client-side processing, per the issue)
     assert!(html.contains(r#"id="qsv-data-rows""#));
     assert!(html.contains(r#"id="qsv-data-cols""#));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Browser-driven drawer contracts (ColumnControl-owned DOM)
+// ---------------------------------------------------------------------------------------------
+//
+// Everything else in the drawer cluster above asserts the HTML string we EMIT. These two assert
+// what ColumnControl actually BUILDS, because both contracts below live in DOM that qsv never
+// writes and no string assertion can see:
+//
+//   * the CSV export drops ColumnControl's search row by filtering `headerStructure` on
+//     `data-dt-order="disable"` — an upstream rename puts a blank line between the header and the
+//     first record, in a file the user opens in Excel;
+//   * the guided tour spotlights `#qsv-data-drawer thead tr:nth-child(2)` — if that stops matching,
+//     driver.js highlights nothing and throws nothing.
+//
+// Both fail silently today. They ride the `ChromeDriver` harness defined near the top of this
+// file, and their names must keep `viz_static` in them: rust-viz-static.yml filters by test-NAME
+// substring, so `#[cfg]` + `#[ignore]` alone would compile them and never run them.
+
+/// Open the drawer on a freshly rendered dashboard and block until DataTables has initialised.
+///
+/// `--tour-steps 0` is only safe for the export test; the tour test needs the steps present in the
+/// HTML to read the selectors back out, and a live driver.js overlay was verified not to disturb
+/// `querySelector` or `getBoundingClientRect`.
+#[cfg(feature = "viz_static")]
+fn drawer_ready(drv: &ChromeDriver, path: &std::path::Path) {
+    let url = url::Url::from_file_path(path).expect("absolute path");
+    drv.goto(url.as_str());
+    // The drawer is lazy — the table does not exist until the Explore link fires.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let mut opened = false;
+    while std::time::Instant::now() < deadline {
+        if drv.exec("return typeof qsvOpenData === 'function';") == serde_json::Value::Bool(true) {
+            drv.exec("qsvOpenData(); return true;");
+            opened = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    assert!(opened, "qsvOpenData never became available");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while std::time::Instant::now() < deadline {
+        let ready =
+            drv.exec("return !!(window.DataTable && DataTable.isDataTable('#qsv-data-table'));");
+        if ready == serde_json::Value::Bool(true) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    panic!("DataTables never initialised on #qsv-data-table");
+}
+
+/// The CSV export must not carry ColumnControl's search row into the file.
+///
+/// Asserted through `dt.buttons.exportData()` rather than by clicking the button: a real click
+/// downloads a file, and the session sets no download-behaviour prefs. More importantly the
+/// options handed to `exportData` are pulled OFF THE LIVE BUTTON rather than restated here — a
+/// restated copy would still pass if viz.rs nested `customizeData` one level up, which is the
+/// exact mistake its own comment warns about ("sitting a level up it is silently never called").
+///
+/// `unfiltered` is the built-in mutation control: it re-exports with empty options, so it sees the
+/// search row and must report 2. If it ever reports 1 the fixture has stopped producing a two-row
+/// header and the `filtered == 1` assertion below has gone vacuous.
+#[cfg(feature = "viz_static")]
+#[test]
+#[ignore = "requires a browser/webdriver"]
+fn viz_static_drawer_csv_export_drops_the_columncontrol_search_row() {
+    let wrk = Workdir::new("viz_static_drawer_csv_export_drops_the_columncontrol_search_row");
+    data_viewer_csv(&wrk);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("viz");
+    // NO_COMPRESS: the DataTables bundle otherwise rides as a gzip-b64 payload inflated on first
+    // drawer open, and the test would race that inflate. tour-steps 0: the tour would overlay.
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1").args([
+        "smart",
+        "dv.csv",
+        "--tour-steps",
+        "0",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let drv = ChromeDriver::start();
+    drawer_ready(&drv, &wrk.path("dash.html"));
+
+    let res = drv.exec(
+        r#"
+        var dt = new DataTable('#qsv-data-table');
+        var withOpts = dt.buttons()[0].inst.s.buttons.filter(function (b) {
+          return b.conf && b.conf.exportOptions;
+        });
+        if (withOpts.length !== 1) return {err: 'export buttons with exportOptions: ' + withOpts.length};
+        var opts = withOpts[0].conf.exportOptions;
+        var filtered = dt.buttons.exportData(opts);
+        var unfiltered = dt.buttons.exportData({});
+        return {
+          customizeData: typeof opts.customizeData,
+          filtered: filtered.headerStructure.length,
+          unfiltered: unfiltered.headerStructure.length,
+          header: filtered.header,
+          firstBody: filtered.body[0]
+        };
+        "#,
+    );
+
+    assert!(res["err"].is_null(), "{res}");
+    assert_eq!(
+        res["customizeData"], "function",
+        "the CSV button's exportOptions lost customizeData: {res}"
+    );
+    assert_eq!(
+        res["unfiltered"], 2,
+        "control failed: the unfiltered export no longer sees a two-row header, so the assertion \
+         below proves nothing: {res}"
+    );
+    assert_eq!(
+        res["filtered"], 1,
+        "ColumnControl's search row survived into the CSV — it lands as a blank line between the \
+         header and the first record. Check that it still carries data-dt-order=\"disable\": {res}"
+    );
+    assert_eq!(res["header"][0], "name", "{res}");
+    assert_eq!(res["firstBody"][0], "alpha", "{res}");
+}
+
+/// Every drawer step of the guided tour must point at something.
+///
+/// The selectors are read back out of the emitted HTML rather than restated, so this follows
+/// viz.rs if a target is edited. The `== 5` guard is deliberate: without it a regex that stops
+/// matching turns the whole test into an empty loop that passes.
+#[cfg(feature = "viz_static")]
+#[test]
+#[ignore = "requires a browser/webdriver"]
+fn viz_static_drawer_tour_targets_resolve() {
+    let wrk = Workdir::new("viz_static_drawer_tour_targets_resolve");
+    data_viewer_csv(&wrk);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+
+    // The tour is left ON here — its steps are the subject. A live driver.js overlay does not
+    // disturb querySelector or getBoundingClientRect, which is all this test does.
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "dv.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = std::fs::read_to_string(&out_html).expect("dashboard unreadable");
+    let mut targets: Vec<String> = Vec::new();
+    for chunk in html.split(r#""target":""#).skip(1) {
+        if let Some(sel) = chunk.split('"').next()
+            && sel.starts_with("#qsv-data-drawer")
+            && !targets.iter().any(|t| t == sel)
+        {
+            targets.push(sel.to_string());
+        }
+    }
+    assert_eq!(
+        targets.len(),
+        5,
+        "expected the 5 drawer tour targets, found {targets:?} — if a step was added or removed \
+         update this count; if it is 0 the emitted shape changed and this test was passing \
+         vacuously"
+    );
+
+    let drv = ChromeDriver::start();
+    drawer_ready(&drv, &wrk.path("dash.html"));
+
+    let res = drv.exec(&format!(
+        r#"
+        var sels = {};
+        return sels.map(function (s) {{
+          var el = document.querySelector(s);
+          if (!el) return {{sel: s, found: false}};
+          var r = el.getBoundingClientRect();
+          return {{sel: s, found: true, w: Math.round(r.width), h: Math.round(r.height),
+                   dtOrder: el.getAttribute('data-dt-order')}};
+        }});
+        "#,
+        serde_json::to_string(&targets).unwrap()
+    ));
+
+    let rows = res.as_array().expect("expected an array");
+    assert_eq!(rows.len(), 5, "{res}");
+    for row in rows {
+        assert_eq!(row["found"], true, "tour target matches nothing: {row}");
+        // a spotlight on a zero-size box highlights nothing, which is the same silent failure
+        assert!(
+            row["w"].as_i64().unwrap_or(0) > 0 && row["h"].as_i64().unwrap_or(0) > 0,
+            "tour target has no box: {row}"
+        );
+    }
+    // The per-column search step must land on ColumnControl's OWN row, not merely on some second
+    // row. `data-dt-order="disable"` is the marker ColumnControl sets on the row it creates, and
+    // it is the same marker the CSV export filters on.
+    let colsearch = rows
+        .iter()
+        .find(|r| r["sel"] == "#qsv-data-drawer thead tr:nth-child(2)")
+        .expect("the per-column search step is missing from the tour");
+    assert_eq!(
+        colsearch["dtOrder"], "disable",
+        "thead row 2 is not ColumnControl's search row: {colsearch}"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------

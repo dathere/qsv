@@ -21,7 +21,7 @@ run `cargo tree` or a tool such as `cargo-about` for that inventory.
 | [plotly.js](https://github.com/plotly/plotly.js) | 3.7.0 | MIT | embedded in `qsv viz` HTML output (gzip+base64), or referenced by CDN |
 | [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js) | as bundled in plotly.js 3.7.0 | BSD-3-Clause | bundled *inside* plotly.js; ships wherever plotly.js does |
 | [plotly.rs](https://github.com/plotly/plotly.rs) | git rev `00fe051` | MIT | Cargo dependency, compiled into the `qsv` binary |
-| [DataTables](https://datatables.net/) + Buttons, ColumnControl, DateTime, SearchBuilder | `dt-3.0.3/b-4.0.2/cc-2.0.1/date-2.0.0/sb-2.0.0` | MIT | vendored in `src/cmd/assets/`, compiled in and embedded in `viz smart` HTML |
+| [DataTables](https://datatables.net/) + Buttons, ColumnControl, DateTime, SearchBuilder | `dt-3.0.4/b-4.0.3/cc-2.0.2/date-2.0.0/sb-2.0.1` | MIT | vendored in `src/cmd/assets/`, compiled in and embedded in `viz smart` HTML |
 | [driver.js](https://driverjs.com/) | 1.8.0 | MIT | vendored in `src/cmd/assets/`, compiled in and embedded in `viz smart` HTML (the guided tour) |
 | [LuaDate](https://github.com/Tieske/date) | 2.2.1 | MIT | vendored in `resources/luau/vendor/luadate/`, compiled into the binary |
 | [DCAT-US v3 schemas](https://github.com/GSA/dcat-us) | commit `cf87890` | CC0-1.0 | vendored in `resources/dcat-us-v3/`, compiled into the binary |
@@ -305,8 +305,8 @@ THE SOFTWARE.
 ## DataTables
 
 Upstream: <https://datatables.net/> — download-builder combination
-`dt-3.0.3/b-4.0.2/cc-2.0.1/date-2.0.0/sb-2.0.0`, comprising DataTables 3.0.3,
-Buttons 4.0.2, ColumnControl 2.0.1, DateTime 2.0.0 and SearchBuilder 2.0.0.
+`dt-3.0.4/b-4.0.3/cc-2.0.2/date-2.0.0/sb-2.0.1`, comprising DataTables 3.0.4,
+Buttons 4.0.3, ColumnControl 2.0.2, DateTime 2.0.0 and SearchBuilder 2.0.1.
 
 Vendored unmodified at [`src/cmd/assets/datatables.min.js`](src/cmd/assets/datatables.min.js)
 and [`src/cmd/assets/datatables.min.css`](src/cmd/assets/datatables.min.css),

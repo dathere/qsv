@@ -13270,7 +13270,7 @@ const THIRD_PARTY_NOTICES_URL: &str =
 /// artifact. This comment (and `third_party_footer`) restore that visibility.
 fn third_party_comment(datatables: bool, driverjs: bool, basemap: bool) -> String {
     let datatables_line = if datatables {
-        "\n     DataTables 3.0.3 + Buttons/ColumnControl/DateTime/SearchBuilder\n       (c) \
+        "\n     DataTables 3.0.4 + Buttons/ColumnControl/DateTime/SearchBuilder\n       (c) \
          SpryMedia Ltd - MIT"
     } else {
         ""
@@ -16321,9 +16321,9 @@ fn plotly_locale_suffix() -> String {
 const DATATABLES_JS: &str = include_str!("assets/datatables.min.js");
 const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
 
-/// The download-builder combination the vendored bundle was built from: DataTables core 3.0.3 +
-/// Buttons 4.0.2 (for the popover SearchBuilder "Filter" button) + `ColumnControl` 2.0.1 (the
-/// in-header per-column search widgets) + `DateTime` 2.0.0 + SearchBuilder 2.0.0, default
+/// The download-builder combination the vendored bundle was built from: DataTables core 3.0.4 +
+/// Buttons 4.0.3 (for the popover SearchBuilder "Filter" button) + `ColumnControl` 2.0.2 (the
+/// in-header per-column search widgets) + `DateTime` 2.0.0 + SearchBuilder 2.0.1, default
 /// DataTables styling. Also the path segment of the version-pinned CDN URLs.
 ///
 /// Two components are deliberately ABSENT and must not be added back when re-fetching:
@@ -16339,11 +16339,11 @@ const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
 ///   the out-of-range index guard, and `__qsvDataPageTo` — while adding ~21 KB to the bundle and
 ///   re-testing the rows <-> map cross-link. Row selection therefore stays hand-rolled in
 ///   `DATA_DRAWER_SCRIPT`; revisit if Select grows a feature that seam needs.
-const DATATABLES_CDN_COMBO: &str = "dt-3.0.3/b-4.0.2/cc-2.0.1/date-2.0.0/sb-2.0.0";
+const DATATABLES_CDN_COMBO: &str = "dt-3.0.4/b-4.0.3/cc-2.0.2/date-2.0.0/sb-2.0.1";
 const DATATABLES_CDN_JS_SRI: &str =
-    "sha384-jHFeoMdQuc9UZshG+gewBPK/3l1nxw1GOrchF5S+6UDUtTkOaVzI5EbufLrpujyr";
+    "sha384-/7l1sx0Wj26wOCI1vzMedEjk0XYcpN8PuoQcjgH40WmPGtMfCxIy6fyAch1dyr0R";
 const DATATABLES_CDN_CSS_SRI: &str =
-    "sha384-NUgT1mWrhrmZW/oGi7Kjwy1S9LdCiUKNcXxKFNZ3MkonxQKg1PIyWCJafoqin3E9";
+    "sha384-2SdhBguOT4zAauPMdM5ftcu6P+okEJnxT7dGs1pIJmnfOzReioMI2Mbe9kcn3tiF";
 
 /// The DataTables bundle gzipped at max compression + base64 (~300 KB -> ~112 KB b64), computed
 /// once per process like `PLOTLY_GZ_B64`. Empty on (never-expected) gzip failure — callers then
@@ -23564,6 +23564,25 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
      this cannot be done with `max-width`: browsers treat that as advisory on table cells under
      `table-layout: auto`. */
   #qsv-data-table td, #qsv-data-table thead th { overflow-wrap: anywhere; }
+  /* Header density. The title row stretches to its TALLEST title, and `th` defaults to
+     `vertical-align: middle`, so on a wide table one title that wraps to four lines sets the
+     height for every column and short titles float in the middle of it. Measured on the 41-column
+     nyc311 Data Schematic: the title row is 85px, a one-line title is 22px, and the 63px left over
+     is split evenly — putting ~32px of dead space between each label and the search input it
+     belongs to, which reads as two disconnected bands instead of 41 title+filter pairs.
+     Bottom-aligning binds each title to its own control: median gap 32px -> 13px, with the row
+     height and every column width unchanged, so DataTables' sizing pass is untouched. It is a
+     no-op on a table whose titles already fit one line — there is no slack to redistribute —
+     which is why this is invisible on narrow tables.
+
+     A two-line clamp on `dt-column-title` was tried here and REMOVED. It bought a shorter header
+     (85px -> 47px) but only by clipping 10 of nyc311's 41 titles, recoverable solely through a
+     `title` tooltip — and `title` never fires on touch and does not appear on keyboard focus, so
+     the reveal was unavailable to exactly the users who could not simply read it. Header cells are
+     not focusable either (0 of 41), so there is nothing to hang a focus-triggered popover on
+     without adding 41 tab stops to a drawer that already has 41 search inputs. Trading a legible
+     column name for 38 vertical pixels is the wrong trade; do not re-add it. */
+  #qsv-data-drawer table.dataTable thead tr:nth-child(1) th { vertical-align: bottom; }
   /* Total width for the scrollX workaround (see syncTableMinWidth). Deliberately applied through
      an ID-SCOPED RULE reading a custom property, NOT as an inline `style.minWidth`.
      DataTables' sizing pass measures a SHALLOW `cloneNode()` of the table, which copies the style
@@ -23941,10 +23960,11 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       table.id = "qsv-data-table";
       table.className = "display compact";
       table.style.width = "100%";
-      // ONE header row: ColumnControl puts the ordering and per-column search widgets inside the
-      // title cell itself, so there is no second filter row to build, keep aligned with
-      // offset for sticky positioning, or strip back out of the
-      // CSV export.
+      // qsv builds ONE header row here — the titles. ColumnControl adds the SECOND row itself at
+      // init (`{ target: 1, content: ["search"] }` below), so the rendered thead is two rows deep.
+      // That is not cosmetic: the sticky-thead offset, the tour's
+      // `#qsv-data-drawer thead tr:nth-child(2)` selector and the CSV export's `headerStructure`
+      // filter all assume row 1 exists and is ColumnControl's. Do not "simplify" this to one row.
       var thead = document.createElement("thead");
       var titleRow = document.createElement("tr");
       cols.forEach(function (c) {

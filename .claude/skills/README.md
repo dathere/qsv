@@ -21,7 +21,7 @@ The QSV MCP Server now supports **direct access to local tabular data files** (C
 
 This directory contains:
 
-1. **55 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
+1. **56 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
 2. **TypeScript Executor** - Complete implementation for running qsv skills
 3. **MCP Server with Filesystem Access** - Model Context Protocol server for Claude Desktop integration
 4. **Working Demos** - Practical demonstrations of the system
@@ -123,7 +123,7 @@ npm test
 npm run mcpb:package
 ```
 
-## Generated Skills (55)
+## Generated Skills (56)
 
 | Category | Count | Skills |
 |----------|-------|--------|
@@ -149,11 +149,11 @@ npm run mcpb:package
 
 ```
 .claude/skills/
-├── qsv/                    # 55 skill JSON definitions
+├── qsv/                    # 56 skill JSON definitions
 │   ├── qsv-select.json
 │   ├── qsv-stats.json
 │   ├── qsv-moarstats.json
-│   └── ... (52 more)
+│   └── ... (53 more)
 ├── src/                    # TypeScript source
 │   ├── types.ts           # Type definitions
 │   ├── loader.ts          # Skill loading

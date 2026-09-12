@@ -439,7 +439,7 @@ import json, sys
 # mirrors viz.rs REGION_CODE_LEAVES + CITY_NAME_LEAVES
 CODE = {"zip_code","zip","postal_code","zcta","census_tract","county","county_fips","state",
         "state_fips","country","country_code","place_fips","fips"}
-CITY = {"city","town","municipality"}           # need --geocode, ranked after every code column
+CITY = {"city","town","municipality"}   # need a geocode-enabled BUILD, not the --geocode flag
 props = json.load(open(sys.argv[1])).get("properties", {})
 con = {k: str((v.get("x-qsv") or {}).get("concept", "")) for k, v in props.items()}
 leaf = lambda c: c.split(".", 1)[1] if c.startswith("geo.") else None
@@ -448,7 +448,11 @@ city = [k for k, c in con.items() if leaf(c) in CITY]
 pair = ([k for k, c in con.items() if leaf(c) == "latitude"],
         [k for k, c in con.items() if leaf(c) == "longitude"])
 print("region-code columns :", code or "(none)")
-print("city-name columns   :", city or "(none)  # --geocode only")
+print("city-name columns   :", city or "(none)")
+if city:
+    print("  ^ nominated as region candidates only on a geocode-enabled BUILD")
+    print("    (check `qsv --version` for `geocode`). NOT the --geocode flag,")
+    print("    which `viz smart` never needs - see 3a above for the two routes.")
 print("lat/lon PAIR        :", "yes" if all(pair) else "no  # a lone lat or lon bins nothing")
 PROBE
 ```
@@ -456,8 +460,9 @@ PROBE
 Do not reach for a region-name regex: it cannot spell every geography (`tract`, `zcta`,
 `municipality`, `town`, `iso3` all miss a `state|county|country` pattern), and a false
 negative here is exactly the mistake this stage used to make. Only when the probe finds
-**neither** a region-code column (nor a geocodable city column on the `auto` path) **nor** a
-complete lat/lon pair does the GeoJSON have no effect — a lone `geo.timezone` or `geo.ip_address`
+**neither** a region-code column (nor a city/place-name column — which on a geocode-enabled build
+either joins a custom GeoJSON keyed by those names directly, or resolves to county FIPS on the
+`auto` path) **nor** a complete lat/lon pair does the GeoJSON have no effect — a lone `geo.timezone` or `geo.ip_address`
 is not a region key and does not count — say so then, and offer
 to proceed without it. A dataset carrying county names (or FIPS codes) and no coordinates at
 all maps perfectly well, so do not talk the user out of it.

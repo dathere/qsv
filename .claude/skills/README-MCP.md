@@ -277,7 +277,7 @@ The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
 - `true`: Always expose all 56 tools immediately (no deferred loading)
 - `false`: Always use 10 core utility tools only (+1 app-only tool when MCP Apps available; disables both deferred loading and the 13 pre-registered common command tools)
-- Unset: Default behavior — 23 tools at startup (10 core + 13 commonly-used commands; +1 app-only tool when MCP Apps available) with deferred loading for the remaining 32 (recommended)
+- Unset: Default behavior — 23 tools at startup (10 core + 13 commonly-used commands; +1 app-only tool when MCP Apps available) with deferred loading for the remaining 41 command tools (recommended). The 41 counts COMMAND tools only: of the 56 command skills, 13 are pre-registered as common commands and `index` and `stats` are promoted into the core set, leaving 41 to be discovered via `qsv_search_tools`
 
 ### Built-in Tool Search (`qsv_search_tools`)
 

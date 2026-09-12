@@ -13192,8 +13192,15 @@ fn viz_smart_geojson_no_points_inside_is_reported() {
 // the ~23 MB index (and download it on a cold cache), the PIP path would bin every core point, and
 // both would announce a skipped panel an image export never draws even when healthy.
 //
-// Both halves are asserted, because sharing one flag is not evidence that both branches consult it
-// — a gate applied to only one of them is exactly the bug the previous commit shipped.
+// This covers the GEOCODED half only. Both branches consult one flag, but sharing a flag is not
+// evidence that both consult it — a gate applied to only one of them is exactly the bug two
+// commits ago — so the `--geojson` half has its own test,
+// `viz_static_smart_image_export_skips_the_geojson_companion`, below.
+//
+// ⚠️ This test runs in NO CI job, and cannot: it needs `geocode`, which the only job that runs
+// ignored tests (`rust-viz-static.yml`, `--features=feature_capable,viz_static`) does not enable.
+// Its `--geojson` sibling was split out precisely so that half does reach that job. Run this one
+// with `cargo test -F all_features -- --ignored`.
 //
 // The ASSERTIONS need no webdriver — the notice is emitted while panels are being built, long
 // before the static render is attempted, so they are decided either way. The COMMAND still runs
@@ -13236,16 +13243,29 @@ fn viz_smart_image_export_does_not_report_the_discarded_choropleth() {
         !stderr.contains("overview panel skipped"),
         "an image export reported a geocoded panel it discards anyway: {stderr}"
     );
+}
 
-    // ...and the `--geojson` point-in-polygon branch, which honors the SAME flag but through its
-    // own call. `viz_smart_geojson_no_points_inside_is_reported` above proves these inputs really
-    // do produce the notice on an HTML run, so its absence here is the gate and not the fixture.
+// The `--geojson` point-in-polygon half of the same gate, split out as its own test for a reason
+// that is pure CI mechanics: `.github/workflows/rust-viz-static.yml` is the ONLY job that runs
+// ignored tests, and it runs `cargo test --features=feature_capable,viz_static viz_static --
+// --ignored`. So a browser-gated test reaches CI only if it (a) compiles without `geocode`, which
+// that feature list omits, and (b) carries `viz_static` in its NAME, which is the filter. Its
+// geocoded sibling above satisfies neither and runs only by hand; this half needs no geocode
+// engine (`build_smart_pip_choropleth_panel`'s own doc says so), so it can satisfy both.
+//
+// `viz_smart_geojson_no_points_inside_is_reported` is the non-vacuity anchor: it proves these exact
+// inputs DO emit the notice on an HTML run, so its absence here is the gate and not the fixture.
+#[cfg(feature = "viz_static")]
+#[test]
+#[ignore = "runs plotly's webdriver-based static export (see viz_static_* neighbours)"]
+fn viz_static_smart_image_export_skips_the_geojson_companion() {
+    let wrk = Workdir::new("viz_static_smart_image_export_skips_the_geojson_companion");
     pip_outside_points(&wrk);
     let gj = pip_regions_geojson(&wrk);
-    let pip_png = wrk.path("pip.png").to_string_lossy().to_string();
+    let out_png = wrk.path("pip.png").to_string_lossy().to_string();
 
-    let mut pip_cmd = wrk.command("viz");
-    pip_cmd.args([
+    let mut cmd = wrk.command("viz");
+    cmd.args([
         "smart",
         "far.csv",
         "--geojson",
@@ -13254,18 +13274,18 @@ fn viz_smart_image_export_does_not_report_the_discarded_choropleth() {
         "properties.id",
         "--no-snap",
         "-o",
-        &pip_png,
+        &out_png,
     ]);
-    let pip_out = wrk.output(&mut pip_cmd);
+    let out = wrk.output(&mut cmd);
 
-    let pip_stderr = String::from_utf8_lossy(&pip_out.stderr);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        pip_stderr.contains("viz smart: charting "),
-        "the --geojson run never got as far as selecting panels: {pip_stderr}"
+        stderr.contains("viz smart: charting "),
+        "the run never got as far as selecting panels, so this proves nothing: {stderr}"
     );
     assert!(
-        !pip_stderr.contains("fell inside any --geojson region"),
-        "an image export reported a point-in-polygon panel it discards anyway: {pip_stderr}"
+        !stderr.contains("fell inside any --geojson region"),
+        "an image export reported a point-in-polygon panel it discards anyway: {stderr}"
     );
 }
 

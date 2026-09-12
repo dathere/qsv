@@ -131,6 +131,8 @@ viz:
     map_animation_over_budget: "跳过动画地图：%{q_buckets} 个时间区间即使完全降采样也会超出 %{q_budget} 个点的预算。请使用更粗粒度的日期列来制作动画。"
     region_no_points_inside: "%{q_total} 个点无一落在任何 --geojson 区域内，因此未构建区域面板。请检查边界文件是否覆盖这些数据，以及 --lat/--lon 是否颠倒。"
     choropleth_no_id_overlap: "已提供 --geojson，但没有区域代码列与边界 id 匹配（最高 %{q_pct}%）；跳过汇总等值区域图。"
+    choropleth_geocode_failed: "跳过按国家/美国州汇总的概览面板：无法加载地理编码引擎（%{q_err}）"
+    choropleth_no_regions_resolved: "跳过按国家/美国州汇总的概览面板：地理编码引擎未能将地图上的 %{q_total} 个点中的任何一个解析为国家或美国州；Geonames 索引可能不完整（可用 qsv geocode index-check 检查）。"
     denominator_invalid: "Data Schematic 中 x-qsv.denominator 的列 '%{q_col}' 无法使用 (%{q_reason})；改为绘制原始计数。"
     denominator_excluded: "%{q_total} 个地区中有 %{q_n} 个没有可用分母，已从比率面板中略去。"
     bivariate_column_cap: "%{q_ncols} 列超过了 %{q_cap} 列的上限（达到上限时约 %{q_pairs} 对）；跳过双变量关联面板。如需完整的成对输出，请直接运行 `qsv moarstats --bivariate`。"

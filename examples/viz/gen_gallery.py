@@ -1406,6 +1406,41 @@ def extract_inline_panels(html):
     return panels
 
 
+def panel_count(html):
+    """How many Data Schematic panels a generated page renders, or None when it renders none.
+
+    Counts the RENDER CALLS, not the `qsv-viz-panel-N` ids: those ids also appear in the guided
+    tour's `"target":"#qsv-viz-panel-N"` steps and in an `[id^="qsv-viz-panel-"]` selector, so an id
+    count reads 23 where this reads 7 on smart_world_events.html and would move whenever that
+    chrome changes. Both render forms are counted, because a page produced without
+    QSV_VIZ_NO_COMPRESS emits `qsvNewPlotGz("qsv-viz-panel-N")` instead of `Plotly.newPlot(...)` --
+    counting only the plain form would read a compressed dashboard as having zero panels and
+    report that as a total wipeout.
+
+    None (rather than 0) for a page with neither form: the typed-grid render path draws every panel
+    as subplots of ONE figure and has no per-panel divs at all, so there is nothing here to compare
+    and `warn_panel_count_regressions` must skip it rather than treat it as a loss.
+    """
+    n = (html.count('Plotly.newPlot("qsv-viz-panel-')
+         + html.count('qsvNewPlotGz("qsv-viz-panel-'))
+    return n or None
+
+
+def remember_panel_count(page, prior_counts):
+    """Record `page`'s CURRENT panel count, to be called immediately before it is overwritten.
+
+    This has to happen at the write site and cannot be deferred to the end of the run: by then the
+    file on disk is the page this run just produced, and comparing it against itself is a check
+    that can never fire. A page that does not exist yet records nothing, and one with no per-panel
+    render calls records None; neither is compared.
+    """
+    path = os.path.join(VIZ_DIR, page)
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        prior_counts[page] = panel_count(fh.read())
+
+
 # Markers of a non-plaintext payload in viz output. All three are literals viz emits — a
 # script-tag content type, a JS call, and the exact typed-array serialization — none of which
 # scraped user data can produce.
@@ -1643,6 +1678,44 @@ def warn_stale_parcats_pages(linked_pages):
             "\n  Their toggle keeps plotly's un-animated snap. They are built from datasets that "
             "are not committed (see the SCREENSHOTS entry for the command), so this script cannot "
             "refresh them.\n")
+
+
+def warn_panel_count_regressions(prior_counts):
+    """Warn when a regenerated page came out with FEWER panels than the one it replaced.
+
+    Issue #4591: a `viz smart` country choropleth went missing from two committed dashboards in a
+    single refresh run -- silently, with no stderr note and exit 0 -- and was only noticed months
+    later because a version-bump diff showed an unexpected net-negative line count. These pages are
+    published to GitHub Pages by `viz-gallery-pages.yml`, so a page that is merely PLAUSIBLE is
+    exactly the failure that survives review: nothing on it says a panel is absent.
+
+    qsv itself now reports the skips it decides on (`viz.omit.choropleth_geocode_failed` and
+    friends). This is the independent artifact-level net beneath that, and it does not care WHY the
+    count fell -- which is the point, since the original cause has never been reproduced.
+
+    A WARNING, not an exit code, matching `warn_stale_data_viewers`/`warn_stale_parcats_pages`
+    rather than `check_caption_map_counts`: a panel count is data-driven, so a legitimate decrease
+    (new input rows, a retuned heuristic) must not red the regen. What it buys is that the decrease
+    is stated in the log next to the qsv stderr note that explains it, instead of having to be
+    inferred from a diff months later.
+    """
+    lost = []
+    for page, before in sorted(prior_counts.items()):
+        if before is None:
+            continue  # no comparable prior page
+        path = os.path.join(VIZ_DIR, page)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            after = panel_count(fh.read())
+        if after is not None and after < before:
+            lost.append(f"{page}: {before} panels -> {after}")
+    if lost:
+        sys.stderr.write(
+            "WARNING: these regenerated pages lost panels:\n  " + "\n  ".join(lost) +
+            "\n  Scroll up for a 'panel skipped' note from qsv explaining which panel and why "
+            "(issue #4591). If there is none, the panel was dropped silently -- do NOT commit "
+            "these pages; re-run the generator first.\n")
 
 
 def llm_dictionary_sidecars():
@@ -2040,6 +2113,9 @@ def main():
     head = head.replace('<div class="grid">', toc_html + '<div class="grid">', 1)
 
     figs, fig_divs, plots = [], [], []
+    # page -> panel count of the version being REPLACED, filled in at each write site below and
+    # consumed by warn_panel_count_regressions once every page is on disk (issue #4591).
+    prior_panel_counts = {}
     for idx, fig in enumerate(FIGURES):
         title, desc, full, args = fig
         gid = f"g{idx}"
@@ -2067,6 +2143,7 @@ def main():
             else:
                 sys.stderr.write(f"[{idx}] {title}: qsv viz {' '.join(args)} -> {iframe_name}\n")
                 html = inject_resize_reporter(run_html(qsv, args))
+                remember_panel_count(iframe_name, prior_panel_counts)
                 with open(os.path.join(VIZ_DIR, iframe_name), "w", encoding="utf-8") as fh:
                     fh.write(html)
             figs.append(None)  # keep FIGS index aligned with idx for the non-iframe figures
@@ -2138,6 +2215,7 @@ def main():
             sys.stderr.write(f"[shot] {shot['title']}: qsv viz {' '.join(shot['args'])} "
                              f"-> {shot['href']}\n")
             html = inject_resize_reporter(run_html(qsv, shot["args"]))
+            remember_panel_count(shot["href"], prior_panel_counts)
             with open(os.path.join(VIZ_DIR, shot["href"]), "w", encoding="utf-8") as fh:
                 fh.write(html)
             cmd_tokens = ["qsv", "viz", *(shlex.quote(a) for a in shot["args"]), "-o", shot["href"]]
@@ -2273,6 +2351,7 @@ def main():
 
     warn_stale_data_viewers(linked_pages)
     warn_stale_parcats_pages(linked_pages)
+    warn_panel_count_regressions(prior_panel_counts)
 
     with open(GALLERY, "w", encoding="utf-8") as fh:
         fh.write(body)

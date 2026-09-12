@@ -124,6 +124,8 @@ viz:
     map_animation_over_budget: "animierte Karte übersprungen: %{q_buckets} Zeitintervalle würden das Budget von %{q_budget} Punkten selbst bei voller Ausdünnung überschreiten. Verwenden Sie eine gröbere Datumsspalte für die Animation."
     region_no_points_inside: "keiner der %{q_total} Punkte liegt in einer --geojson-Region, daher wurde kein Regionen-Panel erstellt. Prüfen Sie, ob die Grenzdatei diese Daten abdeckt und ob --lat/--lon nicht vertauscht sind."
     choropleth_no_id_overlap: "--geojson angegeben, aber keine Regionscode-Spalte stimmte mit den Grenz-Ids überein (bester Wert %{q_pct}%); die zusammenfassende Choroplethenkarte wird übersprungen."
+    choropleth_geocode_failed: "Übersichtspanel nach Land/US-Bundesstaat übersprungen — die Geocode-Engine konnte nicht geladen werden (%{q_err})"
+    choropleth_no_regions_resolved: "Übersichtspanel nach Land/US-Bundesstaat übersprungen — die Geocode-Engine konnte keinen der %{q_total} kartierten Punkte einem Land oder US-Bundesstaat zuordnen; der Geonames-Index ist möglicherweise unvollständig (prüfen mit qsv geocode index-check)."
     denominator_invalid: "die Spalte '%{q_col}' aus x-qsv.denominator im Data Schematic ist nicht verwendbar (%{q_reason}); es werden Rohwerte dargestellt."
     denominator_excluded: "kein verwendbarer Nenner für %{q_n} von %{q_total} Regionen; sie fehlen im Raten-Panel."
     bivariate_column_cap: "%{q_ncols} Spalten überschreiten die Obergrenze von %{q_cap} Spalten (~%{q_pairs} Paare an der Grenze); die bivariaten Assoziationspanels werden übersprungen. Führen Sie `qsv moarstats --bivariate` direkt aus, um die vollständige paarweise Ausgabe zu erhalten."

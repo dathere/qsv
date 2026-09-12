@@ -124,6 +124,8 @@ viz:
     map_animation_over_budget: "アニメーションマップをスキップしました。%{q_buckets} 個の時間区間は、完全に間引いても %{q_budget} 点の上限を超えます。より粗い日付列を使ってアニメーション化してください。"
     region_no_points_inside: "%{q_total} 点のいずれも --geojson の領域内に入らなかったため、領域パネルは作成されませんでした。境界ファイルがこのデータを覆っているか、--lat/--lon が入れ替わっていないか確認してください。"
     choropleth_no_id_overlap: "--geojson が指定されましたが、境界 id と一致する地域コード列がありません (最良 %{q_pct}%)。サマリのコロプレス図をスキップします。"
+    choropleth_geocode_failed: "国/米国の州ごとの概要パネルをスキップします: ジオコードエンジンを読み込めませんでした (%{q_err})"
+    choropleth_no_regions_resolved: "国/米国の州ごとの概要パネルをスキップします: ジオコードエンジンは地図上の %{q_total} 点のいずれも国または米国の州に解決できませんでした。Geonames インデックスが不完全な可能性があります (qsv geocode index-check で確認してください)。"
     denominator_invalid: "Data Schematic の x-qsv.denominator 列 '%{q_col}' は使用できません (%{q_reason})。生の件数を描画します。"
     denominator_excluded: "%{q_total} 件中 %{q_n} 件の地域に使用可能な分母がないため、比率パネルから除外します。"
     bivariate_column_cap: "%{q_ncols} 列は %{q_cap} 列の上限を超えています (上限で約 %{q_pairs} ペア)。二変量の関連性パネルをスキップします。完全な総当たり出力が必要な場合は `qsv moarstats --bivariate` を直接実行してください。"

@@ -29222,25 +29222,75 @@ fn tally(keys: impl Iterator<Item = String>) -> (Vec<String>, HashMap<String, f6
     (order, counts)
 }
 
+/// Report a reverse-geocode pass that resolved NOTHING usable, and only that.
+///
+/// Zero and one are different outcomes and must not share a branch. ONE region is the documented
+/// single-metro case — a per-region fill would show nothing the point map does not, so it stays
+/// silent. ZERO means the engine loaded and then produced no usable region code at all, which
+/// points at the INDEX: a `GeoRegion` can carry a valid `iso2` yet an empty `iso3` when the
+/// country-info lookup fails (see the `all_usa` comment below), and `tally` skips empties — so an
+/// index whose city records survive but whose country table does not resolves every point and
+/// yields no country. That is not a property of the data, and issue #4591 is precisely about this
+/// class of outcome passing unremarked.
+///
+/// The message deliberately does NOT also blame swapped `--lat`/`--lon`. Measured: out-of-range
+/// coordinates never reach here — a column holding longitudes is not detected as a latitude, and
+/// forcing the pair with explicit `--lat`/`--lon` still produced no call. Advice for a cause that
+/// cannot occur is worse than no advice.
+///
+/// One function rather than the same `== 0` test written at both call sites: a duplicated
+/// predicate here is how the county-name layer pin drifted (issue #4417 Part B).
+#[cfg(feature = "geocode")]
+fn note_if_no_regions_resolved(regions_resolved: usize, points: usize) {
+    if regions_resolved == 0 {
+        viz_skip_note!(
+            VIZ_SMART_PREFIX,
+            "viz.omit.choropleth_no_regions_resolved",
+            q_total = points
+        );
+    }
+}
+
 /// Build a `viz smart` choropleth overview panel from already-collected map coordinates: reverse-
 /// geocode the points (reusing qsv's geocode engine), then choose the breakdown from what actually
 /// resolved — when every resolved point is in the USA, a per-US-state fill (the informative view,
-/// needs 2+ states); otherwise a per-ISO-3-country fill (needs 2+ countries). Returns `None` when
-/// neither has 2+ regions (a single-region or metro dataset stays point-only). Deciding from the
-/// resolved countries — not the broad US bounding box — keeps multi-country datasets that happen to
-/// fall inside that box (e.g. US + Mexico/Canada/Caribbean) on the per-country panel.
+/// needs 2+ states); otherwise a per-ISO-3-country fill (needs 2+ countries). Returns `Ok(None)`
+/// when neither has 2+ regions (a single-region or metro dataset stays point-only). Deciding from
+/// the resolved countries — not the broad US bounding box — keeps multi-country datasets that
+/// happen to fall inside that box (e.g. US + Mexico/Canada/Caribbean) on the per-country panel.
 /// Geocode-gated.
+///
+/// Still returns a bare `Option` — this panel genuinely cannot fail the run — but it no longer
+/// gets there by DISCARDING failures. It used to call the engine through `.ok()?`, so any hard
+/// setup failure (the tokio runtime, a failed index download, a corrupt or truncated Geonames
+/// index, engine init) left the panel simply not existing: no stderr line, no "Panels not drawn"
+/// entry, exit 0, every panel after it renumbered (issue #4591). Each way out now either draws a
+/// panel or says why it did not.
+///
+/// A network failure is reported like every other engine failure rather than aborting, unlike
+/// `--geojson auto` and `viz choropleth` where a `Network` error propagates. The rule there exists
+/// so that network weather cannot decide WHICH candidate column wins the region contest; there is
+/// no contest here, just one unrequested companion to the point map — and a user who asked for a
+/// dashboard should still get one offline, not an exit 3 naming a GitHub URL they never mentioned.
 #[cfg(feature = "geocode")]
 fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
     let points: Vec<(f64, f64)> = lats.iter().copied().zip(lons.iter().copied()).collect();
-    let regions: Vec<crate::cmd::geocode::GeoRegion> =
-        // deliberately UNhinted: this panel picks per-state vs per-country from what actually
-        // resolves, so constraining the country up front would prejudge that decision
-        crate::cmd::geocode::reverse_geocode_regions(&points, &[], None)
-            .ok()?
-            .into_iter()
-            .flatten()
-            .collect();
+    // deliberately UNhinted: this panel picks per-state vs per-country from what actually
+    // resolves, so constraining the country up front would prejudge that decision
+    let resolved = match crate::cmd::geocode::reverse_geocode_regions(&points, &[], None) {
+        Ok(resolved) => resolved,
+        // Degrade to a point-only map, but SAY SO, carrying the engine's own error text: that text
+        // is the only diagnostic for a failure that has so far resisted reproduction (#4591).
+        Err(e) => {
+            viz_skip_note!(
+                VIZ_SMART_PREFIX,
+                "viz.omit.choropleth_geocode_failed",
+                q_err = e.to_string()
+            );
+            return None;
+        },
+    };
+    let regions: Vec<crate::cmd::geocode::GeoRegion> = resolved.into_iter().flatten().collect();
 
     // decide the all-USA case from every resolved region's ISO-2 country code, NOT from the ISO-3
     // tally: a GeoRegion can carry a valid `iso2` ("MX") yet an empty `iso3` when the country-info
@@ -29252,7 +29302,9 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
         let (state_order, state_counts) =
             tally(regions.iter().filter_map(|r| r.us_state_code.clone()));
         if state_order.len() < 2 {
-            // all-USA but a single state: nothing a point map doesn't already show.
+            // all-USA but a single state: nothing a point map doesn't already show. Zero states,
+            // though, is a different story — see `note_if_no_regions_resolved`.
+            note_if_no_regions_resolved(state_order.len(), points.len());
             return None;
         }
         (
@@ -29264,6 +29316,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
     } else {
         let (country_order, country_counts) = tally(regions.iter().map(|r| r.iso3.clone()));
         if country_order.len() < 2 {
+            note_if_no_regions_resolved(country_order.len(), points.len());
             return None;
         }
         (
@@ -31341,6 +31394,9 @@ fn build_map_panel(
         let overlay = build_geojson_overlay(spec, key, name_key, loaded_geojson);
         (panel, overlay)
     } else {
+        // the span gate stays OUTSIDE the call: it is what short-circuits the expensive
+        // all-row reverse-geocode pass (and its index load) for the common metro-scale dataset,
+        // and a suppressed panel there is a design decision, not a failure worth reporting.
         #[cfg(feature = "geocode")]
         let choropleth = (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG
             || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)

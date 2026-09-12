@@ -13054,6 +13054,122 @@ monterrey,25.69,-100.32
     assert!(!html.contains(r#""locationmode":"USA-states""#));
 }
 
+// Issue #4591: the reverse-geocoded country/US-state overview panel used to vanish on ANY
+// geocode-engine failure with no stderr line, no omissions entry and exit 0 — which is how a
+// dropped panel got committed to the published gallery and stayed unnoticed for months.
+//
+// Unlike its sibling above, this needs no real index and is therefore NOT #[ignore]d: a poisoned
+// index makes the failure deterministic AND offline. Both properties of that file are load-bearing
+// — it must EXIST, or `load_engine_data_resolved` downloads the real index instead, and it must not
+// begin with the snappy magic, or it goes to the decompressor rather than to the rkyv loader.
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_smart_choropleth_reports_geocode_engine_failure() {
+    let wrk = Workdir::new("viz_smart_choropleth_reports_geocode_engine_failure");
+    // same multi-country fixture as the test above (lon span ~31° clears
+    // SMART_CHOROPLETH_MIN_SPAN_DEG, so the engine load is actually attempted)
+    wrk.create_from_string(
+        "pts.csv",
+        "n,lat,lon
+nyc,40.71,-74.01
+la,34.05,-118.24
+chicago,41.88,-87.63
+mexicocity,19.43,-99.13
+guadalajara,20.67,-103.35
+monterrey,25.69,-100.32
+",
+    );
+
+    let cache = wrk.path("gc-cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(
+        cache.join("not-an-index.rkyv"),
+        b"this is not a Geonames index",
+    )
+    .unwrap();
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv"])
+        .env("QSV_CACHE_DIR", &cache)
+        .env("QSV_GEOCODE_INDEX_FILENAME", "not-an-index.rkyv");
+    let out = wrk.output(&mut cmd);
+
+    // the Data Schematic still renders: this panel is a companion to the point map, so a broken
+    // geocode engine degrades it rather than failing the whole page
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains("Plotly.newPlot"));
+    // ...the choropleth really is absent...
+    assert!(!html.contains(r#""locationmode":"ISO-3""#));
+    // ...and the run SAYS so, carrying the underlying error text — which is the only diagnostic
+    // for a failure that has so far resisted reproduction.
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("viz smart: country/US-state overview panel skipped"),
+        "stderr did not report the skipped choropleth: {stderr}"
+    );
+    // The error CLAUSE must be non-empty, rather than a pinned message: which layer rejects the
+    // poisoned file is geosuggest's business (today `as_engine()` fails validating the rkyv, not
+    // `load_from` reading it), and pinning that text would make this test a change-detector for
+    // an upstream string. What matters is that SOME error text reached the user — an empty `()`
+    // would be the silent drop wearing a note.
+    let clause = stderr
+        .split_once("could not be loaded (")
+        .map(|(_, rest)| rest.split(')').next().unwrap_or_default().trim())
+        .unwrap_or_default();
+    assert!(
+        !clause.is_empty(),
+        "the engine's own error text was not carried through: {stderr}"
+    );
+}
+
+// A network failure loading the index must be REPORTED, never fatal: this panel is an unrequested
+// companion to the point map, so a user who asked for a dashboard still gets one offline rather
+// than an exit 3 naming a GitHub URL they never mentioned. (`--geojson auto` and `viz choropleth`
+// DO abort on a `Network` error — there it decides which candidate column wins the region contest,
+// and here there is no contest.) The fixture is `quakes()`, whose globe-spanning extent clears the
+// span gate, so `viz_smart_with_coords_has_map_panel` above asserts the very same success
+// property; this test pins the REASON so it cannot be relaxed by accident.
+//
+// An unroutable proxy makes the download fail without touching the real network. Deliberately
+// asserting the two things that hold whichever way the environment resolves the proxy — an
+// environment that ignores it downloads the real index and simply draws the panel — rather than a
+// panel-absence assertion that would only hold where the proxy is honored.
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_smart_choropleth_network_failure_is_not_fatal() {
+    let wrk = Workdir::new("viz_smart_choropleth_network_failure_is_not_fatal");
+    quakes(&wrk);
+
+    // an EMPTY cache plus a filename that is not in it, so the engine has to reach the network
+    let cache = wrk.path("gc-cache");
+    std::fs::create_dir_all(&cache).unwrap();
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "quakes.csv"])
+        .env("QSV_CACHE_DIR", &cache)
+        .env("QSV_GEOCODE_INDEX_FILENAME", "not-cached.rkyv")
+        .env("HTTP_PROXY", "http://127.0.0.1:1")
+        .env("HTTPS_PROXY", "http://127.0.0.1:1")
+        .env("ALL_PROXY", "http://127.0.0.1:1")
+        .env("NO_PROXY", "");
+    let out = wrk.output(&mut cmd);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "an unreachable index must not fail the dashboard: {stderr}"
+    );
+    // `network error: ` is the top-level CliError::Network prefix — its presence would mean the
+    // failure propagated out of the panel builder instead of being reported by it.
+    assert!(
+        !stderr.contains("network error: "),
+        "the network failure escaped as a fatal error: {stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains("Plotly.newPlot"));
+}
+
 // The fullscreen modebar button is injected as client-side JS (the plotly-rs `Configuration` can't
 // carry a JS `click` handler). These assert the injected chrome is present in both HTML paths: the
 // plain single-chart document (`Plot::to_html`) and the hand-assembled `viz smart` dashboard.

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING (tool schemas): option and positional types now come from the struct qsv deserializes its arguments into, not from prose in the description** ([#4596](https://github.com/dathere/qsv/issues/4596)). The skill generator decided whether an option was `number` or `string` by scanning its *description* for a literal `<number>` or `<int>`. The argument it actually declares never reaches that text, so the heuristic was reading the wrong thing and was wrong in both directions: exactly **1 of 761** options across the 56 skills was typed `number`, and it was a false positive - `sample --ts-interval`, whose description reads `Format: <number><unit>` and which takes `1h`. Every genuinely numeric option - `--seed`, `--bins`, `--timeout`, `--infer-len` - was advertised to agents as a string.
+
+  Inferring from the argument placeholder instead was tried and abandoned: it cannot see the many numeric options declared `--pad <arg>`, `--chunks <arg>`, `--memory-limit <arg>`, `--batch <size>` or `--scale <f>`, so any allowlist of placeholder names is whack-a-mole that still misses every `<arg>`. The type now comes from the deserialized args struct, which is exact - `flag_timeout: u16` IS the contract, since docopt itself refuses a non-number for that field. The struct is identified by the `util::get_args` call's type annotation rather than assumed to be `struct Args`, so commands deserializing into something else (`schema`) and files declaring several `*Args` structs (`stats`) need no special case.
+
+  **What changes for MCP clients:** **110 options** are now typed `number` instead of `string`, and `sample --ts-interval` is corrected to `string`. `type: "number"` is enforced strictly - the executor requires `typeof value === "number"` - so those options now require `30` and reject `"30"`, exactly inverting what they accepted before. `"30"` did work end-to-end previously, since it is passed through to the CLI and parsed there; what changes is that the advertised schema now tells the truth, an agent sending a bare `30` is no longer turned away, and non-numeric junk is caught at the MCP boundary instead of surfacing later as a qsv usage error. Agents that construct arguments from the tool schema need no change; anything hardcoding stringified numbers for these options does.
+
+  Positionals had the identical defect and are fixed the same way, which also settles a disagreement between two spellings of the same argument: `select <selection>` was typed `regex` purely because its description mentions selecting "by regex", while `fill <selection>` was a `string`. Both are `string` now. `file` and `regex` remain name-based, since nothing in the struct distinguishes a path or a pattern from any other `String`.
+
+  An option whose struct field cannot be resolved is now a hard generation error rather than a silent `string`, so a future rename fails the build instead of quietly un-typing every option in that command.
+
 
 ## [23.0.0] - 2026-09-11
 

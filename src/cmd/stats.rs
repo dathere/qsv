@@ -252,10 +252,14 @@ stats options:
                                            * --infer-boolean forces exact (boolean
                                              inference needs cardinality == 2 exactness);
                                              a one-time warning is emitted.
-                                           * Reproducible across --jobs values: the
-                                             HLL union used at merge time is associative
-                                             and order-invariant, so chunk completion
-                                             order does not affect the final estimate.
+                                           * Reproducible across PARALLEL --jobs values:
+                                             the HLL union used at merge time is
+                                             associative and order-invariant, so chunk
+                                             completion order does not affect the final
+                                             estimate. --jobs 1 never reaches that union
+                                             and so can report a different estimate than
+                                             a parallel run - pin --jobs when comparing
+                                             cardinality across runs.
                                            * Requires a little-endian target. Apache
                                              DataSketches does not support big-endian
                                              platforms (e.g., s390x); on those builds,

@@ -63,32 +63,12 @@ import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
 import { PipelineManifest } from "./pipeline-manifest.js";
 import { WorkingDirManager } from "./working-dir-manager.js";
 import { PIPELINE_METADATA, type PipelineMetadata } from "./mcp-tools.js";
-import { SENSITIVE_HOME_DIRS, normalizeForCaseFs } from "./tool-constants.js";
-
-/**
- * Core tools that are always available (defer_loading: false)
- * These are essential utility tools that enable tool discovery and session management
- */
-const CORE_TOOLS = [
-  "qsv_search_tools",
-  "qsv_config",
-  "qsv_set_working_dir",
-  "qsv_get_working_dir",
-  "qsv_browse_directory",
-  "qsv_list_files",
-  "qsv_log",
-  "qsv_command",
-  "qsv_to_parquet",
-  "qsv_index",
-  "qsv_stats",
-] as const;
-
-/**
- * The one CORE_TOOLS entry that is NOT registered unconditionally: it appears only when MCP Apps
- * are enabled AND the connected client supports them. Everything reporting a core-tool count has
- * to account for it, which is why those counts are derived rather than written as literals.
- */
-const APP_ONLY_CORE_TOOL = "qsv_browse_directory";
+import {
+  SENSITIVE_HOME_DIRS,
+  normalizeForCaseFs,
+  CORE_TOOLS,
+  coreToolCount,
+} from "./tool-constants.js";
 
 /**
  * Default server instructions sent to MCP clients during initialization.
@@ -456,9 +436,7 @@ class QsvMcpServer {
         // supports. The authoritative number is the "Registered N tools" line at the end.
         const shouldExposeAll = config.exposeAllTools === true;
         const appToolExposed = config.enableMcpApps && this.clientSupportsApps();
-        const coreToolCount = CORE_TOOLS.filter(
-          (name) => name !== APP_ONLY_CORE_TOOL || appToolExposed,
-        ).length;
+        const coreTools = coreToolCount(appToolExposed);
 
         // Log tool mode once per session
         if (!this.loggedToolMode) {
@@ -468,11 +446,11 @@ class QsvMcpServer {
             );
           } else if (config.exposeAllTools === false) {
             console.error(
-              `[Server] Using up to ${coreToolCount} core tools only (QSV_MCP_EXPOSE_ALL_TOOLS=false)`,
+              `[Server] Using up to ${coreTools} core tools only (QSV_MCP_EXPOSE_ALL_TOOLS=false)`,
             );
           } else {
             console.error(
-              `[Server] Using deferred loading (up to ${coreToolCount} core + ${COMMON_COMMANDS.length} common commands = ${coreToolCount + COMMON_COMMANDS.length} at startup, + search-discovered)`,
+              `[Server] Using deferred loading (up to ${coreTools} core + ${COMMON_COMMANDS.length} common commands = ${coreTools + COMMON_COMMANDS.length} at startup, + search-discovered)`,
             );
           }
           this.loggedToolMode = true;

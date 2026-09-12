@@ -13,23 +13,10 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { COMMON_COMMANDS } from '../src/mcp-tools.js';
 import { SkillLoader } from '../src/loader.js';
-
-// Matches CORE_TOOLS array in mcp-server.ts (11 entries).
-// Note: listTools exposes only 10 by default; qsv_browse_directory
-// is conditionally exposed when MCP Apps are enabled (via the enableMcpApps/clientSupportsApps check).
-const CORE_TOOLS = [
-  "qsv_search_tools",
-  "qsv_config",
-  "qsv_set_working_dir",
-  "qsv_get_working_dir",
-  "qsv_browse_directory",
-  "qsv_list_files",
-  "qsv_log",
-  "qsv_command",
-  "qsv_to_parquet",
-  "qsv_index",
-  "qsv_stats",
-] as const;
+// The REAL core-tool set and count, imported rather than mirrored. These used to be copied into
+// this file because mcp-server.ts calls main() at module scope and cannot be imported; they now
+// live in tool-constants.ts precisely so tests exercise production values.
+import { CORE_TOOLS, APP_ONLY_CORE_TOOL, coreToolCount } from '../src/tool-constants.js';
 
 // ============================================================================
 // Core Tools Count Verification
@@ -39,14 +26,9 @@ test('CORE_TOOLS has exactly 11 tools', () => {
   assert.strictEqual(CORE_TOOLS.length, 11, 'Should have exactly 11 core tools');
 });
 
-// The core-tool count reported in the mode logs is DERIVED from CORE_TOOLS minus the app-gated
-// entry, never written as a literal. A hardcoded 10 undercounted an app-capable client (MCP Apps
-// default to ON via QSV_MCP_ENABLE_APPS), recreating the log-vs-reality mismatch the logging
-// exists to prevent. This mirrors the production expression in mcp-server.ts.
-const APP_ONLY_CORE_TOOL = 'qsv_browse_directory';
-const coreToolCount = (appToolExposed: boolean) =>
-  CORE_TOOLS.filter((name) => name !== APP_ONLY_CORE_TOOL || appToolExposed).length;
-
+// `coreToolCount` here is the PRODUCTION function (src/tool-constants.ts), not a local
+// reimplementation -- an earlier version of this test mirrored the expression and so would have
+// passed even if the server regressed to a hardcoded count.
 test('core-tool count is derived, and accounts for the app-gated tool', () => {
   assert.ok(
     CORE_TOOLS.includes(APP_ONLY_CORE_TOOL as typeof CORE_TOOLS[number]),
@@ -65,6 +47,16 @@ test('core-tool count is derived, and accounts for the app-gated tool', () => {
     'deferred-mode startup total with MCP Apps'
   );
 });
+
+// NOTE: a subprocess probe that drives the built server over stdio and compares its mode log to
+// what it actually registers was attempted here and removed. It works standalone (verified: a
+// client declaring the MCP Apps UI capability gets 11 tools including qsv_browse_directory, and
+// the log says "up to 11" matching "Registered 11 tools"), but under `node --test` the tools/list
+// response never arrives and the test times out. A test that times out, or that silently skips
+// whenever no qsv binary is present, is worse than none. The guard against the log drifting from
+// reality is instead structural: the log and the conditional registration share ONE helper
+// (`coreToolCount`) and ONE guard expression (`config.enableMcpApps && clientSupportsApps()`),
+// so neither can be changed alone.
 
 test('CORE_TOOLS includes all required utility tools', () => {
   const required = [

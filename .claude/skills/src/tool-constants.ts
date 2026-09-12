@@ -147,6 +147,47 @@ export const MAX_MCP_RESPONSE_SIZE = 850 * 1024; // 850KB - safe for Claude Desk
  * Commands moved to qsv_command generic tool:
  * join, sort, dedup, rename, validate, sample, template, diff, schema
  */
+/**
+ * Core tools that are always available (defer_loading: false).
+ * These are the essential utility tools that enable tool discovery and session management,
+ * plus the `index` and `stats` command tools, which are promoted into the core set.
+ *
+ * Lives here rather than in mcp-server.ts so tests can import the REAL set: mcp-server.ts calls
+ * main() at module scope, so importing it would start a server, which is why test files had been
+ * keeping hand-maintained copies of this array.
+ */
+export const CORE_TOOLS = [
+  "qsv_search_tools",
+  "qsv_config",
+  "qsv_set_working_dir",
+  "qsv_get_working_dir",
+  "qsv_browse_directory",
+  "qsv_list_files",
+  "qsv_log",
+  "qsv_command",
+  "qsv_to_parquet",
+  "qsv_index",
+  "qsv_stats",
+] as const;
+
+/**
+ * The one CORE_TOOLS entry that is NOT registered unconditionally: it appears only when MCP Apps
+ * are enabled AND the connected client supports them.
+ */
+export const APP_ONLY_CORE_TOOL = "qsv_browse_directory";
+
+/**
+ * How many core tools a session actually exposes.
+ *
+ * Derived, never a literal: CORE_TOOLS holds 11 entries but only 10 register unconditionally,
+ * and MCP Apps are enabled by DEFAULT (QSV_MCP_ENABLE_APPS), gated only on client support -- so
+ * an app-capable client really does get 11. Hardcoding 10 made the mode logs contradict the
+ * server's own "Registered N tools" line for exactly those clients.
+ */
+export function coreToolCount(appToolExposed: boolean): number {
+  return CORE_TOOLS.filter((name) => name !== APP_ONLY_CORE_TOOL || appToolExposed).length;
+}
+
 export const COMMON_COMMANDS = [
   "select", // Column selection (most frequently used)
   "moarstats", // Comprehensive statistics with data type inference

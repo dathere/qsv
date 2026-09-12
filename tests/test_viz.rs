@@ -13123,18 +13123,25 @@ monterrey,25.69,-100.32
     );
 }
 
-// An image export DISCARDS the companion choropleth, so it must not pay for the ~23 MB index load
-// (nor a cold-cache download) and must not announce a skipped panel it would never have drawn even
-// with a working engine. Regression guard for the asymmetry that made the notice misleading: a
-// healthy image export says nothing about this panel, so a broken one must not either.
+// An image export DISCARDS both companion choropleths — the reverse-geocoded one and the
+// `--geojson` point-in-polygon one — so neither should be built there: the geocode path would load
+// the ~23 MB index (and download it on a cold cache), the PIP path would bin every core point, and
+// both would announce a skipped panel an image export never draws even when healthy. This asserts
+// the geocode half; the PIP half shares the one `wants_companion_choropleth` flag.
 //
-// Needs NO webdriver despite the .png target, which is why it is not #[ignore]d like its
-// `viz_static_*` neighbours: the notice would be emitted while panels are being built, long before
-// the static render is attempted, so the assertion is decided either way. The positive half is
-// what keeps it from passing vacuously — "charting N column(s)" is printed AFTER panel selection,
-// so its presence proves the pipeline reached the point where the notice would have fired.
+// The ASSERTIONS need no webdriver — the notice is emitted while panels are being built, long
+// before the static render is attempted, so they are decided either way. The COMMAND still runs
+// the exporter to completion, and `viz_static` pulls in `webdriver-downloader`, so in an
+// environment without a browser this would download one. That is exactly what every `viz_static_*`
+// neighbour is #[ignore]d to avoid, so this is ignored on the same terms rather than putting a
+// browser download in the ordinary suite. Run it with `cargo test -- --ignored`.
+//
+// The "charting N column(s)" assertion is what keeps it from passing vacuously: that line is
+// printed AFTER panel selection, so its presence proves the pipeline reached the point where the
+// notice would have fired.
 #[cfg(all(feature = "geocode", feature = "viz_static"))]
 #[test]
+#[ignore = "runs plotly's webdriver-based static export (see viz_static_* neighbours)"]
 fn viz_smart_image_export_does_not_report_the_discarded_choropleth() {
     let wrk = Workdir::new("viz_smart_image_export_does_not_report_the_discarded_choropleth");
     quakes(&wrk);

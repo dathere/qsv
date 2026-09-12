@@ -31383,24 +31383,42 @@ fn build_map_panel(
         let coord_decimals = stats_coord_decimals(stats, lat_idx, lon_idx);
         let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
         let name_key = args.flag_feature_name_key.as_deref();
-        let panel = build_smart_pip_choropleth_panel(
-            spec,
-            key,
-            name_key,
-            &core_lats,
-            &core_lons,
-            snap,
-            args.flag_snap_max_dist,
-            coord_decimals,
-            loaded_geojson,
-            args.flag_denominator_key.as_deref(),
-            args.flag_denominator_unit.as_deref(),
-            dict.and_then(|d| d.grain_unit.as_deref()),
-            dict.and_then(|d| d.grain.as_deref()),
-        )?;
-        // overlay the region boundaries + labels directly on the point map (best-effort; the panel
-        // builder above already hard-errored on a bad --geojson). Independent of the choropleth's
-        // 2-region minimum — even a single region is worth outlining on the map.
+        // Same gate as the reverse-geocoded companion below, for the same two reasons: the image
+        // path discards this panel too, so its point-in-polygon pass over every core point is
+        // wasted there, and its `region_no_points_inside` notice would announce the loss of a
+        // panel an image export never draws.
+        //
+        // Skipping it does NOT weaken `--geojson` validation. A missing file, unparseable
+        // GeoJSON, and a `--feature-id-key` that resolves on no feature are all rejected upstream
+        // by `validate_geojson_source` — verified on an image export, which still fails on both a
+        // bogus path and a bogus key — and `loaded_geojson` arrives already parsed. The builder's
+        // own `?`s are a defensive second line, not the check that fires.
+        //
+        // It also cannot hand work to the summary path by leaving `choropleth_panel` empty: that
+        // one is itself gated on `!out_format.is_image()`.
+        let panel = if wants_companion_choropleth {
+            build_smart_pip_choropleth_panel(
+                spec,
+                key,
+                name_key,
+                &core_lats,
+                &core_lons,
+                snap,
+                args.flag_snap_max_dist,
+                coord_decimals,
+                loaded_geojson,
+                args.flag_denominator_key.as_deref(),
+                args.flag_denominator_unit.as_deref(),
+                dict.and_then(|d| d.grain_unit.as_deref()),
+                dict.and_then(|d| d.grain.as_deref()),
+            )?
+        } else {
+            None
+        };
+        // overlay the region boundaries + labels directly on the point map (best-effort;
+        // `validate_geojson_source` has already hard-errored on a bad --geojson upstream).
+        // Independent of the choropleth's 2-region minimum — even a single region is worth
+        // outlining on the map, and the image path keeps this even though it drops the panel.
         let overlay = build_geojson_overlay(spec, key, name_key, loaded_geojson);
         (panel, overlay)
     } else {

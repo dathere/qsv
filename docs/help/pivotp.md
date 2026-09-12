@@ -62,7 +62,8 @@ qsv pivotp --help
 | &nbsp;`‑‑sort‑columns`&nbsp; | flag | Sort the transposed columns by name. (pivot mode only) |  |
 | &nbsp;`‑‑maintain‑order`&nbsp; | flag | Maintain output order: preserve input column order in pivot mode, and preserve group/row order in group-by mode. |  |
 | &nbsp;`‑‑col‑separator`&nbsp; | string | The separator in generated column names in case of multiple --values columns. (pivot mode only; ignored in group-by mode) | `_` |
-| &nbsp;`‑‑validate`&nbsp; | flag | Validate a pivot by checking the pivot column(s)' cardinality. (pivot mode only) |  |
+| &nbsp;`‑‑validate`&nbsp; | flag | Report the pivot column(s)' cardinality before pivoting. Informational only - it does not refuse a pivot; --max-columns does that. (pivot mode only) |  |
+| &nbsp;`‑‑max‑columns`&nbsp; | integer | Maximum number of columns the pivot may create before it is refused. Guards against pivoting on a high-cardinality column, which can exhaust memory. Unlike --validate, this ALWAYS runs. Set to 0 for no limit, for a deliberately wide pivot. (pivot mode only; ignored in group-by mode) | `100000` |
 | &nbsp;`‑‑try‑parsedates`&nbsp; | flag | When set, will attempt to parse columns as dates. |  |
 | &nbsp;`‑‑infer‑len`&nbsp; | integer | Number of rows to scan when inferring schema. Set to 0 to scan entire file. | `10000` |
 | &nbsp;`‑‑decimal‑comma`&nbsp; | flag | Use comma as decimal separator when READING the input. Note that you will need to specify an alternate --delimiter. |  |

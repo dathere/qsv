@@ -847,6 +847,132 @@ pivotp_test!(
     }
 );
 
+// #4589 regression: the column cap must fire WITHOUT --validate. Before the fix the cap was
+// gated behind that opt-in flag, so the default path grew memory until the OS killed it.
+pivotp_test!(
+    pivotp_max_columns_exceeded,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args([
+            "product",
+            "--index",
+            "date",
+            "--values",
+            "sales",
+            "--max-columns",
+            "1",
+            "sales.csv",
+        ]);
+
+        let stderr = wrk.stderr_on_error(&mut cmd);
+        assert!(
+            stderr.contains("exceeding the --max-columns limit"),
+            "expected the cap to fire without --validate, got: {stderr}"
+        );
+    }
+);
+
+// The escape hatch: a deliberately wide pivot stays possible. Before #4589 this was expressed
+// by simply omitting --validate, so without `0` the fix would remove a capability.
+pivotp_test!(
+    pivotp_max_columns_zero_unlimited,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args([
+            "product",
+            "--index",
+            "date",
+            "--values",
+            "sales",
+            "--max-columns",
+            "0",
+            "sales.csv",
+        ]);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        // Values are smart-agg'd (--agg defaults to smart); what this test pins is that
+        // --max-columns 0 leaves the result identical to an uncapped pivot.
+        let expected = vec![
+            svec!["date", "A", "B"],
+            svec!["2023-01-01", "150.0", "150.0"],
+            svec!["2023-01-02", "300.0", "300.0"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// --validate still reports, and the cap still aborts, and the report comes first.
+pivotp_test!(
+    pivotp_max_columns_with_validate,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args([
+            "product",
+            "--index",
+            "date",
+            "--values",
+            "sales",
+            "--validate",
+            "--max-columns",
+            "1",
+            "sales.csv",
+        ]);
+
+        let stderr = wrk.stderr_on_error(&mut cmd);
+        assert!(
+            stderr.contains("Pivot on-column cardinality"),
+            "--validate report should still print, got: {stderr}"
+        );
+        assert!(
+            stderr.contains("exceeding the --max-columns limit"),
+            "cap should still abort under --validate, got: {stderr}"
+        );
+    }
+);
+
+// The cap measures the EXACT number of distinct <on-cols> combinations, not the product of the
+// per-column cardinalities. Here `product` and `region` are perfectly correlated: the product
+// estimate is 2 x 2 = 4, but only 2 combinations exist. Capping on the estimate would abort a
+// pivot that produces 2 columns - and because the cap is now always-on, that would break pivots
+// that worked before. Both halves matter: without the --max-columns 1 run this test would pass
+// even if the cap were removed entirely.
+#[test]
+fn pivotp_max_columns_uses_exact_count_not_estimate() {
+    let wrk = Workdir::new("pivotp_max_columns_uses_exact_count_not_estimate");
+    let data = vec![
+        svec!["date", "product", "region", "sales"],
+        svec!["2023-01-01", "A", "North", "100"],
+        svec!["2023-01-02", "A", "North", "200"],
+        svec!["2023-01-01", "B", "South", "150"],
+        svec!["2023-01-02", "B", "South", "250"],
+    ];
+    wrk.create("corr.csv", data);
+
+    let run = |max_columns: &str| {
+        let mut cmd = wrk.command("pivotp");
+        cmd.args([
+            "product,region",
+            "--index",
+            "date",
+            "--values",
+            "sales",
+            "--max-columns",
+            max_columns,
+            "corr.csv",
+        ]);
+        cmd
+    };
+
+    // 2 real columns <= 3, even though the cardinality product is 4.
+    let mut ok = run("3");
+    wrk.assert_success(&mut ok);
+
+    // ...and the cap is genuinely live on the same input.
+    let mut err = run("1");
+    let stderr = wrk.stderr_on_error(&mut err);
+    assert!(
+        stderr.contains("exceeding the --max-columns limit"),
+        "expected the cap to fire at 1, got: {stderr}"
+    );
+}
+
 // Test smart aggregation without moarstats — graceful degradation to existing behavior
 // Normal numeric data with CV > 1% should use Median (existing CV-based behavior)
 #[test]
@@ -2061,5 +2187,23 @@ pivotp_groupby_test!(
             stderr.contains("--agg item is not supported in group-by mode"),
             "Expected --agg item error, got: {stderr}"
         );
+    }
+);
+
+// The cap is pivot-mode only; group-by mode does not widen output per distinct value, so a
+// tiny --max-columns must not leak across and reject a valid group-by.
+pivotp_groupby_test!(
+    pivotp_groupby_max_columns_ignored,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args([
+            "--index",
+            "GROUP",
+            "--agg",
+            "len",
+            "--max-columns",
+            "1",
+            "test.csv",
+        ]);
+        wrk.assert_success(&mut cmd);
     }
 );

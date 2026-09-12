@@ -79,7 +79,14 @@ pivotp options:
                             and preserve group/row order in group-by mode.
     --col-separator <arg>   The separator in generated column names in case of multiple --values columns.
                             (pivot mode only; ignored in group-by mode) [default: _]
-    --validate              Validate a pivot by checking the pivot column(s)' cardinality. (pivot mode only)
+    --validate              Report the pivot column(s)' cardinality before pivoting. Informational
+                            only - it does not refuse a pivot; --max-columns does that.
+                            (pivot mode only)
+    --max-columns <n>       Maximum number of columns the pivot may create before it is refused.
+                            Guards against pivoting on a high-cardinality column, which can
+                            exhaust memory. Unlike --validate, this ALWAYS runs.
+                            Set to 0 for no limit, for a deliberately wide pivot.
+                            (pivot mode only; ignored in group-by mode) [default: 100000]
     --try-parsedates        When set, will attempt to parse columns as dates.
     --infer-len <arg>       Number of rows to scan when inferring schema.
                             Set to 0 to scan entire file. [default: 10000]
@@ -199,6 +206,7 @@ struct Args {
     flag_maintain_order: bool,
     flag_col_separator:  String,
     flag_validate:       bool,
+    flag_max_columns:    u64,
     flag_try_parsedates: bool,
     flag_infer_len:      usize,
     flag_decimal_comma:  bool,
@@ -261,8 +269,12 @@ fn calculate_pivot_metadata(
     })
 }
 
-/// Validate pivot operation using metadata
-fn validate_pivot_operation(metadata: &PivotMetadata) -> CliResult<()> {
+/// Print the pivot's cardinality report. `--validate` only; purely informational.
+///
+/// `metadata.estimated_columns` is the PRODUCT of the per-column cardinalities, i.e. an upper
+/// bound - correlated <on-cols> produce far fewer real columns. That is fine for a warning, but
+/// it is why the hard cap lives in `enforce_max_columns` against the exact count instead.
+fn report_pivot_cardinality(metadata: &PivotMetadata) {
     const COLUMN_WARNING_THRESHOLD: u64 = 1000;
 
     // Print cardinality information
@@ -282,13 +294,37 @@ fn validate_pivot_operation(metadata: &PivotMetadata) -> CliResult<()> {
             HumanCount(metadata.estimated_columns)
         );
     }
+}
 
-    // Error if operation would create an unreasonable number of columns
-    if metadata.estimated_columns > 100_000 {
+/// Refuse a pivot whose output would be wider than `max_columns` (0 = no limit).
+///
+/// Enforced ALWAYS, not just under `--validate` (#4589): pivoting on a high-cardinality column
+/// otherwise grows memory until the OS kills the process, which is strictly worse than the error
+/// the command already knew how to emit.
+///
+/// `on_col_groups` is `unique_df.height()` - the EXACT number of distinct <on-cols> combinations,
+/// not the stats-derived product. That matters twice over: the exact count cannot false-positive
+/// on correlated <on-cols> (e.g. `state` x `state_abbrev`, where the product is quadratic but the
+/// width is linear), and it cannot fail open when the stats cache is unavailable, which the
+/// estimate silently does.
+fn enforce_max_columns(
+    on_col_groups: u64,
+    value_col_count: u64,
+    max_columns: u64,
+) -> CliResult<()> {
+    if max_columns == 0 {
+        return Ok(());
+    }
+
+    let actual = on_col_groups.saturating_mul(value_col_count);
+    if actual > max_columns {
+        // Name the remedy flag - an escape hatch nobody can discover is the same as none.
         return fail_clierror!(
-            "Pivot would create too many columns ({}). Consider reducing the number of pivot \
-             columns or using a different approach.",
-            HumanCount(metadata.estimated_columns)
+            "Pivot would create {} columns, exceeding the --max-columns limit of {}. Pivot on a \
+             lower-cardinality column, raise --max-columns, or set --max-columns 0 to disable \
+             this limit.",
+            HumanCount(actual),
+            HumanCount(max_columns)
         );
     }
 
@@ -1222,7 +1258,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         {
             // Validation uses cached stats records, not the DataFrame itself,
             // so we don't need to collect the LazyFrame here.
-            validate_pivot_operation(&metadata)?;
+            report_pivot_cardinality(&metadata);
         }
 
         // Compute unique values for the pivot columns to create on_columns DataFrame
@@ -1244,6 +1280,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .sort([row_order_col], SortMultipleOptions::default())
                 .drop(cols([row_order_col]))
                 .collect()?;
+
+            // Hard cap on output width (#4589). This is the earliest point where the EXACT
+            // column count is known, and it is still before the pivot itself - which is where
+            // the unbounded allocation happened. The `unique` above is bounded by the number of
+            // distinct <on-cols> combinations, so it cannot blow up the way the pivot can.
+            enforce_max_columns(
+                unique_df.height() as u64,
+                actual_value_cols.len() as u64,
+                args.flag_max_columns,
+            )?;
 
             Arc::new(unique_df)
         };

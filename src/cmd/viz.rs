@@ -558,7 +558,7 @@ smart options:
                            support. Per-field hints live in a property's "x-qsv" object:
                              gauge_range [min,max] - render the KPI tile as a GAUGE on that
                                canonical scale; kept only when the observed value is inside it
-                             target <number> - add a "vs target" DELTA (value minus target).
+                             target <goal> - add a "vs target" DELTA (value minus target).
                                A goal you supply, so "infer" never emits one
                              currency <ISO-4217> - prefix the KPI tile with that currency's
                                symbol ($192B); an unknown code renders verbatim ("XOF 1.2B")

@@ -23564,6 +23564,25 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
      this cannot be done with `max-width`: browsers treat that as advisory on table cells under
      `table-layout: auto`. */
   #qsv-data-table td, #qsv-data-table thead th { overflow-wrap: anywhere; }
+  /* Header density. The title row stretches to its TALLEST title, and `th` defaults to
+     `vertical-align: middle`, so on a wide table one title that wraps to four lines sets the
+     height for every column and short titles float in the middle of it. Measured on the 41-column
+     nyc311 Data Schematic: the title row is 85px, a one-line title is 22px, and the 63px left over
+     is split evenly — putting ~32px of dead space between each label and the search input it
+     belongs to, which reads as two disconnected bands instead of 41 title+filter pairs.
+     Bottom-aligning binds each title to its own control: median gap 32px -> 13px, with the row
+     height and every column width unchanged, so DataTables' sizing pass is untouched. It is a
+     no-op on a table whose titles already fit one line — there is no slack to redistribute —
+     which is why this is invisible on narrow tables.
+
+     A two-line clamp on `dt-column-title` was tried here and REMOVED. It bought a shorter header
+     (85px -> 47px) but only by clipping 10 of nyc311's 41 titles, recoverable solely through a
+     `title` tooltip — and `title` never fires on touch and does not appear on keyboard focus, so
+     the reveal was unavailable to exactly the users who could not simply read it. Header cells are
+     not focusable either (0 of 41), so there is nothing to hang a focus-triggered popover on
+     without adding 41 tab stops to a drawer that already has 41 search inputs. Trading a legible
+     column name for 38 vertical pixels is the wrong trade; do not re-add it. */
+  #qsv-data-drawer table.dataTable thead tr:nth-child(1) th { vertical-align: bottom; }
   /* Total width for the scrollX workaround (see syncTableMinWidth). Deliberately applied through
      an ID-SCOPED RULE reading a custom property, NOT as an inline `style.minWidth`.
      DataTables' sizing pass measures a SHALLOW `cloneNode()` of the table, which copies the style

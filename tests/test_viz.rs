@@ -17158,6 +17158,73 @@ fn viz_static_drawer_tour_targets_resolve() {
     );
 }
 
+/// Title cells stay bottom-aligned, so each column label sits with the search input it labels.
+///
+/// The whole point is a table wide enough for titles to differ in height: the row takes its height
+/// from the tallest, and `vertical-align: middle` then centres every shorter title in that space.
+/// A fixture whose titles are all one line has no slack to distribute and would pass whatever the
+/// alignment is, so this asserts the computed style rather than a measured gap - a geometry
+/// assertion here would be the vacuous kind.
+#[cfg(feature = "viz_static")]
+#[test]
+#[ignore = "requires a browser/webdriver"]
+fn viz_static_drawer_title_cells_are_bottom_aligned() {
+    let wrk = Workdir::new("viz_static_drawer_title_cells_are_bottom_aligned");
+    data_viewer_csv(&wrk);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1").args([
+        "smart",
+        "dv.csv",
+        "--tour-steps",
+        "0",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let drv = ChromeDriver::start();
+    drawer_ready(&drv, &wrk.path("dash.html"));
+
+    let res = drv.exec(
+        r#"
+        var ths = Array.prototype.slice.call(
+          document.querySelectorAll('#qsv-data-drawer div.dt-scroll-head thead tr:nth-child(1) th'));
+        if (!ths.length) return {err: 'no header cells'};
+        var titleDiv = ths[0].querySelector('div.dt-column-title');
+        if (!titleDiv) return {err: 'no dt-column-title element'};
+        return {
+          cols: ths.length,
+          verticalAlign: getComputedStyle(ths[0]).verticalAlign,
+          // a clamp here would clip long names with no touch- or keyboard-reachable reveal;
+          // it was tried and removed deliberately (see the stylesheet comment)
+          lineClamp: getComputedStyle(titleDiv).webkitLineClamp,
+          titlesFullyRendered: ths.every(function (th) {
+            var t = th.querySelector('div.dt-column-title');
+            return t && t.scrollHeight <= t.clientHeight + 1;
+          })
+        };
+        "#,
+    );
+
+    assert!(res["err"].is_null(), "{res}");
+    assert_eq!(
+        res["verticalAlign"], "bottom",
+        "title cells are no longer bottom-aligned, so short titles float away from the search \
+         input they label: {res}"
+    );
+    assert_eq!(
+        res["lineClamp"], "none",
+        "a line clamp is back on the column titles. It clips names with no reveal that works on \
+         touch or by keyboard - see the stylesheet comment for why it was removed: {res}"
+    );
+    assert_eq!(
+        res["titlesFullyRendered"], true,
+        "a column title is being visually truncated: {res}"
+    );
+}
+
 // ---------------------------------------------------------------------------------------------
 // Data viewer <-> map point selection (rows <-> points cross-link)
 // ---------------------------------------------------------------------------------------------

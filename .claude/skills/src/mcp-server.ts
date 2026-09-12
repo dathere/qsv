@@ -68,6 +68,7 @@ import {
   normalizeForCaseFs,
   CORE_TOOLS,
   coreToolCount,
+  ELICITATION_EXEMPT_TOOLS,
   filterAvailableCommands,
 } from "./tool-constants.js";
 
@@ -689,7 +690,7 @@ class QsvMcpServer {
       // First-tool-use working directory prompt: if the working directory has not
       // been confirmed (via roots sync, manual set, or elicitation), prompt the
       // user to select one before the first data-processing tool call.
-      if (!QsvMcpServer.ELICITATION_EXEMPT_TOOLS.has(name)) {
+      if (!ELICITATION_EXEMPT_TOOLS.has(name)) {
         await this.workingDirManager.ensureConfirmedForTool();
       }
 
@@ -1138,20 +1139,6 @@ class QsvMcpServer {
     this.pipelineManifest?.updateWorkingDir(resolved);
     return resolved;
   }
-
-  /**
-   * Tools that should NOT trigger the first-use working directory elicitation.
-   * These are configuration, discovery, and logging tools.
-   */
-  private static readonly ELICITATION_EXEMPT_TOOLS = new Set([
-    "qsv_config",
-    "qsv_setup",
-    "qsv_log",
-    "qsv_search_tools",
-    "qsv_set_working_dir",
-    "qsv_get_working_dir",
-    "qsv_browse_directory",
-  ]);
 
   /**
    * Deploy cowork-CLAUDE.md workflow guide to the working directory (non-fatal).

@@ -225,6 +225,22 @@ export function filterAvailableCommands(
   return commands.filter((cmd) => availableCommands.includes(cmd));
 }
 
+/**
+ * Tools that must NOT trigger the first-use working-directory elicitation.
+ *
+ * Configuration, discovery and logging tools: prompting for a working directory before the user
+ * can even inspect or set one would deadlock the very tools that resolve the prompt.
+ */
+export const ELICITATION_EXEMPT_TOOLS = new Set([
+  "qsv_config",
+  "qsv_setup",
+  "qsv_log",
+  "qsv_search_tools",
+  "qsv_set_working_dir",
+  "qsv_get_working_dir",
+  "qsv_browse_directory",
+]);
+
 /** Valid entry types for qsv_log */
 export const LOG_ENTRY_TYPES = new Set([
   "agent_reasoning",

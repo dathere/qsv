@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { writeFileSync, mkdirSync } from "node:fs";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { FilesystemResourceProvider } from "./../src/mcp-filesystem.js";
+import { ELICITATION_EXEMPT_TOOLS } from "../src/tool-constants.js";
 import { WorkingDirManager } from "../src/working-dir-manager.js";
 import { createTestDir, cleanupTestDir } from "./test-helpers.js";
 
@@ -401,40 +402,44 @@ describe("WorkingDirManager.elicitWorkingDirectory", () => {
 });
 
 describe("ELICITATION_EXEMPT_TOOLS", () => {
-  test("config/log/search tools are exempt from first-use prompt", () => {
-    // These tool names should be exempt from triggering elicitation
-    const exemptTools = new Set([
+  // This used to build its own Set and then assert that Set contained what it had just put in,
+  // which no change to production could ever have falsified. It had also drifted: the local copy
+  // listed five tools, omitting qsv_setup and qsv_browse_directory. The set now lives in
+  // tool-constants.ts and is imported, so these assertions are about the server's real behaviour.
+  test("configuration, discovery and logging tools are exempt from the first-use prompt", () => {
+    for (const tool of [
       "qsv_config",
+      "qsv_setup",
       "qsv_log",
       "qsv_search_tools",
       "qsv_set_working_dir",
       "qsv_get_working_dir",
-    ]);
+      "qsv_browse_directory",
+    ]) {
+      assert.ok(ELICITATION_EXEMPT_TOOLS.has(tool), `${tool} must be exempt`);
+    }
+    assert.strictEqual(
+      ELICITATION_EXEMPT_TOOLS.size,
+      7,
+      "a newly exempted tool needs a deliberate decision here, not a silent pass",
+    );
+  });
 
-    // Data tools should NOT be exempt
-    const dataTools = [
+  test("data tools are NOT exempt, so the first one prompts for a working directory", () => {
+    for (const tool of [
       "qsv_select",
       "qsv_stats",
       "qsv_count",
       "qsv_frequency",
       "qsv_list_files",
       "qsv_command",
-    ];
-
-    for (const tool of dataTools) {
+    ]) {
       assert.strictEqual(
-        exemptTools.has(tool),
+        ELICITATION_EXEMPT_TOOLS.has(tool),
         false,
-        `${tool} should NOT be exempt from elicitation`,
+        `${tool} reads or writes data and must NOT be exempt`,
       );
     }
-
-    // Exempt tools should be in the set
-    assert.ok(exemptTools.has("qsv_config"));
-    assert.ok(exemptTools.has("qsv_log"));
-    assert.ok(exemptTools.has("qsv_search_tools"));
-    assert.ok(exemptTools.has("qsv_set_working_dir"));
-    assert.ok(exemptTools.has("qsv_get_working_dir"));
   });
 });
 

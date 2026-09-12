@@ -130,16 +130,15 @@ fn option_types_follow_placeholders_not_prose() {
     // (skill, flag, expected type)
     const PINNED: &[(&str, &str, &str)] = &[
         // a numeric placeholder types `number` - none of these descriptions
-        // contains the `<number>` the old prose heuristic looked for
+        // says `<number>`, so the old prose heuristic would have said `string`
         ("qsv-sample.json", "--seed", "number"),
         ("qsv-viz.json", "--bins", "number"),
         ("qsv-moarstats.json", "--epsilon", "number"),
         // `<N>`, uppercase
         ("qsv-pragmastat.json", "--subsample", "number"),
         // a non-numeric placeholder stays a `string` even though its
-        // description says `<number>` - see the assert below
+        // description DOES say `<number>` - `Format: <number><unit>`
         ("qsv-sample.json", "--ts-interval", "string"),
-        ("qsv-viz.json", "--dictionary", "string"),
     ];
 
     let find = |skill: &str, flag: &str| -> serde_json::Value {
@@ -154,33 +153,41 @@ fn option_types_follow_placeholders_not_prose() {
     };
 
     let mut wrong = Vec::new();
+    let mut vacuous = Vec::new();
     for &(skill, flag, expected) in PINNED {
-        let actual = find(skill, flag)["type"]
-            .as_str()
-            .unwrap_or("?")
-            .to_string();
+        let opt = find(skill, flag);
+        let actual = opt["type"].as_str().unwrap_or("?");
         if actual != expected {
             wrong.push(format!(
                 "{skill}: {flag} is {actual:?}, expected {expected:?}"
             ));
         }
+
+        // Every pin must DISAGREE with the heuristic it exists to keep out:
+        // the pre-#4596 generator typed an option `number` iff its description
+        // mentioned `<number>` or `<int>`. A pin the old heuristic would have
+        // got right proves nothing, and a reword can quietly turn a good pin
+        // into one - so the premise is asserted rather than assumed.
+        let desc = opt["description"].as_str().unwrap_or_default();
+        let prose_heuristic_says = if desc.contains("<number>") || desc.contains("<int>") {
+            "number"
+        } else {
+            "string"
+        };
+        if prose_heuristic_says == expected {
+            vacuous.push(format!("{skill}: {flag} (description: {desc:?})"));
+        }
     }
+
     assert!(
         wrong.is_empty(),
         "option types no longer follow their placeholders (see #4596):\n  {}",
         wrong.join("\n  ")
     );
-
-    // The `--ts-interval` pin is only a test of direction 2 for as long as its
-    // description actually mentions `<number>`. If a reword drops that, the
-    // pin goes vacuous - move it to another option that still has the shape.
-    let desc = find("qsv-sample.json", "--ts-interval")["description"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
     assert!(
-        desc.contains("<number>"),
-        "--ts-interval no longer describes itself with `<number>`, so it no longer pins \
-         description prose out of type inference; pick another option: {desc:?}"
+        vacuous.is_empty(),
+        "these pins no longer discriminate against the pre-#4596 prose heuristic, so they no \
+         longer test anything - reword the description back, or pin a different option:\n  {}",
+        vacuous.join("\n  ")
     );
 }

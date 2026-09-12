@@ -182,3 +182,6 @@ activation_command_timeout: 180.0
 # Note that when using the JetBrains backend, language servers are not used and this list is correspondingly ignored.
 language_servers:
 - rust
+- python
+- luau
+- typescript

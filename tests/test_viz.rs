@@ -20320,7 +20320,18 @@ fn viz_check_geojson_key_refuses_auto() {
         wrk.stderr_on_error(&mut cmd)
     };
 
-    for spec in ["auto", "census"] {
+    // every form `parse_auto_spec` accepts is refused, not just the bare `auto` keyword:
+    // layer-qualified and vintage-pinned specs resolve through the same Census path
+    for spec in [
+        "auto",
+        "census",
+        "census:county",
+        "census:zcta",
+        "census:tract",
+        "census:place",
+        "census:county@2021",
+        "auto@2019",
+    ] {
         let got = run(spec);
         assert!(
             got.contains("--check-geojson-key does not apply to `--geojson"),
@@ -20375,6 +20386,64 @@ fn viz_check_geojson_key_finds_nested_and_foreign_paths() {
     assert!(
         report.contains("0/2   0.0%  properties.region.label"),
         "{report}"
+    );
+}
+
+// Enumeration imposes NO depth limit, because `feature_member_by_path` imposes none: a key
+// nested deeper than any hand-picked cap still renders, so a capped sweep would omit it and could
+// report a file as unkeyable while a deeper key binds. (A cap of 4 shipped briefly and missed
+// this fixture.) Pathological input is already refused upstream by serde_json's own parse
+// recursion limit, so the sweep does not need a cap to terminate.
+#[test]
+fn viz_check_geojson_key_has_no_depth_cap() {
+    let wrk = Workdir::new("viz_check_geojson_key_has_no_depth_cap");
+    wrk.create_from_string("rg.csv", "region,val\nA1,10\nB2,20\n");
+    // properties.a.b.c.d.e.f.code -- seven segments past `properties`
+    wrk.create_from_string(
+        "deep.geojson",
+        r#"{"type":"FeatureCollection","features":[
+          {"type":"Feature","properties":{"a":{"b":{"c":{"d":{"e":{"f":{"code":"A1"}}}}}}},
+           "geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+          {"type":"Feature","properties":{"a":{"b":{"c":{"d":{"e":{"f":{"code":"B2"}}}}}}},
+           "geometry":{"type":"Polygon","coordinates":[[[2,2],[2,3],[3,3],[3,2],[2,2]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--geojson",
+        "deep.geojson",
+        "--check-geojson-key",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let report = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        report.contains("2/2 100.0%  properties.a.b.c.d.e.f.code"),
+        "{report}"
+    );
+
+    // and the promise holds: the key the sweep reports actually binds at render time
+    let mut render = wrk.command("viz");
+    render.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--geojson",
+        "deep.geojson",
+        "--feature-id-key",
+        "properties.a.b.c.d.e.f.code",
+    ]);
+    let html = wrk.stdout::<String>(&mut render);
+    assert!(
+        html.contains(r#""featureidkey":"properties.a.b.c.d.e.f.code""#),
+        "deep key did not bind at render time"
     );
 }
 

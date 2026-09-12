@@ -473,11 +473,12 @@ choropleth options:
                            nothing. Scoring uses the same matcher the render path uses,
                            so a path reported here as a full match will bind at render
                            time. Requires --geojson and --locations, and a concrete
-                           source for the former (path, URL or shortcut). The value
-                           `auto` is refused: automatic Census resolution picks the
-                           key itself and may bind place NAMES through an alias map
-                           this check does not model, so it reports its own coverage
-                           instead.
+                           source for the former (path, URL or shortcut). EVERY
+                           automatic Census spec is refused — `auto`, `census`,
+                           `census:<layer>` and their `@<year>` forms: automatic
+                           resolution picks the key itself and may bind place NAMES
+                           through an alias map this check does not model, so it
+                           reports its own region coverage instead.
     --denominator-key <k>  GeoJSON property path holding each region's DENOMINATOR
                            (e.g. properties.POP2020), using the same addressing as
                            the --feature-id-key flag. Turns a raw-count region map
@@ -7507,39 +7508,41 @@ fn validate_geojson_source(
     Ok(geojson)
 }
 
-/// How deep `candidate_feature_id_keys` descends into nested objects. `feature_member_by_path`
-/// itself has no depth limit, but a candidate SWEEP has to terminate on adversarial input, and
-/// real boundary files nest a level or two at most.
-const CHECK_KEY_MAX_DEPTH: usize = 4;
-
-/// Collect dotted paths to every string/number leaf in `value`, which are the only shapes
-/// `feature_id_by_path` can return an id from.
+/// Collect dotted paths to every string/number leaf reachable from `root`, which are the only
+/// shapes `feature_id_by_path` can return an id from.
+///
+/// Walks an explicit stack rather than recursing, and imposes NO depth limit of its own:
+/// `feature_member_by_path` accepts arbitrary-depth paths, so a shallower enumeration would omit
+/// keys that render perfectly well — and could report a file as unkeyable while a deeper key
+/// binds. Input depth is already bounded upstream, where `serde_json` refuses to parse past its
+/// own recursion limit, so a pathological document never arrives here; keeping the traversal off
+/// the call stack means that guarantee is not load-bearing for stack safety either.
 fn collect_scalar_paths(
-    value: &serde_json::Value,
+    root: &serde_json::Value,
     prefix: &str,
-    depth: usize,
     seen: &mut std::collections::HashSet<String>,
     out: &mut Vec<String>,
 ) {
-    let Some(map) = value.as_object() else {
-        return;
-    };
-    for (key, child) in map {
-        let path = if prefix.is_empty() {
-            key.clone()
-        } else {
-            format!("{prefix}.{key}")
+    let mut stack: Vec<(&serde_json::Value, String)> = vec![(root, prefix.to_string())];
+    while let Some((value, prefix)) = stack.pop() {
+        let Some(map) = value.as_object() else {
+            continue;
         };
-        match child {
-            serde_json::Value::String(_) | serde_json::Value::Number(_) => {
-                if seen.insert(path.clone()) {
-                    out.push(path);
-                }
-            },
-            serde_json::Value::Object(_) if depth < CHECK_KEY_MAX_DEPTH => {
-                collect_scalar_paths(child, &path, depth + 1, seen, out);
-            },
-            _ => {},
+        for (key, child) in map {
+            let path = if prefix.is_empty() {
+                key.clone()
+            } else {
+                format!("{prefix}.{key}")
+            };
+            match child {
+                serde_json::Value::String(_) | serde_json::Value::Number(_) => {
+                    if seen.insert(path.clone()) {
+                        out.push(path);
+                    }
+                },
+                serde_json::Value::Object(_) => stack.push((child, path)),
+                _ => {},
+            }
         }
     }
 }
@@ -7562,12 +7565,12 @@ fn candidate_feature_id_keys(geojson: &serde_json::Value) -> Vec<String> {
     for feature in &fc.features {
         if let Some(properties) = feature.properties.as_ref() {
             let as_value = serde_json::Value::Object(properties.clone());
-            collect_scalar_paths(&as_value, "properties", 0, &mut seen, &mut paths);
+            collect_scalar_paths(&as_value, "properties", &mut seen, &mut paths);
         }
         // foreign members are addressed WITHOUT a `properties.` prefix, so they seed an empty one
         if let Some(foreign) = feature.foreign_members.as_ref() {
             let as_value = serde_json::Value::Object(foreign.clone());
-            collect_scalar_paths(&as_value, "", 0, &mut seen, &mut paths);
+            collect_scalar_paths(&as_value, "", &mut seen, &mut paths);
         }
     }
     paths.sort_unstable();

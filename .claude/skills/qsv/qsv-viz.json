@@ -74,7 +74,7 @@
       {
         "flag": "--check-geojson-key",
         "type": "flag",
-        "description": "Diagnostic mode. Instead of rendering, score EVERY candidate feature-id path in --geojson (its `id`, plus every scalar leaf under `properties` and every top-level foreign member) against the distinct values of the locations column, and print them ranked by overlap. Use it to find the right --feature-id-key when a region map shades nothing. Scoring uses the same matcher the render path uses, so a path reported here as a full match will bind at render time. Requires --geojson and --locations, and a concrete source for the former (path, URL or shortcut). The value `auto` is refused: automatic Census resolution picks the key itself and may bind place NAMES through an alias map this check does not model, so it reports its own coverage instead."
+        "description": "Diagnostic mode. Instead of rendering, score EVERY candidate feature-id path in --geojson (its `id`, plus every scalar leaf under `properties` and every top-level foreign member) against the distinct values of the locations column, and print them ranked by overlap. Use it to find the right --feature-id-key when a region map shades nothing. Scoring uses the same matcher the render path uses, so a path reported here as a full match will bind at render time. Requires --geojson and --locations, and a concrete source for the former (path, URL or shortcut). EVERY automatic Census spec is refused — `auto`, `census`, `census:<layer>` and their `@<year>` forms: automatic resolution picks the key itself and may bind place NAMES through an alias map this check does not model, so it reports its own region coverage instead."
       },
       {
         "flag": "--close",

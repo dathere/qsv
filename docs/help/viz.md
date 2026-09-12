@@ -13,169 +13,92 @@
 
 Generate charts/maps from CSV data using the plotly charting library.
 
-Produces a self-contained, interactive HTML chart (the plotly.js runtime is embedded,
-so charts work offline; map basemaps fetch their tiles over the network at view time
-unless the `white-bg` style is used). Set the QSV_VIZ_CDN environment variable to load
-plotly.js from its CDN instead, shrinking the page by ~1.9MB at the cost of needing
-network access to view it. By default the embedded plotly.js is gzip-compressed
-(~1.9MB vs ~4.8MB) and inflated in-browser, which requires a browser with
-DecompressionStream support (Chrome/Edge 80+, Firefox 113+, or Safari 16.4+);
-set QSV_VIZ_NO_COMPRESS for plain-text, uncompressed HTML that also works on
-older browsers.
-Titles and labels are rendered as plain text - LaTeX (e.g. `$\alpha$`) is not typeset.
-With a qsv build that includes the `viz_static` feature, charts can also be exported as
-static PNG/SVG/PDF/JPEG/WebP images (this requires a Chromium/Firefox browser at
-runtime - a webdriver is auto-managed by plotly).
+Produces a self-contained, interactive HTML chart - the plotly.js runtime is embedded, so
+charts work offline. Tile basemaps (`viz map`, `viz choropleth --map`) are the exception:  
+they fetch tiles over the network at view time. Titles and labels are plain text; LaTeX is
+not typeset. With a build that includes the `viz_static` feature, charts can also be exported
+as static PNG/SVG/PDF/JPEG/WebP (needs a Chromium/Firefox at runtime; plotly auto-manages the
+webdriver).
+
+Set QSV_VIZ_CDN to load plotly.js from its CDN (~1.9MB smaller, but the page then needs the
+network to be VIEWED). Set QSV_VIZ_NO_COMPRESS for plain-text HTML that works on pre-2023
+browsers and strict-CSP embeds. Progress is shown on stderr, auto-hidden when stderr is not a
+terminal, and disabled by setting QSV_PROGRESSBAR to a falsy value. For all of the above, see
+<https://github.com/dathere/qsv/wiki/Visualization#output-and-file-size>
 
 The output format is inferred from the --output file extension (.html is the default).
 Interactive HTML is written to stdout when --output is not given; image formats always
 require --output. Use --open to view the result in your default browser/viewer.
 
-Progress is shown on stderr by default: a spinner with per-phase status messages (loading
-statistics, inferring the data dictionary, computing correlations, rendering, etc.). It is
-auto-hidden when stderr is not a terminal (e.g. piped or redirected). Set the QSV_PROGRESSBAR
-environment variable to a falsy value (0/false/off) to disable it.
-
 Chart types (subcommands):
 
 ```text
-smart       Auto-dashboard (Data Schematic). Picks an appropriate chart per
-            column from the dataset's statistics & frequency distribution
-            (no --x/--y needed).
-bar         Bar chart.        --x = category column, --y = value column.
-line        Line chart.       --x = x column, --y = y column.
-scatter     Scatter plot.     --x = x column, --y = y column.
-scatter3d   3D scatter plot.  --x, --y, --z = three numeric columns.
-histogram   Distribution.     --x = numeric column to bin.
-box         Box plot.         --y = value column, optional --x = group column.
-violin      Violin plot: a box plot plus a KDE density curve revealing the
-            distribution's shape (modes, shoulders). Same inputs as box
-            (--y = value column, optional --x = group column).
-pie         Proportions.      --x = label column, optional --y = value column.
-funnel      Stage-by-stage drop-off. --x = stage column, optional --y = value
-            column (counts stage occurrences when omitted). Stages keep the
-            order they first appear in the file, so the rows define the
-            pipeline; plotly labels each band with its conversion from the
-            previous stage.
-heatmap     Color grid. Correlation matrix of numeric columns (default; an
-            optional column subset via --cols), or a category x category pivot
-            with --x/--y/--z.
-contour     2D density contour of two numeric columns (--x and --y), binned
-            into a grid (--bins controls the grid resolution).
-candlestick Financial OHLC.   --x = date column, plus --ohlc-open/--high/--low/--close.
+smart       Auto-dashboard (Data Schematic) - picks a chart per column from the
+            dataset's statistics & frequency distribution. No --x/--y needed.
+bar         --x = category column, --y = value column.
+line        --x = x column, --y = y column.
+scatter     --x = x column, --y = y column.
+scatter3d   --x, --y, --z = three numeric columns.
+histogram   --x = numeric column to bin.
+box         --y = value column, optional --x = group column.
+violin      Box plot plus a KDE density curve revealing the distribution's shape
+            (modes, shoulders). Same inputs as box.
+pie         --x = label column, optional --y = value column.
+funnel      Stage-by-stage drop-off. --x = stage column, optional --y = value column
+            (counts stage occurrences when omitted). Stages keep the order they first
+            appear in the file, so the rows define the pipeline.
+heatmap     Correlation matrix of numeric columns (default; subset with --cols), or a
+            category x category pivot with --x/--y/--z.
+contour     2D density contour of --x and --y, binned into a --bins x --bins grid.
+candlestick Financial OHLC. --x = date column, plus --ohlc-open/--high/--low/--close.
 ohlc        Financial OHLC bars (same inputs as candlestick).
-sankey      Flow diagram.     --source, --target, optional --value column.
+sankey      Flow diagram. --source, --target, optional --value column.
 radar       Polar/radar chart of numeric --cols, optional --series per trace.
-treemap     Part-to-whole hierarchy as nested tiles. --cols = 2+ dimension
-            columns (levels), optional --value and --agg.
-sunburst    Part-to-whole hierarchy as concentric rings (same inputs as
-            treemap). Better for deeper hierarchies.
-icicle      Part-to-whole hierarchy as stacked bars per level (same inputs as
-            treemap). Level-aligned; good for deep, wide hierarchies.
-splom       Scatter-plot matrix: every pair of numeric --cols plotted against
-            each other in a grid, with each column's distribution on the
-            diagonal. Good for spotting correlations across many numeric
-            columns at once (default: all numeric columns).
+treemap     Part-to-whole hierarchy as nested tiles. --cols = 2+ dimension columns
+            (levels, outermost first), optional --value and --agg.
+sunburst    Same inputs as treemap, as concentric rings. Better for deep hierarchies.
+icicle      Same inputs as treemap, as level-aligned stacked bars. Good for deep,
+            wide hierarchies.
+splom       Scatter-plot matrix: every pair of numeric --cols in a grid, with each
+            column's distribution on the diagonal (default: all numeric).
 parcats     Parallel categories: ribbons showing how rows flow across the
-            categorical --cols (best with 3-4). Complements sankey (which
-            takes 2 columns) for higher-dimensional categorical relationships.
-map         Geographic point map (or --density heatmap) on tile basemaps.
-            Pick the coordinate columns with the lat/lon options below.
-geo         Geographic point map on a projection basemap (coastlines/land/
-            countries; no tiles, no token). Uses the same lat/lon options
-            as `map`, plus --projection. Good for global/country-scale data.
-choropleth  Filled-region map: color whole regions (countries, US states, or
-            custom GeoJSON areas) by a value. --locations names the region-code
-            column, --value/--agg the measure (row counts if omitted). Defaults
-            to a token-free projection basemap; --map switches to MapLibre tiles.
+            categorical --cols (best with 3-4). Complements sankey, which takes
+            2 columns.
+map         Point map (or --density heatmap) on MapLibre tile basemaps. Pick the
+            coordinate columns with the lat/lon options below.
+geo         Point map on a projection basemap - coastlines/land/countries, no tiles
+            and no token. Same lat/lon options as `map`, plus --projection.
+choropleth  Fill whole regions (countries, US states, or custom GeoJSON areas) by a
+            value. --locations names the region-code column, --value/--agg the
+            measure (row counts if omitted). Defaults to a token-free projection
+            basemap; --map switches to MapLibre tiles.
 ```
 
-`qsv viz smart` builds a DATA SCHEMATIC - a single, self-contained rendering of a
-dataset's schema and statistics in which every claim shown is checkable against the
-data it describes. The format is defined in docs/DATA_SCHEMATIC.md and is
-tool-neutral; what `viz smart` produces is a "qsv Schematic".
+`qsv viz smart` builds a DATA SCHEMATIC - a single, self-contained rendering of a dataset's
+schema and statistics in which every claim shown is checkable against the data it describes.
+The format is specified in docs/DATA_SCHEMATIC.md and is tool-neutral. A DETERMINISTIC half
+(statistics and heuristics - reproducible, offline, no tokens) picks the panels and scales the
+axes; a SEMANTIC half (an optional LLM-inferred Data Dictionary, see the dictionary option)
+supplies what the fields MEAN. Both halves show their work, and the dictionary is a
+hand-editable sidecar, so a Data Steward can correct anything the model proposed.
 
-A schematic is the drawing form of a SCHEMA - and `viz smart` already emits a
-`.schema.json` - so the name is descriptive rather than decorative. Where a data
-dictionary lists fields one at a time, a schematic shows components AND HOW THEY
-CONNECT: correlation, process order, hierarchy, temporal pacing, spatial pairing.
-It alloys two ways of knowing a dataset. The DETERMINISTIC half (statistics,
-heuristics and algorithms - reproducible, offline, no tokens) picks the panels and
-scales the axes; the SEMANTIC half (an optional LLM-inferred Data Dictionary, via
-the --dictionary option) supplies what the fields MEAN - labels, roles and units,
-all correctable by a human Data Steward. Both halves show their work.
+It reuses qsv's stats and frequency caches (the first run computes & caches stats; later runs
+are fast) and auto-picks panels, so no --x/--y is needed:  
 
-The schematic is a one-page grid of subplots, reusing qsv's stats and frequency
-caches (the first run computes & caches stats; later runs are fast). It auto-picks
-panels, so no --x/--y is needed:  
+Per-column panels flow in a grid below the overview rows (see --grid-cols):
 
-Per-column panels (flow in the grid below the overview rows, see --grid-cols):  
-- continuous numeric -> box plot (quartiles from the stats cache; sample
-points overlaid by a size heuristic, see --box-points)
-- low-cardinality / boolean -> frequency bar chart
-- ID-like (near-unique) and all-empty columns are skipped
+```text
+continuous numeric -> violin or box plot; low-cardinality/boolean -> frequency bar;
+confirmed-bimodal -> histogram (needs --smarter). ID-like (near-unique) and all-empty
+columns are skipped and reported.
+```
 
-Overview panels (each leads the Data Schematic on its own full-width row):  
-- KPI overview row (leads the Data Schematic when the dataset has headline numeric
-measures): a strip of "big number" tiles, one per headline measure (summed
-for extensive quantities, averaged for intensive ones). A measure tile
-becomes a GAUGE when the dictionary supplies a validated `x-qsv.gauge_range`
-that contains the value, and gains a "vs target" DELTA when it supplies an
-`x-qsv.target` (see --dictionary). Omitted for image exports and for datasets
-with no headline measure. (Overall dataset completeness - the share of
-non-empty cells - is a quiet "Completeness:" line in the header metadata
-table, not a KPI tile.)
-- pipeline panel, when the dictionary DECLARES one (see --dictionary). Which
-columns are process stages, and in which direction, is semantics rather than
-a statistic - no column-name vocabulary settles it and no statistic does
-either - so the panel is drawn ONLY from an explicit declaration, never
-guessed. Both encodings are supported: stages held in separate measure
-columns, and stages held as values of one category column. Costs one extra
-data pass over the declared stages only.
-The declaration fixes WHICH columns and in WHAT order; the numbers decide the
-FORM. A funnel's band widths are a containment claim, so one is drawn only
-while the stage totals never grow. If any stage outruns the one before it, the
-same declaration is drawn as a BRIDGE instead: the signed difference between
-consecutive totals, each step labelled as the arithmetic difference it is
-rather than as a flow. A funnel there would render a band wider than the one
-above it, asserting the opposite of the data. The subtitle says which form was
-used and why.
-Stage order is the declared order and is never re-sorted by size. For the
-column encoding, row-wise containment (does each stage nest inside the one
-before it?) is MEASURED and disclosed in the subtitle - separately from the
-form, since rows can overrun while the totals still shrink, or nest while the
-totals grow. Totals sum over the rows complete across every declared stage,
-so they do NOT match `stats.sum`; the subtitle always discloses that
-denominator. See also the standalone `qsv viz funnel` chart type, which takes
-its stage order from the file and needs no dictionary.
-- correlation heatmap, when 2+ continuous numeric columns exist (one extra
-data pass for Pearson correlations). If the strongest pair is at least
-moderately correlated, a drill-down is added beside it: a scatter (or a 2D
-density contour for large, overplotting datasets); with 3+ numeric columns,
-a 3D scatter of the strongest triple is added too.
-- time-series line, when an auto-detected date/datetime column and a
-continuous numeric column both exist.
-- geographic map, when a latitude/longitude pair is detected:
-    - HTML uses a MapLibre tile map for a local extent, or an offline
-      ScatterGeo projection world-overview for continental/global data.
-    - static image export uses an offline ScatterGeo fit to the data extent
-      (US-spanning data uses albers-usa); tile maps and 3D panels stay
-      HTML-only, as tile maps need network tiles.
-    - geographic outliers (points beyond the Tukey far-out fence of
-      distances from the cluster centroid) get a distinct marker and are
-      excluded from the spatial extent; the map zooms to the core, with a
-      dotted no-fill box marking the full extent and (in HTML) Core/Full
-      extent buttons. Outliers within the core's jurisdiction don't trigger
-      the extent call-out.
-    - with the `geocode` feature, the core extent (4 corners + center) is
-      reverse-geocoded against the local Geonames index and drawn as a
-      labeled bounding box with a location summary (e.g. "New York & New
-      Jersey, United States"); outliers are called out with their count and
-      jurisdiction. HTML points reveal city/state/country on hover (static
-      exports omit it). The first run may download the index (~13MB, cached
-      in ~/.qsv-cache); offline, the map renders without the overlay.
-    - extents spanning the antimeridian (>180 degrees of longitude) are
-      skipped.
+Overview panels each lead the Data Schematic on their own full-width row: a KPI "big
+number" strip, a declared pipeline funnel or bridge, a correlation heatmap with a
+drill-down scatter/contour/3D triple, a time-series line, a part-to-whole hierarchy, and
+a geographic map plus region choropleth. Each is drawn only when the data supports it;
+which panel is chosen, and why, is documented at
+<https://github.com/dathere/qsv/wiki/Visualization#smart-panels>
 
 
 <a name="examples"></a>
@@ -194,16 +117,22 @@ qsv viz smart data.csv --open
 qsv viz smart data.csv --max-charts 6 --grid-cols 3 --limit 5 -o dashboard.html
 ```
 
-> Bar chart of fruit prices, opened in the browser
+> Semantics-guided Data Schematic with a browsable Data Dictionary drawer
 
 ```console
-qsv viz bar fruits.csv --x Fruit --y Price --title "Fruit prices" --open
+qsv viz smart data.csv --dictionary infer --dict-info -o dashboard.html
 ```
 
-> Aggregate (sum) sales by region into a bar chart
+> Richer Data Schematic: extra distribution-shape stats plus pairwise associations
 
 ```console
-qsv viz bar sales.csv --x region --y amount --agg sum -o sales.html
+qsv viz smart data.csv --smarter --bivariate -o dashboard.html
+```
+
+> Aggregate (sum) sales by region into a titled bar chart, opened in the browser
+
+```console
+qsv viz bar sales.csv --x region --y amount --agg sum --title "Sales by region" --open
 ```
 
 > Scatter plot with a separate series (trace) per category
@@ -224,22 +153,28 @@ qsv viz scatter data.csv --x gdp --y life_exp --size population --color score -o
 qsv viz scatter regions.csv --x gdp_index --y wellbeing_index --size population_m --series region --slider month_date -o gapminder.html
 ```
 
+> 3D scatter of three numeric columns, colored by a fourth
+
+```console
+qsv viz scatter3d data.csv --x length --y width --z height --color weight -o scatter3d.html
+```
+
+> 2D density contour of two numeric columns with a 40x40 grid
+
+```console
+qsv viz contour data.csv --x height --y weight --bins 40 -o contour.html
+```
+
 > Histogram of a numeric column with 30 bins
 
 ```console
 qsv viz histogram data.csv --x value --bins 30 -o hist.html
 ```
 
-> Box plot of a value column grouped by a category, exported to PNG (needs viz_static)
+> Box plot grouped by a category, every sample point overlaid, exported to PNG
 
 ```console
-qsv viz box data.csv --y measurement --x group -o box.png
-```
-
-> Box plot with every sample point overlaid (jittered) instead of just the outliers
-
-```console
-qsv viz box data.csv --y measurement --box-points all -o box.html
+qsv viz box data.csv --y measurement --x group --box-points all -o box.png
 ```
 
 > Violin plot (KDE density curve + inner box) of a value column grouped by a category
@@ -284,6 +219,18 @@ qsv viz candlestick prices.csv --x date --ohlc-open open --high high --low low -
 qsv viz sankey flows.csv --source from --target to --value weight -o sankey.html
 ```
 
+> Treemap of part-to-whole sales by region then category, sized by amount
+
+```console
+qsv viz treemap sales.csv --cols region,category --value amount --agg sum -o treemap.html
+```
+
+> Sunburst of a deep 3-level web-traffic hierarchy, sized by row count
+
+```console
+qsv viz sunburst web.csv --cols source,campaign,landing_page -o sunburst.html
+```
+
 > Radar chart comparing numeric metrics, one trace per team
 
 ```console
@@ -302,34 +249,10 @@ qsv viz map quakes.csv --lat lat --lon lon --color magnitude --size depth -o map
 qsv viz map quakes.csv --lat lat --lon lon --density --style carto-positron -o heat.html
 ```
 
-> 3D scatter of three numeric columns, colored by a fourth
-
-```console
-qsv viz scatter3d data.csv --x length --y width --z height --color weight -o scatter3d.html
-```
-
-> 2D density contour of two numeric columns with a 40x40 grid
-
-```console
-qsv viz contour data.csv --x height --y weight --bins 40 -o contour.html
-```
-
-> Projection map of earthquakes (token-free), marker color by magnitude
+> Projection map of earthquakes (token-free, offline), marker color by magnitude
 
 ```console
 qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html
-```
-
-> Treemap of part-to-whole sales by region then category, sized by amount
-
-```console
-qsv viz treemap sales.csv --cols region,category --value amount --agg sum -o treemap.html
-```
-
-> Sunburst of a deep 3-level web-traffic hierarchy, sized by row count
-
-```console
-qsv viz sunburst web.csv --cols source,campaign,landing_page -o sunburst.html
 ```
 
 > Choropleth coloring countries (ISO-3 codes) by a summed measure
@@ -344,16 +267,22 @@ qsv viz choropleth gdp.csv --locations iso3 --value gdp --agg sum -o choropleth.
 qsv viz choropleth orders.csv --locations state --location-mode usa-states -o states.html
 ```
 
-> Custom GeoJSON regions on a MapLibre basemap, matched by a feature id
+> US counties with no GeoJSON supplied - boundaries fetched from Census TIGERweb
+
+```console
+qsv viz choropleth complaints.csv --locations fips --geojson auto -o counties.html
+```
+
+> ...as a per-capita RATE, with the population fetched from the Census Data API
+
+```console
+qsv viz choropleth complaints.csv --locations fips --geojson auto --denominator census -o rate.html
+```
+
+> Custom GeoJSON regions on a MapLibre tile basemap, matched by a feature id
 
 ```console
 qsv viz choropleth counties.csv --locations fips --value pop --map --geojson counties.json --feature-id-key id -o counties.html
-```
-
-> Reverse-geocode lat/lon points to ISO-3 codes, then count per country (needs geocode feature)
-
-```console
-qsv viz choropleth stops.csv --geocode --lat lat --lon lon -o by_country.html
 ```
 
 > Point-in-polygon: bin lat/lon points into custom GeoJSON regions by count (no geocode)
@@ -419,10 +348,10 @@ qsv viz --help
 | &nbsp;`‑‑source`&nbsp; | string | Source node column for a sankey diagram. |  |
 | &nbsp;`‑‑target`&nbsp; | string | Target node column for a sankey diagram. |  |
 | &nbsp;`‑‑value`&nbsp; | string | Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1. For treemap/sunburst/icicle: a numeric measure summed per sector (when omitted, each row counts as 1). |  |
-| &nbsp;`‑‑sankey‑value‑order`&nbsp; | flag | Order sankey nodes by total flow (largest at the top of each column). By DEFAULT nodes use plotly's crossing-minimizing "snap" order, which packs the diagram more compactly; this opts into the flow-ranked initial ordering instead. Either way the rendered chart carries an on-screen "node order" button to flip between the two layouts, and link ribbons are always colored by their source node. Applies to the `sankey` chart and the `smart` Data Schematic flow panel. |  |
+| &nbsp;`‑‑sankey‑value‑order`&nbsp; | flag | Order sankey nodes by total flow (largest at the top of each column) instead of plotly's default crossing-minimizing "snap" order. Either way the chart carries an on-screen "node order" button to flip between the two layouts, and link ribbons are always colored by their source node. Applies to the `sankey` chart AND the `smart` Data Schematic flow panel. |  |
 | &nbsp;`‑‑bins`&nbsp; | integer | Number of bins. For histogram: bins along the x-axis (default: auto). For contour: the per-axis resolution of the density grid (default: 20). |  |
-| &nbsp;`‑‑agg`&nbsp; | string | For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. For treemap/sunburst/icicle, only additive aggregations apply: count (default) or sum (requires --value). For choropleth, how rows sharing a region are combined: sum when --value is given, else count. Pass mean for an intensive measure (a density, rate, index or per-capita figure) — summing those is meaningless, and the count/sum hover adds a "share of total" line that would be too. For a bubble animation (see --slider), collapses each entity x frame cell to a single bubble; defaults to mean (the cell centroid). count is rejected there, since a row count is not a position. |  |
-| &nbsp;`‑‑box‑points`&nbsp; | string | Which sample points to draw alongside a box. Reading the raw values lets plotly render true Tukey whiskers (1.5*IQR) with the points beyond the fences as outliers. One of: outliers (only the outliers), all (every point, jittered), suspected (mark suspected outliers), none (no points, but still real Tukey whiskers). For `viz box` the default is outliers. For `viz smart` this flag OVERRIDES the default size-based heuristic, which overlays all points on a column with few non-null values (<=1,000) — unless the Data Schematic has more than 8 panels, where all-points cells turn to noise, so the overlay drops to outliers-only — and only the outliers for a medium one (<=10,000 values). Above that, a column that HAS outliers shows them as points on a precomputed quartile box (a single pass collects only the out-of-fence values, capped); a column with no outliers stays a fast cache-only quartile summary with no data re-scan. An explicit mode is applied to every box panel (one batched pass to read the values), except `none`, which keeps the cache-only box for BOX panels. A smart violin panel still renders under `none`, just with no sample points — its KDE needs the values anyway; combine with the violin option's `off` mode for the cache-only escape hatch. The same modes also pick the sample points drawn beside a violin, for `viz violin` and for the violin panels of `viz smart` — though a smart violin panel skips the size-based `all` upgrade (its KDE silhouette already shows the distribution) and overlays only the outliers unless an explicit mode is given. |  |
+| &nbsp;`‑‑agg`&nbsp; | string | How to combine values. For bar/line, aggregate the y values when the x value repeats: one of sum, mean, count, min, max. For treemap/sunburst/icicle, only the additive aggregations apply: count (the default) or sum (which requires --value). For choropleth, how rows sharing a region are combined: sum when --value is given, else count; pass mean for an intensive measure (a density, rate, index or per-capita figure), since summing those is meaningless and the count/sum hover's "share of total" line would be too. On a bubble animation (see the slider option), it collapses each entity x frame cell to a single bubble and defaults to mean, the cell centroid; count is rejected there, since a row count is not a position. |  |
+| &nbsp;`‑‑box‑points`&nbsp; | string | Which sample points to draw alongside a box or violin. Reading the raw values lets plotly render true Tukey whiskers (1.5*IQR) with the points beyond the fences as outliers. One of: outliers (only the outliers), all (every point, jittered), suspected (mark suspected outliers), none (no points, but still real Tukey whiskers). Applies to `viz box`, `viz violin` AND `viz smart`. For `viz box` the default is outliers; for `viz smart` an explicit mode OVERRIDES a size-based heuristic and is applied to every panel. `none` only hides a violin's points, since its KDE needs the values anyway; the cache-only escape hatch is `--violin off` with this set to none. For the heuristic's thresholds, see <https://github.com/dathere/qsv/wiki/Visualization#distribution-panels> |  |
 
 <a name="map-options"></a>
 
@@ -454,19 +383,19 @@ qsv viz --help
 | &nbsp;`‑‑location‑mode`&nbsp; | string | How --locations values are matched to regions. One of: iso3 (the default, ISO-3166-1 alpha-3 country codes), usa-states (2-letter US state codes), country-names (full country names), geojson-id (match a --geojson feature id). | `iso3` |
 | &nbsp;`‑‑color‑scale`&nbsp; | string | Colorscale for the region fill. One of: viridis (the default), cividis, greys, greens, blues, reds, ylgnbu, ylorrd, bluered, rdbu, portland, electric, jet, hot, blackbody, earth, picnic, rainbow. | `viridis` |
 | &nbsp;`‑‑map`&nbsp; | flag | Render on a token-free MapLibre tile basemap (a ChoroplethMap) instead of the default projection basemap. Requires --geojson; feature-id-key defaults to id. Reuses --style for the basemap. |  |
-| &nbsp;`‑‑geojson`&nbsp; | string | Custom region polygons as a local file path or an http(s) URL to a GeoJSON FeatureCollection. May also be a shortcut name defined in the QSV_GEOJSON_SHORTCUTS env var (a JSON map of name to {path, id}); the shortcut's id sets --feature-id-key when you don't pass one. The source is validated up front. Use `auto` (or `census`) to fetch US county, ZIP Code Tabulation Area, census tract or place boundaries from the Census TIGERweb service automatically. County FIPS and ZIP codes are both 5-digit, so qsv probes the layers and picks whichever your codes resolve against, reporting them when it cannot tell; force one with `census:county`, `census:zcta`, `census:tract` or `census:place` (which covers both incorporated places and census designated places). Sets the feature-id-key to properties.GEOID. It needs to know which column holds the region codes: `viz choropleth` reads the column named by --locations, while `viz smart` takes the region column its data dictionary names — so there it needs a --dictionary. An existing local file named `auto` takes precedence over the keyword. A locations column holding city/place NAMES rather than codes can be served by also passing the geocode flag, which forward-geocodes the names to US county FIPS first (see --geocode). Boundaries are re-drawn between vintages (Connecticut replaced its 8 counties with 9 planning regions in the 2022 vintages, sharing no GEOID), so append @<year> to pin one, e.g. `census:county@2021`. When nothing matches the newest vintage, qsv probes older ones and names the vintage that does match. Fetched boundaries are cached under ~/.qsv-cache, so a repeated command makes no network request at all; the cache path can be passed back as an explicit --geojson for an archival run. Freshness defaults to 30 days, overridable with QSV_VIZ_BOUNDARY_CACHE_TTL_DAYS. Required for --map, and for the geojson-id location mode. Also enables point-in-polygon binning: with --lat/--lon (and without --geocode), each row's point is binned into the region whose polygon contains it (exact, no geocoding) and colored by --value/--agg or counts. In `viz smart`, it also overlays the region boundaries on the map, labelling each with its --feature-name-key value (falling back to its id) — as on-map text on the projection/static map, or as a centroid hover marker on the interactive tile map (which culls on-map text). Labels are omitted above 60 regions. |  |
+| &nbsp;`‑‑geojson`&nbsp; | string | Custom region polygons: a local file path, an http(s) URL to a GeoJSON FeatureCollection, or a shortcut name from the QSV_GEOJSON_SHORTCUTS env var (whose id sets --feature-id-key when you don't pass one). Use `auto` (or `census`) to fetch US boundaries from Census TIGERweb automatically; force a layer with census:county, census:zcta, census:tract or census:place (incorporated places AND CDPs), and pin a vintage with @<year>, e.g. census:county@2021. That path sets feature-id-key to properties.GEOID and caches under ~/.qsv-cache for 30 days (QSV_VIZ_BOUNDARY_CACHE_TTL_DAYS); it reads the codes from the --locations column, so in `viz smart` it needs a --dictionary naming the region column. A column of city/place NAMES also needs --geocode. Required for --map and for the geojson-id location mode; with --lat/--lon it instead enables point-in-polygon binning. See <https://github.com/dathere/qsv/wiki/Visualization#census-boundaries> |  |
 | &nbsp;`‑‑feature‑id‑key`&nbsp; | string | Property path in each GeoJSON feature whose value matches an entry in the locations column, or that labels each binned region (e.g. id, properties.fips). | `id` |
 | &nbsp;`‑‑feature‑name‑key`&nbsp; | string | GeoJSON property path whose value is shown as the human-readable region label in choropleth hover (e.g. properties.name). When omitted, common name keys are auto-detected; falls back to the feature id when absent. |  |
-| &nbsp;`‑‑check‑geojson‑key`&nbsp; | flag | Diagnostic mode. Instead of rendering, score EVERY candidate feature-id path in --geojson (its `id`, plus every scalar leaf under `properties` and every top-level foreign member) against the distinct values of the locations column, and print them ranked by overlap. Use it to find the right --feature-id-key when a region map shades nothing. Scoring uses the same matcher the render path uses, so a path reported here as a full match will bind at render time. Requires --geojson and --locations, and a concrete source for the former (path, URL or shortcut). EVERY automatic Census spec is refused — `auto`, `census`, `census:<layer>` and their `@<year>` forms: automatic resolution picks the key itself and may bind place NAMES through an alias map this check does not model, so it reports its own region coverage instead. |  |
-| &nbsp;`‑‑denominator‑key`&nbsp; | string | GeoJSON property path holding each region's DENOMINATOR (e.g. properties.POP2020), using the same addressing as the --feature-id-key flag. Turns a raw-count region map into a RATE map: without it, a region map of row counts redraws where the people are (a populous region tallies more rows), so the biggest region wins on size, not on intensity. In `viz choropleth` the map itself becomes the rate; in `viz smart` a rate panel is added BESIDE the count panel. Regions whose denominator is missing or non-positive are excluded from the rate and reported. The per-region scale (per 1,000 / 10,000 / 100,000 / 1,000,000 / 1,000,000,000) is chosen automatically. |  |
-| &nbsp;`‑‑denominator‑unit`&nbsp; | string | Unit the denominator values are IN, so qsv can convert them and name them. Without this, an area denominator is divided in its raw unit and labelled with its raw field name — real boundary files carry land area in square METRES, which reads as "per 100,000 AREALAND" at approximately zero everywhere. One of: m2, km2 (also spelled m², km², sqm, sqkm). Values in m2 are converted to km², so the map reads "per km²". Never inferred from a field name; boundaries fetched by `--geojson auto` declare their own units and need no flag. |  |
-| &nbsp;`‑‑denominator`&nbsp; | string | Column holding each region's DENOMINATOR, as an alternative to reading it from the GeoJSON. The value must be constant within a region (it describes the region, not the row). `viz choropleth` only, and only with a --locations region column (not with --geocode or lat/lon binning). Valid with the default count aggregation and with --agg sum; the other aggregations are already intensive, so a denominator is rejected. In `viz smart`, declare the column in the data dictionary instead, via x-qsv.denominator (see --dictionary). The value `census` is RESERVED (a column of that name cannot be used): it fetches US population from the Census Data API and divides by it, giving a per-capita rate with nothing supplied. It works on `viz smart` too, being a source rather than a column. Region codes must be 5-digit county FIPS, 2-digit state FIPS, or 2-letter state codes. The newest published ACS 5-year release is used; append @<year> to pin one, e.g. `census@2019`. The release is always stated beneath the map, since a rate means something different against a different one. Regions the release does not cover are excluded and reported. Results are cached under ~/.qsv-cache, so a repeated command makes no network request; freshness defaults to 30 days, overridable with QSV_VIZ_DENOMINATOR_CACHE_TTL_DAYS. REQUIRES a Census API key in QSV_CENSUS_API_KEY - request a free one at <https://api.census.gov/data/key_signup.html>. (The Bureau redirects unkeyed requests to a "Missing Key" page rather than refusing them, so qsv asks for the key up front.) |  |
-| &nbsp;`‑‑geocode`&nbsp; | flag | Derive the region codes by reusing qsv's geocode engine (needs a build with the geocode feature). Either reverse-geocode the lat/lon points, or forward-geocode the locations name column. Only valid with location modes iso3 or usa-states. `viz choropleth` also reuses --value, --agg, --style and the lat/lon options. Combined with `--geojson auto`, forward-geocodes a locations column of city/place NAMES to their containing US county FIPS (Geonames states the county directly, so this is a lookup, not an approximation) and fetches those county boundaries; the geocode-country/geocode-admin1 hint columns disambiguate same-named places (the country defaults to `us`). Each distinct name is a full engine lookup, so a column with thousands of distinct names resolves slower than one holding codes. Names the default Geonames index cannot resolve are reported with a denser-index remedy (`qsv geocode index-load 1000`). Lat/lon is rejected on this path: reverse geocoding finds the NEAREST populated place, not the containing county. |  |
-| &nbsp;`‑‑geocode‑country`&nbsp; | string | Column holding each row's expected country, as an ISO-3166-1 alpha-2 code (e.g. US, GB, BR). Without it a place-name search spans every country, so US city names have resolved to Pakistan and the UK, and a point near a border takes the nearest FOREIGN place. Rows whose match falls outside the hint are counted and reported, never silently dropped. Country NAMES are not accepted, only codes. With location-mode usa-states the country defaults to `us`, so no hint is needed there. Applies to both geocode sources. |  |
-| &nbsp;`‑‑geocode‑admin1`&nbsp; | string | Column holding each row's expected admin1 (state/province), either as a qualified Geonames code (US.AL) or a bare subdivision code (AL) qualified by the country. Narrows a place-name search within a country, for names that are ambiguous on their own (there are dozens of US Springfields). Spelled-out names are rejected: admin1 names are matched by prefix, so `AL` would silently accept Alaska. Valid only with a locations name column, not with lat/lon points. |  |
-| &nbsp;`‑‑region‑state`&nbsp; | string | Column holding each row's state, for a --locations column that holds county NAMES rather than codes. Accepts a USPS code (PA), a 2-digit state FIPS (42) or the full state name (Pennsylvania). 422 county names are carried by more than one county - Washington County exists in 30 states - so without this, a column containing any of them is refused rather than resolved to an arbitrary state. Only applies to `viz choropleth --geojson auto`; in `viz smart` the state column is taken from the data dictionary instead. Not needed for a county FIPS column, which is unambiguous already. |  |
-| &nbsp;`‑‑no‑snap`&nbsp; | flag | For point-in-polygon binning (lat/lon points binned into a custom GeoJSON without geocoding): do not snap at all — drop every point that falls outside every region. By default an outside point instead snaps to its nearest region when within the snap-distance limit (see --snap-max-dist). Applies to both the `viz choropleth` command and the `viz smart` GeoJSON choropleth panel. A stderr note reports coverage either way; each snapping region's hover tallies the points it absorbed from outside, and snapped or dropped points are reported in a note beneath the map (or in the smart panel's title). |  |
-| &nbsp;`‑‑snap‑max‑dist`&nbsp; | float | For point-in-polygon binning: the farthest (in km) an outside point may snap to a region's boundary; points with no region within this distance are dropped. Distance is an equirectangular km approximation. When omitted, the cap is auto-derived from the GeoJSON's median region size (10% of the median bbox diagonal) and the lat/lon coordinate precision (coarse, few-decimal coordinates raise the cap to cover their quantization error), clamped to 0.1-100 km; a fixed 10 km is used only when neither signal is available. Applies to both the `viz choropleth` command and the `viz smart` GeoJSON choropleth panel; the coverage notes state the cap applied and how it was derived. Pass a large value for effectively unbounded snapping; cannot be combined with --no-snap. |  |
+| &nbsp;`‑‑check‑geojson‑key`&nbsp; | flag | Diagnostic mode. Instead of rendering, score EVERY candidate feature-id path in --geojson against the distinct values of the locations column and print them ranked by overlap - use it when a region map shades nothing while exiting 0. Requires --geojson and --locations, with a concrete source for the former (path, URL or shortcut); every automatic Census spec is refused, since automatic resolution picks the key itself. |  |
+| &nbsp;`‑‑denominator‑key`&nbsp; | string | GeoJSON property path holding each region's DENOMINATOR (e.g. properties.POP2020), addressed like --feature-id-key. Turns a raw-count region map into a RATE map: in `viz choropleth` the map itself becomes the rate; in `viz smart` a rate panel is added BESIDE the count panel. Regions whose denominator is missing or non-positive are excluded and reported; the per-region scale (per 1,000 / 10,000 / 100,000 / 1,000,000 / 1,000,000,000) is chosen automatically. See <https://github.com/dathere/qsv/wiki/Visualization#rate-maps> |  |
+| &nbsp;`‑‑denominator‑unit`&nbsp; | string | Unit the denominator values are IN, so qsv can convert and name them. One of: m2, km2 (also spelled m², km², sqm, sqkm). Values in m2 are converted to km², so the map reads "per km²". NEVER inferred from a field name - real boundary files carry land area in square METRES, which divided raw reads as "per 100,000 AREALAND" at approximately zero everywhere. Boundaries fetched by `--geojson auto` declare their own units and need no flag. |  |
+| &nbsp;`‑‑denominator`&nbsp; | string | Column holding each region's DENOMINATOR, as an alternative to reading it from the GeoJSON. Its value must be constant within a region (it describes the region, not the row). `viz choropleth` only, and only with a --locations region column - not with the --geocode flag or lat/lon binning. Valid with the default count aggregation and with --agg sum; the other aggregations are already intensive, so a denominator is rejected there. In `viz smart`, declare it in the data dictionary instead, via x-qsv.denominator (see --dictionary). The value `census` is RESERVED (a column of that name cannot be used): it fetches US population from the Census Data API for a per-capita rate with nothing supplied, and being a source rather than a column it works on `viz smart` too. Region codes must be 5-digit county FIPS, 2-digit state FIPS, or 2-letter state codes. The newest published ACS 5-year release is used and is always stated beneath the map; pin one with @<year>, e.g. census@2019. Uncovered regions are excluded and reported. Cached for 30 days (QSV_VIZ_DENOMINATOR_CACHE_TTL_DAYS). REQUIRES a Census API key in QSV_CENSUS_API_KEY - free at <https://api.census.gov/data/key_signup.html> |  |
+| &nbsp;`‑‑geocode`&nbsp; | flag | Derive the region codes with qsv's geocode engine (needs a build with the geocode feature): either reverse-geocode the lat/lon points, or forward-geocode the locations name column. Only valid with location modes iso3 or usa-states. `viz choropleth` also reuses --value, --agg, --style and the lat/lon options. Combined with `--geojson auto` it forward-geocodes a column of city/place NAMES to their containing US county FIPS and fetches those counties; lat/lon is REJECTED there, since reverse geocoding finds the nearest populated place, not the containing county. Each distinct name is a full engine lookup, so a column with thousands of them resolves slowly; unresolvable names are reported with a denser-index remedy. |  |
+| &nbsp;`‑‑geocode‑country`&nbsp; | string | Column holding each row's expected country, as an ISO-3166-1 alpha-2 code (e.g. US, GB, BR). Without it a place-name search spans every country, so US city names have resolved to Pakistan and a point near a border takes the nearest FOREIGN place. Rows whose match falls outside the hint are counted and reported, never silently dropped. Country NAMES are not accepted. With location-mode usa-states the country defaults to `us`. Applies to both geocode sources. |  |
+| &nbsp;`‑‑geocode‑admin1`&nbsp; | string | Column holding each row's expected admin1 (state/province), either as a qualified Geonames code (US.AL) or a bare subdivision code (AL) qualified by the country. Narrows a place-name search for names ambiguous on their own - there are dozens of US Springfields. Spelled-out names are REJECTED: admin1 names match by prefix, so `AL` would silently accept Alaska. Valid only with a locations name column, not with lat/lon points. |  |
+| &nbsp;`‑‑region‑state`&nbsp; | string | Column holding each row's state, for a --locations column of county NAMES rather than codes. Accepts a USPS code (PA), a 2-digit state FIPS (42) or the full state name (Pennsylvania). 422 county names are carried by more than one county - Washington County exists in 30 states - so without this, a column containing any of them is refused rather than resolved to an arbitrary state. `viz choropleth --geojson auto` only; in `viz smart` the state column comes from the data dictionary. A county FIPS column needs none of this. |  |
+| &nbsp;`‑‑no‑snap`&nbsp; | flag | For point-in-polygon binning: do not snap at all - drop every point that falls outside every region. By default an outside point snaps to its nearest region when within the snap-distance limit (see --snap-max-dist). Applies to both `viz choropleth` and the `viz smart` GeoJSON choropleth panel; coverage is reported on stderr and beneath the map either way. |  |
+| &nbsp;`‑‑snap‑max‑dist`&nbsp; | float | For point-in-polygon binning: the farthest (in km, an equirectangular approximation) an outside point may snap to a region's boundary; points with no region within it are dropped. When omitted the cap is AUTO-DERIVED from the GeoJSON's median region size and the lat/lon coordinate precision, clamped to 0.1-100 km; a fixed 10 km is used only when neither signal is available. The coverage notes state the cap and how it was derived. Pass a large value for effectively unbounded snapping; cannot be combined with --no-snap. See <https://github.com/dathere/qsv/wiki/Visualization#point-in-polygon> |  |
 
 <a name="smart-options"></a>
 
@@ -474,32 +403,32 @@ qsv viz --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑max‑charts`&nbsp; | integer | Maximum number of panels in the Data Schematic. 0 (the default) means auto: draw every eligible column (up to 64), for both HTML and static image export (png/svg/pdf/...). Up to 8 cartesian panels render as one typed subplot grid; beyond 8, HTML switches to an inline-div grid of independent plots, and static image export uses domain-positioned axes to fit them in one image. Set a positive <n> to cap the panel count instead. Eligible columns beyond the cap are reported but not drawn. | `0` |
+| &nbsp;`‑‑max‑charts`&nbsp; | integer | Maximum number of panels in the Data Schematic. 0 (the default) means auto: draw every eligible column (up to 64), for both HTML and static image export. Up to 8 cartesian panels render as one typed subplot grid; beyond 8, HTML switches to an inline-div grid and static export uses domain-positioned axes to fit one image. Set a positive <n> to cap the panel count instead; eligible columns beyond the cap are reported but not drawn. | `0` |
 | &nbsp;`‑‑grid‑cols`&nbsp; | integer | Number of columns in the Data Schematic grid for the per-column distribution panels. Overview panels (map/geo, correlation, time-series) always span the full width. | `2` |
-| &nbsp;`‑‑preview‑threshold`&nbsp; | integer | Row threshold for the interactive data viewer drawer of HTML dashboards. Next to the row count in the Data Schematic metadata, an "(Explore)" link opens the underlying table in a bottom drawer (with global, per-column and builder search) when the dataset has at most <n> rows and ALL rows are embedded in the page; above <n>, only the first <n> rows are embedded and the link reads "(Preview)". Note that embedded rows grow the HTML file (and browser memory) in proportion to rows x columns. Set to 0 to disable the data viewer entirely (no link, no embedded data). Only affects `smart` HTML output. | `50000` |
-| &nbsp;`‑‑tour‑steps`&nbsp; | integer | How many chart panels the guided tour of a `smart` HTML dashboard spotlights (default: 8). This budgets the per-panel steps only - the introduction, the Data Dictionary drawer chapter, the data viewer chapter and the conclusion are always included. Set to 0 to suppress the guided tour entirely (no tour, no "Tour" button, and no first-visit hint beacons on the page's pills). By default every Data Schematic ships an interactive tour (auto-started the first time a reader opens the page, and relaunchable anytime from the "Tour" button) that walks through the Data Dictionary drawer, the data viewer and the summary panels, explaining why each chart was chosen for this data. When left at its default, the budget is a soft one: a dashboard whose panels would otherwise all be overviews gets one extra step so a frequency distribution is always spotlighted. Passing an explicit value makes it a hard cap instead, substituting rather than adding. A dictionary's dataset-level "x-qsv" "tour" object can refine the narration: its "overrides" map replaces step prose by step id, its "panels" map replaces per-panel explanations (keyed by raw field name, or by "@kind" tokens like "@kpi", "@correlation", "@map" for overview panels), and "panel_order" picks which panels the tour spotlights (capped by this same budget, and never amended by the frequency-distribution guarantee). Only affects `smart` HTML output. |  |
-| &nbsp;`‑‑heatmap‑density`&nbsp; | integer | For the `viz smart` map panel: at or above <n> mappable points, draw the core as a density heatmap (DensityMap) instead of markers. The heatmap keeps per-point hover (coordinates, plus the point's label). Defaults to 0 (disabled): dense point maps instead open as individual points with an in-map "Clusters/Points" toggle (collapse the dense areas into interactive count bubbles on demand) rather than aggregating into a static heat surface. Set a positive <n> to opt back into the heatmap above that point count. | `0` |
-| &nbsp;`‑‑cluster`&nbsp; | string | For the `viz smart` map panel: whether to offer an in-map "Clusters/Points" toggle that collapses dense points into native MapLibre count bubbles (which expand back into individual, hoverable points on zoom-in). Hovering a bubble shows its point count; clicking it zooms to where that cluster breaks apart. The map always OPENS as individual points; the toggle switches clustering on. One of: auto, on, off. "auto" (the default) offers the toggle for a plain-marker core (no density heatmap, no bubble-size measure) once it reaches 1,000 points. "on" offers it whenever the core draws as markers, regardless of point count or a bubble-size measure. "off" omits the toggle, so points are always drawn plainly. Only affects `smart`. | `auto` |
-| &nbsp;`‑‑photos`&nbsp; | flag | For the `viz smart` map panel: when a column holds image URLs (detected from the stats cache - an http(s) value ending in a common image extension), embed each point's image URL so that dwelling on a map point for 2 seconds opens that row's photo in a small preview card beside the pointer (arrow keys page through a row with several photos; Escape dismisses the card). Points that have photos say so in their hover label. When the image host allows cross-origin reads, fetched images are cached in the browser's IndexedDB, so re-dwelling a point or reloading the page serves them locally; otherwise the preview falls back to a normal image load served by the ordinary browser cache. OFF by default, and deliberately so: images load from whatever third-party host the DATA names, so enabling this makes everyone who opens the Data Schematic request those URLs directly (revealing their IP to that host). Nothing is fetched until a viewer dwells. Embedding every mapped point's URLs also grows the HTML. Applies to HTML output only - static image exports (PNG/SVG/PDF) are unaffected - and only on the tile-basemap map panel. Only affects `smart`. |  |
+| &nbsp;`‑‑preview‑threshold`&nbsp; | integer | Row threshold for the interactive data viewer drawer of HTML dashboards. Next to the row count in the metadata table, an "(Explore)" link opens the underlying table in a bottom drawer (with global, per-column and builder search) when the dataset has at most <n> rows and ALL rows are embedded; above <n>, only the first <n> rows are embedded and the link reads "(Preview)". Embedded rows grow the HTML file, and browser memory, in proportion to rows x columns. Set to 0 to disable the data viewer entirely (no link, no embedded data). `smart` HTML only. | `50000` |
+| &nbsp;`‑‑tour‑steps`&nbsp; | integer | How many chart panels the guided tour of a `smart` HTML dashboard spotlights. This budgets the per-panel steps only - the introduction, the Data Dictionary drawer chapter, the data viewer chapter and the conclusion are always included. Set to 0 to suppress the tour entirely - no tour, no "Tour" button, no first-visit hint beacons. Left at its default (8) the budget is SOFT: an all-overview dashboard gains one extra step so a frequency distribution is always spotlighted. An explicit value makes it a HARD cap, substituting rather than adding. A dictionary's dataset-level "x-qsv" "tour" object can refine the narration - see <https://github.com/dathere/qsv/wiki/Visualization#guided-tour> `smart` HTML only. |  |
+| &nbsp;`‑‑heatmap‑density`&nbsp; | integer | For the `viz smart` map panel: at or above <n> mappable points, draw the core as a density heatmap (DensityMap) instead of markers, keeping per-point hover. Defaults to 0 (disabled): dense point maps instead open as individual points with an in-map "Clusters/Points" toggle rather than aggregating into a static heat surface. Set a positive <n> to opt back in. | `0` |
+| &nbsp;`‑‑cluster`&nbsp; | string | For the `viz smart` map panel: whether to offer an in-map "Clusters/Points" toggle that collapses dense points into native MapLibre count bubbles (which expand back into individual, hoverable points on zoom-in). The map always OPENS as individual points. One of: auto, on, off. "auto" offers the toggle for a plain-marker core (no density heatmap, no bubble-size measure) once it reaches 1,000 points; "on" offers it whenever the core draws as markers; "off" omits it. Only affects `smart`. | `auto` |
+| &nbsp;`‑‑photos`&nbsp; | flag | For the `viz smart` map panel: when a column holds image URLs (detected from the stats cache), embed each point's image URL so that dwelling on a map point for 2 seconds opens that row's photo in a preview card beside the pointer (arrow keys page through a row's photos; Escape dismisses). OFF by default, and deliberately so: images load from whatever third-party host the DATA names, so enabling this makes everyone who opens the Data Schematic request those URLs directly, revealing their IP to that host. Nothing is fetched until a viewer dwells. HTML output only, tile-basemap map panel only, `smart` only. |  |
 | &nbsp;`‑‑limit`&nbsp; | integer | Top-N categories per frequency bar chart. | `10` |
 | &nbsp;`‑‑no‑nulls`&nbsp; | flag | Omit the "(NULL)" bar (empty cells) from frequency bar charts. By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`. |  |
 | &nbsp;`‑‑no‑other`&nbsp; | flag | Omit the "Other (N)" aggregate bar from frequency bar charts. It collects the categories beyond --limit (N = how many distinct categories were rolled up) and is shown by default. When just ONE category is left over, it is charted under its own name instead of as an opaque "Other (1)" bar. |  |
-| &nbsp;`‑‑smarter`&nbsp; | flag | Before building the Data Schematic, run `qsv moarstats --advanced` to enrich the stats cache with distribution-shape statistics (bimodality, entropy, skewness, outlier share, Gini). This unlocks histograms for bimodal columns, frequency bars for concentrated high-cardinality columns, skew/outlier hints on box panels, and Lorenz curves for the most unequal additive measures (high Gini). Costs one extra pass over the data and writes <stem>.stats.csv, its sidecars, and an .idx index (like running `qsv moarstats` manually). On geocode-enabled builds it also enriches map point hovers with the US FIPS code and annotates the spatial-extent summary with the country's continent; the county is always shown in map hovers, with or without --smarter. Only affects `smart`. Applied only with default parsing; inputs using --no-headers or a custom --delimiter fall back to the standard Data Schematic. |  |
-| &nbsp;`‑‑hierarchy‑style`&nbsp; | string | For `smart`, the chart used for the categorical part-to-whole hierarchy panel (built when 2+ low-cardinality dimensions exist). One of: auto (default), treemap, sunburst, icicle. auto follows best practice — a treemap for a shallow 2-level hierarchy (accurate size comparison) and a sunburst for a deep 3-level one (parent child structure); icicle is an opt-in level-aligned alternative. Only affects `smart`. |  |
-| &nbsp;`‑‑dictionary`&nbsp; | string | Use a describegpt Data Dictionary to guide panel selection from each field's semantic role/concept (falling back to its content type) instead of relying on column statistics alone: dimensions and numeric codes (ward, census_tract, zone) become bars, measures get box/correlation/trend panels, date/datetime columns feed the time-series panel (not noisy frequency bars), identifiers / PII / free-text are skipped, and lat/lon feed the map. Field labels are shown as panel subtitles beneath the field-name titles. Columns the dictionary cannot classify still use the statistical heuristic. <src> is one of: "infer" to run describegpt on the input now (with description, infer-content-type, two-pass and jsonschema output; requires an LLM configured) and use its output; or a path to an existing describegpt dictionary file (jsonschema or json). With "infer", the generated dictionary is saved beside the input as <stem>.schema.json so you can fine-tune it; if that file already exists, it is reused as-is (skipping the LLM) - edit it to fine-tune, or delete it to force a fresh re-infer. An inferred dictionary is a DRAFT, not an oracle. It comes from an LLM, so re-inferring the SAME data can assign a column a different role or concept - and role drives panel selection, so a re-infer can hand you a structurally different Data Schematic. The saved sidecar is therefore the artifact of record: review it, correct what the model got wrong, and keep it beside the data (commit it, if the data is versioned). Every later run then reuses it and renders reproducibly - only deleting it, or setting QSV_VIZ_DICT_FRESH=1, re-rolls the model. Curating that sidecar once is the human-in-the-loop half of the Data Schematic; qsv re-verifies the hints below on read, so a hand-edit can correct the model but cannot smuggle in a hint the data does not support. Set QSV_VIZ_DICT_FRESH=1 to ignore an existing sidecar and bypass describegpt's completion cache, forcing a genuinely fresh inference that overwrites the sidecar on success. Generation/read failures soft-fall back to the stats-only Data Schematic. The dictionary also drives the KPI overview row via five optional per-field hints in a property's "x-qsv" object (edit them in the saved schema to fine-tune). A "gauge_range" of [min, max] on a continuous numeric measure renders its KPI tile as a GAUGE on that canonical scale (e.g. [0,1] for a ratio, [0,100] for a percent); qsv keeps it only when the observed data lies within the range, so a mis-scaled range can't draw a misleading dial, and "infer" emits it for canonical-scale measures. A "target" number on a measure renders a "vs target" DELTA against that goal (value minus target) - a GOAL you supply, never a fabricated prior-period baseline, so "infer" never emits it; hand-author it. A "currency" ISO-4217 alpha-3 code (e.g. "USD", "EUR") on a monetary measure prefixes its KPI tile with that currency's symbol ($192B) and names the currency in the panel subtitle; an unrecognized code renders verbatim ("XOF 1.2B"). "infer" emits it for money columns, which it also tags with the "measure.money" concept. A "unit" UCUM code (e.g. "Cel", "km", "kW.h") on a NON-monetary numeric measure suffixes its KPI tile with the unit's display symbol ("18.4 °C") and names that symbol in the panel subtitle. The scatter/bubble/3D panels are the only ones with real axis titles, and each parenthesizes its unit there ("air_temp (°C)"); those of them that build a per-point hover also suffix each reading in it ("air_temp: 18.4 °C"). The animated scatter-pair panel builds no per-point hover, so it states its units in the axis titles alone. A declared pipeline's hover is marked too, when its stages are rows of ONE measure column. Codes are checked CASE-SENSITIVELY against a curated table of ~44 common units - UCUM distinguishes "m" (metre) from the "M" (mega) prefix - and an off-table code is dropped rather than rendered, since an unrecognized unit string is not self-describing the way an ISO currency code is. Mutually exclusive with "currency": for money the currency IS the unit, so a sidecar declaring both keeps only the currency. An "aggregation" of "sum" or "mean" on a numeric measure declares how that column combines across a group, and OVERRIDES qsv's own extensive-vs-intensive guess in both directions. Use it when a measure does not add up - a unit price, a temperature, a rating - or when a measure whose NAME reads non-additive genuinely does sum. qsv's guess reads column names, in English plus a curated vocabulary for the language the dictionary detected, so this hint is still the reliable way to state it. "infer" emits it for numeric measures. A "denominator" of {"column": "<name>"} on a REGION-CODE column (a zip, county, state or fips column) names the column holding each region's population - or households, area, fleet size - and adds a RATE panel beside the region map's raw-count panel. Without one, a region map colored by row counts mostly redraws where the people are, so the busiest region wins on size rather than on intensity; the count panel says so in its subtitle. The named column must hold the same value on every row of a region (it describes the region, not the row); when it does not, qsv notes why and charts raw counts only. Add a "unit" beside the "column" - {"column": "land_area", "unit": "m2"} - when the values are an area in square metres, so qsv converts them and names the rate "per km2" instead of dividing by metres and printing the raw column name. Add a "level" - {"column": "state_pop", "level": "geo.state"} - naming the AREAL unit those values describe, as a "geo." concept token. qsv checks it against the region column's own concept and refuses the rate panel when the two name different geographies: a denominator measured over a COARSER area than the map is keyed by (county counts over state populations) is constant within each region and positive, so every data-derived check passes while the map is confidently wrong. The two codings of one geography compare equal, so a per-county denominator is fine against either a "geo.county" or a "geo.county_fips" region. describegpt emits the level itself; a hint that declares none still charts, and says so in the rate panel's subtitle. Prefer the denominator-key flag when the boundary file already carries the figure. Note that on ENGLISH pages large numbers use the financial convention (1e9 reads "1B", not the SI "1G") consistently across KPI tiles, bar value labels and axis ticks. Other languages keep the SI prefixes. The dictionary is also the ONLY source of the pipeline panel (drawn as a funnel while the stage TOTALS never increase, otherwise as a bridge; row-wise containment is measured & disclosed in the subtitle, but does not decide the form), declared in the dataset-level "x-qsv" object as a "relationships" entry with "kind": "pipeline". Two encodings, both hand-editable: stages as COLUMNS - "members" lists the stage columns in process order, WIDEST/UPSTREAM FIRST (note this is the opposite direction from a "kind":"ordered" group, which ascends), e.g. {"kind":"pipeline", "members":["planned_amt","committed_amt","spent_amt"]} stages as ROW VALUES - "stage_column" names the category column, "stages" lists its values in process order, and an optional "value_column" names the measure to sum per stage (omit it to count rows), e.g. {"kind":"pipeline","members":["stage","revenue"], "stage_column":"stage", "stages":["Impression","Click","Lead","Conversion"], "value_column":"revenue"} Declared order is authoritative and is never re-sorted by size, so a stage that outruns its predecessor stays visible instead of being quietly reordered away - it switches the panel to a bridge rather than drawing a funnel that widens. A declaration naming a missing column, or a stage that is an average/rate rather than a summable amount, is skipped with a note rather than erroring. Only affects `smart`. |  |
-| &nbsp;`‑‑dictionary‑context`&nbsp; | string | Path to a file with extra context about the dataset (a glossary, README, data dictionary, PDF, etc.) forwarded to describegpt as --context-file when `--dictionary infer` generates the dictionary. Better context yields better role/concept/label/grain tags, hence a better Data Schematic. Ignored unless `--dictionary infer` is used (it does not apply when reading an existing dictionary file). Only affects `smart`. |  |
-| &nbsp;`‑‑tour‑audience`&nbsp; | string | Who the guided Tour should talk to. Forwarded to describegpt when `--dictionary infer` generates the dictionary, so the inferred dictionary carries an "x-qsv.tour" narration written for that audience (e.g. "Explain like I'm 10" - the default - or "a board of directors", "data journalists"). The audience shapes ONLY the tour prose; field labels & descriptions keep their normal register. Ignored unless a FRESH `--dictionary infer` actually runs: when an existing <stem>.schema.json sidecar is reused, delete it (or set QSV_VIZ_DICT_FRESH=1) to re-infer with a new audience. Only affects `smart`. |  |
-| &nbsp;`‑‑dict‑info`&nbsp; | flag | When a usable Data Dictionary is available (per --dictionary), add a "Data Schematic" link beneath the page title and an info icon on each panel title: hovering shows that column's dictionary description; clicking opens a human-friendly rendering of the dictionary in a side drawer NEXT TO the plots (embedded in the Data Schematic file - no extra file is written), scrolled to and highlighting that column's entry. The drawer is open by default on load and can be dismissed with its close button or Esc. The dictionary page carries a role-tinted table of contents and per-column "View chart" links back to the panels, plus a row of download buttons: the dictionary itself as JSON Schema, the frequency counts the Data Schematic actually charted, and every generated sidecar this run read (the stats cache and its metadata, the frequency cache when it was reused, and the bivariate stats CSV when freshly written). A sidecar qsv wrote but viz never read - the human-readable <stem>.stats.csv - is NOT offered, since nothing can show it describes the same computation the Data Schematic used. Every file is BUNDLED into the HTML, so anyone you send the Data Schematic to can download them with no access to your machine; absolute local paths are stripped from the embedded metadata so sharing a Data Schematic doesn't disclose your directory layout. Sidecars over 4 MB are skipped with a note. The drawer also explains what the Data Schematic LEFT OUT, so the omissions travel with the file instead of scrolling past in the terminal: a column `viz smart` did not chart carries a "not charted" note giving the reason it reported (an identifier, all-empty, high-cardinality text, a duplicate of a sibling column that IS charted, or simply capped by --max-charts), and is dimmed in the table of contents. A skipped column the dictionary never described still gets an entry, so nothing disappears silently. Panels qsv declined to draw - a hierarchy panel whose dimensions are statistically independent, a refused funnel, an association panel - are listed together under "Panels not drawn". The drawer's popout button opens the same document in its own browser tab instead (needs a browser that allows user-initiated pop-ups). HTML output only; ignored with a note when no dictionary is available or when exporting an image. Only affects `smart`. |  |
-| &nbsp;`‑‑dataset‑pid`&nbsp; | string | A persistent identifier (PID) for the dataset - typically a full URL such as a DOI (<https://doi.org/10.1234/abc>) or other citable link. When set, a "PID" row is added to the metadata table at the top of the Data Schematic. http(s) and mailto values become a clickable link (opened in a new tab); any other scheme is shown as plain text rather than linked. HTML output only. Only affects `smart`. |  |
-| &nbsp;`‑‑bivariate`&nbsp; | flag | Add two pairwise-association overview panels driven by `qsv moarstats --bivariate`: a normalized mutual information (NMI) heatmap over every column pair (works for numeric AND categorical columns, unlike the Pearson-only correlation heatmap), plus a ranked "top relationships" bar of the strongest pairs when there are more than 8 chartable columns. The ranked bar (not the heatmap, which still shows every pair) requires a pair's co-occurring row count to be at least 10% of the best-supported pair's, so a technically-perfect NMI from two sparsely-populated columns that only ever co-occur in a narrow row slice can't crowd out a more broadly meaningful association; each bar's hover shows its co-occurring row count. A numeric pair whose Spearman rank correlation diverges sharply from its Pearson correlation is flagged "nonlinear" in the hover. Identifier / PII / free-text columns (per --dictionary) and map lat/lon columns are excluded. This automatically turns on --smarter, and when --dictionary isn't already set, also turns on --dictionary infer (so the PII/identifier exclusion has semantic signal to work with). Capped at 50 columns (1,225 pairs); wider datasets skip these panels with a warning (run `qsv moarstats --bivariate` directly for the full pairwise output). Only affects `smart`. |  |
-| &nbsp;`‑‑log‑scale`&nbsp; | string | Use a logarithmic y-axis for panels with a high dynamic range: frequency bar panels whose tallest bar dwarfs the rest (e.g. a large "(NULL)" or "Other (N)" bucket), so the small categories stay visible; and box panels of an all-positive column whose observed max/min ratio is huge (a box otherwise squashed against its extremes). One of: auto, on, off. "auto" (the default) switches a panel to a log y-axis only when its dynamic range is high; "on" forces a log y-axis on every frequency panel and every all-positive box panel; "off" keeps the linear axes. Only affects `smart`. | `auto` |
-| &nbsp;`‑‑violin`&nbsp; | string | Draw distribution panels as violins (a box plot wrapped in a KDE density silhouette — a strict superset of a plain box) instead of boxes. One of: auto, on, off. "auto" (the default) draws a violin for every continuous column EXCEPT those on a log value axis (the KDE is estimated in linear space, which a log axis would geometrically distort) and those with fewer than 20 distinct values or fewer than 50 non-null observations (too few for a meaningful KDE — the curve would be smoothing artifact) — all keep an honest box; "on" also violins those; "off" never draws violins. Violin KDEs are clamped to each column's observed range (Plotly spanmode "hard") so a bounded or discrete measure can't show density past a natural limit. A column with at most 10,000 non-null values gets an exact violin (with outlier points, like a raw box); up to 30,000 values (one-fifth of the smart point budget, so it scales with QSV_VIZ_MAX_POINTS) still draws an exact violin but drops the point overlay; a larger column draws its silhouette and inner box from a deterministic sample of at most that many evenly strided values, carries no point overlay (a sample misses the true extremes), and is titled "(sampled)". An explicit all, outliers or suspected mode given via the box-points option instead collects every value for every panel, violins included; that option's `none` mode just hides a violin's points. Only affects `smart`. | `auto` |
+| &nbsp;`‑‑smarter`&nbsp; | flag | Before building the Data Schematic, run `qsv moarstats --advanced` to enrich the stats cache with distribution-shape statistics (bimodality, entropy, skewness, outlier share, Gini). This unlocks histograms for bimodal columns, frequency bars for concentrated high-cardinality columns, skew/outlier hints on box panels, and Lorenz curves for the most unequal additive measures. Costs one extra pass and writes <stem>.stats.csv, its sidecars and an .idx index. On geocode-enabled builds it also adds the US FIPS code to map hovers. Applied only with default parsing; an input using the --no-headers or --delimiter flags falls back to the standard Data Schematic. Only affects `smart`. |  |
+| &nbsp;`‑‑hierarchy‑style`&nbsp; | string | For `smart`, the chart used for the categorical part-to-whole hierarchy panel (built when 2+ low-cardinality dimensions exist). One of: auto (default), treemap, sunburst, icicle. auto follows best practice - a treemap for a shallow 2-level hierarchy (accurate size comparison) and a sunburst for a deep 3-level one (parent/child structure); icicle is an opt-in level-aligned alternative. An explicit style also bypasses the association screen that would otherwise skip an uninformative panel. Only affects `smart`. |  |
+| &nbsp;`‑‑dictionary`&nbsp; | string | Use a describegpt Data Dictionary to guide panel selection from each field's semantic role/concept (falling back to its content type) instead of relying on column statistics alone: dimensions and numeric codes (ward, census_tract, zone) become bars, measures get box/correlation/trend panels, date/datetime columns feed the time-series panel, identifiers / PII / free-text are skipped, and lat/lon feed the map. Field labels are shown as panel subtitles. Columns the dictionary cannot classify still use the statistical heuristic. <src> is either "infer", to run describegpt on the input now (requires an LLM configured), or a path to an existing describegpt dictionary file (jsonschema or json). With "infer", the generated dictionary is saved beside the input as <stem>.schema.json; if that file already exists it is REUSED as-is, skipping the LLM. An inferred dictionary is a DRAFT, not an oracle: re-inferring the same data can assign a column a different role, and role drives panel selection, so a re-infer can hand you a structurally different Data Schematic. The saved sidecar is therefore the artifact of record - review it, correct it, and keep it beside the data. Set QSV_VIZ_DICT_FRESH=1 to ignore it and bypass describegpt's completion cache, forcing a fresh inference that overwrites the sidecar on success. Generation/read failures soft-fall back to the stats-only Data Schematic. qsv re-verifies every hint below on read, so a hand-edit can correct the model but cannot smuggle in a claim the data does not support. Per-field hints live in a property's "x-qsv" object: gauge_range [min,max] - render the KPI tile as a GAUGE on that canonical scale; kept only when the observed value is inside it target <goal> - add a "vs target" DELTA (value minus target). A goal you supply, so "infer" never emits one currency <ISO-4217> - prefix the KPI tile with that currency's symbol ($192B); an unknown code renders verbatim ("XOF 1.2B") unit <UCUM code> - suffix a NON-monetary measure with the unit symbol ("18.4 °C"), in KPI tiles, axis titles and hovers. Checked CASE-SENSITIVELY against ~44 common units (UCUM distinguishes "m" from the "M" mega prefix); an off-table code is dropped. Mutually exclusive with currency aggregation sum\|mean - declare how the measure combines across a group, overriding qsv's extensive-vs-intensive guess either way denominator {column, unit?, level?} - on a REGION-CODE column, name the column holding each region's population to add a RATE panel beside the raw-count region map. "unit" converts an area given in m2 or km2; "level" names the AREAL unit those values describe as a "geo." concept token, and a level naming a COARSER geography than the region column is refused The dictionary is also the ONLY source of the pipeline panel, declared in the DATASET-level "x-qsv" object as a "relationships" entry with "kind": "pipeline". Stages may be held in separate columns ("members", widest/upstream first) or as values of one category column ("stage_column" plus "stages", with an optional "value_column"). Declared order is authoritative and is never re-sorted by size: it draws as a funnel while the stage totals never grow, and as a BRIDGE when one outruns its predecessor. For the hint semantics, the pipeline encodings and worked JSON, see <https://github.com/dathere/qsv/wiki/Visualization#data-dictionary> Only affects `smart`. |  |
+| &nbsp;`‑‑dictionary‑context`&nbsp; | string | Path to a file with extra context about the dataset (a glossary, README, data dictionary, PDF, etc.) forwarded to describegpt as --context-file when `--dictionary infer` generates the dictionary. Better context yields better role/concept/label tags, hence a better Data Schematic. Ignored unless `--dictionary infer` is used. Only affects `smart`. |  |
+| &nbsp;`‑‑tour‑audience`&nbsp; | string | Who the guided Tour should talk to. Forwarded to describegpt when `--dictionary infer` generates the dictionary, so the inferred dictionary carries an "x-qsv.tour" narration written for that audience (e.g. "Explain like I'm 10" - the default - or "a board of directors", "data journalists"). The audience shapes ONLY the tour prose; field labels and descriptions keep their normal register. Ignored unless a FRESH `--dictionary infer` actually runs: when an existing <stem>.schema.json sidecar is reused, delete it (or set QSV_VIZ_DICT_FRESH=1) to re-infer with a new audience. Only affects `smart`. |  |
+| &nbsp;`‑‑dict‑info`&nbsp; | flag | When a usable Data Dictionary is available (per --dictionary), add a "Data Schematic" link beneath the page title and an info icon on each panel title: hovering shows that column's description, clicking opens a human-friendly rendering of the dictionary in a side drawer NEXT TO the plots, scrolled to that column's entry. The drawer carries a table of contents, per-column "View chart" links, download buttons bundling every sidecar this run READ (each under 4 MB), and a record of what the Data Schematic LEFT OUT. Everything is embedded in the HTML, so no extra file is written. HTML output only; ignored with a note when no dictionary is available or when exporting an image. Only affects `smart`. See <https://github.com/dathere/qsv/wiki/Visualization#dict-info> |  |
+| &nbsp;`‑‑dataset‑pid`&nbsp; | string | A persistent identifier (PID) for the dataset - typically a full URL such as a DOI (<https://doi.org/10.1234/abc>) or other citable link. When set, a "PID" row is added to the metadata table at the top of the Data Schematic. http(s) and mailto values become a clickable link; any other scheme is shown as plain text. HTML output only. Only affects `smart`. |  |
+| &nbsp;`‑‑bivariate`&nbsp; | flag | Add two pairwise-association overview panels driven by `qsv moarstats --bivariate`: a normalized mutual information (NMI) heatmap over every column pair (numeric AND categorical, unlike the Pearson-only correlation heatmap), plus a ranked "top relationships" bar of the strongest pairs when there are more than 8 chartable columns. Identifier / PII / free-text columns (per the --dictionary option) and map lat/lon columns are excluded. It TURNS ON --smarter, plus --dictionary infer when --dictionary isn't already set. Capped at 50 columns (1,225 pairs); wider datasets skip these panels with a warning. Only affects `smart`. See <https://github.com/dathere/qsv/wiki/Visualization#bivariate> |  |
+| &nbsp;`‑‑log‑scale`&nbsp; | string | Use a logarithmic y-axis for panels with a high dynamic range: frequency bar panels whose tallest bar dwarfs the rest (e.g. a large "(NULL)" or "Other (N)" bucket), so the small categories stay visible; and box panels of an all-positive column whose observed max/min ratio is huge. One of: auto, on, off. "auto" switches a panel to a log y-axis only when its dynamic range is high; "on" forces it on every frequency panel and every all-positive box panel; "off" keeps the linear axes. Only affects `smart`. | `auto` |
+| &nbsp;`‑‑violin`&nbsp; | string | Draw distribution panels as violins (a box plot wrapped in a KDE density silhouette - a strict superset of a plain box) instead of boxes. One of: auto, on, off. "auto" draws a violin for every continuous column EXCEPT those on a log value axis (the KDE is estimated in linear space, which a log axis would distort) and those with too few distinct values or observations for a meaningful KDE; both keep an honest box. "on" also violins those; "off" never draws violins. KDEs are clamped to each column's observed range, so a bounded or discrete measure can't show density past a natural limit. Above a size threshold a violin is drawn from a deterministic strided sample, carries no point overlay and is titled "(sampled)"; that budget scales with QSV_VIZ_MAX_POINTS. For the thresholds and how this interacts with the box-points option, see <https://github.com/dathere/qsv/wiki/Visualization#distribution-panels> Only affects `smart`. | `auto` |
 | &nbsp;`‑‑title`&nbsp; | string | Chart title. |  |
 | &nbsp;`‑‑x‑title`&nbsp; | string | X-axis title. (defaults to the x column name) |  |
 | &nbsp;`‑‑y‑title`&nbsp; | string | Y-axis title. (defaults to the y column name) |  |
 | &nbsp;`‑‑y‑range`&nbsp; | string | Fix the y-axis to an explicit min:max range (two colon- separated numbers, e.g. -10:55) instead of autoscaling; points outside are clipped from view. Handy when one extreme outlier squashes the rest. Applies to cartesian charts (bar/line/scatter/histogram/box/violin/heatmap/ contour). Pass a negative min with `=`: --y-range=-10:55. |  |
 | &nbsp;`‑‑rangeslider`&nbsp; | flag | Add a draggable range-slider (a navigator strip) under the x-axis for panning and zooming. Best for an ordered x-axis (time series, line, candlestick/ohlc). Applies to cartesian charts (bar/line/scatter/histogram/box/violin/candlestick/ ohlc); off by default. |  |
-| &nbsp;`‑‑slider`&nbsp; | string | Animate the chart over a column: each distinct value of the given column becomes an animation frame, with a Play/Pause button and a slider to scrub through the frames (Gapminder- style). Supported for bar/line/scatter and geo, and may be split into animated traces with the --series option. (Not supported for `viz map` — the MapLibre basemap can't animate; use `viz geo` for an animated point map.) On `viz scatter`, combining a slider with --series AND --size builds a Gapminder BUBBLE ANIMATION: --series is the entity (one colored bubble each), --x/--y the measure pair and --size the third data variable (bubble area). Each entity x frame cell collapses to one bubble via --agg (mean by default); bubble sizes are scaled once across all frames so they stay comparable. A slider column that parses as dates is auto-bucketed to a readable number of frames; any other column frames on its distinct values. For `smart`, this controls whether one animated relationship-over-time panel is added: the numeric pair whose per-time-bucket centroid path bends the most (a trailing-window scatter colored by time bucket), or an animated geo map of global-extent dated points, or a Gapminder entity-bubble chart (at most one is shown; when several qualify the bubble wins, then the geo map, then the pair). auto (default) adds one only on a strong signal (a date column and enough time buckets); on lowers the bar (as few as two buckets) but still requires a genuinely drifting or animatable relationship; off never does. Axis ranges are pinned across frames so nothing jumps. |  |
+| &nbsp;`‑‑slider`&nbsp; | string | Animate the chart over a column: each distinct value of the given column becomes an animation frame, with a Play/Pause button and a slider to scrub through the frames (Gapminder- style). Supported for bar/line/scatter and geo, and may be split into animated traces with --series. NOT supported for `viz map`, whose MapLibre basemap can't animate - use `viz geo` for an animated point map. A slider column that parses as dates is auto-bucketed to a readable number of frames; any other column frames on its distinct values. Axis ranges are pinned across frames so nothing jumps. On `viz scatter`, a slider with --series AND --size builds a Gapminder BUBBLE ANIMATION: --series is the entity, --x/--y the measure pair and --size the third variable (bubble area). Each entity x frame cell collapses to one bubble via --agg (mean by default), scaled once across all frames so sizes stay comparable. For `smart`, this instead takes auto, on or off, controlling whether ONE animated relationship-over-time panel is added - a drifting numeric pair, an animated geo map of dated points, or a Gapminder entity-bubble chart (at most one; the bubble wins, then the geo map, then the pair). auto requires a strong signal (a date column and enough time buckets); on lowers the bar to two buckets but still requires a genuinely drifting relationship; off never does. |  |
 | &nbsp;`‑‑slider‑speed`&nbsp; | integer | Milliseconds each animation frame is shown while playing. | `800` |
 | &nbsp;`‑‑slider‑cumulative`&nbsp; | flag | Accumulate rows across frames: frame N includes every row whose --slider value is at or below the Nth value, so the animation builds up cumulatively instead of replacing each step. Applies to bar/line/scatter and geo. On a bubble animation there is only ever one bubble per entity per frame, so nothing piles up on screen; instead each bubble shows a RUNNING aggregate over all frames up to that point, and so drifts less and less as the animation plays. |  |
 | &nbsp;`‑‑annotation`&nbsp; | string | Caption note drawn at the bottom of the plot (e.g. to note a clipped outlier). Cartesian charts only. |  |

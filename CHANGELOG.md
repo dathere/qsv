@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [23.0.0] - 2026-09-11 👑 The "Context is King" Release 🧠
+## [23.0.0] - 2026-09-12 👑 The "Context is King" Release 🧠
 
 ### Highlights
 
@@ -28,6 +28,8 @@ Underneath all of it: a sustained **correctness** sweep. A four-batch review of 
 
 > [!IMPORTANT]
 > **Windows users who installed via the [Easy installer](https://github.com/dathere/qsv-easy-windows-installer): upgrade to v1.1.2 or later *before* updating qsv, then confirm with `qsv --version`.** Older versions of the installer report success even when the install did not happen. Installer versions at or below v1.1.1 extract a hardcoded `qsvp.exe`, which this release does not ship - and because the installer's update path returns no error, you are shown a "Successfully installed qsv" message regardless. The symptom is not a crash but an absence: `qsv` is missing from your `PATH`, or silently stays at its old version.
+
+---
 
 ### Added
 - **`viz`: `--check-geojson-key` reports which `--feature-id-key` will actually bind.** `--feature-id-key` defaults to `id`, which is usually wrong for a real boundary file, and picking the wrong one renders a choropleth that shades nothing while exiting 0. The new diagnostic mode scores **every** candidate path in the GeoJSON - its feature `id`, plus each scalar `properties.*` field - against the distinct values of the `--locations` column, and prints them ranked by overlap with the unmatched examples and a `Use: --feature-id-key <path>` recommendation. The point is *where* the scoring happens: it runs through the same `RegionMatcher` the render path binds with, so zero-padding (`6` against `06037`), ASCII-only case folding, and the refusal to guess between ambiguous folds (given features `CA` and `ca`, the value `Ca` matches neither) all come out identical **by construction** rather than by a second implementation kept in step by hand. A path reported here as a full match will bind at render time. This replaces a hand-maintained reimplementation of those match tiers that lived in the `visual-data-dictionary` skill, where being one tier more generous than `viz` meant advertising a join the user would not get. Two details make it usable by the audience it is for - someone who does not yet know the right key: the mode **skips the two up-front `--feature-id-key` validations**, which would otherwise reject the very runs it serves, and a candidate carried by no usable polygon is scored `0` rather than aborting the sweep (`RegionMatcher` errors in exactly that case, which is the common outcome when trying keys you are choosing between). The report goes to stdout so it can be piped, leaving the per-candidate skip notes on stderr. It needs a concrete `--geojson` source; `--geojson auto` under `viz smart` resolves its boundaries from the data dictionary far later, and is refused rather than silently checking nothing.

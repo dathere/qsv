@@ -1,188 +1,85 @@
 /**
  * Tests for MCP elicitation-based working directory selection.
  *
- * These tests validate the elicitWorkingDirectory() method behavior
- * by testing the QsvMcpServer class indirectly through its exported
- * tool handler logic. Since elicitation depends on the Server instance
- * and client capabilities, we test the logic in isolation by extracting
- * the relevant patterns.
+ * These drive the REAL WorkingDirManager (src/working-dir-manager.ts) with test doubles for its
+ * two collaborators, rather than a copy of its logic. Three helpers used to be reimplemented in
+ * this file, under a note saying they "must be kept in sync with the server implementation. If
+ * these tests diverge from production, bugs may go undetected." They had diverged, and the note
+ * was right about the consequence: two tests asserted a capability gate production does not have
+ * (see the gate tests below), and the discovery helper hardcoded ~/Downloads, ~/Documents,
+ * ~/Desktop and ~ where production reads the filesystem provider's allowed-directory list. The
+ * well-known dirs are still the DEFAULT of that list (config.ts `allowedDirs`), so the observable
+ * suggestions did not change -- but the list is overridable via QSV_MCP_ALLOWED_DIRS, and the
+ * mirror could not see an override at all.
  *
- * NOTE: The helper functions below mirror the production code in mcp-server.ts.
- * They must be kept in sync with the server implementation. If these tests
- * diverge from production, bugs may go undetected.
+ * The mirror predated the extraction: mcp-server.ts calls main() at module scope and so cannot be
+ * imported, which is why the logic was copied. WorkingDirManager is an ordinary exported class,
+ * so that reason is gone.
  */
 
 import { describe, test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { writeFileSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { writeFileSync, mkdirSync } from "node:fs";
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import type { FilesystemResourceProvider } from "./../src/mcp-filesystem.js";
+import { WorkingDirManager } from "../src/working-dir-manager.js";
 import { createTestDir, cleanupTestDir } from "./test-helpers.js";
 
-/**
- * Discover well-known directories that exist on the user's system.
- * Mirrors discoverDirectories() from mcp-server.ts — uses async stat
- * via Promise.allSettled to avoid blocking the event loop.
- */
-async function discoverDirectories(currentWorkingDir: string): Promise<Array<{ path: string; label: string }>> {
-  const home = homedir();
+/** The two `Server` methods WorkingDirManager uses, typed against the real SDK signatures so a
+ * changed signature is a compile error here rather than a silently-satisfied fake. */
+type ServerDouble = Pick<Server, "getClientCapabilities" | "elicitInput">;
+/** Likewise for the filesystem provider. */
+type ProviderDouble = Pick<
+  FilesystemResourceProvider,
+  "getAllowedDirectories" | "getWorkingDirectory"
+>;
 
-  const wellKnown = [
-    { path: join(home, "Downloads"), label: "Downloads" },
-    { path: join(home, "Documents"), label: "Documents" },
-    { path: join(home, "Desktop"), label: "Desktop" },
-    { path: home, label: "Home" },
-  ];
-
-  const cwd = process.cwd();
-
-  const allCandidates = [
-    ...wellKnown,
-    { path: cwd, label: "Current Directory" },
-    { path: currentWorkingDir, label: "qsv Working Dir" },
-  ];
-
-  const results = await Promise.allSettled(
-    allCandidates.map(async (candidate) => {
-      const s = await stat(candidate.path);
-      return s.isDirectory() ? candidate : null;
-    }),
-  );
-
-  const seen = new Set<string>();
-  const candidates: Array<{ path: string; label: string }> = [];
-  for (const result of results) {
-    if (result.status === "fulfilled" && result.value) {
-      const { path } = result.value;
-      if (!seen.has(path)) {
-        seen.add(path);
-        candidates.push(result.value);
-      }
-    }
-  }
-
-  return candidates;
-}
-
-/**
- * Build a directory suggestion list for when elicitation is not available.
- * Mirrors buildDirectorySuggestions() from mcp-server.ts.
- */
-async function buildDirectorySuggestions(currentWorkingDir: string): Promise<string> {
-  const candidates = await discoverDirectories(currentWorkingDir);
-
-  const suggestions = candidates
-    .map((c) => `  - ${c.label}: ${c.path}`)
-    .join("\n");
-
-  return (
-    `No directory specified. Current working directory: ${currentWorkingDir}\n\n` +
-    `Available directories:\n${suggestions}\n\n` +
-    `Call qsv_set_working_dir with one of these paths (e.g. directory: "${candidates[0]?.path || currentWorkingDir}"), ` +
-    `or provide any other accessible directory path.`
+function makeManager(opts: {
+  capabilities?: ReturnType<Server["getClientCapabilities"]>;
+  elicitInput?: ServerDouble["elicitInput"];
+  allowedDirs?: readonly string[];
+  workingDir: string;
+}): WorkingDirManager {
+  const server: ServerDouble = {
+    getClientCapabilities: () => opts.capabilities,
+    elicitInput:
+      opts.elicitInput ??
+      (async () => {
+        throw new Error("elicitInput not stubbed for this test");
+      }),
+  };
+  const provider: ProviderDouble = {
+    getAllowedDirectories: () => opts.allowedDirs ?? [],
+    getWorkingDirectory: () => opts.workingDir,
+  };
+  // Casts are confined to this call: the doubles above are structurally checked against the real
+  // types, and only the unused remainder of each interface is waived.
+  return new WorkingDirManager(
+    server as Server,
+    provider as FilesystemResourceProvider,
+    (dir: string) => dir,
   );
 }
 
-/**
- * Simulate the elicitWorkingDirectory logic extracted from mcp-server.ts.
- * This mirrors the server method but accepts dependencies as parameters
- * for testability.
- */
-async function elicitWorkingDirectory(options: {
-  getClientCapabilities: () => { elicitation?: { form?: boolean } } | undefined;
-  elicitInput: (params: Record<string, unknown>) => Promise<{
-    action: string;
-    content?: Record<string, unknown>;
-  }>;
-  currentWorkingDir: string;
-}): Promise<{ directory?: string; fallback?: string }> {
-  const capabilities = options.getClientCapabilities();
-  if (!capabilities?.elicitation?.form) {
-    return { fallback: await buildDirectorySuggestions(options.currentWorkingDir) };
-  }
-
-  // Discover directories for the form
-  const candidates = await discoverDirectories(options.currentWorkingDir);
-
-  const enumValues = candidates.map((c) => c.path);
-  const enumLabels = candidates.map((c) => ({
-    const: c.path,
-    title: `${c.label} — ${c.path}`,
-  }));
-
-  try {
-    const result = await options.elicitInput({
-      mode: "form",
-      message: "Select a working directory for qsv file operations:",
-      requestedSchema: {
-        type: "object",
-        properties: {
-          selected_directory: {
-            type: "string",
-            title: "Directory",
-            description: "Choose from common directories",
-            enum: enumValues,
-            oneOf: enumLabels,
-          },
-          custom_path: {
-            type: "string",
-            title: "Custom Path (optional)",
-            description: "Or type a custom directory path (overrides selection above)",
-          },
-        },
-      },
-    });
-
-    if (result.action === "accept" && result.content) {
-      const customPath =
-        typeof result.content.custom_path === "string"
-          ? (result.content.custom_path as string).trim()
-          : "";
-      const selectedDir =
-        typeof result.content.selected_directory === "string"
-          ? (result.content.selected_directory as string).trim()
-          : "";
-
-      const chosenDir = customPath || selectedDir;
-
-      if (chosenDir) {
-        // Validate the chosen directory exists and is actually a directory
-        try {
-          const s = await stat(chosenDir);
-          if (!s.isDirectory()) {
-            return {
-              fallback: `"${chosenDir}" is not a directory. Please call qsv_set_working_dir with a valid directory path.`,
-            };
-          }
-        } catch {
-          return {
-            fallback: `Directory "${chosenDir}" does not exist or is not accessible. Please call qsv_set_working_dir with a valid directory path.`,
-          };
-        }
-        return { directory: chosenDir };
-      }
-
-      return {
-        fallback: "No directory was selected. Please call qsv_set_working_dir with a directory path.",
-      };
-    }
-
-    if (result.action === "decline") {
-      return {
-        fallback: "Directory selection was declined. The working directory remains unchanged. You can call qsv_set_working_dir with an explicit path.",
-      };
-    }
-
-    return {
-      fallback: "Directory selection was cancelled. The working directory remains unchanged.",
-    };
-  } catch {
-    return { fallback: await buildDirectorySuggestions(options.currentWorkingDir) };
-  }
+/** An `elicitInput` stub that records what schema the manager asked for. */
+function recordingElicit(
+  result: Awaited<ReturnType<ServerDouble["elicitInput"]>>,
+): { calls: Record<string, unknown>[]; fn: ServerDouble["elicitInput"] } {
+  const calls: Record<string, unknown>[] = [];
+  return {
+    calls,
+    fn: (async (params: Record<string, unknown>) => {
+      calls.push(params);
+      return result;
+    }) as ServerDouble["elicitInput"],
+  };
 }
 
-describe("elicitWorkingDirectory", () => {
+/** Capabilities that let the manager through its gate and on to elicitInput. */
+const ELICIT_CAPABLE = { elicitation: {} } as ReturnType<Server["getClientCapabilities"]>;
+
+describe("WorkingDirManager.discoverDirectories", () => {
   let testDir: string;
 
   beforeEach(async () => {
@@ -193,203 +90,313 @@ describe("elicitWorkingDirectory", () => {
     await cleanupTestDir(testDir);
   });
 
-  test("returns fallback with directory suggestions when client does not support elicitation", async () => {
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => undefined,
-      elicitInput: async () => ({ action: "accept", content: {} }),
-      currentWorkingDir: testDir,
-    });
+  test("candidates come from the allowed-directory list, labelled by basename", async () => {
+    const alpha = join(testDir, "alpha");
+    const beta = join(testDir, "beta");
+    mkdirSync(alpha);
+    mkdirSync(beta);
 
-    assert.ok(result.fallback);
-    assert.ok(result.fallback.includes("No directory specified"));
-    assert.ok(result.fallback.includes("Available directories:"));
-    assert.ok(result.fallback.includes(testDir));
+    const candidates = await makeManager({
+      allowedDirs: [alpha, beta],
+      workingDir: testDir,
+    }).discoverDirectories();
+
+    assert.deepStrictEqual(candidates, [
+      { path: alpha, label: "alpha" },
+      { path: beta, label: "beta" },
+      { path: testDir, label: "Current Directory" },
+    ]);
+  });
+
+  test("paths that are missing or are not directories are dropped", async () => {
+    const real = join(testDir, "real");
+    const missing = join(testDir, "missing");
+    const file = join(testDir, "a-file.csv");
+    mkdirSync(real);
+    writeFileSync(file, "h\n1\n");
+
+    const candidates = await makeManager({
+      allowedDirs: [real, missing, file],
+      workingDir: testDir,
+    }).discoverDirectories();
+
+    assert.deepStrictEqual(
+      candidates.map((c) => c.path),
+      [real, testDir],
+      "only the existing directory and the working dir survive",
+    );
+  });
+
+  test("the working directory is not listed twice when it is also an allowed dir", async () => {
+    const candidates = await makeManager({
+      allowedDirs: [testDir],
+      workingDir: testDir,
+    }).discoverDirectories();
+
+    assert.strictEqual(candidates.length, 1);
+    assert.notStrictEqual(
+      candidates[0]?.label,
+      "Current Directory",
+      "first occurrence wins, so the allowed-dir label is kept",
+    );
+  });
+});
+
+describe("WorkingDirManager.buildDirectorySuggestions", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir("qsv-elicit");
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  test("lists every discovered directory and offers the first as the example", async () => {
+    const alpha = join(testDir, "alpha");
+    mkdirSync(alpha);
+
+    const text = await makeManager({
+      allowedDirs: [alpha],
+      workingDir: testDir,
+    }).buildDirectorySuggestions();
+
+    assert.match(text, /No directory specified/);
+    assert.match(text, /Available directories:/);
+    assert.ok(text.includes(`  - alpha: ${alpha}`), "labelled entry for the allowed dir");
+    assert.ok(text.includes(`  - Current Directory: ${testDir}`));
+    assert.ok(text.includes(`directory: "${alpha}"`), "first candidate is the worked example");
+  });
+
+  test("falls back to the working directory as the example when nothing is discoverable", async () => {
+    const text = await makeManager({
+      allowedDirs: [join(testDir, "nope")],
+      workingDir: join(testDir, "also-gone"),
+    }).buildDirectorySuggestions();
+
+    assert.ok(text.includes(`directory: "${join(testDir, "also-gone")}"`));
+  });
+});
+
+describe("WorkingDirManager.elicitWorkingDirectory", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await createTestDir("qsv-elicit");
+  });
+
+  afterEach(async () => {
+    await cleanupTestDir(testDir);
+  });
+
+  // The gate is `if (capabilities && !capabilities.elicitation)`. Two earlier tests here asserted
+  // a DIFFERENT gate -- `!capabilities?.elicitation?.form` -- and so claimed that undefined
+  // capabilities, and an `elicitation` object with `form: false`, both short-circuit to the
+  // suggestion text. Neither does. Production treats any truthy `elicitation` value as support
+  // (deliberately: some clients, e.g. MCPB proxies, advertise the key with no details) and treats
+  // absent capabilities as "ask and find out". The tests below pin the real three-way split.
+  test("a client that sent capabilities without elicitation gets the suggestion text", async () => {
+    const { calls, fn } = recordingElicit({ action: "accept", content: {} });
+    const result = await makeManager({
+      capabilities: {} as ReturnType<Server["getClientCapabilities"]>,
+      elicitInput: fn,
+      allowedDirs: [testDir],
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
+
     assert.strictEqual(result.directory, undefined);
+    assert.match(result.fallback ?? "", /No directory specified/);
+    assert.strictEqual(calls.length, 0, "it must not attempt elicitation");
   });
 
-  test("returns fallback with suggestions when elicitation.form is false", async () => {
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: false } }),
-      elicitInput: async () => ({ action: "accept", content: {} }),
-      currentWorkingDir: testDir,
+  test("an elicitation capability with no details still counts as support", async () => {
+    const { calls, fn } = recordingElicit({
+      action: "accept",
+      content: { selected_directory: testDir },
     });
+    const result = await makeManager({
+      capabilities: { elicitation: {} } as ReturnType<Server["getClientCapabilities"]>,
+      elicitInput: fn,
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
 
-    assert.ok(result.fallback);
-    assert.ok(result.fallback.includes("Available directories:"));
+    assert.strictEqual(result.directory, testDir);
+    assert.strictEqual(calls.length, 1);
   });
 
-  test("returns directory when user accepts enum selection", async () => {
-    const selectedPath = testDir;
+  test("absent capabilities are not a refusal: it asks, and the throw becomes the fallback", async () => {
+    let asked = 0;
+    const result = await makeManager({
+      capabilities: undefined,
+      elicitInput: (async () => {
+        asked++;
+        throw new Error("client does not support elicitation");
+      }) as ServerDouble["elicitInput"],
+      allowedDirs: [testDir],
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
 
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: true } }),
-      elicitInput: async () => ({
+    assert.strictEqual(asked, 1, "the gate does not fire when capabilities are undefined");
+    assert.match(result.fallback ?? "", /Available directories:/);
+  });
+
+  test("returns the enum selection the user accepted", async () => {
+    const result = await makeManager({
+      capabilities: ELICIT_CAPABLE,
+      elicitInput: recordingElicit({
         action: "accept",
-        content: { selected_directory: selectedPath },
-      }),
-      currentWorkingDir: testDir,
-    });
+        content: { selected_directory: testDir },
+      }).fn,
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
 
-    assert.strictEqual(result.directory, selectedPath);
+    assert.strictEqual(result.directory, testDir);
     assert.strictEqual(result.fallback, undefined);
   });
 
-  test("custom_path overrides enum selection", async () => {
-    const customPath = testDir;
-    const enumPath = homedir();
+  test("custom_path overrides the enum selection", async () => {
+    const custom = join(testDir, "custom");
+    mkdirSync(custom);
 
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: true } }),
-      elicitInput: async () => ({
+    const result = await makeManager({
+      capabilities: ELICIT_CAPABLE,
+      elicitInput: recordingElicit({
         action: "accept",
-        content: {
-          selected_directory: enumPath,
-          custom_path: customPath,
-        },
-      }),
-      currentWorkingDir: testDir,
-    });
+        content: { selected_directory: testDir, custom_path: custom },
+      }).fn,
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
 
-    assert.strictEqual(result.directory, customPath);
+    assert.strictEqual(result.directory, custom);
   });
 
-  test("returns fallback when user declines", async () => {
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: true } }),
-      elicitInput: async () => ({ action: "decline" }),
-      currentWorkingDir: testDir,
-    });
-
-    assert.ok(result.fallback);
-    assert.ok(result.fallback.includes("declined"));
-    assert.strictEqual(result.directory, undefined);
-  });
-
-  test("returns fallback when user cancels", async () => {
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: true } }),
-      elicitInput: async () => ({ action: "cancel" }),
-      currentWorkingDir: testDir,
-    });
-
-    assert.ok(result.fallback);
-    assert.ok(result.fallback.includes("cancelled"));
-    assert.strictEqual(result.directory, undefined);
-  });
-
-  test("returns fallback with suggestions when elicitInput throws", async () => {
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: true } }),
-      elicitInput: async () => {
-        throw new Error("Connection lost");
-      },
-      currentWorkingDir: testDir,
-    });
-
-    assert.ok(result.fallback);
-    assert.ok(result.fallback.includes("Available directories:"));
-    assert.strictEqual(result.directory, undefined);
-  });
-
-  test("returns fallback when accept but no directory selected", async () => {
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: true } }),
-      elicitInput: async () => ({
-        action: "accept",
-        content: {},
-      }),
-      currentWorkingDir: testDir,
-    });
-
-    assert.ok(result.fallback);
-    assert.ok(result.fallback.includes("No directory was selected"));
-  });
-
-  test("trims whitespace from custom_path", async () => {
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: true } }),
-      elicitInput: async () => ({
+  test("custom_path is trimmed", async () => {
+    const result = await makeManager({
+      capabilities: ELICIT_CAPABLE,
+      elicitInput: recordingElicit({
         action: "accept",
         content: { custom_path: `  ${testDir}  ` },
-      }),
-      currentWorkingDir: testDir,
-    });
+      }).fn,
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
 
     assert.strictEqual(result.directory, testDir);
   });
 
-  test("empty custom_path falls through to selected_directory", async () => {
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: true } }),
-      elicitInput: async () => ({
+  test("a whitespace-only custom_path falls through to the enum selection", async () => {
+    const result = await makeManager({
+      capabilities: ELICIT_CAPABLE,
+      elicitInput: recordingElicit({
         action: "accept",
-        content: {
-          custom_path: "   ",
-          selected_directory: testDir,
-        },
-      }),
-      currentWorkingDir: testDir,
-    });
+        content: { selected_directory: testDir, custom_path: "   " },
+      }).fn,
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
 
     assert.strictEqual(result.directory, testDir);
   });
 
-  test("elicitInput receives form schema with enum values", async () => {
-    let capturedParams: Record<string, unknown> | null = null;
-
-    await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: true } }),
-      elicitInput: async (params) => {
-        capturedParams = params;
-        return { action: "cancel" };
-      },
-      currentWorkingDir: testDir,
-    });
-
-    assert.ok(capturedParams);
-    assert.strictEqual((capturedParams as Record<string, unknown>).mode, "form");
-    assert.ok((capturedParams as Record<string, unknown>).message);
-    assert.ok((capturedParams as Record<string, unknown>).requestedSchema);
-
-    const schema = (capturedParams as Record<string, unknown>).requestedSchema as Record<string, unknown>;
-    const props = schema.properties as Record<string, Record<string, unknown>>;
-    assert.ok(props.selected_directory);
-    assert.ok(props.custom_path);
-    assert.ok(Array.isArray(props.selected_directory.enum));
-    assert.ok((props.selected_directory.enum as string[]).length > 0);
-  });
-
-  test("returns fallback when custom_path points to a non-existent directory", async () => {
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: true } }),
-      elicitInput: async () => ({
-        action: "accept",
-        content: { custom_path: "/nonexistent/path/that/does/not/exist" },
-      }),
-      currentWorkingDir: testDir,
-    });
+  test("accepting without choosing anything asks for an explicit path", async () => {
+    const result = await makeManager({
+      capabilities: ELICIT_CAPABLE,
+      elicitInput: recordingElicit({ action: "accept", content: {} }).fn,
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
 
     assert.strictEqual(result.directory, undefined);
-    assert.ok(result.fallback);
-    assert.ok(result.fallback!.includes("does not exist"));
+    assert.match(result.fallback ?? "", /No directory was selected/);
   });
 
-  test("returns fallback when custom_path points to a file instead of a directory", async () => {
-    const filePath = join(testDir, "not-a-directory.txt");
-    writeFileSync(filePath, "test content");
+  test("declining leaves the working directory unchanged", async () => {
+    const result = await makeManager({
+      capabilities: ELICIT_CAPABLE,
+      elicitInput: recordingElicit({ action: "decline" }).fn,
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
 
-    const result = await elicitWorkingDirectory({
-      getClientCapabilities: () => ({ elicitation: { form: true } }),
-      elicitInput: async () => ({
+    assert.match(result.fallback ?? "", /declined/);
+    assert.match(result.fallback ?? "", /remains unchanged/);
+  });
+
+  test("cancelling leaves the working directory unchanged", async () => {
+    const result = await makeManager({
+      capabilities: ELICIT_CAPABLE,
+      elicitInput: recordingElicit({ action: "cancel" }).fn,
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
+
+    assert.match(result.fallback ?? "", /cancelled/);
+    assert.match(result.fallback ?? "", /remains unchanged/);
+  });
+
+  test("a chosen path that does not exist is rejected, not adopted", async () => {
+    const missing = join(testDir, "no-such-dir");
+    const result = await makeManager({
+      capabilities: ELICIT_CAPABLE,
+      elicitInput: recordingElicit({
         action: "accept",
-        content: { custom_path: filePath },
-      }),
-      currentWorkingDir: testDir,
-    });
+        content: { custom_path: missing },
+      }).fn,
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
 
     assert.strictEqual(result.directory, undefined);
-    assert.ok(result.fallback);
-    assert.ok(result.fallback!.includes("is not a directory"));
+    assert.ok(result.fallback?.includes("does not exist or is not accessible"));
+    assert.ok(result.fallback?.includes(missing));
+  });
+
+  test("a chosen path that is a file is rejected with a distinct message", async () => {
+    const file = join(testDir, "data.csv");
+    writeFileSync(file, "h\n1\n");
+
+    const result = await makeManager({
+      capabilities: ELICIT_CAPABLE,
+      elicitInput: recordingElicit({
+        action: "accept",
+        content: { custom_path: file },
+      }).fn,
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
+
+    assert.strictEqual(result.directory, undefined);
+    assert.ok(result.fallback?.includes("is not a directory"));
+  });
+
+  test("the form schema offers exactly the discovered directories", async () => {
+    const alpha = join(testDir, "alpha");
+    mkdirSync(alpha);
+
+    const { calls, fn } = recordingElicit({
+      action: "accept",
+      content: { selected_directory: alpha },
+    });
+    await makeManager({
+      capabilities: ELICIT_CAPABLE,
+      elicitInput: fn,
+      allowedDirs: [alpha],
+      workingDir: testDir,
+    }).elicitWorkingDirectory();
+
+    assert.strictEqual(calls.length, 1);
+    const params = calls[0] as {
+      mode?: string;
+      requestedSchema?: {
+        properties?: {
+          selected_directory?: { enum?: string[]; oneOf?: { const: string; title: string }[] };
+          custom_path?: unknown;
+        };
+      };
+    };
+    assert.strictEqual(params.mode, "form");
+    const selected = params.requestedSchema?.properties?.selected_directory;
+    assert.deepStrictEqual(selected?.enum, [alpha, testDir]);
+    assert.deepStrictEqual(selected?.oneOf?.map((o) => o.const), [alpha, testDir]);
+    assert.ok(
+      selected?.oneOf?.[0]?.title.includes("alpha"),
+      "the label the user reads comes from discoverDirectories",
+    );
+    assert.ok(params.requestedSchema?.properties?.custom_path, "custom path stays available");
   });
 });
 

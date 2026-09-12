@@ -109,10 +109,12 @@ test('COMMON_COMMANDS and CORE_TOOLS are disjoint sets', () => {
 test('deferred loading reduces initial tool count significantly', async () => {
   const loader = new SkillLoader();
   const skills = await loader.loadAll();
-  const coreToolCount = CORE_TOOLS.length;
+  // what core-only mode actually EXPOSES, which is the number that determines the token cost.
+  // (Also avoids shadowing the imported `coreToolCount` function with a local of the same name.)
+  const exposedCoreTools = coreToolCount(false);
   const totalSkillCount = skills.size;
 
-  const coreOnlyReduction = 1 - (coreToolCount / totalSkillCount);
+  const coreOnlyReduction = 1 - (exposedCoreTools / totalSkillCount);
   assert.ok(
     coreOnlyReduction >= 0.75,
     `Core-only mode should reduce tokens by ≥75% (actual: ${(coreOnlyReduction * 100).toFixed(0)}%)`

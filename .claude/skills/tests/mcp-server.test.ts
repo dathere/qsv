@@ -3,7 +3,7 @@
  *
  * Since QsvMcpServer is not exported, we test through:
  * 1. Exported constants and functions from mcp-tools.ts (which the server delegates to)
- * 2. The CORE_TOOLS constant behavior (via re-declaration for validation)
+ * 2. The CORE_TOOLS constant, imported from tool-constants.ts (see the note below)
  * 3. Exported handler functions (handleToolCall, handleGenericCommand, etc.)
  * 4. Shutdown and process management functions
  * 5. Server instructions content
@@ -29,6 +29,11 @@ import {
   getActiveOperationCount,
   buildConversionArgs,
 } from "../src/mcp-tools.js";
+import {
+  CORE_TOOLS,
+  APP_ONLY_CORE_TOOL,
+  coreToolCount,
+} from "../src/tool-constants.js";
 import { SkillLoader } from "../src/loader.js";
 import { SkillExecutor } from "../src/executor.js";
 import { FilesystemResourceProvider } from "../src/mcp-filesystem.js";
@@ -43,23 +48,26 @@ import { existsSync, statSync } from "node:fs";
 // CORE_TOOLS Constant Tests
 // ============================================================================
 
-// Mirror the CORE_TOOLS constant from mcp-server.ts for validation
-// (not importable since the class is not exported)
-const CORE_TOOLS = [
-  "qsv_search_tools",
-  "qsv_config",
-  "qsv_set_working_dir",
-  "qsv_get_working_dir",
-  "qsv_list_files",
-  "qsv_log",
-  "qsv_command",
-  "qsv_to_parquet",
-  "qsv_index",
-  "qsv_stats",
-] as const;
+// CORE_TOOLS is IMPORTED, not mirrored. A local copy lived here with the comment "not
+// importable since the class is not exported" -- true of the server class, but the constant
+// itself now lives in tool-constants.ts. That copy had gone stale: it listed 10 entries and
+// omitted qsv_browse_directory, and its length assertion pinned 10, so it would have kept
+// passing while production exposed a different set.
+//
+// The two numbers are different questions and both are asserted below:
+//   CORE_TOOLS.length     -- how many core tools are CONFIGURED (11)
+//   coreToolCount(false)  -- how many a session without MCP Apps EXPOSES (10)
+test("CORE_TOOLS holds every configured core tool, app-gated one included", () => {
+  assert.strictEqual(CORE_TOOLS.length, 11, "11 core tools are configured");
+  assert.ok(
+    CORE_TOOLS.includes(APP_ONLY_CORE_TOOL as typeof CORE_TOOLS[number]),
+    `${APP_ONLY_CORE_TOOL} is one of them, and is the app-gated entry`,
+  );
+});
 
-test("CORE_TOOLS has exactly 10 entries", () => {
-  assert.strictEqual(CORE_TOOLS.length, 10);
+test("a session exposes 10 core tools without MCP Apps and 11 with", () => {
+  assert.strictEqual(coreToolCount(false), 10);
+  assert.strictEqual(coreToolCount(true), CORE_TOOLS.length);
 });
 
 test("CORE_TOOLS all have qsv_ prefix", () => {

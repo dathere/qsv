@@ -61,7 +61,7 @@
         "flag": "--infer-len",
         "type": "number",
         "description": "Number of rows to scan when inferring schema. Set to 0 to scan entire file.",
-        "default": "10000"
+        "default": 10000
       },
       {
         "flag": "--maintain-order",
@@ -72,7 +72,7 @@
         "flag": "--max-columns",
         "type": "number",
         "description": "Maximum number of columns the pivot may create before it is refused. Guards against pivoting on a high-cardinality column, which can exhaust memory. Unlike --validate, this ALWAYS runs. Set to 0 for no limit, for a deliberately wide pivot. (pivot mode only; ignored in group-by mode)",
-        "default": "100000"
+        "default": 100000
       },
       {
         "flag": "--output",

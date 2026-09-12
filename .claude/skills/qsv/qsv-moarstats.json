@@ -28,7 +28,7 @@
         "flag": "--bivariate-batch",
         "type": "number",
         "description": "Process at most <n> field pairs per pass over the input, bounding peak memory at the cost of extra passes. Peak memory is otherwise O(columns^2) regardless of row count - a 160-column, 100k-row (60 MB) input needs ~21 GiB with mi/nmi/u enabled. Extra passes are cheap, so prefer the largest <n> that fits. Only applies to indexed input with >= 10,000 rows. Set to 0 to process all pairs in one pass.",
-        "default": "0"
+        "default": 0
       },
       {
         "flag": "--bivariate-stats",
@@ -45,7 +45,7 @@
         "flag": "--epsilon",
         "type": "number",
         "description": "The Atkinson Index Inequality Aversion parameter. Epsilon controls the sensitivity of the Atkinson Index to inequality. The higher the epsilon, the more sensitive the index is to inequality. Typical values are 0.5 (standard in economic research), 1.0 (natural boundary), or 2.0 (useful for poverty analysis).",
-        "default": "1.0"
+        "default": 1.0
       },
       {
         "flag": "--force",
@@ -83,7 +83,7 @@
         "flag": "--round",
         "type": "number",
         "description": "Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule.",
-        "default": "4"
+        "default": 4
       },
       {
         "flag": "--stats-options",

@@ -65,13 +65,13 @@
         "flag": "--pad",
         "type": "number",
         "description": "The zero padding width that is used in the generated filename.",
-        "default": "0"
+        "default": 0
       },
       {
         "flag": "--size",
         "type": "number",
         "description": "The number of records to write into each chunk.",
-        "default": "500"
+        "default": 500
       }
     ]
   },

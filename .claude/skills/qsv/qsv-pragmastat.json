@@ -43,7 +43,7 @@
         "flag": "--misrate",
         "type": "number",
         "description": "Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size.",
-        "default": "0.001"
+        "default": 0.001
       },
       {
         "flag": "--no-bounds",
@@ -64,7 +64,7 @@
         "flag": "--round",
         "type": "number",
         "description": "Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule.",
-        "default": "4"
+        "default": 4
       },
       {
         "flag": "--seed",

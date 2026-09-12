@@ -77,7 +77,7 @@
         "flag": "--infer-len",
         "type": "number",
         "description": "The number of rows to scan when inferring the schema of the CSV. Set to 0 to do a full table scan (warning: can be slow).",
-        "default": "10000"
+        "default": 10000
       },
       {
         "flag": "--low-memory",

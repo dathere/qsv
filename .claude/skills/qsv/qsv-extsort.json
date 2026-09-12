@@ -29,7 +29,7 @@
         "flag": "--memory-limit",
         "type": "number",
         "description": "The maximum amount of memory to buffer the external merge sort. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory.",
-        "default": "20"
+        "default": 20
       },
       {
         "flag": "--no-headers",

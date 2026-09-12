@@ -29,7 +29,7 @@
         "flag": "--enum-threshold",
         "type": "number",
         "description": "Cardinality threshold for adding enum constraints. Enum constraints are compiled for String & Integer types.",
-        "default": "50"
+        "default": 50
       },
       {
         "flag": "--force",

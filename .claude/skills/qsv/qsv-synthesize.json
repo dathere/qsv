@@ -23,7 +23,7 @@
         "flag": "--correlation-threshold",
         "type": "number",
         "description": "Minimum absolute Spearman correlation for a pair of columns to stay in a `correlated` relationship. Weakly-correlated members are dropped.",
-        "default": "0.3"
+        "default": 0.3
       },
       {
         "flag": "--delimiter",
@@ -39,7 +39,7 @@
         "flag": "--freq-limit",
         "type": "number",
         "description": "Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited.",
-        "default": "100"
+        "default": 100
       },
       {
         "flag": "--infer-content-type",
@@ -50,7 +50,7 @@
         "flag": "--joint-cardinality-cap",
         "type": "number",
         "description": "Maximum number of distinct value-tuples a `joint` relationship may have. A joint group above this cap falls back to independent generation (or aborts under --strict-relationships). 0 means unlimited.",
-        "default": "100000"
+        "default": 100000
       },
       {
         "flag": "--locale",
@@ -72,7 +72,7 @@
         "flag": "--rows",
         "type": "number",
         "description": "Number of synthetic rows to generate.",
-        "default": "100"
+        "default": 100
       },
       {
         "flag": "--seed",

@@ -33,13 +33,13 @@
         "flag": "--backtrack-limit",
         "type": "number",
         "description": "Set the approximate number of backtracking steps allowed. This is only used when --fancy-regex is set.",
-        "default": "1000000"
+        "default": 1000000
       },
       {
         "flag": "--batch",
         "type": "number",
         "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows.",
-        "default": "50000"
+        "default": 50000
       },
       {
         "flag": "--cache-dir",
@@ -62,7 +62,7 @@
         "flag": "--dfa-size-limit",
         "type": "number",
         "description": "Set the approximate capacity, in megabytes, of the cache of transitions used by the engine's lazy Discrete Finite Automata.",
-        "default": "10"
+        "default": 10
       },
       {
         "flag": "--email-display-text",
@@ -78,7 +78,7 @@
         "flag": "--email-min-subdomains",
         "type": "number",
         "description": "Minimum number of subdomains required in the email. e.g. \"jdoe@example.com\" is INVALID if this option is set to 3, but \"jdoe@sub.example.com\" is VALID.",
-        "default": "2"
+        "default": 2
       },
       {
         "flag": "--email-required-tld",
@@ -125,7 +125,7 @@
         "flag": "--size-limit",
         "type": "number",
         "description": "Set the approximate size limit, in megabytes, of a compiled regex.",
-        "default": "50"
+        "default": 50
       },
       {
         "flag": "--split-ragged",
@@ -136,7 +136,7 @@
         "flag": "--timeout",
         "type": "number",
         "description": "Timeout for downloading json-schemas on URLs and for 'dynamicEnum' lookups on URLs. If 0, no timeout is used.",
-        "default": "30"
+        "default": 30
       },
       {
         "flag": "--trim",

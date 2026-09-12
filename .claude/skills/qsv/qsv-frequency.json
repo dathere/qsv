@@ -44,13 +44,13 @@
         "flag": "--high-card-pct",
         "type": "number",
         "description": "Percentage of rowcount threshold for HIGH_CARDINALITY classification in the frequency cache. Must be between 1 and 100. Can also be set with QSV_FREQ_HIGH_CARD_PCT env var (env var takes precedence when CLI value equals the default). Only used with --frequency-jsonl.",
-        "default": "90"
+        "default": 90
       },
       {
         "flag": "--high-card-threshold",
         "type": "number",
         "description": "Absolute cardinality threshold for HIGH_CARDINALITY classification in the frequency cache. Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var (env var takes precedence when CLI value equals the default). Only used with --frequency-jsonl.",
-        "default": "100"
+        "default": 100
       },
       {
         "flag": "--ignore-case",
@@ -66,13 +66,13 @@
         "flag": "--limit",
         "type": "number",
         "description": "Limit the frequency table to the N most common items. Set to '0' to disable a limit. If negative, only return values with an occurrence count >= absolute value of the negative limit. e.g. --limit -2 will only return values with an occurrence count >= 2.",
-        "default": "10"
+        "default": 10
       },
       {
         "flag": "--lmt-threshold",
         "type": "number",
         "description": "The threshold for which --limit and --unq-limit will be applied. If the number of unique items in a column >= threshold, the limits will be applied. Set to '0' to disable the threshold and always apply limits.",
-        "default": "0"
+        "default": 0
       },
       {
         "flag": "--memcheck",
@@ -140,7 +140,7 @@
         "flag": "--pct-dec-places",
         "type": "number",
         "description": "The number of decimal places to round the percentage to. If negative, the number of decimal places will be set automatically to the minimum number of decimal places needed to represent the percentage accurately, up to the absolute value of the negative number.",
-        "default": "-5"
+        "default": -5
       },
       {
         "flag": "--pct-nulls",
@@ -167,7 +167,7 @@
         "flag": "--sketch-map-size",
         "type": "number",
         "description": "Maximum map size for the Frequent Items sketch. Must be a power of two and at least 8. Larger values tighten error bounds at the cost of more memory. Only used when sketch-method is frequent_items.",
-        "default": "4096"
+        "default": 4096
       },
       {
         "flag": "--sketch-method",
@@ -189,7 +189,7 @@
         "flag": "--unq-limit",
         "type": "number",
         "description": "If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit. Only applies in unweighted mode; ignored when --weight is set.",
-        "default": "10"
+        "default": 10
       },
       {
         "flag": "--vis-whitespace",

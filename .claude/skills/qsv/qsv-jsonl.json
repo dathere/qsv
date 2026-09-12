@@ -18,7 +18,7 @@
         "flag": "--batch",
         "type": "number",
         "description": "The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch.",
-        "default": "50000"
+        "default": 50000
       },
       {
         "flag": "--delimiter",

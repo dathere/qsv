@@ -241,3 +241,52 @@ fn positional_types_agree_across_commands() {
         Some("number")
     );
 }
+
+/// A default must agree with the type it sits beside. `tool-definitions.ts`
+/// copies an option's default straight into the MCP tool schema, so a `number`
+/// option advertising `"default": "32"` hands clients a self-contradictory
+/// contract: fill in the advertised default and the executor's strict
+/// `typeof value === "number"` check rejects it.
+#[test]
+fn defaults_agree_with_their_option_type() {
+    let mut wrong = Vec::new();
+    let mut numeric_defaults = 0;
+    for path in skill_files() {
+        let json = parse(&path);
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        for opt in json["command"]["options"].as_array().into_iter().flatten() {
+            let Some(default) = opt.get("default") else {
+                continue;
+            };
+            let flag = opt["flag"].as_str().unwrap_or("?");
+            match opt["type"].as_str() {
+                Some("number") => {
+                    if default.is_number() {
+                        numeric_defaults += 1;
+                    } else {
+                        wrong.push(format!("{name}: {flag} is a number with default {default}"));
+                    }
+                },
+                // every other type maps to a JSON Schema string
+                _ => {
+                    if !default.is_string() {
+                        wrong.push(format!("{name}: {flag} is a string with default {default}"));
+                    }
+                },
+            }
+        }
+    }
+
+    assert!(
+        wrong.is_empty(),
+        "skill JSONs whose defaults contradict their type (regenerate with `qsv \
+         --update-mcp-skills`):\n  {}",
+        wrong.join("\n  ")
+    );
+    // guard the guard: if defaults ever stop being emitted, the loop above
+    // passes by never running
+    assert!(
+        numeric_defaults > 50,
+        "only {numeric_defaults} numeric defaults found - are defaults still being emitted?"
+    );
+}

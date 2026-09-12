@@ -60,7 +60,7 @@ struct Option_ {
     required:    Option<bool>,
     description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    default:     Option<String>,
+    default:     Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -128,6 +128,26 @@ impl UsageParser {
                 | "f32"
                 | "f64"
         )
+    }
+
+    /// A default value, typed to agree with the option it belongs to.
+    ///
+    /// `tool-definitions.ts` copies an option's default straight into the MCP
+    /// tool schema, so a `number` option advertising `"default": "32"` hands
+    /// clients a self-contradictory contract: fill in the advertised default
+    /// and the executor's strict `typeof value === "number"` check rejects it.
+    ///
+    /// A default that does not parse as a JSON number stays a string rather
+    /// than becoming an error - the type is inferred from the args struct, so
+    /// disagreeing with the USAGE `[default: ...]` is possible in principle,
+    /// and a visibly odd default beats a failed generation.
+    fn typed_default(raw: String, option_type: &str) -> serde_json::Value {
+        if option_type == "number"
+            && let Ok(value @ serde_json::Value::Number(_)) = serde_json::from_str(raw.trim())
+        {
+            return value;
+        }
+        serde_json::Value::String(raw)
     }
 
     /// The declared Rust type of the struct field a flag deserializes into,
@@ -497,7 +517,7 @@ impl UsageParser {
                         option_type: option_type.to_string(),
                         required,
                         description,
-                        default,
+                        default: default.map(|d| Self::typed_default(d, option_type)),
                     });
                 },
                 Atom::Long(name) => {
@@ -613,7 +633,7 @@ impl UsageParser {
                         option_type: option_type.to_string(),
                         required,
                         description,
-                        default,
+                        default: default.map(|d| Self::typed_default(d, option_type)),
                     });
                 },
                 Atom::Positional(name) => {
@@ -2198,6 +2218,24 @@ mod tests {
     // ------------------------------------------------------------------
     // #4596 - types come from the deserialized args struct, not from prose
     // ------------------------------------------------------------------
+
+    #[test]
+    fn defaults_are_typed_to_match_their_option() {
+        let t = UsageParser::typed_default;
+        assert_eq!(t("32".to_string(), "number"), serde_json::json!(32));
+        // a falsy-but-real default: nine options ship `0`
+        assert_eq!(t("0".to_string(), "number"), serde_json::json!(0));
+        assert_eq!(t("2.5".to_string(), "number"), serde_json::json!(2.5));
+        assert_eq!(t(" 7 ".to_string(), "number"), serde_json::json!(7));
+        // strings stay strings, and a numeric-LOOKING default on a string
+        // option must not be silently renumbered
+        assert_eq!(t("32".to_string(), "string"), serde_json::json!("32"));
+        assert_eq!(t("auto".to_string(), "string"), serde_json::json!("auto"));
+        // a number-typed option whose default will not parse keeps the raw
+        // text rather than failing generation
+        assert_eq!(t("auto".to_string(), "number"), serde_json::json!("auto"));
+        assert_eq!(t("true".to_string(), "number"), serde_json::json!("true"));
+    }
 
     #[test]
     fn rust_type_numeric_shapes() {

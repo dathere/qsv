@@ -33,7 +33,7 @@
         "flag": "--length",
         "type": "number",
         "description": "The number of output bytes, before hex encoding.",
-        "default": "32"
+        "default": 32
       },
       {
         "flag": "--no-mmap",

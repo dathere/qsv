@@ -188,13 +188,13 @@
         "flag": "--grid-cols",
         "type": "number",
         "description": "Number of columns in the Data Schematic grid for the per-column distribution panels. Overview panels (map/geo, correlation, time-series) always span the full width.",
-        "default": "2"
+        "default": 2
       },
       {
         "flag": "--heatmap-density",
         "type": "number",
         "description": "For the `viz smart` map panel: at or above <n> mappable points, draw the core as a density heatmap (DensityMap) instead of markers, keeping per-point hover. Defaults to 0 (disabled): dense point maps instead open as individual points with an in-map \"Clusters/Points\" toggle rather than aggregating into a static heat surface. Set a positive <n> to opt back in.",
-        "default": "0"
+        "default": 0
       },
       {
         "flag": "--height",
@@ -226,7 +226,7 @@
         "flag": "--limit",
         "type": "number",
         "description": "Top-N categories per frequency bar chart.",
-        "default": "10"
+        "default": 10
       },
       {
         "flag": "--location-mode",
@@ -264,7 +264,7 @@
         "flag": "--max-charts",
         "type": "number",
         "description": "Maximum number of panels in the Data Schematic. 0 (the default) means auto: draw every eligible column (up to 64), for both HTML and static image export. Up to 8 cartesian panels render as one typed subplot grid; beyond 8, HTML switches to an inline-div grid and static export uses domain-positioned axes to fit one image. Set a positive <n> to cap the panel count instead; eligible columns beyond the cap are reported but not drawn.",
-        "default": "0"
+        "default": 0
       },
       {
         "flag": "--no-headers",
@@ -310,7 +310,7 @@
         "flag": "--preview-threshold",
         "type": "number",
         "description": "Row threshold for the interactive data viewer drawer of HTML dashboards. Next to the row count in the metadata table, an \"(Explore)\" link opens the underlying table in a bottom drawer (with global, per-column and builder search) when the dataset has at most <n> rows and ALL rows are embedded; above <n>, only the first <n> rows are embedded and the link reads \"(Preview)\". Embedded rows grow the HTML file, and browser memory, in proportion to rows x columns. Set to 0 to disable the data viewer entirely (no link, no embedded data). `smart` HTML only.",
-        "default": "50000"
+        "default": 50000
       },
       {
         "flag": "--projection",
@@ -337,7 +337,7 @@
         "flag": "--scale",
         "type": "number",
         "description": "Image scale factor (static export).",
-        "default": "1.0"
+        "default": 1.0
       },
       {
         "flag": "--series",
@@ -363,7 +363,7 @@
         "flag": "--slider-speed",
         "type": "number",
         "description": "Milliseconds each animation frame is shown while playing.",
-        "default": "800"
+        "default": 800
       },
       {
         "flag": "--smarter",

@@ -1,0 +1,161 @@
+name: Publish (Linux only)
+
+# Rebuild and re-upload ONLY the Linux targets for the current release tag.
+#
+# The Linux sibling of publish-windows.yml, and it exists for the same reason: publish.yml
+# rebuilds all five targets and its upload step runs with overwrite: true, so re-running it
+# to fix ONE target also rebuilds and REPLACES the assets that already published fine. PGO
+# output is not deterministic, so those replacements are not byte-identical to what users
+# may already have downloaded.
+#
+# Why a Linux one was needed: in run 34670874141 (23.0.0) x86_64-unknown-linux-gnu failed
+# three times while every other target succeeded, leaving the release without its main
+# Linux binary. All three attempts died the same way - the PGO training step OOM-killed the
+# runner VM ("The hosted runner lost communication with the server" / exit 143), because
+# pgo-train.sh pivoted on a column with 841,014 distinct values. See issue #4589 and the
+# fix in 139c2ef33.
+#
+# Currently covers x86_64-unknown-linux-gnu only - the one Linux target that has ever
+# needed a retry. If musl or aarch64 ever needs one, copy its entry from publish.yml
+# verbatim; scripts/check-publish-matrix-sync.py accepts any SUBSET of publish.yml's Linux
+# entries but requires each one present here to match publish.yml exactly.
+#
+# The matrix entry below MUST stay identical to publish.yml's entry for the same target, or
+# a retry would ship binaries built with different features than the full run would have.
+# scripts/check-publish-matrix-sync.py enforces that and runs in CI - if you edit the
+# x86_64-unknown-linux-gnu entry here or in publish.yml, edit both.
+#
+# Manual dispatch only: a tag push should run the full publish.yml.
+
+# see publish-target.yml - a caller's workflow-level env does NOT reach a reusable
+# workflow, so QSV_KIND is set there, not here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: >-
+          Ref to BUILD from. Default (empty) = the dispatched commit, NOT the release tag -
+          see the source_ref note below. Assets are always named with the release tag.
+        type: string
+        required: false
+        default: ''
+      release_tag:
+        description: >-
+          Release tag to upload to. Empty = auto-detect (see the analyze-tags guard).
+        type: string
+        required: false
+        default: ''
+
+jobs:
+  analyze-tags:
+    runs-on: ubuntu-22.04
+    outputs:
+      previous-tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Get previous tag
+        id: previoustag
+        if: ${{ inputs.release_tag == '' }}
+        uses: "WyriHaximus/github-action-get-previous-tag@v2"
+      # This workflow is dispatched from an UNTAGGED master, whereas publish.yml runs with
+      # HEAD at the tag - so tag auto-detection is not exercised the same way here, and it
+      # has never actually reached the upload step. The repo also carries non-version tags
+      # (`git tag --sort=-version:refname | head -1` returns `rkyv`), so a wrong resolution
+      # is plausible, and svenstaro/upload-release-action runs with overwrite: true. Assert
+      # the shape before anything spends hours building.
+      - name: Resolve and validate release tag
+        id: resolve
+        shell: bash
+        env:
+          OVERRIDE: ${{ inputs.release_tag }}
+          DETECTED: ${{ steps.previoustag.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${OVERRIDE:-$DETECTED}"
+          echo "override='$OVERRIDE' detected='$DETECTED' -> resolved='$TAG'"
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::resolved release tag '$TAG' is not MAJOR.MINOR.PATCH." \
+                 "Re-dispatch with release_tag set explicitly."
+            exit 1
+          fi
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::release '$TAG' does not exist - refusing to create one from a" \
+                 "Linux-only retry."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish for ${{ matrix.job.target }}
+    needs: analyze-tags
+    strategy:
+      # don't cancel the other target build if one fails; each publishes independently
+      fail-fast: false
+      matrix:
+        rust: [stable]
+        job:
+          #### KEEP IN SYNC WITH publish.yml (enforced by check-publish-matrix-sync.py) ####
+          - os: ubuntu-24.04
+            os-name: linux
+            target: x86_64-unknown-linux-gnu
+            architecture: x86_64
+            use-cross: false
+            addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,readstat,to,lens,prompt,magika,color,viz_static,viz,profile,synthesize
+            default-features:
+            addl-qsvlite-features:
+            addl-qsvdp-features:
+            addl-rustflags:
+            # native runner - PGO-optimize the main qsv binary (issue #1448)
+            pgo: true
+            pgo-train-flags:
+            pgo-lto:
+            # no link-time tuning - keep Cargo.toml's fat LTO + codegen-units=1
+            lto:
+            codegen-units:
+            # sequential build keeps the #4372 dependency sharing, worth more here than parallelism
+            split-mcp: false
+          #### END KEEP IN SYNC ####
+    uses: ./.github/workflows/publish-target.yml
+    with:
+      os: ${{ matrix.job.os }}
+      os_name: ${{ matrix.job.os-name }}
+      target: ${{ matrix.job.target }}
+      previous_tag: ${{ needs.analyze-tags.outputs.previous-tag }}
+      # Build the DISPATCHED COMMIT by default, not the release tag - the opposite of
+      # publish.yml, and deliberate. This workflow only runs when a Linux publish has
+      # already failed, and the fix for such a failure routinely lives OUTSIDE the source
+      # that the tag pins - 23.0.0's fix was in scripts/pgo-train.sh, which a tag checkout
+      # would revert while the matrix-level settings in this same file silently took
+      # effect. Pinned to the SHA, not a branch name, so a push mid-run cannot change what
+      # is being built.
+      #
+      # The tradeoff is real: the uploaded zip is named for the release tag but built from
+      # a later commit, so it can differ from that tag's other platforms. If you want every
+      # platform on one source, cut a new release instead.
+      source_ref: ${{ inputs.source_ref != '' && inputs.source_ref || github.sha }}
+      rust: ${{ matrix.rust }}
+      addl_build_args: ${{ matrix.job.addl-build-args }}
+      default_features: ${{ matrix.job.default-features }}
+      addl_qsvlite_features: ${{ matrix.job.addl-qsvlite-features }}
+      addl_qsvdp_features: ${{ matrix.job.addl-qsvdp-features }}
+      addl_rustflags: ${{ matrix.job.addl-rustflags }}
+      # publish.yml writes these as `${{ matrix.job.musl-prep || false }}` /
+      # `${{ ... job-timeout || 240 }}` because SOME entry in its five-target matrix sets
+      # them. Neither key exists on the single entry here, so the same expression would
+      # reference an undefined matrix property (actionlint flags it, and `job_timeout`
+      # would be passed as a string to a `type: number` input). Pass the literals instead -
+      # the same fix publish-windows.yml uses for `musl_prep`. 240 is publish-target.yml's
+      # own declared default for job_timeout, so this is not a new policy.
+      musl_prep: false
+      pgo: ${{ matrix.job.pgo || false }}
+      pgo_train_flags: ${{ matrix.job.pgo-train-flags }}
+      pgo_lto: ${{ matrix.job.pgo-lto }}
+      lto: ${{ matrix.job.lto }}
+      codegen_units: ${{ matrix.job.codegen-units }}
+      split_mcp: ${{ matrix.job.split-mcp || false }}
+      job_timeout: 240
+    secrets:
+      QSV_ZIPSIGN_PRIV_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}

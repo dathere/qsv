@@ -47,6 +47,7 @@ on:
       - '.github/workflows/docs-drift.yml'
       - '.github/workflows/publish.yml'
       - '.github/workflows/publish-windows.yml'
+      - '.github/workflows/publish-linux.yml'
       - 'scripts/check-publish-matrix-sync.py'
   workflow_dispatch:
 
@@ -78,8 +79,9 @@ jobs:
       - name: Install PyYAML
         run: pip install pyyaml
 
-      # publish-windows.yml duplicates publish.yml's Windows matrix entries so a
-      # Windows-only failure can be retried without rebuilding the other targets. If they
-      # drift, the retry ships binaries built with different features than the full run.
+      # publish-windows.yml and publish-linux.yml duplicate publish.yml's matrix entries
+      # for their platform, so a failure confined to one platform can be retried without
+      # rebuilding the other targets. If they drift, the retry ships binaries built with
+      # different features than the full run.
       - name: Check publish matrix sync
         run: python3 scripts/check-publish-matrix-sync.py

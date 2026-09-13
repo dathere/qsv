@@ -126,6 +126,30 @@ test("createToolDefinition produces valid tool with qsv_ prefix", () => {
   assert.ok(tool.description.includes("Test command"));
 });
 
+test("createToolDefinition publishes typed defaults, including a numeric zero", () => {
+  // `0` is falsy, and nine shipped options default to it (`--max-charts`,
+  // `--pad`, `--insert` ...). A truthiness check drops them from the schema.
+  const skill: QsvSkill = {
+    ...mockSkill,
+    command: {
+      ...mockSkill.command,
+      options: [
+        { flag: "--max-charts", type: "number", description: "Max panels.", default: 0 },
+        { flag: "--length", type: "number", description: "Digest length.", default: 32 },
+        { flag: "--sep", type: "string", description: "Separator.", default: "," },
+        { flag: "--plain", type: "string", description: "No default." },
+      ],
+    },
+  };
+  const props = createToolDefinition(skill).inputSchema.properties;
+
+  assert.strictEqual(props.max_charts.default, 0, "a 0 default must survive");
+  assert.strictEqual(props.max_charts.type, "number");
+  assert.strictEqual(props.length.default, 32);
+  assert.strictEqual(props.sep.default, ",");
+  assert.ok(!("default" in props.plain), "an option with no default must not gain one");
+});
+
 test("createToolDefinition includes input_file, output_file, and help properties", () => {
   const tool = createToolDefinition(mockSkill);
   assert.ok("input_file" in tool.inputSchema.properties);

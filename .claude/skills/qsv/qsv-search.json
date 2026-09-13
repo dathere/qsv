@@ -32,9 +32,9 @@
       },
       {
         "flag": "--dfa-size-limit",
-        "type": "string",
+        "type": "number",
         "description": "Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. Modify this only if you're getting regular expression compilation errors.",
-        "default": "10"
+        "default": 10
       },
       {
         "flag": "--exact",
@@ -83,7 +83,7 @@
       },
       {
         "flag": "--preview-match",
-        "type": "string",
+        "type": "number",
         "description": "Preview the first N matches OR all matches found within N milliseconds, whichever occurs first. NOTE: the same numeric value is used for BOTH the match count AND the millisecond timeout - choose a value where one bound effectively dominates (e.g., a small count for \"first N\" preview, or a large count for \"all within N ms\"). Returns the preview to stderr; output is still written to stdout or --output as usual. Forces a sequential search, even if the CSV is indexed."
       },
       {
@@ -98,9 +98,9 @@
       },
       {
         "flag": "--size-limit",
-        "type": "string",
+        "type": "number",
         "description": "Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. Modify this only if you're getting regular expression compilation errors.",
-        "default": "50"
+        "default": 50
       },
       {
         "flag": "--unicode",

@@ -44,7 +44,7 @@
       },
       {
         "flag": "--limit",
-        "type": "string",
+        "type": "number",
         "description": "Limit the number of simultaneously open files. Useful for partitioning large datasets with many unique values to avoid \"too many open files\" errors. Data is processed in batches until all unique values are processed. If not set, it will be automatically set to the system limit with a 10% safety margin. If set to 0, it will process all data at once, regardless of the system's open files limit."
       },
       {
@@ -54,7 +54,7 @@
       },
       {
         "flag": "--prefix-length",
-        "type": "string",
+        "type": "number",
         "description": "Truncate the partition column after the specified number of bytes when creating the output file."
       }
     ]

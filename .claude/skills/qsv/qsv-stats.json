@@ -22,9 +22,9 @@
       },
       {
         "flag": "--cache-threshold",
-        "type": "string",
+        "type": "number",
         "description": "Controls the creation of stats cache files. * when greater than 1, the threshold in milliseconds before caching stats results. If a stats run takes longer than this threshold, the stats results will be cached. * 0 to suppress caching. * 1 to force caching. * a negative number to automatically create an index when the input file size is greater than abs(arg) in bytes. If the negative number ends with 5, it will delete the index file and the stats cache file after the stats run. Otherwise, the index file and the cache files are kept.",
-        "default": "5000"
+        "default": 5000
       },
       {
         "flag": "--cardinality",
@@ -95,9 +95,9 @@
       },
       {
         "flag": "--mode-cardinality-cap",
-        "type": "string",
+        "type": "number",
         "description": "Bound mode-tracking memory on high-cardinality columns. When > 0, if a column's mode tracker grows past <n> UNIQUE values (true cardinality, for both unweighted and weighted runs), qsv drops it and emits sentinel values instead of exact modes and cardinality. The cap is a direct memory bound on the tracker, which stores one entry per unique value. Sentinel output: * mode columns: \"*HIGH_CARDINALITY\" * cardinality column: \">=<n>\" (the \">=\" prefix DOES break downstream parsers expecting a plain integer; cap is opt-in only). Under --cardinality-method approx, the cardinality column ignores this cap (HLL gives an approximate estimate at fixed memory, ~1.5% RSE) — only mode/antimode columns are gated. Useful on wide tables with many ID/UUID/timestamp columns where tracking exact cardinality is wasted work.",
-        "default": "0"
+        "default": 0
       },
       {
         "flag": "--no-headers",
@@ -148,9 +148,9 @@
       },
       {
         "flag": "--round",
-        "type": "string",
+        "type": "number",
         "description": "Round statistics to <decimal_places>. Rounding is done following Midpoint Nearest Even (aka \"Bankers Rounding\") rule. https://docs.rs/rust_decimal/latest/rust_decimal/enum.RoundingStrategy.html If set to the sentinel value 9999, no rounding is done. For dates - range, stddev & IQR are rounded to 1e-5 day precision (sub-second), with trailing zeros trimmed in the displayed output.",
-        "default": "4"
+        "default": 4
       },
       {
         "flag": "--select",

@@ -70,7 +70,9 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
           type: mapSchemaType(opt.type),
           description: enhanceParameterDescription(optName, opt.description),
         };
-        if (opt.default) {
+        // `!== undefined`, not truthiness: a numeric default of 0 is falsy,
+        // and nine options ship one (`--max-charts`, `--pad`, `--insert` ...)
+        if (opt.default !== undefined) {
           properties[optName].default = opt.default;
         }
       }

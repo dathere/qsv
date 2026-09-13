@@ -60,7 +60,7 @@ struct Option_ {
     required:    Option<bool>,
     description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    default:     Option<String>,
+    default:     Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -79,14 +79,89 @@ struct Example {
 struct UsageParser {
     usage_text:   String,
     command_name: String,
+    /// `flag_*` / `arg_*` field types of the struct this command deserializes
+    /// its docopt arguments into - see `extract_arg_field_types`.
+    ///
+    /// Empty only for the unit tests that exercise description parsing alone;
+    /// the generator always supplies a populated map, and `parse_with_docopt`
+    /// refuses to type an option against an empty one.
+    field_types:  HashMap<String, String>,
 }
 
 impl UsageParser {
-    const fn new(usage_text: String, command_name: String) -> Self {
+    fn new(usage_text: String, command_name: String) -> Self {
         Self {
             usage_text,
             command_name,
+            field_types: HashMap::new(),
         }
+    }
+
+    fn with_field_types(mut self, field_types: HashMap<String, String>) -> Self {
+        self.field_types = field_types;
+        self
+    }
+
+    /// Whether a Rust type from the deserialized args struct is a number.
+    ///
+    /// `Option<T>` is unwrapped: an absent `Option<u16>` is still numeric when
+    /// present, and docopt rejects a non-number for it either way.
+    fn rust_type_is_numeric(rust_type: &str) -> bool {
+        let inner = rust_type
+            .strip_prefix("Option<")
+            .and_then(|t| t.strip_suffix('>'))
+            .unwrap_or(rust_type)
+            .trim();
+        matches!(
+            inner,
+            "u8" | "u16"
+                | "u32"
+                | "u64"
+                | "u128"
+                | "usize"
+                | "i8"
+                | "i16"
+                | "i32"
+                | "i64"
+                | "i128"
+                | "isize"
+                | "f32"
+                | "f64"
+        )
+    }
+
+    /// A default value, typed to agree with the option it belongs to.
+    ///
+    /// `tool-definitions.ts` copies an option's default straight into the MCP
+    /// tool schema, so a `number` option advertising `"default": "32"` hands
+    /// clients a self-contradictory contract: fill in the advertised default
+    /// and the executor's strict `typeof value === "number"` check rejects it.
+    ///
+    /// A default that does not parse as a JSON number stays a string rather
+    /// than becoming an error - the type is inferred from the args struct, so
+    /// disagreeing with the USAGE `[default: ...]` is possible in principle,
+    /// and a visibly odd default beats a failed generation.
+    fn typed_default(raw: String, option_type: &str) -> serde_json::Value {
+        if option_type == "number"
+            && let Ok(value @ serde_json::Value::Number(_)) = serde_json::from_str(raw.trim())
+        {
+            return value;
+        }
+        serde_json::Value::String(raw)
+    }
+
+    /// The declared Rust type of the struct field a flag deserializes into,
+    /// e.g. `--infer-len` -> `flag_infer_len`.
+    fn flag_field_type(&self, flag: &str) -> Option<&str> {
+        let field = format!("flag_{}", flag.trim_start_matches('-').replace('-', "_"));
+        self.field_types.get(&field).map(String::as_str)
+    }
+
+    /// The declared Rust type of the struct field a positional deserializes
+    /// into, e.g. `<sample-size>` -> `arg_sample_size`.
+    fn arg_field_type(&self, name: &str) -> Option<&str> {
+        let field = format!("arg_{}", name.replace('-', "_"));
+        self.field_types.get(&field).map(String::as_str)
     }
 
     fn parse(&self) -> Result<SkillDefinition, String> {
@@ -285,6 +360,10 @@ impl UsageParser {
 
         // Also parse manually to get descriptions
         let manual_descriptions = self.extract_descriptions_from_text();
+        // flags with no field in the deserialized args struct - a rename or a
+        // new command would otherwise silently degrade every option in the
+        // file to `string`, undoing the fix rather than failing loudly
+        let mut unresolved: Vec<String> = Vec::new();
 
         // Per-command option skip list for MCP
         // These options are not relevant when using the command through MCP
@@ -388,15 +467,23 @@ impl UsageParser {
                     let option_type = match &opts.arg {
                         DocoptArgument::Zero => "flag",
                         DocoptArgument::One(_) => {
-                            // Check if it's a number type
-                            let desc = manual_descriptions
-                                .get(&primary_flag)
-                                .or_else(|| manual_descriptions.get(&flag_str))
-                                .map_or("", std::string::String::as_str);
-                            if desc.contains("<number>") || desc.contains("<int>") {
-                                "number"
-                            } else {
-                                "string"
+                            // the DESERIALIZED FIELD decides the type, never
+                            // prose in the description (#4596)
+                            match self
+                                .flag_field_type(&primary_flag)
+                                .or_else(|| self.flag_field_type(&flag_str))
+                            {
+                                Some(rust_type) => {
+                                    if Self::rust_type_is_numeric(rust_type) {
+                                        "number"
+                                    } else {
+                                        "string"
+                                    }
+                                },
+                                None => {
+                                    unresolved.push(primary_flag.clone());
+                                    "string"
+                                },
                             }
                         },
                     };
@@ -430,7 +517,7 @@ impl UsageParser {
                         option_type: option_type.to_string(),
                         required,
                         description,
-                        default,
+                        default: default.map(|d| Self::typed_default(d, option_type)),
                     });
                 },
                 Atom::Long(name) => {
@@ -498,13 +585,20 @@ impl UsageParser {
                     let option_type = match &opts.arg {
                         DocoptArgument::Zero => "flag",
                         DocoptArgument::One(_) => {
-                            let desc = manual_descriptions
-                                .get(&flag_str)
-                                .map_or("", std::string::String::as_str);
-                            if desc.contains("<number>") || desc.contains("<int>") {
-                                "number"
-                            } else {
-                                "string"
+                            // the DESERIALIZED FIELD decides the type, never
+                            // prose in the description (#4596)
+                            match self.flag_field_type(&flag_str) {
+                                Some(rust_type) => {
+                                    if Self::rust_type_is_numeric(rust_type) {
+                                        "number"
+                                    } else {
+                                        "string"
+                                    }
+                                },
+                                None => {
+                                    unresolved.push(flag_str.clone());
+                                    "string"
+                                },
                             }
                         },
                     };
@@ -539,7 +633,7 @@ impl UsageParser {
                         option_type: option_type.to_string(),
                         required,
                         description,
-                        default,
+                        default: default.map(|d| Self::typed_default(d, option_type)),
                     });
                 },
                 Atom::Positional(name) => {
@@ -550,7 +644,7 @@ impl UsageParser {
                         .cloned()
                         .unwrap_or_default();
 
-                    let arg_type = self.infer_argument_type(&arg_name, &description);
+                    let arg_type = self.infer_argument_type(&arg_name);
 
                     // `optional_args` also covers the USAGE [] syntax
                     let required = !opts.arg.has_default() && !optional_args.contains(&arg_name);
@@ -651,6 +745,20 @@ impl UsageParser {
 
         // Sort options for consistent output
         options.sort_by(|a, b| a.flag.cmp(&b.flag));
+
+        // Typing an option requires its field, so a flag we cannot resolve is
+        // a hard error rather than a quiet `string`. `field_types` is empty
+        // only in the unit tests that parse a synthetic USAGE with no struct
+        // behind it; the generator always supplies a populated map.
+        if !self.field_types.is_empty() && !unresolved.is_empty() {
+            unresolved.sort_unstable();
+            unresolved.dedup();
+            return Err(format!(
+                "no field in the deserialized args struct for: {}. Did a flag get renamed, or \
+                 does this command deserialize into a different struct?",
+                unresolved.join(", ")
+            ));
+        }
 
         Ok((args, options))
     }
@@ -931,18 +1039,21 @@ impl UsageParser {
         (!flags.is_empty()).then_some(flags)
     }
 
-    /// A single, whitespace-free angle-bracketed argument placeholder:
-    /// `<arg>`, `=<arg>`, `[<arg>]` or `[=<arg>]`.
     fn is_arg_placeholder(rest: &str) -> bool {
+        Self::placeholder_name(rest).is_some()
+    }
+
+    /// The bare name inside a single, whitespace-free argument placeholder:
+    /// `<arg>`, `=<arg>`, `[<arg>]` and `[=<arg>]` all yield `arg`. Returns
+    /// `None` for prose and for anything that is not exactly one placeholder.
+    fn placeholder_name(rest: &str) -> Option<&str> {
         let inner = rest
             .strip_prefix('[')
             .map_or(rest, |r| r.strip_suffix(']').unwrap_or(r));
         let inner = inner.strip_prefix('=').unwrap_or(inner);
-        inner.len() > 2
-            && inner.starts_with('<')
-            && inner.ends_with('>')
-            && !inner[1..inner.len() - 1].contains(['<', '>'])
-            && !inner.contains(char::is_whitespace)
+        let name = inner.strip_prefix('<')?.strip_suffix('>')?;
+        (!name.is_empty() && !name.contains(['<', '>']) && !name.contains(char::is_whitespace))
+            .then_some(name)
     }
 
     /// Extract descriptions from the usage text manually
@@ -1141,26 +1252,30 @@ impl UsageParser {
         Ok(description_lines.join(" "))
     }
 
-    fn infer_argument_type(&self, name: &str, description: &str) -> String {
+    /// A positional's type.
+    ///
+    /// `number` comes from the deserialized struct field, for the same reason
+    /// an option's does (#4596): `arg_sample_size: f64` IS the contract.
+    /// Description prose does not participate - it used to, and typed
+    /// `select <selection>` as a `regex` merely because its description
+    /// mentions selecting "by regex", while `fill <selection>` - the same
+    /// argument - stayed a `string`.
+    ///
+    /// `file` and `regex` remain name-based: nothing in the struct
+    /// distinguishes a path or a pattern from any other `String`.
+    fn infer_argument_type(&self, name: &str) -> String {
         let name_lower = name.to_lowercase();
-        let desc_lower = description.to_lowercase();
 
         if name_lower.contains("input") || name_lower.contains("file") {
             "file".to_string()
-        } else if name_lower.contains("number")
-            || name_lower.contains("count")
-            || desc_lower.contains("number")
+        } else if self
+            .arg_field_type(name)
+            .is_some_and(Self::rust_type_is_numeric)
         {
             "number".to_string()
-        } else if name_lower.contains("regex")
-            || name_lower.contains("pattern")
-            || desc_lower.contains("regex")
-            || desc_lower.contains("regular expression")
-        {
+        } else if name_lower.contains("regex") || name_lower.contains("pattern") {
             "regex".to_string()
         } else {
-            // if name_lower.contains("column") || name_lower.contains("selection")
-            // Also, default to string if we can't infer a better type
             "string".to_string()
         }
     }
@@ -1530,6 +1645,84 @@ impl HasDefault for DocoptArgument {
     }
 }
 
+/// The `flag_*` / `arg_*` field types of the struct a command deserializes its
+/// docopt arguments into.
+///
+/// This - not the argument placeholder, and emphatically not prose in the
+/// description (#4596) - decides an option's type. `flag_timeout: u16` IS the
+/// contract: docopt itself refuses a non-number for that field, which is
+/// exactly what the MCP schema's `number` means to a client. Reading the
+/// declaration also catches the options a placeholder never could, since
+/// plenty of numeric ones are declared `--pad <arg>` or `--batch <size>`.
+///
+/// The struct is named by the `util::get_args` call's type annotation rather
+/// than assumed to be `struct Args`, so commands deserializing into something
+/// else (`schema` uses `util::SchemaArgs`) and files declaring several `*Args`
+/// structs (`stats`) need no special case. The struct is looked up in the
+/// command's own source first, then in `src/util.rs`.
+fn extract_arg_field_types(
+    cmd_src: &str,
+    util_src: &str,
+) -> Result<HashMap<String, String>, String> {
+    let get_args_re =
+        regex_oncelock!(r"let\s+(?:mut\s+)?\w+\s*:\s*(?:util::)?(\w+)\s*=\s*util::get_args\s*\(");
+    let struct_name = get_args_re
+        .captures(cmd_src)
+        .map(|c| c[1].to_string())
+        .ok_or_else(|| "no `util::get_args` call to name the args struct".to_string())?;
+
+    let body = struct_body(cmd_src, &struct_name)
+        .or_else(|| struct_body(util_src, &struct_name))
+        .ok_or_else(|| format!("args struct `{struct_name}` not found"))?;
+
+    let field_re =
+        regex_oncelock!(r"(?m)^\s*(?:pub\s+)?((?:flag|arg)_[a-z0-9_]+)\s*:\s*([^,\n]+),");
+    let mut fields = HashMap::new();
+    for caps in field_re.captures_iter(body) {
+        fields.insert(caps[1].to_string(), caps[2].trim().to_string());
+    }
+
+    if fields.is_empty() {
+        return Err(format!(
+            "args struct `{struct_name}` has no flag_/arg_ fields"
+        ));
+    }
+    Ok(fields)
+}
+
+/// The brace-delimited body of a named struct, or `None` if it is not declared
+/// in this source. Braces are balanced rather than matched to the first `}`,
+/// so a field whose type contains one does not truncate the body.
+fn struct_body<'a>(src: &'a str, name: &str) -> Option<&'a str> {
+    let decl = format!("struct {name}");
+    let mut from = 0;
+    while let Some(pos) = src[from..].find(&decl) {
+        let at = from + pos;
+        // whole-word match: `struct Args` must not match `struct StatsArgs`
+        let after = src[at + decl.len()..].chars().next();
+        if after.is_some_and(|c| c.is_alphanumeric() || c == '_') {
+            from = at + decl.len();
+            continue;
+        }
+        let open = src[at..].find('{')? + at;
+        let mut depth = 0usize;
+        for (i, c) in src[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(&src[open + 1..open + i]);
+                    }
+                },
+                _ => {},
+            }
+        }
+        return None;
+    }
+    None
+}
+
 fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
     let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {e}"))?;
 
@@ -1713,6 +1906,10 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     eprintln!("Output: {}", output_dir.display());
     eprintln!("Generating {} skills...\n", commands.len());
 
+    // some commands deserialize into an args struct declared in util.rs
+    // (`schema` uses `util::SchemaArgs`) rather than in their own source
+    let util_src = fs::read_to_string(repo_root.join("src/util.rs")).unwrap_or_default();
+
     let mut success_count = 0;
     let mut error_count = 0;
 
@@ -1751,7 +1948,20 @@ pub fn generate_mcp_skills() -> CliResult<()> {
             cmd_name
         };
 
-        let parser = UsageParser::new(usage_text, invocation_name.to_string());
+        // the deserialized args struct decides every option's type (#4596)
+        let cmd_src = fs::read_to_string(&cmd_file)
+            .map_err(|e| format!("Failed to read {}: {e}", cmd_file.display()))?;
+        let field_types = match extract_arg_field_types(&cmd_src, &util_src) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("  ❌ Failed to resolve args struct: {e}");
+                error_count += 1;
+                continue;
+            },
+        };
+
+        let parser =
+            UsageParser::new(usage_text, invocation_name.to_string()).with_field_types(field_types);
         let skill = match parser.parse() {
             Ok(s) => s,
             Err(e) => {
@@ -2004,6 +2214,160 @@ mod tests {
     // ------------------------------------------------------------------
     // flag-token normalization helper
     // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // #4596 - types come from the deserialized args struct, not from prose
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn defaults_are_typed_to_match_their_option() {
+        let t = UsageParser::typed_default;
+        assert_eq!(t("32".to_string(), "number"), serde_json::json!(32));
+        // a falsy-but-real default: nine options ship `0`
+        assert_eq!(t("0".to_string(), "number"), serde_json::json!(0));
+        assert_eq!(t("2.5".to_string(), "number"), serde_json::json!(2.5));
+        assert_eq!(t(" 7 ".to_string(), "number"), serde_json::json!(7));
+        // strings stay strings, and a numeric-LOOKING default on a string
+        // option must not be silently renumbered
+        assert_eq!(t("32".to_string(), "string"), serde_json::json!("32"));
+        assert_eq!(t("auto".to_string(), "string"), serde_json::json!("auto"));
+        // a number-typed option whose default will not parse keeps the raw
+        // text rather than failing generation
+        assert_eq!(t("auto".to_string(), "number"), serde_json::json!("auto"));
+        assert_eq!(t("true".to_string(), "number"), serde_json::json!("true"));
+    }
+
+    #[test]
+    fn rust_type_numeric_shapes() {
+        let n = UsageParser::rust_type_is_numeric;
+        assert!(n("usize") && n("u16") && n("i64") && n("f64") && n("u8"));
+        // an absent `Option<u16>` is still a number when present
+        assert!(n("Option<usize>") && n("Option<f64>"));
+        assert!(!n("String") && !n("Option<String>") && !n("bool"));
+        assert!(!n("SelectColumns") && !n("Option<Delimiter>"));
+        // not a numeric type merely because a numeric name is inside it
+        assert!(!n("Vec<usize>") && !n("Option<Vec<u64>>"));
+    }
+
+    #[test]
+    fn struct_body_matches_whole_names_only() {
+        let src = "struct StatsArgs {\n    flag_decoy: String,\n}\nstruct Args {\n    flag_real: \
+                   usize,\n}\n";
+        // `struct Args` must not match inside `struct StatsArgs` - stats.rs
+        // declares both, and picking the wrong one mistypes the whole command
+        let body = struct_body(src, "Args").expect("Args not found");
+        assert!(body.contains("flag_real"));
+        assert!(!body.contains("flag_decoy"));
+        assert!(struct_body(src, "Nope").is_none());
+    }
+
+    #[test]
+    fn struct_body_balances_braces() {
+        let src = "struct Args { flag_map: HashMap<String, Vec<u8>>, flag_n: usize, }\nstruct \
+                   After { x: u8, }\n";
+        let body = struct_body(src, "Args").unwrap();
+        assert!(body.contains("flag_n"));
+        assert!(!body.contains("struct After"));
+    }
+
+    #[test]
+    fn arg_field_types_come_from_the_get_args_annotation() {
+        // the annotation names the struct, so a file declaring several picks
+        // the right one, and `schema`'s out-of-file struct resolves from util
+        let cmd_src = "struct StatsArgs {\n    flag_decoy: String,\n}\nstruct Args {\n    \
+                       flag_infer_len: usize,\n    arg_input: Option<String>,\n}\nlet mut args: \
+                       Args = util::get_args(USAGE, argv)?;";
+        let f = extract_arg_field_types(cmd_src, "").unwrap();
+        assert_eq!(f.get("flag_infer_len").map(String::as_str), Some("usize"));
+        assert_eq!(
+            f.get("arg_input").map(String::as_str),
+            Some("Option<String>")
+        );
+        assert!(!f.contains_key("flag_decoy"));
+
+        let util_src = "pub struct SchemaArgs {\n    pub flag_enum_threshold: usize,\n}";
+        let cmd_src = "let mut args: util::SchemaArgs = util::get_args(USAGE, argv)?;";
+        let f = extract_arg_field_types(cmd_src, util_src).unwrap();
+        assert_eq!(
+            f.get("flag_enum_threshold").map(String::as_str),
+            Some("usize")
+        );
+
+        // a command we cannot resolve must fail loudly, never type as `string`
+        assert!(extract_arg_field_types("fn main() {}", "").is_err());
+        assert!(
+            extract_arg_field_types("let a: Gone = util::get_args(USAGE, argv)?;", "").is_err()
+        );
+    }
+
+    #[test]
+    fn option_type_follows_the_struct_field_not_the_description() {
+        let usage = "\nTest command.\n\nUsage:\n    qsv test [options] [<input>]\n\ntest \
+                     options:\n    --seed <number>         RNG seed to use.\n    --ts-interval \
+                     <intvl>   Time interval. Format: <number><unit>.\n    --pad <arg>             \
+                     Pad width - a generic placeholder.\n    --plain <arg>           An ordinary \
+                     string option.\n    --switch                A boolean flag.\n\nCommon \
+                     options:\n    -h, --help   Display this message\n";
+        let mut fields = HashMap::new();
+        for (k, v) in [
+            ("flag_seed", "Option<u64>"),
+            ("flag_ts_interval", "Option<String>"),
+            ("flag_pad", "usize"),
+            ("flag_plain", "String"),
+            ("flag_switch", "bool"),
+        ] {
+            fields.insert(k.to_string(), v.to_string());
+        }
+        let (_, options) = UsageParser::new(usage.to_string(), "test".to_string())
+            .with_field_types(fields.clone())
+            .parse_with_docopt()
+            .unwrap();
+        let type_of = |flag: &str| {
+            options
+                .iter()
+                .find(|o| o.flag == flag)
+                .unwrap_or_else(|| panic!("{flag} missing"))
+                .option_type
+                .clone()
+        };
+
+        // a numeric field types `number`, whatever the prose says
+        assert_eq!(type_of("--seed"), "number");
+        // ... and whatever the placeholder says: `<arg>` is why reading the
+        // placeholder instead of the field would still have missed this one
+        assert_eq!(type_of("--pad"), "number");
+        // a non-numeric field stays a `string` even though this description
+        // says `<number>` - the regression #4596 fixed
+        assert_eq!(type_of("--ts-interval"), "string");
+        assert_eq!(type_of("--plain"), "string");
+        assert_eq!(type_of("--switch"), "flag");
+
+        // a flag with no field is a hard error, never a quiet `string`
+        fields.remove("flag_pad");
+        let err = UsageParser::new(usage.to_string(), "test".to_string())
+            .with_field_types(fields)
+            .parse_with_docopt()
+            .unwrap_err();
+        assert!(err.contains("--pad"), "{err}");
+    }
+
+    #[test]
+    fn positional_type_ignores_description_prose() {
+        let mut fields = HashMap::new();
+        fields.insert("arg_sample_size".to_string(), "f64".to_string());
+        fields.insert("arg_selection".to_string(), "SelectColumns".to_string());
+        let p = UsageParser::new(String::new(), "test".to_string()).with_field_types(fields);
+
+        // numeric because the field is f64
+        assert_eq!(p.infer_argument_type("sample-size"), "number");
+        // `select <selection>` used to type `regex` purely because its
+        // description mentions selecting "by regex", disagreeing with
+        // `fill <selection>` - the identical argument
+        assert_eq!(p.infer_argument_type("selection"), "string");
+        // file and regex stay name-based - the struct says `String` for both
+        assert_eq!(p.infer_argument_type("input"), "file");
+        assert_eq!(p.infer_argument_type("pattern"), "regex");
+    }
 
     #[test]
     fn normalize_flag_token_shapes() {

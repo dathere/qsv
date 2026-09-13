@@ -22,7 +22,7 @@
       },
       {
         "flag": "--condense",
-        "type": "string",
+        "type": "number",
         "description": "Limits the length of each field to the value specified. If the field is UTF-8 encoded, then <arg> refers to the number of code points. Otherwise, it refers to the number of bytes."
       },
       {
@@ -42,15 +42,15 @@
       },
       {
         "flag": "--pad",
-        "type": "string",
+        "type": "number",
         "description": "The minimum number of spaces between each column.",
-        "default": "2"
+        "default": 2
       },
       {
         "flag": "--width",
-        "type": "string",
+        "type": "number",
         "description": "The minimum width of each column.",
-        "default": "2"
+        "default": 2
       }
     ]
   },

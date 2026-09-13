@@ -42,7 +42,7 @@
       },
       {
         "flag": "--max-size",
-        "type": "string",
+        "type": "number",
         "description": "Maximum size of the file to download in MB before sampling. Will download the entire file if not specified. If the CSV is partially downloaded, the sample will be taken only from the downloaded portion."
       },
       {
@@ -68,7 +68,7 @@
       },
       {
         "flag": "--seed",
-        "type": "string",
+        "type": "number",
         "description": "Random Number Generator (RNG) seed."
       },
       {
@@ -93,9 +93,9 @@
       },
       {
         "flag": "--timeout",
-        "type": "string",
+        "type": "number",
         "description": "Inactivity timeout for downloading URLs in seconds. Aborts only if no data is received from the server for this long. If 0, no timeout.",
-        "default": "30"
+        "default": 30
       },
       {
         "flag": "--timeseries",
@@ -120,7 +120,7 @@
       },
       {
         "flag": "--ts-interval",
-        "type": "number",
+        "type": "string",
         "description": "Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). Examples: \"1h\", \"1d\", \"1w\", \"2d\" (every 2 days). If not specified, <sample-size> is treated as hours."
       },
       {

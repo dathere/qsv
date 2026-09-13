@@ -22,9 +22,9 @@
     "options": [
       {
         "flag": "--batch",
-        "type": "string",
+        "type": "number",
         "description": "The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch.",
-        "default": "50000"
+        "default": 50000
       },
       {
         "flag": "--cache-dir",
@@ -73,9 +73,9 @@
       },
       {
         "flag": "--outsubdir-size",
-        "type": "string",
+        "type": "number",
         "description": "The number of files per subdirectory in <outdir>.",
-        "default": "1000"
+        "default": 1000
       },
       {
         "flag": "--template",
@@ -89,9 +89,9 @@
       },
       {
         "flag": "--timeout",
-        "type": "string",
+        "type": "number",
         "description": "Timeout for downloading lookups on URLs.",
-        "default": "30"
+        "default": 30
       }
     ]
   },

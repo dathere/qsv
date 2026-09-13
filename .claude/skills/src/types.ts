@@ -38,7 +38,12 @@ export interface Option {
    */
   required?: boolean;
   description: string;
-  default?: string;
+  /**
+   * Typed to agree with `type`: a `number` option carries a JSON number, so a
+   * client filling in the advertised default does not trip the executor's
+   * strict `typeof value === "number"` check (#4596).
+   */
+  default?: string | number;
 }
 
 export interface Example {

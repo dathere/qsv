@@ -73,9 +73,9 @@
       },
       {
         "flag": "--enum-threshold",
-        "type": "string",
+        "type": "number",
         "description": "The threshold for compiling Enumerations with the frequency command before bucketing other unique values into the \"Other\" category. This is a convenience shortcut for --freq-options --limit <n>. If --freq-options contains --limit, this flag is ignored.",
-        "default": "10"
+        "default": 10
       },
       {
         "flag": "--flush-cache",
@@ -136,15 +136,15 @@
       },
       {
         "flag": "--num-examples",
-        "type": "string",
+        "type": "number",
         "description": "The number of Example values to include in the dictionary.",
-        "default": "5"
+        "default": 5
       },
       {
         "flag": "--num-tags",
-        "type": "string",
+        "type": "number",
         "description": "The maximum number of tags to infer when the --tags option is used. Maximum allowed value is 50.",
-        "default": "10"
+        "default": 10
       },
       {
         "flag": "--okf-type",
@@ -158,15 +158,15 @@
       },
       {
         "flag": "--score-max-retries",
-        "type": "string",
+        "type": "number",
         "description": "Max LLM re-prompts to improve a low-scoring SQL query.",
-        "default": "3"
+        "default": 3
       },
       {
         "flag": "--score-threshold",
-        "type": "string",
+        "type": "number",
         "description": "Minimum scoresql score for a SQL query to be accepted. Typical range is 0-100; values >100 will always trigger retries and the below-threshold warning.",
-        "default": "50"
+        "default": 50
       },
       {
         "flag": "--stats-options",
@@ -196,9 +196,9 @@
       },
       {
         "flag": "--truncate-str",
-        "type": "string",
+        "type": "number",
         "description": "The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed. Bounds the prompt sent to the LLM, and applies to the csv/json/semantic-md dictionary output. The jsonschema output is machine-facing, so it always carries the full, untruncated Example values.",
-        "default": "25"
+        "default": 25
       },
       {
         "flag": "--two-pass",

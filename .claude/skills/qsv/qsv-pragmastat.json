@@ -41,9 +41,9 @@
       },
       {
         "flag": "--misrate",
-        "type": "string",
+        "type": "number",
         "description": "Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size.",
-        "default": "0.001"
+        "default": 0.001
       },
       {
         "flag": "--no-bounds",
@@ -62,13 +62,13 @@
       },
       {
         "flag": "--round",
-        "type": "string",
+        "type": "number",
         "description": "Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule.",
-        "default": "4"
+        "default": 4
       },
       {
         "flag": "--seed",
-        "type": "string",
+        "type": "number",
         "description": "Seed for reproducible subsampling. If not specified, defaults to 42 when --subsample is used."
       },
       {
@@ -89,7 +89,7 @@
       },
       {
         "flag": "--subsample",
-        "type": "string",
+        "type": "number",
         "description": "Randomly subsample N values per column before computing. Speeds up large datasets while maintaining statistical robustness. Recommended: 10000-50000 for exploratory analysis."
       },
       {

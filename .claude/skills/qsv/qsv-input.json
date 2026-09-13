@@ -64,12 +64,12 @@
       },
       {
         "flag": "--skip-lastlines",
-        "type": "string",
+        "type": "number",
         "description": "The number of epilogue CSV records to skip."
       },
       {
         "flag": "--skip-lines",
-        "type": "string",
+        "type": "number",
         "description": "The number of preamble CSV records to skip."
       },
       {

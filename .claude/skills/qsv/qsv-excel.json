@@ -43,7 +43,7 @@
       },
       {
         "flag": "--header-row",
-        "type": "string",
+        "type": "number",
         "description": "The header row. Set if other than the first non-empty row of the sheet."
       },
       {

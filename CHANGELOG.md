@@ -4,11 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [23.0.1] - <TBD> 👑 The "Context is King" Release 🧠
+## [23.0.1] - 2026-09-13 👑 The "Context is King" Release 🧠
 
 ### Highlights
 
-~<TBD> commits since 22.0.1, and the theme is **context** - the surrounding facts that turn a number into a finding. A count of 4,312 says nothing; 4,312 *per 100,000 residents* says where to look.
+~270 commits since 22.0.1, and the theme is **context** - the surrounding facts that turn a number into a finding. A count of 4,312 says nothing; 4,312 *per 100,000 residents* says where to look.
 
 The headliner is the **Data Schematic's deep US Census integration**. A choropleth colored by raw counts is largely a population map - the big region wins because it is big. A choropleth colored by a *rate* is a finding. Closing that gap used to mean sourcing boundary files, sourcing population tables, joining both to your data and computing the rate by hand; `viz smart` now does all of it from nothing but a CSV. `--geojson auto` fetches US boundaries from the Census TIGERweb REST services, `--denominator census` fetches the matching population denominators, and a `--locations` column of county *names* - not just FIPS codes - resolves against the Census's own name table with nothing supplied but the CSV, while `--geocode` extends the same path to *city*-name columns. Census Designated Places make `census:place` the full place universe rather than incorporated places alone ([#4394](https://github.com/dathere/qsv/issues/4394), [#4395](https://github.com/dathere/qsv/issues/4395), [#4397](https://github.com/dathere/qsv/issues/4397), [#4417](https://github.com/dathere/qsv/issues/4417), [#4540](https://github.com/dathere/qsv/issues/4540)).
 

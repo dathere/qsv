@@ -236,6 +236,9 @@ if [[ "$arg_pat" == "setup" ]]; then
   need_awk=0
   need_sed=0
   need_duckdb=0
+  # set by any post-install verification that fails, so setup reports an honest exit status
+  # instead of printing "All required tools installed!" over the top of its own warnings
+  setup_failed=0
 
   # check if 7z is installed
   if ! command -v "$sevenz_bin" &>/dev/null; then
@@ -318,9 +321,11 @@ if [[ "$arg_pat" == "setup" ]]; then
     if ! command -v hyperfine &>/dev/null; then
       echo "WARNING: hyperfine is STILL not installed - the benchmarks cannot run without it."
       echo "         Install it manually: https://github.com/sharkdp/hyperfine#installation"
+      setup_failed=1
     elif hyperfine_too_old; then
       echo "WARNING: hyperfine is STILL v$hyperfine_version (need v$hyperfine_min_major.$hyperfine_min_minor.0+)."
       echo "         If it was not installed with Homebrew, upgrade it with whatever installed it."
+      setup_failed=1
     fi
   fi
 
@@ -340,6 +345,14 @@ if [[ "$arg_pat" == "setup" ]]; then
   if [[ "$need_duckdb" -eq 1 ]]; then
     echo "INFO: duckdb could not be found. Installing..."
     brew install duckdb
+  fi
+
+  # a verification failure above must not be papered over by the success message, and setup
+  # must exit non-zero so a caller chaining `./benchmarks.sh setup && ./benchmarks.sh` stops
+  # here instead of running into the same error again.
+  if [[ "$setup_failed" -eq 1 ]]; then
+    echo "ERROR: setup did not complete - see the WARNING(s) above."
+    exit 1
   fi
 
   echo "> All required tools installed! You can run ./benchmarks.sh now."

@@ -556,8 +556,24 @@ pragma_rowcount=$("$qsv_benchmarker_bin" count --no-polars pragmastats_50kdata.c
 # even when it also takes a small side input (the `exclude`/`join` pattern).
 # IF YOU ADD A NEW SUBSET INPUT FILE ABOVE, ADD A CASE ARM HERE.
 function rowcount_for_cmd {
-  case " $* " in
-  *"$data"*) cmd_rowcount= ;;
+  local cmd=" $* "
+  # The subset filenames are fixed, but $data is configurable - and a $data whose name is a
+  # SUFFIX of one of them (data.csv, a.csv, _data.csv ...) would substring-match all three,
+  # silently handing every subset benchmark the full-dataset divisor again. So strip the
+  # subset names out before testing for $data. We cannot test $data as a whole token
+  # instead: several run lines embed it inside a larger quoted argument (apply_calcconv,
+  # and the duckdb line, where it sits inside a SQL string).
+  local rest="$cmd"
+  rest="${rest//pragmastats_50kdata.csv/}"
+  rest="${rest//geo_data.csv/}"
+  rest="${rest//ods_data.csv/}"
+  case "$rest" in
+  *"$data"*)
+    cmd_rowcount=
+    return
+    ;;
+  esac
+  case "$cmd" in
   *pragmastats_50kdata.csv*) cmd_rowcount="$pragma_rowcount" ;;
   *geo_data.csv*) cmd_rowcount="$geo_rowcount" ;;
   *ods_data.csv*) cmd_rowcount="$ods_rowcount" ;;

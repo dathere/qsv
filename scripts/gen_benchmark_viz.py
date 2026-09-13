@@ -102,7 +102,9 @@ MOARSTATS_GROWTH = ["moarstats_bivariate_index", "moarstats_advanced_bivariate_i
 # "Index superpowers": commands whose index win is not just skipping the opening scan but doing
 # an order of magnitude less work — seeking straight to the wanted rows (slice, sample) or reusing
 # cached statistics (schema). Shown as a speedup FACTOR so the biggest multiple reads as the
-# tallest bar (schema ~78x), which an absolute axis would bury under slice's larger raw throughput.
+# tallest bar, which an absolute axis would bury under slice's larger raw throughput. Which command
+# leads shifts between releases (schema led at 78x once, slice_one_middle does now), so the prose
+# reads the leader from the data rather than naming one here.
 SUPERPOWER_COMMANDS = ["schema", "slice_one_middle", "slice_last_1k", "slice_last_1k_json",
                        "sample_10", "sample_1000", "frequency_ignorecase"]
 # Command families with several benchmarks each → readable per-family box.
@@ -115,6 +117,23 @@ DELTA_CLAMP = 100.0
 # reporting more than this many recs/sec is a glitch run (only count's .idx read exceeds it),
 # and an unfiltered upward spike would rescale the whole normalized chart. See prep_growth.
 GROWTH_CEILING = 10_000_000
+
+# A caveat about ONE release's deltas, gated on the release it describes so it retires itself on the
+# next run rather than quietly becoming a false claim about newer numbers. Set to None (or bump the
+# version and rewrite) when a newer run supersedes it. Standing behaviour does NOT belong here — it
+# goes in the affected chart's own description, which every future run keeps rendering.
+RELEASE_NOTE_VERSION = "23.0.1"
+_PR_4472 = "https://github.com/dathere/qsv/pull/4472"
+RELEASE_NOTE_HTML = (
+    " <b>23.0.1:</b> un-indexed <code>count</code> is ~8.6x slower than 22.0.1 — by design, see "
+    f'<a href="{_PR_4472}">#4472</a>. Several other un-indexed benchmarks also fell this release '
+    "while their indexed counterparts improved; those movements are not yet traced to a specific "
+    "change.")
+RELEASE_NOTE_MD = (
+    "\n> [!NOTE]\n"
+    "> **23.0.1: un-indexed `count` is ~8.6x slower than 22.0.1 — by design.** See "
+    f"[#4472]({_PR_4472}). Several other un-indexed benchmarks also fell this release while their\n"
+    "> indexed counterparts improved — those movements are not yet traced to a specific change.\n")
 
 
 def find_qsv():
@@ -267,6 +286,32 @@ def alt(names):
     return "^(" + "|".join(re.escape(x) for x in names) + ")$"
 
 
+def latest_rps():
+    """`{benchmark name: recs_per_sec}` for the current run, so a chart description can cite the
+    real numbers instead of hardcoding figures that go stale the next time the suite runs."""
+    vals = {}
+    with open(LATEST, encoding="utf-8") as fh:
+        for r in csv.DictReader(fh):
+            try:
+                vals[r["name"]] = float(r["recs_per_sec"])
+            except (KeyError, ValueError):
+                pass
+    return vals
+
+
+def millions(v):
+    """Compact records/sec for prose: 1_046_025 -> "1.0M", 100_000_000 -> "100M"."""
+    m = v / 1e6
+    return f"{m:.0f}M" if m >= 10 else f"{m:.1f}M"
+
+
+def release_note(info, fmt):
+    """The release-specific caveat, or "" when it does not apply to the run being charted."""
+    if RELEASE_NOTE_VERSION and info.get("version") == RELEASE_NOTE_VERSION:
+        return RELEASE_NOTE_HTML if fmt == "html" else RELEASE_NOTE_MD
+    return ""
+
+
 # ---------------------------------------------------------------------------- data prep
 
 def prep_index():
@@ -281,7 +326,8 @@ def prep_index():
 
 def prep_count():
     # `count` on its own axis: with an index it reads the precomputed row count → effectively
-    # instant (an order of magnitude over the plain scan), a range too wide for the shared charts.
+    # instant (two orders of magnitude over the plain scan since #4472 took the un-indexed path off
+    # the fast Polars count), a range far too wide for the shared charts.
     f = qsv(["search", "-s", "name", r"^count(_index)?$", LATEST], tmp("cnt0.csv"))
     return qsv(["luau", "map", "index_status",
                 '(name:sub(-6)=="_index") and "with index" or "no index"', f], tmp("count.csv"))
@@ -292,13 +338,7 @@ def prep_superpowers():
     sorted so the biggest multiple is the first (tallest) bar. Returns (path, sorted_rows) so the
     prose can cite the top multiples. Computed in Python because it needs each command's index vs
     non-index ratio, an awkward pivot to express in one qsv pass."""
-    vals = {}
-    with open(LATEST, encoding="utf-8") as fh:
-        for r in csv.DictReader(fh):
-            try:
-                vals[r["name"]] = float(r["recs_per_sec"])
-            except (KeyError, ValueError):
-                pass
+    vals = latest_rps()
     rows = []
     for cmd in SUPERPOWER_COMMANDS:
         base, idx = vals.get(cmd), vals.get(cmd + "_index")
@@ -501,7 +541,7 @@ def build_index(figs, info):
         "flagship deep-dives and the heatmap) as broad trajectory, not exact speedup. "
         "<code>count</code> gets its own panel below (not the shared-scale charts) because with an "
         "index it just reads a stored row count (tens of millions of records/sec) and would flatten "
-        "every other bar.</div>")
+        "every other bar." + release_note(info, "html") + "</div>")
     src_blocks = viz_source_blocks([f["slug"] for f in figs])
     parts.append("<main>")
     for f in figs:
@@ -541,7 +581,7 @@ sample of NYC's 311 data, timed with [hyperfine](https://github.com/sharkdp/hype
 (2 warmups + 3 timed runs each). See
 [`scripts/results/README.md`](https://github.com/dathere/qsv/blob/master/scripts/results/README.md)
 for the methodology and the raw CSVs.
-
+{release_note}
 > Looking for the **full per-command timing tables**? See the classic
 > [tabular benchmarks at qsv.dathere.com](https://qsv.dathere.com/benchmarks). This page is the
 > interactive, visual companion to it.
@@ -569,7 +609,8 @@ redeploys to GitHub Pages automatically on push to `master`._
 
 def write_wiki_stub(info, total):
     md = WIKI_MD.format(url=PAGES_URL, version=info.get("version", "?"),
-                        platform=info.get("platform", "?"), total=total)
+                        platform=info.get("platform", "?"), total=total,
+                        release_note=release_note(info, "md"))
     with open(os.path.join(OUT, "Benchmarks.wiki.md"), "w", encoding="utf-8") as fh:
         fh.write(md)
 
@@ -634,6 +675,7 @@ def main():
     n_releases = len(all_vers)
     hm_versions = recent_versions(HEATMAP_VERSIONS)
     total = count_rows(LATEST)
+    vals = latest_rps()
 
     figs = []
     index_src = prep_index()
@@ -644,14 +686,23 @@ def main():
                     "Build an index once and qsv can skip the opening scan on every run after. "
                     "The payoff is lopsided — a ~6x jump for stats and ~3x for search, but next "
                     "to nothing for streaming commands — so only the standouts are shown here."))
+    # Cite the run's own numbers — this callout is exactly where hardcoded figures went stale.
+    c_base, c_idx = vals.get("count"), vals.get("count_index")
+    if c_base and c_idx and c_base > 0:
+        c_jump = (f"a ~{c_idx / c_base:.0f}x jump from ~{millions(c_base)} to "
+                  f"~{millions(c_idx)} rows/sec")
+    else:
+        c_jump = "orders of magnitude faster"
     figs.append(viz("bar", prep_count(),
                     ["--x", "index_status", "--y", "recs_per_sec",
                      "--title", "count: the index-read superpower", "--y-title", "records/sec"],
                     "count_callout", "count with an index is effectively instant",
                     "The index advantage at its extreme. With an index, count doesn't scan at all — "
-                    "it reads a row count qsv already stored, a ~10x jump from ~9M to ~90M rows/sec. "
-                    "It sits on its own axis precisely because that number would flatten every "
-                    "other bar on the page."))
+                    f"it reads a row count qsv already stored, {c_jump}. It sits on its own axis "
+                    "precisely because that number would flatten every other bar on the page. The "
+                    "un-indexed bar is deliberately conservative: count only takes the fast Polars "
+                    "path when the file provably has no blank lines, because that path counted blank "
+                    "lines as rows (#4472) — correctness over speed."))
     sp_src, sp_rows = prep_superpowers()
     sp_top_cmd, sp_top_x = (sp_rows[0] if sp_rows else ("schema", 0.0))
     figs.append(viz("bar", sp_src,
@@ -661,9 +712,9 @@ def main():
                     "index_superpowers", "The index superpowers",
                     "Some commands don't just skip the opening scan with an index — they skip almost "
                     "all the work. slice and sample seek straight to the rows they need; schema reuses "
-                    f"cached statistics. That's a different order of magnitude: {sp_top_cmd} runs "
-                    f"{sp_top_x:.0f}x faster, and slice and sample tens of times over — versus the "
-                    "low single digits for the scan-skippers above."))
+                    f"cached statistics. That's a different order of magnitude: {sp_top_cmd} leads at "
+                    f"{sp_top_x:.0f}x faster, with the rest of the seek-and-reuse tier tens of times "
+                    "over — versus the low single digits for the scan-skippers above."))
     figs.append(viz("bar", prep_sqlp(),
                     ["--x", "name", "--y", "recs_per_sec",
                      "--title", "sqlp tuning: the Polars schema-cache knob",
@@ -753,9 +804,9 @@ def main():
                     f"bivariate pass now runs {m_biv:.1f}x its first-release speed, stepping up at 17.0.0, "
                     f"again at 20.0.0, and sharply in {latest_release}. The full all battery is heavier and "
                     "choppier — it climbed to a ~6k-recs/sec peak around 19.x-20.x, then dipped through "
-                    f"21.0.0-21.1.0, before leaping to {m_all:.1f}x launch in {latest_release}: "
-                    "dictionary-encoding the joint keys cut the per-pair cost of the --bivariate-stats all "
-                    "battery by well over an order of magnitude. All four lines are base vs --advanced, "
+                    f"21.0.0-21.1.0, before leaping to {m_all:.1f}x launch once dictionary-encoding of "
+                    "the joint keys cut the per-pair cost of the --bivariate-stats all battery by well "
+                    "over an order of magnitude. All four lines are base vs --advanced, "
                     "each normalized to its own debut. Note the LOG y-axis: that last jump is large enough "
                     "that a linear scale would flatten every earlier step into the baseline.",
                     log_y=True))

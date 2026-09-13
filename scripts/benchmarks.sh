@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.6.0
+bm_version=9.7.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -444,7 +444,9 @@ if [ ! -r "$data" ]; then
 fi
 
 # we get the rowcount, just in case the benchmark data was modified by the user to tailor
-# the benchmark to their system/workload. We use the rowcount to compute records per second
+# the benchmark to their system/workload. We use the rowcount to compute records per second.
+# This is the DEFAULT divisor; the few benchmarks that read a subset of the data get their
+# own divisor - see rowcount_for_cmd() further below.
 rowcount=$("$qsv_bin" count --no-polars "$data")
 printf "  Benchmark data rowcount: %'.0f\n" "$rowcount"
 qsv_absolute_path=$(which "$qsv_bin")
@@ -522,7 +524,8 @@ fi
 # `to ods` writes the whole sheet as a single content.xml entry inside the ODS zip
 # archive. The full 1M-row dataset overflows the 4GB ZIP (non-ZIP64) limit, which the
 # underlying spreadsheet-ods crate does not handle, so we benchmark `to ods` on a
-# 500k-row subset that stays comfortably under the limit. Used by the to_ods benchmark.
+# 500k-row subset that stays comfortably under the limit. Used by the to_ods benchmark,
+# whose recs_per_sec divides by this subset's own rowcount.
 if [ ! -r ods_data.csv ]; then
   echo "   ods_data.csv..."
   "$qsv_benchmarker_bin" slice -l 500000 "$data" -o ods_data.csv
@@ -532,6 +535,40 @@ if [ ! -r pragmastats_50kdata.csv ]; then
   echo "   pragmastats_50kdata.csv..."
   "$qsv_benchmarker_bin" slice -l 50000 "$data" -o pragmastats_50kdata.csv
 fi
+
+# Measure the subset inputs' rowcounts, so recs_per_sec divides by the rows a benchmark
+# ACTUALLY read instead of the full dataset's $rowcount (qsv issue #4598).
+# These MUST be measured unconditionally, OUTSIDE the `if [ ! -r ... ]` prep guards above:
+# the subsets survive between runs (cleanup_files does not delete them - only `reset` does),
+# so on a re-run the prep blocks are skipped and an inside-the-guard count would silently
+# yield an empty value. Like $rowcount above, we measure rather than assume, in case the
+# user tailored the benchmark data to their system/workload.
+geo_rowcount=$("$qsv_benchmarker_bin" count --no-polars geo_data.csv)
+ods_rowcount=$("$qsv_benchmarker_bin" count --no-polars ods_data.csv)
+pragma_rowcount=$("$qsv_benchmarker_bin" count --no-polars pragmastats_50kdata.csv)
+
+# Derive the correct recs_per_sec divisor for a queued command. We key off the INPUT FILE
+# rather than a per-benchmark opt-in flag, so a future benchmark added against one of these
+# subsets gets the right divisor for free - forgetting to mark it is exactly how #4598
+# happened. Sets the global `cmd_rowcount` to the subset's rowcount, or "" meaning
+# "use the full $rowcount".
+# $data is matched FIRST: a command that reads the full dataset is a full-dataset benchmark
+# even when it also takes a small side input (the `exclude`/`join` pattern).
+# IF YOU ADD A NEW SUBSET INPUT FILE ABOVE, ADD A CASE ARM HERE.
+function rowcount_for_cmd {
+  case " $* " in
+  *"$data"*) cmd_rowcount= ;;
+  *pragmastats_50kdata.csv*) cmd_rowcount="$pragma_rowcount" ;;
+  *geo_data.csv*) cmd_rowcount="$geo_rowcount" ;;
+  *ods_data.csv*) cmd_rowcount="$ods_rowcount" ;;
+  *) cmd_rowcount= ;;
+  esac
+}
+
+# "name=rowcount;" pairs for benchmarks whose input is NOT the full $data, exported to
+# benchmark_aggregations.luau as QSVBM_ROWCOUNTS. Benchmark names are [a-z0-9_] only
+# (no "=" or ";"), so this flat format needs no escaping.
+bench_rowcounts=""
 
 if [ ! -r searchset_patterns.txt ]; then
   echo "   searchset_patterns.txt..."
@@ -586,6 +623,14 @@ function run {
   shift
 
   if [[ "$name" == *"$arg_pat"* ]]; then
+    # record a per-benchmark rowcount override if this command reads a subset of $data,
+    # so its recs_per_sec is not computed against the full dataset (qsv issue #4598).
+    # An empty cmd_rowcount (no subset, or a failed count) records nothing, so the
+    # benchmark simply falls back to the full $rowcount as before.
+    rowcount_for_cmd "$@"
+    if [ -n "$cmd_rowcount" ]; then
+      bench_rowcounts="${bench_rowcounts}${name}=${cmd_rowcount};"
+    fi
     if [ -z "$index" ]; then
       commands_without_index_name+=("$name")
       add_command "without_index" "$@"
@@ -754,9 +799,8 @@ run pivotp_dates "$qsv_bin" pivotp \"Created Date\" --index "Borough" --values \
 # benchmark names carry the _50k marker so they form their own series in the historical
 # archive: the delta/rank columns compare a benchmark only against earlier runs of the
 # same name, so the subset runs are never compared against the old full-dataset rows.
-# Note that recs_per_sec for these is derived from the full dataset's $rowcount (see
-# benchmark_aggregations.luau), so it overstates their throughput - the same caveat that
-# already applies to the other subset-input benchmarks (to_ods, geoconvert_csv2geojsonl).
+# recs_per_sec for these divides by pragmastats_50kdata.csv's own rowcount, not the full
+# dataset's - see rowcount_for_cmd() above and benchmark_aggregations.luau.
 run pragmastat_50k "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
 run pragmastat_50k_twosample "$qsv_bin" pragmastat --twosample --force -s \'Latitude,Longitude\' pragmastats_50kdata.csv
 run --index pragmastat_50k_index "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
@@ -1036,12 +1080,23 @@ echo ""
 "$qsv_bin" sort --select version,tstamp,name results/latest_results.csv \
   -o results/results_work.csv
 
-# compute records per second for each benchmark using luau by dividing rowcount by mean
+# compute records per second for each benchmark using luau by dividing that benchmark's
+# input rowcount by its mean
 # we then round the result to a whole number. We also compute the total mean
 
 # we set the QSVBM_ROWCOUNT environment variable to the rowcount so it can be used
-# by the luau script by using the qsv.get_env() function
+# by the luau script by using the qsv.get_env() function. This is the DEFAULT divisor,
+# used by every benchmark that reads the full dataset.
 export QSVBM_ROWCOUNT=$rowcount
+# a handful of benchmarks read a SUBSET of the benchmark data, so dividing by the full
+# rowcount would overstate their throughput (qsv issue #4598). QSVBM_ROWCOUNTS carries
+# their per-benchmark rowcounts as a flat "name=rows;name=rows;" string, keyed on the
+# benchmark name - which is already a column in the results CSV, so no new column is
+# needed. Benchmarks absent from the map use QSVBM_ROWCOUNT as before.
+export QSVBM_ROWCOUNTS="$bench_rowcounts"
+if [ -n "$bench_rowcounts" ]; then
+  printf "  Subset-input recs_per_sec divisors: %s\n" "$bench_rowcounts"
+fi
 # we run the benchmark_aggregations.luau script using qsv's luau command
 # total_mean is the total mean of all the benchmarks
 # it is computed in the END block of the script and is sent to stderr

@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATA: synth_highcard.csv
-      HYPERFINE_VERSION: "1.18.0"
+      HYPERFINE_VERSION: "1.19.0"
       THP_OFF: "metadata_thp:disabled"
       PERCPU: "percpu_arena:percpu"
       # Inputs are passed through env (not interpolated into `run:` shell) to avoid

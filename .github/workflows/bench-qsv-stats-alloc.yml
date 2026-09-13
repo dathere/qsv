@@ -36,7 +36,7 @@ jobs:
     env:
       DATA_URL: https://raw.githubusercontent.com/wiki/dathere/qsv/files/NYC_311_SR_2010-2020-sample-1M.7z
       DATA: NYC_311_SR_2010-2020-sample-1M.csv
-      HYPERFINE_VERSION: "1.18.0"
+      HYPERFINE_VERSION: "1.19.0"
 
     steps:
       - uses: actions/checkout@v7

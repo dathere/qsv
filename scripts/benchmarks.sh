@@ -446,7 +446,7 @@ fi
 # we get the rowcount, just in case the benchmark data was modified by the user to tailor
 # the benchmark to their system/workload. We use the rowcount to compute records per second.
 # This is the DEFAULT divisor; the few benchmarks that read a subset of the data get their
-# own divisor - see rowcount_for_cmd() further below.
+# own divisor - see rowcount_for_benchmark() further below.
 rowcount=$("$qsv_bin" count --no-polars "$data")
 printf "  Benchmark data rowcount: %'.0f\n" "$rowcount"
 qsv_absolute_path=$(which "$qsv_bin")
@@ -547,37 +547,33 @@ geo_rowcount=$("$qsv_benchmarker_bin" count --no-polars geo_data.csv)
 ods_rowcount=$("$qsv_benchmarker_bin" count --no-polars ods_data.csv)
 pragma_rowcount=$("$qsv_benchmarker_bin" count --no-polars pragmastats_50kdata.csv)
 
-# Derive the correct recs_per_sec divisor for a queued command. We key off the INPUT FILE
-# rather than a per-benchmark opt-in flag, so a future benchmark added against one of these
-# subsets gets the right divisor for free - forgetting to mark it is exactly how #4598
-# happened. Sets the global `cmd_rowcount` to the subset's rowcount, or "" meaning
-# "use the full $rowcount".
-# $data is matched FIRST: a command that reads the full dataset is a full-dataset benchmark
-# even when it also takes a small side input (the `exclude`/`join` pattern).
-# IF YOU ADD A NEW SUBSET INPUT FILE ABOVE, ADD A CASE ARM HERE.
-function rowcount_for_cmd {
-  local cmd=" $* "
-  # The subset filenames are fixed, but $data is configurable - and a $data whose name is a
-  # SUFFIX of one of them (data.csv, a.csv, _data.csv ...) would substring-match all three,
-  # silently handing every subset benchmark the full-dataset divisor again. So strip the
-  # subset names out before testing for $data. We cannot test $data as a whole token
-  # instead: several run lines embed it inside a larger quoted argument (apply_calcconv,
-  # and the duckdb line, where it sits inside a SQL string).
-  local rest="$cmd"
-  rest="${rest//pragmastats_50kdata.csv/}"
-  rest="${rest//geo_data.csv/}"
-  rest="${rest//ods_data.csv/}"
-  case "$rest" in
-  *"$data"*)
-    cmd_rowcount=
-    return
+# Look up the recs_per_sec divisor for a benchmark BY NAME. Most benchmarks read the full
+# dataset and use $rowcount; the few that read a prepared subset are listed here. Sets the
+# global `subset_rowcount` to that subset's rowcount, or "" meaning "use the full $rowcount".
+#
+# Keyed on the benchmark name - a fixed, controlled literal compared for EQUALITY - rather
+# than by inspecting the command for input filenames. Filename inspection was tried and
+# produced real collisions in both directions, because $data is configurable while the
+# subset filenames are fixed:
+#   - a $data that is a SUFFIX of a subset name (data.csv, a.csv) substring-matched all
+#     three subsets, so every subset benchmark silently took the full-dataset divisor;
+#   - a $data that CONTAINS a subset name (mygeo_data.csv, fixtures/geo_data.csv - note
+#     `basename` above, so paths are supported) gave full-dataset commands a subset divisor.
+# $data no longer takes part in the decision, so neither collision is expressible, and the
+# "full dataset wins" rule is now structural: a full-dataset benchmark is simply absent here.
+#
+# The accepted cost is upkeep: a new subset benchmark must be added below. That is the same
+# obligation the prep section's note already carries, and the divisor map is echoed on every
+# run (see QSVBM_ROWCOUNTS below), so a missing entry is visible.
+# IF YOU ADD A BENCHMARK THAT READS A SUBSET INPUT, ADD ITS NAME HERE.
+function rowcount_for_benchmark {
+  case "$1" in
+  pragmastat_50k | pragmastat_50k_twosample | pragmastat_50k_index)
+    subset_rowcount="$pragma_rowcount"
     ;;
-  esac
-  case "$cmd" in
-  *pragmastats_50kdata.csv*) cmd_rowcount="$pragma_rowcount" ;;
-  *geo_data.csv*) cmd_rowcount="$geo_rowcount" ;;
-  *ods_data.csv*) cmd_rowcount="$ods_rowcount" ;;
-  *) cmd_rowcount= ;;
+  geoconvert_csv2geojsonl) subset_rowcount="$geo_rowcount" ;;
+  to_ods) subset_rowcount="$ods_rowcount" ;;
+  *) subset_rowcount= ;;
   esac
 }
 
@@ -639,13 +635,13 @@ function run {
   shift
 
   if [[ "$name" == *"$arg_pat"* ]]; then
-    # record a per-benchmark rowcount override if this command reads a subset of $data,
+    # record a per-benchmark rowcount override if this benchmark reads a subset of $data,
     # so its recs_per_sec is not computed against the full dataset (qsv issue #4598).
-    # An empty cmd_rowcount (no subset, or a failed count) records nothing, so the
-    # benchmark simply falls back to the full $rowcount as before.
-    rowcount_for_cmd "$@"
-    if [ -n "$cmd_rowcount" ]; then
-      bench_rowcounts="${bench_rowcounts}${name}=${cmd_rowcount};"
+    # An empty subset_rowcount (not a subset benchmark, or a failed count) records nothing,
+    # so the benchmark simply falls back to the full $rowcount as before.
+    rowcount_for_benchmark "$name"
+    if [ -n "$subset_rowcount" ]; then
+      bench_rowcounts="${bench_rowcounts}${name}=${subset_rowcount};"
     fi
     if [ -z "$index" ]; then
       commands_without_index_name+=("$name")
@@ -816,7 +812,7 @@ run pivotp_dates "$qsv_bin" pivotp \"Created Date\" --index "Borough" --values \
 # archive: the delta/rank columns compare a benchmark only against earlier runs of the
 # same name, so the subset runs are never compared against the old full-dataset rows.
 # recs_per_sec for these divides by pragmastats_50kdata.csv's own rowcount, not the full
-# dataset's - see rowcount_for_cmd() above and benchmark_aggregations.luau.
+# dataset's - see rowcount_for_benchmark() above and benchmark_aggregations.luau.
 run pragmastat_50k "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
 run pragmastat_50k_twosample "$qsv_bin" pragmastat --twosample --force -s \'Latitude,Longitude\' pragmastats_50kdata.csv
 run --index pragmastat_50k_index "$qsv_bin" pragmastat --force pragmastats_50kdata.csv

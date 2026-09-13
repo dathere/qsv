@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.5.0
+bm_version=9.6.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -400,7 +400,7 @@ if [[ "$arg_pat" == "reset" ]]; then
   rm -f communityboards.csv
   rm -f geo_data.csv
   rm -f ods_data.csv
-  rm -f pragmastats_50kdata.csv
+  rm -f pragmastats_50kdata.csv*
   rm -f data_to_exclude.csv
   rm -f data_unsorted.csv
   rm -f data_sorted.csv
@@ -750,9 +750,16 @@ run pivotp_dates "$qsv_bin" pivotp \"Created Date\" --index "Borough" --values \
 # subsequent runs unless --force is given. Without --force, only the first hyperfine run
 # does real work and the rest error out on the existing cache, so we always pass --force
 # to measure the actual computation on every run.
-run pragmastat "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
-run pragmastat_twosample "$qsv_bin" pragmastat --twosample --force -s \'Latitude,Longitude\' pragmastats_50kdata.csv
-run --index pragmastat_index "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
+# These run on a 50k-row subset - the full 1M-row dataset takes ~2 hours per run. The
+# benchmark names carry the _50k marker so they form their own series in the historical
+# archive: the delta/rank columns compare a benchmark only against earlier runs of the
+# same name, so the subset runs are never compared against the old full-dataset rows.
+# Note that recs_per_sec for these is derived from the full dataset's $rowcount (see
+# benchmark_aggregations.luau), so it overstates their throughput - the same caveat that
+# already applies to the other subset-input benchmarks (to_ods, geoconvert_csv2geojsonl).
+run pragmastat_50k "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
+run pragmastat_50k_twosample "$qsv_bin" pragmastat --twosample --force -s \'Latitude,Longitude\' pragmastats_50kdata.csv
+run --index pragmastat_50k_index "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
 run pseudo "$qsv_bin" pseudo \'Unique Key\' "$data"
 run pseudo_formatstr "$qsv_bin" pseudo \'Unique Key\' --formatstr 'ID-{}' --increment 5 "$data"
 run rename "$qsv_bin" rename \'unique_key,created_date,closed_date,agency,agency_name,complaint_type,descriptor,loctype,zip,addr1,street,xstreet1,xstreet2,inter1,inter2,addrtype,city,landmark,facility_type,status,due_date,res_desc,res_act_date,comm_board,bbl,boro,xcoord,ycoord,opendata_type,parkname,parkboro,vehtype,taxi_boro,taxi_loc,bridge_hwy_name,bridge_hwy_dir,ramp,bridge_hwy_seg,lat,long,loc\' "$data"
@@ -946,8 +953,9 @@ idx=0
 name_idx=1
 for command_no_index in "${commands_without_index[@]}"; do
 
-  # remove the index file and the stats cache files
+  # remove the index files and the stats cache files
   rm -f "$data".idx
+  rm -f pragmastats_50kdata.csv.idx
   rm -f "$filestem".stats.*
 
   pct_complete=$(((name_idx - 1) * 100 / total_count))
@@ -985,6 +993,13 @@ if [ "$with_index_count" -gt 0 ]; then
   echo "  Preparing index and stats cache..."
   rm -f "$data".idx
   "$qsv_bin" index "$data"
+  # the pragmastat_50k_index benchmark reads the 50k subset, not "$data", so it needs its
+  # own index - without it, it silently measures the unindexed path and duplicates
+  # pragmastat_50k instead of exercising pragmastat's indexed parallel-chunk reader.
+  if [ -r pragmastats_50kdata.csv ]; then
+    rm -f pragmastats_50kdata.csv.idx
+    "$qsv_bin" index pragmastats_50kdata.csv
+  fi
   "$qsv_bin" stats "$data" --everything --infer-dates --stats-jsonl --force \
     --output benchmark_work.stats.csv
 fi

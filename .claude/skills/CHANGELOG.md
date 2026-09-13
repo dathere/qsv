@@ -5,7 +5,7 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [23.0.1] - <TBD>
 
 ### Changed
 - **BREAKING (tool schemas): option and positional types now come from the struct qsv deserializes its arguments into, not from prose in the description** ([#4596](https://github.com/dathere/qsv/issues/4596)). The skill generator decided whether an option was `number` or `string` by scanning its *description* for a literal `<number>` or `<int>`. The argument it actually declares never reaches that text, so the heuristic was reading the wrong thing and was wrong in both directions: exactly **1 of 761** options across the 56 skills was typed `number`, and it was a false positive - `sample --ts-interval`, whose description reads `Format: <number><unit>` and which takes `1h`. Every genuinely numeric option - `--seed`, `--bins`, `--timeout`, `--infer-len` - was advertised to agents as a string.
@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [23.0.0] - 2026-09-11
+
+> **Superseded by 23.0.1.** The companion qsv 23.0.0 *binary* release was withdrawn before
+> promotion - its x86_64-unknown-linux-gnu asset never built - so this server's
+> `minimum_qsv_version` floor named a qsv version that was never published. The marketplace
+> channel did serve this version (installs pull live from master), so the entry below stands
+> as the record of what shipped; upgrade to 23.0.1 for a floor you can actually satisfy.
 
 Companion release to qsv 23.0.0, "The Context is King Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 23.0.0 because the regenerated skill JSONs advertise flags that only exist in the new binary (`--tour-steps`, `readstat`). The headline for MCP/Cowork users is the new **`qsv-readstat`** skill - SAS, Stata and SPSS files become queryable without a licence - which takes the skill count to **56**. Beyond that, this is largely a *correctness* release for the agent-facing surface: six generator defects that had been quietly shipping mangled or generic `<input>` descriptions are fixed, and `visual-data-dictionary` is caught up with 23.0.0's Census geo work, where its Stage 3 had been actively steering users away from a working map.
 

@@ -107,6 +107,16 @@ SHOT_CSS = ("figure a.shot{display:block;text-align:center;text-decoration:none;
             "border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.06)}"
             "figure a.shot:hover img{border-color:#c3ccdb;box-shadow:0 2px 8px rgba(0,0,0,.12)}")
 
+# "(open in a new window)" link beside each EMBEDDED Data Schematic's title — the iframe figures'
+# equivalent of the SCREENSHOTS link-outs above, since an iframed Data Schematic is cramped (its
+# data viewer drawer, fullscreen button and map controls all contend with the parent page). Sits
+# inline after `span.t` and before the block-level `span.d`, so it rides on the title line; kept at
+# description weight/size so it reads as an affordance rather than part of the title. The link color
+# matches the Table of Contents links in NAV_CSS.
+POPOUT_CSS = ("figcaption a.popout{font-weight:400;font-size:12px;margin-left:8px;"
+              "color:#3056d3;text-decoration:none}"
+              "figcaption a.popout:hover{text-decoration:underline}")
+
 # GitHub-style copy icons (Octicons, 16x16, fill=currentColor). The button shows the "copy" icon
 # (two overlapping squares) and swaps to a green "check" on success — both are present in the
 # button and toggled by the `.ok` class (no innerHTML churn, no SVG strings in JS).
@@ -1373,11 +1383,25 @@ def command_block_html(tokens):
             f'<pre class="cmd"><code>{display}</code></pre></div>')
 
 
-def figcaption_html(title, desc, args):
+def figcaption_html(title, desc, args, popout=None):
     """A figure's `<figcaption>`: title, description, then the runnable command block with a
     Copy button. The displayed command is wrapped for readability; the button copies the
-    single-line form."""
-    return (f'<figcaption><span class="t">{title}</span>'
+    single-line form.
+
+    `popout` is the figure's own standalone page (an SMART_IFRAME filename) and is passed ONLY by
+    the iframe branch, so the link can never appear on a reconstructed-plotly figure. It mirrors
+    the SCREENSHOTS link-outs: target=_blank is the no-JS fallback, the onclick's window.open
+    gives the popup its own sized window, named per entry so opening one Data Schematic never
+    replaces another."""
+    link = ""
+    if popout:
+        win = os.path.splitext(popout)[0]
+        link = (f'<a class="popout" href="{popout}" target="_blank" rel="noopener" '
+                f"""onclick="window.open(this.href,'{win}','popup,width=1280,height=900');"""
+                f'''return false;" '''
+                f'title="Open the full interactive Data Schematic in a new window">'
+                f'(open in a new window)</a>')
+    return (f'<figcaption><span class="t">{title}</span>{link}'
             f'<span class="d">{desc}</span>'
             f'{command_block_html(viz_command_tokens(title, args))}</figcaption>')
 
@@ -2135,6 +2159,10 @@ def main():
     # (idempotent: drop any prior `figure a.shot` rules before re-adding)
     head = re.sub(r"\s*figure a\.shot[^{]*\{[^}]*\}", "", head)
     head = head.replace("</style>", " " + SHOT_CSS + "\n</style>", 1)
+    # "(open in a new window)" caption link on the embedded Data Schematic figures
+    # (idempotent: drop any prior `figcaption a.popout` rules before re-adding)
+    head = re.sub(r"\s*figcaption a\.popout[^{]*\{[^}]*\}", "", head)
+    head = head.replace("</style>", " " + POPOUT_CSS + "\n</style>", 1)
     # opaque backdrop when a reconstructed figure is sent fullscreen via its modebar button
     # (idempotent: drop any prior rule before re-adding)
     head = re.sub(r"\s*\.js-plotly-plot:fullscreen\{[^}]*\}", "", head)
@@ -2193,7 +2221,11 @@ def main():
                     fh.write(html)
             figs.append(None)  # keep FIGS index aligned with idx for the non-iframe figures
             fig_divs.append(
-                f'<figure class="cell full" id="{anchor}">{figcaption_html(title, desc, args)}'
+                # `iframe_name` doubles as the caption's "(open in a new window)" target — keyed off
+                # the SMART_IFRAME lookup, not the title, since some non-iframe figures are titled
+                # "smart Data Schematic (...)" too and must not get the link.
+                f'<figure class="cell full" id="{anchor}">'
+                f'{figcaption_html(title, desc, args, iframe_name)}'
                 # allow fullscreen so each Data Schematic's in-iframe Plotly "Fullscreen" modebar
                 # button (gd.requestFullscreen()) isn't blocked by the iframe permissions policy.
                 f'<iframe src="{iframe_name}" class="dash" scrolling="no" loading="lazy" '

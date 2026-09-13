@@ -21,7 +21,10 @@ The seventeen **smart dashboards** are embedded as `<iframe>`s of their genuine
 `qsv viz smart` HTML output (`smart_*.html`) rather than reconstructed inline, so
 the full-width overview panels (map, choropleth, correlation heatmap, time-series,
 treemap/sunburst hierarchy), themes and map zoom buttons render exactly as the CLI produces
-them. Those iframe sources are the real output with the inline plotly bundle swapped for the
+them. Each embedded dashboard's caption also carries an **(open in a new window)** link beside its
+title, so any Data Schematic can be opened standalone — an iframe is a cramped place for its data
+viewer drawer and map controls.
+Those iframe sources are the real output with the inline plotly bundle swapped for the
 same CDN tag (so they stay a few KB each); they need a network connection to render. Four of
 them (`smart_dict_treemap.html`, `smart_dict_sunburst.html`, `smart_world_choropleth.html`,
 `smart_geospatial.html`) are `--dictionary infer` examples that need a local LLM to regenerate,

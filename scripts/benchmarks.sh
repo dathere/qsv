@@ -215,10 +215,15 @@ fi
 hyperfine_min_major=1
 hyperfine_min_minor=19
 function hyperfine_too_old {
-  local major minor
-  hyperfine_version=$(hyperfine --version 2>/dev/null | awk '{print $2}')
-  major=$(echo "$hyperfine_version" | cut -d. -f1)
-  minor=$(echo "$hyperfine_version" | cut -d. -f2)
+  local raw major minor
+  raw=$(hyperfine --version 2>/dev/null)
+  # parsed with bash builtins rather than awk/cut ON PURPOSE: setup calls this BEFORE it
+  # checks for (and installs) awk, so an awk dependency here would make a missing awk look
+  # like an unparseable version and silently skip the upgrade.
+  read -r _ hyperfine_version _ <<<"$raw"
+  major=${hyperfine_version%%.*}
+  minor=${hyperfine_version#*.}
+  minor=${minor%%.*}
   [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ ]] || return 1
   ((major < hyperfine_min_major || (major == hyperfine_min_major && minor < hyperfine_min_minor)))
 }
@@ -302,6 +307,21 @@ if [[ "$arg_pat" == "setup" ]]; then
   elif [[ "$need_hyperfine" -eq 2 ]]; then
     echo "INFO: hyperfine v$hyperfine_version is older than v$hyperfine_min_major.$hyperfine_min_minor.0. Upgrading..."
     brew upgrade hyperfine
+  fi
+
+  # `brew upgrade` only works on a brew-managed formula - a hyperfine installed from cargo,
+  # apt or a downloaded tarball makes it exit non-zero - and the brew calls above are
+  # unchecked, so confirm the outcome here. Without this the "All required tools installed!"
+  # message below would claim a success that did not happen, and the too-old hyperfine would
+  # only surface on the next run.
+  if [[ "$need_hyperfine" -ne 0 ]]; then
+    if ! command -v hyperfine &>/dev/null; then
+      echo "WARNING: hyperfine is STILL not installed - the benchmarks cannot run without it."
+      echo "         Install it manually: https://github.com/sharkdp/hyperfine#installation"
+    elif hyperfine_too_old; then
+      echo "WARNING: hyperfine is STILL v$hyperfine_version (need v$hyperfine_min_major.$hyperfine_min_minor.0+)."
+      echo "         If it was not installed with Homebrew, upgrade it with whatever installed it."
+    fi
   fi
 
   # if awk is not installed, install it

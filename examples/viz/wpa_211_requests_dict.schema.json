@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "wpa_211_requests",
+  "type": "object",
+  "description": "REAL 2-1-1 helpline requests across the 25 Western Pennsylvania counties served by the United Way of Southwestern Pennsylvania, one row per request, the upstream resource entire (2023-09-22 .. 2025-08-27, no window and no sample - see gen_wpa_211_requests.py). Used to demonstrate a denominator-aware region map on a real service log rather than a synthetic one. No population column is carried on purpose: the rate panel's denominator is FETCHED by --denominator census@2024, and the county boundaries by --geojson auto, which also canonicalizes the county NAMES below to Census GEOIDs so the fetched population keys onto them.",
+  "x-qsv": {
+    "grain": "one row = one 2-1-1 request",
+    "grain_unit": "request"
+  },
+  "properties": {
+    "contact_date": {
+      "type": "string",
+      "title": "Contact Date",
+      "description": "Date the request reached the 2-1-1 helpline.",
+      "x-qsv": {
+        "qsv_type": "Date",
+        "cardinality": 704,
+        "null_count": 0,
+        "content_type": "date:%Y-%m-%d",
+        "role": "timestamp",
+        "concept": "time.event_timestamp"
+      }
+    },
+    "county": {
+      "type": "string",
+      "title": "County",
+      "description": "County of the caller, normalized to the '<Name> County' spelling by the generator (the upstream 2020-2023 and 2023-2025 resources disagree on the suffix). The ONLY region concept in this dictionary, deliberately: the upstream feed also carries a zip_code, and tagging it geo.* would create a competing choropleth candidate scoring against a county-keyed map. All 25 names are Pennsylvania counties and are unique within the state, so - unlike tristate_county_incidents - they need no state qualifier to stop the frequency bar silently summing namesakes.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 25,
+        "null_count": 0,
+        "content_type": "category",
+        "role": "dimension",
+        "concept": "geo.county"
+      }
+    },
+    "state": {
+      "type": "string",
+      "title": "State",
+      "description": "Constant by construction - this is the Western Pennsylvania 2-1-1 region. Carried so --geojson auto scopes its boundary fetch to one state rather than probing the nation.",
+      "const": "PA",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 1,
+        "null_count": 0,
+        "content_type": "state_abbr",
+        "role": "dimension",
+        "concept": "geo.state"
+      }
+    },
+    "gender": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "title": "Gender",
+      "description": "Self-reported gender of the caller, where recorded.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 3,
+        "null_count": 17395,
+        "content_type": "category",
+        "role": "dimension",
+        "concept": "category.type"
+      }
+    },
+    "age_range": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "title": "Age Range",
+      "description": "Banded age of the caller, where recorded.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 7,
+        "null_count": 5301,
+        "content_type": "category",
+        "role": "dimension",
+        "concept": "category.type"
+      }
+    },
+    "level_1_classification": {
+      "type": "string",
+      "title": "Need Group",
+      "description": "Top level of the AIRS/211 taxonomy for the need behind the request - Basic Needs, Income Support and Employment, and so on. The feed's finer taxonomy levels are dropped by the generator: level_2_classification has 66 values and needs_category 826, both past the point where a frequency bar reads.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 11,
+        "null_count": 0,
+        "content_type": "category",
+        "role": "dimension",
+        "concept": "category.type"
+      }
+    },
+    "needs_met": {
+      "type": "string",
+      "title": "Need Met",
+      "description": "Whether the Resource Navigator could connect the caller to a service for this need. 't' or 'f'.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 2,
+        "null_count": 0,
+        "content_type": "category",
+        "role": "dimension",
+        "concept": "category.type"
+      }
+    }
+  }
+}

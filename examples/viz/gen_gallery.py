@@ -62,6 +62,7 @@ SMART_IFRAME = {
     "smart Data Schematic (--smarter, Gini/Lorenz inequality + log-skew boxes)": "smart_cms_medicare.html",
     "smart Data Schematic (dictionary-declared pipeline funnel)": "smart_onboarding_funnel.html",
     "smart Data Schematic (--smarter, zero-inflated capital pipeline)": "smart_cpdb.html",
+    "smart Data Schematic (real per-capita county rate, WPRDC 2-1-1)": "smart_wpa_211_requests.html",
 }
 
 # Iframe artifacts that depend on a live LLM (`--dictionary infer` calls describegpt against a
@@ -934,6 +935,50 @@ FIGURES = [
             "--geojson", "tristate_counties.geojson",
             "--feature-id-key", "properties.GEOID",
             "--denominator", "census@2024"]),
+    # The third and last denominator figure, and the only one where the rate map does NOT
+    # invert the ranking. That is the point: the two figures above were built (one wholly,
+    # one partly) to show an inversion, and a reader could fairly conclude per-capita always
+    # flips a map. Real data declines to cooperate. Deliberately NOT in PREGENERATED: it is
+    # deterministic, with no `--dictionary infer` sidecar.
+    ("smart Data Schematic (real per-capita county rate, WPRDC 2-1-1)",
+     "The same count-vs-rate lesson as the two figures above, but on a <b>real service log</b> "
+     "where the rate map <b>refuses to invert</b> \u2014 and that is exactly why it is here. "
+     "<b>279,464 2-1-1 helpline requests</b> across the <b>25 Western Pennsylvania counties</b> "
+     "served by the United Way of Southwestern Pennsylvania, one row per request, the upstream "
+     "resource <b>entire</b> (2023-09-22 to 2025-08-27 \u2014 no window, no sample). The "
+     "<b>count</b> panel is <b>Allegheny County and almost nothing else</b>: 172,035 requests, "
+     "<b>61.6% of the whole file</b>, because a raw-count choropleth of any event log is "
+     "substantially a population map. The <b>rate</b> panel beside it divides by each county's "
+     "population \u2014 and <b>Allegheny still leads</b>, at 138.9 requests per 1,000 residents. "
+     "What moves is the <b>middle</b>: <b>Venango</b> climbs from 11th by count to <b>3rd</b> by "
+     "rate (74.8 per 1,000), <b>Cambria</b> from 5th to <b>2nd</b> (81.0), while <b>Butler</b> "
+     "falls from 8th to <b>13th</b>; the two top-eights share only <b>6 of 8</b> members. Compare "
+     "the synthetic tri-state figure above, whose top-tens were constructed to be <i>disjoint</i>. "
+     "Per-capita is a <b>different question</b>, not a trick that always flips a map \u2014 and a "
+     "gallery that only ever showed inversions would teach the wrong lesson. <b>The denominator is "
+     "not in the file.</b> <code>--denominator census@2024</code> fetches ACS 5-year total "
+     "population (<code>B01003</code>) from the Census Data API and stamps the release beneath the "
+     "map \u2014 <i>Denominator: ACS 2020&ndash;2024 5-yr (B01003)</i>. Unlike its neighbour this "
+     "figure keys on county <b>names</b> with <code>--geojson auto</code>, which fetches the "
+     "boundaries <i>and</i> canonicalizes the names to Census GEOIDs so the fetched population "
+     "keys onto them \u2014 so there is no FIPS column and no committed boundary file. "
+     "\u26a0\ufe0f Read the rate map as <b>service reach as much as need</b>, and the map says so "
+     "itself: the darkest county on it is <b>McKean</b>, at <b>2 requests against 39,904 "
+     "residents</b> \u2014 0.05 per 1,000, where the next-lowest county (Elk) is 12.3, some "
+     "<b>245 times higher</b>. Nobody believes McKean "
+     "County has no hardship; it sits at the edge of <i>this</i> call center's intake, so the "
+     "figure is measuring who dials 2-1-1, not who needs it. A per-capita map inherits whatever "
+     "the numerator was actually counting. The upstream feed's <code>zip_code</code> is dropped "
+     "rather than mis-tagged (a second geo concept would create a competing choropleth candidate), "
+     "and the dataset's OLDER 2020-2023 resource is deliberately not concatenated: 5.4% of its "
+     "rows carry a pipe-delimited <code>Allegheny County|Westmoreland County</code> multi-county "
+     "value, and every way of resolving those changes the map.",
+     True, ["smart", "wpa_211_requests.csv", "--smarter", "--bivariate", "--dict-info",
+            "--dictionary", "wpa_211_requests_dict.schema.json",
+            "--geojson", "auto",
+            "--denominator", "census@2024",
+            "--theme", "plotly_white",
+            "--dataset-pid", "https://data.wprdc.org/dataset/211-requests"]),
     ("smart Data Schematic (animated geo, world events)",
      "Auto Data Schematic for world_events_dated: global-extent dated points across six continents "
      "(lon span ~300&deg;, lat span ~99&deg;). Because the extent is continental/global, "

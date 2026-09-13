@@ -2563,6 +2563,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('-i', '-i', [CompletionResultType]::ParameterName, 'i')
             [CompletionResult]::new('--index', '--index', [CompletionResultType]::ParameterName, 'index')
             [CompletionResult]::new('--infer-len', '--infer-len', [CompletionResultType]::ParameterName, 'infer-len')
+            [CompletionResult]::new('--max-columns', '--max-columns', [CompletionResultType]::ParameterName, 'max-columns')
             [CompletionResult]::new('-o', '-o', [CompletionResultType]::ParameterName, 'o')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'output')
             [CompletionResult]::new('--total-label', '--total-label', [CompletionResultType]::ParameterName, 'total-label')

@@ -1,6 +1,6 @@
 {
   "name": "qsv-viz",
-  "version": "23.0.0",
+  "version": "23.0.1",
   "description": "Generate interactive charts & maps from CSV data using plotly. `viz smart` creates a Data Schematic — a *\"neuro-symbolic\"* interactive rendering of a dataset's schema & statistics — picking appropriate visualizations using the dataset's statistics, frequency distributions, data dictionary & optional LLM metadata inferencing/classification, with automatic geocoding enrichment. Outputs self-contained, interactive HTML or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature. (Gallery)",
   "category": "utility",
   "command": {

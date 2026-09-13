@@ -2436,6 +2436,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand -i 'i'
             cand --index 'index'
             cand --infer-len 'infer-len'
+            cand --max-columns 'max-columns'
             cand -o 'o'
             cand --output 'output'
             cand --total-label 'total-label'

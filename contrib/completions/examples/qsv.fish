@@ -1580,6 +1580,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -l col-separator -r
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -s i -l index -r
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -l infer-len -r
+complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -l max-columns -r
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -l total-label -r
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -s v -l values -r

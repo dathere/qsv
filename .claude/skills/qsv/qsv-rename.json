@@ -1,6 +1,6 @@
 {
   "name": "qsv-rename",
-  "version": "23.0.0",
+  "version": "23.0.1",
   "description": "Rename the columns of a CSV efficiently.",
   "category": "transformation",
   "command": {

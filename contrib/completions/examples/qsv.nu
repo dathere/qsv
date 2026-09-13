@@ -1785,6 +1785,7 @@ module completions {
     --index(-i): string
     --infer-len: string
     --maintain-order
+    --max-columns: string
     --output(-o): string
     --quiet(-q)
     --sort-columns

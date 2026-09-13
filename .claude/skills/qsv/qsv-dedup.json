@@ -1,6 +1,6 @@
 {
   "name": "qsv-dedup",
-  "version": "23.0.0",
+  "version": "23.0.1",
   "description": "Remove duplicate rows (See also `extdedup`, `extsort`, `sort` & `sortcheck` commands).",
   "category": "utility",
   "command": {

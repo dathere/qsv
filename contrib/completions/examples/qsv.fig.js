@@ -9418,6 +9418,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--max-columns",
+          isRepeatable: true,
+          args: {
+            name: "max-columns",
+            isOptional: true,
+          },
+        },
+        {
           name: ["-o", "--output"],
           isRepeatable: true,
           args: {

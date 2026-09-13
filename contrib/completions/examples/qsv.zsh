@@ -2650,6 +2650,7 @@ _arguments "${_arguments_options[@]}" : \
 '-i+[]: :_default' \
 '--index=[]: :_default' \
 '--infer-len=[]: :_default' \
+'--max-columns=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--total-label=[]: :_default' \

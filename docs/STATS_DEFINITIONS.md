@@ -1,6 +1,6 @@
 # qsv Stats Definitions
 
-> **Applies to qsv 23.0.0.** This file is **hand-maintained** — it is not generated from the
+> **Applies to qsv 23.0.1.** This file is **hand-maintained** — it is not generated from the
 > source, so it can drift silently when a statistic's behavior or output changes. If you are
 > reading it against a newer qsv, treat the column *set* as authoritative only up to the
 > version above, and check `qsv stats --help` for anything that looks off.

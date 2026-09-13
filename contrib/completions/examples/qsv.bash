@@ -10386,7 +10386,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__pivotp)
-            opts="-a -d -i -o -q -v -h --agg --col-separator --decimal-comma --delimiter --grand-total --ignore-errors --index --infer-len --maintain-order --output --quiet --sort-columns --subtotal --total-label --try-parsedates --validate --values --help"
+            opts="-a -d -i -o -q -v -h --agg --col-separator --decimal-comma --delimiter --grand-total --ignore-errors --index --infer-len --maintain-order --max-columns --output --quiet --sort-columns --subtotal --total-label --try-parsedates --validate --values --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -10421,6 +10421,10 @@ _qsv() {
                     return 0
                     ;;
                 --infer-len)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --max-columns)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

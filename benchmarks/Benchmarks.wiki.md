@@ -1,6 +1,6 @@
 # Benchmarks
 
-qsv's benchmark suite runs 277 benchmarks on a **1,000,000-row × 41-column, 520 MB**
+qsv's benchmark suite runs 276 benchmarks on a **1,000,000-row × 41-column, 520 MB**
 sample of NYC's 311 data, timed with [hyperfine](https://github.com/sharkdp/hyperfine)
 (2 warmups + 3 timed runs each). See
 [`scripts/results/README.md`](https://github.com/dathere/qsv/blob/master/scripts/results/README.md)

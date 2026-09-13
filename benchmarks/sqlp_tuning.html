@@ -16,7 +16,7 @@
 
         <script type="module">
             const graph_div = document.getElementById("plotly-html-element");
-            await Plotly.newPlot(graph_div, {"data":[{"type":"bar","x":["sqlp_aggregations_use_schema_cache","sqlp_aggregations_expensive_streaming","sqlp_aggregations_expensive","sqlp_aggregations","sqlp"],"y":[1079914.0,926784.0,923361.0,679810.0,642261.0],"textposition":"outside","texttemplate":"%{y:.3s}","textfont":{"size":10},"cliponaxis":false}],"layout":{"title":{"text":"sqlp tuning: the Polars schema-cache knob"},"uirevision":"qsv-viz","xaxis":{"title":{"text":"name"}},"yaxis":{"title":{"text":"records/sec"}}},"config":{"responsive":true},"frames":null});
+            await Plotly.newPlot(graph_div, {"data":[{"type":"bar","x":["sqlp_aggregations_use_schema_cache","sqlp_aggregations_expensive_streaming","sqlp_aggregations_expensive","sqlp_aggregations","sqlp"],"y":[1079914.0,926784.0,923361.0,679810.0,642261.0],"textposition":"outside","texttemplate":["1.08M","927k","923k","680k","642k"],"textfont":{"size":10},"cliponaxis":false}],"layout":{"title":{"text":"sqlp tuning: the Polars schema-cache knob"},"uirevision":"qsv-viz","xaxis":{"title":{"text":"name"}},"yaxis":{"title":{"text":"records/sec"}}},"config":{"responsive":true},"frames":null});
         </script>
     </div>
 <style>

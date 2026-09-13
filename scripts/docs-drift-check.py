@@ -618,6 +618,12 @@ def check_version_markers(report: Report, cargo: dict) -> None:
     for doc_rel in VERSION_MARKER_DOCS:
         doc = REPO_ROOT / doc_rel
         if not doc.exists():
+            report.add(
+                file=doc_rel,
+                line=None,
+                category="config",
+                message="doc file not found; docs-drift-check.py is out of date",
+            )
             continue
         text = doc.read_text(encoding="utf-8")
         m = APPLIES_TO_RE.search(text)

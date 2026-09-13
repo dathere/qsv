@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.4.0
+bm_version=9.5.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -400,6 +400,7 @@ if [[ "$arg_pat" == "reset" ]]; then
   rm -f communityboards.csv
   rm -f geo_data.csv
   rm -f ods_data.csv
+  rm -f pragmastats_50kdata.csv
   rm -f data_to_exclude.csv
   rm -f data_unsorted.csv
   rm -f data_sorted.csv
@@ -525,6 +526,11 @@ fi
 if [ ! -r ods_data.csv ]; then
   echo "   ods_data.csv..."
   "$qsv_benchmarker_bin" slice -l 500000 "$data" -o ods_data.csv
+fi
+
+if [ ! -r pragmastats_50kdata.csv ]; then
+  echo "   pragmastats_50kdata.csv..."
+  "$qsv_benchmarker_bin" slice -l 50000 "$data" -o pragmastats_50kdata.csv
 fi
 
 if [ ! -r searchset_patterns.txt ]; then
@@ -744,9 +750,9 @@ run pivotp_dates "$qsv_bin" pivotp \"Created Date\" --index "Borough" --values \
 # subsequent runs unless --force is given. Without --force, only the first hyperfine run
 # does real work and the rest error out on the existing cache, so we always pass --force
 # to measure the actual computation on every run.
-run pragmastat "$qsv_bin" pragmastat --force "$data"
-run pragmastat_twosample "$qsv_bin" pragmastat --twosample --force -s \'Latitude,Longitude\' "$data"
-run --index pragmastat_index "$qsv_bin" pragmastat --force "$data"
+run pragmastat "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
+run pragmastat_twosample "$qsv_bin" pragmastat --twosample --force -s \'Latitude,Longitude\' pragmastats_50kdata.csv
+run --index pragmastat_index "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
 run pseudo "$qsv_bin" pseudo \'Unique Key\' "$data"
 run pseudo_formatstr "$qsv_bin" pseudo \'Unique Key\' --formatstr 'ID-{}' --increment 5 "$data"
 run rename "$qsv_bin" rename \'unique_key,created_date,closed_date,agency,agency_name,complaint_type,descriptor,loctype,zip,addr1,street,xstreet1,xstreet2,inter1,inter2,addrtype,city,landmark,facility_type,status,due_date,res_desc,res_act_date,comm_board,bbl,boro,xcoord,ycoord,opendata_type,parkname,parkboro,vehtype,taxi_boro,taxi_loc,bridge_hwy_name,bridge_hwy_dir,ramp,bridge_hwy_seg,lat,long,loc\' "$data"

@@ -207,6 +207,27 @@ else
   sevenz_bin=7z
 fi
 
+# hyperfine's --conclude (used by the to_sqlite benchmark) was added in v1.19, so that is
+# our floor. hyperfine_too_old returns 0 (true) ONLY when an installed hyperfine can be
+# positively identified as older - an unparseable version string is never treated as too
+# old, so a future version-string change cannot block the benchmarks. Sets the global
+# $hyperfine_version for error messages.
+hyperfine_min_major=1
+hyperfine_min_minor=19
+function hyperfine_too_old {
+  local raw major minor
+  raw=$(hyperfine --version 2>/dev/null)
+  # parsed with bash builtins rather than awk/cut ON PURPOSE: setup calls this BEFORE it
+  # checks for (and installs) awk, so an awk dependency here would make a missing awk look
+  # like an unparseable version and silently skip the upgrade.
+  read -r _ hyperfine_version _ <<<"$raw"
+  major=${hyperfine_version%%.*}
+  minor=${hyperfine_version#*.}
+  minor=${minor%%.*}
+  [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ ]] || return 1
+  ((major < hyperfine_min_major || (major == hyperfine_min_major && minor < hyperfine_min_minor)))
+}
+
 # if arg_pat is equal to "setup", setup and install all the required tools
 if [[ "$arg_pat" == "setup" ]]; then
 
@@ -215,15 +236,23 @@ if [[ "$arg_pat" == "setup" ]]; then
   need_awk=0
   need_sed=0
   need_duckdb=0
+  # set by any post-install verification that fails, so setup reports an honest exit status
+  # instead of printing "All required tools installed!" over the top of its own warnings
+  setup_failed=0
 
   # check if 7z is installed
   if ! command -v "$sevenz_bin" &>/dev/null; then
     need_sevenz=1
   fi
 
-  # check if hyperfine is installed
+  # check if hyperfine is installed, and that it is new enough for --conclude.
+  # need_hyperfine=2 means "installed but too old", which needs an upgrade, not an install
+  # - `brew install` on an already-installed formula is a no-op, so without this a 1.18
+  # user would bounce between the version error and a setup run that does nothing.
   if ! command -v hyperfine &>/dev/null; then
     need_hyperfine=1
+  elif hyperfine_too_old; then
+    need_hyperfine=2
   fi
 
   # check if awk is installed
@@ -274,10 +303,30 @@ if [[ "$arg_pat" == "setup" ]]; then
     brew install 7zip
   fi
 
-  # if hyperfine is not installed, install it
+  # if hyperfine is not installed, install it; if it is too old, upgrade it
   if [[ "$need_hyperfine" -eq 1 ]]; then
     echo "INFO: hyperfine could not be found. Installing..."
     brew install hyperfine
+  elif [[ "$need_hyperfine" -eq 2 ]]; then
+    echo "INFO: hyperfine v$hyperfine_version is older than v$hyperfine_min_major.$hyperfine_min_minor.0. Upgrading..."
+    brew upgrade hyperfine
+  fi
+
+  # `brew upgrade` only works on a brew-managed formula - a hyperfine installed from cargo,
+  # apt or a downloaded tarball makes it exit non-zero - and the brew calls above are
+  # unchecked, so confirm the outcome here. Without this the "All required tools installed!"
+  # message below would claim a success that did not happen, and the too-old hyperfine would
+  # only surface on the next run.
+  if [[ "$need_hyperfine" -ne 0 ]]; then
+    if ! command -v hyperfine &>/dev/null; then
+      echo "WARNING: hyperfine is STILL not installed - the benchmarks cannot run without it."
+      echo "         Install it manually: https://github.com/sharkdp/hyperfine#installation"
+      setup_failed=1
+    elif hyperfine_too_old; then
+      echo "WARNING: hyperfine is STILL v$hyperfine_version (need v$hyperfine_min_major.$hyperfine_min_minor.0+)."
+      echo "         If it was not installed with Homebrew, upgrade it with whatever installed it."
+      setup_failed=1
+    fi
   fi
 
   # if awk is not installed, install it
@@ -298,6 +347,14 @@ if [[ "$arg_pat" == "setup" ]]; then
     brew install duckdb
   fi
 
+  # a verification failure above must not be papered over by the success message, and setup
+  # must exit non-zero so a caller chaining `./benchmarks.sh setup && ./benchmarks.sh` stops
+  # here instead of running into the same error again.
+  if [[ "$setup_failed" -eq 1 ]]; then
+    echo "ERROR: setup did not complete - see the WARNING(s) above."
+    exit 1
+  fi
+
   echo "> All required tools installed! You can run ./benchmarks.sh now."
   exit
 fi
@@ -312,7 +369,16 @@ fi
 # check if hyperfine is installed
 if ! command -v hyperfine &>/dev/null; then
   echo "ERROR: hyperfine could not be found"
-  echo "Please install hyperfine v1.18.0 and above or run \"./benchmarks.sh setup\" to install it."
+  echo "Please install hyperfine v1.19.0 and above or run \"./benchmarks.sh setup\" to install it."
+  exit 1
+fi
+
+# the to_sqlite benchmark uses hyperfine's --conclude, which was added in 1.19. On an
+# older hyperfine that benchmark would die on an unknown argument mid-run, so fail fast
+# with a clear message instead.
+if hyperfine_too_old; then
+  echo "ERROR: hyperfine v$hyperfine_version is too old (--conclude requires v$hyperfine_min_major.$hyperfine_min_minor.0+)"
+  echo "Please run \"brew upgrade hyperfine\" or \"./benchmarks.sh setup\" to upgrade it."
   exit 1
 fi
 
@@ -602,8 +668,10 @@ dynenum_schema=benchmark_data-dynenum.csv.schema.json
 
 commands_without_index=()
 commands_without_index_name=()
+commands_without_index_conclude=()
 commands_with_index=()
 commands_with_index_name=()
+commands_with_index_conclude=()
 
 function add_command {
   local dest_array="$1"
@@ -619,11 +687,29 @@ function add_command {
 
 function run {
   local index=
+  # --conclude CMD is handed to hyperfine's --conclude, which runs CMD after each timing
+  # run WITHOUT timing it. Use it for benchmarks whose command refuses to re-run against
+  # its own leftover output (e.g. `to sqlite` errors if the table already exists): without
+  # per-run cleanup only the first run does real work and the rest measure an instant
+  # failure. Doing the cleanup here instead of inside the timed command keeps it out of
+  # the measurement and out of the command's exit status.
+  # TWO TRAPS, both verified against hyperfine 1.20:
+  #  1. we invoke hyperfine with -N (--shell=none), so CMD is executed as a BARE PROGRAM,
+  #     not a shell line. No `;`, `&&`, globs or redirects - they are passed through as
+  #     literal argv entries. Use a helper script if you need more than one command.
+  #  2. if CMD exits non-zero, hyperfine ABORTS THE WHOLE BENCHMARK RUN. -i does not cover
+  #     it (that only ignores the benchmarked program's exit code). `rm -f` is safe - it
+  #     exits 0 on a missing file - but anything fancier needs its own guard.
+  local conclude=
   while true; do
     case "$1" in
     --index)
       index="yes"
       shift
+      ;;
+    --conclude)
+      conclude="$2"
+      shift 2
       ;;
     *)
       break
@@ -643,11 +729,15 @@ function run {
     if [ -n "$subset_rowcount" ]; then
       bench_rowcounts="${bench_rowcounts}${name}=${subset_rowcount};"
     fi
+    # the _conclude arrays are index-aligned with the _name arrays, so every benchmark
+    # appends an entry - an empty one when it has no --conclude command.
     if [ -z "$index" ]; then
       commands_without_index_name+=("$name")
+      commands_without_index_conclude+=("$conclude")
       add_command "without_index" "$@"
     else
       commands_with_index_name+=("$name")
+      commands_with_index_conclude+=("$conclude")
       add_command "with_index" "$@"
     fi
   fi
@@ -932,12 +1022,12 @@ run template_lookup_outdir "$qsv_bin" template --template-file template-with-cb-
 run to_xlsx "$qsv_bin" to xlsx benchmark_work.xlsx "$data"
 # `to sqlite` ERRORS OUT if the target db already has the table, so the db must be
 # removed between hyperfine runs — otherwise only the first run does real work and the
-# rest measure an instant failure (masked by hyperfine's -i). We wrap in `bash -c` (the
-# extsort_csv pattern) so the rm runs INSIDE each timed run; its overhead is negligible
-# vs the multi-second conversion. (A bare `;rm` here would run once at queue time, not
-# between runs — that was the old bug.) We preserve the conversion's exit status so a
-# failed conversion isn't masked by a successful rm.
-run to_sqlite bash -c \'"$qsv_bin" to sqlite benchmark_work.db "$data"\; s=\$\?\; rm -f benchmark_work.db\; exit \$s\'
+# rest measure an instant failure (masked by hyperfine's -i). --conclude runs the rm
+# after each timing run but OUTSIDE the measurement, so unlike the old `bash -c` wrapper
+# the cleanup costs nothing and cannot mask the conversion's exit status. (A bare `;rm`
+# here would run once at queue time, not between runs — that was the original bug.)
+# --conclude requires hyperfine 1.19+.
+run --conclude 'rm -f benchmark_work.db' to_sqlite "$qsv_bin" to sqlite benchmark_work.db "$data"
 run to_datapackage "$qsv_bin" to datapackage benchmark_work.json "$data"
 # to_ods uses a 500k-row subset (ods_data.csv); the full dataset overflows the ODS 4GB
 # ZIP limit. See the ods_data.csv prep step above. Unlike `to sqlite`, `to ods`
@@ -1017,8 +1107,12 @@ for command_no_index in "${commands_without_index[@]}"; do
   pct_complete=$(((name_idx - 1) * 100 / total_count))
 
   echo "$name_idx. ${commands_without_index_name[$idx]} ($pct_complete%)"
+  conclude_args=()
+  if [ -n "${commands_without_index_conclude[$idx]}" ]; then
+    conclude_args=(--conclude "${commands_without_index_conclude[$idx]}")
+  fi
   hyperfine -N --warmup "$warmup_runs" -i --runs "$benchmark_runs" --export-csv results/hf_result.csv \
-    "$command_no_index"
+    "${conclude_args[@]}" "$command_no_index"
 
   # prepend version, tstamp & benchmark name to the hyperfine results
   echo "version,tstamp,name" >results/results_work.csv
@@ -1065,8 +1159,12 @@ for command_with_index in "${commands_with_index[@]}"; do
   pct_complete=$(((name_idx - 1) * 100 / total_count))
 
   echo "$name_idx. ${commands_with_index_name[$idx]} ($pct_complete%)"
+  conclude_args=()
+  if [ -n "${commands_with_index_conclude[$idx]}" ]; then
+    conclude_args=(--conclude "${commands_with_index_conclude[$idx]}")
+  fi
   hyperfine -N --warmup "$warmup_runs" -i --runs "$benchmark_runs" --export-csv results/hf_result.csv \
-    "$command_with_index"
+    "${conclude_args[@]}" "$command_with_index"
   echo "version,tstamp,name" >results/results_work.csv
   echo "$version,$now,${commands_with_index_name[$idx]}" >>results/results_work.csv
   "$qsv_bin" select '!command' results/hf_result.csv -o results/hf_result_nocmd.csv

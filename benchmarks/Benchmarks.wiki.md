@@ -7,8 +7,12 @@ sample of NYC's 311 data, timed with [hyperfine](https://github.com/sharkdp/hype
 for the methodology and the raw CSVs.
 
 > [!NOTE]
-> **23.0.1: un-indexed `count` is ~8.6x slower than 22.0.1 — by design.** See [#4472](https://github.com/dathere/qsv/pull/4472). Several other un-indexed benchmarks also fell this release while their
-> indexed counterparts improved — those movements are not yet traced to a specific change.
+> **23.0.1 — un-indexed regression, under investigation.** Un-indexed `count` is ~8.6x slower
+> than 22.0.1, and several other un-indexed benchmarks fell 34-58%, while their indexed
+> counterparts improved. The un-indexed row count routes through polars, and this release moved
+> polars from crates.io 0.55.2 to the `py-1.44.2` git pin; the indexed path reads the index
+> instead and is unaffected. Tracked in [#4603](https://github.com/dathere/qsv/issues/4603) — building an index sidesteps it
+> entirely.
 
 > Looking for the **full per-command timing tables**? See the classic
 > [tabular benchmarks at qsv.dathere.com](https://qsv.dathere.com/benchmarks). This page is the

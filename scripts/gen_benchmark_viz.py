@@ -123,17 +123,22 @@ GROWTH_CEILING = 10_000_000
 # version and rewrite) when a newer run supersedes it. Standing behaviour does NOT belong here — it
 # goes in the affected chart's own description, which every future run keeps rendering.
 RELEASE_NOTE_VERSION = "23.0.1"
-_PR_4472 = "https://github.com/dathere/qsv/pull/4472"
+_ISSUE_URL = "https://github.com/dathere/qsv/issues/4603"
 RELEASE_NOTE_HTML = (
-    " <b>23.0.1:</b> un-indexed <code>count</code> is ~8.6x slower than 22.0.1 — by design, see "
-    f'<a href="{_PR_4472}">#4472</a>. Several other un-indexed benchmarks also fell this release '
-    "while their indexed counterparts improved; those movements are not yet traced to a specific "
-    "change.")
+    " <b>23.0.1 — un-indexed regression, under investigation.</b> Un-indexed <code>count</code> is "
+    "~8.6x slower than 22.0.1, and several other un-indexed benchmarks fell 34-58%, while their "
+    "indexed counterparts improved. The un-indexed row count routes through polars and this release "
+    "moved polars from crates.io 0.55.2 to the py-1.44.2 git pin; the indexed path reads the index "
+    f'instead and is unaffected. Tracked in <a href="{_ISSUE_URL}">#4603</a> — building an index '
+    "sidesteps it entirely.")
 RELEASE_NOTE_MD = (
     "\n> [!NOTE]\n"
-    "> **23.0.1: un-indexed `count` is ~8.6x slower than 22.0.1 — by design.** See "
-    f"[#4472]({_PR_4472}). Several other un-indexed benchmarks also fell this release while their\n"
-    "> indexed counterparts improved — those movements are not yet traced to a specific change.\n")
+    "> **23.0.1 — un-indexed regression, under investigation.** Un-indexed `count` is ~8.6x slower\n"
+    "> than 22.0.1, and several other un-indexed benchmarks fell 34-58%, while their indexed\n"
+    "> counterparts improved. The un-indexed row count routes through polars, and this release moved\n"
+    "> polars from crates.io 0.55.2 to the `py-1.44.2` git pin; the indexed path reads the index\n"
+    f"> instead and is unaffected. Tracked in [#4603]({_ISSUE_URL}) — building an index sidesteps it\n"
+    "> entirely.\n")
 
 
 def find_qsv():
@@ -700,9 +705,8 @@ def main():
                     "The index advantage at its extreme. With an index, count doesn't scan at all — "
                     f"it reads a row count qsv already stored, {c_jump}. It sits on its own axis "
                     "precisely because that number would flatten every other bar on the page. The "
-                    "un-indexed bar is deliberately conservative: count only takes the fast Polars "
-                    "path when the file provably has no blank lines, because that path counted blank "
-                    "lines as rows (#4472) — correctness over speed."))
+                    "un-indexed bar scans the file to count it, so it tracks whatever the current "
+                    "scan path costs; the indexed bar reads the stored count and does not."))
     sp_src, sp_rows = prep_superpowers()
     sp_top_cmd, sp_top_x = (sp_rows[0] if sp_rows else ("schema", 0.0))
     figs.append(viz("bar", sp_src,

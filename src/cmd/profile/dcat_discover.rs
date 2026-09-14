@@ -23,9 +23,10 @@
 
 use std::time::Duration;
 
+use encoding_rs::{Encoding, UTF_8};
 use reqwest::{
-    blocking::Client,
-    header::{HeaderValue, LINK},
+    blocking::{Client, Response},
+    header::{CONTENT_TYPE, HeaderMap, HeaderValue, LINK},
 };
 use serde_json::Value;
 
@@ -74,37 +75,68 @@ pub fn discover(url: &str, timeout: Duration) -> Option<Value> {
 /// being a safe ceiling.
 const DCAT_DISCOVERY_MAX_BYTES: u64 = 4 * 1024 * 1024;
 
-/// Read at most `DCAT_DISCOVERY_MAX_BYTES` from `reader` and decode it lossily
-/// as UTF-8.
+/// Pull the `charset` parameter out of a `Content-Type` header.
+/// e.g. `text/html; charset=windows-1252` -> `Some("windows-1252")`.
 ///
-/// Deliberately not `Response::text()`: these bodies are publisher-controlled
-/// and `.text()` is unbounded, so the cap has to be applied at the reader.
+/// A deliberate hand parse rather than promoting `mime` to a direct dependency:
+/// the grammar needed here is one parameter with optional quoting.
+fn charset_from_headers(headers: &HeaderMap) -> Option<String> {
+    let content_type = headers.get(CONTENT_TYPE)?.to_str().ok()?;
+    content_type
+        .split(';')
+        .skip(1)
+        .filter_map(|param| param.split_once('='))
+        .find(|(name, _)| name.trim().eq_ignore_ascii_case("charset"))
+        .map(|(_, value)| value.trim().trim_matches('"').to_string())
+}
+
+/// Read at most `DCAT_DISCOVERY_MAX_BYTES` from `reader`.
 ///
-/// Equally deliberately not `read_to_string()`, which is what this used to be.
-/// That hard-errored on two inputs a discovery probe will actually meet - a
-/// non-UTF-8 body (windows-1252 landing pages are common on open-data portals)
-/// and a *valid* UTF-8 body whose byte cap sliced a multi-byte codepoint - and
-/// since every caller swallows the error with `.ok()?`, both silently aborted
-/// discovery with no diagnostic. Lossy decoding degrades a stray bad byte to
-/// U+FFFD instead, which the JSON/JSON-LD scanners downstream tolerate.
-///
-/// To be clear about what this does NOT fix: a body actually truncated by the cap
-/// is still truncated, and `serde_json::from_str` on it still fails. Lossy decoding
-/// only stops truncation from being a *second*, earlier failure mode (a dangling
-/// lead byte killing an otherwise-fine read); the real win is the non-UTF-8 case.
-///
-/// Takes `impl Read` rather than a `Response` purely so the decode behaviour is
-/// unit-testable without a live server; `Response` implements `Read`, so every
-/// call site is unchanged.
-fn read_capped_lossy(reader: impl std::io::Read) -> Option<String> {
+/// Deliberately not `Response::text()`: these bodies are publisher-controlled and
+/// `.text()` is unbounded, so the cap has to be applied at the reader. That is also
+/// why the charset handling below is open-coded instead of delegating to
+/// `text_with_charset()`.
+fn read_capped(reader: impl std::io::Read) -> Option<Vec<u8>> {
     let mut limited = std::io::Read::take(reader, DCAT_DISCOVERY_MAX_BYTES);
     let mut buf = Vec::new();
     std::io::Read::read_to_end(&mut limited, &mut buf).ok()?;
-    // avoid re-copying the (overwhelmingly common) already-valid UTF-8 case
-    Some(
-        String::from_utf8(buf)
-            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()),
-    )
+    Some(buf)
+}
+
+/// Decode a capped body to text, honoring the publisher's declared `charset`.
+///
+/// This mirrors what `reqwest::Response::text_with_charset` does internally: a
+/// `charset` that `encoding_rs` recognizes wins, anything else falls back to UTF-8,
+/// and `Encoding::decode` BOM-sniffs (so a UTF-8/UTF-16 BOM both selects the
+/// encoding and is stripped, which matters because `serde_json` chokes on a BOM).
+///
+/// Decoding is lossy in every branch. The predecessor here was `read_to_string`,
+/// which hard-errored on two inputs a discovery probe actually meets - a non-UTF-8
+/// body, and a *valid* UTF-8 body whose byte cap sliced a multi-byte codepoint -
+/// and since every caller swallows the error with `.ok()?`, both silently aborted
+/// discovery with no diagnostic.
+///
+/// What lossiness does NOT fix: a body truncated by the cap is still truncated, and
+/// `serde_json::from_str` on it still fails. It only stops truncation from being a
+/// *second*, earlier failure mode.
+///
+/// Note that a declared charset is honored on JSON bodies too, even though JSON is
+/// UTF-8 by RFC 8259, so a server sending `application/json; charset=iso-8859-1` is
+/// taken at its word. That is deliberate: it is exactly what `text_with_charset`
+/// does for every other HTTP body in qsv, and diverging here would be the surprise.
+fn decode_capped(buf: &[u8], charset: Option<&str>) -> String {
+    let encoding = charset
+        .and_then(|label| Encoding::for_label(label.as_bytes()))
+        .unwrap_or(UTF_8);
+    encoding.decode(buf).0.into_owned()
+}
+
+/// Read a capped body and decode it per the response's own `Content-Type` charset.
+fn read_capped_lossy(response: Response) -> Option<String> {
+    // the charset has to come off the headers before `response` is moved into the reader
+    let charset = charset_from_headers(response.headers());
+    let buf = read_capped(response)?;
+    Some(decode_capped(&buf, charset.as_deref()))
 }
 
 /// Issue a HEAD against `url`; if the response carries a
@@ -236,7 +268,7 @@ fn discover_via_html_jsonld(client: &Client, url: &str) -> Option<Value> {
     }
     let content_type_is_html = response
         .headers()
-        .get(reqwest::header::CONTENT_TYPE)
+        .get(CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|s| s.to_ascii_lowercase().contains("html"));
 
@@ -460,30 +492,82 @@ mod tests {
         );
     }
 
-    // read_capped_lossy: the three inputs the old read_to_string() rejected.
-    // Each of these previously returned Err -> .ok()? -> None, silently
-    // aborting DCAT discovery.
+    // ---- capped read + charset-aware decode -------------------------------
 
     #[test]
-    fn read_capped_lossy_passes_through_valid_utf8() {
-        let src = r#"{"@type":"dcat:Dataset","dct:title":"café"}"#;
-        assert_eq!(read_capped_lossy(src.as_bytes()), Some(src.to_string()));
+    fn charset_from_headers_reads_the_content_type_parameter() {
+        let mut h = HeaderMap::new();
+        h.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=windows-1252"),
+        );
+        assert_eq!(charset_from_headers(&h), Some("windows-1252".to_string()));
     }
 
     #[test]
-    fn read_capped_lossy_survives_non_utf8_body() {
-        // windows-1252 "café" - 0xE9 is not valid UTF-8. read_to_string() errored
-        // here; we now degrade the single bad byte to U+FFFD and keep going.
-        let src: &[u8] = &[b'c', b'a', b'f', 0xE9];
-        let got = read_capped_lossy(src).expect("must not fail on a non-UTF-8 body");
-        assert_eq!(got, "caf\u{FFFD}");
+    fn charset_from_headers_tolerates_quotes_case_and_spacing() {
+        let mut h = HeaderMap::new();
+        h.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static(r#"text/html ; Charset = "ISO-8859-1""#),
+        );
+        assert_eq!(charset_from_headers(&h), Some("ISO-8859-1".to_string()));
     }
 
     #[test]
-    fn read_capped_lossy_survives_cap_slicing_a_codepoint() {
-        // A body that is perfectly valid UTF-8, but whose DCAT_DISCOVERY_MAX_BYTES
-        // cut lands between the two bytes of "é" (0xC3 0xA9). read_to_string()
-        // errored on the dangling 0xC3; we keep the prefix and mark the tail.
+    fn charset_from_headers_is_none_without_a_parameter() {
+        let mut h = HeaderMap::new();
+        h.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        assert_eq!(charset_from_headers(&h), None);
+        assert_eq!(charset_from_headers(&HeaderMap::new()), None);
+    }
+
+    #[test]
+    fn decode_capped_honors_a_declared_legacy_charset() {
+        // The whole point of the fix: "Café" in windows-1252 is 0xE9, which is not
+        // valid UTF-8. With the publisher's declaration honored it round-trips;
+        // without it, the title silently became "Caf<U+FFFD>".
+        let src: &[u8] = &[b'C', b'a', b'f', 0xE9];
+        assert_eq!(decode_capped(src, Some("windows-1252")), "Café");
+        assert_eq!(decode_capped(src, None), "Caf\u{FFFD}");
+    }
+
+    #[test]
+    fn decode_capped_ignores_an_unusable_charset_label() {
+        // Encoding::for_label() returns None for junk; we fall back to UTF-8 rather
+        // than guessing. windows-1252 bytes are used so the assertion discriminates -
+        // an implementation that guessed latin-1 would yield "Café", not U+FFFD, and
+        // an ASCII fixture would pass under either.
+        let src: &[u8] = &[b'C', b'a', b'f', 0xE9];
+        assert_eq!(decode_capped(src, Some("not-an-encoding")), "Caf\u{FFFD}");
+    }
+
+    #[test]
+    fn decode_capped_strips_a_utf8_bom() {
+        // serde_json::from_str fails on a leading U+FEFF, so the BOM must go.
+        let mut src = vec![0xEF, 0xBB, 0xBF];
+        src.extend_from_slice(br#"{"@type":"dcat:Dataset"}"#);
+        assert_eq!(decode_capped(&src, None), r#"{"@type":"dcat:Dataset"}"#);
+        assert_eq!(
+            decode_capped(&src, Some("utf-8")),
+            r#"{"@type":"dcat:Dataset"}"#
+        );
+    }
+
+    #[test]
+    fn decode_capped_survives_a_body_truncated_mid_codepoint() {
+        // A dangling lead byte used to kill an otherwise-fine read via
+        // read_to_string(); it now degrades to U+FFFD.
+        let src: &[u8] = &[b'a', 0xC3];
+        assert_eq!(decode_capped(src, None), "a\u{FFFD}");
+    }
+
+    #[test]
+    fn read_capped_stops_at_the_byte_cap_slicing_a_codepoint() {
+        // Covers the read/decode seam: the cap lands between the two bytes of "é"
+        // (0xC3 0xA9), so read_capped hands back a buffer ending in a dangling lead
+        // byte. This exact shape is what the old read_to_string() died on, so the
+        // fixture has to straddle the real cap - a short buffer would not prove it.
         let cap = DCAT_DISCOVERY_MAX_BYTES as usize;
         let mut src = vec![b'a'; cap - 1];
         src.extend_from_slice(&[0xC3, 0xA9]);
@@ -492,9 +576,23 @@ mod tests {
             "fixture must itself be valid UTF-8"
         );
 
-        let got = read_capped_lossy(src.as_slice()).expect("must not fail on a sliced codepoint");
-        assert_eq!(got.len(), cap - 1 + "\u{FFFD}".len());
-        assert!(got.ends_with('\u{FFFD}'));
+        let got = read_capped(src.as_slice()).expect("capped read must not fail");
+        assert_eq!(got.len(), cap, "read_capped must stop exactly at the cap");
+        assert_eq!(
+            got[cap - 1],
+            0xC3,
+            "the cap must actually slice the codepoint"
+        );
+
+        let decoded = decode_capped(&got, None);
+        assert_eq!(decoded.len(), cap - 1 + "\u{FFFD}".len());
+        assert!(decoded.ends_with('\u{FFFD}'));
+    }
+
+    #[test]
+    fn read_capped_passes_through_a_short_body() {
+        let src = r#"{"@type":"dcat:Dataset","dct:title":"café"}"#;
+        assert_eq!(read_capped(src.as_bytes()).as_deref(), Some(src.as_bytes()));
     }
 
     #[test]

@@ -468,8 +468,14 @@ pivotp_test!(
         ]);
 
         let msg = wrk.stderr_on_error(&mut cmd);
-        let expected_msg = r#"Polars error: ExprContext { error: ComputeError(ErrString("aggregation 'item' expected no or a single value, got 2 values")), expr: ErrString("col(\"sales\").filter([(col(\"product\"))"#;
-        assert!(msg.starts_with(expected_msg));
+        // Assert the substantive complaint only. Polars used to wrap this in an
+        // `ExprContext { .. expr: <rendered expr> }` envelope and no longer does;
+        // the envelope and the expression rendering are upstream cosmetics.
+        let expected_msg = r#"aggregation 'item' expected no or a single value, got 2 values"#;
+        assert!(
+            msg.contains(expected_msg),
+            "expected {expected_msg:?} in stderr, got: {msg}"
+        );
     }
 );
 

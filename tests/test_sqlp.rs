@@ -66,7 +66,12 @@ sqlp_test!(
                 svec!["Buffalo", "NY", "Buffalo", "Ralph Wilson Stadium"],
             ],
         );
-        assert_eq!(got, expected);
+        // sqlp exposes no ordering option and its join output is nondeterministic
+        // run to run; assert content, not order.
+        assert_eq!(
+            crate::workdir::sorted_rows(got),
+            crate::workdir::sorted_rows(expected)
+        );
     }
 );
 
@@ -84,7 +89,12 @@ sqlp_test!(
                 svec!["", "", "Orlando", "Disney World"],
             ],
         );
-        assert_eq!(got, expected);
+        // sqlp exposes no ordering option and its join output is nondeterministic
+        // run to run; assert content, not order.
+        assert_eq!(
+            crate::workdir::sorted_rows(got),
+            crate::workdir::sorted_rows(expected)
+        );
     }
 );
 
@@ -103,7 +113,12 @@ sqlp_test!(
                 svec!["Buffalo", "NY", "Buffalo", "Ralph Wilson Stadium"],
             ],
         );
-        assert_eq!(got, expected);
+        // sqlp exposes no ordering option and its join output is nondeterministic
+        // run to run; assert content, not order.
+        assert_eq!(
+            crate::workdir::sorted_rows(got),
+            crate::workdir::sorted_rows(expected)
+        );
     }
 );
 
@@ -112,7 +127,7 @@ sqlp_test!(
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("select * from cities full outer join places on cities.city = places.city");
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        let expected1 = vec![
+        let expected = vec![
             svec!["city", "state", "city:places", "place"],
             svec!["Boston", "MA", "Boston", "Logan Airport"],
             svec!["Boston", "MA", "Boston", "Boston Garden"],
@@ -121,16 +136,12 @@ sqlp_test!(
             svec!["New York", "NY", "", ""],
             svec!["San Francisco", "CA", "", ""],
         ];
-        let expected2 = vec![
-            svec!["city", "state", "city:places", "place"],
-            svec!["Boston", "MA", "Boston", "Logan Airport"],
-            svec!["Boston", "MA", "Boston", "Boston Garden"],
-            svec!["Buffalo", "NY", "Buffalo", "Ralph Wilson Stadium"],
-            svec!["", "", "Orlando", "Disney World"],
-            svec!["San Francisco", "CA", "", ""],
-            svec!["New York", "NY", "", ""],
-        ];
-        assert!(got == expected1 || got == expected2);
+        // sqlp exposes no ordering option and its join output is nondeterministic
+        // run to run; assert content, not order.
+        assert_eq!(
+            crate::workdir::sorted_rows(got),
+            crate::workdir::sorted_rows(expected)
+        );
     }
 );
 
@@ -158,7 +169,12 @@ fn sqlp_join_cross() {
         svec!["c", "d", "1", "2"],
         svec!["c", "d", "3", "4"],
     ];
-    assert_eq!(got, expected);
+    // sqlp exposes no ordering option and its join output is nondeterministic
+    // run to run; assert content, not order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -1578,7 +1594,12 @@ fn sqlp_sql_join_on_subquery() {
         svec!["4", "a0c", "4", "a0c"],
     ];
 
-    assert_eq!(got, expected);
+    // sqlp exposes no ordering option and its join output is nondeterministic
+    // run to run; assert content, not order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -1661,7 +1682,12 @@ fn sqlp_sql_join_on_expression_comparison() {
         svec!["WORLD", "world", "913.56"],
     ];
 
-    assert_eq!(got, expected);
+    // sqlp exposes no ordering option and its join output is nondeterministic
+    // run to run; assert content, not order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -1704,7 +1730,12 @@ fn sqlp_sql_from_subquery() {
         svec!["4", "a0c", "4", "a0c"],
     ];
 
-    assert_eq!(got, expected);
+    // sqlp exposes no ordering option and its join output is nondeterministic
+    // run to run; assert content, not order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -2135,7 +2166,12 @@ fn sqlp_compound_join_basic() {
         svec!["3", "4", "3", "4"],
     ];
 
-    assert_eq!(got, expected);
+    // sqlp exposes no ordering option and its join output is nondeterministic
+    // run to run; assert content, not order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -2182,7 +2218,12 @@ fn sqlp_compound_join_diff_colnames() {
         svec!["3", "3", "3", "3", "9"],
     ];
 
-    assert_eq!(got, expected);
+    // sqlp exposes no ordering option and its join output is nondeterministic
+    // run to run; assert content, not order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -2244,7 +2285,12 @@ fn sqlp_compound_join_three_tables() {
         svec!["3", "4", "3", "4", "3", "4", "4"],
     ];
 
-    assert_eq!(got, expected);
+    // sqlp exposes no ordering option and its join output is nondeterministic
+    // run to run; assert content, not order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]

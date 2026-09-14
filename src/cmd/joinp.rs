@@ -97,9 +97,17 @@ joinp options:
                             JOIN OPTIONS:
     --maintain-order <arg>  Which row order to preserve, if any. Valid values are:
                               none, left, right, left_right, right_left
-                            Do not rely on any observed ordering without explicitly
-                            setting this parameter. Not specifying any order can improve
-                            performance. Supported for inner, left, right and full joins.
+                            Defaults to "none", which lets the engine emit rows in
+                            whatever order it finishes them - faster on large joins,
+                            but the output is NOT reproducible: the same invocation
+                            can return the same rows in a different order each run.
+                            "left" orders by the left row only, so when one left row
+                            matches several right rows those matches are tied and
+                            their relative order is still unspecified. Use
+                            "left_right" (or "right_left") for a fully deterministic,
+                            byte-repeatable order.
+                            Only inner, left, right and full joins can maintain order;
+                            cross, non-equi and asof joins ignore this option.
                             [default: none]
     --nulls                When set, joins will work on empty fields.
                            Otherwise, empty fields are completely ignored.

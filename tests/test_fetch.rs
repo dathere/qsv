@@ -773,7 +773,8 @@ fn fetchpost_custom_user_agent() {
 use std::{net::SocketAddr, sync::mpsc, thread};
 
 use actix_web::{
-    App, HttpRequest, HttpServer, Responder, Result, dev::ServerHandle, middleware, rt, web,
+    App, HttpRequest, HttpResponse, HttpServer, Responder, Result, dev::ServerHandle, middleware,
+    rt, web,
 };
 use serde::Serialize;
 #[derive(Serialize)]
@@ -795,6 +796,41 @@ async fn get_fullname(req: HttpRequest, name: web::Path<String>) -> Result<impl 
     };
 
     Ok(web::Json(obj))
+}
+
+// --default-encoding fixtures. Both endpoints serve the SAME character, U+00E9
+// (e-acute), but in different encodings, chosen so that a wrong decode produces
+// another *valid* string rather than a replacement char - otherwise a test could
+// pass merely by not seeing U+FFFD.
+//
+//   windows-1252 e-acute = 0xE9          (invalid as UTF-8 -> U+FFFD)
+//   UTF-8        e-acute = 0xC3 0xA9     (valid as windows-1252 -> "A-tilde ©")
+
+/// Serves `{"v":"<0xE9>"}` with NO charset parameter, so reqwest has nothing to
+/// go on and must fall back to --default-encoding.
+///
+/// The payload is JSON (not bare text) because fetch validates every non-jaq
+/// response body as JSON and blanks it on a parse error - a plain-text fixture
+/// silently exercises the retry path instead of the decode path.
+async fn latin1_no_charset() -> impl Responder {
+    let mut body = br#"{"v":""#.to_vec();
+    body.push(0xE9);
+    body.extend_from_slice(br#""}"#);
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(body)
+}
+
+/// Serves `{"v":"<0xC3 0xA9>"}` and explicitly DECLARES charset=utf-8. A
+/// --default-encoding of windows-1252 must be ignored here: were it wrongly
+/// applied, these bytes would decode to "Ã©" instead of "é".
+async fn utf8_with_charset() -> impl Responder {
+    let mut body = br#"{"v":""#.to_vec();
+    body.extend_from_slice(&[0xC3, 0xA9]);
+    body.extend_from_slice(br#""}"#);
+    HttpResponse::Ok()
+        .content_type("application/json; charset=utf-8")
+        .body(body)
 }
 
 // Bind to 127.0.0.1 with an OS-assigned ephemeral port. Hardcoded ports
@@ -828,6 +864,8 @@ async fn run_webserver(
             .wrap(middleware::Compress::default())
             .wrap(Governor::new(&governor_conf))
             .service(web::resource("/user/{name}").route(web::get().to(get_fullname)))
+            .service(web::resource("/enc/latin1-no-charset").to(latin1_no_charset))
+            .service(web::resource("/enc/utf8-with-charset").to(utf8_with_charset))
             .service(web::resource("/").to(index))
     });
 
@@ -1987,4 +2025,355 @@ fn test_fetch_jaq_array() {
     ];
 
     assert_eq!(got, expected);
+}
+
+// ---------------------------------------------------------------------------
+// --default-encoding (reqwest `charset` feature / Response::text_with_charset)
+// ---------------------------------------------------------------------------
+
+/// The flag applies when the server sends NO charset parameter.
+/// 0xE9 is windows-1252 "é"; decoding it as the flag says yields "é".
+#[test]
+#[serial]
+fn fetch_default_encoding_applies_when_server_sends_no_charset() {
+    let (server_handle, addr) = start_fetch_webserver();
+
+    let wrk = Workdir::new("fetch");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["URL"],
+            vec![format!("http://{addr}/enc/latin1-no-charset")],
+        ],
+    );
+
+    let mut cmd = wrk.command("fetch");
+    cmd.arg("URL")
+        .arg("--new-column")
+        .arg("body")
+        .arg("--jaq")
+        .arg(r#"."v""#)
+        .arg("--default-encoding")
+        .arg("windows-1252")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["URL", "body"],
+        vec![
+            format!("http://{addr}/enc/latin1-no-charset"),
+            "é".to_string(),
+        ],
+    ];
+    rt::System::new().block_on(server_handle.stop(true));
+
+    assert_eq!(got, expected);
+}
+
+/// Control for the test above: WITHOUT the flag the default is utf-8, and 0xE9
+/// is not valid UTF-8, so it degrades to U+FFFD. Without this, the previous
+/// test could pass even if --default-encoding did nothing at all.
+#[test]
+#[serial]
+fn fetch_default_encoding_defaults_to_utf8() {
+    let (server_handle, addr) = start_fetch_webserver();
+
+    let wrk = Workdir::new("fetch");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["URL"],
+            vec![format!("http://{addr}/enc/latin1-no-charset")],
+        ],
+    );
+
+    let mut cmd = wrk.command("fetch");
+    cmd.arg("URL")
+        .arg("--new-column")
+        .arg("body")
+        .arg("--jaq")
+        .arg(r#"."v""#)
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["URL", "body"],
+        vec![
+            format!("http://{addr}/enc/latin1-no-charset"),
+            "\u{FFFD}".to_string(),
+        ],
+    ];
+    rt::System::new().block_on(server_handle.stop(true));
+
+    assert_eq!(got, expected);
+}
+
+/// A charset sent by the server WINS over --default-encoding. The endpoint
+/// serves UTF-8 "é" (0xC3 0xA9) and declares charset=utf-8; if the flag were
+/// wrongly given precedence those bytes would decode to "Ã©".
+#[test]
+#[serial]
+fn fetch_server_charset_beats_default_encoding() {
+    let (server_handle, addr) = start_fetch_webserver();
+
+    let wrk = Workdir::new("fetch");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["URL"],
+            vec![format!("http://{addr}/enc/utf8-with-charset")],
+        ],
+    );
+
+    let mut cmd = wrk.command("fetch");
+    cmd.arg("URL")
+        .arg("--new-column")
+        .arg("body")
+        .arg("--jaq")
+        .arg(r#"."v""#)
+        .arg("--default-encoding")
+        .arg("windows-1252")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["URL", "body"],
+        vec![
+            format!("http://{addr}/enc/utf8-with-charset"),
+            "é".to_string(),
+        ],
+    ];
+    rt::System::new().block_on(server_handle.stop(true));
+
+    assert_eq!(got, expected);
+    // guard the mutation: "Ã©" is what a wrong-precedence decode would produce
+    assert_ne!(got[1][1], "Ã©");
+}
+
+/// --default-encoding participates in the cross-session (disk) cache key.
+/// Same URL, same cache dir, different encodings => the second run must NOT be
+/// served the first run's decoding.
+#[test]
+#[serial]
+fn fetch_default_encoding_is_in_the_disk_cache_key() {
+    let (server_handle, addr) = start_fetch_webserver();
+
+    let wrk = Workdir::new("fetch");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["URL"],
+            vec![format!("http://{addr}/enc/latin1-no-charset")],
+        ],
+    );
+    let cache_dir = wrk.path("enc_cache").to_string_lossy().to_string();
+
+    // populate the disk cache under windows-1252
+    let mut warm = wrk.command("fetch");
+    warm.arg("URL")
+        .arg("--new-column")
+        .arg("body")
+        .arg("--jaq")
+        .arg(r#"."v""#)
+        .arg("--disk-cache")
+        .arg("--disk-cache-dir")
+        .arg(&cache_dir)
+        .arg("--default-encoding")
+        .arg("windows-1252")
+        .arg("data.csv");
+    let warmed: Vec<Vec<String>> = wrk.read_stdout(&mut warm);
+
+    // same URL + same cache dir, but utf-8: must re-decode, not reuse the entry
+    let mut reuse = wrk.command("fetch");
+    reuse
+        .arg("URL")
+        .arg("--new-column")
+        .arg("body")
+        .arg("--jaq")
+        .arg(r#"."v""#)
+        .arg("--disk-cache")
+        .arg("--disk-cache-dir")
+        .arg(&cache_dir)
+        .arg("--default-encoding")
+        .arg("utf-8")
+        .arg("data.csv");
+    let reused: Vec<Vec<String>> = wrk.read_stdout(&mut reuse);
+
+    rt::System::new().block_on(server_handle.stop(true));
+
+    assert_eq!(warmed[1][1], "é");
+    assert_eq!(reused[1][1], "\u{FFFD}");
+}
+
+/// An unknown encoding label is rejected up front rather than silently falling
+/// back to UTF-8 (which is what encoding_rs' Encoding::for_label() would do).
+#[test]
+fn fetch_default_encoding_rejects_unknown_label() {
+    let wrk = Workdir::new("fetch");
+    wrk.create("data.csv", vec![svec!["URL"], svec!["http://example.com"]]);
+
+    let mut cmd = wrk.command("fetch");
+    cmd.arg("URL")
+        .arg("--default-encoding")
+        .arg("latin_1")
+        .arg("data.csv");
+
+    // single execution: assert_err() + output_stderr() would each run the command
+    // again, which scripts/double-run-check.py (CI job `check`) rejects.
+    let out = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    assert!(
+        !out.status.success(),
+        "expected a usage error, got success. stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("Unknown --default-encoding label"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+// fetchpost mirrors fetch's --default-encoding wiring exactly (OnceLock, USAGE,
+// validation, text_with_charset, cache key), so these cover the wiring rather
+// than re-deriving every case. The endpoints are shared: `web::resource().to()`
+// answers any method, POST included.
+
+/// fetchpost honors --default-encoding when the server sends no charset,
+/// and defaults to utf-8 (-> U+FFFD for 0xE9) when the flag is omitted.
+#[test]
+#[serial]
+fn fetchpost_default_encoding_applies_when_server_sends_no_charset() {
+    let (server_handle, addr) = start_fetch_webserver();
+
+    let wrk = Workdir::new("fetch");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["URL", "col1"],
+            vec![
+                format!("http://{addr}/enc/latin1-no-charset"),
+                "a".to_string(),
+            ],
+        ],
+    );
+
+    let mut cmd = wrk.command("fetchpost");
+    cmd.arg("URL")
+        .arg("col1")
+        .arg("--new-column")
+        .arg("body")
+        .arg("--jaq")
+        .arg(r#"."v""#)
+        .arg("--default-encoding")
+        .arg("windows-1252")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // control: no flag => utf-8 default => 0xE9 is invalid => U+FFFD
+    let mut ctl = wrk.command("fetchpost");
+    ctl.arg("URL")
+        .arg("col1")
+        .arg("--new-column")
+        .arg("body")
+        .arg("--jaq")
+        .arg(r#"."v""#)
+        .arg("data.csv");
+    let ctl_got: Vec<Vec<String>> = wrk.read_stdout(&mut ctl);
+
+    rt::System::new().block_on(server_handle.stop(true));
+
+    assert_eq!(got[1][2], "é");
+    assert_eq!(ctl_got[1][2], "\u{FFFD}");
+}
+
+/// fetchpost rejects an unknown encoding label up front, same as fetch.
+#[test]
+fn fetchpost_default_encoding_rejects_unknown_label() {
+    let wrk = Workdir::new("fetch");
+    wrk.create(
+        "data.csv",
+        vec![svec!["URL", "col1"], svec!["http://example.com", "a"]],
+    );
+
+    let mut cmd = wrk.command("fetchpost");
+    cmd.arg("URL")
+        .arg("col1")
+        .arg("--default-encoding")
+        .arg("latin_1")
+        .arg("data.csv");
+
+    // single execution - see fetch_default_encoding_rejects_unknown_label
+    let out = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    assert!(
+        !out.status.success(),
+        "expected a usage error, got success. stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("Unknown --default-encoding label"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+/// fetchpost's --default-encoding participates in its cross-session (disk) cache
+/// key too. fetchpost has its own `cross_session_cache_key` with a different
+/// (and fiddlier) format! string, so fetch's equivalent test does not cover it -
+/// dropping default_encoding() from fetchpost's key went undetected by the whole
+/// suite until this test existed.
+#[test]
+#[serial]
+fn fetchpost_default_encoding_is_in_the_disk_cache_key() {
+    let (server_handle, addr) = start_fetch_webserver();
+
+    let wrk = Workdir::new("fetch");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["URL", "col1"],
+            vec![
+                format!("http://{addr}/enc/latin1-no-charset"),
+                "a".to_string(),
+            ],
+        ],
+    );
+    let cache_dir = wrk.path("fp_enc_cache").to_string_lossy().to_string();
+
+    // populate the disk cache under windows-1252
+    let mut warm = wrk.command("fetchpost");
+    warm.arg("URL")
+        .arg("col1")
+        .arg("--new-column")
+        .arg("body")
+        .arg("--jaq")
+        .arg(r#"."v""#)
+        .arg("--disk-cache")
+        .arg("--disk-cache-dir")
+        .arg(&cache_dir)
+        .arg("--default-encoding")
+        .arg("windows-1252")
+        .arg("data.csv");
+    let warmed: Vec<Vec<String>> = wrk.read_stdout(&mut warm);
+
+    // same URL + same cache dir, but utf-8: must re-decode, not reuse the entry
+    let mut reuse = wrk.command("fetchpost");
+    reuse
+        .arg("URL")
+        .arg("col1")
+        .arg("--new-column")
+        .arg("body")
+        .arg("--jaq")
+        .arg(r#"."v""#)
+        .arg("--disk-cache")
+        .arg("--disk-cache-dir")
+        .arg(&cache_dir)
+        .arg("--default-encoding")
+        .arg("utf-8")
+        .arg("data.csv");
+    let reused: Vec<Vec<String>> = wrk.read_stdout(&mut reuse);
+
+    rt::System::new().block_on(server_handle.stop(true));
+
+    assert_eq!(warmed[1][2], "é");
+    assert_eq!(reused[1][2], "\u{FFFD}");
 }

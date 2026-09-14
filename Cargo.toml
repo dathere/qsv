@@ -193,6 +193,11 @@ directories = "6.0"
 dotenvy = "0.15"
 dunce = "1"
 dynfmt2 = { version = "0.4", default-features = false, features = ["curly"] }
+# only used to validate --default-encoding labels up front (fetch/fetchpost).
+# reqwest's charset feature does the actual decoding, but Encoding::for_label()
+# silently falls back to UTF-8 on an unknown label, so we reject typos early.
+# No compile cost: encoding_rs is already built via calamine/csv-nose/reqwest.
+encoding_rs = "0.8"
 eudex = { version = "0.1", optional = true }
 ext-sort = { version = "0.1", default-features = false }
 fake = { version = "5", features = [
@@ -408,6 +413,20 @@ reqwest = { version = "0.13", features = [
     "rustls",
     "stream",
     "zstd",
+    # charset: makes Response::text() honor the Content-Type charset= parameter
+    # (via encoding_rs) and strip BOMs, instead of a blind from_utf8_lossy.
+    # Listed EXPLICITLY on purpose: with all_features this already arrives by
+    # accident, because cpc (via `apply`) and plotly_static (via `viz_static`)
+    # depend on reqwest WITHOUT default-features=false, and reqwest's defaults
+    # include charset. qsvlite/qsvdp/qsvmcp get it from nowhere else, and
+    # dropping `apply`/`viz_static` would otherwise silently regress .text()
+    # back to lossy UTF-8. Pulls encoding_rs + mime, both already in the tree.
+    "charset",
+    # system-proxy: hyper-util/client-proxy-system - resolves OS-level proxy
+    # configuration (macOS SystemConfiguration, Windows registry) in addition
+    # to the HTTP_PROXY/HTTPS_PROXY environment variables. Same accidental
+    # unification story as charset (cpc, plotly_static, and polars-io).
+    "system-proxy",
 ], default-features = false }
 rfd = { version = "0.17", optional = true }
 rmp-serde = { version = "1.3", optional = true }

@@ -59,7 +59,9 @@ to be as fast as allowed. The --rate-limit option sets the maximum number of que
 throttling as required, based on rate-limit and retry-after response headers.
 
 To use a proxy, set the environment variables HTTP_PROXY, HTTPS_PROXY or ALL_PROXY
-(e.g. export HTTPS_PROXY=socks5://127.0.0.1:1086).
+(e.g. export HTTPS_PROXY=socks5://127.0.0.1:1086). Your operating system's own
+proxy configuration (macOS System Settings, Windows registry) is also honored;
+the environment variables take precedence over it.
 
 ```console
 qsv fetch supports brotli, gzip and deflate automatic decompression for improved throughput
@@ -195,7 +197,7 @@ qsv fetch --help
 
 ## Fetch Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑url‑template`&nbsp; | string | URL template to use. Use column names enclosed with curly braces to insert the CSV data for a record. Mutually exclusive with url-column. |  |
 | &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | Put the fetched values in a new column. Specifying this option results in a CSV. Otherwise, the output is in JSONL format. |  |
@@ -204,6 +206,7 @@ qsv fetch --help
 | &nbsp;`‑‑pretty`&nbsp; | flag | Prettify JSON responses. Otherwise, they're minified. If the response is not in JSON format, it's passed through. Note that --pretty requires the --new-column option. |  |
 | &nbsp;`‑‑rate‑limit`&nbsp; | integer | Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetch job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10. | `0` |
 | &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for each URL request. | `30` |
+| &nbsp;`‑‑default‑encoding`&nbsp; | string | Fallback character encoding used to decode a response body when the server does NOT send a charset parameter in its Content-Type header. Accepts WHATWG encoding labels, e.g. utf-8, windows-1252, iso-8859-1, shift_jis, euc-jp, koi8-r. When the server DOES send a charset, the server always wins and this option is ignored. | `utf-8` |
 | &nbsp;`‑H,`<br>`‑‑http‑header`&nbsp; | string | Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon. |  |
 | &nbsp;`‑‑max‑retries`&nbsp; | integer | Maximum number of retries per record before an error is raised. | `5` |
 | &nbsp;`‑‑max‑errors`&nbsp; | integer | Maximum number of errors before aborting. Set to zero (0) to continue despite errors. | `10` |

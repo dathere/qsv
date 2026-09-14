@@ -73,8 +73,10 @@ to be as fast as allowed. The --rate-limit option sets the maximum number of que
 (QPS) to be made. The default is 0, which means to go as fast as possible, automatically
 throttling as required, based on rate-limit and retry-after response headers.
 
-To use a proxy, please set env vars HTTP_PROXY, HTTPS_PROXY or ALL_PROXY
-(e.g. export HTTPS_PROXY=socks5://127.0.0.1:1086).
+To use a proxy, set the environment variables HTTP_PROXY, HTTPS_PROXY or ALL_PROXY
+(e.g. export HTTPS_PROXY=socks5://127.0.0.1:1086). Your operating system's own
+proxy configuration (macOS System Settings, Windows registry) is also honored;
+the environment variables take precedence over it.
 
 ```console
 qsv fetchpost supports brotli, gzip and deflate automatic decompression for improved throughput
@@ -191,7 +193,7 @@ qsv fetchpost --help
 
 ## Fetchpost Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑t,`<br>`‑‑payload‑tpl`&nbsp; | string | Instead of <column-list>, use a MiniJinja template file to render a JSON payload in the HTTP Post body. You can also use --payload-tpl to render a non-JSON payload, but --content-type will have to be set manually. If a rendered JSON is invalid, `fetchpost` will abort and return an error. |  |
 | &nbsp;`‑‑content‑type`&nbsp; | string | Overrides automatic content types for `<column-list>` (`application/x-www-form-urlencoded`) and `--payload-tpl` (`application/json`). Typical alternative values are `multipart/form-data` and `text/plain`. It is the responsibility of the user to format the payload accordingly when using --payload-tpl. |  |
@@ -202,6 +204,7 @@ qsv fetchpost --help
 | &nbsp;`‑‑pretty`&nbsp; | flag | Prettify JSON responses. Otherwise, they're minified. If the response is not in JSON format, it's passed through unchanged. Note that --pretty requires the --new-column option. |  |
 | &nbsp;`‑‑rate‑limit`&nbsp; | integer | Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetchpost job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10. | `0` |
 | &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for each URL request. | `30` |
+| &nbsp;`‑‑default‑encoding`&nbsp; | string | Fallback character encoding used to decode a response body when the server does NOT send a charset parameter in its Content-Type header. Accepts WHATWG encoding labels, e.g. utf-8, windows-1252, iso-8859-1, shift_jis, euc-jp, koi8-r. When the server DOES send a charset, the server always wins and this option is ignored. | `utf-8` |
 | &nbsp;`‑H,`<br>`‑‑http‑header`&nbsp; | string | Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon. |  |
 | &nbsp;`‑‑compress`&nbsp; | flag | Compress the HTTP request body using gzip. Note that most servers do not support compressed request bodies unless they are specifically configured to do so. This should only be enabled for trusted scenarios where "zip bombs" are not a concern. see <https://github.com/postmanlabs/httpbin/issues/577#issuecomment-875814469> for more info. |  |
 | &nbsp;`‑‑max‑retries`&nbsp; | integer | Maximum number of retries per record before an error is raised. | `5` |

@@ -465,7 +465,13 @@ border:1px solid var(--border);background:var(--card);border-radius:8px;padding:
 background:#fff8e6;border:1px solid #f2e2ad;border-radius:8px}
 main{max-width:1180px;margin:0 auto;padding:8px 22px 60px}
 section{margin-top:30px}
-h2{font-size:19px;margin:0 0 4px}
+h2{font-size:19px;margin:0 0 4px;scroll-margin-top:12px}
+h1{scroll-margin-top:12px}
+a.anchor{color:var(--muted);text-decoration:none;font-weight:400;margin-left:.35em;opacity:0;
+transition:opacity .12s}
+h1:hover a.anchor,h2:hover a.anchor,a.anchor:focus-visible{opacity:1}
+a.anchor:hover{color:var(--accent)}
+@media (hover:none){a.anchor{opacity:.45}}
 .desc{color:var(--muted);margin:0 0 12px;font-size:14px}
 iframe.chart{width:100%;border:1px solid var(--border);border-radius:8px;height:420px;display:block;
 background:var(--card)}
@@ -510,6 +516,14 @@ def viz_source_blocks(slugs):
     return blocks
 
 
+def anchor_link(slug, title):
+    """Hover-revealed permalink beside a heading. Anchors are keyed to the chart slug — not the
+    heading text — so reworded titles don't break links people have already shared. The label
+    names the section so a screen reader's link list doesn't read as N identical entries."""
+    return (f"<a class=anchor href='#{slug}' "
+            f"aria-label='Permalink to “{html_escape(title, quote=True)}”'>#</a>")
+
+
 def build_index(figs, info):
     ver = info.get("version", "?")
     plat = info.get("platform", "?")
@@ -528,7 +542,8 @@ def build_index(figs, info):
              "<title>qsv benchmark Data Schematic</title>",
              f"<style>{PAGE_CSS}</style>{THIRD_PARTY_STYLE}</head><body>"]
     parts.append("<header>")
-    parts.append("<h1>qsv benchmark Data Schematic</h1>")
+    parts.append(f"<h1 id=top>qsv benchmark Data Schematic"
+                 f"{anchor_link('top', 'qsv benchmark Data Schematic')}</h1>")
     parts.append(f"<p class=sub>Interactive charts of the qsv benchmark suite, rendered with "
                  f"<code>qsv viz</code> — a live showcase of the command charting its own performance.</p>")
     meta = [f"<span><b>qsv</b> {html_escape(ver)}</span>",
@@ -551,7 +566,8 @@ def build_index(figs, info):
     parts.append("<main>")
     for f in figs:
         parts.append("<section>")
-        parts.append(f"<h2>{html_escape(f['title'])}</h2>")
+        parts.append(f"<h2 id={f['slug']}>{html_escape(f['title'])}"
+                     f"{anchor_link(f['slug'], f['title'])}</h2>")
         parts.append(f"<p class=desc>{html_escape(f['desc'])}</p>")
         parts.append(f"<iframe class=chart loading=lazy scrolling=no src='{f['slug']}.html'></iframe>")
         blk = src_blocks.get(f["slug"])

@@ -530,6 +530,36 @@ fn create_dir_all<P: AsRef<Path>>(p: P) -> io::Result<()> {
     Err(last_err.unwrap())
 }
 
+/// Sort the data rows (everything after the header), leaving the header in place.
+///
+/// Use ONLY where qsv itself defines no row order: `joinp`'s cross, non-equi and asof
+/// joins (`--maintain-order` covers inner/left/right/full only), and `sqlp`, which
+/// exposes no ordering option at all and whose join output is nondeterministic run to
+/// run. Everywhere the order IS defined, assert it exactly — do not reach for this.
+#[allow(dead_code)]
+pub fn sorted_rows(mut rows: Vec<Vec<String>>) -> Vec<Vec<String>> {
+    if rows.len() > 1 {
+        rows[1..].sort_unstable();
+    }
+    rows
+}
+
+/// `sorted_rows` for tests that compare raw stdout as a string rather than parsed CSV.
+/// A trailing newline, if present, is preserved.
+#[allow(dead_code)]
+pub fn sorted_lines(s: &str) -> String {
+    let trailing_nl = s.ends_with('\n');
+    let mut lines: Vec<&str> = s.strip_suffix('\n').unwrap_or(s).split('\n').collect();
+    if lines.len() > 1 {
+        lines[1..].sort_unstable();
+    }
+    let mut out = lines.join("\n");
+    if trailing_nl {
+        out.push('\n');
+    }
+    out
+}
+
 #[cfg(all(feature = "to", feature = "feature_capable"))]
 pub fn is_same_file(file1: &Path, file2: &Path) -> Result<bool, std::io::Error> {
     use std::io::BufReader;

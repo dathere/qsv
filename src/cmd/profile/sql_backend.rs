@@ -49,7 +49,7 @@ impl SqlBackend {
     }
 
     /// Set whether the first row carries column names. When `false`,
-    /// Polars synthesizes `column_1`, `column_2`, … as field names —
+    /// Polars synthesizes `column_0`, `column_1`, … as field names —
     /// SQL queries must reference those generated names.
     #[must_use]
     pub const fn with_has_header(mut self, has_header: bool) -> Self {
@@ -167,10 +167,11 @@ mod tests {
 
     #[test]
     fn with_has_header_false_uses_synthetic_names() {
-        // No header row — Polars synthesizes column_1, column_2.
+        // No header row — Polars synthesizes column_0, column_1 (0-based since
+        // pola-rs/polars#28146).
         let f = write_csv("hdrless", "1,2024-01-01\n2,2024-01-02\n3,2024-01-03\n");
         let backend = SqlBackend::new(f.path()).with_has_header(false);
-        let dates = backend.distinct_sorted_date_strings("column_2").unwrap();
+        let dates = backend.distinct_sorted_date_strings("column_1").unwrap();
         assert_eq!(dates, vec!["2024-01-01", "2024-01-02", "2024-01-03"]);
     }
 }

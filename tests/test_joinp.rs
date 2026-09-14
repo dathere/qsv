@@ -13,7 +13,11 @@ macro_rules! joinp_test {
             fn headers() {
                 let wrk = setup(stringify!($name));
                 let mut cmd = wrk.command("joinp");
-                cmd.args(&["city", "cities.csv", "city", "places.csv"]);
+                // joinp defaults to --maintain-order none, whose row order is
+                // deliberately unspecified and varies run to run. These tests
+                // assert an exact order, so they must ask for one.
+                cmd.args(&["city", "cities.csv", "city", "places.csv"])
+                    .args(["--maintain-order", "left"]);
                 $fun(wrk, cmd);
             }
         }
@@ -33,6 +37,9 @@ macro_rules! joinp_test_cache_schema {
             fn headers() {
                 let wrk = setup(stringify!($name));
                 let mut cmd = wrk.command("joinp");
+                // joinp defaults to --maintain-order none, whose row order is
+                // deliberately unspecified and varies run to run. These tests
+                // assert an exact order, so they must ask for one.
                 cmd.args(&[
                     "city",
                     "cities.csv",
@@ -40,7 +47,8 @@ macro_rules! joinp_test_cache_schema {
                     "places.csv",
                     "--cache-schema",
                     "1",
-                ]);
+                ])
+                .args(["--maintain-order", "left"]);
                 $fun(wrk, cmd);
             }
         }
@@ -60,7 +68,11 @@ macro_rules! joinp_test_tab {
             fn headers() {
                 let wrk = setup(stringify!($name0));
                 let mut cmd = wrk.command("joinp");
-                cmd.args(&["city", "cities.tsv", "city", "places.ssv"]);
+                // joinp defaults to --maintain-order none, whose row order is
+                // deliberately unspecified and varies run to run. These tests
+                // assert an exact order, so they must ask for one.
+                cmd.args(&["city", "cities.tsv", "city", "places.ssv"])
+                    .args(["--maintain-order", "left"]);
                 $fun(wrk, cmd);
             }
         }
@@ -81,7 +93,11 @@ macro_rules! joinp_test_comments {
                 let wrk = setup(stringify!($name2));
                 let mut cmd = wrk.command("joinp");
                 cmd.env("QSV_COMMENT_CHAR", "#");
-                cmd.args(&["city", "cities_comments.csv", "city", "places.ssv"]);
+                // joinp defaults to --maintain-order none, whose row order is
+                // deliberately unspecified and varies run to run. These tests
+                // assert an exact order, so they must ask for one.
+                cmd.args(&["city", "cities_comments.csv", "city", "places.ssv"])
+                    .args(["--maintain-order", "left"]);
                 $fun(wrk, cmd);
             }
         }
@@ -101,7 +117,11 @@ macro_rules! joinp_test_compressed {
             fn headers() {
                 let wrk = setup(stringify!($name3));
                 let mut cmd = wrk.command("joinp");
-                cmd.args(&["city", "cities.csv.sz", "city", "places.ssv.sz"]);
+                // joinp defaults to --maintain-order none, whose row order is
+                // deliberately unspecified and varies run to run. These tests
+                // assert an exact order, so they must ask for one.
+                cmd.args(&["city", "cities.csv.sz", "city", "places.ssv.sz"])
+                    .args(["--maintain-order", "left"]);
                 $fun(wrk, cmd);
             }
         }
@@ -532,29 +552,21 @@ joinp_test!(
 joinp_test!(joinp_full, |wrk: Workdir, mut cmd: process::Command| {
     cmd.arg("--full").arg("--coalesce");
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    let expected1 = make_rows(
+    // Left-positional order: each left row in its cities.csv position,
+    // multi-matches expanded in place, right-only rows appended.
+    // Deterministic under --maintain-order left (verified over 5 runs).
+    let expected = make_rows(
         false,
         vec![
             svec!["Boston", "MA", "Logan Airport"],
             svec!["Boston", "MA", "Boston Garden"],
-            svec!["Buffalo", "NY", "Ralph Wilson Stadium"],
-            svec!["Orlando", "", "Disney World"],
-            svec!["San Francisco", "CA", ""],
-            svec!["New York", "NY", ""],
-        ],
-    );
-    let expected2 = make_rows(
-        false,
-        vec![
-            svec!["Boston", "MA", "Logan Airport"],
-            svec!["Boston", "MA", "Boston Garden"],
-            svec!["Buffalo", "NY", "Ralph Wilson Stadium"],
-            svec!["Orlando", "", "Disney World"],
             svec!["New York", "NY", ""],
             svec!["San Francisco", "CA", ""],
+            svec!["Buffalo", "NY", "Ralph Wilson Stadium"],
+            svec!["Orlando", "", "Disney World"],
         ],
     );
-    assert!(got == expected1 || got == expected2);
+    assert_eq!(got, expected);
 });
 
 joinp_test!(
@@ -562,36 +574,20 @@ joinp_test!(
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--full");
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        let mut expected1 = make_rows(
-            false,
-            vec![
-                svec!["city", "state", "city_right", "place"],
-                svec!["Boston", "MA", "Boston", "Logan Airport"],
-                svec!["Boston", "MA", "Boston", "Boston Garden"],
-                svec!["Buffalo", "NY", "Buffalo", "Ralph Wilson Stadium"],
-                svec!["", "", "Orlando", "Disney World"],
-                svec!["San Francisco", "CA", "", ""],
-                svec!["New York", "NY", "", ""],
-            ],
-        );
-        // remove the first old header from expected1
-        expected1.remove(0);
-
-        let mut expected2 = make_rows(
-            false,
-            vec![
-                svec!["city", "state", "city_right", "place"],
-                svec!["Boston", "MA", "Boston", "Logan Airport"],
-                svec!["Boston", "MA", "Boston", "Boston Garden"],
-                svec!["Buffalo", "NY", "Buffalo", "Ralph Wilson Stadium"],
-                svec!["", "", "Orlando", "Disney World"],
-                svec!["New York", "NY", "", ""],
-                svec!["San Francisco", "CA", "", ""],
-            ],
-        );
-        expected2.remove(0);
-
-        assert!(got == expected1 || got == expected2);
+        // Not coalesced, so the join key appears twice and the header is 4 columns.
+        // Left-positional order: each left row in its cities.csv position,
+        // multi-matches expanded in place, right-only rows appended.
+        // Deterministic under --maintain-order left (verified over 5 runs).
+        let expected = vec![
+            svec!["city", "state", "city_right", "place"],
+            svec!["Boston", "MA", "Boston", "Logan Airport"],
+            svec!["Boston", "MA", "Boston", "Boston Garden"],
+            svec!["New York", "NY", "", ""],
+            svec!["San Francisco", "CA", "", ""],
+            svec!["Buffalo", "NY", "Buffalo", "Ralph Wilson Stadium"],
+            svec!["", "", "Orlando", "Disney World"],
+        ];
+        assert_eq!(got, expected);
     }
 );
 
@@ -600,29 +596,21 @@ joinp_test_compressed!(
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--full").arg("--coalesce");
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        let expected1 = make_rows(
+        // Left-positional order: each left row in its cities.csv position,
+        // multi-matches expanded in place, right-only rows appended.
+        // Deterministic under --maintain-order left (verified over 5 runs).
+        let expected = make_rows(
             false,
             vec![
                 svec!["Boston", "MA", "Logan Airport"],
                 svec!["Boston", "MA", "Boston Garden"],
-                svec!["Buffalo", "NY", "Ralph Wilson Stadium"],
-                svec!["Orlando", "", "Disney World"],
-                svec!["San Francisco", "CA", ""],
-                svec!["New York", "NY", ""],
-            ],
-        );
-        let expected2 = make_rows(
-            false,
-            vec![
-                svec!["Boston", "MA", "Logan Airport"],
-                svec!["Boston", "MA", "Boston Garden"],
-                svec!["Buffalo", "NY", "Ralph Wilson Stadium"],
-                svec!["Orlando", "", "Disney World"],
                 svec!["New York", "NY", ""],
                 svec!["San Francisco", "CA", ""],
+                svec!["Buffalo", "NY", "Ralph Wilson Stadium"],
+                svec!["Orlando", "", "Disney World"],
             ],
         );
-        assert!(got == expected1 || got == expected2);
+        assert_eq!(got, expected);
     }
 );
 
@@ -631,29 +619,21 @@ joinp_test_comments!(
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--full").arg("--coalesce");
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        let expected1 = make_rows(
+        // Left-positional order: each left row in its cities.csv position,
+        // multi-matches expanded in place, right-only rows appended.
+        // Deterministic under --maintain-order left (verified over 5 runs).
+        let expected = make_rows(
             false,
             vec![
                 svec!["Boston", "MA", "Logan Airport"],
                 svec!["Boston", "MA", "Boston Garden"],
-                svec!["Buffalo", "NY", "Ralph Wilson Stadium"],
-                svec!["Orlando", "", "Disney World"],
-                svec!["San Francisco", "CA", ""],
-                svec!["New York", "NY", ""],
-            ],
-        );
-        let expected2 = make_rows(
-            false,
-            vec![
-                svec!["Boston", "MA", "Logan Airport"],
-                svec!["Boston", "MA", "Boston Garden"],
-                svec!["Buffalo", "NY", "Ralph Wilson Stadium"],
-                svec!["Orlando", "", "Disney World"],
                 svec!["New York", "NY", ""],
                 svec!["San Francisco", "CA", ""],
+                svec!["Buffalo", "NY", "Ralph Wilson Stadium"],
+                svec!["Orlando", "", "Disney World"],
             ],
         );
-        assert!(got == expected1 || got == expected2);
+        assert_eq!(got, expected);
     }
 );
 
@@ -736,7 +716,12 @@ fn joinp_cross() {
         svec!["c", "d", "1", "2"],
         svec!["c", "d", "3", "4"],
     ];
-    assert_eq!(got, expected);
+    // cross/non-equi joins ignore --maintain-order, so qsv defines no row order
+    // here; assert content, not an incidental order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -771,7 +756,12 @@ fn joinp_cross_compress() {
         svec!["c", "d", "1", "2"],
         svec!["c", "d", "3", "4"],
     ];
-    assert_eq!(got, expected);
+    // cross/non-equi joins ignore --maintain-order, so qsv defines no row order
+    // here; assert content, not an incidental order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -1271,6 +1261,7 @@ fn joinp_ignore_case() {
     );
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["city", "cities_mixed.csv", "city", "places_mixed.csv"])
         .arg("--ignore-case");
 
@@ -1513,7 +1504,12 @@ fn joinp_filter_pattern_matching() {
         svec!["XYZ", "X-ray Yankee Zulu", "XYZ789", "Third"],
         svec!["123", "One Two Three", "123456", "Fourth"],
     ];
-    assert_eq!(got, expected);
+    // cross/non-equi joins ignore --maintain-order, so qsv defines no row order
+    // here; assert content, not an incidental order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 
     // Test 2: Right contains left
     let mut cmd = wrk.command("joinp");
@@ -1535,7 +1531,10 @@ fn joinp_filter_pattern_matching() {
         svec!["123", "One Two Three", "TEST123", "Fifth"],
         svec!["123", "One Two Three", "DEF123", "Sixth"],
     ];
-    assert_eq!(got, expected);
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 
     // Test 3: Right ends-with left
     let mut cmd = wrk.command("joinp");
@@ -1553,7 +1552,10 @@ fn joinp_filter_pattern_matching() {
         svec!["123", "One Two Three", "TEST123", "Fifth"],
         svec!["123", "One Two Three", "DEF123", "Sixth"],
     ];
-    assert_eq!(got, expected);
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 
     // Create reversed test data for left-side pattern matching
     wrk.create(
@@ -1592,7 +1594,10 @@ fn joinp_filter_pattern_matching() {
         svec!["ABCDEF", "Full Code 2", "ABC", "Alpha Beta Charlie"],
         svec!["XYZ789", "Full Code 3", "XYZ", "X-ray Yankee Zulu"],
     ];
-    assert_eq!(got, expected);
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 
     // Test 5: Left contains right
     let mut cmd = wrk.command("joinp");
@@ -1611,7 +1616,10 @@ fn joinp_filter_pattern_matching() {
         svec!["ABCDEF", "Full Code 2", "ABC", "Alpha Beta Charlie"],
         svec!["XYZ789", "Full Code 3", "XYZ", "X-ray Yankee Zulu"],
     ];
-    assert_eq!(got, expected);
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 
     // Test 6: Left ends-with right
     let mut cmd = wrk.command("joinp");
@@ -1627,7 +1635,10 @@ fn joinp_filter_pattern_matching() {
         svec!["code", "description", "pattern", "meaning"],
         svec!["ABC123", "Full Code 1", "123", "One Two Three"],
     ];
-    assert_eq!(got, expected);
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -1659,6 +1670,7 @@ fn test_joinp_cache_schema() {
 
     // Test 1: No schema caching (default)
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
@@ -1676,6 +1688,7 @@ fn test_joinp_cache_schema() {
 
     // Test 2: Cache inferred schema
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("1");
@@ -1690,6 +1703,7 @@ fn test_joinp_cache_schema() {
 
     // Test 3: Use string schema for all columns
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("-1");
@@ -1699,6 +1713,7 @@ fn test_joinp_cache_schema() {
 
     // Test 4: Use and cache string schema
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("-2");
@@ -1708,6 +1723,7 @@ fn test_joinp_cache_schema() {
 
     // Test 5: Invalid cache-schema value
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("2");
@@ -1814,6 +1830,7 @@ fn joinp_ignore_leading_zero() {
     );
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.csv", "id", "right.csv"]).arg("-z");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
@@ -1854,6 +1871,7 @@ fn joinp_ignore_leading_zero_string_schema() {
     );
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("-z")
         .args(["--cache-schema", "-2"]); // force schema to all String types
@@ -1896,6 +1914,7 @@ fn joinp_ignore_leading_zero_with_non_numeric() {
     );
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["code", "left.csv", "code", "right.csv"])
         .arg("--ignore-leading-zeros");
 
@@ -1934,6 +1953,7 @@ fn joinp_ignore_leading_zero_multiple_columns() {
     );
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id,code", "left.csv", "id,code", "right.csv"])
         .arg("--ignore-leading-zeros")
         .args(["--cache-schema", "-2"]); // force schema to all String types
@@ -1973,6 +1993,7 @@ fn joinp_ignore_case_and_leading_zeros() {
     );
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id,code", "left.csv", "id,code", "right.csv"])
         .arg("--ignore-leading-zeros")
         .arg("--ignore-case")
@@ -2012,6 +2033,7 @@ fn joinp_ignore_case_and_leading_zeros_coalesce() {
     );
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id,code", "left.csv", "id,code", "right.csv"])
         .arg("--ignore-leading-zeros")
         .arg("--ignore-case")
@@ -2065,7 +2087,12 @@ fn joinp_non_equi_greater_than() {
         svec!["banana", "2.00", "Carol", "3.50"],
         svec!["orange", "3.00", "Carol", "3.50"],
     ];
-    assert_eq!(got, expected);
+    // cross/non-equi joins ignore --maintain-order, so qsv defines no row order
+    // here; assert content, not an incidental order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -2102,7 +2129,12 @@ fn joinp_non_equi_less_than() {
         svec!["party", "2024-06-15", "presentation", "2024-07-01"],
         svec!["party", "2024-06-15", "review", "2024-12-15"],
     ];
-    assert_eq!(got, expected);
+    // cross/non-equi joins ignore --maintain-order, so qsv defines no row order
+    // here; assert content, not an incidental order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -2178,7 +2210,12 @@ fn joinp_non_equi_not_equal() {
         svec!["Carol", "Red", "David", "Green"],
         svec!["Carol", "Red", "Eve", "Blue"],
     ];
-    assert_eq!(got, expected);
+    // cross/non-equi joins ignore --maintain-order, so qsv defines no row order
+    // here; assert content, not an incidental order.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -2290,6 +2327,7 @@ fn joinp_ignore_leading_zeros_issue_2424() {
     );
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args([
         "-i",
         "-z",
@@ -2345,12 +2383,19 @@ fn joinp_unicode_normalization() {
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["name", "value", "name_right", "desc"],
+        // Normalization affects MATCHING only; the original forms are emitted as-is.
         svec!["cafe\u{301}", "a", "café", "one"],
-        svec!["café", "b", "café", "one"],
         svec!["cafe\u{301}", "a", "cafe\u{301}", "two"],
+        svec!["café", "b", "café", "one"],
         svec!["café", "b", "cafe\u{301}", "two"],
     ];
-    assert_eq!(got, expected);
+    // DEFAULT-PATH CANARY: deliberately does NOT pass --maintain-order, so this is
+    // the order users get out of the box. That order is unspecified and varies run
+    // to run, so assert the rows, not their sequence.
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(expected)
+    );
 }
 
 #[test]
@@ -2376,6 +2421,7 @@ fn joinp_unicode_normalization_with_other_options() {
     );
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id,name", "left.csv", "id,name", "right.csv"])
         .args(["--norm-unicode", "nfkc"])
         .arg("--ignore-leading-zeros")
@@ -2437,6 +2483,7 @@ fn joinp_unicode_normalization_ligatures() {
 
     // Test NFKD normalization (should also decompose ligatures)
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["name", "left.csv", "name", "right.csv"])
         .args(["--norm-unicode", "nfkd"]);
 
@@ -2616,20 +2663,34 @@ fn joinp_asof_sortkey_options() {
         .arg("--try-parsedates")
         .args(["--datetime-format", "%Y-%m-%d %H:%M:%S"]);
 
-    // and the output is INCORRECT because the data is not sorted
-    let expected = vec![
+    // An asof join requires sorted input, so --no-sort on unsorted data produces
+    // GARBAGE. WHICH garbage is undefined -- asof ignores --maintain-order and the
+    // result shifts with the polars planner -- so assert the property that actually
+    // matters (it is not the correct answer) instead of pinning one wrong result.
+    let correct = vec![
         svec!["time", "price", "bid"],
-        svec!["2024-01-01 10:00:10", "102.0", ""],
-        svec!["2024-01-01 10:00:05", "101.0", ""],
         svec!["2024-01-01 10:00:00", "100.0", ""],
-        svec!["2024-01-01 10:00:15", "103.0", "99.5"],
-        svec!["2024-01-01 10:00:12", "102.5", "99.5"],
         svec!["2024-01-01 10:00:03", "100.5", "99.5"],
+        svec!["2024-01-01 10:00:05", "101.0", "99.5"],
         svec!["2024-01-01 10:00:08", "101.5", "99.5"],
+        svec!["2024-01-01 10:00:10", "102.0", "99.5"],
+        svec!["2024-01-01 10:00:12", "102.5", "101.5"],
+        svec!["2024-01-01 10:00:15", "103.0", "101.5"],
     ];
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert_eq!(got, expected);
+    // Same header and the same (time, price) rows as a multiset...
+    assert_eq!(got[0], correct[0]);
+    assert_eq!(
+        crate::workdir::sorted_rows(got.iter().map(|r| r[..2].to_vec()).collect::<Vec<_>>()),
+        crate::workdir::sorted_rows(correct.iter().map(|r| r[..2].to_vec()).collect::<Vec<_>>()),
+    );
+    // ...but the asof-matched `bid` column does NOT agree with the sorted-input result.
+    assert_ne!(
+        crate::workdir::sorted_rows(got),
+        crate::workdir::sorted_rows(correct),
+        "--no-sort on unsorted input unexpectedly produced the correct asof result"
+    );
 }
 
 #[test]
@@ -2649,6 +2710,7 @@ fn joinp_decimal_comma_validation() {
 
     // Test 1: --decimal-comma with comma delimiter should fail
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma");
 
@@ -2661,6 +2723,7 @@ fn joinp_decimal_comma_validation() {
     wrk.create_with_delim("right_semi.csv", right_data.clone(), b';');
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left_semi.csv", "id", "right_semi.csv"])
         .arg("--decimal-comma")
         .args(["--delimiter", ";"]);
@@ -2677,6 +2740,7 @@ fn joinp_decimal_comma_validation() {
     wrk.create_with_delim("right_tab.csv", right_data.clone(), b'\t');
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left_tab.csv", "id", "right_tab.csv"])
         .arg("--decimal-comma")
         .args(["--delimiter", "\t"]);
@@ -2690,6 +2754,7 @@ fn joinp_decimal_comma_validation() {
     wrk.create_with_delim("left_pipe.csv", left_data.clone(), b'|');
     wrk.create_with_delim("right_pipe.csv", right_data.clone(), b'|');
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left_pipe.csv", "id", "right_pipe.csv"])
         .arg("--decimal-comma")
         .args(["--delimiter", "|"]);
@@ -2717,6 +2782,7 @@ fn joinp_decimal_comma_validation_with_tsv_files() {
     // Test: --decimal-comma with TSV files should fail because the validation
     // checks the delimiter parameter, not the file extension
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.tsv", "id", "right.tsv"])
         .arg("--decimal-comma");
 
@@ -2743,6 +2809,7 @@ fn joinp_decimal_comma_validation_with_ssv_files() {
     // because stdin is not a file, so the delimiter is not detected, so it defaults to
     // comma, as --delimiter is not set.
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.ssv", "id", "right.ssv"])
         .arg("--decimal-comma");
 
@@ -2751,6 +2818,7 @@ fn joinp_decimal_comma_validation_with_ssv_files() {
 
     // Test 2: --decimal-comma with SSV files (semicolon delimiter) should succeed
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.ssv", "id", "right.ssv"])
         .arg("--decimal-comma")
         .args(["--delimiter", ";"]);
@@ -2777,6 +2845,7 @@ fn joinp_decimal_comma_validation_with_output_file() {
 
     // Test: --decimal-comma with output file should validate the output delimiter
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma")
         .args(["--delimiter", ";"])
@@ -2792,6 +2861,7 @@ fn joinp_decimal_comma_validation_with_output_file() {
 
     // Test: --decimal-comma with output file that would have comma delimiter should fail
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma")
         .args(["--output", "output.csv"]);
@@ -2817,6 +2887,7 @@ fn joinp_decimal_comma_validation_with_tsv_output() {
 
     // Test: --decimal-comma with TSV output file should succeed
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.tsv", "id", "right.tsv"])
         .arg("--decimal-comma")
         .args(["--delimiter", "\t"])
@@ -2845,6 +2916,7 @@ fn joinp_decimal_comma_validation_with_ssv_output() {
 
     // Test: --decimal-comma with SSV output file should succeed
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.ssv", "id", "right.ssv"])
         .arg("--decimal-comma")
         .args(["--delimiter", ";"])
@@ -2892,7 +2964,12 @@ fn joinp_decimal_comma_validation_with_cross_join() {
 
     let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "id;value;name\n1;100,5;Alice\n1;100,5;Bob\n2;200,75;Alice\n2;200,75;Bob";
-    assert_eq!(got, expected);
+    // cross/non-equi joins ignore --maintain-order, so qsv defines no row order
+    // here; assert content, not an incidental order.
+    assert_eq!(
+        crate::workdir::sorted_lines(&got),
+        crate::workdir::sorted_lines(expected)
+    );
 }
 
 #[test]
@@ -3000,6 +3077,7 @@ fn joinp_decimal_comma_validation_with_sql_filter() {
 
     // Test: --decimal-comma with SQL filter and comma delimiter should fail
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma")
         .arg("--sql-filter")
@@ -3010,6 +3088,7 @@ fn joinp_decimal_comma_validation_with_sql_filter() {
 
     // Test: --decimal-comma with SQL filter and semicolon delimiter should succeed
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma")
         .args(["--delimiter", ";"])
@@ -3093,6 +3172,7 @@ fn test_joinp_cache_schema_datetime() {
 
     // Join with cached schemas containing Datetime type
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--cache-schema")
         .arg("1");
@@ -3118,6 +3198,7 @@ fn joinp_decimal_comma_validation_preserves_output_file() {
     std::fs::write(&output_path, b"SENTINEL\n").unwrap();
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma")
         .args(["--output", "out.csv"]);
@@ -3137,6 +3218,7 @@ fn joinp_manytomany_validate_rejected() {
     wrk.create("right.csv", vec![svec!["id"], svec!["1"]]);
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .args(["--validate", "manytomany"]);
 
@@ -3163,6 +3245,7 @@ fn joinp_tsv_cache_schema_minus1() {
     );
 
     let mut cmd = wrk.command("joinp");
+    cmd.args(["--maintain-order", "left"]);
     cmd.args(["id", "left.tsv", "id", "right.tsv"])
         .args(["--cache-schema", "-1"]);
 

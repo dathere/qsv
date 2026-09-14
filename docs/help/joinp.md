@@ -63,7 +63,7 @@ qsv joinp --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑maintain‑order`&nbsp; | string | Which row order to preserve, if any. Valid values are: none, left, right, left_right, right_left Defaults to "none", which lets the engine emit rows in whatever order it finishes them - faster on large joins, but the output is NOT reproducible: the same invocation can return the same rows in a different order each run. Set "left" (or right/left_right/right_left) when you need a stable, repeatable row order. Only inner, left, right and full joins can maintain order; cross, non-equi and asof joins ignore this option. | `none` |
+| &nbsp;`‑‑maintain‑order`&nbsp; | string | Which row order to preserve, if any. Valid values are: none, left, right, left_right, right_left Defaults to "none", which lets the engine emit rows in whatever order it finishes them - faster on large joins, but the output is NOT reproducible: the same invocation can return the same rows in a different order each run. "left" orders by the left row only, so when one left row matches several right rows those matches are tied and their relative order is still unspecified. Use "left_right" (or "right_left") for a fully deterministic, byte-repeatable order. Only inner, left, right and full joins can maintain order; cross, non-equi and asof joins ignore this option. | `none` |
 | &nbsp;`‑‑nulls`&nbsp; | flag | When set, joins will work on empty fields. Otherwise, empty fields are completely ignored. |  |
 | &nbsp;`‑‑streaming`&nbsp; | flag | When set, the join will be done in a streaming fashion. Only use this when you get out of memory errors. |  |
 

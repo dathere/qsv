@@ -17,7 +17,7 @@ macro_rules! joinp_test {
                 // deliberately unspecified and varies run to run. These tests
                 // assert an exact order, so they must ask for one.
                 cmd.args(&["city", "cities.csv", "city", "places.csv"])
-                    .args(["--maintain-order", "left"]);
+                    .args(["--maintain-order", "left_right"]);
                 $fun(wrk, cmd);
             }
         }
@@ -48,7 +48,7 @@ macro_rules! joinp_test_cache_schema {
                     "--cache-schema",
                     "1",
                 ])
-                .args(["--maintain-order", "left"]);
+                .args(["--maintain-order", "left_right"]);
                 $fun(wrk, cmd);
             }
         }
@@ -72,7 +72,7 @@ macro_rules! joinp_test_tab {
                 // deliberately unspecified and varies run to run. These tests
                 // assert an exact order, so they must ask for one.
                 cmd.args(&["city", "cities.tsv", "city", "places.ssv"])
-                    .args(["--maintain-order", "left"]);
+                    .args(["--maintain-order", "left_right"]);
                 $fun(wrk, cmd);
             }
         }
@@ -97,7 +97,7 @@ macro_rules! joinp_test_comments {
                 // deliberately unspecified and varies run to run. These tests
                 // assert an exact order, so they must ask for one.
                 cmd.args(&["city", "cities_comments.csv", "city", "places.ssv"])
-                    .args(["--maintain-order", "left"]);
+                    .args(["--maintain-order", "left_right"]);
                 $fun(wrk, cmd);
             }
         }
@@ -121,7 +121,7 @@ macro_rules! joinp_test_compressed {
                 // deliberately unspecified and varies run to run. These tests
                 // assert an exact order, so they must ask for one.
                 cmd.args(&["city", "cities.csv.sz", "city", "places.ssv.sz"])
-                    .args(["--maintain-order", "left"]);
+                    .args(["--maintain-order", "left_right"]);
                 $fun(wrk, cmd);
             }
         }
@@ -1261,7 +1261,7 @@ fn joinp_ignore_case() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["city", "cities_mixed.csv", "city", "places_mixed.csv"])
         .arg("--ignore-case");
 
@@ -1670,7 +1670,7 @@ fn test_joinp_cache_schema() {
 
     // Test 1: No schema caching (default)
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
@@ -1688,7 +1688,7 @@ fn test_joinp_cache_schema() {
 
     // Test 2: Cache inferred schema
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("1");
@@ -1703,7 +1703,7 @@ fn test_joinp_cache_schema() {
 
     // Test 3: Use string schema for all columns
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("-1");
@@ -1713,7 +1713,7 @@ fn test_joinp_cache_schema() {
 
     // Test 4: Use and cache string schema
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("-2");
@@ -1723,7 +1723,7 @@ fn test_joinp_cache_schema() {
 
     // Test 5: Invalid cache-schema value
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("2");
@@ -1830,7 +1830,7 @@ fn joinp_ignore_leading_zero() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.csv", "id", "right.csv"]).arg("-z");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
@@ -1871,7 +1871,7 @@ fn joinp_ignore_leading_zero_string_schema() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("-z")
         .args(["--cache-schema", "-2"]); // force schema to all String types
@@ -1914,7 +1914,7 @@ fn joinp_ignore_leading_zero_with_non_numeric() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["code", "left.csv", "code", "right.csv"])
         .arg("--ignore-leading-zeros");
 
@@ -1953,7 +1953,7 @@ fn joinp_ignore_leading_zero_multiple_columns() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id,code", "left.csv", "id,code", "right.csv"])
         .arg("--ignore-leading-zeros")
         .args(["--cache-schema", "-2"]); // force schema to all String types
@@ -1993,7 +1993,7 @@ fn joinp_ignore_case_and_leading_zeros() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id,code", "left.csv", "id,code", "right.csv"])
         .arg("--ignore-leading-zeros")
         .arg("--ignore-case")
@@ -2033,7 +2033,7 @@ fn joinp_ignore_case_and_leading_zeros_coalesce() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id,code", "left.csv", "id,code", "right.csv"])
         .arg("--ignore-leading-zeros")
         .arg("--ignore-case")
@@ -2327,7 +2327,7 @@ fn joinp_ignore_leading_zeros_issue_2424() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args([
         "-i",
         "-z",
@@ -2421,7 +2421,7 @@ fn joinp_unicode_normalization_with_other_options() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id,name", "left.csv", "id,name", "right.csv"])
         .args(["--norm-unicode", "nfkc"])
         .arg("--ignore-leading-zeros")
@@ -2468,7 +2468,7 @@ fn joinp_unicode_normalization_ligatures() {
     let mut cmd = wrk.command("joinp");
     cmd.args(["name", "left.csv", "name", "right.csv"])
         .args(["--norm-unicode", "nfkc"])
-        .args(["--maintain-order", "left"]);
+        .args(["--maintain-order", "left_right"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
@@ -2483,7 +2483,7 @@ fn joinp_unicode_normalization_ligatures() {
 
     // Test NFKD normalization (should also decompose ligatures)
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["name", "left.csv", "name", "right.csv"])
         .args(["--norm-unicode", "nfkd"]);
 
@@ -2494,7 +2494,7 @@ fn joinp_unicode_normalization_ligatures() {
     let mut cmd = wrk.command("joinp");
     cmd.args(["name", "left.csv", "name", "right.csv"])
         .args(["--norm-unicode", "nfc"])
-        .args(["--maintain-order", "left"]);
+        .args(["--maintain-order", "left_right"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
@@ -2710,7 +2710,7 @@ fn joinp_decimal_comma_validation() {
 
     // Test 1: --decimal-comma with comma delimiter should fail
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma");
 
@@ -2723,7 +2723,7 @@ fn joinp_decimal_comma_validation() {
     wrk.create_with_delim("right_semi.csv", right_data.clone(), b';');
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left_semi.csv", "id", "right_semi.csv"])
         .arg("--decimal-comma")
         .args(["--delimiter", ";"]);
@@ -2740,7 +2740,7 @@ fn joinp_decimal_comma_validation() {
     wrk.create_with_delim("right_tab.csv", right_data.clone(), b'\t');
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left_tab.csv", "id", "right_tab.csv"])
         .arg("--decimal-comma")
         .args(["--delimiter", "\t"]);
@@ -2754,7 +2754,7 @@ fn joinp_decimal_comma_validation() {
     wrk.create_with_delim("left_pipe.csv", left_data.clone(), b'|');
     wrk.create_with_delim("right_pipe.csv", right_data.clone(), b'|');
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left_pipe.csv", "id", "right_pipe.csv"])
         .arg("--decimal-comma")
         .args(["--delimiter", "|"]);
@@ -2782,7 +2782,7 @@ fn joinp_decimal_comma_validation_with_tsv_files() {
     // Test: --decimal-comma with TSV files should fail because the validation
     // checks the delimiter parameter, not the file extension
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.tsv", "id", "right.tsv"])
         .arg("--decimal-comma");
 
@@ -2809,7 +2809,7 @@ fn joinp_decimal_comma_validation_with_ssv_files() {
     // because stdin is not a file, so the delimiter is not detected, so it defaults to
     // comma, as --delimiter is not set.
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.ssv", "id", "right.ssv"])
         .arg("--decimal-comma");
 
@@ -2818,7 +2818,7 @@ fn joinp_decimal_comma_validation_with_ssv_files() {
 
     // Test 2: --decimal-comma with SSV files (semicolon delimiter) should succeed
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.ssv", "id", "right.ssv"])
         .arg("--decimal-comma")
         .args(["--delimiter", ";"]);
@@ -2845,7 +2845,7 @@ fn joinp_decimal_comma_validation_with_output_file() {
 
     // Test: --decimal-comma with output file should validate the output delimiter
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma")
         .args(["--delimiter", ";"])
@@ -2861,7 +2861,7 @@ fn joinp_decimal_comma_validation_with_output_file() {
 
     // Test: --decimal-comma with output file that would have comma delimiter should fail
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma")
         .args(["--output", "output.csv"]);
@@ -2887,7 +2887,7 @@ fn joinp_decimal_comma_validation_with_tsv_output() {
 
     // Test: --decimal-comma with TSV output file should succeed
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.tsv", "id", "right.tsv"])
         .arg("--decimal-comma")
         .args(["--delimiter", "\t"])
@@ -2916,7 +2916,7 @@ fn joinp_decimal_comma_validation_with_ssv_output() {
 
     // Test: --decimal-comma with SSV output file should succeed
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.ssv", "id", "right.ssv"])
         .arg("--decimal-comma")
         .args(["--delimiter", ";"])
@@ -3077,7 +3077,7 @@ fn joinp_decimal_comma_validation_with_sql_filter() {
 
     // Test: --decimal-comma with SQL filter and comma delimiter should fail
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma")
         .arg("--sql-filter")
@@ -3088,7 +3088,7 @@ fn joinp_decimal_comma_validation_with_sql_filter() {
 
     // Test: --decimal-comma with SQL filter and semicolon delimiter should succeed
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma")
         .args(["--delimiter", ";"])
@@ -3172,7 +3172,7 @@ fn test_joinp_cache_schema_datetime() {
 
     // Join with cached schemas containing Datetime type
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--cache-schema")
         .arg("1");
@@ -3198,7 +3198,7 @@ fn joinp_decimal_comma_validation_preserves_output_file() {
     std::fs::write(&output_path, b"SENTINEL\n").unwrap();
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("--decimal-comma")
         .args(["--output", "out.csv"]);
@@ -3218,7 +3218,7 @@ fn joinp_manytomany_validate_rejected() {
     wrk.create("right.csv", vec![svec!["id"], svec!["1"]]);
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .args(["--validate", "manytomany"]);
 
@@ -3245,7 +3245,7 @@ fn joinp_tsv_cache_schema_minus1() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(["--maintain-order", "left"]);
+    cmd.args(["--maintain-order", "left_right"]);
     cmd.args(["id", "left.tsv", "id", "right.tsv"])
         .args(["--cache-schema", "-1"]);
 

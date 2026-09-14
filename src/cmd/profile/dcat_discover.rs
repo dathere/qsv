@@ -74,6 +74,39 @@ pub fn discover(url: &str, timeout: Duration) -> Option<Value> {
 /// being a safe ceiling.
 const DCAT_DISCOVERY_MAX_BYTES: u64 = 4 * 1024 * 1024;
 
+/// Read at most `DCAT_DISCOVERY_MAX_BYTES` from `reader` and decode it lossily
+/// as UTF-8.
+///
+/// Deliberately not `Response::text()`: these bodies are publisher-controlled
+/// and `.text()` is unbounded, so the cap has to be applied at the reader.
+///
+/// Equally deliberately not `read_to_string()`, which is what this used to be.
+/// That hard-errored on two inputs a discovery probe will actually meet - a
+/// non-UTF-8 body (windows-1252 landing pages are common on open-data portals)
+/// and a *valid* UTF-8 body whose byte cap sliced a multi-byte codepoint - and
+/// since every caller swallows the error with `.ok()?`, both silently aborted
+/// discovery with no diagnostic. Lossy decoding degrades a stray bad byte to
+/// U+FFFD instead, which the JSON/JSON-LD scanners downstream tolerate.
+///
+/// To be clear about what this does NOT fix: a body actually truncated by the cap
+/// is still truncated, and `serde_json::from_str` on it still fails. Lossy decoding
+/// only stops truncation from being a *second*, earlier failure mode (a dangling
+/// lead byte killing an otherwise-fine read); the real win is the non-UTF-8 case.
+///
+/// Takes `impl Read` rather than a `Response` purely so the decode behaviour is
+/// unit-testable without a live server; `Response` implements `Read`, so every
+/// call site is unchanged.
+fn read_capped_lossy(reader: impl std::io::Read) -> Option<String> {
+    let mut limited = std::io::Read::take(reader, DCAT_DISCOVERY_MAX_BYTES);
+    let mut buf = Vec::new();
+    std::io::Read::read_to_end(&mut limited, &mut buf).ok()?;
+    // avoid re-copying the (overwhelmingly common) already-valid UTF-8 case
+    Some(
+        String::from_utf8(buf)
+            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()),
+    )
+}
+
 /// Issue a HEAD against `url`; if the response carries a
 /// `Link: <iri>; rel="describedBy"` header, follow the IRI and parse
 /// its body as JSON-LD. Returns the parsed `dcat:Dataset` value, if
@@ -91,9 +124,7 @@ fn discover_via_link_header(client: &Client, url: &str) -> Option<Value> {
     let resolved = resolve_relative(url, &describedby_iri).unwrap_or(describedby_iri);
 
     let response = client.get(&resolved).send().ok()?;
-    let mut limited = std::io::Read::take(response, DCAT_DISCOVERY_MAX_BYTES);
-    let mut body = String::new();
-    std::io::Read::read_to_string(&mut limited, &mut body).ok()?;
+    let body = read_capped_lossy(response)?;
     let json: Value = serde_json::from_str(&body).ok()?;
     extract_dcat_dataset(&json)
 }
@@ -209,9 +240,7 @@ fn discover_via_html_jsonld(client: &Client, url: &str) -> Option<Value> {
         .and_then(|v| v.to_str().ok())
         .is_some_and(|s| s.to_ascii_lowercase().contains("html"));
 
-    let mut limited = std::io::Read::take(response, DCAT_DISCOVERY_MAX_BYTES);
-    let mut body = String::new();
-    std::io::Read::read_to_string(&mut limited, &mut body).ok()?;
+    let body = read_capped_lossy(response)?;
 
     // Cheap looks-like-html sniff so we don't spend cycles scanning a
     // PDF or binary blob that happened to be served with no Content-Type.
@@ -271,9 +300,7 @@ fn fetch_json_and_extract(client: &Client, url: &str) -> Option<Value> {
     if !response.status().is_success() {
         return None;
     }
-    let mut limited = std::io::Read::take(response, DCAT_DISCOVERY_MAX_BYTES);
-    let mut body = String::new();
-    std::io::Read::read_to_string(&mut limited, &mut body).ok()?;
+    let body = read_capped_lossy(response)?;
     let json: Value = serde_json::from_str(&body).ok()?;
     extract_dcat_dataset(&json)
 }
@@ -431,6 +458,43 @@ mod tests {
             resolve_relative("https://x.gov/dir/data.csv", "https://other.gov/m.json"),
             Some("https://other.gov/m.json".to_string())
         );
+    }
+
+    // read_capped_lossy: the three inputs the old read_to_string() rejected.
+    // Each of these previously returned Err -> .ok()? -> None, silently
+    // aborting DCAT discovery.
+
+    #[test]
+    fn read_capped_lossy_passes_through_valid_utf8() {
+        let src = r#"{"@type":"dcat:Dataset","dct:title":"café"}"#;
+        assert_eq!(read_capped_lossy(src.as_bytes()), Some(src.to_string()));
+    }
+
+    #[test]
+    fn read_capped_lossy_survives_non_utf8_body() {
+        // windows-1252 "café" - 0xE9 is not valid UTF-8. read_to_string() errored
+        // here; we now degrade the single bad byte to U+FFFD and keep going.
+        let src: &[u8] = &[b'c', b'a', b'f', 0xE9];
+        let got = read_capped_lossy(src).expect("must not fail on a non-UTF-8 body");
+        assert_eq!(got, "caf\u{FFFD}");
+    }
+
+    #[test]
+    fn read_capped_lossy_survives_cap_slicing_a_codepoint() {
+        // A body that is perfectly valid UTF-8, but whose DCAT_DISCOVERY_MAX_BYTES
+        // cut lands between the two bytes of "é" (0xC3 0xA9). read_to_string()
+        // errored on the dangling 0xC3; we keep the prefix and mark the tail.
+        let cap = DCAT_DISCOVERY_MAX_BYTES as usize;
+        let mut src = vec![b'a'; cap - 1];
+        src.extend_from_slice(&[0xC3, 0xA9]);
+        assert!(
+            std::str::from_utf8(&src).is_ok(),
+            "fixture must itself be valid UTF-8"
+        );
+
+        let got = read_capped_lossy(src.as_slice()).expect("must not fail on a sliced codepoint");
+        assert_eq!(got.len(), cap - 1 + "\u{FFFD}".len());
+        assert!(got.ends_with('\u{FFFD}'));
     }
 
     #[test]

@@ -63,8 +63,10 @@ to be as fast as allowed. The --rate-limit option sets the maximum number of que
 (QPS) to be made. The default is 0, which means to go as fast as possible, automatically
 throttling as required, based on rate-limit and retry-after response headers.
 
-To use a proxy, please set env vars HTTP_PROXY, HTTPS_PROXY or ALL_PROXY
-(e.g. export HTTPS_PROXY=socks5://127.0.0.1:1086).
+To use a proxy, set the environment variables HTTP_PROXY, HTTPS_PROXY or ALL_PROXY
+(e.g. export HTTPS_PROXY=socks5://127.0.0.1:1086). Your operating system's own
+proxy configuration (macOS System Settings, Windows registry) is also honored;
+the environment variables take precedence over it.
 
 qsv fetchpost supports brotli, gzip and deflate automatic decompression for improved throughput
 and performance, preferring brotli over gzip over deflate.
@@ -192,6 +194,13 @@ Fetchpost options:
                                [default: 0 ]
     --timeout <seconds>        Timeout for each URL request.
                                [default: 30 ]
+    --default-encoding <enc>   Fallback character encoding used to decode a response body when
+                               the server does NOT send a charset parameter in its Content-Type
+                               header. Accepts WHATWG encoding labels, e.g. utf-8, windows-1252,
+                               iso-8859-1, shift_jis, euc-jp, koi8-r.
+                               When the server DOES send a charset, the server always wins and
+                               this option is ignored.
+                               [default: utf-8]
     -H, --http-header <k:v>    Append custom header(s) to the HTTP header. Pass multiple key-value pairs
                                by adding this option multiple times, once for each pair. The key and value
                                should be separated by a colon.
@@ -328,37 +337,38 @@ impl std::fmt::Display for ContentType {
 
 #[derive(Deserialize)]
 struct Args {
-    flag_payload_tpl:    Option<String>,
-    flag_content_type:   Option<String>,
-    flag_globals_json:   Option<PathBuf>,
-    flag_new_column:     Option<String>,
-    flag_jaq:            Option<String>,
-    flag_jaqfile:        Option<PathBuf>,
-    flag_pretty:         bool,
-    flag_rate_limit:     u32,
-    flag_timeout:        u16,
-    flag_http_header:    Vec<String>,
-    flag_compress:       bool,
-    flag_max_retries:    u8,
-    flag_max_errors:     u64,
-    flag_store_error:    bool,
-    flag_cookies:        bool,
-    flag_user_agent:     Option<String>,
-    flag_report:         String,
-    flag_no_cache:       bool,
-    flag_mem_cache_size: usize,
-    flag_disk_cache:     bool,
-    flag_disk_cache_dir: Option<String>,
-    flag_redis_cache:    bool,
-    flag_cache_error:    bool,
-    flag_flush_cache:    bool,
-    flag_output:         Option<String>,
-    flag_no_headers:     bool,
-    flag_delimiter:      Option<Delimiter>,
-    flag_progressbar:    bool,
-    arg_url_column:      SelectColumns,
-    arg_column_list:     SelectColumns,
-    arg_input:           Option<String>,
+    flag_payload_tpl:      Option<String>,
+    flag_content_type:     Option<String>,
+    flag_globals_json:     Option<PathBuf>,
+    flag_new_column:       Option<String>,
+    flag_jaq:              Option<String>,
+    flag_jaqfile:          Option<PathBuf>,
+    flag_pretty:           bool,
+    flag_rate_limit:       u32,
+    flag_timeout:          u16,
+    flag_default_encoding: String,
+    flag_http_header:      Vec<String>,
+    flag_compress:         bool,
+    flag_max_retries:      u8,
+    flag_max_errors:       u64,
+    flag_store_error:      bool,
+    flag_cookies:          bool,
+    flag_user_agent:       Option<String>,
+    flag_report:           String,
+    flag_no_cache:         bool,
+    flag_mem_cache_size:   usize,
+    flag_disk_cache:       bool,
+    flag_disk_cache_dir:   Option<String>,
+    flag_redis_cache:      bool,
+    flag_cache_error:      bool,
+    flag_flush_cache:      bool,
+    flag_output:           Option<String>,
+    flag_no_headers:       bool,
+    flag_delimiter:        Option<Delimiter>,
+    flag_progressbar:      bool,
+    arg_url_column:        SelectColumns,
+    arg_column_list:       SelectColumns,
+    arg_input:             Option<String>,
 }
 
 // set memcache size - the default is 2 million entries
@@ -368,6 +378,17 @@ static MEM_CACHE_SIZE: OnceLock<usize> = OnceLock::new();
 static DEFAULT_REDIS_CONN_STRING: OnceLock<String> = OnceLock::new();
 
 static TIMEOUT_FP_SECS: OnceLock<u64> = OnceLock::new();
+
+// --default-encoding, kept in a OnceLock rather than threaded through
+// get_response/get_cached_response and the #[concurrent_cached] wrappers.
+// Read by BOTH the response decode and cross_session_cache_key(), so it must be
+// set before any cache key is built - see the set() next to TIMEOUT_FP_SECS in run().
+static DEFAULT_ENCODING: OnceLock<String> = OnceLock::new();
+
+#[inline]
+fn default_encoding() -> &'static str {
+    DEFAULT_ENCODING.get().map_or("utf-8", String::as_str)
+}
 
 const FETCHPOST_REPORT_PREFIX: &str = "qsv_fetchp_";
 const FETCHPOST_REPORT_SUFFIX: &str = ".fetchpost-report.tsv";
@@ -400,6 +421,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // safety: OnceLock set exactly once at startup
     TIMEOUT_FP_SECS
         .set(util::timeout_secs(args.flag_timeout)?)
+        .unwrap();
+
+    // Validate --default-encoding up front. reqwest's text_with_charset() resolves
+    // the label with Encoding::for_label(), which silently falls back to UTF-8 on an
+    // unknown label - so a typo like "latin_1" would quietly produce wrong output.
+    // Reject it here instead.
+    if encoding_rs::Encoding::for_label(args.flag_default_encoding.as_bytes()).is_none() {
+        return fail_incorrectusage_clierror!(
+            "Unknown --default-encoding label: \"{}\". Use a WHATWG encoding label (e.g. utf-8, \
+             windows-1252, iso-8859-1, shift_jis).",
+            args.flag_default_encoding
+        );
+    }
+    // MUST be set before the first cross_session_cache_key() call, as that key
+    // includes the encoding. Set here alongside TIMEOUT_FP_SECS, which is ahead of
+    // the disk/redis cache setup below.
+    // safety: OnceLock set exactly once at startup
+    DEFAULT_ENCODING
+        .set(args.flag_default_encoding.clone())
         .unwrap();
 
     // setup diskcache dir response caching
@@ -1215,6 +1255,11 @@ fn get_cached_response(
 // Defined once and called from each `convert` macro and each `cache_remove`
 // call site so the format cannot drift (the original cache-eviction bug came
 // from a divergence between these).
+//
+// --default-encoding is folded in via default_encoding() rather than a parameter,
+// for that same drift reason. It MUST participate in the key: it changes how a
+// response body is decoded, so a run with --default-encoding windows-1252 must not
+// be served a value that a previous utf-8 run persisted for the same URL.
 #[inline]
 #[allow(clippy::fn_params_excessive_bools)]
 fn cross_session_cache_key(
@@ -1229,7 +1274,8 @@ fn cross_session_cache_key(
 ) -> String {
     format!(
         "{url}{form_body_jsonmap:?}{payload_content_type}{flag_jaq:?\
-         }{flag_store_error}{flag_pretty}{flag_compress}{include_existing_columns}"
+         }{flag_store_error}{flag_pretty}{flag_compress}{include_existing_columns}{}",
+        default_encoding()
     )
 }
 
@@ -1481,7 +1527,11 @@ fn get_response(
             // debug!("{resp:?}");
             api_respheader.clone_from(resp.headers());
             api_status = resp.status();
-            api_value = resp.text().unwrap_or_default();
+            // text_with_charset() honors a server-sent Content-Type charset= first and
+            // only falls back to --default-encoding when the server sends none.
+            api_value = resp
+                .text_with_charset(default_encoding())
+                .unwrap_or_default();
 
             if api_status.is_client_error() || api_status.is_server_error() {
                 error_flag = true;

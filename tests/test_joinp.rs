@@ -552,9 +552,12 @@ joinp_test!(
 joinp_test!(joinp_full, |wrk: Workdir, mut cmd: process::Command| {
     cmd.arg("--full").arg("--coalesce");
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    // Left-positional order: each left row in its cities.csv position,
+    // Left-positional order: each left row in its left-input position,
     // multi-matches expanded in place, right-only rows appended.
-    // Deterministic under --maintain-order left (verified over 5 runs).
+    // --maintain-order left_right sorts by (left index, right index), a
+    // TOTAL order, so the two Boston matches below cannot swap. Plain
+    // `left` sorts by the left index alone and would leave them tied
+    // (polars-ops/src/frame/join/hash_join/mod.rs).
     let expected = make_rows(
         false,
         vec![
@@ -575,9 +578,12 @@ joinp_test!(
         cmd.arg("--full");
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
         // Not coalesced, so the join key appears twice and the header is 4 columns.
-        // Left-positional order: each left row in its cities.csv position,
+        // Left-positional order: each left row in its left-input position,
         // multi-matches expanded in place, right-only rows appended.
-        // Deterministic under --maintain-order left (verified over 5 runs).
+        // --maintain-order left_right sorts by (left index, right index), a
+        // TOTAL order, so the two Boston matches below cannot swap. Plain
+        // `left` sorts by the left index alone and would leave them tied
+        // (polars-ops/src/frame/join/hash_join/mod.rs).
         let expected = vec![
             svec!["city", "state", "city_right", "place"],
             svec!["Boston", "MA", "Boston", "Logan Airport"],
@@ -596,9 +602,12 @@ joinp_test_compressed!(
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--full").arg("--coalesce");
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        // Left-positional order: each left row in its cities.csv position,
+        // Left-positional order: each left row in its left-input position,
         // multi-matches expanded in place, right-only rows appended.
-        // Deterministic under --maintain-order left (verified over 5 runs).
+        // --maintain-order left_right sorts by (left index, right index), a
+        // TOTAL order, so the two Boston matches below cannot swap. Plain
+        // `left` sorts by the left index alone and would leave them tied
+        // (polars-ops/src/frame/join/hash_join/mod.rs).
         let expected = make_rows(
             false,
             vec![
@@ -619,9 +628,12 @@ joinp_test_comments!(
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.arg("--full").arg("--coalesce");
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        // Left-positional order: each left row in its cities.csv position,
+        // Left-positional order: each left row in its left-input position,
         // multi-matches expanded in place, right-only rows appended.
-        // Deterministic under --maintain-order left (verified over 5 runs).
+        // --maintain-order left_right sorts by (left index, right index), a
+        // TOTAL order, so the two Boston matches below cannot swap. Plain
+        // `left` sorts by the left index alone and would leave them tied
+        // (polars-ops/src/frame/join/hash_join/mod.rs).
         let expected = make_rows(
             false,
             vec![

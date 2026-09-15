@@ -313,25 +313,9 @@ plotly = { version = "0.14.1", default-features = false, optional = true }
 # resolves the path relative to CARGO_MANIFEST_DIR at compile time.
 # NOTE: the `i18n!` init MUST be invoked at a crate root (src/main.rs) because the
 # `t!` macro expands to `crate::_rust_i18n_t!`. See src/cmd/viz_i18n.rs.
-rust-i18n  = { version = "4.2.1", optional = true }
+rust-i18n = { version = "4.2.1", optional = true }
 pragmastat = "14.0"
-# Pure-Rust SAS/Stata/SPSS readers powering the `readstat` command.
-# A DIRECT git dep, NOT a [patch.crates-io] entry: a patch only applies when its version
-# satisfies the requirement, so a `version = "x.y"` here that does not match the fork's own
-# version is SILENTLY ignored and Cargo resolves the crates.io release instead - which still
-# wants polars 0.53 and drags in a whole duplicate polars tree.
-#
-# This crate also depends on polars-core and polars-arrow directly, hence the matching
-# [patch.crates-io] entries below that redirect them onto the same git polars qsv pins.
-# Without those, they resolve from crates.io and the two arrow/error types fail to typecheck.
-# NOTE: once crates.io polars-* packages land in Cargo.lock they are sticky - Cargo will keep
-# them even after the manifest is corrected. Re-resolve (or check `cargo tree -d`) rather than
-# assuming a manifest fix took effect.
-# Pinned to a REV, not the `polars-0.55` branch, so the build cannot shift underfoot if that
-# branch moves - the same reproducibility reason plotly and object_store are pinned by rev.
-# TRACKING: repoint at the upstream crate once jrothbaum/polars_readstat#59 (polars 0.55)
-# is merged and released.
-polars-readstat-rs = { git = "https://github.com/jqnatividad/polars_readstat", rev = "293af6358b8c5cca6b6df869e7b6044124dc1a56", optional = true }
+polars-readstat-rs = { version = "0.23", optional = true }
 polars = { version = "0.55", features = [
     "asof_join",
     "avro",
@@ -510,8 +494,8 @@ serial_test = { version = "4.0", features = ["file_locks"] }
 [patch.crates-io]
 # polars-readstat-rs depends on these directly; redirect them onto the same git polars
 # revision qsv pins, otherwise a second, incompatible polars tree resolves from crates.io.
-polars-core  = { git = "https://github.com/pola-rs/polars", rev = "d84c1d4f28b0293d4f9a821c435e60a978059063" } # tag = "py-1.44.2" }
-polars-arrow = { git = "https://github.com/pola-rs/polars", rev = "d84c1d4f28b0293d4f9a821c435e60a978059063" } # tag = "py-1.44.2" }
+polars-core  = { git = "https://github.com/pola-rs/polars", rev = "5267819479ed3af6e1327a487b874dbcc9783410" }
+polars-arrow = { git = "https://github.com/pola-rs/polars", rev = "5267819479ed3af6e1327a487b874dbcc9783410" }
 # use our tweaked fork of csv crate
 # the csv crate underpins a lot of qsv's functionality, so every perf tweak helps
 # for details, see https://github.com/dathere/qsv/wiki/Tuned-csv-Fork-Benchmarks
@@ -591,9 +575,9 @@ spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", bran
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=py-1.44.2:d84c1d4f28b0293d4f9a821c435e60a978059063
+# QSV_POLARS_REV=py-1.44.2:5267819479ed3af6e1327a487b874dbcc9783410
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.44.2", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "d84c1d4f28b0293d4f9a821c435e60a978059063", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "5267819479ed3af6e1327a487b874dbcc9783410", optional = true }
 
 # Apache DataSketches (t-digest, HLL, Frequent Items) — upstream C++ does not
 # support big-endian targets, so we exclude the crate on big-endian builds.

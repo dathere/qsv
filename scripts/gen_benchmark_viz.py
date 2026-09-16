@@ -69,9 +69,13 @@ PAGES_URL = "https://dathere.github.io/qsv/benchmarks/"
 # Deep-link base for the per-chart "see the qsv viz command" shortcut (line range appended).
 SOURCE_URL = "https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py"
 
-# Index-advantage chart: only commands whose _index variant is a STARK win (flat pairs like
-# validate and sample are deliberately excluded — an index barely helps them).
-INDEX_PAIR_COMMANDS = ["stats", "frequency", "search", "searchset", "tojsonl"]
+# Index-advantage chart: commands whose _index variant is a decisive win. Genuinely flat pairs
+# stay out — an index barely helps a streaming command (sample_100000, exclude and
+# frequency_sorted all sit at ~1.0x). validate was one of those for most of its history (~1.06x
+# from launch through 22.0.1) and joined once #4508/#4509 — which took the serde_json::Value
+# conversion out of the batch-parallel validation path — roughly doubled its indexed throughput.
+# That is so far a ONE-run result; drop it back out if a later run returns it toward 1x.
+INDEX_PAIR_COMMANDS = ["stats", "frequency", "search", "searchset", "tojsonl", "validate"]
 # Full-history trend: each marquee command's PLAIN and `_index` variant as SEPARATE series, so
 # the index advantage reads release by release. Each entry below is expanded to `<name>` and
 # `<name>_index` by prep_trend(). stats is represented by its heavier `--everything` pass.
@@ -717,13 +721,25 @@ def main():
 
     figs = []
     index_src = prep_index()
+    # Cite this run's own spread; which command leads shifts between releases, so a hardcoded
+    # multiple here would quietly go stale the next time the suite runs.
+    ip_ratios = {c: vals[f"{c}_index"] / vals[c] for c in INDEX_PAIR_COMMANDS
+                 if vals.get(c) and vals.get(f"{c}_index")}
+    if ip_ratios:
+        ip_hi = max(ip_ratios, key=ip_ratios.get)
+        ip_lo = min(ip_ratios, key=ip_ratios.get)
+        ip_span = (f"{ip_ratios[ip_hi]:.1f}x for {ip_hi} down to {ip_ratios[ip_lo]:.1f}x for "
+                   f"{ip_lo}")
+    else:
+        ip_span = "several times over for some commands"
     figs.append(viz("bar", index_src,
                     ["--x", "command", "--y", "recs_per_sec", "--series", "index_status",
                      "--title", "The index advantage", "--y-title", "records/sec"],
                     "index_advantage", "The index advantage",
                     "Build an index once and qsv can skip the opening scan on every run after. "
-                    "The payoff is lopsided — a ~6x jump for stats and ~3x for search, but next "
-                    "to nothing for streaming commands — so only the standouts are shown here."))
+                    f"The payoff is lopsided — {ip_span} on this run, and next to nothing for "
+                    "streaming commands, so only the pairs where an index actually moves the "
+                    "needle are shown here."))
     # Cite the run's own numbers — this callout is exactly where hardcoded figures went stale.
     c_base, c_idx = vals.get("count"), vals.get("count_index")
     if c_base and c_idx and c_base > 0:

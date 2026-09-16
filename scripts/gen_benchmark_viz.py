@@ -35,11 +35,13 @@ repo and interactive Plotly can't render in wiki markdown, which strips <script>
 NOTE on the historical trend/heatmap: cross-version numbers are NOT strictly
 apples-to-apples — commands gain features over time (see scripts/results/README.md),
 so the Data Schematic carries that caveat prominently. The trend line spans the FULL release
-history and, for each command, follows the fastest variant available at the time (base
-scan early on, indexed variant once it exists — for search/searchset that step lands at
-10.0.0). The heatmap keeps a recent window for legibility. `count` is excluded from the
-shared-scale throughput charts (it just reads the row count from the .idx — tens of
-millions of "records/sec") but appears in the per-row-normalized heatmap.
+history and draws each command TWICE — its plain scan and its `_index` variant as separate
+series on a log axis — so the index advantage reads release by release (search/searchset only
+gained index support at 10.0.0, so those two `_index` lines start there). The heatmap keeps a
+recent window for legibility and is the only chart that still folds a command's variants into
+one line via merge_index(). `count` is excluded from the shared-scale throughput charts (it
+just reads the row count from the .idx — tens of millions of "records/sec") but appears in
+the per-row-normalized heatmap.
 """
 import csv
 import json

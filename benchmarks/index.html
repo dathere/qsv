@@ -63,7 +63,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;index_advantage&quot;, &quot;The index advantage&quot;,
                 &quot;Build an index once and qsv can skip the opening scan on every run after. &quot;
                 &quot;The payoff is lopsided — a ~6x jump for stats and ~3x for search, but next &quot;
-                &quot;to nothing for streaming commands — so only the standouts are shown here.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L718-L724' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 718–724)</a></details>
+                &quot;to nothing for streaming commands — so only the standouts are shown here.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L720-L726' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 720–726)</a></details>
 </section>
 <section>
 <h2 id=count_callout>count with an index is effectively instant<a class=anchor href='#count_callout' aria-label='Permalink to “count with an index is effectively instant”'>#</a></h2>
@@ -77,7 +77,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 f&quot;it reads a row count qsv already stored, {c_jump}. It sits on its own axis &quot;
                 &quot;precisely because that number would flatten every other bar on the page. The &quot;
                 &quot;un-indexed bar scans the file to count it, so it tracks whatever the current &quot;
-                &quot;scan path costs; the indexed bar reads the stored count and does not.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L732-L740' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 732–740)</a></details>
+                &quot;scan path costs; the indexed bar reads the stored count and does not.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L734-L742' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 734–742)</a></details>
 </section>
 <section>
 <h2 id=index_superpowers>The index superpowers<a class=anchor href='#index_superpowers' aria-label='Permalink to “The index superpowers”'>#</a></h2>
@@ -92,7 +92,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;all the work. slice and sample seek straight to the rows they need; schema reuses &quot;
                 f&quot;cached statistics. That&#x27;s a different order of magnitude: {sp_top_cmd} leads at &quot;
                 f&quot;{sp_top_x:.0f}x faster, with the rest of the seek-and-reuse tier tens of times &quot;
-                &quot;over — versus the low single digits for the scan-skippers above.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L743-L752' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 743–752)</a></details>
+                &quot;over — versus the low single digits for the scan-skippers above.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L745-L754' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 745–754)</a></details>
 </section>
 <section>
 <h2 id=sqlp_tuning>sqlp tuning: the schema-cache knob<a class=anchor href='#sqlp_tuning' aria-label='Permalink to “sqlp tuning: the schema-cache knob”'>#</a></h2>
@@ -105,7 +105,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;sqlp_tuning&quot;, &quot;sqlp tuning: the schema-cache knob&quot;,
                 &quot;sqlp infers a schema before it runs. Cache that schema and the re-inference &quot;
                 &quot;cost disappears on the next query — worth about a third more throughput on &quot;
-                &quot;these aggregations, for a one-line option.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L753-L760' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 753–760)</a></details>
+                &quot;these aggregations, for a one-line option.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L755-L762' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 755–762)</a></details>
 </section>
 <section>
 <h2 id=trend>The long view — every release<a class=anchor href='#trend' aria-label='Permalink to “The long view — every release”'>#</a></h2>
@@ -128,7 +128,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;on a log axis a constant multiple reads as a constant vertical gap. Broad &quot;
                 &quot;trajectory only (see the note above); count and moarstats are omitted for &quot;
                 &quot;scale.&quot;,
-                log_y=True))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L772-L789' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 772–789)</a></details>
+                log_y=True))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L774-L791' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 774–791)</a></details>
 </section>
 <section>
 <h2 id=stats_growth>Flagship deep-dive: stats<a class=anchor href='#stats_growth' aria-label='Permalink to “Flagship deep-dive: stats”'>#</a></h2>
@@ -144,7 +144,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 f&quot;slower: plain stats now runs {s_base:.1f}x its first-release speed, and the &quot;
                 f&quot;full --everything pass with an index {s_heavy:.1f}x. Features grew; the curve &quot;
                 &quot;still points up. (The odd single-release dip is a failed benchmark run, not a &quot;
-                &quot;regression.)&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L800-L810' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 800–810)</a></details>
+                &quot;regression.)&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L802-L812' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 802–812)</a></details>
 </section>
 <section>
 <h2 id=freq_growth>Flagship deep-dive: frequency<a class=anchor href='#freq_growth' aria-label='Permalink to “Flagship deep-dive: frequency”'>#</a></h2>
@@ -159,7 +159,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;case-insensitive and unlimited modes, throughput climbed rather than eroded — &quot;
                 f&quot;base frequency is now {f_base:.1f}x its launch speed and the indexed run &quot;
                 f&quot;{f_idx:.1f}x. Newer modes join partway, each measured from its own debut; the &quot;
-                &quot;transient dips are measurement artifacts, not regressions.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L811-L820' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 811–820)</a></details>
+                &quot;transient dips are measurement artifacts, not regressions.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L813-L822' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 813–822)</a></details>
 </section>
 <section>
 <h2 id=validate_growth>Flagship deep-dive: validate<a class=anchor href='#validate_growth' aria-label='Permalink to “Flagship deep-dive: validate”'>#</a></h2>
@@ -181,7 +181,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 f&quot;in {latest_release}. Full-schema &quot;
                 &quot;and no-schema paths are shown base vs index, each normalized to its own debut. (The &quot;
                 &quot;sharp single-release spikes down — e.g. at 1.0.0 and 2.2.1 — are failed benchmark &quot;
-                &quot;runs, not regressions.)&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L821-L837' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 821–837)</a></details>
+                &quot;runs, not regressions.)&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L823-L839' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 823–839)</a></details>
 </section>
 <section>
 <h2 id=moarstats_growth>Flagship deep-dive: moarstats<a class=anchor href='#moarstats_growth' aria-label='Permalink to “Flagship deep-dive: moarstats”'>#</a></h2>
@@ -214,7 +214,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;over an order of magnitude. All four lines are base vs --advanced, &quot;
                 &quot;each normalized to its own debut. Note the LOG y-axis: that last jump is large enough &quot;
                 &quot;that a linear scale would flatten every earlier step into the baseline.&quot;,
-                log_y=True))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L838-L865' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 838–865)</a></details>
+                log_y=True))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L840-L867' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 840–867)</a></details>
 </section>
 <section>
 <h2 id=heatmap>Relative throughput heatmap<a class=anchor href='#heatmap' aria-label='Permalink to “Relative throughput heatmap”'>#</a></h2>
@@ -227,7 +227,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;The indexed marquee commands over the recent window, each row normalized to its &quot;
                 &quot;own peak (1.0 = that command&#x27;s fastest release). Normalizing per row lets a &quot;
                 &quot;90M-rows/sec count and a 600k-rows/sec frequency share one canvas — the colour &quot;
-                &quot;shows trajectory, not absolute speed.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L866-L873' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 866–873)</a></details>
+                &quot;shows trajectory, not absolute speed.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L868-L875' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 868–875)</a></details>
 </section>
 <section>
 <h2 id=time_spent>Where the suite spends its time<a class=anchor href='#time_spent' aria-label='Permalink to “Where the suite spends its time”'>#</a></h2>
@@ -239,7 +239,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;time_spent&quot;, &quot;Where the suite spends its time&quot;,
                 &quot;The whole suite by wall-clock, family then benchmark. The biggest tiles are &quot;
                 &quot;where a speedup would move the needle most — a map of where the optimization &quot;
-                &quot;effort is best spent.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L874-L880' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 874–880)</a></details>
+                &quot;effort is best spent.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L876-L882' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 876–882)</a></details>
 </section>
 <section>
 <h2 id=gainers>Biggest speedups this release<a class=anchor href='#gainers' aria-label='Permalink to “Biggest speedups this release”'>#</a></h2>
@@ -251,7 +251,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;gainers&quot;, &quot;Biggest speedups this release&quot;,
                 &quot;The 15 benchmarks that improved most over the previous release. Bigger, brighter &quot;
                 &quot;bubbles are larger wins — the percentage cut in mean run time from one version &quot;
-                &quot;to the next.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L881-L887' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 881–887)</a></details>
+                &quot;to the next.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L883-L889' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 883–889)</a></details>
 </section>
 <section>
 <h2 id=change_by_family>Change distribution by family<a class=anchor href='#change_by_family' aria-label='Permalink to “Change distribution by family”'>#</a></h2>
@@ -267,7 +267,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;family (above zero = faster). Most families cluster just north of zero — steady, &quot;
                 f&quot;unglamorous progress. Extreme outliers (|Δ| &gt; {int(DELTA_CLAMP)}%, usually &quot;
                 &quot;measurement noise) are omitted; the y-axis follows the remaining data, so every &quot;
-                &quot;point charted here is visible.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L894-L904' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 894–904)</a></details>
+                &quot;point charted here is visible.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L896-L906' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 896–906)</a></details>
 </section>
 </main>
 <footer>Regenerated by <code>scripts/gen_benchmark_viz.py</code> from <code>scripts/results/*.csv</code>. Charts are interactive — hover for values, drag to zoom, use the toolbar to pan or download a PNG. Under each chart, <b>see the qsv viz command</b> reveals the exact <code>qsv viz</code> call that produced it. Source benchmarks: <a href='https://github.com/dathere/qsv/blob/master/scripts/results/'>scripts/results</a>.</footer>

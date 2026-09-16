@@ -35,11 +35,13 @@ repo and interactive Plotly can't render in wiki markdown, which strips <script>
 NOTE on the historical trend/heatmap: cross-version numbers are NOT strictly
 apples-to-apples — commands gain features over time (see scripts/results/README.md),
 so the Data Schematic carries that caveat prominently. The trend line spans the FULL release
-history and, for each command, follows the fastest variant available at the time (base
-scan early on, indexed variant once it exists — for search/searchset that step lands at
-10.0.0). The heatmap keeps a recent window for legibility. `count` is excluded from the
-shared-scale throughput charts (it just reads the row count from the .idx — tens of
-millions of "records/sec") but appears in the per-row-normalized heatmap.
+history and draws each command TWICE — its plain scan and its `_index` variant as separate
+series on a log axis — so the index advantage reads release by release (search/searchset only
+gained index support at 10.0.0, so those two `_index` lines start there). The heatmap keeps a
+recent window for legibility and is the only chart that still folds a command's variants into
+one line via merge_index(). `count` is excluded from the shared-scale throughput charts (it
+just reads the row count from the .idx — tens of millions of "records/sec") but appears in
+the per-row-normalized heatmap.
 """
 import csv
 import json
@@ -67,16 +69,23 @@ PAGES_URL = "https://dathere.github.io/qsv/benchmarks/"
 # Deep-link base for the per-chart "see the qsv viz command" shortcut (line range appended).
 SOURCE_URL = "https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py"
 
-# Index-advantage chart: only commands whose _index variant is a STARK win (flat pairs like
-# validate and sample are deliberately excluded — an index barely helps them).
-INDEX_PAIR_COMMANDS = ["stats", "frequency", "search", "searchset", "tojsonl"]
-# Full-history trend & heatmap: marquee commands shown with their index variant wherever it
-# exists (all releases for stats/frequency/validate; from 10.0.0 for search/searchset — the base
-# variant is used before, so each line stays continuous and the index-adoption jump is visible).
-# validate carried its index from launch, so its line is steady with no adoption step.
+# Index-advantage chart: commands whose _index variant is a decisive win. Genuinely flat pairs
+# stay out — an index barely helps a streaming command (sample_100000, exclude and
+# frequency_sorted all sit at ~1.0x). validate was one of those for most of its history (~1.06x
+# from launch through 22.0.1) and joined once #4508/#4509 — which took the serde_json::Value
+# conversion out of the batch-parallel validation path — roughly doubled its indexed throughput.
+# That is so far a ONE-run result; drop it back out if a later run returns it toward 1x.
+INDEX_PAIR_COMMANDS = ["stats", "frequency", "search", "searchset", "tojsonl", "validate"]
+# Full-history trend: each marquee command's PLAIN and `_index` variant as SEPARATE series, so
+# the index advantage reads release by release. Each entry below is expanded to `<name>` and
+# `<name>_index` by prep_trend(). stats is represented by its heavier `--everything` pass.
+# search/searchset only gained index support at 10.0.0, so those two `_index` lines start there;
+# validate's pair ran together (~1x) until its index finally started paying off around 23.0.0.
+TREND_PAIRS = ["stats_everything", "frequency", "search", "searchset", "validate"]
+# Heatmap: marquee commands shown with their index variant wherever it exists, folded into one
+# line per command by merge_index() (the base variant is used before index support was added).
 # `count` is in the heatmap only (per-row normalized); it's excluded from the trend line and
 # the shared-scale charts because its ~90M "records/sec" index read would squash everything.
-TREND_NAMES = ["stats", "frequency", "search", "searchset", "validate"]
 HEATMAP_NAMES = ["count", "stats", "frequency", "search", "searchset"]
 # Flagship deep-dives: variant sets whose growth-since-first-release shows throughput held (or
 # improved) even as the flagship commands gained features over ~60 releases.
@@ -96,7 +105,7 @@ VALIDATE_GROWTH = ["validate", "validate_index", "validate_no_schema", "validate
 # The univariate paths DO scan the original CSV (outliers always; kurtosis/Gini/Atkinson/entropy
 # under --advanced); only the separate bivariate computation is redone every run, so the bivariate
 # variants are the ones with a real per-row story. That ~90M scale is also why moarstats stays out of
-# TREND_NAMES (it would squash the trend's shared axis like count) — a deep-dive-only feature.
+# TREND_PAIRS (it would squash the trend's shared axis like count) — a deep-dive-only feature.
 MOARSTATS_GROWTH = ["moarstats_bivariate_index", "moarstats_advanced_bivariate_index",
                     "moarstats_bivariate_all_index", "moarstats_advanced_bivariate_all_index"]
 # "Index superpowers": commands whose index win is not just skipping the opening scan but doing
@@ -388,8 +397,20 @@ def merge_index(commands, dst):
 
 
 def prep_trend():
-    f = merge_index(TREND_NAMES, tmp("trend_m.csv"))
-    return qsv(["sort", "-s", "tstamp", f], tmp("trend.csv"))
+    """Full-history long CSV `(name, version, tstamp, recs_per_sec)`: every command in
+    TREND_PAIRS as TWO series, its plain scan and its `_index` variant, so the index advantage is
+    visible across releases instead of being folded into one merged line. NOT merge_index() —
+    that strips the `_index` suffix, which would collapse each pair back into a single line.
+
+    A release benchmarked more than once is collapsed to its LATEST run (not MAX(recs_per_sec),
+    which on a re-benchmarked release would report the fastest run rather than the current one)."""
+    names = [n for c in TREND_PAIRS for n in (c, f"{c}_index")]
+    f = qsv(["search", "-s", "name", alt(names), HISTORY], tmp("trend_m.csv"))
+    return qsv(["sqlp", f,
+                "SELECT name, version, tstamp, recs_per_sec FROM ("
+                "SELECT name, version, tstamp, recs_per_sec, ROW_NUMBER() OVER "
+                "(PARTITION BY name, version ORDER BY tstamp DESC) AS rn "
+                "FROM _t_1) WHERE rn = 1 ORDER BY tstamp"], tmp("trend.csv"))
 
 
 def prep_heatmap(versions):
@@ -700,13 +721,25 @@ def main():
 
     figs = []
     index_src = prep_index()
+    # Cite this run's own spread; which command leads shifts between releases, so a hardcoded
+    # multiple here would quietly go stale the next time the suite runs.
+    ip_ratios = {c: vals[f"{c}_index"] / vals[c] for c in INDEX_PAIR_COMMANDS
+                 if vals.get(c) and vals.get(f"{c}_index")}
+    if ip_ratios:
+        ip_hi = max(ip_ratios, key=ip_ratios.get)
+        ip_lo = min(ip_ratios, key=ip_ratios.get)
+        ip_span = (f"{ip_ratios[ip_hi]:.1f}x for {ip_hi} down to {ip_ratios[ip_lo]:.1f}x for "
+                   f"{ip_lo}")
+    else:
+        ip_span = "several times over for some commands"
     figs.append(viz("bar", index_src,
                     ["--x", "command", "--y", "recs_per_sec", "--series", "index_status",
                      "--title", "The index advantage", "--y-title", "records/sec"],
                     "index_advantage", "The index advantage",
                     "Build an index once and qsv can skip the opening scan on every run after. "
-                    "The payoff is lopsided — a ~6x jump for stats and ~3x for search, but next "
-                    "to nothing for streaming commands — so only the standouts are shown here."))
+                    f"The payoff is lopsided — {ip_span} on this run, and next to nothing for "
+                    "streaming commands, so only the pairs where an index actually moves the "
+                    "needle are shown here."))
     # Cite the run's own numbers — this callout is exactly where hardcoded figures went stale.
     c_base, c_idx = vals.get("count"), vals.get("count_index")
     if c_base and c_idx and c_base > 0:
@@ -743,17 +776,35 @@ def main():
                     "sqlp infers a schema before it runs. Cache that schema and the re-inference "
                     "cost disappears on the next query — worth about a third more throughput on "
                     "these aggregations, for a one-line option."))
+    # Cite this run's own index ratios — which pair leads shifts between releases, so naming a
+    # multiple here would go stale the next time the suite runs.
+    tr_ratios = {c: vals[f"{c}_index"] / vals[c] for c in TREND_PAIRS
+                 if vals.get(c) and vals.get(f"{c}_index")}
+    if tr_ratios:
+        tr_hi = max(tr_ratios, key=tr_ratios.get)
+        tr_lo = min(tr_ratios, key=tr_ratios.get)
+        tr_gap = (f"On the current release the widest gap is {tr_hi} at {tr_ratios[tr_hi]:.1f}x "
+                  f"and the narrowest {tr_lo} at {tr_ratios[tr_lo]:.1f}x. ")
+    else:
+        tr_gap = ""
     figs.append(viz("line", prep_trend(),
-                    ["--x", "version", "--y", "recs_per_sec", "--series", "command",
-                     "--title", f"Throughput across every release ({first_release} → {latest_release})",
+                    ["--x", "version", "--y", "recs_per_sec", "--series", "name",
+                     "--title", "Throughput across every release, plain vs indexed "
+                                f"({first_release} → {latest_release})",
                      "--y-title", "records/sec"],
                     "trend", "The long view — every release",
                     f"Records/sec for the marquee commands across all {n_releases} releases since "
-                    f"{first_release}. Each line follows the fastest path available at the time: the "
-                    "plain scan early on, then the indexed variant once search and searchset learned "
-                    "to use an index at 10.0.0 — the visible step up. stats, frequency and validate "
-                    "carried their index from launch, so those lines run flat-to-up with no step. "
-                    "Broad trajectory only (see the note above); count is omitted for scale."))
+                    f"{first_release}, each shown twice: the plain scan and its indexed variant. "
+                    f"The gap between a pair is what an index buys you. {tr_gap}"
+                    "search and searchset only learned to use an index at 10.0.0, so those two "
+                    "_index lines start there. validate is the exception — its pair runs together "
+                    "for most of the history; an index barely helped it until the latest releases. "
+                    "stats is shown as the heavier --everything pass. The y-axis is logarithmic: "
+                    "ten lines this far apart would pile up along the bottom of a linear axis, and "
+                    "on a log axis a constant multiple reads as a constant vertical gap. Broad "
+                    "trajectory only (see the note above); count and moarstats are omitted for "
+                    "scale.",
+                    log_y=True))
     stats_src = prep_growth(STATS_GROWTH, tmp("stats_growth.csv"))
     freq_src = prep_growth(FREQ_GROWTH, tmp("freq_growth.csv"))
     validate_src = prep_growth(VALIDATE_GROWTH, tmp("validate_growth.csv"))

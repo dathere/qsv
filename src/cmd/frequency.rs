@@ -2093,7 +2093,15 @@ impl Args {
         io::Write::write_all(&mut tmp, jsonl.as_bytes())?;
         // `NamedTempFile` creates with 0600. Carry over the mode of the cache we are replacing
         // so a refresh cannot silently make an existing cache less readable than the user left
-        // it. A brand-new cache keeps the stricter default.
+        // it.
+        //
+        // A brand-new cache keeps the stricter 0600 rather than the `0644 & ~umask` that
+        // `fs::write` used to produce. That is DELIBERATE and settled - do not "restore" it.
+        // The trade was weighed: on a shared machine a teammate silently loses cache reuse,
+        // against which matching the old mode would need the umask, which Rust std does not
+        // expose (only a racy `libc::umask` set-and-restore). A derived cache beside the user's
+        // own CSV is not worth that, and a reader who cannot open it falls back to computing.
+        // Replacement preserves the existing mode, so no cache already in the wild changes.
         if let Ok(existing) = fs::metadata(&cache_path) {
             let _ = fs::set_permissions(tmp.path(), existing.permissions());
         }

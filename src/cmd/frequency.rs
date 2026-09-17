@@ -2091,13 +2091,26 @@ impl Args {
             .prefix(".qsv-freqcache-")
             .tempfile_in(cache_dir)?;
         io::Write::write_all(&mut tmp, jsonl.as_bytes())?;
-        io::Write::flush(&mut tmp)?;
         // `NamedTempFile` creates with 0600. Carry over the mode of the cache we are replacing
         // so a refresh cannot silently make an existing cache less readable than the user left
         // it. A brand-new cache keeps the stricter default.
         if let Ok(existing) = fs::metadata(&cache_path) {
             let _ = fs::set_permissions(tmp.path(), existing.permissions());
         }
+        // fsync before the rename. `rename` is atomic for the name -> inode mapping, but that
+        // says nothing about the new file's DATA being on storage: a crash or power loss can
+        // persist the rename while the blocks behind it are still in writeback, leaving exactly
+        // the truncated, unhealable cache the temp-file dance exists to prevent. There is no
+        // buffer to flush here - `io::Write::flush` on a `File` delegates to a no-op, so it was
+        // doing nothing for durability and has been dropped rather than left beside this call
+        // looking meaningful. Placed AFTER `set_permissions` so the mode change is synced too;
+        // it is the same inode, nothing has been renamed yet.
+        //
+        // The parent directory is deliberately NOT synced. Without that, a crash can lose the
+        // rename itself and leave the OLD cache in place - stale, but intact and still
+        // healable. That is a perfectly safe outcome, so a second fsync would buy nothing here.
+        // Cost is one fsync per command invocation, not per row.
+        tmp.as_file().sync_all()?;
         tmp.persist(&cache_path).map_err(|e| e.error)?;
 
         winfo!(

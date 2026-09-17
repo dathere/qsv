@@ -423,6 +423,12 @@ static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
 // and FREQ_CACHE_FTABLES holds their pre-built FTables for merging after computation.
 static FREQ_CACHE_SKIP: OnceLock<Vec<bool>> = OnceLock::new();
 static FREQ_CACHE_FTABLES: OnceLock<FTables> = OnceLock::new();
+// Set by `read_frequency_cache` when it refuses a cache SOLELY because the qsv version that
+// wrote it differs from this one; holds that cache's `selection_signature`. `run()` uses it to
+// refresh the stale file after recomputing, so a version-invalidated cache self-heals instead of
+// missing forever - `frequency` only writes its cache under `--frequency-jsonl`, so unlike
+// stats.rs it has no recompute-and-rewrite path of its own.
+static FREQ_CACHE_STALE_SIG: OnceLock<String> = OnceLock::new();
 // FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-jsonl JSON cache
 #[derive(Serialize, Deserialize)]
 struct FrequencyCacheEntry {
@@ -436,6 +442,75 @@ struct FrequencyCacheValue {
     value:      String,
     count:      u64,
     percentage: f64,
+}
+
+/// What mode does a newly created file ACTUALLY get in `dir`?
+///
+/// Creates an empty probe at 0666, reads back the mode the kernel gave it, and removes it. This
+/// is an oracle rather than a calculation: it captures the process umask and anything else the
+/// filesystem applies to new files here (on Linux a directory default ACL constrains the mode the
+/// same way), none of which std exposes directly.
+///
+/// The real cache temp must NOT be created this way - an fd obtained while it is briefly wide
+/// survives every later chmod, which is the hole roborev 4796 closed. The probe is safe precisely
+/// because it never receives a single byte, so an fd on it reveals nothing.
+///
+/// Returns `None` if no probe could be created; the caller then assumes owner-only, and the real
+/// temp's own creation produces the actionable error.
+#[cfg(unix)]
+fn new_file_mode_in(dir: &std::path::Path) -> Option<u32> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    static PROBE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let pid = std::process::id();
+    for _ in 0..16 {
+        let seq = PROBE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let probe_path = dir.join(format!(".qsv-freqprobe-{pid}-{seq}.tmp"));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o666)
+            .open(&probe_path)
+        {
+            Ok(probe) => {
+                // no `?` between create and remove, so the probe cannot be leaked
+                let mode = probe
+                    .metadata()
+                    .ok()
+                    .map(|m| m.permissions().mode() & 0o777);
+                drop(probe);
+                let _ = fs::remove_file(&probe_path);
+                return mode;
+            },
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
+/// Deletes a temp file on drop unless disarmed.
+///
+/// `write_frequency_jsonl` builds the cache in a sibling temp and renames it into place. It uses
+/// `OpenOptions::create_new` rather than `tempfile` so the new file picks up the process umask
+/// (see the comment there), which costs the delete-on-drop `NamedTempFile` provided. This gives
+/// it back, so a `?` on the write, the fsync or the rename cannot leave a stray
+/// `.qsv-freqcache-*.tmp` beside the user's CSV.
+struct TempFileGuard(Option<std::path::PathBuf>);
+
+impl TempFileGuard {
+    /// The temp file is now the cache; stop tracking it.
+    fn disarm(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take() {
+            let _ = fs::remove_file(path);
+        }
+    }
 }
 
 // FrequencyCacheMetadata stores how the cache was generated.
@@ -578,10 +653,17 @@ pub(crate) fn read_frequency_cache_view(
         delimiter.map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string());
     // `metadata.flag_flexible` joins them: this reader has no flexible caller (viz parses the
     // CSV strictly), so a cache built from ragged data under --flexible must not be served here.
+    //
+    // `qsv_version` joins them too, for the same reason `read_frequency_cache` compares it: the
+    // cached sentinels and layout only mean what the writing version meant by them. This reader
+    // does NOT self-heal - it is a read-only accelerator for `viz`, which falls back to its own
+    // computation, and refreshing a cache as a side effect of drawing a chart would write a file
+    // the viz user never asked for. A later `frequency` run heals it.
     if metadata.flag_no_nulls != no_nulls
         || metadata.flag_no_headers != no_headers
         || metadata.flag_delimiter != current_delimiter
         || metadata.flag_flexible
+        || metadata.qsv_version != env!("CARGO_PKG_VERSION")
     {
         log::info!("Frequency cache incompatible with current options; recomputing.");
         return None;
@@ -1317,8 +1399,38 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Write frequency cache if --frequency-jsonl is set.
     // Always write when explicitly requested — the user may be regenerating
     // with different thresholds or after data changes.
+    //
+    // Also refresh a cache that `read_frequency_cache` just refused as version-stale, so it
+    // self-heals like the stats cache does. Three conditions make this safe, and all three are
+    // load-bearing:
+    //   - the signature is only set on a VERSION mismatch, reached after every option check agreed,
+    //     so this can never turn an option disagreement into a rewrite war;
+    //   - it is only set when a cache file was actually read, so a user who never asked for one
+    //     never gets one - this refreshes an existing file, it does not create a new one;
+    //   - the recorded signature must equal this run's, so a `--select` run recomputing a subset
+    //     cannot overwrite a whole-file cache with a narrow one.
+    // An empty recorded signature (a cache predating `selection_signature`) can prove none of
+    // this, so it is left alone rather than healed.
+    let refreshing_stale_cache = FREQ_CACHE_STALE_SIG
+        .get()
+        .is_some_and(|sig| !sig.is_empty() && *sig == Args::selection_signature(&headers));
     if args.flag_frequency_jsonl {
+        // explicitly requested: a failure to write the cache the user asked for is fatal
         args.write_frequency_jsonl(&headers, &tables, &rconfig)?;
+    } else if refreshing_stale_cache {
+        // BEST-EFFORT, unlike the branch above. This user asked for frequencies, not for a
+        // cache write, and the frequencies are already computed. A cache file we cannot
+        // replace - read-only file, read-only media, a directory owned by someone else - must
+        // not turn an ordinary `qsv frequency` into a failure that prints nothing at all.
+        // (`can_use_freq_cache` requires `!flag_frequency_jsonl`, so the two branches are
+        // mutually exclusive in practice; they are kept separate because their error policies
+        // genuinely differ.)
+        if let Err(e) = args.write_frequency_jsonl(&headers, &tables, &rconfig) {
+            wwarn!(
+                "Could not refresh the version-stale frequency cache: {e}. Continuing with the \
+                 computed frequencies."
+            );
+        }
     }
 
     if is_json {
@@ -2027,7 +2139,215 @@ impl Args {
 
         let cache_path = Self::cache_path_for(path);
         let cache_len = jsonl.len();
-        fs::write(&cache_path, jsonl)?;
+
+        // Write to a temp file in the SAME directory and rename it over the cache, rather than
+        // `fs::write`, which is `File::create` + `write_all` - it TRUNCATES on open, so any
+        // failure after that point (ENOSPC, EDQUOT, EIO, a network-mount hiccup) leaves a
+        // 0-byte or half-written cache. Such a cache is unrecoverable by design: its metadata
+        // line will not parse, so there is no version to compare and no signature to refresh
+        // from, and it misses forever. The implicit refresh path swallows write errors, so that
+        // would happen without even a failure the user is likely to notice.
+        //
+        // Same directory because `rename` across filesystems fails with EXDEV, and because
+        // `NamedTempFile` removes itself on drop, so a failed write or rename leaves nothing
+        // behind beside the user's CSV. A failed refresh therefore leaves the PREVIOUS cache
+        // intact - still stale, but still healable.
+        let cache_dir = cache_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+
+        // `create_new` (O_CREAT|O_EXCL) rather than `tempfile`, for exactly the reason
+        // `Config::autoindex`'s own temp-and-rename gives (roborev 4371): the kernel applies the
+        // process umask to the requested 0666, so a NEW cache lands at the same mode
+        // `fs::write` used to give it, whereas `tempfile` creates 0600 and would carry
+        // owner-only onto the cache through the rename. O_EXCL also means two concurrent
+        // writers cannot collide on one temp, and a pre-existing file or symlink at a guessable
+        // name cannot be written through.
+        //
+        // Resolve the cache's permissions BEFORE the file exists, and hand them to `open` so it
+        // is CREATED at its final mode. Creating at the umask default and chmod-ing afterwards
+        // - in either order relative to the write - leaves a window in which the file is
+        // openable at the wider mode, and an fd obtained in that window stays readable through
+        // every later chmod, so the data still leaks once it is written. The only fix is for
+        // the file never to exist wider than its target.
+        //
+        // Two rules, as before:
+        //   1. start from the mode of the cache being REPLACED, so a deliberate chmod survives a
+        //      refresh; a brand-new cache starts from the umask default.
+        //   2. grant nothing the SOURCE CSV does not. Unlike an `.idx`, which holds byte offsets,
+        //      this cache holds the data - every non-high-cardinality value and its count - so a
+        //      0600 CSV must not yield a 0644 cache. Intersecting is what lets this coexist with
+        //      the umask default: a world-readable CSV still gets a world-readable cache, so
+        //      shared-machine reuse is untouched.
+        // Rule 2 overrides rule 1, so "a deliberate chmod survives" means "survives, but never
+        // beyond what the source grants". Widening is what would be unsafe.
+        //
+        // For a NEW cache there is no second step at all: requesting `0o666 & input` lets the
+        // kernel apply the umask itself, landing exactly on `umask_default & input`.
+        // For a REPLACED one the umask may narrow the request below the mode the user chose, so
+        // `widen_to` records the target and a single fchmod restores it after creation. That
+        // only ever WIDENS, from a mode that was already no broader than the target - so no
+        // wider-than-target window is ever opened.
+        //
+        // Failures are fatal, not `let _ =`: this is a confidentiality control, and silently
+        // publishing a 0644 cache of a 0600 CSV because a stat failed is the outcome it exists
+        // to prevent. The temp guard removes the file on the way out.
+        #[cfg(unix)]
+        let (create_mode, target_mode, source_gid, source_group_as_other) = {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+            let src = fs::metadata(path)?;
+            let input_mode = src.permissions().mode() & 0o777;
+
+            let base_mode = match fs::metadata(&cache_path) {
+                // refreshing: start from the mode the user left on the cache. No probe needed.
+                Ok(existing) => existing.permissions().mode() & 0o777,
+                // new cache: ask an empty probe what a new file in this directory actually gets
+                Err(_) => new_file_mode_in(cache_dir).unwrap_or(0o600),
+            };
+
+            // Create OWNER-ONLY. The group and other bits are added back after creation, once
+            // the temp's real gid is known - see the fchmod below. Creating at the full target
+            // and narrowing afterwards would reopen roborev 4796: an fd obtained while the file
+            // is briefly wide survives every later chmod.
+            // The source's GROUP bits, shifted into the OTHER position. When the gids differ,
+            // this is what caps the cache's other bits - see the fchmod below.
+            let source_group_as_other = (input_mode & 0o070) >> 3;
+            (
+                (base_mode & input_mode) & 0o700,
+                base_mode & input_mode,
+                src.gid(),
+                source_group_as_other,
+            )
+        };
+
+        // Uniqueness needs no randomness: `create_new` fails with `AlreadyExists`, so the loop
+        // advances the counter until it wins. The pid separates processes, the counter
+        // separates threads and repeat calls within one.
+        static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let pid = std::process::id();
+        let mut tmp_path = None;
+        let mut tmp_file = None;
+        let mut open_opts = fs::OpenOptions::new();
+        open_opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            open_opts.mode(create_mode);
+        }
+        for _ in 0..16 {
+            let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let candidate = cache_dir.join(format!(".qsv-freqcache-{pid}-{seq}.tmp"));
+            match open_opts.open(&candidate) {
+                Ok(f) => {
+                    tmp_path = Some(candidate);
+                    tmp_file = Some(f);
+                    break;
+                },
+                // ONLY a name collision is worth retrying. Retrying a permission, quota,
+                // read-only-filesystem or bad-path error just burns 15 more syscalls and then
+                // reports a generic message, throwing away the actionable OS error that
+                // `tempfile_in` used to propagate.
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => {
+                    return fail_clierror!(
+                        "Could not create a temp file for the frequency cache in {}: {e}",
+                        cache_dir.display()
+                    );
+                },
+            }
+        }
+        let (Some(tmp_path), Some(mut tmp_file)) = (tmp_path, tmp_file) else {
+            // only reachable by exhausting the retries on AlreadyExists, which really is a
+            // collision problem and has no OS error worth relaying
+            return fail_clierror!(
+                "Could not find a free temp filename for the frequency cache in {} after 16 \
+                 attempts",
+                cache_dir.display()
+            );
+        };
+        // `create_new` gives no delete-on-drop, unlike the `NamedTempFile` this replaced, so a
+        // guard restores it: every `?` below must leave nothing beside the user's CSV.
+        let mut tmp_guard = TempFileGuard(Some(tmp_path.clone()));
+
+        // Now that the file exists, widen it from owner-only to the access it should actually
+        // grant - never past it, so no wider-than-intended window is ever opened.
+        //
+        // The GROUP bits are the subtle part, and mode-bit intersection alone got this wrong.
+        // A mode bit is not portable between inodes: the cache is a new file, and a new file's
+        // group is the DIRECTORY's on macOS/BSD and the process's egid on Linux (unless the
+        // directory is setgid) - never, in general, the source CSV's. So a 0640 CSV owned by
+        // group `admin` could yield a 0640 cache owned by group `staff`, handing the cached
+        // values to every member of a group that cannot read the CSV at all. Identical mode
+        // bits, strictly wider effective access.
+        //
+        // Group bits are therefore granted only when the two gids match, and dropped otherwise.
+        // We do NOT fchown the cache to the source's group: a non-root process can only chgrp
+        // into a group it already belongs to, so that fails exactly when the source's group is
+        // the restricted one that matters. Dropping the bits is both simpler and fails closed.
+        //
+        // OTHER bits need a check of their own, and the obvious reasoning about them is WRONG.
+        // "other" is the same CLASS on both files but not the same set of users, because Unix
+        // selects exactly one class - owner, else group, else other - and never falls through.
+        // A source at 0604 DENIES its own group (group bits clear) while allowing everyone
+        // else; that is the standard "block this group" idiom. Copy that 0604 onto a cache with
+        // a different group and those same users land in the OTHER class and are allowed.
+        // Identical bits, and the very users the source excluded gain access.
+        //
+        // So on a gid mismatch an `other` bit survives only where the source grants it to its
+        // own group as well: `source_group & source_other`. Whoever reads the cache through its
+        // other class reads the source through either its group or its other class, and that
+        // intersection is within both. A world-readable 0644 source still yields 0604, so
+        // genuinely public data is unaffected.
+        //
+        // Known residual, deliberately not chased here: mode and gid are what std exposes.
+        // ACLs, xattrs and MAC labels can all make effective access differ from what these say,
+        // and every one of them needs a platform-specific dependency this PR is not taking. The
+        // probe above does capture a Linux directory default ACL's effect on the mode, which is
+        // partial mitigation, not a solution.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+            let created = tmp_file.metadata()?;
+            let allowed = if created.gid() == source_gid {
+                target_mode
+            } else {
+                target_mode & (0o700 | source_group_as_other)
+            };
+            if (created.permissions().mode() & 0o777) != allowed {
+                tmp_file.set_permissions(fs::Permissions::from_mode(allowed))?;
+            }
+        }
+
+        io::Write::write_all(&mut tmp_file, jsonl.as_bytes())?;
+
+        // Windows has no group/world bits to leak, so the only thing to carry over is the
+        // read-only flag - and that is applied AFTER the write rather than before, because
+        // marking the temp read-only up front would make our own `write_all` fail.
+        // Through the fd, like the unix branch: no permission change here goes by pathname,
+        // which a directory-entry swap in a shared directory could redirect onto another file.
+        #[cfg(not(unix))]
+        if let Ok(existing) = fs::metadata(&cache_path) {
+            tmp_file.set_permissions(existing.permissions())?;
+        }
+
+        // fsync before the rename. `rename` is atomic for the name -> inode mapping, but that
+        // says nothing about the new file's DATA being on storage: a crash or power loss can
+        // persist the rename while the blocks behind it are still in writeback, leaving exactly
+        // the truncated, unhealable cache this whole dance exists to prevent. There is no
+        // buffer to flush - `io::Write::flush` on a `File` delegates to a no-op - so fsync is
+        // the only thing that helps. It is the same inode the mode was set on above, so this
+        // syncs that metadata too; nothing has been renamed yet.
+        //
+        // The parent directory is deliberately NOT synced. Without that, a crash can lose the
+        // rename itself and leave the OLD cache in place - stale, but intact and still
+        // healable. That is a perfectly safe outcome, so a second fsync would buy nothing here.
+        // Cost is one fsync per command invocation, not per row.
+        tmp_file.sync_all()?;
+        fs::rename(&tmp_path, &cache_path)?;
+        tmp_guard.disarm();
 
         winfo!(
             "Frequency cache written: {} ({} bytes, {} columns, {} rows).",
@@ -2077,7 +2397,17 @@ impl Args {
         let jsonl_content = fs::read_to_string(&cache_path).ok()?;
         let mut lines = jsonl_content.lines();
 
-        let metadata_line = lines.next()?;
+        // A 0-byte cache produces no metadata line. Without this it returned silently, so a
+        // user left holding a truncated cache saw no diagnostic at all - just a run that was
+        // permanently, inexplicably slower. (Adjacent to, not caused by, the atomic-write fix
+        // below: that stops qsv from CREATING such a file; this makes an existing one legible.)
+        let Some(metadata_line) = lines.next() else {
+            wwarn!(
+                "Frequency cache is empty: {}. Recomputing. Use --frequency-jsonl to regenerate.",
+                cache_path.display()
+            );
+            return None;
+        };
         let metadata: FrequencyCacheMetadata = serde_json::from_str(metadata_line)
             .map_err(|e| {
                 wwarn!("Failed to deserialize frequency cache metadata: {e}");
@@ -2085,19 +2415,15 @@ impl Args {
             })
             .ok()?;
 
-        let mut entries = Vec::new();
-        for line in lines {
-            if line.is_empty() {
-                continue;
-            }
-            let entry: FrequencyCacheEntry = serde_json::from_str(line)
-                .map_err(|e| {
-                    wwarn!("Failed to deserialize frequency cache entry: {e}");
-                    e
-                })
-                .ok()?;
-            entries.push(entry);
-        }
+        // NOTE: the entry lines are deserialized only AFTER every check below passes. They used
+        // to be parsed here, which defeated the version check placed after them: a cache whose
+        // ENTRY layout no longer matches `FrequencyCacheEntry` bailed out on the first line and
+        // never reached the version comparison, so the very case the version check exists to
+        // catch could not self-heal. Deferring also means an incompatible cache is rejected
+        // without paying to deserialize entries it will not use.
+        //
+        // An unparseable METADATA line still cannot self-heal - the version is unreadable, so
+        // there is nothing to compare and no signature to refresh from.
 
         // Validate cache args compatibility
         // flag_no_nulls affects what's stored in the FTable — mismatch means
@@ -2166,6 +2492,64 @@ impl Args {
                 self.flag_high_card_threshold,
                 self.flag_high_card_pct,
             );
+        }
+
+        // The cache's VALUES only mean what this qsv version thinks they mean. Nothing above
+        // detects a change to the cached representation itself - the `<ALL_UNIQUE>` /
+        // HIGH_CARDINALITY sentinels, percentage/rank computation, entry layout - so, like
+        // stats.rs, the package version is the backstop for all of it. Compared LAST on
+        // purpose: reaching here means every option check already agreed, so a stale version is
+        // the ONLY reason this cache is being refused. `run()` relies on that to decide whether
+        // refreshing it is safe (an option mismatch must never trigger a rewrite, or two
+        // differently-flagged runs would overwrite each other's cache forever).
+        let current_version = env!("CARGO_PKG_VERSION");
+        if metadata.qsv_version != current_version {
+            winfo!(
+                "Frequency cache was written by qsv {}, this is qsv {current_version}. \
+                 Recomputing. Use --frequency-jsonl to regenerate.",
+                metadata.qsv_version,
+            );
+            // Hand `run()` the stale cache's selection signature so it can refresh the file it
+            // just refused - but only if this run recomputes the SAME columns. Storing the
+            // signature rather than a bare flag is what stops a `--select` run from replacing a
+            // whole-file cache with a narrow one.
+            //
+            // --flexible needs EXACT equality here, unlike the read check above, which is
+            // deliberately one-way. A `--flexible` run is allowed to READ a strict cache, so
+            // without this it would heal one by rewriting it with `flag_flexible: true` - and
+            // strict runs would then refuse that cache forever, with the version now current so
+            // no future heal could undo it. In practice this only ever discriminates the
+            // strict-cache/flexible-run case: a flexible cache meeting a strict run is refused
+            // by the one-way read check above and never reaches this point.
+            //
+            // The alternative - refreshing while preserving the stale cache's `flag_flexible:
+            // false` - is NOT safe. It would rest on the cache proving the input is still
+            // well-formed, but this cache validates neither filesize nor record count (stats.rs
+            // has `filesize_bytes`; this does not), so an mtime-preserving swap (cp -p, git
+            // checkout, tar -x) of a ragged file would let a --flexible recompute record
+            // `false`, and a later strict run would serve frequencies for records it must
+            // refuse. A cache miss is a better outcome than that.
+            //
+            // The residual: a strict cache plus a flexible-only user never heals. The message
+            // above names --frequency-jsonl so that is recoverable rather than mysterious.
+            if metadata.flag_flexible == self.flag_flexible {
+                let _ = FREQ_CACHE_STALE_SIG.set(metadata.selection_signature.clone());
+            }
+            return None;
+        }
+
+        let mut entries = Vec::new();
+        for line in lines {
+            if line.is_empty() {
+                continue;
+            }
+            let entry: FrequencyCacheEntry = serde_json::from_str(line)
+                .map_err(|e| {
+                    wwarn!("Failed to deserialize frequency cache entry: {e}");
+                    e
+                })
+                .ok()?;
+            entries.push(entry);
         }
 
         if entries.is_empty() {

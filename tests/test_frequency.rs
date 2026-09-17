@@ -48,6 +48,27 @@ fn tamper_cache(path: &std::path::Path, old_count: u64, new_count: u64) {
     std::fs::write(path, lines.join("\n")).expect("tamper_cache: failed to write tampered cache");
 }
 
+/// Overwrite the `qsv_version` recorded in a JSONL cache's metadata line, simulating a cache
+/// left behind by a different qsv release.
+fn set_cache_version(path: &std::path::Path, version: &str) {
+    let contents = std::fs::read_to_string(path).expect("set_cache_version: failed to read cache");
+    let mut lines: Vec<String> = contents.lines().map(String::from).collect();
+    let mut meta: Value =
+        serde_json::from_str(&lines[0]).expect("set_cache_version: failed to parse metadata line");
+    meta["qsv_version"] = Value::from(version);
+    lines[0] = serde_json::to_string(&meta).expect("set_cache_version: failed to re-encode");
+    std::fs::write(path, lines.join("\n")).expect("set_cache_version: failed to write cache");
+}
+
+/// Read one field out of a JSONL cache's metadata line.
+fn cache_meta(path: &std::path::Path, key: &str) -> Value {
+    let contents = std::fs::read_to_string(path).expect("cache_meta: failed to read cache");
+    let meta: Value =
+        serde_json::from_str(contents.lines().next().expect("cache_meta: empty file"))
+            .expect("cache_meta: failed to parse metadata line");
+    meta[key].clone()
+}
+
 fn setup(name: &str) -> (Workdir, process::Command) {
     let rows = vec![
         svec!["h1", "h2"],
@@ -7492,5 +7513,785 @@ fn frequency_flexible_reuses_a_strict_cache() {
     assert!(
         stderr.contains("Frequency cache hit"),
         "--flexible must REUSE the strict cache, not regenerate it, got:\n{stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// qsv_version cache validation + self-heal (issue #4617).
+//
+// FrequencyCacheMetadata recorded qsv_version but never compared it, so a cache written by an
+// older qsv was served indefinitely. Nothing else in the validation detects a change to what
+// the cached values MEAN - the <ALL_UNIQUE>/HIGH_CARDINALITY sentinels, percentage/rank
+// computation, entry layout - so the version is the backstop for all of it, exactly as it is in
+// stats.rs.
+//
+// Unlike stats, `frequency` writes its cache only under --frequency-jsonl, so a plain run that
+// rejected a cache would have missed FOREVER. Hence the self-heal, and hence the three guards
+// each pinned below.
+// ---------------------------------------------------------------------------
+
+fn version_cache_workdir(name: &str) -> (Workdir, std::path::PathBuf) {
+    let wrk = Workdir::new(name);
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["h1", "h2"],
+            svec!["a", "z"],
+            svec!["a", "y"],
+            svec!["b", "z"],
+        ],
+    );
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    assert!(cache.exists(), "setup should have written a cache");
+    (wrk, cache)
+}
+
+// A version-stale cache must not be served. Proven by tampering a count first: if the stale
+// cache were read, the tampered value would reach stdout.
+#[test]
+fn frequency_rejects_a_version_stale_cache() {
+    let (wrk, cache) = version_cache_workdir("frequency_rejects_a_version_stale_cache");
+    tamper_cache(&cache, 2, 999);
+    set_cache_version(&cache, "0.0.1-ancient");
+
+    let mut stale = wrk.command("frequency");
+    stale.arg("in.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut stale);
+    assert!(
+        !got.iter().any(|r| r.contains(&"999".to_string())),
+        "the version-stale cache must NOT be served, got:\n{got:?}"
+    );
+}
+
+// ... and having rejected it, the run refreshes it, so the miss is one-time rather than forever.
+#[test]
+fn frequency_version_stale_cache_self_heals() {
+    let (wrk, cache) = version_cache_workdir("frequency_version_stale_cache_self_heals");
+    set_cache_version(&cache, "0.0.1-ancient");
+
+    let mut heal = wrk.command("frequency");
+    heal.arg("in.csv");
+    let stderr = wrk.output_stderr(&mut heal);
+    assert!(
+        stderr.contains("written by qsv 0.0.1-ancient"),
+        "expected the stale-version diagnostic, got:\n{stderr}"
+    );
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        env!("CARGO_PKG_VERSION"),
+        "the stale cache should have been refreshed in place"
+    );
+
+    // the refreshed cache is usable: the NEXT plain run hits it
+    let mut hit = wrk.command("frequency");
+    hit.arg("in.csv");
+    let hit_stderr = wrk.output_stderr(&mut hit);
+    assert!(
+        hit_stderr.contains("Frequency cache hit"),
+        "the refreshed cache should be served, got:\n{hit_stderr}"
+    );
+}
+
+// GUARD: the self-heal must not let a `--select` run replace a whole-file cache with a narrow
+// one. The recorded selection signature has to match this run's, or the file is left alone.
+#[test]
+fn frequency_self_heal_does_not_narrow_a_cache() {
+    let (wrk, cache) = version_cache_workdir("frequency_self_heal_does_not_narrow_a_cache");
+    set_cache_version(&cache, "0.0.1-ancient");
+
+    let mut narrow = wrk.command("frequency");
+    narrow.arg("--select").arg("h1").arg("in.csv");
+    wrk.assert_success(&mut narrow);
+
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        "0.0.1-ancient",
+        "a --select run must leave the whole-file cache untouched, not shrink it"
+    );
+    assert_eq!(
+        cache_meta(&cache, "column_count").as_u64(),
+        Some(2),
+        "the cache must still cover both columns"
+    );
+}
+
+// GUARD: the self-heal refreshes an EXISTING cache; it never creates one. A user who never
+// passed --frequency-jsonl must not start finding cache files beside their CSVs.
+#[test]
+fn frequency_self_heal_never_creates_a_cache() {
+    let wrk = Workdir::new("frequency_self_heal_never_creates_a_cache");
+    wrk.create("in.csv", vec![svec!["h1"], svec!["a"], svec!["b"]]);
+
+    let mut plain = wrk.command("frequency");
+    plain.arg("in.csv");
+    wrk.assert_success(&mut plain);
+
+    assert!(
+        !wrk.path("in.freq.csv.data.jsonl").exists(),
+        "a plain frequency run must not leave a cache behind"
+    );
+}
+
+// GUARD: the signature is set ONLY on a version mismatch, which is compared after every option
+// check agrees. An option disagreement must never trigger a rewrite, or two differently-flagged
+// runs would overwrite each other's cache forever.
+#[test]
+fn frequency_option_mismatch_does_not_rewrite_the_cache() {
+    let (wrk, cache) =
+        version_cache_workdir("frequency_option_mismatch_does_not_rewrite_the_cache");
+    // current version, so the version check passes; --no-nulls is the disagreement
+    let generated_version = cache_meta(&cache, "qsv_version");
+
+    let mut mismatched = wrk.command("frequency");
+    mismatched.arg("--no-nulls").arg("in.csv");
+    wrk.assert_success(&mut mismatched);
+
+    assert_eq!(
+        cache_meta(&cache, "flag_no_nulls").as_bool(),
+        Some(false),
+        "the --no-nulls run must NOT have rewritten the cache with its own options"
+    );
+    assert_eq!(
+        cache_meta(&cache, "qsv_version"),
+        generated_version,
+        "an option mismatch must leave the cache untouched"
+    );
+}
+
+/// Flip a DIRECTORY's write permission, so creating a file inside it fails.
+///
+/// The cache is replaced by writing a temp file beside it and renaming over the target, and
+/// POSIX `rename` needs write+execute on the containing DIRECTORY while ignoring the target
+/// file's own mode entirely — so making the cache file read-only does not block a refresh, and
+/// an earlier version of this test passed for the wrong reason. Unix-only: Windows does not
+/// enforce a directory read-only bit against file creation, so there is no equivalent fixture.
+#[cfg(unix)]
+fn set_dir_writable(path: &std::path::Path, writable: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = if writable { 0o755 } else { 0o555 };
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+        .expect("set_dir_writable: failed to set directory permissions");
+}
+
+// The self-heal is a side effect of a run the user made for its OUTPUT. A cache it cannot
+// replace - read-only file, read-only media, someone else's directory - must not turn an
+// ordinary `qsv frequency` into a failure that prints nothing at all. Explicit
+// --frequency-jsonl keeps its fatal error; only the implicit refresh is best-effort.
+#[cfg(unix)]
+#[test]
+fn frequency_self_heal_write_failure_is_not_fatal() {
+    let (wrk, cache) = version_cache_workdir("frequency_self_heal_write_failure_is_not_fatal");
+    set_cache_version(&cache, "0.0.1-ancient");
+    let dir = cache.parent().unwrap().to_path_buf();
+    set_dir_writable(&dir, false);
+
+    let mut blocked = wrk.command("frequency");
+    blocked.arg("in.csv");
+    let out = blocked.output().unwrap();
+
+    // restore BEFORE asserting, so a failure here still leaves a deletable workdir
+    set_dir_writable(&dir, true);
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "an unwritable cache must not fail the command.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("h1"),
+        "the frequency table must still be produced, got:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("Could not refresh"),
+        "expected the best-effort warning, got:\n{stderr}"
+    );
+    // the underlying OS error must survive, not be replaced by a generic message: the temp
+    // creation loop retries ONLY AlreadyExists and propagates everything else with context
+    assert!(
+        stderr.contains("os error"),
+        "the actionable OS error must be relayed, got:\n{stderr}"
+    );
+}
+
+// The --flexible read check is deliberately one-way (a flexible run may READ a strict cache),
+// so without an exact-equality gate on the refresh a `--flexible` run would heal a strict cache
+// by rewriting it as flexible — and strict runs would then refuse it FOREVER, the version now
+// being current so no later heal could undo it.
+#[test]
+fn frequency_flexible_run_does_not_poison_a_strict_cache() {
+    let (wrk, cache) =
+        version_cache_workdir("frequency_flexible_run_does_not_poison_a_strict_cache");
+    set_cache_version(&cache, "0.0.1-ancient");
+
+    let mut flexible = wrk.command("frequency");
+    flexible.arg("--flexible").arg("in.csv");
+    wrk.assert_success(&mut flexible);
+
+    assert_eq!(
+        cache_meta(&cache, "flag_flexible").as_bool(),
+        Some(false),
+        "a --flexible run must not rewrite a strict cache as flexible"
+    );
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        "0.0.1-ancient",
+        "it should have left the stale cache alone entirely"
+    );
+
+    // the strict owner of that cache still heals it, and to STRICT
+    let mut strict = wrk.command("frequency");
+    strict.arg("in.csv");
+    wrk.assert_success(&mut strict);
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        env!("CARGO_PKG_VERSION"),
+        "a strict run should refresh the stale strict cache"
+    );
+    assert_eq!(
+        cache_meta(&cache, "flag_flexible").as_bool(),
+        Some(false),
+        "and the refreshed cache must stay strict"
+    );
+}
+
+// Entry lines are deserialized only after the version check. Parsing them first defeated the
+// check: a cache whose ENTRY layout no longer matches `FrequencyCacheEntry` bailed on the first
+// line and never reached the version comparison — so the very case the version check exists for
+// could not self-heal.
+#[test]
+fn frequency_self_heal_recovers_an_incompatible_entry_layout() {
+    let (wrk, cache) =
+        version_cache_workdir("frequency_self_heal_recovers_an_incompatible_entry_layout");
+
+    // simulate an older release whose entry shape this build cannot parse
+    let contents = std::fs::read_to_string(&cache).unwrap();
+    let mut lines: Vec<String> = contents.lines().map(String::from).collect();
+    let mut entry: Value = serde_json::from_str(&lines[1]).unwrap();
+    entry.as_object_mut().unwrap().remove("cardinality");
+    lines[1] = serde_json::to_string(&entry).unwrap();
+    std::fs::write(&cache, lines.join("\n")).unwrap();
+    set_cache_version(&cache, "0.0.1-ancient");
+
+    let mut heal = wrk.command("frequency");
+    heal.arg("in.csv");
+    wrk.assert_success(&mut heal);
+
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        env!("CARGO_PKG_VERSION"),
+        "an unparseable-entry cache from an older version must still self-heal"
+    );
+    let healed = std::fs::read_to_string(&cache).unwrap();
+    let healed_entry: Value = serde_json::from_str(healed.lines().nth(1).unwrap()).unwrap();
+    assert!(
+        healed_entry.get("cardinality").is_some(),
+        "the refreshed cache should carry the current entry layout"
+    );
+}
+
+// The finding behind the atomic write (roborev 4790): `fs::write` is `File::create` +
+// `write_all`, so it TRUNCATES on open. Any failure after that - ENOSPC, EDQUOT, EIO - left a
+// 0-byte or half-written cache, and such a cache is unrecoverable by design: its metadata line
+// will not parse, so there is no version to compare and no signature to refresh from. It would
+// miss forever, and because the implicit refresh swallows write errors, without a failure the
+// user is likely to notice. Writing a temp file beside the cache and renaming over it means a
+// failed refresh leaves the PREVIOUS cache exactly as it was - still stale, but still healable.
+#[cfg(unix)]
+#[test]
+fn frequency_failed_refresh_leaves_the_previous_cache_intact() {
+    let (wrk, cache) =
+        version_cache_workdir("frequency_failed_refresh_leaves_the_previous_cache_intact");
+    set_cache_version(&cache, "0.0.1-ancient");
+    let before = std::fs::read_to_string(&cache).unwrap();
+    let dir = cache.parent().unwrap().to_path_buf();
+    set_dir_writable(&dir, false);
+
+    let mut blocked = wrk.command("frequency");
+    blocked.arg("in.csv");
+    let out = blocked.output().unwrap();
+
+    set_dir_writable(&dir, true);
+
+    assert!(out.status.success());
+    let after = std::fs::read_to_string(&cache).unwrap();
+    assert_eq!(
+        before, after,
+        "a refresh that could not complete must leave the cache byte-for-byte unchanged, not \
+         truncated"
+    );
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        "0.0.1-ancient",
+        "the untouched cache must still carry a readable version, so a later run can heal it"
+    );
+
+    // and it DOES still heal once the directory is writable again
+    let mut heal = wrk.command("frequency");
+    heal.arg("in.csv");
+    wrk.assert_success(&mut heal);
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        env!("CARGO_PKG_VERSION"),
+        "the preserved cache should heal on the next writable run"
+    );
+
+    // no stray temp file left beside the user's CSV
+    let strays: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with(".qsv-freqcache-")
+        })
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "a failed refresh left a temp file behind"
+    );
+}
+
+// A 0-byte cache used to return silently, leaving the user with a permanently slower run and no
+// diagnostic. Adjacent to the atomic-write fix: that stops qsv creating such a file, this makes
+// one that already exists legible.
+#[test]
+fn frequency_empty_cache_is_diagnosed() {
+    let (wrk, cache) = version_cache_workdir("frequency_empty_cache_is_diagnosed");
+    std::fs::write(&cache, b"").unwrap();
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv");
+    let out = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "an empty cache must not fail the run");
+    assert!(
+        stderr.contains("Frequency cache is empty"),
+        "expected the empty-cache diagnostic, got:\n{stderr}"
+    );
+}
+
+// The cache is built in a sibling temp and renamed into place. `tempfile` would create that
+// temp 0600 and carry owner-only onto the cache through the rename, so `create_new` is used
+// instead - the kernel applies the process umask to the requested 0666, exactly as the
+// `fs::write` this replaced did. Same reasoning, and the same fix, as `Config::autoindex` for
+// the `.idx` (roborev 4371); this pins it for the frequency cache too.
+//
+// Derives the expectation from a probe file rather than hardcoding 0644, so the test holds
+// under any umask the CI runner happens to have.
+#[cfg(unix)]
+#[test]
+fn frequency_new_cache_has_umask_default_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("frequency_new_cache_has_umask_default_permissions");
+    wrk.create("in.csv", vec![svec!["h1"], svec!["a"], svec!["b"]]);
+
+    // Pin the INPUT's mode. The cache mode is `umask_default & input`, so leaving the input at
+    // whatever the runner's umask produced would make every expectation below umask-dependent -
+    // which is exactly how an earlier version of this test passed at umask 022 and failed at 077.
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    // what a plainly-created file gets under THIS process's umask
+    let probe = wrk.path("probe");
+    std::fs::File::create(&probe).unwrap();
+    let umask_default = std::fs::metadata(&probe).unwrap().permissions().mode() & 0o777;
+
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    let actual = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        actual,
+        umask_default & 0o644,
+        "a new cache must be the umask default narrowed by the input (got {actual:o}, umask \
+         default {umask_default:o}) - a 0600 temp must not leak through the rename"
+    );
+
+    // a REFRESH must not revert a deliberately-set mode. 0640 is within the input's 0644, so
+    // rule 2 does not narrow it and this holds under any umask.
+    let restrictive = 0o640;
+    std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(restrictive)).unwrap();
+    set_cache_version(&cache, "0.0.1-ancient");
+    std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(restrictive)).unwrap();
+
+    let mut heal = wrk.command("frequency");
+    heal.arg("in.csv");
+    wrk.assert_success(&mut heal);
+    let after = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        after, restrictive,
+        "a self-heal must preserve the existing cache's permissions (got {after:o})"
+    );
+
+    // and no stray temp survives a successful write
+    let strays: Vec<_> = std::fs::read_dir(wrk.path("."))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with(".qsv-freqcache-")
+        })
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "a successful write left a temp file behind"
+    );
+}
+
+// `create_new` has no delete-on-drop, unlike the `NamedTempFile` it replaced, so `TempFileGuard`
+// gives that back. The read-only-directory tests above cannot exercise it - there the temp is
+// never created at all - so this forces a failure AFTER the temp exists, by putting a directory
+// where the cache file belongs so the final rename fails.
+#[cfg(unix)]
+#[test]
+fn frequency_failed_rename_leaves_no_stray_temp() {
+    let wrk = Workdir::new("frequency_failed_rename_leaves_no_stray_temp");
+    wrk.create("in.csv", vec![svec!["h1"], svec!["a"], svec!["b"]]);
+
+    // a directory at the cache path: create_new succeeds, write succeeds, rename cannot
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    std::fs::create_dir(&cache).unwrap();
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--frequency-jsonl").arg("in.csv");
+    let out = cmd.output().unwrap();
+    assert!(
+        !out.status.success(),
+        "an explicit --frequency-jsonl whose cache cannot be written must fail"
+    );
+
+    let strays: Vec<String> = std::fs::read_dir(wrk.path("."))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".qsv-freqcache-"))
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "a failed rename must not leave a temp file beside the user's CSV, found: {strays:?}"
+    );
+}
+
+// The frequency cache holds the DATA - every non-high-cardinality value and its count - not
+// byte offsets like an `.idx`. So a deliberately private 0600 CSV whose cache lands at the 0644
+// umask default hands its contents to every local user. The cache mode is intersected with the
+// input's for that reason. (Long-standing: the `fs::write` this replaced did the same.)
+#[cfg(unix)]
+#[test]
+fn frequency_cache_never_out_permissions_its_source_csv() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("frequency_cache_never_out_permissions_its_source_csv");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["dx", "ward"],
+            svec!["flu", "a"],
+            svec!["flu", "b"],
+            svec!["measles", "a"],
+        ],
+    );
+
+    let probe = wrk.path("probe");
+    std::fs::File::create(&probe).unwrap();
+    let umask_default = std::fs::metadata(&probe).unwrap().permissions().mode() & 0o777;
+
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    let mode = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    // the security property, and it holds under ANY umask: 0600 & anything is within 0600
+    assert_eq!(
+        mode & 0o077,
+        0,
+        "a cache derived from a 0600 CSV must not be group- or world-readable (got {mode:o})"
+    );
+
+    // the cache really does carry the source values, which is why the mode matters
+    let body = std::fs::read_to_string(&cache).unwrap();
+    assert!(
+        body.contains("measles"),
+        "sanity: the cache should contain source values, else this test proves nothing"
+    );
+
+    // An intermediate mode is INTERSECTED, not clamped to 0600. Stated as the rule rather than
+    // as fixed bits: under a restrictive umask the group bit is absent from the umask default
+    // too, so asserting it unconditionally would fail there (and did, at umask 077).
+    let group_csv = wrk.path("g.csv");
+    std::fs::copy(&input, &group_csv).unwrap();
+    std::fs::set_permissions(&group_csv, std::fs::Permissions::from_mode(0o640)).unwrap();
+    let mut group_writer = wrk.command("frequency");
+    group_writer.arg("--frequency-jsonl").arg("g.csv");
+    wrk.assert_success(&mut group_writer);
+    let g_mode = std::fs::metadata(wrk.path("g.freq.csv.data.jsonl"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        g_mode,
+        umask_default & 0o640,
+        "a 0640 CSV must yield the umask default narrowed to 0640 (got {g_mode:o}, umask default \
+         {umask_default:o})"
+    );
+    assert_eq!(
+        g_mode & 0o007,
+        0,
+        "a 0640 CSV must never yield a world-readable cache (got {g_mode:o})"
+    );
+}
+
+// The cache's mode is now applied to the temp while it is still EMPTY, which is the whole point
+// (tightening afterwards leaves the data readable in a shared directory for a window, and an fd
+// opened in that window survives the chmod). Moving it earlier introduces its own risk: if the
+// resolved mode drops the owner-write bit, an implementation that reopened the temp by path
+// would fail. It writes through the fd it already holds, so it does not - this pins that, and
+// that a read-only source still yields a complete, readable cache.
+#[cfg(unix)]
+#[test]
+fn frequency_readonly_source_still_yields_a_complete_cache() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("frequency_readonly_source_still_yields_a_complete_cache");
+    wrk.create(
+        "in.csv",
+        vec![svec!["dx"], svec!["flu"], svec!["flu"], svec!["measles"]],
+    );
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o400)).unwrap();
+
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    let mode = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode, 0o400,
+        "a 0400 source must yield a 0400 cache (got {mode:o})"
+    );
+
+    // complete, not truncated by the missing write bit
+    let body = std::fs::read_to_string(&cache).unwrap();
+    let lines: Vec<&str> = body.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        2,
+        "expected a metadata line + one entry, got:\n{body}"
+    );
+    assert!(
+        body.contains("measles"),
+        "the cache must hold the computed values, got:\n{body}"
+    );
+    let meta: Value = serde_json::from_str(lines[0]).expect("metadata line must parse");
+    assert_eq!(meta["column_count"].as_u64(), Some(1));
+}
+
+// The temp is now CREATED at its target mode, so it never exists wider than its final one (an
+// fd obtained during a create-then-chmod gap survives every later chmod, so narrowing the gap
+// was never enough - the file must not be born wide). The kernel applies the umask to that
+// creation request, which can land BELOW a mode the user deliberately set on the cache, so a
+// single fd-based fchmod restores it. This pins that restore.
+//
+// Deterministic under any umask: a cache at 0660 with a 0664 source targets 0660, which the
+// common 022 umask narrows to 0640 at creation - so without the widen-back this fails there,
+// and the expected result stays 0660 either way because the widen restores the target exactly.
+#[cfg(unix)]
+#[test]
+fn frequency_refresh_restores_a_mode_the_umask_narrowed() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("frequency_refresh_restores_a_mode_the_umask_narrowed");
+    wrk.create(
+        "in.csv",
+        vec![svec!["h1"], svec!["a"], svec!["a"], svec!["b"]],
+    );
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o664)).unwrap();
+
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+
+    // a group-shared mode the user chose deliberately; 0660 is within the source's 0664
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    let chosen = 0o660;
+    set_cache_version(&cache, "0.0.1-ancient");
+    std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(chosen)).unwrap();
+
+    let mut heal = wrk.command("frequency");
+    heal.arg("in.csv");
+    wrk.assert_success(&mut heal);
+
+    let after = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        after, chosen,
+        "a refresh must restore the mode the user set, even when the umask narrowed the creation \
+         request below it (got {after:o})"
+    );
+}
+
+/// A gid this process belongs to that differs from `other`, or `None` if it has only one.
+///
+/// A minimal CI container often puts the test user in exactly ONE group, in which case the
+/// mismatch this test needs cannot be constructed at all - so it skips rather than failing for
+/// an unrelated reason.
+#[cfg(unix)]
+fn other_group_than(other: u32) -> Option<u32> {
+    let out = process::Command::new("id").arg("-G").output().ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .filter_map(|g| g.parse::<u32>().ok())
+        .find(|g| *g != other)
+}
+
+// Mode bits are not portable between inodes. The cache is a NEW file, and a new file's group is
+// the directory's on macOS/BSD and the process's egid on Linux - never, in general, the source
+// CSV's. So an identical 0640 on both can still mean strictly wider access: a CSV readable only
+// by group `admin` yielding a cache readable by all of group `staff`. Group bits are granted
+// only when the gids match.
+//
+// This is the case every earlier permissions test missed, because in all of their fixtures the
+// source and the temp happened to share a group.
+#[cfg(unix)]
+#[test]
+fn frequency_drops_group_bits_when_the_cache_group_differs() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let wrk = Workdir::new("frequency_drops_group_bits_when_the_cache_group_differs");
+    wrk.create(
+        "in.csv",
+        vec![svec!["dx"], svec!["flu"], svec!["flu"], svec!["measles"]],
+    );
+
+    // the gid a NEW file in this directory actually gets - what the cache will be born with
+    let probe = wrk.path("probe");
+    std::fs::File::create(&probe).unwrap();
+    let probe_meta = std::fs::metadata(&probe).unwrap();
+    let new_file_gid = probe_meta.gid();
+    // the umask default too - the "other" expectation below is umask-dependent and must be
+    // derived, not hardcoded (this assertion failed under umask 077 when it was not)
+    let umask_default = probe_meta.permissions().mode() & 0o777;
+
+    let Some(foreign_gid) = other_group_than(new_file_gid) else {
+        // single-group environment: the mismatch is not constructible here
+        return;
+    };
+
+    let input = wrk.path("in.csv");
+    if std::os::unix::fs::chown(&input, None, Some(foreign_gid)).is_err() {
+        return; // not permitted here; nothing to assert
+    }
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o640)).unwrap();
+
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    let meta = std::fs::metadata(&cache).unwrap();
+    let mode = meta.permissions().mode() & 0o777;
+    assert_ne!(
+        meta.gid(),
+        std::fs::metadata(&input).unwrap().gid(),
+        "sanity: the cache and source must actually differ in group, else this proves nothing"
+    );
+    assert_eq!(
+        mode & 0o070,
+        0,
+        "a cache whose group differs from the source's must not be group-readable (got {mode:o}) \
+         - identical mode bits on a different group are WIDER access"
+    );
+
+    // ...and the cache really does hold the source values, which is why it matters
+    let body = std::fs::read_to_string(&cache).unwrap();
+    assert!(
+        body.contains("measles"),
+        "sanity: cache should hold source values"
+    );
+
+    // This 0644 fixture keeps its other-read bit, but NOT because "other" means the same set
+    // of users on both files - it does not, which is exactly what the 0604 case below pins.
+    // It survives because 0644 grants read to its GROUP as well as to other: every user who
+    // could reach the cache through its other class could already read the source through one
+    // class or the other, so nothing is widened. Change this fixture to 0604 and the bit must
+    // disappear. The resulting 0604 cache looks odd but is right; pinned so nobody "tidies" it.
+    let pub_csv = wrk.path("p.csv");
+    std::fs::copy(&input, &pub_csv).unwrap();
+    std::os::unix::fs::chown(&pub_csv, None, Some(foreign_gid)).unwrap();
+    std::fs::set_permissions(&pub_csv, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let mut pub_writer = wrk.command("frequency");
+    pub_writer.arg("--frequency-jsonl").arg("p.csv");
+    wrk.assert_success(&mut pub_writer);
+    let p_mode = std::fs::metadata(wrk.path("p.freq.csv.data.jsonl"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        p_mode,
+        (umask_default & 0o644) & 0o704,
+        "a foreign-group cache keeps owner and OTHER bits and drops only the group ones (got \
+         {p_mode:o}, umask default {umask_default:o})"
+    );
+    assert_eq!(
+        p_mode & 0o070,
+        0,
+        "group bits must still be dropped on a foreign group (got {p_mode:o})"
+    );
+
+    // ...but an OTHER bit only survives where the source grants it to its own group TOO.
+    // Unix picks exactly one class - owner, else group, else other - with no fallthrough, so a
+    // 0604 source DENIES its own group while allowing everyone else (the "block this group"
+    // idiom). Copying that 0604 onto a cache with a different group would put those excluded
+    // users in the OTHER class and let them in: identical bits, wider access. Umask-independent,
+    // since the expectation is "no other bits at all".
+    let denied_csv = wrk.path("d.csv");
+    std::fs::copy(&input, &denied_csv).unwrap();
+    std::os::unix::fs::chown(&denied_csv, None, Some(foreign_gid)).unwrap();
+    std::fs::set_permissions(&denied_csv, std::fs::Permissions::from_mode(0o604)).unwrap();
+    let mut denied_writer = wrk.command("frequency");
+    denied_writer.arg("--frequency-jsonl").arg("d.csv");
+    wrk.assert_success(&mut denied_writer);
+    let d_mode = std::fs::metadata(wrk.path("d.freq.csv.data.jsonl"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        d_mode & 0o007,
+        0,
+        "a 0604 source denies its own group, so the cache must not grant OTHER either (got \
+         {d_mode:o}) - on a foreign group those are the same excluded users"
+    );
+    assert_eq!(
+        d_mode & 0o070,
+        0,
+        "and its group bits stay clear too (got {d_mode:o})"
+    );
+
+    // no probe file from the implementation survives
+    let strays: Vec<String> = std::fs::read_dir(wrk.path("."))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".qsv-freqprobe-") || n.starts_with(".qsv-freqcache-"))
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "left temp/probe files behind: {strays:?}"
     );
 }

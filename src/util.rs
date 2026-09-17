@@ -3415,7 +3415,28 @@ fn stats_cache_parsing_opts_match(
     no_headers: bool,
     delimiter: Option<Delimiter>,
     prefer_dmy: Option<bool>,
+    flexible: bool,
 ) -> bool {
+    // --flexible is a parsing option too: a ragged file can ONLY be summarized under it, since
+    // a strict `stats` run errors out before it writes anything. So a cache recording
+    // `flag_flexible: true` may describe records a strict consumer would refuse outright.
+    //
+    // The check is deliberately ONE-WAY - it refuses a flexible cache to a strict consumer, but
+    // lets a flexible consumer reuse a strict cache. The converse would make flexible and strict
+    // consumers of the same unchanged file invalidate each other's cache on every invocation,
+    // forever, exactly like the raw --prefer-dmy comparison did (see `effective_prefer_dmy` in
+    // `get_stats_records_flexible`). It also costs nothing in correctness: a strict cache exists
+    // only because a strict run succeeded, which means the input had no ragged records, which
+    // means --flexible would have computed the very same numbers.
+    if !flexible
+        && metadata
+            .get("flag_flexible")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    {
+        return false;
+    }
+
     // --no-headers determines whether the header row is part of the data (and therefore whether
     // field names are real or positional), so it must match the consuming command.
     if metadata
@@ -3640,6 +3661,7 @@ fn stats_cache_parsing_opts_conflict(
     no_headers: bool,
     delimiter: Option<Delimiter>,
     prefer_dmy: Option<bool>,
+    flexible: bool,
 ) -> bool {
     // Both locations must be checked, because for a SYMLINKED input they differ: the JSONL cache
     // is looked up beside the canonicalized target, but the `stats` subprocess is invoked with the
@@ -3658,8 +3680,9 @@ fn stats_cache_parsing_opts_conflict(
         let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&text) else {
             continue;
         };
-        if !stats_cache_parsing_opts_match(&metadata, input_path, no_headers, delimiter, prefer_dmy)
-        {
+        if !stats_cache_parsing_opts_match(
+            &metadata, input_path, no_headers, delimiter, prefer_dmy, flexible,
+        ) {
             return true;
         }
     }
@@ -3771,10 +3794,11 @@ pub fn get_stats_records_flexible(
                 args.flag_no_headers,
                 args.flag_delimiter,
                 effective_prefer_dmy,
+                flexible,
             ) {
                 info!(
                     "stats.csv.data.jsonl file was built with different parsing options \
-                     (--no-headers/--delimiter/--prefer-dmy). Regenerating stats jsonl."
+                     (--no-headers/--delimiter/--prefer-dmy/--flexible). Regenerating stats jsonl."
                 );
                 false
             } else if stats_jsonl_predates_stats_cache(
@@ -4283,6 +4307,9 @@ pub fn get_stats_records_readonly(
         // extsort/sortcheck do no date inference, so --prefer-dmy cannot affect what they
         // read out of the cache
         None,
+        // both read the input strictly, so a cache built from ragged data under --flexible
+        // must not prove anything to them
+        false,
     ) {
         return None;
     }
@@ -5773,11 +5800,11 @@ mod tests {
         let meta = serde_json::json!({"flag_no_headers": true, "flag_delimiter": ","});
         // cache built headerless, consumer wants headers -> reject
         assert!(!stats_cache_parsing_opts_match(
-            &meta, input, false, None, None
+            &meta, input, false, None, None, false
         ));
         // same setting on both sides -> accept
         assert!(stats_cache_parsing_opts_match(
-            &meta, input, true, None, None
+            &meta, input, true, None, None, false
         ));
     }
 
@@ -5787,14 +5814,15 @@ mod tests {
         let meta = serde_json::json!({"flag_no_headers": false, "flag_delimiter": ";"});
         // cache built semicolon-delimited, consumer resolves ',' from the .csv extension
         assert!(!stats_cache_parsing_opts_match(
-            &meta, input, false, None, None
+            &meta, input, false, None, None, false
         ));
         assert!(stats_cache_parsing_opts_match(
             &meta,
             input,
             false,
             Some(Delimiter(b';')),
-            None
+            None,
+            false
         ));
     }
 
@@ -5808,7 +5836,8 @@ mod tests {
             Path::new("data.csv"),
             false,
             None,
-            None
+            None,
+            false
         ));
         // ... and a .tsv input resolves to tab on both sides
         assert!(stats_cache_parsing_opts_match(
@@ -5816,7 +5845,8 @@ mod tests {
             Path::new("data.tsv"),
             false,
             None,
-            None
+            None,
+            false
         ));
         // but an explicit comma against a .tsv input is a genuine mismatch
         assert!(!stats_cache_parsing_opts_match(
@@ -5824,7 +5854,8 @@ mod tests {
             Path::new("data.tsv"),
             false,
             Some(Delimiter(b',')),
-            None
+            None,
+            false
         ));
     }
 
@@ -5835,12 +5866,12 @@ mod tests {
         // No sidecar at all: NOT a conflict. `moarstats` writes the JSONL cache without one, and
         // rejecting those would discard a rich cache and regenerate a leaner one.
         assert!(!stats_cache_parsing_opts_conflict(
-            &input, &input, false, None, None
+            &input, &input, false, None, None, false
         ));
         // Present but unparseable: same — decline to judge rather than discard.
         std::fs::write(dir.path().join("data.stats.csv.json"), b"{not json").unwrap();
         assert!(!stats_cache_parsing_opts_conflict(
-            &input, &input, false, None, None
+            &input, &input, false, None, None, false
         ));
         // Readable and matching: no conflict.
         std::fs::write(
@@ -5849,7 +5880,7 @@ mod tests {
         )
         .unwrap();
         assert!(!stats_cache_parsing_opts_conflict(
-            &input, &input, false, None, None
+            &input, &input, false, None, None, false
         ));
         // Readable and mismatched: the case this exists to catch.
         std::fs::write(
@@ -5858,7 +5889,7 @@ mod tests {
         )
         .unwrap();
         assert!(stats_cache_parsing_opts_conflict(
-            &input, &input, false, None, None
+            &input, &input, false, None, None, false
         ));
     }
 
@@ -5877,7 +5908,7 @@ mod tests {
         )
         .unwrap();
         assert!(stats_cache_parsing_opts_conflict(
-            &link, &canonical, false, None, None
+            &link, &canonical, false, None, None, false
         ));
         // and the agreeing case is still not a conflict
         std::fs::write(
@@ -5886,7 +5917,7 @@ mod tests {
         )
         .unwrap();
         assert!(!stats_cache_parsing_opts_conflict(
-            &link, &canonical, false, None, None
+            &link, &canonical, false, None, None, false
         ));
     }
 
@@ -5902,7 +5933,8 @@ mod tests {
             input,
             false,
             None,
-            Some(false)
+            Some(false),
+            false
         ));
         // same setting on both sides -> accept
         assert!(stats_cache_parsing_opts_match(
@@ -5910,12 +5942,75 @@ mod tests {
             input,
             false,
             None,
-            Some(true)
+            Some(true),
+            false
         ));
         // a consumer that does no date inference (extsort, sortcheck) opts out entirely, so
         // the flag must not force it to regenerate
         assert!(stats_cache_parsing_opts_match(
-            &meta, input, false, None, None
+            &meta, input, false, None, None, false
+        ));
+    }
+
+    // --flexible is a parsing option too, but unlike the others it is checked ONE-WAY: a
+    // flexible cache may describe ragged records a strict consumer must refuse, while a strict
+    // cache can only exist for a file that had none, so it is always safe for a flexible one.
+    // The symmetric check would make flexible and strict consumers of the same unchanged file
+    // regenerate each other's cache on every invocation, forever.
+    #[test]
+    fn stats_cache_parsing_opts_match_refuses_a_flexible_cache_to_a_strict_consumer() {
+        let input = Path::new("data.csv");
+        let flexible_cache = serde_json::json!({
+            "flag_no_headers": false, "flag_delimiter": ",", "flag_flexible": true
+        });
+        assert!(!stats_cache_parsing_opts_match(
+            &flexible_cache,
+            input,
+            false,
+            None,
+            None,
+            false
+        ));
+        // a flexible consumer may reuse it
+        assert!(stats_cache_parsing_opts_match(
+            &flexible_cache,
+            input,
+            false,
+            None,
+            None,
+            true
+        ));
+    }
+
+    #[test]
+    fn stats_cache_parsing_opts_match_accepts_a_strict_cache_for_a_flexible_run() {
+        let input = Path::new("data.csv");
+        let strict_cache = serde_json::json!({
+            "flag_no_headers": false, "flag_delimiter": ",", "flag_flexible": false
+        });
+        // BOTH directions accept a strict cache - this pins the asymmetry. If someone
+        // "restores" a symmetric `==` comparison, the flexible case below fails.
+        assert!(stats_cache_parsing_opts_match(
+            &strict_cache,
+            input,
+            false,
+            None,
+            None,
+            true
+        ));
+        assert!(stats_cache_parsing_opts_match(
+            &strict_cache,
+            input,
+            false,
+            None,
+            None,
+            false
+        ));
+        // a legacy cache written before the field existed records nothing, and must be read
+        // as strict rather than rejected
+        let legacy = serde_json::json!({"flag_no_headers": false, "flag_delimiter": ","});
+        assert!(stats_cache_parsing_opts_match(
+            &legacy, input, false, None, None, false
         ));
     }
 

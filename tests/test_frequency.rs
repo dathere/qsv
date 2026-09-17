@@ -7709,6 +7709,12 @@ fn frequency_self_heal_write_failure_is_not_fatal() {
         stderr.contains("Could not refresh"),
         "expected the best-effort warning, got:\n{stderr}"
     );
+    // the underlying OS error must survive, not be replaced by a generic message: the temp
+    // creation loop retries ONLY AlreadyExists and propagates everything else with context
+    assert!(
+        stderr.contains("os error"),
+        "the actionable OS error must be relayed, got:\n{stderr}"
+    );
 }
 
 // The --flexible read check is deliberately one-way (a flexible run may READ a strict cache),
@@ -7963,5 +7969,70 @@ fn frequency_failed_rename_leaves_no_stray_temp() {
     assert!(
         strays.is_empty(),
         "a failed rename must not leave a temp file beside the user's CSV, found: {strays:?}"
+    );
+}
+
+// The frequency cache holds the DATA - every non-high-cardinality value and its count - not
+// byte offsets like an `.idx`. So a deliberately private 0600 CSV whose cache lands at the 0644
+// umask default hands its contents to every local user. The cache mode is intersected with the
+// input's for that reason. (Long-standing: the `fs::write` this replaced did the same.)
+#[cfg(unix)]
+#[test]
+fn frequency_cache_never_out_permissions_its_source_csv() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("frequency_cache_never_out_permissions_its_source_csv");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["dx", "ward"],
+            svec!["flu", "a"],
+            svec!["flu", "b"],
+            svec!["measles", "a"],
+        ],
+    );
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    let mode = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode & 0o077,
+        0,
+        "a cache derived from a 0600 CSV must not be group- or world-readable (got {mode:o})"
+    );
+
+    // the cache really does carry the source values, which is why the mode matters
+    let body = std::fs::read_to_string(&cache).unwrap();
+    assert!(
+        body.contains("measles"),
+        "sanity: the cache should contain source values, else this test proves nothing"
+    );
+
+    // an intermediate mode is intersected, not clamped to 0600
+    let group_csv = wrk.path("g.csv");
+    std::fs::copy(&input, &group_csv).unwrap();
+    std::fs::set_permissions(&group_csv, std::fs::Permissions::from_mode(0o640)).unwrap();
+    let mut group_writer = wrk.command("frequency");
+    group_writer.arg("--frequency-jsonl").arg("g.csv");
+    wrk.assert_success(&mut group_writer);
+    let g_mode = std::fs::metadata(wrk.path("g.freq.csv.data.jsonl"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        g_mode & 0o007,
+        0,
+        "a 0640 CSV must not yield a world-readable cache (got {g_mode:o})"
+    );
+    assert_ne!(
+        g_mode & 0o040,
+        0,
+        "...but the group bit the CSV grants must survive (got {g_mode:o})"
     );
 }

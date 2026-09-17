@@ -2130,19 +2130,35 @@ impl Args {
         for _ in 0..16 {
             let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let candidate = cache_dir.join(format!(".qsv-freqcache-{pid}-{seq}.tmp"));
-            if let Ok(f) = fs::OpenOptions::new()
+            match fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(&candidate)
             {
-                tmp_path = Some(candidate);
-                tmp_file = Some(f);
-                break;
+                Ok(f) => {
+                    tmp_path = Some(candidate);
+                    tmp_file = Some(f);
+                    break;
+                },
+                // ONLY a name collision is worth retrying. Retrying a permission, quota,
+                // read-only-filesystem or bad-path error just burns 15 more syscalls and then
+                // reports a generic message, throwing away the actionable OS error that
+                // `tempfile_in` used to propagate.
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => {
+                    return fail_clierror!(
+                        "Could not create a temp file for the frequency cache in {}: {e}",
+                        cache_dir.display()
+                    );
+                },
             }
         }
         let (Some(tmp_path), Some(mut tmp_file)) = (tmp_path, tmp_file) else {
+            // only reachable by exhausting the retries on AlreadyExists, which really is a
+            // collision problem and has no OS error worth relaying
             return fail_clierror!(
-                "Could not create a temp file for the frequency cache in {}",
+                "Could not find a free temp filename for the frequency cache in {} after 16 \
+                 attempts",
                 cache_dir.display()
             );
         };
@@ -2158,6 +2174,34 @@ impl Args {
         // the `.idx`: umask default when creating, preserve the mode when rebuilding.
         if let Ok(existing) = fs::metadata(&cache_path) {
             let _ = fs::set_permissions(&tmp_path, existing.permissions());
+        }
+
+        // ... but never grant access the SOURCE CSV does not. Unlike an `.idx`, which holds
+        // byte offsets, this cache holds the data itself - every non-high-cardinality value and
+        // its count - so a 0600 CSV whose cache lands at the 0644 umask default hands its
+        // contents to every local user. That was true of the `fs::write` this replaced too, so
+        // it is a long-standing hole rather than a new one, but it is this function's to close.
+        //
+        // Intersecting is what makes this safe to combine with the umask default the previous
+        // commit deliberately restored: a world-readable CSV still gets a world-readable cache,
+        // so shared-machine cache reuse is untouched, while a private CSV gets a private cache.
+        // Nothing is lost by tightening - anyone refused by the cache could not read the CSV it
+        // was derived from either.
+        //
+        // Applied AFTER the carry-over above, so it also tightens a cache that a previous qsv
+        // left too open rather than faithfully preserving a leak.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            if let (Ok(input_meta), Ok(tmp_meta)) = (fs::metadata(path), fs::metadata(&tmp_path)) {
+                let input_mode = input_meta.permissions().mode() & 0o777;
+                let tmp_mode = tmp_meta.permissions().mode() & 0o777;
+                let restricted = tmp_mode & input_mode;
+                if restricted != tmp_mode {
+                    let _ = fs::set_permissions(&tmp_path, fs::Permissions::from_mode(restricted));
+                }
+            }
         }
 
         // fsync before the rename. `rename` is atomic for the name -> inode mapping, but that

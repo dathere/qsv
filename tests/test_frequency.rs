@@ -8099,3 +8099,47 @@ fn frequency_readonly_source_still_yields_a_complete_cache() {
     let meta: Value = serde_json::from_str(lines[0]).expect("metadata line must parse");
     assert_eq!(meta["column_count"].as_u64(), Some(1));
 }
+
+// The temp is now CREATED at its target mode, so it never exists wider than its final one (an
+// fd obtained during a create-then-chmod gap survives every later chmod, so narrowing the gap
+// was never enough - the file must not be born wide). The kernel applies the umask to that
+// creation request, which can land BELOW a mode the user deliberately set on the cache, so a
+// single fd-based fchmod restores it. This pins that restore.
+//
+// Deterministic under any umask: a cache at 0660 with a 0664 source targets 0660, which the
+// common 022 umask narrows to 0640 at creation - so without the widen-back this fails there,
+// and the expected result stays 0660 either way because the widen restores the target exactly.
+#[cfg(unix)]
+#[test]
+fn frequency_refresh_restores_a_mode_the_umask_narrowed() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("frequency_refresh_restores_a_mode_the_umask_narrowed");
+    wrk.create(
+        "in.csv",
+        vec![svec!["h1"], svec!["a"], svec!["a"], svec!["b"]],
+    );
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o664)).unwrap();
+
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+
+    // a group-shared mode the user chose deliberately; 0660 is within the source's 0664
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    let chosen = 0o660;
+    set_cache_version(&cache, "0.0.1-ancient");
+    std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(chosen)).unwrap();
+
+    let mut heal = wrk.command("frequency");
+    heal.arg("in.csv");
+    wrk.assert_success(&mut heal);
+
+    let after = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        after, chosen,
+        "a refresh must restore the mode the user set, even when the umask narrowed the creation \
+         request below it (got {after:o})"
+    );
+}

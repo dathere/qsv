@@ -2120,6 +2120,49 @@ impl Args {
         // writers cannot collide on one temp, and a pre-existing file or symlink at a guessable
         // name cannot be written through.
         //
+        // Resolve the cache's permissions BEFORE the file exists, and hand them to `open` so it
+        // is CREATED at its final mode. Creating at the umask default and chmod-ing afterwards
+        // - in either order relative to the write - leaves a window in which the file is
+        // openable at the wider mode, and an fd obtained in that window stays readable through
+        // every later chmod, so the data still leaks once it is written. The only fix is for
+        // the file never to exist wider than its target.
+        //
+        // Two rules, as before:
+        //   1. start from the mode of the cache being REPLACED, so a deliberate chmod survives a
+        //      refresh; a brand-new cache starts from the umask default.
+        //   2. grant nothing the SOURCE CSV does not. Unlike an `.idx`, which holds byte offsets,
+        //      this cache holds the data - every non-high-cardinality value and its count - so a
+        //      0600 CSV must not yield a 0644 cache. Intersecting is what lets this coexist with
+        //      the umask default: a world-readable CSV still gets a world-readable cache, so
+        //      shared-machine reuse is untouched.
+        // Rule 2 overrides rule 1, so "a deliberate chmod survives" means "survives, but never
+        // beyond what the source grants". Widening is what would be unsafe.
+        //
+        // For a NEW cache there is no second step at all: requesting `0o666 & input` lets the
+        // kernel apply the umask itself, landing exactly on `umask_default & input`.
+        // For a REPLACED one the umask may narrow the request below the mode the user chose, so
+        // `widen_to` records the target and a single fchmod restores it after creation. That
+        // only ever WIDENS, from a mode that was already no broader than the target - so no
+        // wider-than-target window is ever opened.
+        //
+        // Failures are fatal, not `let _ =`: this is a confidentiality control, and silently
+        // publishing a 0644 cache of a 0600 CSV because a stat failed is the outcome it exists
+        // to prevent. The temp guard removes the file on the way out.
+        #[cfg(unix)]
+        let (create_mode, widen_to) = {
+            use std::os::unix::fs::PermissionsExt;
+
+            let input_mode = fs::metadata(path)?.permissions().mode() & 0o777;
+            match fs::metadata(&cache_path) {
+                Ok(existing) => {
+                    let target = existing.permissions().mode() & 0o777 & input_mode;
+                    (target, Some(target))
+                },
+                // an absent or unreadable cache path just means "nothing to inherit"
+                Err(_) => (0o666 & input_mode, None),
+            }
+        };
+
         // Uniqueness needs no randomness: `create_new` fails with `AlreadyExists`, so the loop
         // advances the counter until it wins. The pid separates processes, the counter
         // separates threads and repeat calls within one.
@@ -2127,14 +2170,17 @@ impl Args {
         let pid = std::process::id();
         let mut tmp_path = None;
         let mut tmp_file = None;
+        let mut open_opts = fs::OpenOptions::new();
+        open_opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            open_opts.mode(create_mode);
+        }
         for _ in 0..16 {
             let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let candidate = cache_dir.join(format!(".qsv-freqcache-{pid}-{seq}.tmp"));
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&candidate)
-            {
+            match open_opts.open(&candidate) {
                 Ok(f) => {
                     tmp_path = Some(candidate);
                     tmp_file = Some(f);
@@ -2166,51 +2212,21 @@ impl Args {
         // guard restores it: every `?` below must leave nothing beside the user's CSV.
         let mut tmp_guard = TempFileGuard(Some(tmp_path.clone()));
 
-        // Settle the cache's permissions BEFORE a single byte of data goes into the file, and
-        // apply them while it is still empty. Tightening afterwards leaves a window in which
-        // the full contents sit in a shared directory at the umask default, and an fd opened
-        // during that window stays readable after the chmod - so the restriction below has to
-        // come first to mean anything.
-        //
-        // Two rules, in order:
-        //
-        // 1. Start from the mode of the cache being REPLACED, so a deliberate chmod survives a
-        //    refresh. A brand-new cache starts from the umask default `create_new` just gave us.
-        //    This mirrors `Config::autoindex` for the `.idx`: umask default when creating, preserve
-        //    the mode when rebuilding.
-        //
-        // 2. Then grant nothing the SOURCE CSV does not. Unlike an `.idx`, which holds byte
-        //    offsets, this cache holds the data itself - every non-high-cardinality value and its
-        //    count - so a 0600 CSV whose cache lands at the 0644 umask default hands its contents
-        //    to every local user. (True of the `fs::write` this replaced too, so a long-standing
-        //    hole rather than a new one.) Intersecting is what lets this coexist with the umask
-        //    default: a world-readable CSV still gets a world-readable cache, so shared-machine
-        //    reuse is untouched, while a private CSV gets a private cache. Nothing is lost by
-        //    tightening - anyone the cache refuses could not read the CSV it came from either.
-        //
-        // Rule 2 deliberately overrides rule 1, so a cache an earlier qsv left too open is
-        // tightened rather than faithfully preserved. That does weaken "a deliberate chmod
-        // survives" to "survives, but never beyond what the source grants" - the security
-        // reading wins, because widening is what would be unsafe.
-        //
-        // Failures here are FATAL, not `let _ =`. This is a confidentiality control: silently
-        // publishing a 0644 cache of a 0600 CSV because a stat failed is the exact outcome it
-        // exists to prevent, so it fails closed. The temp guard removes the file on the way out.
+        // The file was CREATED at its target mode above, so nothing here can widen it past
+        // that. The one remaining step is restoring a deliberately-chmod'd cache's mode when
+        // the umask narrowed our creation request below it - and it goes through the fd, not
+        // the pathname. A path-based chmod can be redirected: in a shared directory the entry
+        // can be swapped between create and chmod, and we would be changing someone else's
+        // file. fchmod on the descriptor we already hold cannot be.
         #[cfg(unix)]
-        {
+        if let Some(target) = widen_to {
             use std::os::unix::fs::PermissionsExt;
 
-            // an unreadable/absent cache path just means "no cache to inherit from" - not a
-            // security-relevant failure, since the intersection below still applies
-            let base_mode = match fs::metadata(&cache_path) {
-                Ok(existing) => existing.permissions().mode() & 0o777,
-                Err(_) => fs::metadata(&tmp_path)?.permissions().mode() & 0o777,
-            };
-            let input_mode = fs::metadata(path)?.permissions().mode() & 0o777;
-            fs::set_permissions(
-                &tmp_path,
-                fs::Permissions::from_mode(base_mode & input_mode),
-            )?;
+            let created = tmp_file.metadata()?.permissions().mode() & 0o777;
+            // `created` is `target & ~umask`, so this only ever adds bits back
+            if created != target {
+                tmp_file.set_permissions(fs::Permissions::from_mode(target))?;
+            }
         }
 
         io::Write::write_all(&mut tmp_file, jsonl.as_bytes())?;
@@ -2218,9 +2234,11 @@ impl Args {
         // Windows has no group/world bits to leak, so the only thing to carry over is the
         // read-only flag - and that is applied AFTER the write rather than before, because
         // marking the temp read-only up front would make our own `write_all` fail.
+        // Through the fd, like the unix branch: no permission change here goes by pathname,
+        // which a directory-entry swap in a shared directory could redirect onto another file.
         #[cfg(not(unix))]
         if let Ok(existing) = fs::metadata(&cache_path) {
-            fs::set_permissions(&tmp_path, existing.permissions())?;
+            tmp_file.set_permissions(existing.permissions())?;
         }
 
         // fsync before the rename. `rename` is atomic for the name -> inode mapping, but that

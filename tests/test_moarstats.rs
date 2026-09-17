@@ -7156,3 +7156,47 @@ fn moarstats_bivariate_tsv_delimiter_is_honored() {
         "bivariate stats for a .tsv inside a .zip must equal the same data as CSV"
     );
 }
+
+// `moarstats` regenerates `<FILESTEM>.stats.csv.data.jsonl` after appending its columns. That
+// file carries data values (min/max/mode/antimode), so like every other derived artifact it
+// must never be readable by anyone the input is not readable by (#4619). This pins the
+// moarstats write path specifically - it goes through `util::csv_to_jsonl` with its own
+// permission source, not through `stats`.
+#[cfg(unix)]
+#[test]
+fn moarstats_stats_jsonl_never_out_permissions_its_source_csv() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("moarstats_stats_jsonl_never_out_permissions_its_source_csv");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["dx", "n"],
+            svec!["flu", "1"],
+            svec!["flu", "2"],
+            svec!["measles", "30"],
+        ],
+    );
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("in.csv");
+    wrk.assert_success(&mut cmd);
+
+    for artifact in ["in.stats.csv", "in.stats.csv.data.jsonl"] {
+        let path = wrk.path(artifact);
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode & 0o077,
+            0,
+            "{artifact} derived from a 0600 CSV must not be group- or world-readable (got \
+             {mode:o})"
+        );
+        let body = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            body.contains("measles"),
+            "sanity: {artifact} should contain source values, else this test proves nothing"
+        );
+    }
+}

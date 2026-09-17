@@ -9565,3 +9565,132 @@ fn stats_flexible_short_record_selection_order_matters() {
         "out-of-order selection stops at the missing column 3 and skips `a`"
     );
 }
+
+// The stats cache holds DATA - a string column's min/max, its mode and antimode - not byte
+// offsets like an `.idx`. So a deliberately private 0600 CSV whose `.stats.csv` or
+// `.stats.csv.data.jsonl` lands at the 0644 umask default hands its extremes and most frequent
+// values to every local user. Both are installed as `util::DerivedFile`s for that reason:
+// never wider than the input (#4619). Before that, the JSONL was a plain `File::create` (0644)
+// and the CSV an `fs::copy` from a 0600 tempfile - safe by accident, and clobbering any chmod.
+#[cfg(unix)]
+#[test]
+fn stats_cache_never_out_permissions_its_source_csv() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("stats_cache_never_out_permissions_its_source_csv");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["dx", "ward"],
+            svec!["flu", "a"],
+            svec!["flu", "b"],
+            svec!["measles", "a"],
+        ],
+    );
+
+    let probe = wrk.path("probe");
+    std::fs::File::create(&probe).unwrap();
+    let umask_default = std::fs::metadata(&probe).unwrap().permissions().mode() & 0o777;
+
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--stats-jsonl", "--cache-threshold", "1", "in.csv"]);
+    wrk.assert_success(&mut cmd);
+
+    for artifact in ["in.stats.csv", "in.stats.csv.data.jsonl"] {
+        let path = wrk.path(artifact);
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        // the security property, and it holds under ANY umask: 0600 & anything is within 0600
+        assert_eq!(
+            mode & 0o077,
+            0,
+            "{artifact} derived from a 0600 CSV must not be group- or world-readable (got \
+             {mode:o})"
+        );
+        // and it really does carry the source values, which is why the mode matters
+        let body = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            body.contains("measles"),
+            "sanity: {artifact} should contain source values, else this test proves nothing"
+        );
+    }
+
+    // An intermediate mode is INTERSECTED, not clamped to 0600. Stated as the rule rather than
+    // as fixed bits, so it holds under a restrictive umask too.
+    let group_csv = wrk.path("g.csv");
+    std::fs::copy(&input, &group_csv).unwrap();
+    std::fs::set_permissions(&group_csv, std::fs::Permissions::from_mode(0o640)).unwrap();
+    let mut group_cmd = wrk.command("stats");
+    group_cmd.args(["--stats-jsonl", "--cache-threshold", "1", "g.csv"]);
+    wrk.assert_success(&mut group_cmd);
+    for artifact in ["g.stats.csv", "g.stats.csv.data.jsonl"] {
+        let mode = std::fs::metadata(wrk.path(artifact))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode,
+            umask_default & 0o640,
+            "{artifact}: a 0640 CSV must yield the umask default narrowed to 0640 (got {mode:o}, \
+             umask default {umask_default:o})"
+        );
+        assert_eq!(
+            mode & 0o007,
+            0,
+            "{artifact}: a 0640 CSV must never yield a world-readable cache (got {mode:o})"
+        );
+    }
+}
+
+// The other half of #4619 for `.stats.csv`: it used to be 0600 ALWAYS - not by design, but
+// because `fs::copy` stamps the source's mode onto the destination and the source was a
+// `tempfile`. A world-readable CSV should get a world-readable cache so a shared machine can
+// reuse it, exactly like the `.idx` and the frequency cache. Derives the expectation from a probe
+// rather than hardcoding 0644, so it holds under any umask the CI runner has.
+#[cfg(unix)]
+#[test]
+fn stats_new_cache_has_umask_default_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("stats_new_cache_has_umask_default_permissions");
+    wrk.create("in.csv", vec![svec!["h1"], svec!["a"], svec!["b"]]);
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    let probe = wrk.path("probe");
+    std::fs::File::create(&probe).unwrap();
+    let umask_default = std::fs::metadata(&probe).unwrap().permissions().mode() & 0o777;
+
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--stats-jsonl", "--cache-threshold", "1", "in.csv"]);
+    wrk.assert_success(&mut cmd);
+
+    for artifact in ["in.stats.csv", "in.stats.csv.data.jsonl"] {
+        let mode = std::fs::metadata(wrk.path(artifact))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode,
+            umask_default & 0o644,
+            "{artifact} must be the umask default narrowed by the input (got {mode:o}, umask \
+             default {umask_default:o}) - a 0600 temp must not leak through the install"
+        );
+    }
+
+    // and no stray temp survives a successful install
+    let strays: Vec<String> = std::fs::read_dir(wrk.path("."))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".qsv-"))
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "a successful install left a temp file behind: {strays:?}"
+    );
+}

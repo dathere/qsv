@@ -7047,6 +7047,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             &crate::cmd::stats::STATSDATA_TYPES_MAP,
             &jsonl_path,
             b',',
+            input_path,
         ) {
             wwarn!("Failed to regenerate stats JSONL cache: {e}");
         }

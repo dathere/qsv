@@ -862,3 +862,45 @@ fn schema_ragged_relays_stats_csv_error() {
         "expected the fixlengths hint, got:\n{stderr}"
     );
 }
+
+// `schema` obtains its stats through `util::get_stats_records`, which runs `qsv stats` as a
+// subprocess and then writes `<FILESTEM>.stats.csv.data.jsonl` ITSELF, at the canonical input
+// path - a third write path for that file, beside `stats` and `moarstats`. It carries data
+// values, so it must never be readable by anyone the input is not readable by (#4619).
+#[test]
+fn schema_stats_jsonl_never_out_permissions_its_source_csv() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("schema_stats_jsonl_never_out_permissions_its_source_csv");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["dx", "ward"],
+            svec!["flu", "a"],
+            svec!["flu", "b"],
+            svec!["measles", "a"],
+        ],
+    );
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("in.csv");
+    wrk.assert_success(&mut cmd);
+
+    for artifact in ["in.stats.csv", "in.stats.csv.data.jsonl"] {
+        let path = wrk.path(artifact);
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode & 0o077,
+            0,
+            "{artifact} derived from a 0600 CSV must not be group- or world-readable (got \
+             {mode:o})"
+        );
+        let body = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            body.contains("measles"),
+            "sanity: {artifact} should contain source values, else this test proves nothing"
+        );
+    }
+}

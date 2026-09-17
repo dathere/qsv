@@ -7661,32 +7661,39 @@ fn frequency_option_mismatch_does_not_rewrite_the_cache() {
     );
 }
 
-/// Flip a cache file's read-only bit. `fs::Permissions` rather than a unix-only `chmod` so the
-/// test runs on Windows CI too, where `fs::write` fails on a readonly file just the same.
-fn set_cache_readonly(path: &std::path::Path, readonly: bool) {
-    let mut perms = std::fs::metadata(path)
-        .expect("set_cache_readonly: failed to stat cache")
-        .permissions();
-    perms.set_readonly(readonly);
-    std::fs::set_permissions(path, perms).expect("set_cache_readonly: failed to set permissions");
+/// Flip a DIRECTORY's write permission, so creating a file inside it fails.
+///
+/// The cache is replaced by writing a temp file beside it and renaming over the target, and
+/// POSIX `rename` needs write+execute on the containing DIRECTORY while ignoring the target
+/// file's own mode entirely — so making the cache file read-only does not block a refresh, and
+/// an earlier version of this test passed for the wrong reason. Unix-only: Windows does not
+/// enforce a directory read-only bit against file creation, so there is no equivalent fixture.
+#[cfg(unix)]
+fn set_dir_writable(path: &std::path::Path, writable: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = if writable { 0o755 } else { 0o555 };
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+        .expect("set_dir_writable: failed to set directory permissions");
 }
 
 // The self-heal is a side effect of a run the user made for its OUTPUT. A cache it cannot
 // replace - read-only file, read-only media, someone else's directory - must not turn an
 // ordinary `qsv frequency` into a failure that prints nothing at all. Explicit
 // --frequency-jsonl keeps its fatal error; only the implicit refresh is best-effort.
+#[cfg(unix)]
 #[test]
 fn frequency_self_heal_write_failure_is_not_fatal() {
     let (wrk, cache) = version_cache_workdir("frequency_self_heal_write_failure_is_not_fatal");
     set_cache_version(&cache, "0.0.1-ancient");
-    set_cache_readonly(&cache, true);
+    let dir = cache.parent().unwrap().to_path_buf();
+    set_dir_writable(&dir, false);
 
     let mut blocked = wrk.command("frequency");
     blocked.arg("in.csv");
     let out = blocked.output().unwrap();
 
     // restore BEFORE asserting, so a failure here still leaves a deletable workdir
-    set_cache_readonly(&cache, false);
+    set_dir_writable(&dir, true);
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -7777,5 +7784,86 @@ fn frequency_self_heal_recovers_an_incompatible_entry_layout() {
     assert!(
         healed_entry.get("cardinality").is_some(),
         "the refreshed cache should carry the current entry layout"
+    );
+}
+
+// The finding behind the atomic write (roborev 4790): `fs::write` is `File::create` +
+// `write_all`, so it TRUNCATES on open. Any failure after that - ENOSPC, EDQUOT, EIO - left a
+// 0-byte or half-written cache, and such a cache is unrecoverable by design: its metadata line
+// will not parse, so there is no version to compare and no signature to refresh from. It would
+// miss forever, and because the implicit refresh swallows write errors, without a failure the
+// user is likely to notice. Writing a temp file beside the cache and renaming over it means a
+// failed refresh leaves the PREVIOUS cache exactly as it was - still stale, but still healable.
+#[cfg(unix)]
+#[test]
+fn frequency_failed_refresh_leaves_the_previous_cache_intact() {
+    let (wrk, cache) =
+        version_cache_workdir("frequency_failed_refresh_leaves_the_previous_cache_intact");
+    set_cache_version(&cache, "0.0.1-ancient");
+    let before = std::fs::read_to_string(&cache).unwrap();
+    let dir = cache.parent().unwrap().to_path_buf();
+    set_dir_writable(&dir, false);
+
+    let mut blocked = wrk.command("frequency");
+    blocked.arg("in.csv");
+    let out = blocked.output().unwrap();
+
+    set_dir_writable(&dir, true);
+
+    assert!(out.status.success());
+    let after = std::fs::read_to_string(&cache).unwrap();
+    assert_eq!(
+        before, after,
+        "a refresh that could not complete must leave the cache byte-for-byte unchanged, not \
+         truncated"
+    );
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        "0.0.1-ancient",
+        "the untouched cache must still carry a readable version, so a later run can heal it"
+    );
+
+    // and it DOES still heal once the directory is writable again
+    let mut heal = wrk.command("frequency");
+    heal.arg("in.csv");
+    wrk.assert_success(&mut heal);
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        env!("CARGO_PKG_VERSION"),
+        "the preserved cache should heal on the next writable run"
+    );
+
+    // no stray temp file left beside the user's CSV
+    let strays: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with(".qsv-freqcache-")
+        })
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "a failed refresh left a temp file behind"
+    );
+}
+
+// A 0-byte cache used to return silently, leaving the user with a permanently slower run and no
+// diagnostic. Adjacent to the atomic-write fix: that stops qsv creating such a file, this makes
+// one that already exists legible.
+#[test]
+fn frequency_empty_cache_is_diagnosed() {
+    let (wrk, cache) = version_cache_workdir("frequency_empty_cache_is_diagnosed");
+    std::fs::write(&cache, b"").unwrap();
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv");
+    let out = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "an empty cache must not fail the run");
+    assert!(
+        stderr.contains("Frequency cache is empty"),
+        "expected the empty-cache diagnostic, got:\n{stderr}"
     );
 }

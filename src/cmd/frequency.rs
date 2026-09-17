@@ -2070,7 +2070,35 @@ impl Args {
 
         let cache_path = Self::cache_path_for(path);
         let cache_len = jsonl.len();
-        fs::write(&cache_path, jsonl)?;
+
+        // Write to a temp file in the SAME directory and rename it over the cache, rather than
+        // `fs::write`, which is `File::create` + `write_all` - it TRUNCATES on open, so any
+        // failure after that point (ENOSPC, EDQUOT, EIO, a network-mount hiccup) leaves a
+        // 0-byte or half-written cache. Such a cache is unrecoverable by design: its metadata
+        // line will not parse, so there is no version to compare and no signature to refresh
+        // from, and it misses forever. The implicit refresh path swallows write errors, so that
+        // would happen without even a failure the user is likely to notice.
+        //
+        // Same directory because `rename` across filesystems fails with EXDEV, and because
+        // `NamedTempFile` removes itself on drop, so a failed write or rename leaves nothing
+        // behind beside the user's CSV. A failed refresh therefore leaves the PREVIOUS cache
+        // intact - still stale, but still healable.
+        let cache_dir = cache_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let mut tmp = tempfile::Builder::new()
+            .prefix(".qsv-freqcache-")
+            .tempfile_in(cache_dir)?;
+        io::Write::write_all(&mut tmp, jsonl.as_bytes())?;
+        io::Write::flush(&mut tmp)?;
+        // `NamedTempFile` creates with 0600. Carry over the mode of the cache we are replacing
+        // so a refresh cannot silently make an existing cache less readable than the user left
+        // it. A brand-new cache keeps the stricter default.
+        if let Ok(existing) = fs::metadata(&cache_path) {
+            let _ = fs::set_permissions(tmp.path(), existing.permissions());
+        }
+        tmp.persist(&cache_path).map_err(|e| e.error)?;
 
         winfo!(
             "Frequency cache written: {} ({} bytes, {} columns, {} rows).",
@@ -2120,7 +2148,17 @@ impl Args {
         let jsonl_content = fs::read_to_string(&cache_path).ok()?;
         let mut lines = jsonl_content.lines();
 
-        let metadata_line = lines.next()?;
+        // A 0-byte cache produces no metadata line. Without this it returned silently, so a
+        // user left holding a truncated cache saw no diagnostic at all - just a run that was
+        // permanently, inexplicably slower. (Adjacent to, not caused by, the atomic-write fix
+        // below: that stops qsv from CREATING such a file; this makes an existing one legible.)
+        let Some(metadata_line) = lines.next() else {
+            wwarn!(
+                "Frequency cache is empty: {}. Recomputing. Use --frequency-jsonl to regenerate.",
+                cache_path.display()
+            );
+            return None;
+        };
         let metadata: FrequencyCacheMetadata = serde_json::from_str(metadata_line)
             .map_err(|e| {
                 wwarn!("Failed to deserialize frequency cache metadata: {e}");

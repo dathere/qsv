@@ -8223,9 +8223,12 @@ fn frequency_drops_group_bits_when_the_cache_group_differs() {
         "sanity: cache should hold source values"
     );
 
-    // OTHER bits are unaffected: "other" is the same set of users for both files, so a
-    // world-readable source still justifies a world-readable cache even on a foreign group.
-    // 0604 looks odd but is exactly right; pinned so nobody "tidies" it to 0600.
+    // This 0644 fixture keeps its other-read bit, but NOT because "other" means the same set
+    // of users on both files - it does not, which is exactly what the 0604 case below pins.
+    // It survives because 0644 grants read to its GROUP as well as to other: every user who
+    // could reach the cache through its other class could already read the source through one
+    // class or the other, so nothing is widened. Change this fixture to 0604 and the bit must
+    // disappear. The resulting 0604 cache looks odd but is right; pinned so nobody "tidies" it.
     let pub_csv = wrk.path("p.csv");
     std::fs::copy(&input, &pub_csv).unwrap();
     std::os::unix::fs::chown(&pub_csv, None, Some(foreign_gid)).unwrap();

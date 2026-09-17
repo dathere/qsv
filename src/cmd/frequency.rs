@@ -2194,7 +2194,7 @@ impl Args {
         // publishing a 0644 cache of a 0600 CSV because a stat failed is the outcome it exists
         // to prevent. The temp guard removes the file on the way out.
         #[cfg(unix)]
-        let (create_mode, target_mode, source_gid) = {
+        let (create_mode, target_mode, source_gid, source_group_as_other) = {
             use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
             let src = fs::metadata(path)?;
@@ -2211,10 +2211,14 @@ impl Args {
             // the temp's real gid is known - see the fchmod below. Creating at the full target
             // and narrowing afterwards would reopen roborev 4796: an fd obtained while the file
             // is briefly wide survives every later chmod.
+            // The source's GROUP bits, shifted into the OTHER position. When the gids differ,
+            // this is what caps the cache's other bits - see the fchmod below.
+            let source_group_as_other = (input_mode & 0o070) >> 3;
             (
                 (base_mode & input_mode) & 0o700,
                 base_mode & input_mode,
                 src.gid(),
+                source_group_as_other,
             )
         };
 
@@ -2283,8 +2287,19 @@ impl Args {
         // into a group it already belongs to, so that fails exactly when the source's group is
         // the restricted one that matters. Dropping the bits is both simpler and fails closed.
         //
-        // OTHER bits need no such check - "other" is the same set of users for both files, so a
-        // world-readable source genuinely does justify a world-readable cache. Hence 0o707.
+        // OTHER bits need a check of their own, and the obvious reasoning about them is WRONG.
+        // "other" is the same CLASS on both files but not the same set of users, because Unix
+        // selects exactly one class - owner, else group, else other - and never falls through.
+        // A source at 0604 DENIES its own group (group bits clear) while allowing everyone
+        // else; that is the standard "block this group" idiom. Copy that 0604 onto a cache with
+        // a different group and those same users land in the OTHER class and are allowed.
+        // Identical bits, and the very users the source excluded gain access.
+        //
+        // So on a gid mismatch an `other` bit survives only where the source grants it to its
+        // own group as well: `source_group & source_other`. Whoever reads the cache through its
+        // other class reads the source through either its group or its other class, and that
+        // intersection is within both. A world-readable 0644 source still yields 0604, so
+        // genuinely public data is unaffected.
         //
         // Known residual, deliberately not chased here: mode and gid are what std exposes.
         // ACLs, xattrs and MAC labels can all make effective access differ from what these say,
@@ -2299,7 +2314,7 @@ impl Args {
             let allowed = if created.gid() == source_gid {
                 target_mode
             } else {
-                target_mode & 0o707
+                target_mode & (0o700 | source_group_as_other)
             };
             if (created.permissions().mode() & 0o777) != allowed {
                 tmp_file.set_permissions(fs::Permissions::from_mode(allowed))?;

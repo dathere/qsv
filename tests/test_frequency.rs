@@ -8240,7 +8240,7 @@ fn frequency_drops_group_bits_when_the_cache_group_differs() {
         & 0o777;
     assert_eq!(
         p_mode,
-        (umask_default & 0o644) & 0o707,
+        (umask_default & 0o644) & 0o704,
         "a foreign-group cache keeps owner and OTHER bits and drops only the group ones (got \
          {p_mode:o}, umask default {umask_default:o})"
     );
@@ -8248,6 +8248,36 @@ fn frequency_drops_group_bits_when_the_cache_group_differs() {
         p_mode & 0o070,
         0,
         "group bits must still be dropped on a foreign group (got {p_mode:o})"
+    );
+
+    // ...but an OTHER bit only survives where the source grants it to its own group TOO.
+    // Unix picks exactly one class - owner, else group, else other - with no fallthrough, so a
+    // 0604 source DENIES its own group while allowing everyone else (the "block this group"
+    // idiom). Copying that 0604 onto a cache with a different group would put those excluded
+    // users in the OTHER class and let them in: identical bits, wider access. Umask-independent,
+    // since the expectation is "no other bits at all".
+    let denied_csv = wrk.path("d.csv");
+    std::fs::copy(&input, &denied_csv).unwrap();
+    std::os::unix::fs::chown(&denied_csv, None, Some(foreign_gid)).unwrap();
+    std::fs::set_permissions(&denied_csv, std::fs::Permissions::from_mode(0o604)).unwrap();
+    let mut denied_writer = wrk.command("frequency");
+    denied_writer.arg("--frequency-jsonl").arg("d.csv");
+    wrk.assert_success(&mut denied_writer);
+    let d_mode = std::fs::metadata(wrk.path("d.freq.csv.data.jsonl"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        d_mode & 0o007,
+        0,
+        "a 0604 source denies its own group, so the cache must not grant OTHER either (got \
+         {d_mode:o}) - on a foreign group those are the same excluded users"
+    );
+    assert_eq!(
+        d_mode & 0o070,
+        0,
+        "and its group bits stay clear too (got {d_mode:o})"
     );
 
     // no probe file from the implementation survives

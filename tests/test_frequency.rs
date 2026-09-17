@@ -7660,3 +7660,122 @@ fn frequency_option_mismatch_does_not_rewrite_the_cache() {
         "an option mismatch must leave the cache untouched"
     );
 }
+
+/// Flip a cache file's read-only bit. `fs::Permissions` rather than a unix-only `chmod` so the
+/// test runs on Windows CI too, where `fs::write` fails on a readonly file just the same.
+fn set_cache_readonly(path: &std::path::Path, readonly: bool) {
+    let mut perms = std::fs::metadata(path)
+        .expect("set_cache_readonly: failed to stat cache")
+        .permissions();
+    perms.set_readonly(readonly);
+    std::fs::set_permissions(path, perms).expect("set_cache_readonly: failed to set permissions");
+}
+
+// The self-heal is a side effect of a run the user made for its OUTPUT. A cache it cannot
+// replace - read-only file, read-only media, someone else's directory - must not turn an
+// ordinary `qsv frequency` into a failure that prints nothing at all. Explicit
+// --frequency-jsonl keeps its fatal error; only the implicit refresh is best-effort.
+#[test]
+fn frequency_self_heal_write_failure_is_not_fatal() {
+    let (wrk, cache) = version_cache_workdir("frequency_self_heal_write_failure_is_not_fatal");
+    set_cache_version(&cache, "0.0.1-ancient");
+    set_cache_readonly(&cache, true);
+
+    let mut blocked = wrk.command("frequency");
+    blocked.arg("in.csv");
+    let out = blocked.output().unwrap();
+
+    // restore BEFORE asserting, so a failure here still leaves a deletable workdir
+    set_cache_readonly(&cache, false);
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "an unwritable cache must not fail the command.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("h1"),
+        "the frequency table must still be produced, got:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("Could not refresh"),
+        "expected the best-effort warning, got:\n{stderr}"
+    );
+}
+
+// The --flexible read check is deliberately one-way (a flexible run may READ a strict cache),
+// so without an exact-equality gate on the refresh a `--flexible` run would heal a strict cache
+// by rewriting it as flexible — and strict runs would then refuse it FOREVER, the version now
+// being current so no later heal could undo it.
+#[test]
+fn frequency_flexible_run_does_not_poison_a_strict_cache() {
+    let (wrk, cache) =
+        version_cache_workdir("frequency_flexible_run_does_not_poison_a_strict_cache");
+    set_cache_version(&cache, "0.0.1-ancient");
+
+    let mut flexible = wrk.command("frequency");
+    flexible.arg("--flexible").arg("in.csv");
+    wrk.assert_success(&mut flexible);
+
+    assert_eq!(
+        cache_meta(&cache, "flag_flexible").as_bool(),
+        Some(false),
+        "a --flexible run must not rewrite a strict cache as flexible"
+    );
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        "0.0.1-ancient",
+        "it should have left the stale cache alone entirely"
+    );
+
+    // the strict owner of that cache still heals it, and to STRICT
+    let mut strict = wrk.command("frequency");
+    strict.arg("in.csv");
+    wrk.assert_success(&mut strict);
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        env!("CARGO_PKG_VERSION"),
+        "a strict run should refresh the stale strict cache"
+    );
+    assert_eq!(
+        cache_meta(&cache, "flag_flexible").as_bool(),
+        Some(false),
+        "and the refreshed cache must stay strict"
+    );
+}
+
+// Entry lines are deserialized only after the version check. Parsing them first defeated the
+// check: a cache whose ENTRY layout no longer matches `FrequencyCacheEntry` bailed on the first
+// line and never reached the version comparison — so the very case the version check exists for
+// could not self-heal.
+#[test]
+fn frequency_self_heal_recovers_an_incompatible_entry_layout() {
+    let (wrk, cache) =
+        version_cache_workdir("frequency_self_heal_recovers_an_incompatible_entry_layout");
+
+    // simulate an older release whose entry shape this build cannot parse
+    let contents = std::fs::read_to_string(&cache).unwrap();
+    let mut lines: Vec<String> = contents.lines().map(String::from).collect();
+    let mut entry: Value = serde_json::from_str(&lines[1]).unwrap();
+    entry.as_object_mut().unwrap().remove("cardinality");
+    lines[1] = serde_json::to_string(&entry).unwrap();
+    std::fs::write(&cache, lines.join("\n")).unwrap();
+    set_cache_version(&cache, "0.0.1-ancient");
+
+    let mut heal = wrk.command("frequency");
+    heal.arg("in.csv");
+    wrk.assert_success(&mut heal);
+
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        env!("CARGO_PKG_VERSION"),
+        "an unparseable-entry cache from an older version must still self-heal"
+    );
+    let healed = std::fs::read_to_string(&cache).unwrap();
+    let healed_entry: Value = serde_json::from_str(healed.lines().nth(1).unwrap()).unwrap();
+    assert!(
+        healed_entry.get("cardinality").is_some(),
+        "the refreshed cache should carry the current entry layout"
+    );
+}

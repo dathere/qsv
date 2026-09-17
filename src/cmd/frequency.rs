@@ -1345,8 +1345,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let refreshing_stale_cache = FREQ_CACHE_STALE_SIG
         .get()
         .is_some_and(|sig| !sig.is_empty() && *sig == Args::selection_signature(&headers));
-    if args.flag_frequency_jsonl || refreshing_stale_cache {
+    if args.flag_frequency_jsonl {
+        // explicitly requested: a failure to write the cache the user asked for is fatal
         args.write_frequency_jsonl(&headers, &tables, &rconfig)?;
+    } else if refreshing_stale_cache {
+        // BEST-EFFORT, unlike the branch above. This user asked for frequencies, not for a
+        // cache write, and the frequencies are already computed. A cache file we cannot
+        // replace - read-only file, read-only media, a directory owned by someone else - must
+        // not turn an ordinary `qsv frequency` into a failure that prints nothing at all.
+        // (`can_use_freq_cache` requires `!flag_frequency_jsonl`, so the two branches are
+        // mutually exclusive in practice; they are kept separate because their error policies
+        // genuinely differ.)
+        if let Err(e) = args.write_frequency_jsonl(&headers, &tables, &rconfig) {
+            wwarn!(
+                "Could not refresh the version-stale frequency cache: {e}. Continuing with the \
+                 computed frequencies."
+            );
+        }
     }
 
     if is_json {
@@ -2113,19 +2128,15 @@ impl Args {
             })
             .ok()?;
 
-        let mut entries = Vec::new();
-        for line in lines {
-            if line.is_empty() {
-                continue;
-            }
-            let entry: FrequencyCacheEntry = serde_json::from_str(line)
-                .map_err(|e| {
-                    wwarn!("Failed to deserialize frequency cache entry: {e}");
-                    e
-                })
-                .ok()?;
-            entries.push(entry);
-        }
+        // NOTE: the entry lines are deserialized only AFTER every check below passes. They used
+        // to be parsed here, which defeated the version check placed after them: a cache whose
+        // ENTRY layout no longer matches `FrequencyCacheEntry` bailed out on the first line and
+        // never reached the version comparison, so the very case the version check exists to
+        // catch could not self-heal. Deferring also means an incompatible cache is rejected
+        // without paying to deserialize entries it will not use.
+        //
+        // An unparseable METADATA line still cannot self-heal - the version is unreadable, so
+        // there is nothing to compare and no signature to refresh from.
 
         // Validate cache args compatibility
         // flag_no_nulls affects what's stored in the FTable — mismatch means
@@ -2208,15 +2219,50 @@ impl Args {
         if metadata.qsv_version != current_version {
             winfo!(
                 "Frequency cache was written by qsv {}, this is qsv {current_version}. \
-                 Recomputing.",
+                 Recomputing. Use --frequency-jsonl to regenerate.",
                 metadata.qsv_version,
             );
             // Hand `run()` the stale cache's selection signature so it can refresh the file it
             // just refused - but only if this run recomputes the SAME columns. Storing the
             // signature rather than a bare flag is what stops a `--select` run from replacing a
             // whole-file cache with a narrow one.
-            let _ = FREQ_CACHE_STALE_SIG.set(metadata.selection_signature.clone());
+            //
+            // --flexible needs EXACT equality here, unlike the read check above, which is
+            // deliberately one-way. A `--flexible` run is allowed to READ a strict cache, so
+            // without this it would heal one by rewriting it with `flag_flexible: true` - and
+            // strict runs would then refuse that cache forever, with the version now current so
+            // no future heal could undo it. In practice this only ever discriminates the
+            // strict-cache/flexible-run case: a flexible cache meeting a strict run is refused
+            // by the one-way read check above and never reaches this point.
+            //
+            // The alternative - refreshing while preserving the stale cache's `flag_flexible:
+            // false` - is NOT safe. It would rest on the cache proving the input is still
+            // well-formed, but this cache validates neither filesize nor record count (stats.rs
+            // has `filesize_bytes`; this does not), so an mtime-preserving swap (cp -p, git
+            // checkout, tar -x) of a ragged file would let a --flexible recompute record
+            // `false`, and a later strict run would serve frequencies for records it must
+            // refuse. A cache miss is a better outcome than that.
+            //
+            // The residual: a strict cache plus a flexible-only user never heals. The message
+            // above names --frequency-jsonl so that is recoverable rather than mysterious.
+            if metadata.flag_flexible == self.flag_flexible {
+                let _ = FREQ_CACHE_STALE_SIG.set(metadata.selection_signature.clone());
+            }
             return None;
+        }
+
+        let mut entries = Vec::new();
+        for line in lines {
+            if line.is_empty() {
+                continue;
+            }
+            let entry: FrequencyCacheEntry = serde_json::from_str(line)
+                .map_err(|e| {
+                    wwarn!("Failed to deserialize frequency cache entry: {e}");
+                    e
+                })
+                .ok()?;
+            entries.push(entry);
         }
 
         if entries.is_empty() {

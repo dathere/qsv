@@ -48,6 +48,27 @@ fn tamper_cache(path: &std::path::Path, old_count: u64, new_count: u64) {
     std::fs::write(path, lines.join("\n")).expect("tamper_cache: failed to write tampered cache");
 }
 
+/// Overwrite the `qsv_version` recorded in a JSONL cache's metadata line, simulating a cache
+/// left behind by a different qsv release.
+fn set_cache_version(path: &std::path::Path, version: &str) {
+    let contents = std::fs::read_to_string(path).expect("set_cache_version: failed to read cache");
+    let mut lines: Vec<String> = contents.lines().map(String::from).collect();
+    let mut meta: Value =
+        serde_json::from_str(&lines[0]).expect("set_cache_version: failed to parse metadata line");
+    meta["qsv_version"] = Value::from(version);
+    lines[0] = serde_json::to_string(&meta).expect("set_cache_version: failed to re-encode");
+    std::fs::write(path, lines.join("\n")).expect("set_cache_version: failed to write cache");
+}
+
+/// Read one field out of a JSONL cache's metadata line.
+fn cache_meta(path: &std::path::Path, key: &str) -> Value {
+    let contents = std::fs::read_to_string(path).expect("cache_meta: failed to read cache");
+    let meta: Value =
+        serde_json::from_str(contents.lines().next().expect("cache_meta: empty file"))
+            .expect("cache_meta: failed to parse metadata line");
+    meta[key].clone()
+}
+
 fn setup(name: &str) -> (Workdir, process::Command) {
     let rows = vec![
         svec!["h1", "h2"],
@@ -7492,5 +7513,150 @@ fn frequency_flexible_reuses_a_strict_cache() {
     assert!(
         stderr.contains("Frequency cache hit"),
         "--flexible must REUSE the strict cache, not regenerate it, got:\n{stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// qsv_version cache validation + self-heal (issue #4617).
+//
+// FrequencyCacheMetadata recorded qsv_version but never compared it, so a cache written by an
+// older qsv was served indefinitely. Nothing else in the validation detects a change to what
+// the cached values MEAN - the <ALL_UNIQUE>/HIGH_CARDINALITY sentinels, percentage/rank
+// computation, entry layout - so the version is the backstop for all of it, exactly as it is in
+// stats.rs.
+//
+// Unlike stats, `frequency` writes its cache only under --frequency-jsonl, so a plain run that
+// rejected a cache would have missed FOREVER. Hence the self-heal, and hence the three guards
+// each pinned below.
+// ---------------------------------------------------------------------------
+
+fn version_cache_workdir(name: &str) -> (Workdir, std::path::PathBuf) {
+    let wrk = Workdir::new(name);
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["h1", "h2"],
+            svec!["a", "z"],
+            svec!["a", "y"],
+            svec!["b", "z"],
+        ],
+    );
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    assert!(cache.exists(), "setup should have written a cache");
+    (wrk, cache)
+}
+
+// A version-stale cache must not be served. Proven by tampering a count first: if the stale
+// cache were read, the tampered value would reach stdout.
+#[test]
+fn frequency_rejects_a_version_stale_cache() {
+    let (wrk, cache) = version_cache_workdir("frequency_rejects_a_version_stale_cache");
+    tamper_cache(&cache, 2, 999);
+    set_cache_version(&cache, "0.0.1-ancient");
+
+    let mut stale = wrk.command("frequency");
+    stale.arg("in.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut stale);
+    assert!(
+        !got.iter().any(|r| r.contains(&"999".to_string())),
+        "the version-stale cache must NOT be served, got:\n{got:?}"
+    );
+}
+
+// ... and having rejected it, the run refreshes it, so the miss is one-time rather than forever.
+#[test]
+fn frequency_version_stale_cache_self_heals() {
+    let (wrk, cache) = version_cache_workdir("frequency_version_stale_cache_self_heals");
+    set_cache_version(&cache, "0.0.1-ancient");
+
+    let mut heal = wrk.command("frequency");
+    heal.arg("in.csv");
+    let stderr = wrk.output_stderr(&mut heal);
+    assert!(
+        stderr.contains("written by qsv 0.0.1-ancient"),
+        "expected the stale-version diagnostic, got:\n{stderr}"
+    );
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        env!("CARGO_PKG_VERSION"),
+        "the stale cache should have been refreshed in place"
+    );
+
+    // the refreshed cache is usable: the NEXT plain run hits it
+    let mut hit = wrk.command("frequency");
+    hit.arg("in.csv");
+    let hit_stderr = wrk.output_stderr(&mut hit);
+    assert!(
+        hit_stderr.contains("Frequency cache hit"),
+        "the refreshed cache should be served, got:\n{hit_stderr}"
+    );
+}
+
+// GUARD: the self-heal must not let a `--select` run replace a whole-file cache with a narrow
+// one. The recorded selection signature has to match this run's, or the file is left alone.
+#[test]
+fn frequency_self_heal_does_not_narrow_a_cache() {
+    let (wrk, cache) = version_cache_workdir("frequency_self_heal_does_not_narrow_a_cache");
+    set_cache_version(&cache, "0.0.1-ancient");
+
+    let mut narrow = wrk.command("frequency");
+    narrow.arg("--select").arg("h1").arg("in.csv");
+    wrk.assert_success(&mut narrow);
+
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        "0.0.1-ancient",
+        "a --select run must leave the whole-file cache untouched, not shrink it"
+    );
+    assert_eq!(
+        cache_meta(&cache, "column_count").as_u64(),
+        Some(2),
+        "the cache must still cover both columns"
+    );
+}
+
+// GUARD: the self-heal refreshes an EXISTING cache; it never creates one. A user who never
+// passed --frequency-jsonl must not start finding cache files beside their CSVs.
+#[test]
+fn frequency_self_heal_never_creates_a_cache() {
+    let wrk = Workdir::new("frequency_self_heal_never_creates_a_cache");
+    wrk.create("in.csv", vec![svec!["h1"], svec!["a"], svec!["b"]]);
+
+    let mut plain = wrk.command("frequency");
+    plain.arg("in.csv");
+    wrk.assert_success(&mut plain);
+
+    assert!(
+        !wrk.path("in.freq.csv.data.jsonl").exists(),
+        "a plain frequency run must not leave a cache behind"
+    );
+}
+
+// GUARD: the signature is set ONLY on a version mismatch, which is compared after every option
+// check agrees. An option disagreement must never trigger a rewrite, or two differently-flagged
+// runs would overwrite each other's cache forever.
+#[test]
+fn frequency_option_mismatch_does_not_rewrite_the_cache() {
+    let (wrk, cache) =
+        version_cache_workdir("frequency_option_mismatch_does_not_rewrite_the_cache");
+    // current version, so the version check passes; --no-nulls is the disagreement
+    let generated_version = cache_meta(&cache, "qsv_version");
+
+    let mut mismatched = wrk.command("frequency");
+    mismatched.arg("--no-nulls").arg("in.csv");
+    wrk.assert_success(&mut mismatched);
+
+    assert_eq!(
+        cache_meta(&cache, "flag_no_nulls").as_bool(),
+        Some(false),
+        "the --no-nulls run must NOT have rewritten the cache with its own options"
+    );
+    assert_eq!(
+        cache_meta(&cache, "qsv_version"),
+        generated_version,
+        "an option mismatch must leave the cache untouched"
     );
 }

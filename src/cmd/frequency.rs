@@ -423,6 +423,12 @@ static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
 // and FREQ_CACHE_FTABLES holds their pre-built FTables for merging after computation.
 static FREQ_CACHE_SKIP: OnceLock<Vec<bool>> = OnceLock::new();
 static FREQ_CACHE_FTABLES: OnceLock<FTables> = OnceLock::new();
+// Set by `read_frequency_cache` when it refuses a cache SOLELY because the qsv version that
+// wrote it differs from this one; holds that cache's `selection_signature`. `run()` uses it to
+// refresh the stale file after recomputing, so a version-invalidated cache self-heals instead of
+// missing forever - `frequency` only writes its cache under `--frequency-jsonl`, so unlike
+// stats.rs it has no recompute-and-rewrite path of its own.
+static FREQ_CACHE_STALE_SIG: OnceLock<String> = OnceLock::new();
 // FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-jsonl JSON cache
 #[derive(Serialize, Deserialize)]
 struct FrequencyCacheEntry {
@@ -578,10 +584,17 @@ pub(crate) fn read_frequency_cache_view(
         delimiter.map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string());
     // `metadata.flag_flexible` joins them: this reader has no flexible caller (viz parses the
     // CSV strictly), so a cache built from ragged data under --flexible must not be served here.
+    //
+    // `qsv_version` joins them too, for the same reason `read_frequency_cache` compares it: the
+    // cached sentinels and layout only mean what the writing version meant by them. This reader
+    // does NOT self-heal - it is a read-only accelerator for `viz`, which falls back to its own
+    // computation, and refreshing a cache as a side effect of drawing a chart would write a file
+    // the viz user never asked for. A later `frequency` run heals it.
     if metadata.flag_no_nulls != no_nulls
         || metadata.flag_no_headers != no_headers
         || metadata.flag_delimiter != current_delimiter
         || metadata.flag_flexible
+        || metadata.qsv_version != env!("CARGO_PKG_VERSION")
     {
         log::info!("Frequency cache incompatible with current options; recomputing.");
         return None;
@@ -1317,7 +1330,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Write frequency cache if --frequency-jsonl is set.
     // Always write when explicitly requested — the user may be regenerating
     // with different thresholds or after data changes.
-    if args.flag_frequency_jsonl {
+    //
+    // Also refresh a cache that `read_frequency_cache` just refused as version-stale, so it
+    // self-heals like the stats cache does. Three conditions make this safe, and all three are
+    // load-bearing:
+    //   - the signature is only set on a VERSION mismatch, reached after every option check agreed,
+    //     so this can never turn an option disagreement into a rewrite war;
+    //   - it is only set when a cache file was actually read, so a user who never asked for one
+    //     never gets one - this refreshes an existing file, it does not create a new one;
+    //   - the recorded signature must equal this run's, so a `--select` run recomputing a subset
+    //     cannot overwrite a whole-file cache with a narrow one.
+    // An empty recorded signature (a cache predating `selection_signature`) can prove none of
+    // this, so it is left alone rather than healed.
+    let refreshing_stale_cache = FREQ_CACHE_STALE_SIG
+        .get()
+        .is_some_and(|sig| !sig.is_empty() && *sig == Args::selection_signature(&headers));
+    if args.flag_frequency_jsonl || refreshing_stale_cache {
         args.write_frequency_jsonl(&headers, &tables, &rconfig)?;
     }
 
@@ -2166,6 +2194,29 @@ impl Args {
                 self.flag_high_card_threshold,
                 self.flag_high_card_pct,
             );
+        }
+
+        // The cache's VALUES only mean what this qsv version thinks they mean. Nothing above
+        // detects a change to the cached representation itself - the `<ALL_UNIQUE>` /
+        // HIGH_CARDINALITY sentinels, percentage/rank computation, entry layout - so, like
+        // stats.rs, the package version is the backstop for all of it. Compared LAST on
+        // purpose: reaching here means every option check already agreed, so a stale version is
+        // the ONLY reason this cache is being refused. `run()` relies on that to decide whether
+        // refreshing it is safe (an option mismatch must never trigger a rewrite, or two
+        // differently-flagged runs would overwrite each other's cache forever).
+        let current_version = env!("CARGO_PKG_VERSION");
+        if metadata.qsv_version != current_version {
+            winfo!(
+                "Frequency cache was written by qsv {}, this is qsv {current_version}. \
+                 Recomputing.",
+                metadata.qsv_version,
+            );
+            // Hand `run()` the stale cache's selection signature so it can refresh the file it
+            // just refused - but only if this run recomputes the SAME columns. Storing the
+            // signature rather than a bare flag is what stops a `--select` run from replacing a
+            // whole-file cache with a narrow one.
+            let _ = FREQ_CACHE_STALE_SIG.set(metadata.selection_signature.clone());
+            return None;
         }
 
         if entries.is_empty() {

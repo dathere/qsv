@@ -450,6 +450,20 @@ struct FrequencyCacheMetadata {
     flag_no_nulls:            bool,
     flag_no_headers:          bool,
     flag_delimiter:           String,
+    /// Was the cache built with `--flexible`? A ragged file can ONLY be tabulated under it -
+    /// a strict run errors out before it writes a cache - so serving such a cache to a strict
+    /// run reports frequencies derived from records that run is supposed to refuse.
+    ///
+    /// Validated ONE-WAY (a flexible cache is refused to a strict run, a strict cache is fine
+    /// for a flexible one): a strict cache exists only because a strict run succeeded, which
+    /// means the input had no ragged records, which means `--flexible` would have tabulated the
+    /// very same values. The symmetric check would instead make strict and flexible runs of the
+    /// same unchanged file invalidate each other's cache forever.
+    ///
+    /// `#[serde(default)]` keeps caches written before this field was added readable - without
+    /// it every pre-existing `.freq.csv.data.jsonl` becomes a hard deserialization error.
+    #[serde(default)]
+    flag_flexible:            bool,
     record_count:             u64,
     column_count:             usize,
     date_generated:           String,
@@ -562,9 +576,12 @@ pub(crate) fn read_frequency_cache_view(
     // / how values were split, so a mismatch means the cache can't be reused.
     let current_delimiter =
         delimiter.map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string());
+    // `metadata.flag_flexible` joins them: this reader has no flexible caller (viz parses the
+    // CSV strictly), so a cache built from ragged data under --flexible must not be served here.
     if metadata.flag_no_nulls != no_nulls
         || metadata.flag_no_headers != no_headers
         || metadata.flag_delimiter != current_delimiter
+        || metadata.flag_flexible
     {
         log::info!("Frequency cache incompatible with current options; recomputing.");
         return None;
@@ -1984,6 +2001,7 @@ impl Args {
                 .flag_delimiter
                 .as_ref()
                 .map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string()),
+            flag_flexible:            self.flag_flexible,
             record_count:             row_count,
             column_count:             headers.len(),
             date_generated:           chrono::Utc::now().to_rfc3339(),
@@ -2100,6 +2118,15 @@ impl Args {
                  Recomputing.",
                 metadata.flag_no_headers,
                 self.flag_no_headers
+            );
+            return None;
+        }
+        // a --flexible cache may have been built from ragged records a strict run must refuse
+        // outright, so it cannot be served to one. One-way on purpose - see the field's docs.
+        if metadata.flag_flexible && !self.flag_flexible {
+            winfo!(
+                "Frequency cache incompatible: it was built with --flexible and this run is \
+                 strict. Recomputing."
             );
             return None;
         }

@@ -7409,3 +7409,88 @@ fn frequency_ragged_flexible_succeeds() {
     let fields: Vec<String> = got.iter().skip(1).map(|r| r[0].clone()).collect();
     assert_eq!(fields, svec!["a", "b", "c"]);
 }
+
+// A `--flexible` run is the only way a frequency cache can exist for a ragged file (a strict
+// run errors out before writing one). FrequencyCacheMetadata did not record --flexible, so a
+// later strict run was served that cache and exited 0 with a complete-looking frequency table
+// for records it is supposed to refuse.
+#[test]
+fn frequency_strict_does_not_reuse_a_flexible_cache() {
+    let wrk = Workdir::new("frequency_strict_does_not_reuse_a_flexible_cache").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["a", "b", "c"], svec!["1", "2", "3", "4", "5"]],
+    );
+
+    let mut flexible = wrk.command("frequency");
+    flexible
+        .arg("--flexible")
+        .arg("--frequency-jsonl")
+        .arg("data.csv");
+    let first = flexible.output().unwrap();
+    assert!(
+        first.status.success(),
+        "--flexible run should succeed: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert!(
+        wrk.path("data.freq.csv.data.jsonl").exists(),
+        "the --flexible run should have written a cache to reuse"
+    );
+
+    let mut strict = wrk.command("frequency");
+    strict.arg("data.csv");
+    let out = strict.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !out.status.success(),
+        "the strict run must refuse the ragged file, not serve the flexible cache.\nstdout: \
+         {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("found record with 5 fields, but the previous record has 3 fields"),
+        "expected the csv error, got:\n{stderr}"
+    );
+}
+
+// The converse of the test above: the guard is deliberately ONE-WAY. A strict cache exists
+// only because a strict run succeeded, which means the input had no ragged records, so
+// --flexible would have tabulated the very same values. Refusing it symmetrically would make
+// strict and flexible runs of the same unchanged file invalidate each other's cache forever.
+#[test]
+fn frequency_flexible_reuses_a_strict_cache() {
+    let wrk = Workdir::new("frequency_flexible_reuses_a_strict_cache");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a", "b"],
+            svec!["1", "2"],
+            svec!["1", "3"],
+            svec!["4", "3"],
+        ],
+    );
+
+    let mut strict = wrk.command("frequency");
+    strict.arg("--frequency-jsonl").arg("data.csv");
+    let first = strict.output().unwrap();
+    assert!(
+        first.status.success(),
+        "strict run should succeed: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert!(wrk.path("data.freq.csv.data.jsonl").exists());
+
+    let mut flexible = wrk.command("frequency");
+    flexible.arg("--flexible").arg("data.csv");
+    let out = flexible.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "--flexible run should succeed: {stderr}"
+    );
+    assert!(
+        stderr.contains("Frequency cache hit"),
+        "--flexible must REUSE the strict cache, not regenerate it, got:\n{stderr}"
+    );
+}

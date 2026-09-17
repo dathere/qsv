@@ -2003,6 +2003,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 == current_stats_args.flag_no_headers
                             && existing_stats_args_json.flag_delimiter
                                 == current_stats_args.flag_delimiter
+                            // --flexible is a PARSING option: a ragged file can ONLY be
+                            // summarized under it (a strict run errors out before writing a
+                            // cache), so serving such a cache to a strict run reports
+                            // statistics derived from records that run is supposed to refuse.
+                            // The whole-struct equality in the first disjunct already covers
+                            // this; this branch enumerates its own flags, so it needs it
+                            // spelled out - and it is the WIDER hole, because it keys off the
+                            // CACHE's --everything, serving an --everything cache to any
+                            // narrower request, including a plain `qsv stats`.
+                            && existing_stats_args_json.flag_flexible
+                                == current_stats_args.flag_flexible
                             && existing_stats_args_json.flag_nulls == current_stats_args.flag_nulls
                             && existing_stats_args_json.flag_weight
                                 == current_stats_args.flag_weight

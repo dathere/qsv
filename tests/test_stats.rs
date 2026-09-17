@@ -9459,6 +9459,48 @@ fn stats_strict_does_not_reuse_a_flexible_cache() {
     assert_ragged_diagnostic(&wrk, &mut strict);
 }
 
+// The `--everything` cache-reuse branch enumerates its own compatibility flags instead of
+// comparing the whole StatsArgs struct, and it keys off the CACHE's --everything, not the
+// current run's - so an `--everything --flexible` cache was served to ANY narrower later
+// request, including a plain `qsv stats`, which then reported statistics for a ragged file
+// it is supposed to refuse.
+#[test]
+fn stats_strict_does_not_reuse_a_flexible_everything_cache() {
+    let wrk = ragged_workdir("stats_strict_does_not_reuse_a_flexible_everything_cache");
+
+    let mut flexible = wrk.command("stats");
+    flexible
+        .arg("--everything")
+        .arg("--flexible")
+        .arg("--cache-threshold")
+        .arg("1")
+        .arg("data.csv");
+    let first = flexible.output().unwrap();
+    assert!(
+        first.status.success(),
+        "--everything --flexible run should succeed: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert!(
+        wrk.path("data.stats.csv").exists(),
+        "the --flexible run should have written a cache to reuse"
+    );
+
+    // a plain strict run is the WIDEST consumer of that cache - it must refuse it
+    let mut strict = wrk.command("stats");
+    strict.arg("--cache-threshold").arg("1").arg("data.csv");
+    assert_ragged_diagnostic(&wrk, &mut strict);
+
+    // ... and so must a strict --everything run
+    let mut strict_everything = wrk.command("stats");
+    strict_everything
+        .arg("--everything")
+        .arg("--cache-threshold")
+        .arg("1")
+        .arg("data.csv");
+    assert_ragged_diagnostic(&wrk, &mut strict_everything);
+}
+
 // --flexible semantics for SHORT records, pinning what the USAGE text promises.
 #[test]
 fn stats_flexible_short_record_contributes_nothing() {

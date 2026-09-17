@@ -2369,8 +2369,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         //
         // safety: we know the path is a valid PathBuf, so we can use unwrap
         if currstats_filename != stats_pathbuf.to_str().unwrap() {
-            // if the stats file is not the same as the input file, copy it
-            fs::copy(currstats_filename.clone(), stats_pathbuf.clone())?;
+            // Installed as a derived artifact, not `fs::copy`: the stats CSV holds data values
+            // (a string column's min/max, its mode/antimode), so it must never be readable by
+            // anyone the input is not readable by. `fs::copy` also stamps the SOURCE's mode
+            // onto the destination, and the source here is a 0600 tempfile - which is why
+            // this file used to be owner-only always, by accident rather than design (#4619).
+            // The rules are on `util::DerivedFile`. Its "keep the replaced file's mode" rule
+            // never applies here: every recompute path removes the old pair first (see
+            // remove_stats_cache_pair above), so the result is always `umask default & input`.
+            let mut installed = util::DerivedFile::create(&path, &stats_pathbuf, "statscache")?;
+            io::copy(&mut fs::File::open(&currstats_filename)?, &mut installed)?;
+            installed.install()?;
         }
 
         if args.flag_cache_threshold == 0
@@ -2461,6 +2470,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     &STATSDATA_TYPES_MAP,
                     &stats_jsonl_pathbuf,
                     b',', // cache is always CSV (comma-delimited)
+                    &path,
                 )?;
             }
         } else if compute_stats {
@@ -2533,6 +2543,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     &STATSDATA_TYPES_MAP,
                     &stats_jsonl_pathbuf,
                     b',', // cache is always CSV (comma-delimited)
+                    &path,
                 )?;
             }
         }

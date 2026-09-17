@@ -7200,3 +7200,73 @@ fn moarstats_stats_jsonl_never_out_permissions_its_source_csv() {
         );
     }
 }
+
+// Under --join-inputs the regenerated JSONL describes EVERY joined dataset, so its permission
+// source must be the joined temp (a 0600 NamedTempFile), not the primary input: a public
+// primary joined with a private secondary must not yield a cache at the primary's mode
+// (roborev 4802). Observable only with --output - without it both files live in the temp dir,
+// which is removed before the process exits - so that is how this pins it (roborev 4803).
+#[cfg(unix)]
+#[test]
+fn moarstats_join_inputs_jsonl_never_out_permissions_the_private_secondary() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk =
+        Workdir::new("moarstats_join_inputs_jsonl_never_out_permissions_the_private_secondary");
+    wrk.create(
+        "primary.csv",
+        vec![
+            svec!["id", "n"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+        ],
+    );
+    wrk.create(
+        "private.csv",
+        vec![
+            svec!["id", "secret"],
+            svec!["1", "SECRETALPHA"],
+            svec!["2", "SECRETBETA"],
+            svec!["3", "SECRETGAMMA"],
+        ],
+    );
+    std::fs::set_permissions(
+        wrk.path("primary.csv"),
+        std::fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        wrk.path("private.csv"),
+        std::fs::Permissions::from_mode(0o600),
+    )
+    .unwrap();
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.args([
+        "primary.csv",
+        "--join-inputs",
+        "private.csv",
+        "--join-keys",
+        "id,id",
+        "--output",
+        "out.stats.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let jsonl = wrk.path("out.stats.csv.data.jsonl");
+    let mode = std::fs::metadata(&jsonl).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode & 0o077,
+        0,
+        "a JSONL describing a 0600 secondary must not be group- or world-readable, whatever the \
+         primary's mode (got {mode:o})"
+    );
+
+    // ...and it really does carry the secondary's values, which is why the mode matters
+    let body = std::fs::read_to_string(&jsonl).unwrap();
+    assert!(
+        body.contains("SECRETALPHA"),
+        "sanity: the JSONL should hold the joined secondary's values, else this proves nothing"
+    );
+}

@@ -8143,3 +8143,122 @@ fn frequency_refresh_restores_a_mode_the_umask_narrowed() {
          request below it (got {after:o})"
     );
 }
+
+/// A gid this process belongs to that differs from `other`, or `None` if it has only one.
+///
+/// A minimal CI container often puts the test user in exactly ONE group, in which case the
+/// mismatch this test needs cannot be constructed at all - so it skips rather than failing for
+/// an unrelated reason.
+#[cfg(unix)]
+fn other_group_than(other: u32) -> Option<u32> {
+    let out = process::Command::new("id").arg("-G").output().ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .filter_map(|g| g.parse::<u32>().ok())
+        .find(|g| *g != other)
+}
+
+// Mode bits are not portable between inodes. The cache is a NEW file, and a new file's group is
+// the directory's on macOS/BSD and the process's egid on Linux - never, in general, the source
+// CSV's. So an identical 0640 on both can still mean strictly wider access: a CSV readable only
+// by group `admin` yielding a cache readable by all of group `staff`. Group bits are granted
+// only when the gids match.
+//
+// This is the case every earlier permissions test missed, because in all of their fixtures the
+// source and the temp happened to share a group.
+#[cfg(unix)]
+#[test]
+fn frequency_drops_group_bits_when_the_cache_group_differs() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let wrk = Workdir::new("frequency_drops_group_bits_when_the_cache_group_differs");
+    wrk.create(
+        "in.csv",
+        vec![svec!["dx"], svec!["flu"], svec!["flu"], svec!["measles"]],
+    );
+
+    // the gid a NEW file in this directory actually gets - what the cache will be born with
+    let probe = wrk.path("probe");
+    std::fs::File::create(&probe).unwrap();
+    let probe_meta = std::fs::metadata(&probe).unwrap();
+    let new_file_gid = probe_meta.gid();
+    // the umask default too - the "other" expectation below is umask-dependent and must be
+    // derived, not hardcoded (this assertion failed under umask 077 when it was not)
+    let umask_default = probe_meta.permissions().mode() & 0o777;
+
+    let Some(foreign_gid) = other_group_than(new_file_gid) else {
+        // single-group environment: the mismatch is not constructible here
+        return;
+    };
+
+    let input = wrk.path("in.csv");
+    if std::os::unix::fs::chown(&input, None, Some(foreign_gid)).is_err() {
+        return; // not permitted here; nothing to assert
+    }
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o640)).unwrap();
+
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    let meta = std::fs::metadata(&cache).unwrap();
+    let mode = meta.permissions().mode() & 0o777;
+    assert_ne!(
+        meta.gid(),
+        std::fs::metadata(&input).unwrap().gid(),
+        "sanity: the cache and source must actually differ in group, else this proves nothing"
+    );
+    assert_eq!(
+        mode & 0o070,
+        0,
+        "a cache whose group differs from the source's must not be group-readable (got {mode:o}) \
+         - identical mode bits on a different group are WIDER access"
+    );
+
+    // ...and the cache really does hold the source values, which is why it matters
+    let body = std::fs::read_to_string(&cache).unwrap();
+    assert!(
+        body.contains("measles"),
+        "sanity: cache should hold source values"
+    );
+
+    // OTHER bits are unaffected: "other" is the same set of users for both files, so a
+    // world-readable source still justifies a world-readable cache even on a foreign group.
+    // 0604 looks odd but is exactly right; pinned so nobody "tidies" it to 0600.
+    let pub_csv = wrk.path("p.csv");
+    std::fs::copy(&input, &pub_csv).unwrap();
+    std::os::unix::fs::chown(&pub_csv, None, Some(foreign_gid)).unwrap();
+    std::fs::set_permissions(&pub_csv, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let mut pub_writer = wrk.command("frequency");
+    pub_writer.arg("--frequency-jsonl").arg("p.csv");
+    wrk.assert_success(&mut pub_writer);
+    let p_mode = std::fs::metadata(wrk.path("p.freq.csv.data.jsonl"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        p_mode,
+        (umask_default & 0o644) & 0o707,
+        "a foreign-group cache keeps owner and OTHER bits and drops only the group ones (got \
+         {p_mode:o}, umask default {umask_default:o})"
+    );
+    assert_eq!(
+        p_mode & 0o070,
+        0,
+        "group bits must still be dropped on a foreign group (got {p_mode:o})"
+    );
+
+    // no probe file from the implementation survives
+    let strays: Vec<String> = std::fs::read_dir(wrk.path("."))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".qsv-freqprobe-") || n.starts_with(".qsv-freqcache-"))
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "left temp/probe files behind: {strays:?}"
+    );
+}

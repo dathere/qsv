@@ -444,6 +444,51 @@ struct FrequencyCacheValue {
     percentage: f64,
 }
 
+/// What mode does a newly created file ACTUALLY get in `dir`?
+///
+/// Creates an empty probe at 0666, reads back the mode the kernel gave it, and removes it. This
+/// is an oracle rather than a calculation: it captures the process umask and anything else the
+/// filesystem applies to new files here (on Linux a directory default ACL constrains the mode the
+/// same way), none of which std exposes directly.
+///
+/// The real cache temp must NOT be created this way - an fd obtained while it is briefly wide
+/// survives every later chmod, which is the hole roborev 4796 closed. The probe is safe precisely
+/// because it never receives a single byte, so an fd on it reveals nothing.
+///
+/// Returns `None` if no probe could be created; the caller then assumes owner-only, and the real
+/// temp's own creation produces the actionable error.
+#[cfg(unix)]
+fn new_file_mode_in(dir: &std::path::Path) -> Option<u32> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    static PROBE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let pid = std::process::id();
+    for _ in 0..16 {
+        let seq = PROBE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let probe_path = dir.join(format!(".qsv-freqprobe-{pid}-{seq}.tmp"));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o666)
+            .open(&probe_path)
+        {
+            Ok(probe) => {
+                // no `?` between create and remove, so the probe cannot be leaked
+                let mode = probe
+                    .metadata()
+                    .ok()
+                    .map(|m| m.permissions().mode() & 0o777);
+                drop(probe);
+                let _ = fs::remove_file(&probe_path);
+                return mode;
+            },
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
 /// Deletes a temp file on drop unless disarmed.
 ///
 /// `write_frequency_jsonl` builds the cache in a sibling temp and renames it into place. It uses
@@ -2149,18 +2194,28 @@ impl Args {
         // publishing a 0644 cache of a 0600 CSV because a stat failed is the outcome it exists
         // to prevent. The temp guard removes the file on the way out.
         #[cfg(unix)]
-        let (create_mode, widen_to) = {
-            use std::os::unix::fs::PermissionsExt;
+        let (create_mode, target_mode, source_gid) = {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-            let input_mode = fs::metadata(path)?.permissions().mode() & 0o777;
-            match fs::metadata(&cache_path) {
-                Ok(existing) => {
-                    let target = existing.permissions().mode() & 0o777 & input_mode;
-                    (target, Some(target))
-                },
-                // an absent or unreadable cache path just means "nothing to inherit"
-                Err(_) => (0o666 & input_mode, None),
-            }
+            let src = fs::metadata(path)?;
+            let input_mode = src.permissions().mode() & 0o777;
+
+            let base_mode = match fs::metadata(&cache_path) {
+                // refreshing: start from the mode the user left on the cache. No probe needed.
+                Ok(existing) => existing.permissions().mode() & 0o777,
+                // new cache: ask an empty probe what a new file in this directory actually gets
+                Err(_) => new_file_mode_in(cache_dir).unwrap_or(0o600),
+            };
+
+            // Create OWNER-ONLY. The group and other bits are added back after creation, once
+            // the temp's real gid is known - see the fchmod below. Creating at the full target
+            // and narrowing afterwards would reopen roborev 4796: an fd obtained while the file
+            // is briefly wide survives every later chmod.
+            (
+                (base_mode & input_mode) & 0o700,
+                base_mode & input_mode,
+                src.gid(),
+            )
         };
 
         // Uniqueness needs no randomness: `create_new` fails with `AlreadyExists`, so the loop
@@ -2212,20 +2267,42 @@ impl Args {
         // guard restores it: every `?` below must leave nothing beside the user's CSV.
         let mut tmp_guard = TempFileGuard(Some(tmp_path.clone()));
 
-        // The file was CREATED at its target mode above, so nothing here can widen it past
-        // that. The one remaining step is restoring a deliberately-chmod'd cache's mode when
-        // the umask narrowed our creation request below it - and it goes through the fd, not
-        // the pathname. A path-based chmod can be redirected: in a shared directory the entry
-        // can be swapped between create and chmod, and we would be changing someone else's
-        // file. fchmod on the descriptor we already hold cannot be.
+        // Now that the file exists, widen it from owner-only to the access it should actually
+        // grant - never past it, so no wider-than-intended window is ever opened.
+        //
+        // The GROUP bits are the subtle part, and mode-bit intersection alone got this wrong.
+        // A mode bit is not portable between inodes: the cache is a new file, and a new file's
+        // group is the DIRECTORY's on macOS/BSD and the process's egid on Linux (unless the
+        // directory is setgid) - never, in general, the source CSV's. So a 0640 CSV owned by
+        // group `admin` could yield a 0640 cache owned by group `staff`, handing the cached
+        // values to every member of a group that cannot read the CSV at all. Identical mode
+        // bits, strictly wider effective access.
+        //
+        // Group bits are therefore granted only when the two gids match, and dropped otherwise.
+        // We do NOT fchown the cache to the source's group: a non-root process can only chgrp
+        // into a group it already belongs to, so that fails exactly when the source's group is
+        // the restricted one that matters. Dropping the bits is both simpler and fails closed.
+        //
+        // OTHER bits need no such check - "other" is the same set of users for both files, so a
+        // world-readable source genuinely does justify a world-readable cache. Hence 0o707.
+        //
+        // Known residual, deliberately not chased here: mode and gid are what std exposes.
+        // ACLs, xattrs and MAC labels can all make effective access differ from what these say,
+        // and every one of them needs a platform-specific dependency this PR is not taking. The
+        // probe above does capture a Linux directory default ACL's effect on the mode, which is
+        // partial mitigation, not a solution.
         #[cfg(unix)]
-        if let Some(target) = widen_to {
-            use std::os::unix::fs::PermissionsExt;
+        {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-            let created = tmp_file.metadata()?.permissions().mode() & 0o777;
-            // `created` is `target & ~umask`, so this only ever adds bits back
-            if created != target {
-                tmp_file.set_permissions(fs::Permissions::from_mode(target))?;
+            let created = tmp_file.metadata()?;
+            let allowed = if created.gid() == source_gid {
+                target_mode
+            } else {
+                target_mode & 0o707
+            };
+            if (created.permissions().mode() & 0o777) != allowed {
+                tmp_file.set_permissions(fs::Permissions::from_mode(allowed))?;
             }
         }
 

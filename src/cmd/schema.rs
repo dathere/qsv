@@ -707,6 +707,7 @@ fn get_unique_values(
         flag_output: None,
         flag_no_headers: args.flag_no_headers,
         flag_delimiter: args.flag_delimiter,
+        flag_flexible: false,
         flag_memcheck: args.flag_memcheck,
         flag_vis_whitespace: false,
         flag_frequency_jsonl: false,

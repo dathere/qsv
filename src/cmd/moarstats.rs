@@ -7039,7 +7039,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     winfo!("Elapsed: {:.2}s", start_time.elapsed().as_secs_f64());
 
     // Regenerate the .stats.csv.data.jsonl so downstream "smart" commands
-    // (pivotp, schema, etc.) can see moarstats columns
+    // (pivotp, schema, etc.) can see moarstats columns.
+    //
+    // The permission source is `actual_input_path`, NOT `input_path`: under --join-inputs the
+    // stats describe every joined dataset, and a public primary joined with a private
+    // secondary must not yield a cache at the primary's mode (roborev 4802). The joined temp
+    // is a 0600 `NamedTempFile`, like the `.stats.csv` beside it, so the JSONL lands at 0600
+    // too. Without --join-inputs the two paths are the same file.
     if let Some(output_path_str) = output_path.to_str() {
         let jsonl_path = PathBuf::from(format!("{output_path_str}.data.jsonl"));
         if let Err(e) = util::csv_to_jsonl(
@@ -7047,7 +7053,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             &crate::cmd::stats::STATSDATA_TYPES_MAP,
             &jsonl_path,
             b',',
-            input_path,
+            actual_input_path,
         ) {
             wwarn!("Failed to regenerate stats JSONL cache: {e}");
         }

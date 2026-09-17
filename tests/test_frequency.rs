@@ -7890,10 +7890,16 @@ fn frequency_new_cache_has_umask_default_permissions() {
     let wrk = Workdir::new("frequency_new_cache_has_umask_default_permissions");
     wrk.create("in.csv", vec![svec!["h1"], svec!["a"], svec!["b"]]);
 
-    // what a plainly-created file gets under this process's umask
+    // Pin the INPUT's mode. The cache mode is `umask_default & input`, so leaving the input at
+    // whatever the runner's umask produced would make every expectation below umask-dependent -
+    // which is exactly how an earlier version of this test passed at umask 022 and failed at 077.
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    // what a plainly-created file gets under THIS process's umask
     let probe = wrk.path("probe");
     std::fs::File::create(&probe).unwrap();
-    let expected = std::fs::metadata(&probe).unwrap().permissions().mode() & 0o777;
+    let umask_default = std::fs::metadata(&probe).unwrap().permissions().mode() & 0o777;
 
     let mut writer = wrk.command("frequency");
     writer.arg("--frequency-jsonl").arg("in.csv");
@@ -7902,12 +7908,14 @@ fn frequency_new_cache_has_umask_default_permissions() {
     let cache = wrk.path("in.freq.csv.data.jsonl");
     let actual = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
     assert_eq!(
-        actual, expected,
-        "a new frequency cache must have the same permissions as a normally created file (got \
-         {actual:o}, expected {expected:o}) - a 0600 temp must not leak through the rename"
+        actual,
+        umask_default & 0o644,
+        "a new cache must be the umask default narrowed by the input (got {actual:o}, umask \
+         default {umask_default:o}) - a 0600 temp must not leak through the rename"
     );
 
-    // a REFRESH must not revert a deliberately-set mode
+    // a REFRESH must not revert a deliberately-set mode. 0640 is within the input's 0644, so
+    // rule 2 does not narrow it and this holds under any umask.
     let restrictive = 0o640;
     std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(restrictive)).unwrap();
     set_cache_version(&cache, "0.0.1-ancient");
@@ -7991,6 +7999,11 @@ fn frequency_cache_never_out_permissions_its_source_csv() {
             svec!["measles", "a"],
         ],
     );
+
+    let probe = wrk.path("probe");
+    std::fs::File::create(&probe).unwrap();
+    let umask_default = std::fs::metadata(&probe).unwrap().permissions().mode() & 0o777;
+
     let input = wrk.path("in.csv");
     std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o600)).unwrap();
 
@@ -8000,6 +8013,7 @@ fn frequency_cache_never_out_permissions_its_source_csv() {
 
     let cache = wrk.path("in.freq.csv.data.jsonl");
     let mode = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    // the security property, and it holds under ANY umask: 0600 & anything is within 0600
     assert_eq!(
         mode & 0o077,
         0,
@@ -8013,7 +8027,9 @@ fn frequency_cache_never_out_permissions_its_source_csv() {
         "sanity: the cache should contain source values, else this test proves nothing"
     );
 
-    // an intermediate mode is intersected, not clamped to 0600
+    // An intermediate mode is INTERSECTED, not clamped to 0600. Stated as the rule rather than
+    // as fixed bits: under a restrictive umask the group bit is absent from the umask default
+    // too, so asserting it unconditionally would fail there (and did, at umask 077).
     let group_csv = wrk.path("g.csv");
     std::fs::copy(&input, &group_csv).unwrap();
     std::fs::set_permissions(&group_csv, std::fs::Permissions::from_mode(0o640)).unwrap();
@@ -8026,13 +8042,60 @@ fn frequency_cache_never_out_permissions_its_source_csv() {
         .mode()
         & 0o777;
     assert_eq!(
+        g_mode,
+        umask_default & 0o640,
+        "a 0640 CSV must yield the umask default narrowed to 0640 (got {g_mode:o}, umask default \
+         {umask_default:o})"
+    );
+    assert_eq!(
         g_mode & 0o007,
         0,
-        "a 0640 CSV must not yield a world-readable cache (got {g_mode:o})"
+        "a 0640 CSV must never yield a world-readable cache (got {g_mode:o})"
     );
-    assert_ne!(
-        g_mode & 0o040,
-        0,
-        "...but the group bit the CSV grants must survive (got {g_mode:o})"
+}
+
+// The cache's mode is now applied to the temp while it is still EMPTY, which is the whole point
+// (tightening afterwards leaves the data readable in a shared directory for a window, and an fd
+// opened in that window survives the chmod). Moving it earlier introduces its own risk: if the
+// resolved mode drops the owner-write bit, an implementation that reopened the temp by path
+// would fail. It writes through the fd it already holds, so it does not - this pins that, and
+// that a read-only source still yields a complete, readable cache.
+#[cfg(unix)]
+#[test]
+fn frequency_readonly_source_still_yields_a_complete_cache() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("frequency_readonly_source_still_yields_a_complete_cache");
+    wrk.create(
+        "in.csv",
+        vec![svec!["dx"], svec!["flu"], svec!["flu"], svec!["measles"]],
     );
+    let input = wrk.path("in.csv");
+    std::fs::set_permissions(&input, std::fs::Permissions::from_mode(0o400)).unwrap();
+
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    let mode = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode, 0o400,
+        "a 0400 source must yield a 0400 cache (got {mode:o})"
+    );
+
+    // complete, not truncated by the missing write bit
+    let body = std::fs::read_to_string(&cache).unwrap();
+    let lines: Vec<&str> = body.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        2,
+        "expected a metadata line + one entry, got:\n{body}"
+    );
+    assert!(
+        body.contains("measles"),
+        "the cache must hold the computed values, got:\n{body}"
+    );
+    let meta: Value = serde_json::from_str(lines[0]).expect("metadata line must parse");
+    assert_eq!(meta["column_count"].as_u64(), Some(1));
 }

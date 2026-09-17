@@ -2166,42 +2166,61 @@ impl Args {
         // guard restores it: every `?` below must leave nothing beside the user's CSV.
         let mut tmp_guard = TempFileGuard(Some(tmp_path.clone()));
 
-        io::Write::write_all(&mut tmp_file, jsonl.as_bytes())?;
-
-        // When REPLACING a cache, carry its mode over, so a refresh cannot silently make an
-        // existing cache less readable than the user left it. A brand-new cache keeps the
-        // umask default from `create_new` above. This mirrors what `Config::autoindex` does for
-        // the `.idx`: umask default when creating, preserve the mode when rebuilding.
-        if let Ok(existing) = fs::metadata(&cache_path) {
-            let _ = fs::set_permissions(&tmp_path, existing.permissions());
-        }
-
-        // ... but never grant access the SOURCE CSV does not. Unlike an `.idx`, which holds
-        // byte offsets, this cache holds the data itself - every non-high-cardinality value and
-        // its count - so a 0600 CSV whose cache lands at the 0644 umask default hands its
-        // contents to every local user. That was true of the `fs::write` this replaced too, so
-        // it is a long-standing hole rather than a new one, but it is this function's to close.
+        // Settle the cache's permissions BEFORE a single byte of data goes into the file, and
+        // apply them while it is still empty. Tightening afterwards leaves a window in which
+        // the full contents sit in a shared directory at the umask default, and an fd opened
+        // during that window stays readable after the chmod - so the restriction below has to
+        // come first to mean anything.
         //
-        // Intersecting is what makes this safe to combine with the umask default the previous
-        // commit deliberately restored: a world-readable CSV still gets a world-readable cache,
-        // so shared-machine cache reuse is untouched, while a private CSV gets a private cache.
-        // Nothing is lost by tightening - anyone refused by the cache could not read the CSV it
-        // was derived from either.
+        // Two rules, in order:
         //
-        // Applied AFTER the carry-over above, so it also tightens a cache that a previous qsv
-        // left too open rather than faithfully preserving a leak.
+        // 1. Start from the mode of the cache being REPLACED, so a deliberate chmod survives a
+        //    refresh. A brand-new cache starts from the umask default `create_new` just gave us.
+        //    This mirrors `Config::autoindex` for the `.idx`: umask default when creating, preserve
+        //    the mode when rebuilding.
+        //
+        // 2. Then grant nothing the SOURCE CSV does not. Unlike an `.idx`, which holds byte
+        //    offsets, this cache holds the data itself - every non-high-cardinality value and its
+        //    count - so a 0600 CSV whose cache lands at the 0644 umask default hands its contents
+        //    to every local user. (True of the `fs::write` this replaced too, so a long-standing
+        //    hole rather than a new one.) Intersecting is what lets this coexist with the umask
+        //    default: a world-readable CSV still gets a world-readable cache, so shared-machine
+        //    reuse is untouched, while a private CSV gets a private cache. Nothing is lost by
+        //    tightening - anyone the cache refuses could not read the CSV it came from either.
+        //
+        // Rule 2 deliberately overrides rule 1, so a cache an earlier qsv left too open is
+        // tightened rather than faithfully preserved. That does weaken "a deliberate chmod
+        // survives" to "survives, but never beyond what the source grants" - the security
+        // reading wins, because widening is what would be unsafe.
+        //
+        // Failures here are FATAL, not `let _ =`. This is a confidentiality control: silently
+        // publishing a 0644 cache of a 0600 CSV because a stat failed is the exact outcome it
+        // exists to prevent, so it fails closed. The temp guard removes the file on the way out.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
 
-            if let (Ok(input_meta), Ok(tmp_meta)) = (fs::metadata(path), fs::metadata(&tmp_path)) {
-                let input_mode = input_meta.permissions().mode() & 0o777;
-                let tmp_mode = tmp_meta.permissions().mode() & 0o777;
-                let restricted = tmp_mode & input_mode;
-                if restricted != tmp_mode {
-                    let _ = fs::set_permissions(&tmp_path, fs::Permissions::from_mode(restricted));
-                }
-            }
+            // an unreadable/absent cache path just means "no cache to inherit from" - not a
+            // security-relevant failure, since the intersection below still applies
+            let base_mode = match fs::metadata(&cache_path) {
+                Ok(existing) => existing.permissions().mode() & 0o777,
+                Err(_) => fs::metadata(&tmp_path)?.permissions().mode() & 0o777,
+            };
+            let input_mode = fs::metadata(path)?.permissions().mode() & 0o777;
+            fs::set_permissions(
+                &tmp_path,
+                fs::Permissions::from_mode(base_mode & input_mode),
+            )?;
+        }
+
+        io::Write::write_all(&mut tmp_file, jsonl.as_bytes())?;
+
+        // Windows has no group/world bits to leak, so the only thing to carry over is the
+        // read-only flag - and that is applied AFTER the write rather than before, because
+        // marking the temp read-only up front would make our own `write_all` fail.
+        #[cfg(not(unix))]
+        if let Ok(existing) = fs::metadata(&cache_path) {
+            fs::set_permissions(&tmp_path, existing.permissions())?;
         }
 
         // fsync before the rename. `rename` is atomic for the name -> inode mapping, but that
@@ -2209,8 +2228,8 @@ impl Args {
         // persist the rename while the blocks behind it are still in writeback, leaving exactly
         // the truncated, unhealable cache this whole dance exists to prevent. There is no
         // buffer to flush - `io::Write::flush` on a `File` delegates to a no-op - so fsync is
-        // the only thing that helps. Placed AFTER `set_permissions` so the mode change is
-        // synced too; it is the same inode, nothing has been renamed yet.
+        // the only thing that helps. It is the same inode the mode was set on above, so this
+        // syncs that metadata too; nothing has been renamed yet.
         //
         // The parent directory is deliberately NOT synced. Without that, a crash can lose the
         // rename itself and leave the OLD cache in place - stale, but intact and still

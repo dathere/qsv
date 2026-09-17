@@ -444,6 +444,30 @@ struct FrequencyCacheValue {
     percentage: f64,
 }
 
+/// Deletes a temp file on drop unless disarmed.
+///
+/// `write_frequency_jsonl` builds the cache in a sibling temp and renames it into place. It uses
+/// `OpenOptions::create_new` rather than `tempfile` so the new file picks up the process umask
+/// (see the comment there), which costs the delete-on-drop `NamedTempFile` provided. This gives
+/// it back, so a `?` on the write, the fsync or the rename cannot leave a stray
+/// `.qsv-freqcache-*.tmp` beside the user's CSV.
+struct TempFileGuard(Option<std::path::PathBuf>);
+
+impl TempFileGuard {
+    /// The temp file is now the cache; stop tracking it.
+    fn disarm(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take() {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
 // FrequencyCacheMetadata stores how the cache was generated.
 // Written as the first line of a JSONL cache file (.freq.csv.data.jsonl),
 // followed by one FrequencyCacheEntry per subsequent line.
@@ -2087,39 +2111,70 @@ impl Args {
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or_else(|| std::path::Path::new("."));
-        let mut tmp = tempfile::Builder::new()
-            .prefix(".qsv-freqcache-")
-            .tempfile_in(cache_dir)?;
-        io::Write::write_all(&mut tmp, jsonl.as_bytes())?;
-        // `NamedTempFile` creates with 0600. Carry over the mode of the cache we are replacing
-        // so a refresh cannot silently make an existing cache less readable than the user left
-        // it.
+
+        // `create_new` (O_CREAT|O_EXCL) rather than `tempfile`, for exactly the reason
+        // `Config::autoindex`'s own temp-and-rename gives (roborev 4371): the kernel applies the
+        // process umask to the requested 0666, so a NEW cache lands at the same mode
+        // `fs::write` used to give it, whereas `tempfile` creates 0600 and would carry
+        // owner-only onto the cache through the rename. O_EXCL also means two concurrent
+        // writers cannot collide on one temp, and a pre-existing file or symlink at a guessable
+        // name cannot be written through.
         //
-        // A brand-new cache keeps the stricter 0600 rather than the `0644 & ~umask` that
-        // `fs::write` used to produce. That is DELIBERATE and settled - do not "restore" it.
-        // The trade was weighed: on a shared machine a teammate silently loses cache reuse,
-        // against which matching the old mode would need the umask, which Rust std does not
-        // expose (only a racy `libc::umask` set-and-restore). A derived cache beside the user's
-        // own CSV is not worth that, and a reader who cannot open it falls back to computing.
-        // Replacement preserves the existing mode, so no cache already in the wild changes.
-        if let Ok(existing) = fs::metadata(&cache_path) {
-            let _ = fs::set_permissions(tmp.path(), existing.permissions());
+        // Uniqueness needs no randomness: `create_new` fails with `AlreadyExists`, so the loop
+        // advances the counter until it wins. The pid separates processes, the counter
+        // separates threads and repeat calls within one.
+        static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let pid = std::process::id();
+        let mut tmp_path = None;
+        let mut tmp_file = None;
+        for _ in 0..16 {
+            let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let candidate = cache_dir.join(format!(".qsv-freqcache-{pid}-{seq}.tmp"));
+            if let Ok(f) = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&candidate)
+            {
+                tmp_path = Some(candidate);
+                tmp_file = Some(f);
+                break;
+            }
         }
+        let (Some(tmp_path), Some(mut tmp_file)) = (tmp_path, tmp_file) else {
+            return fail_clierror!(
+                "Could not create a temp file for the frequency cache in {}",
+                cache_dir.display()
+            );
+        };
+        // `create_new` gives no delete-on-drop, unlike the `NamedTempFile` this replaced, so a
+        // guard restores it: every `?` below must leave nothing beside the user's CSV.
+        let mut tmp_guard = TempFileGuard(Some(tmp_path.clone()));
+
+        io::Write::write_all(&mut tmp_file, jsonl.as_bytes())?;
+
+        // When REPLACING a cache, carry its mode over, so a refresh cannot silently make an
+        // existing cache less readable than the user left it. A brand-new cache keeps the
+        // umask default from `create_new` above. This mirrors what `Config::autoindex` does for
+        // the `.idx`: umask default when creating, preserve the mode when rebuilding.
+        if let Ok(existing) = fs::metadata(&cache_path) {
+            let _ = fs::set_permissions(&tmp_path, existing.permissions());
+        }
+
         // fsync before the rename. `rename` is atomic for the name -> inode mapping, but that
         // says nothing about the new file's DATA being on storage: a crash or power loss can
         // persist the rename while the blocks behind it are still in writeback, leaving exactly
-        // the truncated, unhealable cache the temp-file dance exists to prevent. There is no
-        // buffer to flush here - `io::Write::flush` on a `File` delegates to a no-op, so it was
-        // doing nothing for durability and has been dropped rather than left beside this call
-        // looking meaningful. Placed AFTER `set_permissions` so the mode change is synced too;
-        // it is the same inode, nothing has been renamed yet.
+        // the truncated, unhealable cache this whole dance exists to prevent. There is no
+        // buffer to flush - `io::Write::flush` on a `File` delegates to a no-op - so fsync is
+        // the only thing that helps. Placed AFTER `set_permissions` so the mode change is
+        // synced too; it is the same inode, nothing has been renamed yet.
         //
         // The parent directory is deliberately NOT synced. Without that, a crash can lose the
         // rename itself and leave the OLD cache in place - stale, but intact and still
         // healable. That is a perfectly safe outcome, so a second fsync would buy nothing here.
         // Cost is one fsync per command invocation, not per row.
-        tmp.as_file().sync_all()?;
-        tmp.persist(&cache_path).map_err(|e| e.error)?;
+        tmp_file.sync_all()?;
+        fs::rename(&tmp_path, &cache_path)?;
+        tmp_guard.disarm();
 
         winfo!(
             "Frequency cache written: {} ({} bytes, {} columns, {} rows).",

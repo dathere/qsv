@@ -7867,3 +7867,101 @@ fn frequency_empty_cache_is_diagnosed() {
         "expected the empty-cache diagnostic, got:\n{stderr}"
     );
 }
+
+// The cache is built in a sibling temp and renamed into place. `tempfile` would create that
+// temp 0600 and carry owner-only onto the cache through the rename, so `create_new` is used
+// instead - the kernel applies the process umask to the requested 0666, exactly as the
+// `fs::write` this replaced did. Same reasoning, and the same fix, as `Config::autoindex` for
+// the `.idx` (roborev 4371); this pins it for the frequency cache too.
+//
+// Derives the expectation from a probe file rather than hardcoding 0644, so the test holds
+// under any umask the CI runner happens to have.
+#[cfg(unix)]
+#[test]
+fn frequency_new_cache_has_umask_default_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("frequency_new_cache_has_umask_default_permissions");
+    wrk.create("in.csv", vec![svec!["h1"], svec!["a"], svec!["b"]]);
+
+    // what a plainly-created file gets under this process's umask
+    let probe = wrk.path("probe");
+    std::fs::File::create(&probe).unwrap();
+    let expected = std::fs::metadata(&probe).unwrap().permissions().mode() & 0o777;
+
+    let mut writer = wrk.command("frequency");
+    writer.arg("--frequency-jsonl").arg("in.csv");
+    wrk.assert_success(&mut writer);
+
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    let actual = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        actual, expected,
+        "a new frequency cache must have the same permissions as a normally created file (got \
+         {actual:o}, expected {expected:o}) - a 0600 temp must not leak through the rename"
+    );
+
+    // a REFRESH must not revert a deliberately-set mode
+    let restrictive = 0o640;
+    std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(restrictive)).unwrap();
+    set_cache_version(&cache, "0.0.1-ancient");
+    std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(restrictive)).unwrap();
+
+    let mut heal = wrk.command("frequency");
+    heal.arg("in.csv");
+    wrk.assert_success(&mut heal);
+    let after = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        after, restrictive,
+        "a self-heal must preserve the existing cache's permissions (got {after:o})"
+    );
+
+    // and no stray temp survives a successful write
+    let strays: Vec<_> = std::fs::read_dir(wrk.path("."))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with(".qsv-freqcache-")
+        })
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "a successful write left a temp file behind"
+    );
+}
+
+// `create_new` has no delete-on-drop, unlike the `NamedTempFile` it replaced, so `TempFileGuard`
+// gives that back. The read-only-directory tests above cannot exercise it - there the temp is
+// never created at all - so this forces a failure AFTER the temp exists, by putting a directory
+// where the cache file belongs so the final rename fails.
+#[cfg(unix)]
+#[test]
+fn frequency_failed_rename_leaves_no_stray_temp() {
+    let wrk = Workdir::new("frequency_failed_rename_leaves_no_stray_temp");
+    wrk.create("in.csv", vec![svec!["h1"], svec!["a"], svec!["b"]]);
+
+    // a directory at the cache path: create_new succeeds, write succeeds, rename cannot
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    std::fs::create_dir(&cache).unwrap();
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--frequency-jsonl").arg("in.csv");
+    let out = cmd.output().unwrap();
+    assert!(
+        !out.status.success(),
+        "an explicit --frequency-jsonl whose cache cannot be written must fail"
+    );
+
+    let strays: Vec<String> = std::fs::read_dir(wrk.path("."))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".qsv-freqcache-"))
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "a failed rename must not leave a temp file beside the user's CSV, found: {strays:?}"
+    );
+}

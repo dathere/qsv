@@ -943,6 +943,23 @@ pub fn show_env_vars() {
     }
 }
 
+/// Convert a CSV read error into a `CliError` with an actionable hint.
+///
+/// `stats` and `frequency` historically assumed valid CSV and read the record iterator with
+/// `unwrap_unchecked()`, which is undefined behavior on the `Err` the csv crate returns for a
+/// ragged record (issue #4611). They now surface the error through this helper so a malformed
+/// file gets the same guidance `validate` gives instead of a silent non-unwinding abort.
+pub fn csv_read_error(e: &csv::Error) -> CliError {
+    // csv::Error's Display already starts with "CSV error:", so don't prefix it again
+    if matches!(e.kind(), csv::ErrorKind::UnequalLengths { .. }) {
+        return CliError::Other(format!(
+            "{e}.\nUse `qsv fixlengths` to fix record length issues, or `--flexible` to process \
+             the file anyway."
+        ));
+    }
+    CliError::Other(format!("{e}"))
+}
+
 #[inline]
 pub fn count_rows(conf: &Config) -> Result<u64, CliError> {
     // Check if ROW_COUNT is already initialized to avoid redundant counting
@@ -3649,9 +3666,25 @@ fn stats_cache_parsing_opts_conflict(
     false
 }
 
+/// Get the stats records for `args`, reading or regenerating the stats cache as needed.
+///
+/// `SchemaArgs` is `schema`'s own docopt target, so it cannot carry a `--flexible` field
+/// (docopt rejects a struct field with no matching flag in the USAGE). Callers that accept
+/// ragged input use `get_stats_records_flexible` instead.
 pub fn get_stats_records(
     args: &SchemaArgs,
     requested_mode: StatsMode,
+) -> CliResult<(ByteRecord, Vec<StatsData>)> {
+    get_stats_records_flexible(args, requested_mode, false)
+}
+
+/// `get_stats_records`, with control over whether the `qsv stats` subprocess is told to
+/// accept records with a varying number of fields. `frequency --flexible` needs this: without
+/// it the child would reject the same ragged file the parent was told to accept.
+pub fn get_stats_records_flexible(
+    args: &SchemaArgs,
+    requested_mode: StatsMode,
+    flexible: bool,
 ) -> CliResult<(ByteRecord, Vec<StatsData>)> {
     let env_mode = env::var("QSV_STATSCACHE_MODE")
         .unwrap_or_else(|_| DEFAULT_STATSCACHE_MODE.to_string())
@@ -3902,6 +3935,7 @@ pub fn get_stats_records(
             flag_output:               None,
             flag_no_headers:           args.flag_no_headers,
             flag_delimiter:            detected_delimiter,
+            flag_flexible:             flexible,
             flag_memcheck:             args.flag_memcheck,
             flag_vis_whitespace:       false,
             flag_weight:               None,
@@ -3995,6 +4029,11 @@ pub fn get_stats_records(
         if args.flag_no_headers {
             stats_args_str = format!("{stats_args_str}\t--no-headers");
         }
+        // without this the child would reject the same ragged file the parent was told to
+        // accept, so `frequency --flexible` would still fail on the stats-cache path
+        if flexible {
+            stats_args_str = format!("{stats_args_str}\t--flexible");
+        }
 
         // Use the detected delimiter
         stats_args_str = format!("{stats_args_str}\t--delimiter\t{}", {
@@ -4031,23 +4070,37 @@ pub fn get_stats_records(
         } else {
             stats_cmd.args(stats_args_vec);
         }
-        let status = stats_cmd.output()?.status;
+        let stats_output = stats_cmd.output()?;
+        let status = stats_output.status;
         if !status.success() {
+            // Relay the child's own diagnostic. Without it the caller (schema, viz smart,
+            // frequency's stats cache) only reports an exit code, so a CSV error the child
+            // explained perfectly well reaches the user as "exited with code: 1" (#4611).
+            let child_stderr = String::from_utf8_lossy(&stats_output.stderr);
+            let child_stderr = child_stderr.trim();
+            let detail = if child_stderr.is_empty() {
+                String::new()
+            } else {
+                format!("\n{child_stderr}")
+            };
+
             let status_code = status.code();
             if let Some(code) = status_code {
                 return Err(CliError::Other(format!(
-                    "qsv stats exited with code: {code}"
+                    "qsv stats exited with code: {code}{detail}"
                 )));
             }
             return Err(CliError::Other(cfg_select! {
                 target_family = "unix" => {
                     match status.signal() {
-                        Some(signal) => format!("qsv stats terminated with signal: {signal}"),
-                        None => "qsv stats terminated by unknown cause".to_string(),
+                        Some(signal) => {
+                            format!("qsv stats terminated with signal: {signal}{detail}")
+                        },
+                        None => format!("qsv stats terminated by unknown cause{detail}"),
                     }
                 },
                 _ => {
-                    "qsv stats terminated by unknown cause".to_string()
+                    format!("qsv stats terminated by unknown cause{detail}")
                 },
             }));
         }

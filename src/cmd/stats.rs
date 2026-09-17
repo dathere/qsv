@@ -383,6 +383,16 @@ Common options:
                            in statistics.
     -d, --delimiter <arg>  The field delimiter for READING CSV data.
                            Must be a single character. (default: ,)
+    --flexible             Allow records with a varying number of fields.
+                           Without this, a "ragged" record (one with more or
+                           fewer fields than the header) is an error. With it,
+                           extra fields are ignored and a SHORT record
+                           contributes no value at all for its missing
+                           columns (not even a null), so those columns are computed
+                           over fewer observations. Note that field selection
+                           stops at the first missing column, so an
+                           out-of-order selection (e.g. `3,1`) makes a short
+                           record skip columns that ARE present.
     --memcheck             Use CONSERVATIVE heuristics for the in-memory load
                            check (file size vs. available + free_swap × platform
                            factor − headroom), instead of the default NORMAL
@@ -497,6 +507,7 @@ pub struct Args {
     pub flag_output:               Option<String>,
     pub flag_no_headers:           bool,
     pub flag_delimiter:            Option<Delimiter>,
+    pub flag_flexible:             bool,
     pub flag_memcheck:             bool,
     pub flag_vis_whitespace:       bool,
     pub flag_weight:               Option<String>,
@@ -537,6 +548,11 @@ struct StatsArgs {
     flag_prefer_dmy: bool,
     flag_no_headers: bool,
     flag_delimiter: String,
+    // serde(default) so a cache written before --flexible existed still deserializes.
+    // Part of the cache-validity comparison: a --flexible run must not reuse a strict
+    // run's stats (or vice versa) since raggedness changes the counts.
+    #[serde(default)]
+    flag_flexible: bool,
     flag_output_snappy: bool,
     canonical_input_path: String,
     canonical_stats_path: String,
@@ -629,6 +645,7 @@ impl StatsArgs {
             flag_prefer_dmy: get_bool("flag_prefer_dmy"),
             flag_no_headers: get_bool("flag_no_headers"),
             flag_delimiter: get_str("flag_delimiter"),
+            flag_flexible: get_bool("flag_flexible"),
             flag_output_snappy: get_bool("flag_output_snappy"),
             canonical_input_path: get_str("canonical_input_path"),
             canonical_stats_path: get_str("canonical_stats_path"),
@@ -1665,6 +1682,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .as_ref()
             .map(|d| (d.as_byte() as char).to_string())
             .unwrap_or_default(),
+        flag_flexible: args.flag_flexible,
         // when we write to stdout, we don't use snappy compression
         // when we write to a file with the --output option, we use
         // snappy compression if the file ends with ".sz"
@@ -2724,7 +2742,7 @@ impl Args {
         // accumulation via a two-thread pipeline - records are processed in
         // arrival order, so results are bit-identical to the single-threaded
         // path. --jobs 1 keeps everything on one thread.
-        let (stats, records_read) = if util::njobs(self.flag_jobs) > 1 {
+        let (stats, records_read, read_err) = if util::njobs(self.flag_jobs) > 1 {
             self.compute_pipelined(&sel, rdr, capacity_hint as usize, weight_col_idx)
         } else {
             self.compute(
@@ -2735,6 +2753,11 @@ impl Args {
                 weight_col_idx,
             )
         };
+        // a read error means `stats` only covers the records before it. Fail with the csv
+        // error instead of reporting statistics for a truncated scan (#4611).
+        if let Some(e) = read_err {
+            return Err(util::csv_read_error(&e));
+        }
         Ok((headers, stats, records_read as u64))
     }
 
@@ -2896,8 +2919,14 @@ impl Args {
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded(nchunks);
         let args = Arc::new(self.clone());
+        // First CSV read error seen by any worker. A ragged file cannot be indexed, so this
+        // path is normally unreachable for malformed input - but a stale index that still
+        // looks fresh (an in-place edit that preserves size and mtime) reaches it, as does a
+        // plain mid-chunk I/O error, which no input validation rules out (#4611).
+        let read_err: Arc<OnceLock<String>> = Arc::new(OnceLock::new());
         for i in 0..nchunks {
             let (send, args, sel) = (send.clone(), Arc::clone(&args), sel.clone());
+            let read_err = Arc::clone(&read_err);
             // CLONE the resolved Config - never rebuild it with `args.rconfig()`. The clone
             // shares the `Arc<OnceLock>` holding a special-format input's converted temp, so
             // every worker re-opens the index next to the SAME temp the parent indexed. A
@@ -2924,16 +2953,20 @@ impl Args {
                 // chunk_size doubles as the capacity hint: each worker only ever
                 // accumulates one chunk's worth of values, so hinting the full
                 // file row count here would balloon RSS x nchunks.
+                // .0 = the chunk's Stats; the per-chunk record count is not
+                // needed here - the index count is authoritative for this path
+                let (chunk_stats, _, chunk_read_err) =
+                    args.compute(&sel, &mut idx, chunk_size, chunk_size, weight_idx);
+                if let Some(e) = chunk_read_err {
+                    // record the error (first one wins) and deliberately DON'T send, so the
+                    // chunk gap makes merge_chunks_in_order refuse to build a partial result.
+                    let _ = read_err.set(util::csv_read_error(&e).to_string());
+                    return;
+                }
                 // send only fails if the receiver is already gone, in which case the
                 // merge loop has ended and there is nobody left to hand this chunk to.
                 // Drop it deliberately instead of relying on an unchecked unwrap.
-                let _ = send.send((
-                    i,
-                    // .0 = the chunk's Stats; the per-chunk record count is not
-                    // needed here - the index count is authoritative for this path
-                    args.compute(&sel, &mut idx, chunk_size, chunk_size, weight_idx)
-                        .0,
-                ));
+                let _ = send.send((i, chunk_stats));
             });
         }
         drop(send);
@@ -2950,7 +2983,14 @@ impl Args {
         // merging would hold all nchunks results resident simultaneously.
         // idx_count is authoritative here: the chunks partition exactly that many
         // records, so it already equals the number of records accumulated.
-        Ok((headers, merge_chunks_in_order(&recv, nchunks)?, idx_count))
+        let merged = merge_chunks_in_order(&recv, nchunks);
+        // check the read error BEFORE the merge result: a worker that hit a CSV error skipped
+        // its send, so the merge fails with a generic missing-chunk message. Report the real
+        // csv error instead.
+        if let Some(e) = read_err.get() {
+            return fail_clierror!("{e}");
+        }
+        Ok((headers, merged?, idx_count))
     }
 
     /// Converts a vector of `Stats` objects into CSV records for output.
@@ -3063,8 +3103,9 @@ impl Args {
     /// * Uses unsafe code for performance-critical operations
     /// * Assumes `INFER_DATE_FLAGS` is properly initialized
     /// * Bounds checking is avoided where safe
-    /// * Assumes a valid CSV; read errors are not checked in this performance-critical path (same
-    ///   semantics as before)
+    ///
+    /// Returns `(stats, records_read, read_err)`. A `Some(read_err)` means the scan stopped early
+    /// on a CSV error, so `stats` is PARTIAL and the caller MUST fail instead of reporting it.
     #[inline]
     fn compute<R: std::io::Read>(
         &self,
@@ -3073,7 +3114,7 @@ impl Args {
         limit: usize,
         expected_rows: usize,
         weight_col_idx: Option<usize>,
-    ) -> (Vec<Stats>, usize) {
+    ) -> (Vec<Stats>, usize, Option<csv::Error>) {
         let sel_len = sel.len();
         let mut stats = self.new_stats(sel_len, expected_rows);
 
@@ -3089,12 +3130,18 @@ impl Args {
         // in place, so the hot loop does no per-record heap allocation
         let mut row = csv::ByteRecord::new();
         let mut records_read = 0_usize;
+        // the first CSV read error, if any. `stats` used to `unwrap_unchecked()` here, which is
+        // undefined behavior on the Err a ragged record produces (#4611). The Err arm only
+        // stashes the error and breaks, so the cold path stays out of the hot loop.
+        let mut read_err: Option<csv::Error> = None;
         while records_read < limit {
-            // safety: `stats` assumes a valid CSV, so we don't check for CSV errors
-            // in this performance-critical path (mirrors the previous
-            // `row.unwrap_unchecked()` on the ByteRecords iterator)
-            if !unsafe { rdr.read_byte_record(&mut row).unwrap_unchecked() } {
-                break;
+            match rdr.read_byte_record(&mut row) {
+                Ok(true) => {},
+                Ok(false) => break,
+                Err(e) => {
+                    read_err = Some(e);
+                    break;
+                },
             }
             records_read += 1;
 
@@ -3108,7 +3155,7 @@ impl Args {
                 prefer_dmy,
             );
         }
-        (stats, records_read)
+        (stats, records_read, read_err)
     }
 
     /// Processes one CSV record: extracts the optional weight and feeds every
@@ -3182,14 +3229,16 @@ impl Args {
     /// steady-state processing does no per-record or per-batch allocation.
     ///
     /// Returns the accumulated `Stats` together with the number of records read,
-    /// counted on the consumer side so it matches `compute`'s count exactly.
+    /// counted on the consumer side so it matches `compute`'s count exactly, and the first CSV
+    /// read error if the reader thread hit one. A `Some(read_err)` means `stats` is PARTIAL and
+    /// the caller MUST fail rather than report it.
     fn compute_pipelined(
         &self,
         sel: &Selection,
         rdr: csv::Reader<Box<dyn std::io::Read + Send + 'static>>,
         expected_rows: usize,
         weight_col_idx: Option<usize>,
-    ) -> (Vec<Stats>, usize) {
+    ) -> (Vec<Stats>, usize, Option<csv::Error>) {
         const BATCH_SIZE: usize = 1024;
         // one being filled + one being drained + two in flight
         const NBATCHES: usize = 4;
@@ -3219,29 +3268,40 @@ impl Args {
         // so the count cannot drift from what was actually accumulated.
         let mut records_read = 0_usize;
 
-        std::thread::scope(|s| {
-            // reader thread: fills recycled batches in place
-            s.spawn(move || {
+        let read_err = std::thread::scope(|s| {
+            // reader thread: fills recycled batches in place.
+            // JOINED below - a read error must not look like a normal EOF to the consumer,
+            // or stats for a truncated read would be reported as complete (#4611).
+            let reader = s.spawn(move || -> Option<csv::Error> {
                 let mut rdr = rdr;
                 while let Ok(mut batch) = empty_rx.recv() {
                     let mut n = 0;
+                    let mut read_err: Option<csv::Error> = None;
                     while n < BATCH_SIZE {
-                        // safety: n < BATCH_SIZE == batch.len(); CSV read errors are
-                        // not checked - same "assume valid CSV" semantics as compute()
-                        if !unsafe {
-                            rdr.read_byte_record(batch.get_unchecked_mut(n))
-                                .unwrap_unchecked()
-                        } {
-                            break;
+                        // safety: n < BATCH_SIZE == batch.len()
+                        match rdr.read_byte_record(unsafe { batch.get_unchecked_mut(n) }) {
+                            Ok(true) => {},
+                            Ok(false) => break,
+                            Err(e) => {
+                                read_err = Some(e);
+                                break;
+                            },
                         }
                         n += 1;
                     }
                     let eof = n < BATCH_SIZE;
+                    if read_err.is_some() {
+                        // hand over what was parsed before the error, then report it.
+                        // dropping full_tx (and empty_rx) ends the consumer loop
+                        let _ = full_tx.send((batch, n));
+                        return read_err;
+                    }
                     if full_tx.send((batch, n)).is_err() || eof {
                         // dropping full_tx (and empty_rx) ends the consumer loop
-                        return;
+                        return None;
                     }
                 }
+                None
             });
 
             // consumer (this thread): the same per-row hot loop as compute()
@@ -3261,8 +3321,16 @@ impl Args {
                 // recycle the batch; fails only after the reader exited at EOF
                 let _ = empty_tx.send(batch);
             }
+
+            // the consumer loop above ended because the reader dropped full_tx, so the reader
+            // has returned and this join does not block. A panicking reader is re-raised rather
+            // than swallowed: returning None there would report a truncated scan as complete.
+            match reader.join() {
+                Ok(read_err) => read_err,
+                Err(panic_payload) => std::panic::resume_unwind(panic_payload),
+            }
         });
-        (stats, records_read)
+        (stats, records_read, read_err)
     }
 
     /// Processes headers and handles weight column exclusion if needed.
@@ -3368,6 +3436,7 @@ impl Args {
         Config::new(self.arg_input.as_ref())
             .delimiter(self.flag_delimiter)
             .no_headers_flag(self.flag_no_headers)
+            .flexible(self.flag_flexible)
             .select(self.flag_select.clone())
     }
 

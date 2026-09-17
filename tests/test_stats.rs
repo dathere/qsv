@@ -9317,3 +9317,209 @@ fn stats_infer_dates_autoindex_does_not_leak_across_configs() {
         "stats --infer-dates for a .zip input must equal the same data uncompressed"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #4611: `stats` used to `unwrap_unchecked()` the csv reader's Result, which is
+// undefined behavior on the Err a ragged record produces. In release builds the
+// process died with SIGTRAP and printed nothing at all. These tests pin the
+// replacement behavior: a `validate`-style diagnostic, exit non-zero, and - just
+// as important - NO statistics on stdout for the truncated scan.
+// ---------------------------------------------------------------------------
+
+/// A 3-column header followed by a 5-field record. The csv crate rejects this
+/// because `stats` does not read flexibly by default.
+fn ragged_workdir(name: &str) -> Workdir {
+    let wrk = Workdir::new(name).flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["a", "b", "c"], svec!["1", "2", "3", "4", "5"]],
+    );
+    wrk
+}
+
+fn assert_ragged_diagnostic(wrk: &Workdir, cmd: &mut process::Command) {
+    let out = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        !out.status.success(),
+        "expected failure on ragged input, got success.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    // a partial table would be worse than the old crash - nothing may be emitted
+    assert!(
+        stdout.trim().is_empty(),
+        "expected NO output for a truncated scan, got:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("found record with 5 fields, but the previous record has 3 fields"),
+        "expected the csv error, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("qsv fixlengths"),
+        "expected the fixlengths hint, got:\n{stderr}"
+    );
+    let _ = wrk;
+}
+
+// the default (multi-job) path goes through compute_pipelined()
+#[test]
+fn stats_ragged_reports_csv_error() {
+    let wrk = ragged_workdir("stats_ragged_reports_csv_error");
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--force").arg("data.csv");
+    assert_ragged_diagnostic(&wrk, &mut cmd);
+}
+
+// -j 1 goes through compute() instead
+#[test]
+fn stats_ragged_reports_csv_error_j1() {
+    let wrk = ragged_workdir("stats_ragged_reports_csv_error_j1");
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--force").arg("-j").arg("1").arg("data.csv");
+    assert_ragged_diagnostic(&wrk, &mut cmd);
+}
+
+#[test]
+fn stats_ragged_flexible_succeeds() {
+    let wrk = ragged_workdir("stats_ragged_flexible_succeeds");
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--force").arg("--flexible").arg("data.csv");
+
+    // the 3 header columns are described; the record's 2 extra fields are ignored
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let fields: Vec<String> = got.iter().skip(1).map(|r| r[0].clone()).collect();
+    assert_eq!(fields, svec!["a", "b", "c"]);
+}
+
+// A failed run must not leave a cache behind: a stale/partial cache would turn a
+// loud failure into a silently wrong answer on the next run.
+#[test]
+fn stats_ragged_writes_no_cache() {
+    let wrk = ragged_workdir("stats_ragged_writes_no_cache");
+    let run = || {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("data.csv").arg("--cache-threshold").arg("1");
+        cmd.output().unwrap()
+    };
+
+    let first = run();
+    assert!(!first.status.success());
+    // NB: the cache paths come from `with_extension`, which REPLACES ".csv" - they are
+    // data.stats.csv*, not data.csv.stats.csv*. Globbing the wrong names makes this
+    // assertion silently vacuous.
+    for artifact in [
+        "data.stats.csv",
+        "data.stats.csv.json",
+        "data.stats.csv.data.jsonl",
+    ] {
+        assert!(
+            !wrk.path(artifact).exists(),
+            "{artifact} must not be written when the scan fails"
+        );
+    }
+
+    // and the re-run must fail the same way rather than read a cache
+    let second = run();
+    assert!(!second.status.success());
+    assert!(
+        String::from_utf8_lossy(&second.stderr).contains("found record with 5 fields"),
+        "re-run must report the csv error again"
+    );
+}
+
+// A `--flexible` run is the ONLY way a cache can exist for a ragged file (a strict run
+// fails before writing one). So the dangerous direction is strict-reusing-flexible: if
+// flag_flexible didn't participate in the cache-validity comparison, strict mode would
+// report statistics derived from ragged data it was supposed to refuse.
+#[test]
+fn stats_strict_does_not_reuse_a_flexible_cache() {
+    let wrk = ragged_workdir("stats_strict_does_not_reuse_a_flexible_cache");
+
+    let mut flexible = wrk.command("stats");
+    flexible
+        .arg("--flexible")
+        .arg("--cache-threshold")
+        .arg("1")
+        .arg("data.csv");
+    let first = flexible.output().unwrap();
+    assert!(
+        first.status.success(),
+        "--flexible run should succeed: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert!(
+        wrk.path("data.stats.csv").exists(),
+        "the --flexible run should have written a cache to reuse"
+    );
+
+    // now the strict run must REFUSE, not read that cache
+    let mut strict = wrk.command("stats");
+    strict.arg("--cache-threshold").arg("1").arg("data.csv");
+    assert_ragged_diagnostic(&wrk, &mut strict);
+}
+
+// --flexible semantics for SHORT records, pinning what the USAGE text promises.
+#[test]
+fn stats_flexible_short_record_contributes_nothing() {
+    let wrk = Workdir::new("stats_flexible_short_record_contributes_nothing").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["a", "b", "c"], svec!["1", "2", "3"], svec!["4"]],
+    );
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--force").arg("--flexible").arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+
+    let header = &got[0];
+    let col = |name: &str| header.iter().position(|h| h == name).unwrap();
+    let (sum, mean, nullcount) = (col("sum"), col("mean"), col("nullcount"));
+
+    // `a` saw both records
+    assert_eq!(got[1][sum], "5");
+    assert_eq!(got[1][mean], "2.5");
+    // `b` and `c` saw only the full record: no value AND no null from the short one,
+    // so the mean is over 1 observation (2), not over 2 rows (1).
+    assert_eq!(got[2][sum], "2");
+    assert_eq!(got[2][mean], "2");
+    assert_eq!(got[2][nullcount], "0");
+    assert_eq!(got[3][sum], "3");
+    assert_eq!(got[3][mean], "3");
+    assert_eq!(got[3][nullcount], "0");
+}
+
+// Field selection stops at the first MISSING column, so an out-of-order selection makes a
+// short record skip columns that are actually present. Surprising, so pin it: `-s 3,1`
+// drops the short record's `a`, which `-s 1,3` keeps.
+#[test]
+fn stats_flexible_short_record_selection_order_matters() {
+    let wrk = Workdir::new("stats_flexible_short_record_selection_order_matters").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["a", "b", "c"], svec!["1", "2", "3"], svec!["4"]],
+    );
+
+    let sum_of_a = |sel: &str| -> String {
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--force")
+            .arg("--flexible")
+            .arg("-s")
+            .arg(sel)
+            .arg("data.csv");
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        let sum = got[0].iter().position(|h| h == "sum").unwrap();
+        let row = got.iter().skip(1).find(|r| r[0] == "a").unwrap();
+        row[sum].clone()
+    };
+
+    assert_eq!(
+        sum_of_a("1,3"),
+        "5",
+        "in-order selection sees the short record"
+    );
+    assert_eq!(
+        sum_of_a("3,1"),
+        "1",
+        "out-of-order selection stops at the missing column 3 and skips `a`"
+    );
+}

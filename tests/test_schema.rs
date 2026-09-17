@@ -835,3 +835,30 @@ fn diagnose_schema_generation_s390x() {
     // This test always passes - we just want the diagnostic output
     // The actual assertion failures are in the other tests
 }
+
+// #4611: `schema` runs `stats` as a subprocess. Before the fix that child died by
+// signal and `schema` reported only "qsv stats terminated with signal: 5"; the
+// child's stderr was captured and thrown away. The child's diagnostic must now
+// reach the user, or the fix is invisible to the commands most likely to hit it.
+#[test]
+fn schema_ragged_relays_stats_csv_error() {
+    let wrk = Workdir::new("schema_ragged_relays_stats_csv_error").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["a", "b", "c"], svec!["1", "2", "3", "4", "5"]],
+    );
+    let mut cmd = wrk.command("schema");
+    cmd.arg("data.csv");
+
+    let out = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "expected failure, got:\n{stderr}");
+    assert!(
+        stderr.contains("found record with 5 fields, but the previous record has 3 fields"),
+        "the stats child's diagnostic must be relayed, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("qsv fixlengths"),
+        "expected the fixlengths hint, got:\n{stderr}"
+    );
+}

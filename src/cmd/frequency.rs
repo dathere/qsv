@@ -265,6 +265,16 @@ Common options:
                            names.
     -d, --delimiter <arg>  The field delimiter for reading CSV data.
                            Must be a single character. (default: ,)
+    --flexible             Allow records with a varying number of fields.
+                           Without this, a "ragged" record (one with more or
+                           fewer fields than the header) is an error. With it,
+                           extra fields are ignored and a SHORT record
+                           contributes no value at all for its missing
+                           columns (not even a null), so those columns are counted
+                           fewer times. Note that field selection stops at the
+                           first missing column, so an out-of-order selection
+                           (e.g. `3,1`) makes a short record skip columns that
+                           ARE present.
     --memcheck             Use CONSERVATIVE heuristics for the in-memory load
                            check (file size vs. available + free_swap × platform
                            factor − headroom), instead of the default NORMAL
@@ -287,7 +297,11 @@ Common options:
 "#;
 
 use core::hint::cold_path;
-use std::{fs, io, str::FromStr, sync::OnceLock};
+use std::{
+    fs, io,
+    str::FromStr,
+    sync::{Arc, OnceLock},
+};
 
 use crossbeam_channel;
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
@@ -306,7 +320,7 @@ use crate::{
     config::{Config, Delimiter},
     index::Indexed,
     select::{SelectColumns, Selection},
-    util::{self, ByteString, StatsMode, get_stats_records},
+    util::{self, ByteString, StatsMode},
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -364,6 +378,7 @@ pub struct Args {
     pub flag_output:              Option<String>,
     pub flag_no_headers:          bool,
     pub flag_delimiter:           Option<Delimiter>,
+    pub flag_flexible:            bool,
     pub flag_memcheck:            bool,
     pub flag_vis_whitespace:      bool,
     pub flag_frequency_jsonl:     bool,
@@ -1800,6 +1815,7 @@ impl Args {
         Config::new(self.arg_input.as_ref())
             .delimiter(self.flag_delimiter)
             .no_headers_flag(self.flag_no_headers)
+            .flexible(self.flag_flexible)
             .select(self.flag_select.clone())
     }
 
@@ -2994,12 +3010,12 @@ impl Args {
         let (headers, sel, weight_col_idx) = self.sel_headers(&mut rdr)?;
         if weight_col_idx.is_some() {
             let weighted =
-                self.ftables_weighted_internal(&sel, rdr.byte_records(), 1, weight_col_idx);
+                self.ftables_weighted_internal(&sel, rdr.byte_records(), 1, weight_col_idx)?;
             Ok((headers, vec![], Some(weighted)))
         } else {
             Ok((
                 headers,
-                self.ftables_unweighted(&sel, rdr.byte_records(), 1),
+                self.ftables_unweighted(&sel, rdr.byte_records(), 1)?,
                 None,
             ))
         }
@@ -3101,6 +3117,11 @@ impl Args {
         let nchunks = util::num_of_chunks(idx_count, chunk_size);
         log::info!("({chunking_mode}) nchunks={nchunks}");
 
+        // First CSV read error seen by any worker. The rayon `reduce` below silently absorbs a
+        // chunk that was never sent, so without this check a read error would yield a partial
+        // frequency table reported as complete (#4611).
+        let read_err: Arc<OnceLock<String>> = Arc::new(OnceLock::new());
+
         if weight_col_idx.is_some() {
             // Parallel weighted frequencies
             let pool = ThreadPool::new(njobs);
@@ -3113,12 +3134,29 @@ impl Args {
                     sel.clone(),
                     weight_col_idx,
                 );
+                let read_err = Arc::clone(&read_err);
                 pool.execute(move || {
-                    let mut idx = rconf.indexed().unwrap().unwrap();
-                    idx.seek((i * chunk_size) as u64).unwrap();
+                    // The parent verified the index exists before chunking, but it can be
+                    // deleted or invalidated in between (TOCTOU). Fail loudly with actionable
+                    // info, matching parallel_stats.
+                    let mut idx = rconf
+                        .indexed()
+                        .expect("Failed to re-open index for parallel frequency.")
+                        .expect("Index is no longer available for parallel frequency.");
+                    idx.seek((i * chunk_size) as u64)
+                        .expect("Index seek failed.");
                     let it = idx.byte_records().take(chunk_size);
-                    send.send(args.ftables_weighted_internal(&sel, it, nchunks, weight_idx))
-                        .unwrap();
+                    match args.ftables_weighted_internal(&sel, it, nchunks, weight_idx) {
+                        Ok(ftables) => {
+                            // send only fails if the receiver is already gone, in which case
+                            // the reduce has ended and there is nobody left to hand this to.
+                            let _ = send.send(ftables);
+                        },
+                        // record the error (first one wins) and deliberately DON'T send
+                        Err(e) => {
+                            let _ = read_err.set(e.to_string());
+                        },
+                    }
                 });
             }
             drop(send);
@@ -3131,6 +3169,9 @@ impl Args {
                 .into_iter()
                 .par_bridge()
                 .reduce(Vec::new, merge_weighted_ftables);
+            if let Some(e) = read_err.get() {
+                return fail_clierror!("{e}");
+            }
             Ok((headers, vec![], Some(merged)))
         } else {
             // Parallel unweighted frequencies
@@ -3139,12 +3180,29 @@ impl Args {
             for i in 0..nchunks {
                 let (send, args, rconf, sel) =
                     (send.clone(), self.clone(), rconfig.clone(), sel.clone());
+                let read_err = Arc::clone(&read_err);
                 pool.execute(move || {
-                    let mut idx = rconf.indexed().unwrap().unwrap();
-                    idx.seek((i * chunk_size) as u64).unwrap();
+                    // The parent verified the index exists before chunking, but it can be
+                    // deleted or invalidated in between (TOCTOU). Fail loudly with actionable
+                    // info, matching parallel_stats.
+                    let mut idx = rconf
+                        .indexed()
+                        .expect("Failed to re-open index for parallel frequency.")
+                        .expect("Index is no longer available for parallel frequency.");
+                    idx.seek((i * chunk_size) as u64)
+                        .expect("Index seek failed.");
                     let it = idx.byte_records().take(chunk_size);
-                    send.send(args.ftables_unweighted(&sel, it, nchunks))
-                        .unwrap();
+                    match args.ftables_unweighted(&sel, it, nchunks) {
+                        Ok(ftables) => {
+                            // send only fails if the receiver is already gone, in which case
+                            // the reduce has ended and there is nobody left to hand this to.
+                            let _ = send.send(ftables);
+                        },
+                        // record the error (first one wins) and deliberately DON'T send
+                        Err(e) => {
+                            let _ = read_err.set(e.to_string());
+                        },
+                    }
                 });
             }
             drop(send);
@@ -3156,6 +3214,9 @@ impl Args {
                 .into_iter()
                 .par_bridge()
                 .reduce(Vec::new, merge_ftables);
+            if let Some(e) = read_err.get() {
+                return fail_clierror!("{e}");
+            }
             Ok((headers, merged, None))
         }
     }
@@ -3167,7 +3228,7 @@ impl Args {
         it: I,
         nchunks: usize,
         weight_col_idx: Option<usize>,
-    ) -> WeightedFTables
+    ) -> CliResult<WeightedFTables>
     where
         I: Iterator<Item = csv::Result<csv::ByteRecord>>,
     {
@@ -3273,9 +3334,20 @@ impl Args {
             };
 
         let mut row_result: csv::ByteRecord;
+        // the first CSV read error, if any. Deliberately NOT a `?` inside the loop: stashing
+        // it and breaking keeps the hot loop a plain loop with no early exit out of the whole
+        // function, which measured meaningfully faster on the weighted path.
+        let mut read_err: Option<csv::Error> = None;
         for row in it {
-            // safety: we know the row is valid because it comes from an iterator
-            row_result = unsafe { row.unwrap_unchecked() };
+            // a ragged record makes this an Err. It used to be `unwrap_unchecked()`, which
+            // fabricated a ByteRecord out of the error - undefined behavior (#4611).
+            row_result = match row {
+                Ok(r) => r,
+                Err(e) => {
+                    read_err = Some(e);
+                    break;
+                },
+            };
             row_buffer.clone_from(&row_result);
 
             let weight = if let Some(widx) = weight_col_idx {
@@ -3312,11 +3384,14 @@ impl Args {
             }
         }
 
-        weighted_freq_tables
+        if let Some(e) = read_err {
+            return Err(util::csv_read_error(&e));
+        }
+        Ok(weighted_freq_tables)
     }
 
     #[inline]
-    fn ftables_unweighted<I>(&self, sel: &Selection, it: I, nchunks: usize) -> FTables
+    fn ftables_unweighted<I>(&self, sel: &Selection, it: I, nchunks: usize) -> CliResult<FTables>
     where
         I: Iterator<Item = csv::Result<csv::ByteRecord>>,
     {
@@ -3421,9 +3496,18 @@ impl Args {
                 }
             };
 
+        // see the note in ftables_weighted_internal: stash-and-break, no `?` in the hot loop
+        let mut read_err: Option<csv::Error> = None;
         for row in it {
-            // safety: we know the row is valid
-            row_buffer.clone_from(&unsafe { row.unwrap_unchecked() });
+            // a ragged record makes this an Err. It used to be `unwrap_unchecked()`, which
+            // fabricated a ByteRecord out of the error - undefined behavior (#4611).
+            match row {
+                Ok(ref r) => row_buffer.clone_from(r),
+                Err(e) => {
+                    read_err = Some(e);
+                    break;
+                },
+            }
             for (i, field) in sel.select(&row_buffer).enumerate() {
                 // safety: all_unique_flag_vec is pre-computed to have exactly sel_len elements,
                 // which matches the number of selected columns that we iterate over.
@@ -3453,10 +3537,13 @@ impl Args {
         // if sequential (nchunks == 1), we don't need to shrink the capacity as we
         // use cardinality to set the capacity of the freq_tables
         // if parallel (nchunks > 1), shrink the capacity to avoid over-allocating memory
+        if let Some(e) = read_err {
+            return Err(util::csv_read_error(&e));
+        }
         if nchunks > 1 {
             freq_tables.shrink_to_fit();
         }
-        freq_tables
+        Ok(freq_tables)
     }
 
     /// Compute indices of Float columns that should be skipped from frequency analysis.
@@ -3649,7 +3736,13 @@ impl Args {
             HashMap::new()
         };
 
-        let (csv_fields, csv_stats) = get_stats_records(&schema_args, StatsMode::Frequency)?;
+        // pass --flexible through to the stats subprocess so a `frequency --flexible` run
+        // doesn't die inside the stats-cache child on the ragged file it was told to accept
+        let (csv_fields, csv_stats) = util::get_stats_records_flexible(
+            &schema_args,
+            StatsMode::Frequency,
+            self.flag_flexible,
+        )?;
 
         if csv_fields.is_empty() || csv_stats.len() != csv_fields.len() {
             // the stats cache does not exist or the number of fields & stats records

@@ -7321,3 +7321,91 @@ fn frequency_statscache_mode_force_creates_the_cache() {
         "none mode created a stats cache"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #4611: `frequency` used to `unwrap_unchecked()` the csv reader's Result, which
+// is undefined behavior on the Err a ragged record produces - the release binary
+// died with SIGSEGV and printed nothing. `frequency` has its OWN UB sites,
+// independent of the ones in `stats`, on both the weighted and unweighted loops.
+// QSV_STATSCACHE_MODE=none is what reaches them: by default `frequency` shells
+// out to `stats` and would just relay the child's failure.
+// ---------------------------------------------------------------------------
+
+fn assert_ragged_diagnostic(cmd: &mut process::Command, expected: &str) {
+    let out = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        !out.status.success(),
+        "expected failure on ragged input, got success.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    // a partial frequency table would be worse than the old crash
+    assert!(
+        stdout.trim().is_empty(),
+        "expected NO output for a truncated scan, got:\n{stdout}"
+    );
+    assert!(
+        stderr.contains(expected),
+        "expected {expected:?}, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("qsv fixlengths"),
+        "expected the fixlengths hint, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn frequency_ragged_reports_csv_error() {
+    let wrk = Workdir::new("frequency_ragged_reports_csv_error").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["a", "b", "c"], svec!["1", "2", "3", "4", "5"]],
+    );
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_STATSCACHE_MODE", "none").arg("data.csv");
+    assert_ragged_diagnostic(
+        &mut cmd,
+        "found record with 5 fields, but the previous record has 3 fields",
+    );
+}
+
+// the --weight hot loop is a separate site from the unweighted one
+#[test]
+fn frequency_ragged_weighted_reports_csv_error() {
+    let wrk = Workdir::new("frequency_ragged_weighted_reports_csv_error").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a", "b", "w"],
+            svec!["x", "y", "1"],
+            svec!["p", "q", "2", "3", "4"],
+        ],
+    );
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_STATSCACHE_MODE", "none")
+        .arg("--weight")
+        .arg("w")
+        .arg("data.csv");
+    assert_ragged_diagnostic(
+        &mut cmd,
+        "found record with 5 fields, but the previous record has 3 fields",
+    );
+}
+
+// --flexible must also reach the `stats` subprocess on the default cache path,
+// or the child would reject the file the parent was told to accept.
+#[test]
+fn frequency_ragged_flexible_succeeds() {
+    let wrk = Workdir::new("frequency_ragged_flexible_succeeds").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["a", "b", "c"], svec!["1", "2", "3", "4", "5"]],
+    );
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--flexible").arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let fields: Vec<String> = got.iter().skip(1).map(|r| r[0].clone()).collect();
+    assert_eq!(fields, svec!["a", "b", "c"]);
+}

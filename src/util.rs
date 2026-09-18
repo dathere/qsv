@@ -4510,9 +4510,13 @@ fn new_file_mode_in(dir: &Path) -> Option<u32> {
 ///     openable at the wider mode, and an fd obtained in that window stays readable through every
 ///     later chmod. The only fix is for the file never to be born wide;
 ///   - a failure part-way (ENOSPC, EDQUOT, EIO, a network-mount hiccup) leaves the PREVIOUS
-///     artifact intact rather than a 0-byte or half-written one, which for a cache is unrecoverable
-///     by design (no metadata line parses, so nothing can heal it). The temp is removed on drop, so
-///     no stray is left beside the user's CSV;
+///     artifact intact rather than a 0-byte or half-written one. Measured, so the cost is not
+///     overstated: a truncated cache is NOT a correctness problem - every reader treats an
+///     unparseable line as a cache MISS, warns, and recomputes, so the command still prints the
+///     right answer and exits 0. What it costs is speed, silently and indefinitely: an ordinary run
+///     does not rewrite the broken file, so every later run pays the full recompute until someone
+///     regenerates it explicitly (`--frequency-jsonl`). That is what is being bought here - not
+///     recoverability. The temp is removed on drop, so no stray is left beside the user's CSV;
 ///   - the temp is in the same directory, so `rename` cannot fail with EXDEV. `create_new`
 ///     (`O_CREAT|O_EXCL`) means two concurrent writers cannot collide on one temp, and a
 ///     pre-existing file or symlink at a guessable name cannot be written through.
@@ -4683,11 +4687,16 @@ impl DerivedFile {
 
         // fsync before the rename. `rename` is atomic for the name -> inode mapping, but that
         // says nothing about the new file's DATA being on storage: a crash or power loss can
-        // persist the rename while the blocks behind it are still in writeback, leaving exactly
-        // the truncated, unhealable artifact this whole dance exists to prevent. There is no
-        // buffer to flush - `io::Write::flush` on a `File` is a no-op - so fsync is the only
-        // thing that helps. It is the same inode the mode was set on, so this syncs that
-        // metadata too; nothing has been renamed yet.
+        // persist the rename while the blocks behind it are still in writeback, leaving the
+        // truncated artifact described on the type - which costs every later run a full
+        // recompute, silently, until someone regenerates the cache by hand. Correctness is
+        // never at stake; speed is. There is no buffer to flush - `io::Write::flush` on a
+        // `File` is a no-op - so fsync is the only thing that helps. It is the same inode the
+        // mode was set on, so this syncs that metadata too; nothing has been renamed yet.
+        //
+        // Kept because it is one fsync per cache WRITE - not per run and not per row - against
+        // a failure whose cost is unbounded in time. If that trade ever stops looking worth it,
+        // this is one line to delete; the readers already handle a truncated cache correctly.
         //
         // The parent directory is deliberately NOT synced. Without that, a crash can lose the
         // rename itself and leave the OLD artifact in place - stale, but intact and still

@@ -4545,9 +4545,11 @@ fn source_has_acl(path: &Path) -> bool {
 /// ENOENT.
 #[cfg(all(unix, target_vendor = "apple"))]
 fn path_has_acl(cpath: &std::ffi::CStr) -> bool {
-    // safety: `acl_get_file(const char *path, acl_type_t type)` and `acl_free(void *obj_p)`,
-    // declared to match acl(3) with `acl_t`/`acl_type_t` as the `*mut c_void`/`c_uint` they are on
-    // Apple platforms. Invariants upheld here:
+    // safety: checked against the Apple SDK's `sys/acl.h`, which declares
+    // `typedef struct _acl *acl_t;`, `extern acl_t acl_get_file(const char *path_p, acl_type_t
+    // type);` and `extern int acl_free(void *obj_p);`. `acl_t` is an opaque pointer, hence
+    // `*mut c_void`; `acl_type_t` is an enum whose every value fits in `int` (ACL_TYPE_EXTENDED is
+    // its largest at 0x100), hence `c_int`. Invariants upheld here:
     //   - `cpath` is a NUL-terminated C string that outlives the call, and the callee only reads
     //     from it;
     //   - the returned `acl_t` is an opaque owned handle. It is passed to `acl_free` on the one
@@ -4558,11 +4560,11 @@ fn path_has_acl(cpath: &std::ffi::CStr) -> bool {
     unsafe extern "C" {
         fn acl_get_file(
             path: *const std::ffi::c_char,
-            acl_type: std::ffi::c_uint,
+            acl_type: std::ffi::c_int,
         ) -> *mut std::ffi::c_void;
         fn acl_free(obj_p: *mut std::ffi::c_void) -> std::ffi::c_int;
     }
-    const ACL_TYPE_EXTENDED: std::ffi::c_uint = 0x0000_0100;
+    const ACL_TYPE_EXTENDED: std::ffi::c_int = 0x0000_0100;
 
     let acl = unsafe { acl_get_file(cpath.as_ptr(), ACL_TYPE_EXTENDED) };
     if acl.is_null() {

@@ -4,6 +4,7 @@ too-many-arguments-threshold = 12
 # ".." extends clippy's built-in list rather than replacing it.
 doc-valid-idents = [
     "..",
+    "AppArmor",
     "DataTables",
     "GeoJSON",
     "GeoJSONs",
@@ -11,8 +12,10 @@ doc-valid-idents = [
     "MapLibre",
     "MathJax",
     "MiniJinja",
+    "NFSv4",
     "NxN",
     "OpenAI",
+    "SELinux",
     "SearchBuilder",
     "ToC",
     "snake_case",

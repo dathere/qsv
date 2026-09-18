@@ -8295,3 +8295,154 @@ fn frequency_drops_group_bits_when_the_cache_group_differs() {
         "left temp/probe files behind: {strays:?}"
     );
 }
+
+/// Puts one extra ACE on `path`, then confirms it can be read back with the platform's own tool.
+/// Returns `false` when the environment cannot do that at all - no `chmod +a`/`setfacl`, a
+/// filesystem mounted without ACL support, no `nobody` user - so the caller skips instead of
+/// failing for an unrelated reason.
+///
+/// Compiled on every unix and skipped at RUNTIME rather than gated with
+/// `#[cfg(target_os = "linux")]`: a cfg-gated test is never built on a macOS dev box, so it rots
+/// silently until CI catches it (the argument written into `tests/test_write_failure.rs`).
+#[cfg(unix)]
+fn set_one_test_ace(path: &std::path::Path) -> bool {
+    let apple = cfg!(target_vendor = "apple");
+    let set_ok = if apple {
+        // a DENY ace - it changes effective access without touching the mode bits at all
+        process::Command::new("chmod")
+            .arg("+a")
+            .arg("user:nobody deny read")
+            .arg(path)
+            .status()
+    } else {
+        process::Command::new("setfacl")
+            .arg("-m")
+            .arg("u:nobody:r")
+            .arg(path)
+            .status()
+    }
+    .map(|s| s.success())
+    .unwrap_or(false);
+    if !set_ok {
+        return false;
+    }
+    // Read it BACK rather than trusting the exit status: a tool can be present and still not
+    // persist an ACE (a tmpfs mounted without `acl`), and a test that passes while asserting
+    // nothing is worse than one that skips.
+    let shown = if apple {
+        process::Command::new("ls").arg("-le").arg(path).output()
+    } else {
+        process::Command::new("getfacl")
+            .arg("-c")
+            .arg(path)
+            .output()
+    };
+    shown
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("nobody"))
+        .unwrap_or(false)
+}
+
+// An ACL is invisible to `stat`: a 0644 CSV carrying `user:nobody deny read` still reports 0644,
+// so mode+gid arithmetic alone can hand the cache's values to a user the source itself denies.
+// There is no userland "could user X read this" oracle, so the rule is fail-closed on PRESENCE -
+// any ACL, owner bits only - and the ACL is never parsed (#4621).
+//
+// Paired on purpose. The ACL assertion alone would pass under a restrictive umask with the clamp
+// doing nothing at all, so the same fixture without an ACL has to be shown keeping its bits first.
+#[cfg(unix)]
+#[test]
+fn frequency_drops_group_bits_when_the_source_has_an_acl() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("frequency_drops_group_bits_when_the_source_has_an_acl");
+    wrk.create(
+        "plain.csv",
+        vec![svec!["dx"], svec!["flu"], svec!["flu"], svec!["measles"]],
+    );
+
+    let probe = wrk.path("probe");
+    std::fs::File::create(&probe).unwrap();
+    let umask_default = std::fs::metadata(&probe).unwrap().permissions().mode() & 0o777;
+    if umask_default & 0o077 == 0 {
+        eprintln!(
+            "skipping frequency_drops_group_bits_when_the_source_has_an_acl: a new file here is \
+             already owner-only ({umask_default:o}), so the clamp is not observable"
+        );
+        return;
+    }
+
+    // CONTROL: no ACL, so the cache keeps whatever the umask and the 0644 source allow.
+    let plain = wrk.path("plain.csv");
+    std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let mut plain_writer = wrk.command("frequency");
+    plain_writer.arg("--frequency-jsonl").arg("plain.csv");
+    wrk.assert_success(&mut plain_writer);
+    let plain_mode = std::fs::metadata(wrk.path("plain.freq.csv.data.jsonl"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        plain_mode,
+        umask_default & 0o644,
+        "a 0644 CSV with no ACL must still yield the umask default narrowed to 0644 (got \
+         {plain_mode:o}, umask default {umask_default:o})"
+    );
+    assert_ne!(
+        plain_mode & 0o077,
+        0,
+        "sanity: the control must be wider than owner-only, else the ACL assertion below proves \
+         nothing (got {plain_mode:o})"
+    );
+
+    // SUBJECT: the same bytes, the same 0644, plus one ACE.
+    let acl_csv = wrk.path("acl.csv");
+    std::fs::copy(&plain, &acl_csv).unwrap();
+    std::fs::set_permissions(&acl_csv, std::fs::Permissions::from_mode(0o644)).unwrap();
+    if !set_one_test_ace(&acl_csv) {
+        eprintln!(
+            "skipping frequency_drops_group_bits_when_the_source_has_an_acl: no ACL could be set \
+             or read back here"
+        );
+        return;
+    }
+    let acl_bits = std::fs::metadata(&acl_csv).unwrap().permissions().mode() & 0o777;
+    assert_ne!(
+        acl_bits & 0o077,
+        0,
+        "the ACE must not have narrowed the MODE bits - the whole point is that an ACL is \
+         invisible to them, so a clamp seen here would be the ordinary intersection instead (got \
+         {acl_bits:o})"
+    );
+
+    let mut acl_writer = wrk.command("frequency");
+    acl_writer.arg("--frequency-jsonl").arg("acl.csv");
+    wrk.assert_success(&mut acl_writer);
+
+    let cache = wrk.path("acl.freq.csv.data.jsonl");
+    let mode = std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode & 0o077,
+        0,
+        "a CSV carrying an ACL must yield an owner-only cache, whatever its mode bits say (got \
+         {mode:o}, control {plain_mode:o})"
+    );
+
+    let body = std::fs::read_to_string(&cache).unwrap();
+    assert!(
+        body.contains("measles"),
+        "sanity: the cache should contain source values, else this test proves nothing"
+    );
+
+    // no probe file from the implementation survives
+    let strays: Vec<String> = std::fs::read_dir(wrk.path("."))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".qsv-freqprobe-") || n.starts_with(".qsv-freqcache-"))
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "left temp/probe files behind: {strays:?}"
+    );
+}

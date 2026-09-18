@@ -4499,6 +4499,126 @@ fn new_file_mode_in(dir: &Path) -> Option<u32> {
     None
 }
 
+/// Does `source` carry an ACL? `true` means "clamp the derived artifact to owner-only" (#4621).
+///
+/// A POSIX/NFSv4 ACL is invisible to `stat`: a `0644` file carrying `user:nobody deny read` still
+/// reports `0644`, so `DerivedFile`'s mode+gid arithmetic can hand a user the cache's values when
+/// the source itself denies them. This is a PRESENCE test only - the ACL is never parsed, and no
+/// attempt is made to compute effective access. There is no userland "could user X read this"
+/// oracle, and a fail-closed presence bit is both sufficient and almost never triggered: 0 of 1098
+/// files in a real `~/Downloads` carry an ACL, because macOS puts its default
+/// `group:everyone deny delete` ACE on the FOLDERS, not on the files in them.
+///
+/// Returns `bool`, not `CliResult`, on purpose - see the "Failures are errors" paragraph on
+/// `DerivedFile`. An unexpected errno resolves to `true` (clamp), so a filesystem or platform that
+/// answers in some way we did not anticipate narrows the cache instead of failing the command.
+///
+/// The platform arms are separate functions rather than `#[cfg]` blocks inside one body: a block
+/// that yields a value is the tail expression only once the other arms are stripped, which is
+/// true but reads as a type error to every tool that does not apply cfgs exactly as rustc does.
+///
+/// Deliberately NOT detected, so nobody "completes" this later:
+///   - `system.nfs4_acl` on Linux. On an NFSv4 mount EVERY file exposes an ACL - the mode bits are
+///     synthesized from it - so probing that name would clamp every cache to owner-only for anyone
+///     whose home directory is on NFS. That is a regression, not a fix;
+///   - `system.posix_acl_default`, which only exists on directories (the source is a file);
+///   - a MINIMAL POSIX ACL on Linux - three entries exactly equivalent to the mode bits - reads as
+///     present and clamps although it grants nothing extra. Fail-closed and rare; parsing to tell
+///     the two apart buys very little and costs a whole ACL evaluator.
+#[cfg(unix)]
+fn source_has_acl(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+
+    let Ok(cpath) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        // an interior NUL cannot reach here (`metadata(source)` already succeeded on this path),
+        // but it must never silently become "no ACL"
+        return true;
+    };
+    path_has_acl(&cpath)
+}
+
+/// `acl_get_file` is the ONLY way to see an ACL on macOS. The xattr route is a dead end:
+/// `getxattr(…, "com.apple.system.Security")` returns EPERM with AND without an ACL, and the name
+/// never appears in `listxattr`. libc (0.2.189) binds no `acl_*` symbol for any target, so the two
+/// calls are declared here; both live in libSystem, which is linked by default. Measured on APFS:
+/// a file with one deny ACE yields a non-NULL `acl_t` and errno 0, a file with none yields NULL +
+/// ENOENT.
+#[cfg(all(unix, target_vendor = "apple"))]
+fn path_has_acl(cpath: &std::ffi::CStr) -> bool {
+    // safety: `acl_get_file(const char *path, acl_type_t type)` and `acl_free(void *obj_p)`,
+    // declared to match acl(3) with `acl_t`/`acl_type_t` as the `*mut c_void`/`c_uint` they are on
+    // Apple platforms. Invariants upheld here:
+    //   - `cpath` is a NUL-terminated C string that outlives the call, and the callee only reads
+    //     from it;
+    //   - the returned `acl_t` is an opaque owned handle. It is passed to `acl_free` on the one
+    //     path where it is non-NULL and to nothing else, so it is neither leaked nor freed twice,
+    //     and it is never dereferenced here;
+    //   - errno is read immediately after the call, before any other libc call could overwrite it,
+    //     and only when the return value is NULL (errno is meaningless otherwise).
+    unsafe extern "C" {
+        fn acl_get_file(
+            path: *const std::ffi::c_char,
+            acl_type: std::ffi::c_uint,
+        ) -> *mut std::ffi::c_void;
+        fn acl_free(obj_p: *mut std::ffi::c_void) -> std::ffi::c_int;
+    }
+    const ACL_TYPE_EXTENDED: std::ffi::c_uint = 0x0000_0100;
+
+    let acl = unsafe { acl_get_file(cpath.as_ptr(), ACL_TYPE_EXTENDED) };
+    if acl.is_null() {
+        // ENOENT is "no ACL here". It is also what a vanished path reports, which is fine: the
+        // source was stat-able moments ago, and a source that disappeared mid-run has no values
+        // left to protect.
+        std::io::Error::last_os_error().raw_os_error() != Some(libc::ENOENT)
+    } else {
+        unsafe { acl_free(acl) };
+        true
+    }
+}
+
+/// `getxattr` IS bound by libc here, and presence needs no `libacl`: the access ACL lives in one
+/// well-known xattr name. Asking for 0 bytes returns the value's size without reading it.
+#[cfg(all(unix, any(target_os = "linux", target_os = "android")))]
+fn path_has_acl(cpath: &std::ffi::CStr) -> bool {
+    // safety: `getxattr(const char *path, const char *name, void *value, size_t size)`.
+    // Invariants upheld here:
+    //   - both pointers are NUL-terminated C strings that outlive the call and are only read from
+    //     - `c"…"` is a `&CStr` literal with static storage;
+    //   - `value` is NULL with `size` 0, the documented "just tell me the length" form, so no
+    //     buffer is written and none has to be provided;
+    //   - errno is read immediately after the call and only on the -1 return.
+    let rc = unsafe {
+        libc::getxattr(
+            cpath.as_ptr(),
+            c"system.posix_acl_access".as_ptr(),
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if rc >= 0 {
+        return true;
+    }
+    let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+    // compared with `==` rather than an or-pattern: ENOTSUP and EOPNOTSUPP are the same value on
+    // Linux, and or-patterns over equal-valued constants trip `unreachable_patterns`. ENODATA = no
+    // ACL, ENOTSUP = the filesystem has no ACL support at all, ENOENT = the path vanished (see the
+    // apple arm).
+    errno != libc::ENODATA && errno != libc::ENOTSUP && errno != libc::ENOENT
+}
+
+/// FreeBSD has `acl_get_file` too (with `ACL_TYPE_ACCESS`/NFS4 rather than `ACL_TYPE_EXTENDED`),
+/// and illumos has `acl(2)`; neither is a publish target and neither is reachable from CI. So
+/// rather than ship an untestable arm - or clamp every cache on a platform where no ACL need be
+/// involved at all - this assumes none and leaves the residual exactly where it was before #4621.
+/// The arms above are the hook if that ever changes.
+#[cfg(all(
+    unix,
+    not(any(target_vendor = "apple", target_os = "linux", target_os = "android"))
+))]
+fn path_has_acl(_cpath: &std::ffi::CStr) -> bool {
+    false
+}
+
 /// A `<FILESTEM>.*` artifact derived from a source file - a stats or frequency cache - that
 /// must never be readable by anyone the source itself does not admit (#4619).
 ///
@@ -4520,8 +4640,8 @@ fn new_file_mode_in(dir: &Path) -> Option<u32> {
 /// Mode resolution on unix, from what `std` exposes - mode bits and gid:
 ///   1. start from the mode of the artifact being REPLACED, so a deliberate chmod survives a
 ///      refresh. A brand-new artifact starts from the umask default, probed rather than assumed
-///      (`new_file_mode_in`). Rule 2 overrides this: "survives" means "survives, but never beyond
-///      what the source grants";
+///      (`new_file_mode_in`). Rules 2 and 5 override this: "survives" means "survives, but never
+///      beyond what the source grants";
 ///   2. intersect with the source's mode - grant nothing the source does not. Intersecting is what
 ///      lets this coexist with the umask default: a world-readable CSV still gets a world-readable
 ///      cache, so shared-machine reuse is untouched;
@@ -4540,16 +4660,29 @@ fn new_file_mode_in(dir: &Path) -> Option<u32> {
 ///      "block this group" idiom); copying 0604 onto a file with a different group puts those very
 ///      users in the OTHER class and lets them in. A world-readable 0644 source still yields 0604,
 ///      so genuinely public data is unaffected.
+///   5. if the source carries ANY ACL, only the OWNER bits survive (#4621). An ACL is invisible to
+///      `std` - a 0644 file with a `deny read` ACE still reports 0644 - so unlike rules 2-4 there
+///      is nothing to intersect with, only something to fall back from. `source_has_acl` detects
+///      PRESENCE and never parses, which is why this is a clamp and not an evaluation. It applies
+///      on the refresh path too, so while the source is ACL'd a chmod on the artifact does NOT
+///      survive a refresh (rule 1); the alternative - honoring a once-widened artifact forever -
+///      keeps exactly the hole this closes. It almost never fires: 0 of 1098 files in a real
+///      `~/Downloads` carry an ACL. A directory with INHERITABLE ACEs (some MDM-managed homes, some
+///      sync tools) is the case where it fires for everything.
 ///
-/// Known residual, deliberately not chased (#4619): ACLs, xattrs and MAC labels can all make
-/// effective access differ from what mode+gid say, and none is visible through `std`. The
-/// probe does capture a Linux directory default ACL's effect on the mode, which is partial
-/// mitigation, not a solution.
+/// Known residual, deliberately not chased (#4619): xattrs and MAC labels (SELinux, AppArmor, the
+/// macOS sandbox) can still make effective access differ from what mode+gid say, and there is no
+/// userland "could user X read this" oracle for them short of reimplementing the policy engine.
+/// ACLs are now detected on macOS and Linux (rule 5) but not on other unix, and NFSv4 ACLs are
+/// deliberately not probed - see `source_has_acl` for both. The probe also captures a Linux
+/// directory default ACL's effect on the mode, which is partial mitigation, not a solution.
 ///
 /// Failures are errors, not `let _ =`: this is a confidentiality control, and silently
 /// publishing a 0644 copy of a 0600 CSV because a stat failed is the outcome it exists to
 /// prevent. Callers that must not fail the whole command over a cache (a best-effort refresh)
-/// decide that at their level.
+/// decide that at their level. The ONE exception is rule 5's presence test, which returns a
+/// `bool` and resolves an unexpected errno to "clamp": erroring there would fail a command over a
+/// filesystem that merely answers `getxattr` oddly, while clamping is already the safe direction.
 pub struct DerivedFile {
     file:     File,
     /// `Some` while the temp exists and is ours to remove; `None` once installed.
@@ -4581,12 +4714,15 @@ impl DerivedFile {
                 // new: ask an empty probe what a new file in this directory actually gets
                 Err(_) => new_file_mode_in(dir).unwrap_or(0o600),
             };
+            // An ACL on the source is invisible to everything above, so it cannot be intersected
+            // with - only fallen back from. Rule 5: any ACL present, owner bits only.
+            let acl_mask = if source_has_acl(source) { 0o700 } else { 0o777 };
             // Create OWNER-ONLY. The group and other bits are added back after creation, once
             // the temp's real gid is known - see the fchmod below. Creating at the full target
             // and narrowing afterwards would reopen roborev 4796.
             (
                 (base_mode & input_mode) & 0o700,
-                base_mode & input_mode,
+                (base_mode & input_mode) & acl_mask,
                 src.gid(),
                 // the source's GROUP bits shifted into the OTHER position - rule 4
                 (input_mode & 0o070) >> 3,
@@ -6927,6 +7063,102 @@ mod tests {
         assert!(
             temp_dir_is_removable(owned.path()),
             "a qsv-created temp directory must remain removable"
+        );
+    }
+
+    /// Puts one extra ACE on `path`, then confirms it can be read back with the platform's own
+    /// tool. Returns `false` when the environment cannot do that at all - no `chmod +a`/`setfacl`,
+    /// a filesystem mounted without ACL support, no `nobody` user - so the caller skips instead of
+    /// failing for an unrelated reason.
+    ///
+    /// Compiled on every unix and skipped at RUNTIME rather than gated with
+    /// `#[cfg(target_os = "linux")]`: a cfg-gated test is never built on a macOS dev box, so it
+    /// rots silently until CI catches it (the argument written into `tests/test_write_failure.rs`).
+    /// Verification goes through the tool's own output rather than `source_has_acl`, so the test
+    /// cannot certify the thing it is testing.
+    #[cfg(unix)]
+    fn set_one_test_ace(path: &std::path::Path) -> bool {
+        let apple = cfg!(target_vendor = "apple");
+        let set_ok = if apple {
+            // a DENY ace - it changes effective access without touching the mode bits at all
+            std::process::Command::new("chmod")
+                .arg("+a")
+                .arg("user:nobody deny read")
+                .arg(path)
+                .status()
+        } else {
+            std::process::Command::new("setfacl")
+                .arg("-m")
+                .arg("u:nobody:r")
+                .arg(path)
+                .status()
+        }
+        .map(|s| s.success())
+        .unwrap_or(false);
+        if !set_ok {
+            return false;
+        }
+        // Read it BACK rather than trusting the exit status: a tool can be present and still not
+        // persist an ACE (a tmpfs mounted without `acl`), and a test that passes while asserting
+        // nothing is worse than one that skips.
+        let shown = if apple {
+            std::process::Command::new("ls")
+                .arg("-le")
+                .arg(path)
+                .output()
+        } else {
+            std::process::Command::new("getfacl")
+                .arg("-c")
+                .arg(path)
+                .output()
+        };
+        shown
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains("nobody"))
+            .unwrap_or(false)
+    }
+
+    /// The negative, and the only arm of #4621 that runs unconditionally: on macOS it exercises
+    /// the `acl_get_file` FFI declaration (link, ABI and the `NULL` + `ENOENT` arm) even when the
+    /// positive below has to skip.
+    #[cfg(unix)]
+    #[test]
+    fn source_has_acl_is_false_for_a_plain_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let plain = dir.path().join("plain.csv");
+        std::fs::write(&plain, b"dx\nflu\n").unwrap();
+        assert!(
+            !super::source_has_acl(&plain),
+            "a freshly created file carries no ACL, so the derived cache must not be clamped"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn source_has_acl_is_true_when_an_ace_is_present() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("acl.csv");
+        std::fs::write(&path, b"dx\nflu\n").unwrap();
+
+        // A directory carrying INHERITABLE ACEs (some MDM-managed homes) hands one to every new
+        // file, so the before/after pair is not constructible there.
+        if super::source_has_acl(&path) {
+            eprintln!(
+                "skipping source_has_acl_is_true_when_an_ace_is_present: files created in {} \
+                 already carry an ACL",
+                dir.path().display()
+            );
+            return;
+        }
+        if !set_one_test_ace(&path) {
+            eprintln!(
+                "skipping source_has_acl_is_true_when_an_ace_is_present: no ACL could be set or \
+                 read back here"
+            );
+            return;
+        }
+        assert!(
+            super::source_has_acl(&path),
+            "an ACE was set and read back, so the presence test must see it"
         );
     }
 }

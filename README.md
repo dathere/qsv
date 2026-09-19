@@ -201,7 +201,7 @@ zipsign verify zip <PREBUILT-BINARY-ARCHIVE.zip> qsv-zipsign-public.key
 
 qsv is also distributed by several package managers and distros.
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/qsv.svg)](https://repology.org/project/qsv/versions)
+[![Packaging status](https://repology.amdmi3.ru/badge/vertical-allrepos/qsv.svg)](https://repology.amdmi3.ru/project/qsv/versions)
 
 Here are the relevant commands for installing qsv using the various package managers and distros:
 ```bash

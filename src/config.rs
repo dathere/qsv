@@ -781,8 +781,9 @@ impl Config {
     /// - If the file is Snappy-compressed, the function returns immediately w/o creating an index.
     /// - If `self.path` is `None`, the function returns without action.
     /// - The function creates an index file using `util::idx_path()` to determine index file path.
-    /// - It builds the index into a sibling temp file and `rename`s it into place, so the existing
-    ///   index is never truncated and readers never observe a partial one.
+    /// - It builds the index into a sibling temp file and `rename`s it into place (see
+    ///   `util::write_index_atomically`), so the existing index is never truncated and readers
+    ///   never observe a partial one.
     /// - Returns whether an index was successfully put in place. Callers that memoize the rebuild
     ///   must only record it on `true`.
     /// - No process-global state is set here. A subsequent `index_files()` discovers the new index
@@ -803,92 +804,20 @@ impl Config {
 
         let pidx = util::idx_path(Path::new(path_buf));
 
-        // Build into a SIBLING temp file and rename into place only after the index is
-        // complete. Writing straight to `pidx` means `File::create` TRUNCATES it before a
-        // single byte of the new index is written - so any later failure leaves an empty or
-        // partial index behind, and a concurrent reader can open one mid-write. `rename` on
-        // the same directory is atomic: readers see either the old complete index or the new
-        // one, never a torn file.
-        // Build into a UNIQUE sibling temp, then rename into place. `create_new` is
-        // O_CREAT|O_EXCL, so two concurrent builds - which the `autoindex_size` path below
-        // does NOT serialize - cannot land on the same file, and a pre-existing file or
-        // symlink at a guessable name cannot be written through. A deterministic
-        // `<idx>.tmp<pid>` had both problems, since same-process builds share a pid.
-        //
-        // `create_new` rather than `tempfile`: it applies the process umask exactly like the
-        // `fs::File::create` that `qsv index` uses, whereas `tempfile` creates 0600 and would
-        // carry that onto the `.idx` through the rename - silently turning auto-created and
-        // rebuilt indexes into owner-only files (roborev 4371).
-        let idx_dir = pidx.parent().unwrap_or_else(|| Path::new("."));
-        // Uniqueness does not need randomness here: `create_new` fails with AlreadyExists,
-        // so the loop simply advances the counter until it wins. pid separates processes, the
-        // counter separates threads and repeat calls within one.
-        static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-        let pid = std::process::id();
-        let mut tmp_path = None;
-        let mut tmp_file = None;
-        for _ in 0..16 {
-            let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let candidate = idx_dir.join(format!(".qsv-autoindex-{pid}-{seq}.tmp"));
-            if let Ok(f) = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&candidate)
-            {
-                tmp_path = Some(candidate);
-                tmp_file = Some(f);
-                break;
-            }
-        }
-        let (Some(tmp_path), Some(idxfile)) = (tmp_path, tmp_file) else {
-            debug!(
-                "autoindex of {}: could not create a temp index file",
-                path_buf.display()
-            );
-            return false;
-        };
-
-        // any early return from here on must not leave the temp behind
-        let cleanup = |tmp: &Path| {
-            let _ = fs::remove_file(tmp);
-        };
-
         let Ok(mut rdr) = self.reader_file() else {
-            cleanup(&tmp_path);
             return false;
         };
 
-        let build = {
-            let mut wtr = io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, idxfile);
-            csv_index::RandomAccessSimple::create(&mut rdr, &mut wtr)
-                .and_then(|()| io::Write::flush(&mut wtr).map_err(Into::into))
-        };
-        if let Err(e) = build {
-            cleanup(&tmp_path);
-            debug!("autoindex of {} failed: {e}", path_buf.display());
-            return false;
+        match util::write_index_atomically(&mut rdr, &pidx) {
+            Ok(()) => {
+                debug!("autoindex of {} successful.", path_buf.display());
+                true
+            },
+            Err(e) => {
+                debug!("autoindex of {} failed: {e}", path_buf.display());
+                false
+            },
         }
-
-        // On a REBUILD, carry over the existing index's permissions, so an index someone
-        // deliberately chmod'd keeps that mode instead of reverting to the umask default.
-        #[cfg(unix)]
-        if let Ok(existing) = fs::metadata(&pidx) {
-            let _ = fs::set_permissions(&tmp_path, existing.permissions());
-        }
-
-        // rename is atomic on the same filesystem: readers see either the old complete index
-        // or the new one, never a torn file
-        if let Err(e) = fs::rename(&tmp_path, &pidx) {
-            cleanup(&tmp_path);
-            debug!(
-                "autoindex of {} could not be put in place: {e}",
-                path_buf.display()
-            );
-            return false;
-        }
-        debug!("autoindex of {} successful.", path_buf.display());
-        true
     }
 
     /// Check if the index file exists and is newer than the CSV file.
@@ -1026,6 +955,25 @@ impl Config {
                 }
                 idx_file = fs::File::open(idx_path)?;
             }
+        }
+
+        // Reject a structurally invalid index. `RandomAccessSimple::open` reads only the
+        // trailing 8 bytes and trusts them as the record count, so a truncated index that
+        // happens to end on an 8-byte boundary opens fine and reports a byte OFFSET as the
+        // count - a silent wrong answer at exit 0 (#4615). This covers indexes produced by
+        // older qsv versions, an interrupted or out-of-space write, or a partial copy; the
+        // atomic build in `util::write_index_atomically` stops qsv producing new ones.
+        //
+        // Like a stale index that could not be rebuilt (above), report "no index" rather than
+        // erroring: the caller's sequential path is slower but correct.
+        if !crate::index::is_structurally_complete(&mut idx_file)? {
+            warn!(
+                "index for {} is malformed; proceeding without an index",
+                self.path
+                    .as_ref()
+                    .map_or_else(String::new, |p| p.display().to_string())
+            );
+            return Ok(None);
         }
 
         let csv_rdr = self.from_reader(csv_file);

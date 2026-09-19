@@ -152,6 +152,139 @@ fn index_autoindex_threshold_not_reached() {
     assert!(!wrk.path("in.csv.idx").exists());
 }
 
+/// A failed `qsv index` must leave the filesystem as it found it. It used to write straight to
+/// the destination, so the ragged record below aborted the build AFTER `File::create` had
+/// already truncated the target and the dropped `BufWriter` had flushed a partial index there.
+#[test]
+fn index_failure_leaves_no_index() {
+    let wrk = Workdir::new("index_failure_leaves_no_index");
+    wrk.create_from_string("in.csv", "a,b,c\n1,2,3\n4,5,6,7,8\n9,8,7\n");
+
+    let mut cmd = wrk.command("index");
+    cmd.arg("in.csv");
+    wrk.assert_err(&mut cmd);
+
+    assert!(
+        !wrk.path("in.csv.idx").exists(),
+        "a failed index build left an index behind"
+    );
+    // and no temp file leaked either
+    let leaked: Vec<_> = fs::read_dir(wrk.path("."))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".qsv-index-"))
+        .collect();
+    assert!(leaked.is_empty(), "temp index files leaked: {leaked:?}");
+}
+
+/// Re-indexing a file that has since become ragged must not destroy the good index that is
+/// already there. `File::create` truncated it before reading a single record, so a 40-byte
+/// index became a bogus 16-byte one.
+#[test]
+fn index_failure_preserves_existing_index() {
+    let wrk = Workdir::new("index_failure_preserves_existing_index");
+    wrk.create_from_string("in.csv", "a,b,c\n1,2,3\n4,5,6\n9,8,7\n");
+
+    let mut build = wrk.command("index");
+    build.arg("in.csv");
+    wrk.assert_success(&mut build);
+    let good_idx = fs::read(wrk.path("in.csv.idx")).unwrap();
+    assert!(!good_idx.is_empty());
+
+    // the data file becomes ragged, so re-indexing it fails
+    wrk.create_from_string("in.csv", "a,b,c\n1,2,3\n4,5,6,7,8\n9,8,7\n");
+
+    let mut rebuild = wrk.command("index");
+    rebuild.arg("in.csv");
+    wrk.assert_err(&mut rebuild);
+
+    assert_eq!(
+        fs::read(wrk.path("in.csv.idx")).unwrap(),
+        good_idx,
+        "a failed re-index replaced the existing index"
+    );
+}
+
+/// A truncated index that happens to end on an 8-byte boundary opens without complaint and
+/// reports a byte OFFSET as its record count. `count` believed it and returned a wrong number
+/// at exit 0; it must now ignore the index and scan instead.
+#[test]
+fn truncated_index_is_ignored() {
+    let wrk = Workdir::new("truncated_index_is_ignored");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["a", "b", "c"],
+            svec!["1", "2", "3"],
+            svec!["4", "5", "6"],
+            svec!["9", "8", "7"],
+        ],
+    );
+
+    // 4 records (header included) => 5 u64s => 40 bytes. Lop off the trailing count and the
+    // last offset: the new trailing u64 is an OFFSET, which the reader takes as a count.
+    let idx = fs::read(wrk.path("in.csv.idx")).unwrap();
+    assert_eq!(idx.len(), 40);
+    fs::write(wrk.path("in.csv.idx"), &idx[..24]).unwrap();
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("in.csv");
+    let got: usize = wrk.stdout(&mut cmd);
+    rassert_eq!(got, 3);
+}
+
+/// The issue's exact repro: a bogus index must not let a malformed CSV report a confident row
+/// count. Without the index, `count` surfaces the real CSV error.
+#[test]
+fn bogus_index_does_not_mask_a_csv_error() {
+    let wrk = Workdir::new("bogus_index_does_not_mask_a_csv_error");
+    wrk.create_from_string("in.csv", "a,b,c\n1,2,3\n4,5,6,7,8\n9,8,7\n");
+
+    // exactly what a failed pre-fix `qsv index` used to leave behind: two offsets, no count
+    let bogus = [0_u64, 6_u64]
+        .iter()
+        .flat_map(|o| o.to_be_bytes())
+        .collect::<Vec<u8>>();
+    assert_eq!(bogus.len(), 16);
+    fs::write(wrk.path("in.csv.idx"), &bogus).unwrap();
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+/// The index must keep the umask default, not the 0600 a `tempfile`-based build would carry
+/// through the rename. Probed against a file this test creates the same way, so it holds under
+/// any umask (roborev 4371).
+#[cfg(unix)]
+#[test]
+fn index_keeps_umask_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("index_keeps_umask_permissions");
+    wrk.create_from_string("in.csv", "a,b,c\n1,2,3\n4,5,6\n9,8,7\n");
+
+    let mut cmd = wrk.command("index");
+    cmd.arg("in.csv");
+    wrk.assert_success(&mut cmd);
+
+    // oracle: what mode does an ordinary File::create get in this directory?
+    let probe = wrk.path("umask-probe");
+    fs::File::create(&probe).unwrap();
+    let expected = fs::metadata(&probe).unwrap().permissions().mode() & 0o777;
+
+    let got = fs::metadata(wrk.path("in.csv.idx"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        got, expected,
+        "index mode {got:o} != umask default {expected:o}"
+    );
+}
+
 fn future_time(ft: FileTime) -> FileTime {
     let secs = ft.unix_seconds();
     FileTime::from_unix_time(secs + 10_000, 0)

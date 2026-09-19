@@ -4645,3 +4645,1420 @@ fn sqlp_invalid_format_errors() {
 
     wrk.assert_err(&mut cmd);
 }
+
+// ---------------------------------------------------------------------------
+// Polars SQL surface added between py-1.44.0 and rev 9d5804d (the bump in
+// 50c2cf18f). One test per upstream behavior change; the upstream PR is cited
+// so the next bump can diff against it.
+// ---------------------------------------------------------------------------
+
+/// Fixture shared by the GROUP BY / aggregate tests below.
+fn grouping_fixture(wrk: &Workdir) {
+    wrk.create(
+        "groups.csv",
+        vec![
+            svec!["category", "class", "value"],
+            svec!["a", "x", "1"],
+            svec!["a", "x", "2"],
+            svec!["a", "y", "3"],
+            svec!["b", "x", "4"],
+            svec!["b", "y", "5"],
+            svec!["b", "y", "6"],
+        ],
+    );
+}
+
+#[test]
+fn sqlp_grouping_sets() {
+    // pola-rs/polars#29278: GROUP BY GROUPING SETS. The subtotal rows carry a
+    // NULL in the columns they do not group by, so --wnull-value makes the
+    // difference between "subtotal" and "a group whose key is empty" visible.
+    let wrk = Workdir::new("sqlp_grouping_sets");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv")
+        .arg(
+            "SELECT category, class, SUM(value) AS total, COUNT(*) AS n FROM groups GROUP BY \
+             GROUPING SETS ((category, class), (category), (class), ()) ORDER BY category NULLS \
+             LAST, class NULLS LAST",
+        )
+        .args(["--wnull-value", "NULL"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["category", "class", "total", "n"],
+        svec!["a", "x", "3", "2"],
+        svec!["a", "y", "3", "1"],
+        svec!["a", "NULL", "6", "3"],
+        svec!["b", "x", "4", "1"],
+        svec!["b", "y", "11", "2"],
+        svec!["b", "NULL", "15", "3"],
+        svec!["NULL", "x", "7", "3"],
+        svec!["NULL", "y", "14", "3"],
+        svec!["NULL", "NULL", "21", "6"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_group_by_rollup() {
+    // pola-rs/polars#29278: ROLLUP(a, b) == GROUPING SETS ((a,b), (a), ()),
+    // i.e. it does NOT include the (class) subtotal that CUBE adds below.
+    let wrk = Workdir::new("sqlp_group_by_rollup");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv")
+        .arg(
+            "SELECT category, class, SUM(value) AS total FROM groups GROUP BY ROLLUP(category, \
+             class) ORDER BY category NULLS LAST, class NULLS LAST",
+        )
+        .args(["--wnull-value", "NULL"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["category", "class", "total"],
+        svec!["a", "x", "3"],
+        svec!["a", "y", "3"],
+        svec!["a", "NULL", "6"],
+        svec!["b", "x", "4"],
+        svec!["b", "y", "11"],
+        svec!["b", "NULL", "15"],
+        svec!["NULL", "NULL", "21"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_group_by_cube() {
+    // pola-rs/polars#29278: CUBE(a, b) adds the (class) subtotals that ROLLUP
+    // omits -- the two NULL-category rows below are the whole point.
+    let wrk = Workdir::new("sqlp_group_by_cube");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv")
+        .arg(
+            "SELECT category, class, SUM(value) AS total FROM groups GROUP BY CUBE(category, \
+             class) ORDER BY category NULLS LAST, class NULLS LAST",
+        )
+        .args(["--wnull-value", "NULL"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["category", "class", "total"],
+        svec!["a", "x", "3"],
+        svec!["a", "y", "3"],
+        svec!["a", "NULL", "6"],
+        svec!["b", "x", "4"],
+        svec!["b", "y", "11"],
+        svec!["b", "NULL", "15"],
+        svec!["NULL", "x", "7"],
+        svec!["NULL", "y", "14"],
+        svec!["NULL", "NULL", "21"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_grouping_function() {
+    // pola-rs/polars#29278: GROUPING(col) is 1 when col is rolled up in that
+    // row, else 0; with several arguments the bits are packed MSB-first, so
+    // GROUPING(category, class) == 3 on the grand total but 1 when only class
+    // is rolled up.
+    let wrk = Workdir::new("sqlp_grouping_function");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv")
+        .arg(
+            "SELECT category, class, SUM(value) AS total, GROUPING(category) AS gc, \
+             GROUPING(class) AS gk, GROUPING(category, class) AS gb FROM groups GROUP BY \
+             ROLLUP(category, class) ORDER BY category NULLS LAST, class NULLS LAST",
+        )
+        .args(["--wnull-value", "NULL"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["category", "class", "total", "gc", "gk", "gb"],
+        svec!["a", "x", "3", "0", "0", "0"],
+        svec!["a", "y", "3", "0", "0", "0"],
+        svec!["a", "NULL", "6", "0", "1", "1"],
+        svec!["b", "x", "4", "0", "0", "0"],
+        svec!["b", "y", "11", "0", "0", "0"],
+        svec!["b", "NULL", "15", "0", "1", "1"],
+        svec!["NULL", "NULL", "21", "1", "1", "3"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_grouping_function_select_alias() {
+    // pola-rs/polars#29278: a SELECT alias over an expression is accepted both
+    // as the ROLLUP key and as the GROUPING() argument.
+    let wrk = Workdir::new("sqlp_grouping_function_select_alias");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv")
+        .arg(
+            "SELECT UPPER(category) AS cat, SUM(value) AS total, GROUPING(cat) AS g FROM groups \
+             GROUP BY ROLLUP(cat) ORDER BY cat NULLS LAST",
+        )
+        .args(["--wnull-value", "NULL"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["cat", "total", "g"],
+        svec!["A", "6", "0"],
+        svec!["B", "15", "0"],
+        svec!["NULL", "21", "1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_date_integer_arithmetic() {
+    // pola-rs/polars#29156: a Date +/- an integer shifts by whole days, with the
+    // integer on either side and from either a literal or a column. The fixture
+    // straddles a leap day (2020-02-28 + 2 == 2020-03-01) and the same date in a
+    // non-leap year (2021-02-28 + 2 == 2021-03-02).
+    let wrk = Workdir::new("sqlp_date_integer_arithmetic");
+    wrk.create(
+        "dates.csv",
+        vec![
+            svec!["dt", "n"],
+            svec!["2020-01-01", "5"],
+            svec!["2020-02-28", "2"],
+            svec!["2021-02-28", "2"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("dates.csv")
+        .arg(
+            "SELECT dt, n, dt + 5 AS plus_lit, 5 + dt AS lit_plus, dt - 5 AS minus_lit, dt + n AS \
+             plus_col, dt - n AS minus_col FROM dates",
+        )
+        .arg("--try-parsedates");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec![
+            "dt",
+            "n",
+            "plus_lit",
+            "lit_plus",
+            "minus_lit",
+            "plus_col",
+            "minus_col"
+        ],
+        svec![
+            "2020-01-01",
+            "5",
+            "2020-01-06",
+            "2020-01-06",
+            "2019-12-27",
+            "2020-01-06",
+            "2019-12-27"
+        ],
+        svec![
+            "2020-02-28",
+            "2",
+            "2020-03-04",
+            "2020-03-04",
+            "2020-02-23",
+            "2020-03-01",
+            "2020-02-26"
+        ],
+        svec![
+            "2021-02-28",
+            "2",
+            "2021-03-05",
+            "2021-03-05",
+            "2021-02-23",
+            "2021-03-02",
+            "2021-02-26"
+        ],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_typed_temporal_literals() {
+    // pola-rs/polars#29007: `DATE '...'` / `TIMESTAMP '...'` are parsed as typed
+    // literals rather than a string that later gets cast, so they compare
+    // directly against a Date column.
+    let wrk = Workdir::new("sqlp_typed_temporal_literals");
+    wrk.create(
+        "dates.csv",
+        vec![
+            svec!["dt"],
+            svec!["2020-01-01"],
+            svec!["2020-02-28"],
+            svec!["2021-02-28"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("dates.csv")
+        .arg("SELECT dt FROM dates WHERE dt > DATE '2020-01-15' ORDER BY dt")
+        .arg("--try-parsedates");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["dt"], svec!["2020-02-28"], svec!["2021-02-28"]]
+    );
+
+    let mut between_cmd = wrk.command("sqlp");
+    between_cmd
+        .arg("dates.csv")
+        .arg(
+            "SELECT dt FROM dates WHERE dt BETWEEN DATE '2020-01-01' AND DATE '2020-06-01' ORDER \
+             BY dt",
+        )
+        .arg("--try-parsedates");
+    let got_between: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut between_cmd);
+    assert_eq!(
+        got_between,
+        vec![svec!["dt"], svec!["2020-01-01"], svec!["2020-02-28"]]
+    );
+
+    // As projected values: DATE keeps day resolution, TIMESTAMP is a Datetime.
+    let mut literal_cmd = wrk.command("sqlp");
+    literal_cmd.arg("dates.csv").arg(
+        "SELECT DATE '2020-02-29' AS d, TIMESTAMP '2020-01-01 08:00:00' AS ts FROM dates LIMIT 1",
+    );
+    let got_literal: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut literal_cmd);
+    assert_eq!(
+        got_literal,
+        vec![
+            svec!["d", "ts"],
+            svec!["2020-02-29", "2020-01-01T08:00:00.000000"]
+        ]
+    );
+}
+
+#[test]
+fn sqlp_cast_string_to_temporal() {
+    // pola-rs/polars#28062 removed the string->temporal *cast*, and #28986 then
+    // made `CAST(<string> AS DATE/TIME/TIMESTAMP)` in SQL *parse* the string
+    // instead. So the SQL spelling keeps working even though the underlying
+    // cast is gone -- this test pins that, for a column operand, the `::` form,
+    // and a bare string literal.
+    let wrk = Workdir::new("sqlp_cast_string_to_temporal");
+    wrk.create(
+        "strs.csv",
+        vec![
+            svec!["d", "ts", "t"],
+            svec!["2000-02-01", "2000-02-01 12:30:00", "12:30:00"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("strs.csv").arg(
+        "SELECT CAST(d AS DATE) AS d1, CAST(ts AS TIMESTAMP) AS ts1, CAST(ts AS DATETIME) AS ts2, \
+         CAST(t AS TIME) AS t1 FROM strs",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["d1", "ts1", "ts2", "t1"],
+            svec![
+                "2000-02-01",
+                "2000-02-01T12:30:00.000000",
+                "2000-02-01T12:30:00.000000",
+                "12:30:00.000000000"
+            ]
+        ]
+    );
+
+    let mut colon_cmd = wrk.command("sqlp");
+    colon_cmd
+        .arg("strs.csv")
+        .arg("SELECT d::date AS d1, ts::timestamp AS ts1, t::time AS t1 FROM strs");
+    let got_colon: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut colon_cmd);
+    assert_eq!(
+        got_colon,
+        vec![
+            svec!["d1", "ts1", "t1"],
+            svec![
+                "2000-02-01",
+                "2000-02-01T12:30:00.000000",
+                "12:30:00.000000000"
+            ]
+        ]
+    );
+
+    let mut literal_cmd = wrk.command("sqlp");
+    literal_cmd
+        .arg("strs.csv")
+        .arg("SELECT CAST('2000-02-01' AS DATE) AS d1, CAST('12:30:00' AS TIME) AS t1 FROM strs");
+    let got_literal: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut literal_cmd);
+    assert_eq!(
+        got_literal,
+        vec![svec!["d1", "t1"], svec!["2000-02-01", "12:30:00.000000000"]]
+    );
+}
+
+#[test]
+fn sqlp_cast_strict_vs_try_temporal() {
+    // pola-rs/polars#28986: CAST is strict and TRY_CAST is not. On a column
+    // holding one unparseable value, CAST fails the whole query while TRY_CAST
+    // nulls just that row. `sqlp_try_cast` covers only the TRY_CAST half.
+    let wrk = Workdir::new("sqlp_cast_strict_vs_try_temporal");
+    // The `id` column is load-bearing: a projection of the nulled column ALONE
+    // writes the failed row as an empty line, which the CSV reader then drops,
+    // so the TRY_CAST assertion below could not tell a nulled row from a
+    // missing one.
+    wrk.create(
+        "badstrs.csv",
+        vec![
+            svec!["id", "s"],
+            svec!["1", "2000-02-01"],
+            svec!["2", "not-a-date"],
+        ],
+    );
+
+    let mut strict_cmd = wrk.command("sqlp");
+    strict_cmd
+        .arg("badstrs.csv")
+        .arg("SELECT id, CAST(s AS DATE) AS d FROM badstrs ORDER BY id");
+    let stderr = wrk.stderr_on_error(&mut strict_cmd);
+    assert!(
+        stderr.contains("conversion from `str` to `date` failed"),
+        "unexpected stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("not-a-date"),
+        "error should name the offending value: {stderr}"
+    );
+
+    let mut try_cmd = wrk.command("sqlp");
+    try_cmd
+        .arg("badstrs.csv")
+        .arg("SELECT id, TRY_CAST(s AS DATE) AS d FROM badstrs ORDER BY id");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut try_cmd);
+    assert_eq!(
+        got,
+        vec![svec!["id", "d"], svec!["1", "2000-02-01"], svec!["2", ""]]
+    );
+}
+
+#[test]
+fn sqlp_approx_quantile() {
+    // pola-rs/polars#29288 added APPROX_QUANTILE to the SQL frontend. It is
+    // cfg-gated on polars' `approx_quantile` feature, which qsv enables
+    // explicitly in Cargo.toml -- upstream ships it only inside the
+    // docs-selection/full umbrellas, so without that line sqlp rejects the
+    // function outright.
+    //
+    // Signatures: (col, q), (col, q, allowed_rank_error), (col, q, error, method).
+    // The sketch is deterministic for a given input, so these are exact
+    // expectations, not a tolerance band (verified byte-identical over 20 runs).
+    let wrk = Workdir::new("sqlp_approx_quantile");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv").arg(
+        "SELECT APPROX_QUANTILE(value, 0.5) AS a2, APPROX_QUANTILE(value, 0.5, 0.01) AS a3, \
+         APPROX_QUANTILE(value, 0.5, 0.01, 'kll') AS a4, APPROX_QUANTILE(value, 0.25) AS q25, \
+         APPROX_QUANTILE(value, 0.75) AS q75 FROM groups",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["a2", "a3", "a4", "q25", "q75"],
+            svec!["4", "4", "4", "2", "5"]
+        ]
+    );
+
+    // It is a real aggregate, so it works per group.
+    let mut grouped_cmd = wrk.command("sqlp");
+    grouped_cmd.arg("groups.csv").arg(
+        "SELECT category, APPROX_QUANTILE(value, 0.5) AS aq FROM groups GROUP BY category ORDER \
+         BY category",
+    );
+    let got_grouped: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut grouped_cmd);
+    assert_eq!(
+        got_grouped,
+        vec![svec!["category", "aq"], svec!["a", "2"], svec!["b", "5"]]
+    );
+
+    // Outside 2-4 arguments it is a syntax error, not a silent fallback.
+    let mut arity_cmd = wrk.command("sqlp");
+    arity_cmd
+        .arg("groups.csv")
+        .arg("SELECT APPROX_QUANTILE(value) AS aq FROM groups");
+    let stderr = wrk.stderr_on_error(&mut arity_cmd);
+    assert!(
+        stderr.contains("APPROX_QUANTILE expects 2-4 arguments (found 1)"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+/// Fixture for the window-function tests: two groups, correlated a/b pairs.
+fn window_fixture(wrk: &Workdir) {
+    wrk.create(
+        "win.csv",
+        vec![
+            svec!["i", "g", "a", "b"],
+            svec!["0", "a", "1", "1"],
+            svec!["1", "a", "2", "3"],
+            svec!["2", "a", "3", "2"],
+            svec!["3", "b", "4", "10"],
+            svec!["4", "b", "5", "20"],
+        ],
+    );
+}
+
+#[test]
+fn sqlp_over_multi_arg_aggregates() {
+    // pola-rs/polars#29160: OVER now applies to aggregates that take more than
+    // one argument. Before the fix the window was dropped and these collapsed to
+    // a whole-frame aggregate. The existing OVER tests only cover the
+    // single-argument ranking functions (ROW_NUMBER/RANK/DENSE_RANK), so the
+    // per-partition values below are the regression signal.
+    let wrk = Workdir::new("sqlp_over_multi_arg_aggregates");
+    window_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("win.csv")
+        .arg(
+            "SELECT i, g, CORR(a,b) OVER (PARTITION BY g) AS corr, COVAR_POP(a,b) OVER (PARTITION \
+             BY g) AS cvp, COVAR_SAMP(a,b) OVER (PARTITION BY g) AS cvs, QUANTILE_CONT(a,0.5) \
+             OVER (PARTITION BY g) AS qc, QUANTILE_DISC(a,0.5) OVER (PARTITION BY g) AS qd, \
+             STRING_AGG(g,'-') OVER (PARTITION BY g) AS sa FROM win ORDER BY i",
+        )
+        .args(["--float-precision", "6"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["i", "g", "corr", "cvp", "cvs", "qc", "qd", "sa"],
+        svec![
+            "0", "a", "0.500000", "0.333333", "0.500000", "2.000000", "2.000000", "a-a-a"
+        ],
+        svec![
+            "1", "a", "0.500000", "0.333333", "0.500000", "2.000000", "2.000000", "a-a-a"
+        ],
+        svec![
+            "2", "a", "0.500000", "0.333333", "0.500000", "2.000000", "2.000000", "a-a-a"
+        ],
+        svec![
+            "3", "b", "1.000000", "2.500000", "5.000000", "4.500000", "4.000000", "b-b"
+        ],
+        svec![
+            "4", "b", "1.000000", "2.500000", "5.000000", "4.500000", "4.000000", "b-b"
+        ],
+    ];
+    assert_eq!(got, expected);
+}
+
+/// Fixture for the window NULLS ordering tests: nulls in both groups.
+fn window_nulls_fixture(wrk: &Workdir) {
+    wrk.create(
+        "wnulls.csv",
+        vec![
+            svec!["grp", "a"],
+            svec!["x", "20.0"],
+            svec!["x", ""],
+            svec!["x", "10.0"],
+            svec!["y", ""],
+            svec!["y", "40.0"],
+            svec!["y", "30.0"],
+        ],
+    );
+}
+
+#[test]
+fn sqlp_window_order_by_nulls_last() {
+    // pola-rs/polars#29159: NULLS FIRST/LAST inside a *window's* ORDER BY is now
+    // respected. The existing NULLS FIRST/LAST tests in this file all sit on the
+    // top-level ORDER BY, which took a different code path.
+    let wrk = Workdir::new("sqlp_window_order_by_nulls_last");
+    window_nulls_fixture(&wrk);
+
+    // `grp` is deliberately NOT projected. The two null-`a` rows are peers in
+    // this window, so which one gets rn 5 vs rn 6 is unspecified -- but `a`,
+    // `rn`, `cnt` and `total` are identical either way, so the assertion is a
+    // total order on what it actually asserts. Adding a second window ORDER BY
+    // key as a tiebreak is NOT an option: polars silently ignores
+    // NULLS FIRST/LAST once a window has more than one key (pinned by
+    // sqlp_window_order_by_multiple_keys_limitation), which would invert the
+    // very property under test.
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("wnulls.csv").arg(
+        "SELECT a, ROW_NUMBER() OVER (ORDER BY a NULLS LAST) AS rn, COUNT(*) OVER (ORDER BY a \
+         NULLS LAST) AS cnt, SUM(a) OVER (ORDER BY a NULLS LAST) AS total FROM wnulls ORDER BY rn",
+    );
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["a", "rn", "cnt", "total"],
+        svec!["10.0", "1", "1", "10.0"],
+        svec!["20.0", "2", "2", "30.0"],
+        svec!["30.0", "3", "3", "60.0"],
+        svec!["40.0", "4", "4", "100.0"],
+        svec!["", "5", "5", "100.0"],
+        svec!["", "6", "6", "100.0"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_window_order_by_nulls_first() {
+    // pola-rs/polars#29159, the mirror of sqlp_window_order_by_nulls_last: the
+    // two nulls must lead, and DESC must not silently flip the null placement.
+    let wrk = Workdir::new("sqlp_window_order_by_nulls_first");
+    window_nulls_fixture(&wrk);
+
+    // As in sqlp_window_order_by_nulls_last, `grp` is left out: the two null
+    // rows are peers, so only `a` and `rn` are determinate.
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("wnulls.csv")
+        .arg("SELECT a, ROW_NUMBER() OVER (ORDER BY a NULLS FIRST) AS rn FROM wnulls ORDER BY rn");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["a", "rn"],
+            svec!["", "1"],
+            svec!["", "2"],
+            svec!["10.0", "3"],
+            svec!["20.0", "4"],
+            svec!["30.0", "5"],
+            svec!["40.0", "6"],
+        ]
+    );
+
+    let mut desc_cmd = wrk.command("sqlp");
+    desc_cmd.arg("wnulls.csv").arg(
+        "SELECT a, ROW_NUMBER() OVER (ORDER BY a DESC NULLS FIRST) AS rn FROM wnulls ORDER BY rn",
+    );
+    let got_desc: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut desc_cmd);
+    assert_eq!(
+        got_desc,
+        vec![
+            svec!["a", "rn"],
+            svec!["", "1"],
+            svec!["", "2"],
+            svec!["40.0", "3"],
+            svec!["30.0", "4"],
+            svec!["20.0", "5"],
+            svec!["10.0", "6"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_window_partition_by_order_by_nulls() {
+    // pola-rs/polars#29159 combined with PARTITION BY: the null sorts last
+    // *within* each partition, so both groups restart at rn 1.
+    //
+    // Unlike the two tests above this one CAN project `grp` and assert an exact
+    // order: each partition holds exactly one null, so there are no peers and
+    // every row's rn is determined.
+    let wrk = Workdir::new("sqlp_window_partition_by_order_by_nulls");
+    window_nulls_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("wnulls.csv").arg(
+        "SELECT grp, a, ROW_NUMBER() OVER (PARTITION BY grp ORDER BY a NULLS LAST) AS rn FROM \
+         wnulls ORDER BY grp, rn",
+    );
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["grp", "a", "rn"],
+            svec!["x", "10.0", "1"],
+            svec!["x", "20.0", "2"],
+            svec!["x", "", "3"],
+            svec!["y", "30.0", "1"],
+            svec!["y", "40.0", "2"],
+            svec!["y", "", "3"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_over_aggregate_with_having() {
+    // pola-rs/polars#29006: an OVER window wrapping an aggregate coexists with
+    // HAVING -- the window sees the post-aggregation groups.
+    let wrk = Workdir::new("sqlp_over_aggregate_with_having");
+    window_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("win.csv").arg(
+        "SELECT g, SUM(a) AS s, MAX(SUM(a)) OVER () AS mx FROM win GROUP BY g HAVING SUM(a) > 3 \
+         ORDER BY g",
+    );
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["g", "s", "mx"],
+            svec!["a", "6", "9"],
+            svec!["b", "9", "9"],
+        ]
+    );
+}
+
+/// Fixture for the parenthesized-JOIN tests: overlapping a/b so that a
+/// two-column constraint selects exactly one row.
+fn paren_join_fixture(wrk: &Workdir) {
+    wrk.create(
+        "df1.csv",
+        vec![
+            svec!["a", "b"],
+            svec!["1", "2"],
+            svec!["2", "3"],
+            svec!["3", "4"],
+        ],
+    );
+    wrk.create(
+        "df2.csv",
+        vec![
+            svec!["a", "b"],
+            svec!["2", "3"],
+            svec!["3", "9"],
+            svec!["9", "9"],
+        ],
+    );
+}
+
+#[test]
+fn sqlp_join_parenthesized_constraint() {
+    // pola-rs/polars#28967: `ON (<constraint>)` wrapped in parens is accepted.
+    // ORDER BY a1 is on a unique left key -- sqlp has no --maintain-order, so a
+    // join test without a total order is not repeatable.
+    let wrk = Workdir::new("sqlp_join_parenthesized_constraint");
+    paren_join_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["df1.csv", "df2.csv"]).arg(
+        "SELECT df1.a AS a1, df1.b AS b1, df2.a AS a2, df2.b AS b2 FROM df1 JOIN df2 ON (df1.a = \
+         df2.a AND df1.b = df2.b) ORDER BY a1",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["a1", "b1", "a2", "b2"], svec!["2", "3", "2", "3"],]
+    );
+
+    // LEFT JOIN keeps the non-matching left rows with nulls on the right.
+    let mut left_cmd = wrk.command("sqlp");
+    left_cmd.args(["df1.csv", "df2.csv"]).arg(
+        "SELECT df1.a AS a1, df1.b AS b1, df2.a AS a2, df2.b AS b2 FROM df1 LEFT JOIN df2 ON \
+         (df1.a = df2.a AND df1.b = df2.b) ORDER BY a1",
+    );
+    let got_left: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut left_cmd);
+    assert_eq!(
+        got_left,
+        vec![
+            svec!["a1", "b1", "a2", "b2"],
+            svec!["1", "2", "", ""],
+            svec!["2", "3", "2", "3"],
+            svec!["3", "4", "", ""],
+        ]
+    );
+
+    // A parenthesized non-predicate is rejected rather than treated as a cross
+    // join filter.
+    let mut bad_cmd = wrk.command("sqlp");
+    bad_cmd
+        .args(["df1.csv", "df2.csv"])
+        .arg("SELECT * FROM df1 JOIN df2 ON (df1.a)");
+    let stderr = wrk.stderr_on_error(&mut bad_cmd);
+    assert!(
+        stderr.contains("predicates must resolve to boolean"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn sqlp_join_parenthesized_relation_alias() {
+    // pola-rs/polars#29158: bare parens around a join do NOT introduce a new
+    // scope, so aliases declared inside them stay visible to the outer SELECT.
+    // Asserted by equivalence with the unparenthesized spelling.
+    let wrk = Workdir::new("sqlp_join_parenthesized_relation_alias");
+    paren_join_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["df1.csv", "df2.csv"]).arg(
+        "SELECT lhs.a, rhs.b FROM (df1 AS lhs INNER JOIN df2 AS rhs ON lhs.b = rhs.b) ORDER BY \
+         lhs.a",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["a", "b"], svec!["2", "3"]];
+    assert_eq!(got, expected);
+
+    let mut plain_cmd = wrk.command("sqlp");
+    plain_cmd.args(["df1.csv", "df2.csv"]).arg(
+        "SELECT lhs.a, rhs.b FROM df1 AS lhs INNER JOIN df2 AS rhs ON lhs.b = rhs.b ORDER BY lhs.a",
+    );
+    let got_plain: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut plain_cmd);
+    assert_eq!(got_plain, expected);
+}
+
+#[test]
+fn sqlp_join_literal_comparison() {
+    // pola-rs/polars#28701: a constant comparison in an ON clause belongs to the
+    // input it names, not to a post-join filter. The LEFT JOIN case is what
+    // distinguishes the two: `bob`/`charlie` fail `role = 'admin'`, so they must
+    // still appear with a null dept. A post-join filter would drop them.
+    let wrk = Workdir::new("sqlp_join_literal_comparison");
+    wrk.create(
+        "people.csv",
+        vec![
+            svec!["name", "role"],
+            svec!["alice", "admin"],
+            svec!["bob", "user"],
+            svec!["adam", "admin"],
+            svec!["charlie", "user"],
+        ],
+    );
+    wrk.create(
+        "depts.csv",
+        vec![
+            svec!["name", "dept"],
+            svec!["alice", "IT"],
+            svec!["bob", "HR"],
+            svec!["charlie", "IT"],
+            svec!["adam", "SEC"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["people.csv", "depts.csv"]).arg(
+        "SELECT people.name, people.role, depts.dept FROM people INNER JOIN depts ON people.name \
+         = depts.name AND people.role = 'admin' ORDER BY people.name",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["name", "role", "dept"],
+            svec!["adam", "admin", "SEC"],
+            svec!["alice", "admin", "IT"],
+        ]
+    );
+
+    let mut left_cmd = wrk.command("sqlp");
+    left_cmd.args(["people.csv", "depts.csv"]).arg(
+        "SELECT people.name, people.role, depts.dept FROM people LEFT JOIN depts ON people.name = \
+         depts.name AND people.role = 'admin' ORDER BY people.name",
+    );
+    let got_left: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut left_cmd);
+    assert_eq!(
+        got_left,
+        vec![
+            svec!["name", "role", "dept"],
+            svec!["adam", "admin", "SEC"],
+            svec!["alice", "admin", "IT"],
+            svec!["bob", "user", ""],
+            svec!["charlie", "user", ""],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_join_non_equi_decimal() {
+    // pola-rs/polars#29156 also taught the non-equi join path to compare
+    // Decimals. Reachable because qsv enables both `dtype-decimal` and `iejoin`.
+    //
+    // The values carry fractional parts ON PURPOSE: 1.05 < 1.10 is true in
+    // Decimal but false under any integer truncation, so the (1, 10) pair below
+    // is what proves the comparison really happens at decimal precision rather
+    // than the test passing on whole numbers that compare the same either way.
+    let wrk = Workdir::new("sqlp_join_non_equi_decimal");
+    wrk.create(
+        "dec1.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "1.05"],
+            svec!["2", "2.50"],
+            svec!["3", "10.10"],
+        ],
+    );
+    wrk.create(
+        "dec2.csv",
+        vec![
+            svec!["id", "w"],
+            svec!["10", "1.10"],
+            svec!["11", "2.50"],
+            svec!["12", "9.99"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["dec1.csv", "dec2.csv"]).arg(
+        "SELECT dec1.id AS l, dec1.v, dec2.id AS r, dec2.w FROM dec1 JOIN dec2 ON CAST(dec1.v AS \
+         DECIMAL(10,2)) < CAST(dec2.w AS DECIMAL(10,2)) ORDER BY l, r",
+    );
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["l", "v", "r", "w"],
+            svec!["1", "1.05", "10", "1.1"],
+            svec!["1", "1.05", "11", "2.5"],
+            svec!["1", "1.05", "12", "9.99"],
+            svec!["2", "2.5", "12", "9.99"],
+        ]
+    );
+
+    // >= pins exact boundary equality: 2.50 vs 2.50 matches, and 10.10 exceeds
+    // every right-hand value.
+    let mut ge_cmd = wrk.command("sqlp");
+    ge_cmd.args(["dec1.csv", "dec2.csv"]).arg(
+        "SELECT dec1.id AS l, dec2.id AS r FROM dec1 JOIN dec2 ON CAST(dec1.v AS DECIMAL(10,2)) \
+         >= CAST(dec2.w AS DECIMAL(10,2)) ORDER BY l, r",
+    );
+    let got_ge: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut ge_cmd);
+    assert_eq!(
+        got_ge,
+        vec![
+            svec!["l", "r"],
+            svec!["2", "10"],
+            svec!["2", "11"],
+            svec!["3", "10"],
+            svec!["3", "11"],
+            svec!["3", "12"],
+        ]
+    );
+}
+
+/// Fixture for the subquery / scope tests. `t2` deliberately names its columns
+/// `b, a` so an unqualified reference would be ambiguous across the two.
+fn subquery_fixture(wrk: &Workdir) {
+    wrk.create(
+        "t1.csv",
+        vec![
+            svec!["a", "b"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+        ],
+    );
+    wrk.create(
+        "t2.csv",
+        vec![svec!["b", "a"], svec!["1", "100"], svec!["2", "200"]],
+    );
+}
+
+#[test]
+fn sqlp_exists_subquery() {
+    // pola-rs/polars#29006: EXISTS / NOT EXISTS correlated on the outer relation.
+    // Nothing in this file covered EXISTS before -- only derived-table subqueries.
+    let wrk = Workdir::new("sqlp_exists_subquery");
+    subquery_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t1.csv", "t2.csv"])
+        .arg("SELECT a, b FROM t1 WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.b = t1.a) ORDER BY a");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["a", "b"], svec!["1", "10"], svec!["2", "20"]]
+    );
+
+    let mut not_cmd = wrk.command("sqlp");
+    not_cmd.args(["t1.csv", "t2.csv"]).arg(
+        "SELECT a, b FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t2 WHERE t2.b = t1.a) ORDER BY a",
+    );
+    let got_not: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut not_cmd);
+    assert_eq!(got_not, vec![svec!["a", "b"], svec!["3", "30"]]);
+}
+
+#[test]
+fn sqlp_correlated_scalar_subquery() {
+    // pola-rs/polars#28939: a scalar subquery's aggregate binds to the
+    // subquery's OWN relation. `SUM(x.a)` therefore sums t2's `a`, and a row
+    // with no match yields null rather than 0.
+    let wrk = Workdir::new("sqlp_correlated_scalar_subquery");
+    subquery_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t1.csv", "t2.csv"])
+        .arg("SELECT a, (SELECT SUM(x.a) FROM t2 x WHERE x.b = t1.a) AS s FROM t1 ORDER BY a");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["a", "s"],
+            svec!["1", "100"],
+            svec!["2", "200"],
+            svec!["3", ""],
+        ]
+    );
+
+    // Aggregating a column of the OUTER relation inside the subquery is now an
+    // error instead of silently resolving.
+    let mut bad_cmd = wrk.command("sqlp");
+    bad_cmd
+        .args(["t1.csv", "t2.csv"])
+        .arg("SELECT a, (SELECT SUM(t1.b) FROM t2 x WHERE x.b = t1.a) AS s FROM t1");
+    let stderr = wrk.stderr_on_error(&mut bad_cmd);
+    assert!(
+        stderr.contains("no table or struct column named 't1' found"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn sqlp_scope_strictness() {
+    // pola-rs/polars#28937: SQL scope rules now follow Postgres. Once a relation
+    // is aliased, its original name is out of scope -- but an unqualified
+    // ORDER BY key still resolves, and an outer alias is still visible to a
+    // correlated subquery.
+    let wrk = Workdir::new("sqlp_scope_strictness");
+    subquery_fixture(&wrk);
+
+    // The alias hides the table name.
+    let mut bad_cmd = wrk.command("sqlp");
+    bad_cmd.arg("t1.csv").arg("SELECT t1.a FROM t1 AS f");
+    let stderr = wrk.stderr_on_error(&mut bad_cmd);
+    assert!(
+        stderr.contains("no table or struct column named 't1' found"),
+        "unexpected stderr: {stderr}"
+    );
+
+    let ok_queries = [
+        // qualified by the alias, ordered by the bare column name
+        "SELECT f.a FROM t1 AS f ORDER BY a",
+        // unaliased, so the table name is still in scope
+        "SELECT t1.a FROM t1 ORDER BY a",
+        // the outer alias `o` is visible inside the correlated IN subquery
+        "SELECT a FROM t1 o WHERE b IN (SELECT x.b FROM t1 AS x WHERE x.a <= o.a) ORDER BY a",
+    ];
+    for query in ok_queries {
+        let mut cmd = wrk.command("sqlp");
+        cmd.arg("t1.csv").arg(query);
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(
+            got,
+            vec![svec!["a"], svec!["1"], svec!["2"], svec!["3"]],
+            "query: {query}"
+        );
+    }
+}
+
+#[test]
+fn sqlp_group_by_unaliased_constants() {
+    // pola-rs/polars#29367: unaliased constants in a SELECT with GROUP BY are
+    // projected once per group and named `literal`, `literal:1`, `literal:2`
+    // rather than colliding on a single `literal` column.
+    let wrk = Workdir::new("sqlp_group_by_unaliased_constants");
+    subquery_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t1.csv")
+        .arg("SELECT 2, a, 'x', COUNT(*) AS n, 3 FROM t1 GROUP BY a ORDER BY a");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["literal", "a", "literal:1", "n", "literal:2"],
+            svec!["2", "1", "x", "1", "3"],
+            svec!["2", "2", "x", "1", "3"],
+            svec!["2", "3", "x", "1", "3"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_order_by_aggregate() {
+    // pola-rs/polars#29010: ORDER BY accepts a restated aggregate, an aggregate
+    // that is not in the SELECT list at all, COUNT(*), and an aggregate
+    // expression. `b` outranks `a` on SUM(value) (15 vs 6) while the two tie on
+    // COUNT(*), so the COUNT case needs `category` as a tiebreak to be a total
+    // order.
+    let wrk = Workdir::new("sqlp_order_by_aggregate");
+    grouping_fixture(&wrk);
+
+    let by_total = vec![
+        svec!["category", "total"],
+        svec!["b", "15"],
+        svec!["a", "6"],
+    ];
+
+    let mut restated_cmd = wrk.command("sqlp");
+    restated_cmd.arg("groups.csv").arg(
+        "SELECT category, SUM(value) AS total FROM groups GROUP BY category ORDER BY SUM(value) \
+         DESC",
+    );
+    let got_restated: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut restated_cmd);
+    assert_eq!(got_restated, by_total);
+
+    // ORDER BY an aggregate expression, not just the bare aggregate.
+    let mut expr_cmd = wrk.command("sqlp");
+    expr_cmd.arg("groups.csv").arg(
+        "SELECT category, SUM(value) AS total FROM groups GROUP BY category ORDER BY SUM(value) * \
+         -1",
+    );
+    let got_expr: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut expr_cmd);
+    assert_eq!(got_expr, by_total);
+
+    // The aggregate need not be projected.
+    let mut unselected_cmd = wrk.command("sqlp");
+    unselected_cmd
+        .arg("groups.csv")
+        .arg("SELECT category FROM groups GROUP BY category ORDER BY SUM(value) DESC");
+    let got_unselected: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut unselected_cmd);
+    assert_eq!(
+        got_unselected,
+        vec![svec!["category"], svec!["b"], svec!["a"]]
+    );
+
+    // COUNT(*) ties at 3 for both groups, so `category` decides.
+    let mut count_cmd = wrk.command("sqlp");
+    count_cmd
+        .arg("groups.csv")
+        .arg("SELECT category FROM groups GROUP BY category ORDER BY COUNT(*) DESC, category");
+    let got_count: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut count_cmd);
+    assert_eq!(got_count, vec![svec!["category"], svec!["a"], svec!["b"]]);
+}
+
+#[test]
+fn sqlp_cte_shadows_table_and_case_insensitive_relation() {
+    // pola-rs/polars#29006: a CTE shadows a same-named registered table, and a
+    // relation name resolves case-insensitively.
+    let wrk = Workdir::new("sqlp_cte_shadows_table_and_case_insensitive_relation");
+    grouping_fixture(&wrk);
+
+    let mut cte_cmd = wrk.command("sqlp");
+    cte_cmd.arg("groups.csv").arg(
+        "WITH groups AS (SELECT 'z' AS category, 99 AS value) SELECT category, value FROM groups",
+    );
+    let got_cte: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cte_cmd);
+    assert_eq!(got_cte, vec![svec!["category", "value"], svec!["z", "99"]]);
+
+    let mut case_cmd = wrk.command("sqlp");
+    case_cmd
+        .arg("groups.csv")
+        .arg("SELECT category FROM GROUPS GROUP BY category ORDER BY category");
+    let got_case: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut case_cmd);
+    assert_eq!(got_case, vec![svec!["category"], svec!["a"], svec!["b"]]);
+}
+
+#[test]
+fn sqlp_date_part_functions() {
+    // pola-rs/polars#29269 added the bare date-part shorthands to the SQL
+    // frontend: YEAR, QUARTER, MONTH, WEEK, DAY/DAYOFMONTH, DAYOFWEEK,
+    // DAYOFYEAR, HOUR, MINUTE, SECOND. None of them existed at py-1.44.0.
+    //
+    // The 2024-12-31 row is the discriminating one: WEEK is ISO week, so it is
+    // **1** (of the following year), not 53 as a naive week-of-year would give.
+    // DAYOFWEEK is ISO too -- Monday is 1, so the Monday 2021-03-15 is 1 and the
+    // Tuesday 2024-12-31 is 2. DAYOFYEAR 366 confirms the leap year.
+    let wrk = Workdir::new("sqlp_date_part_functions");
+    wrk.create(
+        "dtparts.csv",
+        vec![
+            svec!["ts", "d"],
+            svec!["2021-03-15 10:30:20", "2021-03-15"],
+            svec!["2024-12-31 23:59:59", "2024-12-31"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("dtparts.csv")
+        .arg(
+            "SELECT ts, YEAR(ts) AS y, QUARTER(ts) AS q, MONTH(ts) AS mo, WEEK(ts) AS wk, DAY(ts) \
+             AS d, DAYOFMONTH(ts) AS dom, DAYOFWEEK(ts) AS dow, DAYOFYEAR(ts) AS doy, HOUR(ts) AS \
+             h, MINUTE(ts) AS mi, SECOND(ts) AS s FROM dtparts",
+        )
+        .arg("--try-parsedates");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec![
+            "ts", "y", "q", "mo", "wk", "d", "dom", "dow", "doy", "h", "mi", "s"
+        ],
+        svec![
+            "2021-03-15T10:30:20.000000",
+            "2021",
+            "1",
+            "3",
+            "11",
+            "15",
+            "15",
+            "1",
+            "74",
+            "10",
+            "30",
+            "20"
+        ],
+        svec![
+            "2024-12-31T23:59:59.000000",
+            "2024",
+            "4",
+            "12",
+            "1",
+            "31",
+            "31",
+            "2",
+            "366",
+            "23",
+            "59",
+            "59"
+        ],
+    ];
+    assert_eq!(got, expected);
+
+    // They apply to a Date column too. `d` is date-shaped, so --try-parsedates
+    // makes it a real Date; note CAST(ts AS DATE) would NOT work here, because
+    // format inference cannot read a datetime string as a date.
+    let mut date_cmd = wrk.command("sqlp");
+    date_cmd
+        .arg("dtparts.csv")
+        .arg("SELECT YEAR(d) AS y, MONTH(d) AS mo, DAY(d) AS dd, WEEK(d) AS wk FROM dtparts")
+        .arg("--try-parsedates");
+    let got_date: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut date_cmd);
+    assert_eq!(
+        got_date,
+        vec![
+            svec!["y", "mo", "dd", "wk"],
+            svec!["2021", "3", "15", "11"],
+            svec!["2024", "12", "31", "1"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_grouping_id() {
+    // pola-rs/polars#29278 added GROUPING_ID alongside GROUPING(). On a ROLLUP
+    // the two agree: both pack one bit per argument, MSB-first, so the grand
+    // total is 3 (both keys rolled up) and a category subtotal is 1 (only class
+    // rolled up).
+    let wrk = Workdir::new("sqlp_grouping_id");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv")
+        .arg(
+            "SELECT category, class, SUM(value) AS total, GROUPING_ID(category, class) AS gid, \
+             GROUPING(category, class) AS g FROM groups GROUP BY ROLLUP(category, class) ORDER BY \
+             category NULLS LAST, class NULLS LAST",
+        )
+        .args(["--wnull-value", "NULL"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["category", "class", "total", "gid", "g"],
+        svec!["a", "x", "3", "0", "0"],
+        svec!["a", "y", "3", "0", "0"],
+        svec!["a", "NULL", "6", "1", "1"],
+        svec!["b", "x", "4", "0", "0"],
+        svec!["b", "y", "11", "0", "0"],
+        svec!["b", "NULL", "15", "1", "1"],
+        svec!["NULL", "NULL", "21", "3", "3"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_cast_temporal_error_payloads() {
+    // pola-rs/polars#28986 routes SQL string->temporal casts through
+    // strptime-infer, which reports TWO different failures depending on whether
+    // a format could be inferred at all:
+    //   * some rows parse   -> InvalidOperation, "conversion ... failed", naming the offending
+    //     value (see sqlp_cast_strict_vs_try_temporal)
+    //   * NO row parses     -> ComputeError, "could not find an appropriate format to parse
+    //     <dates|times>"
+    // Before the rewrite both cases produced the first message, so the
+    // format-inference failure is the new signal.
+    let wrk = Workdir::new("sqlp_cast_temporal_error_payloads");
+    wrk.create(
+        "allbad.csv",
+        vec![svec!["id", "s"], svec!["1", "aaa"], svec!["2", "bbb"]],
+    );
+
+    let mut date_cmd = wrk.command("sqlp");
+    date_cmd
+        .arg("allbad.csv")
+        .arg("SELECT id, CAST(s AS DATE) AS d FROM allbad");
+    let date_stderr = wrk.stderr_on_error(&mut date_cmd);
+    assert!(
+        date_stderr.contains("could not find an appropriate format to parse dates"),
+        "unexpected stderr: {date_stderr}"
+    );
+
+    let mut time_cmd = wrk.command("sqlp");
+    time_cmd
+        .arg("allbad.csv")
+        .arg("SELECT id, CAST(s AS TIME) AS t FROM allbad");
+    let time_stderr = wrk.stderr_on_error(&mut time_cmd);
+    assert!(
+        time_stderr.contains("could not find an appropriate format to parse times"),
+        "unexpected stderr: {time_stderr}"
+    );
+
+    // TRY_CAST still degrades to all-null rather than failing.
+    let mut try_cmd = wrk.command("sqlp");
+    try_cmd
+        .arg("allbad.csv")
+        .arg("SELECT id, TRY_CAST(s AS DATE) AS d FROM allbad ORDER BY id");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut try_cmd);
+    assert_eq!(got, vec![svec!["id", "d"], svec!["1", ""], svec!["2", ""]]);
+}
+
+#[test]
+fn sqlp_grouping_distinguishes_a_data_null() {
+    // pola-rs/polars#29278: this is the whole reason GROUPING()/GROUPING_ID()
+    // exist. A ROLLUP writes NULL into the keys it rolls up, which is
+    // indistinguishable *in the data* from a group whose key is genuinely NULL.
+    // The fixture therefore carries real NULL categories (empty CSV fields read
+    // as NULL), so two output rows both print NULL in `category` and only
+    // GROUPING() tells them apart:
+    //     category=NULL, g=0  -> the real NULL group, total 12 (5 + 7)
+    //     category=NULL, g=1  -> the ROLLUP grand total, total 15 (3 + 12)
+    // The shared `grouping_fixture` has no NULL in the data and so cannot reach
+    // this distinction at all.
+    let wrk = Workdir::new("sqlp_grouping_distinguishes_a_data_null");
+    wrk.create(
+        "gnull.csv",
+        vec![
+            svec!["category", "class", "value"],
+            svec!["a", "x", "1"],
+            svec!["a", "y", "2"],
+            svec!["", "x", "5"],
+            svec!["", "y", "7"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("gnull.csv")
+        .arg(
+            "SELECT category, SUM(value) AS total, GROUPING(category) AS g FROM gnull GROUP BY \
+             ROLLUP(category) ORDER BY g, category NULLS LAST",
+        )
+        .args(["--wnull-value", "NULL"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["category", "total", "g"],
+        svec!["a", "3", "0"],
+        // a REAL null key: GROUPING is 0, because `category` participates in
+        // this grouping set -- the NULL is data, not a subtotal marker.
+        svec!["NULL", "12", "0"],
+        // the rolled-up grand total: same printed NULL, GROUPING is 1.
+        svec!["NULL", "15", "1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_window_order_by_multiple_keys_limitation() {
+    // Found while hardening the #29159 tests, and the reason they project only
+    // determinate columns instead of adding a tiebreak key.
+    //
+    // A window ORDER BY honors NULLS FIRST/LAST only with a SINGLE key. Add a
+    // second key and the NULLS clause is SILENTLY IGNORED -- the nulls move to
+    // the front even when every key says NULLS LAST. A top-level ORDER BY with
+    // two keys honors it correctly, so this is specific to the window path.
+    //
+    // Mixing directions or NULLS placement across window keys is rejected
+    // outright. If a future polars fixes any of this, these assertions fail and
+    // the tiebreak workaround becomes available.
+    //
+    // Reported upstream as pola-rs/polars#29390. Root cause:
+    // Expr::over_with_options collapses several ORDER BY keys into a single
+    // as_struct(...), and a struct holding a null field is not itself null, so
+    // SortOptions::nulls_last has nothing to act on. `descending` survives the
+    // same path, which is why only the null placement is wrong.
+    let wrk = Workdir::new("sqlp_window_order_by_multiple_keys_limitation");
+    window_nulls_fixture(&wrk);
+
+    // Single key: NULLS LAST is honored -- nulls get rn 5 and 6.
+    let mut single_cmd = wrk.command("sqlp");
+    single_cmd
+        .arg("wnulls.csv")
+        .arg("SELECT a, ROW_NUMBER() OVER (ORDER BY a NULLS LAST) AS rn FROM wnulls ORDER BY rn");
+    let got_single: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut single_cmd);
+    assert_eq!(
+        got_single,
+        vec![
+            svec!["a", "rn"],
+            svec!["10.0", "1"],
+            svec!["20.0", "2"],
+            svec!["30.0", "3"],
+            svec!["40.0", "4"],
+            svec!["", "5"],
+            svec!["", "6"],
+        ]
+    );
+
+    // Two keys, BOTH spelled NULLS LAST: the clause is dropped and the nulls
+    // lead. This is the bug -- it is pinned, not endorsed.
+    let mut multi_cmd = wrk.command("sqlp");
+    multi_cmd.arg("wnulls.csv").arg(
+        "SELECT grp, a, ROW_NUMBER() OVER (ORDER BY a NULLS LAST, grp NULLS LAST) AS rn FROM \
+         wnulls ORDER BY rn",
+    );
+    let got_multi: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut multi_cmd);
+    assert_eq!(
+        got_multi,
+        vec![
+            svec!["grp", "a", "rn"],
+            svec!["x", "", "1"],
+            svec!["y", "", "2"],
+            svec!["x", "10.0", "3"],
+            svec!["x", "20.0", "4"],
+            svec!["y", "30.0", "5"],
+            svec!["y", "40.0", "6"],
+        ]
+    );
+
+    // The same two-key ORDER BY at the TOP level honors NULLS LAST, which is
+    // what makes the above a window-specific defect rather than a syntax quirk.
+    let mut top_cmd = wrk.command("sqlp");
+    top_cmd
+        .arg("wnulls.csv")
+        .arg("SELECT grp, a FROM wnulls ORDER BY a NULLS LAST, grp");
+    let got_top: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut top_cmd);
+    assert_eq!(
+        got_top,
+        vec![
+            svec!["grp", "a"],
+            svec!["x", "10.0"],
+            svec!["x", "20.0"],
+            svec!["y", "30.0"],
+            svec!["y", "40.0"],
+            svec!["x", ""],
+            svec!["y", ""],
+        ]
+    );
+
+    // Mixed NULLS placement across window keys is a hard error.
+    let mut mixed_nulls_cmd = wrk.command("sqlp");
+    mixed_nulls_cmd.arg("wnulls.csv").arg(
+        "SELECT a, ROW_NUMBER() OVER (ORDER BY a NULLS FIRST, grp) AS rn FROM wnulls ORDER BY rn",
+    );
+    let mixed_nulls_stderr = wrk.stderr_on_error(&mut mixed_nulls_cmd);
+    assert!(
+        mixed_nulls_stderr
+            .contains("OVER does not (yet) support mixed NULLS FIRST/LAST ordering for ORDER BY"),
+        "unexpected stderr: {mixed_nulls_stderr}"
+    );
+
+    // So is a mixed asc/desc window ORDER BY.
+    let mut mixed_dir_cmd = wrk.command("sqlp");
+    mixed_dir_cmd.arg("wnulls.csv").arg(
+        "SELECT a, ROW_NUMBER() OVER (ORDER BY a DESC NULLS FIRST, grp) AS rn FROM wnulls ORDER \
+         BY rn",
+    );
+    let mixed_dir_stderr = wrk.stderr_on_error(&mut mixed_dir_cmd);
+    assert!(
+        mixed_dir_stderr.contains("OVER does not (yet) support mixed asc/desc directions"),
+        "unexpected stderr: {mixed_dir_stderr}"
+    );
+}

@@ -5969,6 +5969,12 @@ fn sqlp_window_order_by_multiple_keys_limitation() {
     // Mixing directions or NULLS placement across window keys is rejected
     // outright. If a future polars fixes any of this, these assertions fail and
     // the tiebreak workaround becomes available.
+    //
+    // Reported upstream as pola-rs/polars#29390. Root cause:
+    // Expr::over_with_options collapses several ORDER BY keys into a single
+    // as_struct(...), and a struct holding a null field is not itself null, so
+    // SortOptions::nulls_last has nothing to act on. `descending` survives the
+    // same path, which is why only the null placement is wrong.
     let wrk = Workdir::new("sqlp_window_order_by_multiple_keys_limitation");
     window_nulls_fixture(&wrk);
 

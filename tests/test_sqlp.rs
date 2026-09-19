@@ -5181,22 +5181,29 @@ fn sqlp_window_order_by_nulls_last() {
     let wrk = Workdir::new("sqlp_window_order_by_nulls_last");
     window_nulls_fixture(&wrk);
 
+    // `grp` is deliberately NOT projected. The two null-`a` rows are peers in
+    // this window, so which one gets rn 5 vs rn 6 is unspecified -- but `a`,
+    // `rn`, `cnt` and `total` are identical either way, so the assertion is a
+    // total order on what it actually asserts. Adding a second window ORDER BY
+    // key as a tiebreak is NOT an option: polars silently ignores
+    // NULLS FIRST/LAST once a window has more than one key (pinned by
+    // sqlp_window_order_by_multiple_keys_limitation), which would invert the
+    // very property under test.
     let mut cmd = wrk.command("sqlp");
     cmd.arg("wnulls.csv").arg(
-        "SELECT grp, a, ROW_NUMBER() OVER (ORDER BY a NULLS LAST) AS rn, COUNT(*) OVER (ORDER BY \
-         a NULLS LAST) AS cnt, SUM(a) OVER (ORDER BY a NULLS LAST) AS total FROM wnulls ORDER BY \
-         rn",
+        "SELECT a, ROW_NUMBER() OVER (ORDER BY a NULLS LAST) AS rn, COUNT(*) OVER (ORDER BY a \
+         NULLS LAST) AS cnt, SUM(a) OVER (ORDER BY a NULLS LAST) AS total FROM wnulls ORDER BY rn",
     );
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
-        svec!["grp", "a", "rn", "cnt", "total"],
-        svec!["x", "10.0", "1", "1", "10.0"],
-        svec!["x", "20.0", "2", "2", "30.0"],
-        svec!["y", "30.0", "3", "3", "60.0"],
-        svec!["y", "40.0", "4", "4", "100.0"],
-        svec!["x", "", "5", "5", "100.0"],
-        svec!["y", "", "6", "6", "100.0"],
+        svec!["a", "rn", "cnt", "total"],
+        svec!["10.0", "1", "1", "10.0"],
+        svec!["20.0", "2", "2", "30.0"],
+        svec!["30.0", "3", "3", "60.0"],
+        svec!["40.0", "4", "4", "100.0"],
+        svec!["", "5", "5", "100.0"],
+        svec!["", "6", "6", "100.0"],
     ];
     assert_eq!(got, expected);
 }
@@ -5208,40 +5215,40 @@ fn sqlp_window_order_by_nulls_first() {
     let wrk = Workdir::new("sqlp_window_order_by_nulls_first");
     window_nulls_fixture(&wrk);
 
+    // As in sqlp_window_order_by_nulls_last, `grp` is left out: the two null
+    // rows are peers, so only `a` and `rn` are determinate.
     let mut cmd = wrk.command("sqlp");
-    cmd.arg("wnulls.csv").arg(
-        "SELECT grp, a, ROW_NUMBER() OVER (ORDER BY a NULLS FIRST) AS rn FROM wnulls ORDER BY rn",
-    );
+    cmd.arg("wnulls.csv")
+        .arg("SELECT a, ROW_NUMBER() OVER (ORDER BY a NULLS FIRST) AS rn FROM wnulls ORDER BY rn");
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(
         got,
         vec![
-            svec!["grp", "a", "rn"],
-            svec!["x", "", "1"],
-            svec!["y", "", "2"],
-            svec!["x", "10.0", "3"],
-            svec!["x", "20.0", "4"],
-            svec!["y", "30.0", "5"],
-            svec!["y", "40.0", "6"],
+            svec!["a", "rn"],
+            svec!["", "1"],
+            svec!["", "2"],
+            svec!["10.0", "3"],
+            svec!["20.0", "4"],
+            svec!["30.0", "5"],
+            svec!["40.0", "6"],
         ]
     );
 
     let mut desc_cmd = wrk.command("sqlp");
     desc_cmd.arg("wnulls.csv").arg(
-        "SELECT grp, a, ROW_NUMBER() OVER (ORDER BY a DESC NULLS FIRST) AS rn FROM wnulls ORDER \
-         BY rn",
+        "SELECT a, ROW_NUMBER() OVER (ORDER BY a DESC NULLS FIRST) AS rn FROM wnulls ORDER BY rn",
     );
     let got_desc: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut desc_cmd);
     assert_eq!(
         got_desc,
         vec![
-            svec!["grp", "a", "rn"],
-            svec!["x", "", "1"],
-            svec!["y", "", "2"],
-            svec!["y", "40.0", "3"],
-            svec!["y", "30.0", "4"],
-            svec!["x", "20.0", "5"],
-            svec!["x", "10.0", "6"],
+            svec!["a", "rn"],
+            svec!["", "1"],
+            svec!["", "2"],
+            svec!["40.0", "3"],
+            svec!["30.0", "4"],
+            svec!["20.0", "5"],
+            svec!["10.0", "6"],
         ]
     );
 }
@@ -5250,6 +5257,10 @@ fn sqlp_window_order_by_nulls_first() {
 fn sqlp_window_partition_by_order_by_nulls() {
     // pola-rs/polars#29159 combined with PARTITION BY: the null sorts last
     // *within* each partition, so both groups restart at rn 1.
+    //
+    // Unlike the two tests above this one CAN project `grp` and assert an exact
+    // order: each partition holds exactly one null, so there are no peers and
+    // every row's rn is determined.
     let wrk = Workdir::new("sqlp_window_partition_by_order_by_nulls");
     window_nulls_fixture(&wrk);
 
@@ -5898,4 +5909,150 @@ fn sqlp_cast_temporal_error_payloads() {
         .arg("SELECT id, TRY_CAST(s AS DATE) AS d FROM allbad ORDER BY id");
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut try_cmd);
     assert_eq!(got, vec![svec!["id", "d"], svec!["1", ""], svec!["2", ""]]);
+}
+
+#[test]
+fn sqlp_grouping_distinguishes_a_data_null() {
+    // pola-rs/polars#29278: this is the whole reason GROUPING()/GROUPING_ID()
+    // exist. A ROLLUP writes NULL into the keys it rolls up, which is
+    // indistinguishable *in the data* from a group whose key is genuinely NULL.
+    // The fixture therefore carries real NULL categories (empty CSV fields read
+    // as NULL), so two output rows both print NULL in `category` and only
+    // GROUPING() tells them apart:
+    //     category=NULL, g=0  -> the real NULL group, total 12 (5 + 7)
+    //     category=NULL, g=1  -> the ROLLUP grand total, total 15 (3 + 12)
+    // The shared `grouping_fixture` has no NULL in the data and so cannot reach
+    // this distinction at all.
+    let wrk = Workdir::new("sqlp_grouping_distinguishes_a_data_null");
+    wrk.create(
+        "gnull.csv",
+        vec![
+            svec!["category", "class", "value"],
+            svec!["a", "x", "1"],
+            svec!["a", "y", "2"],
+            svec!["", "x", "5"],
+            svec!["", "y", "7"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("gnull.csv")
+        .arg(
+            "SELECT category, SUM(value) AS total, GROUPING(category) AS g FROM gnull GROUP BY \
+             ROLLUP(category) ORDER BY g, category NULLS LAST",
+        )
+        .args(["--wnull-value", "NULL"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["category", "total", "g"],
+        svec!["a", "3", "0"],
+        // a REAL null key: GROUPING is 0, because `category` participates in
+        // this grouping set -- the NULL is data, not a subtotal marker.
+        svec!["NULL", "12", "0"],
+        // the rolled-up grand total: same printed NULL, GROUPING is 1.
+        svec!["NULL", "15", "1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_window_order_by_multiple_keys_limitation() {
+    // Found while hardening the #29159 tests, and the reason they project only
+    // determinate columns instead of adding a tiebreak key.
+    //
+    // A window ORDER BY honors NULLS FIRST/LAST only with a SINGLE key. Add a
+    // second key and the NULLS clause is SILENTLY IGNORED -- the nulls move to
+    // the front even when every key says NULLS LAST. A top-level ORDER BY with
+    // two keys honors it correctly, so this is specific to the window path.
+    //
+    // Mixing directions or NULLS placement across window keys is rejected
+    // outright. If a future polars fixes any of this, these assertions fail and
+    // the tiebreak workaround becomes available.
+    let wrk = Workdir::new("sqlp_window_order_by_multiple_keys_limitation");
+    window_nulls_fixture(&wrk);
+
+    // Single key: NULLS LAST is honored -- nulls get rn 5 and 6.
+    let mut single_cmd = wrk.command("sqlp");
+    single_cmd
+        .arg("wnulls.csv")
+        .arg("SELECT a, ROW_NUMBER() OVER (ORDER BY a NULLS LAST) AS rn FROM wnulls ORDER BY rn");
+    let got_single: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut single_cmd);
+    assert_eq!(
+        got_single,
+        vec![
+            svec!["a", "rn"],
+            svec!["10.0", "1"],
+            svec!["20.0", "2"],
+            svec!["30.0", "3"],
+            svec!["40.0", "4"],
+            svec!["", "5"],
+            svec!["", "6"],
+        ]
+    );
+
+    // Two keys, BOTH spelled NULLS LAST: the clause is dropped and the nulls
+    // lead. This is the bug -- it is pinned, not endorsed.
+    let mut multi_cmd = wrk.command("sqlp");
+    multi_cmd.arg("wnulls.csv").arg(
+        "SELECT grp, a, ROW_NUMBER() OVER (ORDER BY a NULLS LAST, grp NULLS LAST) AS rn FROM \
+         wnulls ORDER BY rn",
+    );
+    let got_multi: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut multi_cmd);
+    assert_eq!(
+        got_multi,
+        vec![
+            svec!["grp", "a", "rn"],
+            svec!["x", "", "1"],
+            svec!["y", "", "2"],
+            svec!["x", "10.0", "3"],
+            svec!["x", "20.0", "4"],
+            svec!["y", "30.0", "5"],
+            svec!["y", "40.0", "6"],
+        ]
+    );
+
+    // The same two-key ORDER BY at the TOP level honors NULLS LAST, which is
+    // what makes the above a window-specific defect rather than a syntax quirk.
+    let mut top_cmd = wrk.command("sqlp");
+    top_cmd
+        .arg("wnulls.csv")
+        .arg("SELECT grp, a FROM wnulls ORDER BY a NULLS LAST, grp");
+    let got_top: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut top_cmd);
+    assert_eq!(
+        got_top,
+        vec![
+            svec!["grp", "a"],
+            svec!["x", "10.0"],
+            svec!["x", "20.0"],
+            svec!["y", "30.0"],
+            svec!["y", "40.0"],
+            svec!["x", ""],
+            svec!["y", ""],
+        ]
+    );
+
+    // Mixed NULLS placement across window keys is a hard error.
+    let mut mixed_nulls_cmd = wrk.command("sqlp");
+    mixed_nulls_cmd.arg("wnulls.csv").arg(
+        "SELECT a, ROW_NUMBER() OVER (ORDER BY a NULLS FIRST, grp) AS rn FROM wnulls ORDER BY rn",
+    );
+    let mixed_nulls_stderr = wrk.stderr_on_error(&mut mixed_nulls_cmd);
+    assert!(
+        mixed_nulls_stderr
+            .contains("OVER does not (yet) support mixed NULLS FIRST/LAST ordering for ORDER BY"),
+        "unexpected stderr: {mixed_nulls_stderr}"
+    );
+
+    // So is a mixed asc/desc window ORDER BY.
+    let mut mixed_dir_cmd = wrk.command("sqlp");
+    mixed_dir_cmd.arg("wnulls.csv").arg(
+        "SELECT a, ROW_NUMBER() OVER (ORDER BY a DESC NULLS FIRST, grp) AS rn FROM wnulls ORDER \
+         BY rn",
+    );
+    let mixed_dir_stderr = wrk.stderr_on_error(&mut mixed_dir_cmd);
+    assert!(
+        mixed_dir_stderr.contains("OVER does not (yet) support mixed asc/desc directions"),
+        "unexpected stderr: {mixed_dir_stderr}"
+    );
 }

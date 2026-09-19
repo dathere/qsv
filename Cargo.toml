@@ -317,6 +317,11 @@ rust-i18n = { version = "4.2.1", optional = true }
 pragmastat = "14.0"
 polars-readstat-rs = { version = "0.23", optional = true }
 polars = { version = "0.55", features = [
+    # "approx_quantile" powers the APPROX_QUANTILE SQL aggregate in sqlp. It is
+    # NOT in any umbrella qsv enables (upstream keeps it in docs-selection/full
+    # only), so without it polars-sql cfg-gates the function out entirely and
+    # sqlp rejects it as "unsupported function 'approx_quantile'".
+    "approx_quantile",
     "asof_join",
     "avro",
     # "avx512" is x86_64-only — enabled via the

@@ -100,6 +100,18 @@ Several dependencies also have environment variables that influence qsv's perfor
 > polars-enabled builds — every `POLARS_*` variable that is set.
 Relevant env vars always include anything that starts with `QSV_` & the proxy variables listed above. Allocator-specific env vars are build-dependent: `MIMALLOC_` vars are included when qsv is built with mimalloc support, and `JEMALLOC_` & `MALLOC_CONF` vars are included when qsv is built with jemalloc support.
 
+## Third-party Environment Variables
+
+These are **not** `QSV_*` variables and will not appear in `qsv --envlist` - they are read
+directly by [`plotly_static`](https://crates.io/crates/plotly_static), the crate behind `viz`
+static image export (the `viz_static` feature). They only matter when writing a chart to
+PNG/SVG/PDF/JPEG/WebP.
+
+| Variable | Description |
+| --- | --- |
+| `WEBDRIVER_PATH` | full path to the `chromedriver` executable to drive the headless browser with. qsv only consults this for image output; when it is unset - **or points at a file that does not exist** - qsv probes `$WEBDRIVER_INSTALL_PATH`, `~/.local/bin`, your `PATH`, and then `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, and sets this variable to the first `chromedriver` it finds. This repairs prebuilt binaries, which carry an absolute path baked in from the machine that built them (issue #4620). Firefox/`geckodriver` is not supported - `viz_static` compiles against `plotly_static/chromedriver`, and the chromedriver/geckodriver features are mutually exclusive upstream. The chromedriver MAJOR version must match your installed Chrome; get a matched pair from [Chrome for Testing](https://googlechromelabs.github.io/chrome-for-testing/). |
+| `BROWSER_PATH` | full path to a Chrome/Chromium binary, when the one to render with is not the system default. Passed straight through as the WebDriver `binary` capability. |
+
 ## MCP Server Environment Variables
 
 The qsv MCP (Model Context Protocol) Server exposes qsv's capabilities to AI agents like Claude. It can be used as a standalone MCP server or as a Claude Desktop Extension (MCPB).

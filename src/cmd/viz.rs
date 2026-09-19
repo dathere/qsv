@@ -5,8 +5,11 @@ Produces a self-contained, interactive HTML chart - the plotly.js runtime is emb
 charts work offline. Tile basemaps (`viz map`, `viz choropleth --map`) are the exception:
 they fetch tiles over the network at view time. Titles and labels are plain text; LaTeX is
 not typeset. With a build that includes the `viz_static` feature, charts can also be exported
-as static PNG/SVG/PDF/JPEG/WebP (needs a Chromium/Firefox at runtime; plotly auto-manages the
-webdriver).
+as static PNG/SVG/PDF/JPEG/WebP. That needs Chrome/Chromium plus a matching chromedriver at
+runtime (Firefox is NOT supported). qsv looks for chromedriver in ~/.local/bin and on your
+PATH; set WEBDRIVER_PATH to the chromedriver binary to override, and BROWSER_PATH to point at
+a non-default Chrome/Chromium. The chromedriver MAJOR version must match your Chrome - get a
+matched pair at https://googlechromelabs.github.io/chrome-for-testing/
 
 Set QSV_VIZ_CDN to load plotly.js from its CDN (~1.9MB smaller, but the page then needs the
 network to be VIEWED). Set QSV_VIZ_NO_COMPRESS for plain-text HTML that works on pre-2023
@@ -1712,6 +1715,20 @@ impl OutFormat {
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // Repair a stale compiled-in webdriver path before ANY other work (#4620). Deliberately the
+    // first statement after arg parsing, because it mutates process env: main.rs spawns no
+    // threads of its own before dispatch, and this lands ahead of everything in viz that does -
+    // resolve_and_validate_geojson() below already starts network I/O.
+    #[cfg(feature = "viz_static")]
+    if args
+        .flag_output
+        .as_deref()
+        .and_then(OutFormat::from_output)
+        .is_some_and(OutFormat::is_image)
+    {
+        ensure_webdriver_path();
+    }
 
     if let Some(name) = &args.flag_theme
         && parse_theme(name).is_none()
@@ -17571,12 +17588,142 @@ fn image_format(fmt: OutFormat) -> plotly::ImageFormat {
 
 /// Shared error mapper for static image export failures, pointing users at the browser/webdriver
 /// requirement (the most common cause).
+///
+/// Only chromedriver is viable here: `viz_static` enables `plotly/static_export_default`, which
+/// selects `plotly_static/chromedriver` - and `chromedriver`/`geckodriver` are mutually exclusive
+/// features upstream (the browser name, the options key and the driver's own CLI args are all
+/// `#[cfg]`-selected at compile time). So geckodriver can never serve a qsv build, whatever
+/// `WEBDRIVER_PATH` points at. Don't re-offer Firefox here.
 #[cfg(feature = "viz_static")]
 fn image_export_err(e: impl std::fmt::Display) -> crate::CliError {
     crate::CliError::Other(format!(
-        "Static image export failed: {e}. A Chromium or Firefox browser must be installed and \
-         available for plotly's webdriver-based export."
+        "Static image export failed: {e}.\n{STATIC_EXPORT_HELP}"
     ))
+}
+
+/// Setup guidance appended to every static-export failure.
+///
+/// A RAW string on purpose: rustfmt runs with `format_strings = true`, which rewraps ordinary
+/// string literals and silently swallows the newlines this layout depends on.
+#[cfg(feature = "viz_static")]
+const STATIC_EXPORT_HELP: &str = r#"
+qsv viz exports images through a headless Chrome/Chromium driven by chromedriver
+(Firefox is not supported in this build).
+
+  * install a chromedriver whose MAJOR version matches your installed Chrome
+      https://googlechromelabs.github.io/chrome-for-testing/
+      (Homebrew's chromedriver cask was disabled 2026-09-01)
+  * point WEBDRIVER_PATH at the chromedriver binary
+  * optionally set BROWSER_PATH to a non-default Chrome/Chromium"#;
+
+/// The chromedriver executable's file name on this platform.
+#[cfg(feature = "viz_static")]
+const CHROMEDRIVER_BIN: &str = if cfg!(windows) {
+    "chromedriver.exe"
+} else {
+    "chromedriver"
+};
+
+/// True if `p` is an existing file we could plausibly execute.
+#[cfg(feature = "viz_static")]
+fn is_executable_file(p: &std::path::Path) -> bool {
+    let Ok(md) = std::fs::metadata(p) else {
+        return false;
+    };
+    if !md.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        md.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+/// Find a usable `chromedriver`: the first existing candidate in `dirs`, else the first hit
+/// scanning `path_var` (a PATH-shaped, platform-delimited list).
+///
+/// Pure so it can be unit-tested without mutating process env - `ensure_webdriver_path` is the
+/// thin wrapper that actually touches the environment.
+#[cfg(feature = "viz_static")]
+fn resolve_chromedriver_in(
+    dirs: &[std::path::PathBuf],
+    path_var: Option<&std::ffi::OsStr>,
+) -> Option<std::path::PathBuf> {
+    for dir in dirs {
+        let candidate = dir.join(CHROMEDRIVER_BIN);
+        if is_executable_file(&candidate) {
+            return Some(candidate);
+        }
+    }
+    let path_var = path_var?;
+    std::env::split_paths(path_var)
+        .map(|dir| dir.join(CHROMEDRIVER_BIN))
+        .find(|candidate| is_executable_file(candidate))
+}
+
+/// Point `WEBDRIVER_PATH` at a chromedriver that actually exists on THIS machine.
+///
+/// `plotly_static` resolves its driver as `WEBDRIVER_PATH` ->
+/// `option_env!("WEBDRIVER_DOWNLOAD_PATH")` -> error, and that second value is an absolute path
+/// baked in by its build script (`$HOME/.local/bin/chromedriver` on the BUILD machine). A prebuilt
+/// qsv therefore ships a path out of a CI runner's - or a maintainer's - home directory, and plotly
+/// does no PATH lookup at all, so an installed chromedriver is never found. See issue #4620.
+///
+/// The probe order deliberately mirrors plotly's own `user_bin_dir()` BEFORE falling back to PATH:
+/// on a source build the build script has already downloaded a driver matched to the Chrome it
+/// detected, so we must resolve to that same binary rather than to some other chromedriver that
+/// happens to be on PATH (a major-version mismatch fails later, and opaquely).
+///
+/// Leaves the environment untouched when nothing is found: the baked path may still be correct on
+/// a source build, and `image_export_err` supplies the guidance if it isn't.
+#[cfg(feature = "viz_static")]
+fn ensure_webdriver_path() {
+    use std::{path::PathBuf, sync::Once};
+
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        // an explicit, working WEBDRIVER_PATH always wins. Set-but-missing is treated as unset,
+        // since that is exactly the broken-prebuilt case we are here to repair.
+        if let Some(explicit) = std::env::var_os("WEBDRIVER_PATH")
+            && is_executable_file(std::path::Path::new(&explicit))
+        {
+            log::debug!("WEBDRIVER_PATH already set to {explicit:?}");
+            return;
+        }
+
+        let mut probe_dirs: Vec<PathBuf> = Vec::with_capacity(5);
+        // plotly's build-script install override, then its default install dir.
+        if let Some(install) = std::env::var_os("WEBDRIVER_INSTALL_PATH") {
+            probe_dirs.push(PathBuf::from(install));
+        }
+        if let Some(base) = directories::BaseDirs::new() {
+            probe_dirs.push(base.home_dir().join(".local").join("bin"));
+        }
+        #[cfg(unix)]
+        probe_dirs.extend(
+            ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
+                .iter()
+                .map(PathBuf::from),
+        );
+
+        let Some(driver) =
+            resolve_chromedriver_in(&probe_dirs, std::env::var_os("PATH").as_deref())
+        else {
+            log::debug!("no chromedriver found; leaving WEBDRIVER_PATH alone");
+            return;
+        };
+        log::debug!("setting WEBDRIVER_PATH to {}", driver.display());
+        // safety: guarded by a Once, and called from the top of run() before viz spawns any
+        // rayon/tokio work of its own. Same exposure as the existing one-shot set_var calls in
+        // cmd::input and cmd::luau, and narrower than cmd::schema's EnvVarGuard, which has to
+        // restore the previous value afterwards - this one only ever sets, never unsets.
+        unsafe { std::env::set_var("WEBDRIVER_PATH", &driver) };
+    });
 }
 
 /// Open `path` in the user's default application, honoring the `BROWSER` environment variable
@@ -54741,5 +54888,118 @@ mod tests {
             "angle brackets and ampersands must be unicode-escaped, got {tagish}"
         );
         assert!(tagish.contains("\\u003c") && tagish.contains("\\u003e"));
+    }
+}
+
+#[cfg(all(test, feature = "viz_static"))]
+mod webdriver_resolution_tests {
+    use std::{ffi::OsString, fs, path::PathBuf};
+
+    use super::{CHROMEDRIVER_BIN, resolve_chromedriver_in};
+
+    /// Create `dir/chromedriver` as an executable file.
+    fn make_driver(dir: &std::path::Path) -> PathBuf {
+        let p = dir.join(CHROMEDRIVER_BIN);
+        fs::write(&p, b"#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        p
+    }
+
+    fn joined(dirs: &[&std::path::Path]) -> OsString {
+        std::env::join_paths(dirs).unwrap()
+    }
+
+    #[test]
+    fn probe_dir_wins_over_path() {
+        let probe = tempfile::tempdir().unwrap();
+        let on_path = tempfile::tempdir().unwrap();
+        let expected = make_driver(probe.path());
+        make_driver(on_path.path());
+
+        let got = resolve_chromedriver_in(
+            &[probe.path().to_path_buf()],
+            Some(&joined(&[on_path.path()])),
+        );
+        assert_eq!(got.as_deref(), Some(expected.as_path()));
+    }
+
+    #[test]
+    fn falls_back_to_path_when_probe_dirs_miss() {
+        // the #4620 case: the baked-in probe dir does not exist, but PATH has a driver
+        let empty = tempfile::tempdir().unwrap();
+        let on_path = tempfile::tempdir().unwrap();
+        let expected = make_driver(on_path.path());
+
+        let got = resolve_chromedriver_in(
+            &[
+                empty.path().to_path_buf(),
+                PathBuf::from("/nonexistent/qsv-4620"),
+            ],
+            Some(&joined(&[on_path.path()])),
+        );
+        assert_eq!(got.as_deref(), Some(expected.as_path()));
+    }
+
+    #[test]
+    fn earlier_path_entry_wins() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let expected = make_driver(first.path());
+        make_driver(second.path());
+
+        let got = resolve_chromedriver_in(&[], Some(&joined(&[first.path(), second.path()])));
+        assert_eq!(got.as_deref(), Some(expected.as_path()));
+    }
+
+    #[test]
+    fn a_directory_named_chromedriver_is_not_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join(CHROMEDRIVER_BIN)).unwrap();
+        assert_eq!(
+            resolve_chromedriver_in(&[dir.path().to_path_buf()], None),
+            None
+        );
+    }
+
+    #[test]
+    fn none_when_nothing_is_found() {
+        let empty_probe = tempfile::tempdir().unwrap();
+        let empty_path = tempfile::tempdir().unwrap();
+        assert_eq!(
+            resolve_chromedriver_in(
+                &[empty_probe.path().to_path_buf()],
+                Some(&joined(&[empty_path.path()]))
+            ),
+            None
+        );
+        // no PATH at all is also fine
+        assert_eq!(
+            resolve_chromedriver_in(&[empty_probe.path().to_path_buf()], None),
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_executable_file_is_skipped() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let probe = tempfile::tempdir().unwrap();
+        let p = probe.path().join(CHROMEDRIVER_BIN);
+        fs::write(&p, b"not executable").unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let on_path = tempfile::tempdir().unwrap();
+        let expected = make_driver(on_path.path());
+
+        let got = resolve_chromedriver_in(
+            &[probe.path().to_path_buf()],
+            Some(&joined(&[on_path.path()])),
+        );
+        assert_eq!(got.as_deref(), Some(expected.as_path()));
     }
 }

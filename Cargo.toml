@@ -715,8 +715,14 @@ viz = [
     "base64-simd",
 ]
 # viz_static: adds static PNG/SVG/PDF/JPEG/WebP export to `viz` via plotly_static,
-# which drives a headless Chromium/Firefox (webdriver auto-downloaded). Requires a
-# browser at runtime, so keep it out of headless-only publish targets. It also
+# which drives a headless Chrome/Chromium through chromedriver. NOT Firefox: this
+# resolves to plotly_static/chromedriver, and chromedriver/geckodriver are mutually
+# exclusive upstream features, so a geckodriver can never serve this build (#4620).
+# The driver is auto-downloaded AT BUILD TIME into $HOME/.local/bin and its absolute
+# path is baked in via option_env!("WEBDRIVER_DOWNLOAD_PATH"), which is meaningless on
+# an end user's machine - cmd::viz::ensure_webdriver_path() repairs that at runtime by
+# probing for a real chromedriver. Requires a browser at runtime, so keep it out of
+# headless-only publish targets. It also
 # inherits `viz`'s big-endian restriction above (enforced at compile time).
 # DO NOT enable on Windows publish targets: it pulls ~54 extra crates (plotly_static,
 # fantoccini, webdriver-downloader, native-tls, icu_segmenter) and the resulting `qsv`

@@ -4,7 +4,7 @@ use csv_index::RandomAccessSimple;
 
 use crate::CliResult;
 
-/// Returns true if `idx_file` is a structurally complete `RandomAccessSimple` index.
+/// Returns true if `idx_file` is an index qsv can trust.
 ///
 /// `RandomAccessSimple::create` writes N big-endian u64 record offsets (the header row counts
 /// as a record) followed by ONE trailing u64 holding N. A complete index is therefore always
@@ -17,15 +17,26 @@ use crate::CliResult;
 /// The mtime staleness check cannot catch it either, since a partial index is NEWER than the
 /// data file. Issue #4615.
 ///
-/// Zero-length and non-multiple-of-8 indexes already fail inside `open()`; this check covers
-/// the dangerous case `open()` cannot see - a truncation that happens to land on an 8-byte
-/// boundary. Note a headerless empty CSV yields a legitimate 8-byte index (`(0 + 1) * 8`), so
-/// the floor is 8, not 16.
-pub fn is_structurally_complete(idx_file: &mut std::fs::File) -> io::Result<bool> {
+/// Zero-length and non-multiple-of-8 indexes already fail inside `open()`; the length/count
+/// agreement below covers the case `open()` cannot see - a truncation that lands on an 8-byte
+/// boundary, which is every truncation, since the format is a u64 array.
+///
+/// An 8-byte index is rejected even though it satisfies that invariant, because the two things
+/// it can mean are indistinguishable from the bytes alone:
+///
+/// - the legitimate index of a CSV with ZERO records (an empty file, or one holding only blank
+///   lines - a header-only CSV is 16 bytes, not 8), or
+/// - a build that died on the FIRST data row after `create` had already written the header's
+///   offset, which is exactly what a pre-fix `qsv index` left behind on such a file.
+///
+/// The second reads back as a confident `0` rows at exit 0 on a CSV that has data. Refusing
+/// both costs nothing: an index over zero records saves no work, so the caller simply scans a
+/// file that is empty anyway.
+pub fn is_usable(idx_file: &mut std::fs::File) -> io::Result<bool> {
     use io::{Read, Seek};
 
     let len = idx_file.metadata()?.len();
-    if len < 8 || len % 8 != 0 {
+    if len <= 8 || len % 8 != 0 {
         return Ok(false);
     }
 
@@ -107,7 +118,7 @@ impl<R: io::Read + io::Seek, I: io::Read + io::Seek> Indexed<R, I> {
 mod tests {
     use std::io::Write;
 
-    use super::is_structurally_complete;
+    use super::is_usable;
 
     /// A `RandomAccessSimple` index: `offsets` as big-endian u64s, then `count` as a trailing u64.
     fn idx_bytes(offsets: &[u64], count: u64) -> Vec<u8> {
@@ -124,17 +135,23 @@ mod tests {
             .write_all(bytes)
             .unwrap();
         let mut f = std::fs::File::open(&path).unwrap();
-        is_structurally_complete(&mut f).unwrap()
+        is_usable(&mut f).unwrap()
     }
 
     #[test]
     fn accepts_complete_indexes() {
-        // headerless empty CSV: no offsets, count 0 => a legitimate 8-byte index
-        assert!(check(&idx_bytes(&[], 0)));
         // header only
         assert!(check(&idx_bytes(&[0], 1)));
         // header + 3 data rows, the 40-byte case from issue #4615
         assert!(check(&idx_bytes(&[0, 6, 12, 18], 4)));
+    }
+
+    /// An 8-byte index satisfies `len == (count + 1) * 8`, but the bytes cannot say whether it
+    /// indexes a zero-record CSV or died after writing the header offset of one that has rows.
+    /// The latter reads back as a confident 0 rows, so both are refused.
+    #[test]
+    fn rejects_the_ambiguous_eight_byte_index() {
+        assert!(!check(&idx_bytes(&[], 0)));
     }
 
     #[test]
@@ -149,6 +166,7 @@ mod tests {
         assert!(!check(&[])); // zero length
         assert!(!check(&[0, 1, 2, 3])); // not a multiple of 8
         assert!(!check(&[0; 12])); // multiple of 4 but not of 8
+        assert!(!check(&[0; 8])); // the ambiguous 8-byte case
     }
 
     #[test]

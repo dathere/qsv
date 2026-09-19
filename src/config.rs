@@ -957,7 +957,7 @@ impl Config {
             }
         }
 
-        // Reject a structurally invalid index. `RandomAccessSimple::open` reads only the
+        // Reject an index qsv cannot trust. `RandomAccessSimple::open` reads only the
         // trailing 8 bytes and trusts them as the record count, so a truncated index that
         // happens to end on an 8-byte boundary opens fine and reports a byte OFFSET as the
         // count - a silent wrong answer at exit 0 (#4615). This covers indexes produced by
@@ -966,7 +966,7 @@ impl Config {
         //
         // Like a stale index that could not be rebuilt (above), report "no index" rather than
         // erroring: the caller's sequential path is slower but correct.
-        if !crate::index::is_structurally_complete(&mut idx_file)? {
+        if !crate::index::is_usable(&mut idx_file)? {
             warn!(
                 "index for {} is malformed; proceeding without an index",
                 self.path

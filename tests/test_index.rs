@@ -285,6 +285,57 @@ fn index_keeps_umask_permissions() {
     );
 }
 
+/// `RandomAccessSimple::create` writes the header's offset BEFORE it reads the first data row,
+/// so a pre-fix `qsv index` on a CSV whose FIRST data row is ragged left an 8-byte index holding
+/// just that offset. It satisfies the `(count + 1) * 8` length invariant with count 0, and
+/// `count` read it back as a confident 0 rows at exit 0. (roborev 4823)
+#[test]
+fn eight_byte_index_is_ignored() {
+    let wrk = Workdir::new("eight_byte_index_is_ignored");
+    wrk.create_from_string("in.csv", "a,b,c\n1,2,3,4,5\n6,7,8\n");
+
+    // exactly what the pre-fix writer left behind: the header offset, no trailing count
+    fs::write(wrk.path("in.csv.idx"), 0_u64.to_be_bytes()).unwrap();
+
+    // the CSV is ragged, so ignoring the index surfaces the real error instead of "0"
+    let mut cmd = wrk.command("count");
+    cmd.arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+/// The same 8-byte index over a VALID CSV must also be ignored - it claims zero records for a
+/// file that has two.
+#[test]
+fn eight_byte_index_does_not_zero_a_valid_file() {
+    let wrk = Workdir::new("eight_byte_index_does_not_zero_a_valid_file");
+    wrk.create_from_string("in.csv", "a,b,c\n1,2,3\n4,5,6\n");
+    fs::write(wrk.path("in.csv.idx"), 0_u64.to_be_bytes()).unwrap();
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("in.csv");
+    let got: usize = wrk.stdout(&mut cmd);
+    rassert_eq!(got, 2);
+}
+
+/// Refusing every 8-byte index costs only the index of a zero-record CSV, where a scan is free.
+/// Commands must still work on such a file rather than erroring.
+#[test]
+fn empty_csv_still_works_without_a_usable_index() {
+    let wrk = Workdir::new("empty_csv_still_works_without_a_usable_index");
+    wrk.create_from_string("in.csv", "");
+
+    let mut build = wrk.command("index");
+    build.arg("in.csv");
+    wrk.assert_success(&mut build);
+    // an index over zero records is exactly 8 bytes, and is deliberately not trusted
+    assert_eq!(fs::metadata(wrk.path("in.csv.idx")).unwrap().len(), 8);
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("in.csv");
+    let got: usize = wrk.stdout(&mut cmd);
+    rassert_eq!(got, 0);
+}
+
 fn future_time(ft: FileTime) -> FileTime {
     let secs = ft.unix_seconds();
     FileTime::from_unix_time(secs + 10_000, 0)

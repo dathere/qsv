@@ -28,19 +28,11 @@ Common options:
     -h, --help             Display this message
 "#;
 
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-use csv_index::RandomAccessSimple;
 use serde::Deserialize;
 
-use crate::{
-    CliResult,
-    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY},
-    util,
-};
+use crate::{CliResult, config::Config, util};
 
 #[derive(Deserialize)]
 struct Args {
@@ -70,10 +62,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let rconfig = Config::new(Some(args.arg_input).as_ref());
     let mut rdr = rconfig.reader_file()?;
-    let mut wtr =
-        io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, fs::File::create(pidx)?);
-    RandomAccessSimple::create(&mut rdr, &mut wtr)?;
-    io::Write::flush(&mut wtr)?;
+
+    // build into a temp beside `pidx` and rename into place only once the index is complete.
+    // Writing straight to `pidx` destroyed a pre-existing good index and left a partial one
+    // behind on any failure - which readers cannot distinguish from a real index (#4615).
+    util::write_index_atomically(&mut rdr, &pidx)?;
 
     Ok(())
 }

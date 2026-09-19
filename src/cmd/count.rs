@@ -462,28 +462,23 @@ fn may_contain_blank_lines(path: &std::path::Path) -> std::io::Result<bool> {
 ///
 /// # Details
 /// - For stdin input, creates a temporary file to allow Polars to read it
-/// - Uses Polars' SQL functionality with lazy evaluation for optimal performance
+/// - Uses a `LazyCsvReader` with `select(len())` for the row count
 /// - Handles comment characters and different delimiters
 /// - Falls back to regular CSV reader if Polars encounters errors
 /// - Adjusts count for no-headers mode since Polars always assumes headers
 ///
 /// # Performance
 /// - Uses memory-mapped reading and multithreading for fast processing
-/// - For standard CSV files (comma-delimited, no comments), uses optimized `read_csv()` function
-/// - Otherwise uses `LazyCsvReader` with optimized settings
+/// - Counts via `select(len())` rather than SQL `COUNT(*)`: polars 1.44.x runs the
+///   latter single-threaded (pola-rs/polars#29393)
 ///
 /// # Errors
 /// Returns error if:
 /// - Unable to create/write temporary file for stdin
 /// - Cannot read the CSV file
-/// - SQL query execution fails
 #[cfg(feature = "polars")]
 pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
-    use polars::{
-        lazy::frame::{LazyFrame, OptFlags},
-        prelude::*,
-        sql::SQLContext,
-    };
+    use polars::{lazy::frame::OptFlags, prelude::*};
 
     // info!("using polars");
 
@@ -550,8 +545,6 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
             None
         };
 
-        let mut ctx = SQLContext::new();
-        let lazy_df: LazyFrame;
         let delimiter = read_conf.get_delimiter();
 
         {
@@ -589,52 +582,45 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
             }
         }
 
-        // if its a "regular" CSV, use polars' read_csv() SQL table function
-        // which is much faster than the LazyCsvReader
-        let count_query = if comment_prefix.is_none() && delimiter == b',' && !low_memory {
-            // escape single quotes in the path so a `'` in the filename can't break
-            // the SQL string. Same convention as src/cmd/scoresql.rs.
-            let escaped_filepath = filepath.to_string_lossy().replace('\'', "''");
-            format!("SELECT COUNT(*) FROM read_csv('{escaped_filepath}')")
-        } else {
-            // otherwise, read the file into a Polars LazyFrame
-            // using the LazyCsvReader builder to set CSV read options
-            // Use ignore_errors to handle schema inference issues (e.g., columns that start
-            // with boolean values but contain integers later)
-            lazy_df = match LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
-                .with_separator(delimiter)
-                .with_comment_prefix(comment_prefix)
-                .with_low_memory(low_memory)
-                .with_ignore_errors(true)
-                .finish()
-            {
-                Ok(lazy_df) => lazy_df,
-                Err(e) => {
-                    log::warn!("polars error loading CSV: {e}");
-                    let (count_regular, _) =
-                        count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
-                    return Ok(count_regular);
-                },
-            };
-            let optflags = OptFlags::from_bits_truncate(0)
-                | OptFlags::PROJECTION_PUSHDOWN
-                | OptFlags::PREDICATE_PUSHDOWN
-                | OptFlags::CLUSTER_WITH_COLUMNS
-                | OptFlags::TYPE_COERCION
-                | OptFlags::SIMPLIFY_EXPR
-                | OptFlags::SLICE_PUSHDOWN
-                | OptFlags::COMM_SUBPLAN_ELIM
-                | OptFlags::COMM_SUBEXPR_ELIM
-                | OptFlags::FAST_PROJECTION
-                | OptFlags::STREAMING;
-            ctx.register("sql_lf", lazy_df.with_optimizations(optflags));
-            "SELECT COUNT(*) FROM sql_lf".to_string()
+        // Count with a LazyCsvReader using `select(len())`.
+        //
+        // Deliberately NOT via SQLContext: polars 1.44.x lost the parallel fast-count
+        // lowering for SQL `COUNT(*)` — both the `read_csv()` table function and a
+        // registered LazyFrame count single-threaded, while `select(len())` still
+        // parallelizes. See pola-rs/polars#29393 and qsv #4603.
+        let lazy_df = match LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
+            .with_separator(delimiter)
+            .with_comment_prefix(comment_prefix)
+            .with_low_memory(low_memory)
+            .with_ignore_errors(true)
+            .finish()
+        {
+            Ok(lazy_df) => lazy_df,
+            Err(e) => {
+                log::warn!("polars error loading CSV: {e}");
+                let (count_regular, _) = count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
+                return Ok(count_regular);
+            },
         };
 
-        // now leverage the magic of Polars SQL with its lazy evaluation, to count the records
-        // in an optimized manner with its blazing fast multithreaded, mem-mapped CSV reader!
-        let sqlresult_lf = match ctx.execute(&count_query) {
-            Ok(sqlresult_lf) => sqlresult_lf,
+        let optflags = OptFlags::from_bits_truncate(0)
+            | OptFlags::PROJECTION_PUSHDOWN
+            | OptFlags::PREDICATE_PUSHDOWN
+            | OptFlags::CLUSTER_WITH_COLUMNS
+            | OptFlags::TYPE_COERCION
+            | OptFlags::SIMPLIFY_EXPR
+            | OptFlags::SLICE_PUSHDOWN
+            | OptFlags::COMM_SUBPLAN_ELIM
+            | OptFlags::COMM_SUBEXPR_ELIM
+            | OptFlags::FAST_PROJECTION
+            | OptFlags::STREAMING;
+
+        let count_df = match lazy_df
+            .with_optimizations(optflags)
+            .select([len()])
+            .collect()
+        {
+            Ok(df) => df,
             Err(e) => {
                 // there was a Polars error, so we fall back to the regular CSV reader
                 log::warn!("polars error executing count query: {e}");
@@ -643,9 +629,9 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
             },
         };
 
-        // COUNT(*)'s result dtype changed from u32 to i64 in polars py-1.44.0,
+        // len()'s result dtype is u32 in older polars and i64 since py-1.44.0,
         // so cast to u64 to handle both
-        let polars_count = sqlresult_lf.collect()?["len"]
+        let polars_count = count_df["len"]
             .cast(&DataType::UInt64)
             .ok()
             .and_then(|s| s.u64().ok().and_then(|ca| ca.get(0)));
@@ -662,8 +648,8 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
             },
         };
 
-        // Polars SQL requires headers, so it made the first row the header row
-        // regardless of the --no-headers flag. That's why we need to add 1 to the count
+        // LazyCsvReader treats the first row as the header row regardless of the
+        // --no-headers flag, so we need to add 1 to the count
         if conf.no_headers {
             count += 1;
         }

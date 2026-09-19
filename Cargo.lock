@@ -2781,9 +2781,9 @@ checksum = "ef25905e51abafe4dcea6c15fec58c57b601cdbd0ee53d22ea1d3016c587d39b"
 
 [[package]]
 name = "finl_unicode"
-version = "1.5.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80bb028c8b4148c9ee0cca68fcd9add6044e81d3619f48577ddf13a263d047a2"
+checksum = "9844ddc3a6e533d62bba727eb6c28b5d360921d5175e9ff0f1e621a5c590a4d5"
 
 [[package]]
 name = "fixed"
@@ -6526,6 +6526,8 @@ dependencies = [
 [[package]]
 name = "polars-readstat-rs"
 version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7e4b6a2dff8aa4fdd2dd264e17db725d12111ae727a8ba22bce60ee2bef9613"
 dependencies = [
  "byteorder",
  "chrono",

@@ -315,8 +315,7 @@ plotly = { version = "0.14.1", default-features = false, optional = true }
 # `t!` macro expands to `crate::_rust_i18n_t!`. See src/cmd/viz_i18n.rs.
 rust-i18n = { version = "4.2.1", optional = true }
 pragmastat = "14.0"
-# polars-readstat-rs = { version = "0.23", optional = true }
-polars-readstat-rs = { path = "../polars_readstat/crates/polars_readstat_rs", optional = true }
+polars-readstat-rs = { version = "0.23", optional = true }
 polars = { version = "0.55", features = [
     "asof_join",
     "avro",

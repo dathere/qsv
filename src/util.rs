@@ -4513,11 +4513,11 @@ fn new_file_mode_in(dir: &Path) -> Option<u32> {
 ///     artifact intact rather than a 0-byte or half-written one. What that is worth was measured on
 ///     ONE reader, so it is stated as such: for `frequency`, a truncated cache is not a correctness
 ///     problem - `read_frequency_cache` treats a missing or unparseable metadata line, an
-///     unparseable entry, and an empty entry set alike as a cache MISS and recomputes, so the
-///     command still prints the right answer and exits 0. What it costs there is speed, silently
-///     and indefinitely: an ordinary run does not rewrite the broken file, so every later run pays
-///     the full recompute until the cache is regenerated explicitly. That - not recoverability - is
-///     what is being bought here.
+///     unparseable entry, and an empty entry set alike as a cache MISS, warns, and recomputes, so
+///     the command still prints the right answer and exits 0. What it costs there is speed,
+///     silently and indefinitely: an ordinary run does not rewrite the broken file, so every later
+///     run pays the full recompute until the cache is regenerated explicitly. That - not
+///     recoverability - is what is being bought here.
 ///
 ///     Do NOT promote that to "every reader misses": it is already false for one. `scoresql`'s
 ///     `load_freq_cache` reads the same `.freq.csv.data.jsonl` and silently SKIPS lines that fail

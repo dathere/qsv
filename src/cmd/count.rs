@@ -469,8 +469,8 @@ fn may_contain_blank_lines(path: &std::path::Path) -> std::io::Result<bool> {
 ///
 /// # Performance
 /// - Uses memory-mapped reading and multithreading for fast processing
-/// - Counts via `select(len())` rather than SQL `COUNT(*)`: polars 1.44.x runs the
-///   latter single-threaded (pola-rs/polars#29393)
+/// - Counts via `select(len())` rather than SQL `COUNT(*)`: polars 1.44.x runs the latter
+///   single-threaded (pola-rs/polars#29393)
 ///
 /// # Errors
 /// Returns error if:

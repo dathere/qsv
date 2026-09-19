@@ -17644,26 +17644,37 @@ fn is_executable_file(p: &std::path::Path) -> bool {
     }
 }
 
-/// Find a usable `chromedriver`: the first existing candidate in `dirs`, else the first hit
-/// scanning `path_var` (a PATH-shaped, platform-delimited list).
+/// Find a usable `chromedriver`: `pre_path_dirs`, then `path_var` (a PATH-shaped,
+/// platform-delimited list), then `post_path_dirs`.
+///
+/// `PATH` sits in the MIDDLE on purpose. Only the directories plotly's own build script installs
+/// into outrank it - a driver the user deliberately put on their `PATH` must beat a stale one
+/// lying around in `/usr/local/bin`, which is a common way to end up with a Chrome/driver
+/// major-version mismatch (and that fails late and opaquely).
 ///
 /// Pure so it can be unit-tested without mutating process env - `ensure_webdriver_path` is the
 /// thin wrapper that actually touches the environment.
 #[cfg(feature = "viz_static")]
 fn resolve_chromedriver_in(
-    dirs: &[std::path::PathBuf],
+    pre_path_dirs: &[std::path::PathBuf],
     path_var: Option<&std::ffi::OsStr>,
+    post_path_dirs: &[std::path::PathBuf],
 ) -> Option<std::path::PathBuf> {
-    for dir in dirs {
-        let candidate = dir.join(CHROMEDRIVER_BIN);
-        if is_executable_file(&candidate) {
-            return Some(candidate);
-        }
+    fn first_in(dirs: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+        dirs.iter()
+            .map(|dir| dir.join(CHROMEDRIVER_BIN))
+            .find(|candidate| is_executable_file(candidate))
     }
-    let path_var = path_var?;
-    std::env::split_paths(path_var)
-        .map(|dir| dir.join(CHROMEDRIVER_BIN))
-        .find(|candidate| is_executable_file(candidate))
+
+    first_in(pre_path_dirs)
+        .or_else(|| {
+            path_var.and_then(|path_var| {
+                std::env::split_paths(path_var)
+                    .map(|dir| dir.join(CHROMEDRIVER_BIN))
+                    .find(|candidate| is_executable_file(candidate))
+            })
+        })
+        .or_else(|| first_in(post_path_dirs))
 }
 
 /// Point `WEBDRIVER_PATH` at a chromedriver that actually exists on THIS machine.
@@ -17696,24 +17707,31 @@ fn ensure_webdriver_path() {
             return;
         }
 
-        let mut probe_dirs: Vec<PathBuf> = Vec::with_capacity(5);
-        // plotly's build-script install override, then its default install dir.
+        // Searched BEFORE PATH: only where plotly's build script installs, so a source build
+        // keeps using the driver it downloaded matched to the Chrome it detected.
+        let mut pre_path_dirs: Vec<PathBuf> = Vec::with_capacity(2);
         if let Some(install) = std::env::var_os("WEBDRIVER_INSTALL_PATH") {
-            probe_dirs.push(PathBuf::from(install));
+            pre_path_dirs.push(PathBuf::from(install));
         }
         if let Some(base) = directories::BaseDirs::new() {
-            probe_dirs.push(base.home_dir().join(".local").join("bin"));
+            pre_path_dirs.push(base.home_dir().join(".local").join("bin"));
         }
-        #[cfg(unix)]
-        probe_dirs.extend(
-            ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
-                .iter()
-                .map(PathBuf::from),
-        );
 
-        let Some(driver) =
-            resolve_chromedriver_in(&probe_dirs, std::env::var_os("PATH").as_deref())
-        else {
+        // Searched AFTER PATH: last-resort system locations. A driver the user put on their
+        // PATH must outrank a stale one sitting in /usr/local/bin.
+        #[cfg(unix)]
+        let post_path_dirs: Vec<PathBuf> = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
+            .iter()
+            .map(PathBuf::from)
+            .collect();
+        #[cfg(not(unix))]
+        let post_path_dirs: Vec<PathBuf> = Vec::new();
+
+        let Some(driver) = resolve_chromedriver_in(
+            &pre_path_dirs,
+            std::env::var_os("PATH").as_deref(),
+            &post_path_dirs,
+        ) else {
             log::debug!("no chromedriver found; leaving WEBDRIVER_PATH alone");
             return;
         };
@@ -54913,22 +54931,57 @@ mod webdriver_resolution_tests {
         std::env::join_paths(dirs).unwrap()
     }
 
+    fn dirs(ds: &[&std::path::Path]) -> Vec<PathBuf> {
+        ds.iter().map(|d| d.to_path_buf()).collect()
+    }
+
     #[test]
-    fn probe_dir_wins_over_path() {
-        let probe = tempfile::tempdir().unwrap();
+    fn pre_path_dir_wins_over_path() {
+        // plotly's own install dir outranks PATH: on a source build it holds the driver the
+        // build script matched to the detected Chrome.
+        let pre = tempfile::tempdir().unwrap();
         let on_path = tempfile::tempdir().unwrap();
-        let expected = make_driver(probe.path());
+        let expected = make_driver(pre.path());
         make_driver(on_path.path());
 
+        let got =
+            resolve_chromedriver_in(&dirs(&[pre.path()]), Some(&joined(&[on_path.path()])), &[]);
+        assert_eq!(got.as_deref(), Some(expected.as_path()));
+    }
+
+    #[test]
+    fn path_wins_over_post_path_fallback_dirs() {
+        // A driver the user deliberately put on PATH must beat a stale one in a system
+        // fallback dir like /usr/local/bin - a mismatch there fails late and opaquely.
+        let on_path = tempfile::tempdir().unwrap();
+        let fallback = tempfile::tempdir().unwrap();
+        let expected = make_driver(on_path.path());
+        make_driver(fallback.path());
+
         let got = resolve_chromedriver_in(
-            &[probe.path().to_path_buf()],
+            &[],
             Some(&joined(&[on_path.path()])),
+            &dirs(&[fallback.path()]),
         );
         assert_eq!(got.as_deref(), Some(expected.as_path()));
     }
 
     #[test]
-    fn falls_back_to_path_when_probe_dirs_miss() {
+    fn post_path_fallback_used_when_path_misses() {
+        let empty_path = tempfile::tempdir().unwrap();
+        let fallback = tempfile::tempdir().unwrap();
+        let expected = make_driver(fallback.path());
+
+        let got = resolve_chromedriver_in(
+            &[],
+            Some(&joined(&[empty_path.path()])),
+            &dirs(&[fallback.path()]),
+        );
+        assert_eq!(got.as_deref(), Some(expected.as_path()));
+    }
+
+    #[test]
+    fn falls_back_to_path_when_pre_path_dirs_miss() {
         // the #4620 case: the baked-in probe dir does not exist, but PATH has a driver
         let empty = tempfile::tempdir().unwrap();
         let on_path = tempfile::tempdir().unwrap();
@@ -54940,6 +54993,7 @@ mod webdriver_resolution_tests {
                 PathBuf::from("/nonexistent/qsv-4620"),
             ],
             Some(&joined(&[on_path.path()])),
+            &[],
         );
         assert_eq!(got.as_deref(), Some(expected.as_path()));
     }
@@ -54951,7 +55005,7 @@ mod webdriver_resolution_tests {
         let expected = make_driver(first.path());
         make_driver(second.path());
 
-        let got = resolve_chromedriver_in(&[], Some(&joined(&[first.path(), second.path()])));
+        let got = resolve_chromedriver_in(&[], Some(&joined(&[first.path(), second.path()])), &[]);
         assert_eq!(got.as_deref(), Some(expected.as_path()));
     }
 
@@ -54960,25 +55014,27 @@ mod webdriver_resolution_tests {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join(CHROMEDRIVER_BIN)).unwrap();
         assert_eq!(
-            resolve_chromedriver_in(&[dir.path().to_path_buf()], None),
+            resolve_chromedriver_in(&dirs(&[dir.path()]), None, &[]),
             None
         );
     }
 
     #[test]
     fn none_when_nothing_is_found() {
-        let empty_probe = tempfile::tempdir().unwrap();
+        let empty_pre = tempfile::tempdir().unwrap();
         let empty_path = tempfile::tempdir().unwrap();
+        let empty_post = tempfile::tempdir().unwrap();
         assert_eq!(
             resolve_chromedriver_in(
-                &[empty_probe.path().to_path_buf()],
-                Some(&joined(&[empty_path.path()]))
+                &dirs(&[empty_pre.path()]),
+                Some(&joined(&[empty_path.path()])),
+                &dirs(&[empty_post.path()])
             ),
             None
         );
         // no PATH at all is also fine
         assert_eq!(
-            resolve_chromedriver_in(&[empty_probe.path().to_path_buf()], None),
+            resolve_chromedriver_in(&dirs(&[empty_pre.path()]), None, &[]),
             None
         );
     }
@@ -54988,18 +55044,16 @@ mod webdriver_resolution_tests {
     fn non_executable_file_is_skipped() {
         use std::os::unix::fs::PermissionsExt;
 
-        let probe = tempfile::tempdir().unwrap();
-        let p = probe.path().join(CHROMEDRIVER_BIN);
+        let pre = tempfile::tempdir().unwrap();
+        let p = pre.path().join(CHROMEDRIVER_BIN);
         fs::write(&p, b"not executable").unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o644)).unwrap();
 
         let on_path = tempfile::tempdir().unwrap();
         let expected = make_driver(on_path.path());
 
-        let got = resolve_chromedriver_in(
-            &[probe.path().to_path_buf()],
-            Some(&joined(&[on_path.path()])),
-        );
+        let got =
+            resolve_chromedriver_in(&dirs(&[pre.path()]), Some(&joined(&[on_path.path()])), &[]);
         assert_eq!(got.as_deref(), Some(expected.as_path()));
     }
 }

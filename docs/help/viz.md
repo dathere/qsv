@@ -17,8 +17,11 @@ Produces a self-contained, interactive HTML chart - the plotly.js runtime is emb
 charts work offline. Tile basemaps (`viz map`, `viz choropleth --map`) are the exception:  
 they fetch tiles over the network at view time. Titles and labels are plain text; LaTeX is
 not typeset. With a build that includes the `viz_static` feature, charts can also be exported
-as static PNG/SVG/PDF/JPEG/WebP (needs a Chromium/Firefox at runtime; plotly auto-manages the
-webdriver).
+as static PNG/SVG/PDF/JPEG/WebP. That needs Chrome/Chromium plus a matching chromedriver at
+runtime (Firefox is NOT supported). qsv looks for chromedriver in ~/.local/bin and on your
+PATH; set WEBDRIVER_PATH to the chromedriver binary to override, and BROWSER_PATH to point at
+a non-default Chrome/Chromium. The chromedriver MAJOR version must match your Chrome - get a
+matched pair at <https://googlechromelabs.github.io/chrome-for-testing/>
 
 Set QSV_VIZ_CDN to load plotly.js from its CDN (~1.9MB smaller, but the page then needs the
 network to be VIEWED). Set QSV_VIZ_NO_COMPRESS for plain-text HTML that works on pre-2023

@@ -628,6 +628,14 @@ discovery_merge:
     - "adms:"
     - "locn:"
   never_overwrite:
+    # `@context` is listed even though v3 never emits one. This list
+    # blocks a key outright, fill included — and `fill-if-absent` fills
+    # exactly the keys that are ABSENT, which `@context` now always is.
+    # Without this entry, a publisher whose markup carries an @context
+    # would have it merged straight back into a v3 projection that is
+    # supposed to have none. It is a guard against reintroduction, not
+    # protection of a value of our own.
+    - "@context"
     - "@type"
     - "distribution"
   default_strategy: fill-if-absent

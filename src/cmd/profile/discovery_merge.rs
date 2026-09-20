@@ -930,3 +930,108 @@ fn strip_curie_key(key: &str, prefixes: &[&str]) -> String {
     }
     key.to_string()
 }
+
+#[cfg(test)]
+mod curie_normalization_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn dcat_us_v3() -> ProfileSpec {
+        super::super::profile_spec::load("dcat-us-v3").expect("embedded profile")
+    }
+
+    #[test]
+    fn discovered_curie_keys_fill_the_unprefixed_slot() {
+        // The whole point of `normalize_curies`. Publisher markup is
+        // still overwhelmingly CURIE-keyed JSON-LD while v3 is bare
+        // names, so without normalization a discovered `dct:title`
+        // lands BESIDE the inferred `title` instead of filling an
+        // empty slot — a doubled, half-prefixed document.
+        let profile = dcat_us_v3();
+        let inferred = json!({
+            "@type": "Dataset",
+            "title": "Inferred Title",
+        });
+        let discovered = json!({
+            "@type":           "dcat:Dataset",
+            "dct:title":       "Publisher Title",
+            "dct:description": "Publisher description.",
+            "dcat:keyword":    ["alpha", "beta"],
+        });
+        let merged = merge(&profile, inferred, Some(&discovered), &[]);
+
+        // Normalized keys must NOT survive in prefixed form.
+        assert!(
+            merged.get("dct:title").is_none(),
+            "discovered CURIE key must be normalized away, got: {merged:#}",
+        );
+        assert!(merged.get("dct:description").is_none());
+        assert!(merged.get("dcat:keyword").is_none());
+
+        // fill-if-absent: the inferred title wins, the absent slots fill.
+        assert_eq!(
+            merged.get("title").and_then(|v| v.as_str()),
+            Some("Inferred Title"),
+            "inferred value must win on conflict",
+        );
+        assert_eq!(
+            merged.get("description").and_then(|v| v.as_str()),
+            Some("Publisher description."),
+            "absent slot must be filled from the normalized discovery",
+        );
+        assert_eq!(
+            merged
+                .get("keyword")
+                .and_then(|v| v.as_array())
+                .map(Vec::len),
+            Some(2),
+        );
+    }
+
+    #[test]
+    fn discovered_context_is_never_reintroduced() {
+        // v3 emits no `@context`, so it is ALWAYS absent — and
+        // `fill-if-absent` fills exactly what is absent. Only the
+        // `never_overwrite` entry stops a publisher's @context being
+        // merged back into a document that must not have one.
+        let profile = dcat_us_v3();
+        let inferred = json!({"@type": "Dataset", "title": "T"});
+        let discovered = json!({
+            "@context": "https://example.gov/some/context.jsonld",
+            "dct:description": "d",
+        });
+        let merged = merge(&profile, inferred, Some(&discovered), &[]);
+        assert!(
+            merged.get("@context").is_none(),
+            "@context must never be reintroduced by discovery, got: {merged:#}",
+        );
+        // Sanity: the merge did run, so this is not passing vacuously.
+        assert_eq!(
+            merged.get("description").and_then(|v| v.as_str()),
+            Some("d"),
+        );
+    }
+
+    #[test]
+    fn curie_profiles_merge_discovered_keys_verbatim() {
+        // Mutation guard: normalization must be opt-in per profile.
+        // DCAT-AP v3 declares no `normalize_curies`, so its discovered
+        // CURIE keys have to survive intact — if they were stripped,
+        // publisher metadata would stop matching that profile's own
+        // prefixed output.
+        let profile = super::super::profile_spec::load("dcat-ap-v3").expect("embedded dcat-ap-v3");
+        assert!(
+            profile.discovery_merge.normalize_curies.is_empty(),
+            "dcat-ap-v3 must not declare normalize_curies",
+        );
+        let inferred = json!({"@type": "dcat:Dataset", "dct:title": "T"});
+        let discovered = json!({"dct:description": "d"});
+        let merged = merge(&profile, inferred, Some(&discovered), &[]);
+        assert_eq!(
+            merged.get("dct:description").and_then(|v| v.as_str()),
+            Some("d"),
+            "CURIE-keyed profiles must merge verbatim, got: {merged:#}",
+        );
+    }
+}

@@ -87,6 +87,7 @@ pub fn register(env: &mut Environment) {
     env.add_filter("basename", basename);
     env.add_filter("file_stem", file_stem);
     env.add_filter("sanitize_iso_8601_interval", sanitize_iso_8601_interval);
+    env.add_filter("dcat_us_date", dcat_us_date);
     env.add_filter("format_mailto", format_mailto);
 
     // --- globals (pure / non-SQL) -------------------------------------
@@ -984,6 +985,63 @@ fn sanitize_iso_8601_interval(value: &str) -> minijinja::Value {
         return minijinja::Value::UNDEFINED;
     }
     minijinja::Value::from(trimmed.to_string())
+}
+
+/// `dcat_us_date` filter — coerce a date/datetime into one of the
+/// forms DCAT-US v3 accepts for `issued` / `modified` / `created`.
+///
+/// The schema's `anyOf` permits `date-time`, `date`, `^[0-9]{4}$` and
+/// `^[0-9]{4}-[0-9]{2}$`. A naive datetime with no UTC offset
+/// (`2024-12-15T08:30:00`, which is exactly what CKAN's
+/// `last_modified` looks like) matches NONE of them — migration Steps
+/// 12 and 15 both say to normalize to UTC Zulu. Such a value is
+/// assumed to be UTC and rendered with a `Z`.
+///
+/// This slipped through for a while because JSON Schema treats
+/// `format` as an annotation by default: qsv reported no findings for
+/// a value the official data.gov validator rejects. The validator now
+/// asserts formats (see `dcat_validate::build_validator`), so this
+/// filter and that switch are a pair — removing either re-opens the
+/// hole.
+///
+/// Anything that parses as none of the accepted forms yields Jinja
+/// undefined so the field is suppressed rather than emitted invalid.
+fn dcat_us_date(value: &str) -> minijinja::Value {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return minijinja::Value::UNDEFINED;
+    }
+
+    // Already-acceptable bare forms: YYYY, YYYY-MM, YYYY-MM-DD.
+    let is_year = trimmed.len() == 4 && trimmed.bytes().all(|b| b.is_ascii_digit());
+    let is_year_month = trimmed.len() == 7
+        && trimmed.as_bytes()[4] == b'-'
+        && trimmed
+            .bytes()
+            .enumerate()
+            .all(|(i, b)| i == 4 || b.is_ascii_digit());
+    if is_year || is_year_month || NaiveDate::parse_from_str(trimmed, "%Y-%m-%d").is_ok() {
+        return minijinja::Value::from(trimmed.to_string());
+    }
+
+    // A full RFC 3339 timestamp (offset present) is already valid.
+    if DateTime::parse_from_rfc3339(trimmed).is_ok() {
+        return minijinja::Value::from(trimmed.to_string());
+    }
+
+    // Offset-less datetime: assume UTC and stamp the Z.
+    for fmt in [
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%d %H:%M",
+    ] {
+        if let Ok(naive) = NaiveDateTime::parse_from_str(trimmed, fmt) {
+            return minijinja::Value::from(naive.format("%Y-%m-%dT%H:%M:%SZ").to_string());
+        }
+    }
+
+    minijinja::Value::UNDEFINED
 }
 
 /// `format_mailto` filter — trims whitespace and prepends `mailto:` if

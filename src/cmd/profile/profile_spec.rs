@@ -706,7 +706,10 @@ dataset:
         assert!(!spec.dataset.fields.is_empty());
         assert!(spec.distribution.is_some());
         assert!(spec.catalog.is_some());
-        assert_eq!(spec.field_mappings.len(), 53);
+        // 51 = the original 53 minus the two `inSeries` aliases
+        // (`/package/inSeries`, `/package/in_series`), dropped when
+        // GSA removed `inSeries` from Dataset.json.
+        assert_eq!(spec.field_mappings.len(), 51);
         // Vocabularies populated.
         assert!(spec.vocabularies.contains_key("license_iri"));
         assert!(spec.vocabularies.contains_key("accrual_periodicity"));

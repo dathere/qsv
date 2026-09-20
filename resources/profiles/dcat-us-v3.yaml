@@ -232,11 +232,11 @@ dataset:
       emit_when: '{{ (pkg.name | default("")) != "" }}'
 
     - path: "issued"
-      template: '{{ pkg.metadata_created | default("") }}'
+      template: '{{ pkg.metadata_created | default("") | dcat_us_date }}'
       emit_when: '{{ (pkg.metadata_created | default("")) != "" }}'
 
     - path: "modified"
-      template: '{{ pkg.metadata_modified | default("") | sanitize_iso_8601_interval }}'
+      template: '{{ pkg.metadata_modified | default("") | sanitize_iso_8601_interval | dcat_us_date }}'
       emit_when: '{{ (pkg.metadata_modified | default("")) != "" }}'
 
     # ------ add_provenance ------
@@ -439,7 +439,7 @@ dataset:
       emit_when: '{{ (pkg.temporalResolution | default(pkg.dpp_suggestions.temporal_resolution.value | default(""))) != "" }}'
 
     - path: "created"
-      template: '{{ pkg.created | default("") }}'
+      template: '{{ pkg.created | default("") | dcat_us_date }}'
       emit_when: '{{ (pkg.created | default("")) != "" }}'
 
     - path: "version"
@@ -505,7 +505,7 @@ distribution:
       emit_when: '{{ res.rights is defined and res.rights }}'
 
     - path: "modified"
-      template: '{{ res.last_modified | default(res.modified | default("")) }}'
+      template: '{{ res.last_modified | default(res.modified | default("")) | dcat_us_date }}'
       emit_when: '{{ (res.last_modified | default(res.modified | default(""))) != "" }}'
 
     # accessRestriction / useRestriction are ARRAYS of restriction

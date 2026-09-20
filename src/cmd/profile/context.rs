@@ -376,14 +376,14 @@ fn append_csv_flags(out: &mut Vec<String>, args: &ContextArgs, gates: FreqOrCoun
 /// 3. `forced_package_fields` — CKAN-side field names (e.g. `"publisher"`) marked `force: true`
 ///    under `package/`, **expanded to include any alias keys that map to the same target pointer**
 ///    (Roborev #2493). For example forcing `package.author` also locks `package.publisher` because
-///    both map to `/projection/dct:publisher`. Consumed by `merge_formula_results` to skip formula
+///    both map to `/projection/publisher`. Consumed by `merge_formula_results` to skip formula
 ///    output on those fields so a spec formula can't overwrite a forced value (originally Roborev
 ///    #2491).
 /// 4. `forced_resource_fields` — same idea for `resource/`.
 ///
 /// Subtree handling:
-/// - `dataset_info/<key>` — key is already a target JSON pointer (e.g. `/projection/dct:title`);
-///   the raw value is written directly to that pointer via `apply_force_overrides`. `dataset_info`
+/// - `dataset_info/<key>` — key is already a target JSON pointer (e.g. `/projection/title`); the
+///   raw value is written directly to that pointer via `apply_force_overrides`. `dataset_info`
 ///   bypasses the profile's templates by design — users who need direct DCAT shape control reach
 ///   for this knob.
 /// - `package/<key>` and `resource/<key>` — translated to a target pointer via
@@ -434,7 +434,7 @@ fn collect_forced_paths(
     // Roborev #2493: also collect the set of forced TARGET POINTERS
     // per scope so we can expand the field-name sets to cover alias
     // keys. e.g. `/package/author` and `/package/publisher` both map
-    // to `/projection/dct:publisher`; forcing one must lock the other.
+    // to `/projection/publisher`; forcing one must lock the other.
     let mut forced_pkg_targets: HashSet<String> = HashSet::new();
     let mut forced_res_targets: HashSet<String> = HashSet::new();
     for (top, key_prefix, field_set, target_set) in [
@@ -565,7 +565,7 @@ pub(super) fn load_initial_context(
     let resource = normalize_value_force(doc.get("resource").cloned().unwrap_or(json!({})));
     // Roborev 2440#2: dataset_info must also pass through wrapper
     // normalization so that an override like
-    //   "/projection/dcat:contactPoint": {"value": {...}, "force": true}
+    //   "/projection/contactPoint": {"value": {...}, "force": true}
     // unwraps to the inner value before being written to the output.
     // Otherwise the wrapper object itself becomes the DCAT value and
     // the override fails to rescue --strict validation.
@@ -708,27 +708,27 @@ mod load_initial_context_tests {
             "dataset_info": {
                 // dataset_info bypasses templates by design — both
                 // path and value are recorded for raw-write semantics.
-                "/projection/dct:title":       {"value": "Override", "force": true},
-                "/projection/dct:description": {"value": "no force", "force": false},
-                "/projection/dct:identifier":  "plain string",
-                "/projection/dct:rights":      {"value": null, "force": true},
+                "/projection/title":       {"value": "Override", "force": true},
+                "/projection/description": {"value": "no force", "force": false},
+                "/projection/identifier":  "plain string",
+                "/projection/rights":      {"value": null, "force": true},
             }
         });
         let (mut paths, values, _forced_pkg, _forced_res) = collect_forced_paths(&doc, &profile);
         paths.sort();
-        // package.title and dataset_info both target the same /projection/dct:title
+        // package.title and dataset_info both target the same /projection/title
         // pointer — duplicates are intentionally preserved so the merge /
         // override paths can apply set-membership semantics per-key.
         assert!(
-            paths.contains(&"/projection/dct:title".to_string()),
-            "package.title force must land at /projection/dct:title"
+            paths.contains(&"/projection/title".to_string()),
+            "package.title force must land at /projection/title"
         );
         assert!(
-            paths.contains(&"/projection/dct:rights".to_string()),
-            "dataset_info /projection/dct:rights force must be recorded"
+            paths.contains(&"/projection/rights".to_string()),
+            "dataset_info /projection/rights force must be recorded"
         );
         assert!(
-            paths.contains(&"/projection/dcat:distribution/0/dcat:downloadURL".to_string()),
+            paths.contains(&"/projection/distribution/0/downloadURL".to_string()),
             "resource.url force must translate to distribution[0].downloadURL"
         );
         // Only dataset_info forces populate `values` now (raw-write
@@ -736,18 +736,18 @@ mod load_initial_context_tests {
         // projection so they don't appear here.
         let dataset_info_value_paths: Vec<&str> = values.iter().map(|(p, _)| p.as_str()).collect();
         assert!(
-            dataset_info_value_paths.contains(&"/projection/dct:title"),
-            "dataset_info /projection/dct:title raw-write value must be recorded"
+            dataset_info_value_paths.contains(&"/projection/title"),
+            "dataset_info /projection/title raw-write value must be recorded"
         );
         assert!(
-            dataset_info_value_paths.contains(&"/projection/dct:rights"),
-            "dataset_info /projection/dct:rights raw-write value must be recorded"
+            dataset_info_value_paths.contains(&"/projection/rights"),
+            "dataset_info /projection/rights raw-write value must be recorded"
         );
         // resource.url's value should NOT be in `values` — it flows
         // through projection so the dcat:downloadURL template's
         // only_if_absolute_iri filter still validates the IRI.
         assert!(
-            !dataset_info_value_paths.contains(&"/projection/dcat:distribution/0/dcat:downloadURL"),
+            !dataset_info_value_paths.contains(&"/projection/distribution/0/downloadURL"),
             "resource.url force value must flow through projection, not raw-write"
         );
     }
@@ -762,7 +762,7 @@ mod load_initial_context_tests {
         let doc = json!({
             "package":      {"title": "plain"},
             "resource":     {"url":   "plain"},
-            "dataset_info": {"/projection/dct:title": "plain"},
+            "dataset_info": {"/projection/title": "plain"},
         });
         let (paths, values, forced_pkg, forced_res) = collect_forced_paths(&doc, &profile);
         assert!(paths.is_empty());

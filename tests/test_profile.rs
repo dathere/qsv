@@ -3331,3 +3331,148 @@ fn overlay_rejects_malformed_bureau_code() {
         "overlay pattern must reject a malformed bureauCode, got: {warnings:#?}",
     );
 }
+
+#[test]
+fn severity_is_class_qualified_not_name_qualified() {
+    // `modified` is Recommended on Dataset but Mandatory on
+    // CatalogRecord. A flat property-name index would take the
+    // strongest level found anywhere in the bundle and escalate an
+    // ordinary Dataset date problem to Required — which under
+    // --strict aborts the run. Severity must be resolved against the
+    // class that actually owns the path.
+    let wrk = Workdir::new("severity_class_qualified");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "T",
+                "notes":         "n",
+                "name":          "id",
+                "contact_point": {"fn": "J", "hasEmail": "j@example.gov"}
+            },
+            "dataset_info": { "/projection/modified": "not-a-real-timestamp" }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("projection_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let modified = warnings
+        .iter()
+        .find(|w| w.get("field").and_then(|v| v.as_str()) == Some("modified"))
+        .expect("bad `modified` format must be reported at all");
+    assert_eq!(
+        modified.get("severity").and_then(|v| v.as_str()),
+        Some("recommended"),
+        "Dataset.modified is Recommended; CatalogRecord's Mandatory `modified` must not leak \
+         across classes. Got: {modified:#?}",
+    );
+}
+
+#[test]
+fn validate_asserts_string_formats() {
+    // JSON Schema 2020-12 treats `format` as an annotation by
+    // default, so without `should_validate_formats(true)` a malformed
+    // date-time passes here while data.gov's own validator rejects
+    // it — which is exactly what happened to a naive
+    // `2024-12-15T08:30:00` before this was switched on.
+    let wrk = Workdir::new("validate_formats");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "T",
+                "notes":         "n",
+                "name":          "id",
+                "contact_point": {"fn": "J", "hasEmail": "j@example.gov"}
+            },
+            "dataset_info": { "/projection/issued": "15-12-2024" }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("projection_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.get("field").and_then(|v| v.as_str()) == Some("issued")),
+        "a malformed `issued` must be reported — format assertion is off if it is not. Got: \
+         {warnings:#?}",
+    );
+}
+
+#[test]
+fn distribution_modified_is_normalized_to_utc_zulu() {
+    // Migration Steps 12/15. CKAN's `last_modified` is an offset-less
+    // datetime, which matches none of the forms the v3 schema accepts
+    // (date-time, date, YYYY, YYYY-MM). data.gov's validator rejected
+    // exactly this value; qsv now stamps the Z.
+    let wrk = Workdir::new("dist_modified_zulu");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "T",
+                "notes":         "n",
+                "name":          "id",
+                "contact_point": {"fn": "J", "hasEmail": "j@example.gov"}
+            },
+            "resource": { "last_modified": "2024-12-15T08:30:00" }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(
+        out.pointer("/projection/distribution/0/modified")
+            .and_then(|v| v.as_str()),
+        Some("2024-12-15T08:30:00Z"),
+    );
+    assert!(
+        out.get("projection_warnings").is_none(),
+        "normalized timestamp must validate cleanly, got: {:?}",
+        out.get("projection_warnings"),
+    );
+}

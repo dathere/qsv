@@ -22,7 +22,10 @@ inference block).
 `ckan`       — a CKAN-shaped block (package + resources) that
 datapusher-plus consumes to prepopulate CKAN packages.
 `projection` — the dataset re-expressed in the active profile's metadata
-vocabulary. Default is DCAT-US v3; bundled alternates are
+vocabulary. Default is DCAT-US v3, emitted in its canonical
+form: plain JSON with unprefixed keys and no `@context`,
+validating against the schemas data.gov's own validator at
+<https://harvest.data.gov/validate/> runs. Bundled alternates are
 dcat-ap-v3 (EU portals), croissant (ML/AI registries) and
 geoconnex (water-data federations). Consumable directly by
 data.gov harvesters, EU DCAT-AP catalogs, mlcommons /
@@ -75,7 +78,7 @@ qsv profile data.csv --initial-context publisher.json -o data.metadata.json
 ```
 
 > data.gov-style harvest: validate against DCAT-US v3 JSON Schema, abort on
-> violations, wrap in a Catalog envelope.
+> mandatory-field violations, wrap in a Catalog envelope.
 
 ```console
 qsv profile data.csv --validate --strict --catalog -o data.metadata.json
@@ -144,15 +147,15 @@ qsv profile --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑spec`&nbsp; | string | CKAN scheming YAML spec file. If omitted, only the inferred `dpp` block (lat/lon/date columns, dataset stats) is emitted; no formulas are evaluated. |  |
-| &nbsp;`‑‑initial‑context`&nbsp; | string | JSON file providing seed values for the package / resource dicts plus optional JSON-Pointer overrides for the final projection block. Replaces the older --package-meta / --resource-meta flags. Top-level keys: `package`, `resource`, `dataset_info`. Each leaf value may be wrapped as {"value": ..., "force": true} to mark it as overriding any value discovered from URL DCAT markup AND any value qsv inferred. Force is honored across all three subtrees: dataset_info entries override their target path verbatim; package / resource entries route through the active profile's `field_mappings:` table (e.g. `package.title force=true` lands at `/projection/dct:title`, beating inference and discovery). Forced values for slots the profile does not surface are silently dropped (no-op). See tests/resources/profile/dcat-init-context.README.md for a fully-populated example. |  |
+| &nbsp;`‑‑initial‑context`&nbsp; | string | JSON file providing seed values for the package / resource dicts plus optional JSON-Pointer overrides for the final projection block. Replaces the older --package-meta / --resource-meta flags. Top-level keys: `package`, `resource`, `dataset_info`. Each leaf value may be wrapped as {"value": ..., "force": true} to mark it as overriding any value discovered from URL DCAT markup AND any value qsv inferred. Force is honored across all three subtrees: dataset_info entries override their target path verbatim; package / resource entries route through the active profile's `field_mappings:` table (e.g. `package.title force=true` lands at `/projection/title`, beating inference and discovery). Forced values for slots the profile does not surface are silently dropped (no-op). See tests/resources/profile/dcat-init-context.README.md for a fully-populated example. |  |
 | &nbsp;`‑‑no‑projection`&nbsp; | flag | Skip the metadata projection block (dcat/croissant/ geoconnex, depending on the active profile). |  |
 | &nbsp;`‑‑no‑ckan`&nbsp; | flag | Skip the CKAN-shape block. |  |
 | &nbsp;`‑‑croissant‑frequency`&nbsp; | flag | Embed per-column value-frequency distributions in the metadata projection. The croissant profile renders them as inline cr:RecordSets (one `<col>-frequency` RecordSet of {value, count, percentage} rows per column), per the spec's "distribution of values is a statistic on the field" guidance. Off by default (keeps the projection compact); the raw counts always remain in the top-level `frequency` block regardless. Other bundled profiles ignore this flag. |  |
-| &nbsp;`‑‑dcat‑legacy‑license`&nbsp; | flag | Transitional: re-emit dct:license on the Dataset alongside the v3-required Distribution-level copy. Default: off (strict v3, license on Distribution only). |  |
+| &nbsp;`‑‑dcat‑legacy‑license`&nbsp; | flag | Also emit `license` on the Dataset, alongside the Distribution-level copy. Both are valid DCAT-US v3 (the Dataset-level property was added upstream), but the migration guide directs publishers to put license on each Distribution, so that is what qsv emits by default. Default: off. |  |
 | &nbsp;`‑‑no‑dcat‑discovery`&nbsp; | flag | Skip DCAT-markup discovery on URL inputs. Discovery sniffs HTTP Link: rel=describedBy (and, in future, sibling .metadata.json / JSON-LD <script> blocks) to use the publisher's stated metadata as a base layer. |  |
 | &nbsp;`‑‑dcat‑discovery‑timeout`&nbsp; | integer | Per-request timeout for DCAT-markup discovery probes. Default: 5. |  |
 | &nbsp;`‑‑validate`&nbsp; | flag | Validate the emitted projection block against the active profile's declared validators. For dcat-us-v3 that's the vendored GSA JSON Schema bundle (see resources/dcat-us-v3/); for dcat-ap-v3 / geoconnex it's pyshacl over the bundled SHACL shapes; for croissant it's mlcroissant. Catches missing mandatory fields, cardinality issues, and shape violations. Violations append to projection_warnings by default. |  |
-| &nbsp;`‑‑strict`&nbsp; | flag | With --validate, fail the command on JSON Schema violations or non-Info external- validator findings (Required/Recommended severities) instead of just warning. Note: RFC4180 structural failures from `qsv validate` (emitted when a spec declares `validators`) are always appended as warnings, regardless of this flag. |  |
+| &nbsp;`‑‑strict`&nbsp; | flag | With --validate, fail the command on Required-severity schema violations, or on non-Info external-validator findings, instead of just warning. Severity comes from the DCAT-US v3 schema's own requirementLevel annotations, so a missing mandatory property aborts while a recommended-field advisory does not. |  |
 | &nbsp;`‑‑allow‑external‑validator`&nbsp; | flag | Opt in to spawning the validator binary declared by `validation.external` when the profile was loaded from an arbitrary YAML file. Bundled profiles (dcat-us-v3, dcat-ap-v3, croissant, geoconnex) always run their declared external validators because the profile content is vetted at qsv release time. Without this flag, file-loaded profiles emit a Recommended-severity warning instead of running the binary, so an untrusted YAML can't silently execute arbitrary commands. Default: off. |  |
 | &nbsp;`‑‑catalog`&nbsp; | flag | Wrap the emitted DCAT-US v3 Dataset inside a dcat:Catalog envelope (Catalog{dataset:[...]}). Useful for federation harvesters (data.gov, CKAN ingest) that expect Catalog-shaped top-level metadata. Default: off (Dataset-only, backwards-compatible). |  |
 | &nbsp;`‑‑profile`&nbsp; | string | Metadata projection profile to use. Embedded names: dcat-us-v3 (default), dcat-ap-v3, croissant; geoconnex (when built with the `geoconnex` feature — qsv default; qsvdp opt-in via -F datapusher_plus,geoconnex). A path to a custom YAML profile is also accepted; embedded names always win over same-named files. See resources/profiles/README.md for the schema and authoring guide. |  |

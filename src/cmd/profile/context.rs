@@ -48,7 +48,7 @@ pub struct ContextArgs<'a> {
 /// Result of the analysis pass — the JSON context plus the column headers we
 /// extracted along the way (used by the output module), the
 /// initial-context's `dataset_info` JSON-Pointer override map (applied to
-/// the final output by `profile.rs::run` after `dcat::build` returns), the
+/// the final output by `profile.rs::run` after the projection is built), the
 /// §5.4 list of target JSON-Pointer paths that the user marked
 /// `{value, force: true}` (consulted by `discovery_merge::merge` to skip
 /// overlay at those paths), and the matching list of `(target_pointer, value)`
@@ -193,7 +193,7 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     // Loaded from --initial-context (unified single-file replacement for
     // the old --package-meta + --resource-meta pair). dataset_info
     // (the third returned slot) holds JSON-Pointer overrides applied to
-    // the final output by profile.rs::run after dcat::build returns; we
+    // the final output by profile.rs::run after the projection is built; we
     // round-trip it through the analysis context so the orchestrator
     // doesn't need a separate loader call.
     let (

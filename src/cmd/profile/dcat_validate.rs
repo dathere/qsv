@@ -729,11 +729,10 @@ mod tests {
 
     #[test]
     fn minimal_dataset_passes_full_bundle() {
-        // Regression guard for the CURIE-strip bridge: a fully-populated
-        // minimal dataset in compact form must validate clean after
-        // curie::strip_curies. If this starts failing, either the bundle
-        // was refreshed with new mandatory fields or the curie module
-        // is mis-mapping a prefix.
+        // A fully-populated minimal dataset must validate clean. If
+        // this starts failing, the bundle was refreshed with new
+        // mandatory fields — check Dataset.json's `required` array
+        // against what the fixture supplies.
         let profile = super::super::profile_spec::load("dcat-us-v3").unwrap();
         let warnings = validate(&profile, &minimal_valid_dataset());
         assert!(

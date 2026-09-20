@@ -2794,6 +2794,55 @@ fn dcat_us_v3_bundle_pin_manifest_matches_files() {
         entries.extend(list);
     }
 
+    // The hash loop below only proves that everything the manifest LISTS is
+    // unchanged. It says nothing about a file on disk that the manifest omits
+    // — and `load_fixtures` reads the examples DIRECTORY, not the manifest, so
+    // an unlisted fixture would be exercised by gsa_conformance while sitting
+    // entirely outside the pin protection this test claims to provide. Compare
+    // both directions before hashing.
+    {
+        fn collect_json(dir: &std::path::Path, prefix: &str, out: &mut Vec<String>) {
+            let Ok(rd) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for e in rd.filter_map(Result::ok) {
+                let path = e.path();
+                let name = e.file_name().to_string_lossy().to_string();
+                if path.is_dir() {
+                    collect_json(&path, &format!("{prefix}{name}/"), out);
+                } else if path.extension().is_some_and(|x| x == "json") {
+                    out.push(format!("{prefix}{name}"));
+                }
+            }
+        }
+        let mut on_disk: Vec<String> = Vec::new();
+        collect_json(
+            &bundle_root.join("definitions"),
+            "definitions/",
+            &mut on_disk,
+        );
+        collect_json(&bundle_root.join("examples"), "examples/", &mut on_disk);
+        on_disk.sort();
+
+        let mut listed: Vec<String> = entries
+            .iter()
+            .filter_map(|e| e.get("path").and_then(|v| v.as_str()).map(str::to_string))
+            .collect();
+        listed.sort();
+
+        let unlisted: Vec<&String> = on_disk.iter().filter(|p| !listed.contains(p)).collect();
+        assert!(
+            unlisted.is_empty(),
+            "vendored file(s) on disk but absent from MANIFEST.json, so unprotected by the pin \
+             (and, under examples/, silently exercised by gsa_conformance): {unlisted:?}",
+        );
+        let missing: Vec<&String> = listed.iter().filter(|p| !on_disk.contains(p)).collect();
+        assert!(
+            missing.is_empty(),
+            "MANIFEST.json lists file(s) that are not on disk: {missing:?}",
+        );
+    }
+
     for entry in entries {
         let rel_path = entry
             .get("path")

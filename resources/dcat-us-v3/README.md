@@ -52,11 +52,19 @@ match the file on disk. Silent edits are blocked.
    older commit than the schema it is validated against quietly
    stops testing what it claims to:
 
+   ⚠️ The pin comes from `$COMMIT` set in step 1, **not** from
+   `MANIFEST.json` — the manifest still holds the OLD commit until
+   step 4, so reading it here would fetch new schemas against old
+   fixtures and then label both with the new SHA. That is exactly
+   the drift these fixtures exist to catch.
+
    ```bash
    cd resources/dcat-us-v3
-   python3 - <<'FIXTURES'
-   import json, urllib.request, pathlib
-   pin = json.load(open('MANIFEST.json'))['commit']
+   PIN="$COMMIT" python3 - <<'FIXTURES'
+   import json, os, urllib.request, pathlib
+   pin = os.environ.get('PIN', '').strip()
+   if not pin:
+       raise SystemExit('PIN is empty - run step 1 first, in the same shell.')
    for cls in ['Dataset', 'Catalog', 'Distribution']:
        for kind in ['good', 'bad']:
            api = (f"https://api.github.com/repos/GSA/dcat-us/contents/"

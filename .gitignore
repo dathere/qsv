@@ -46,6 +46,15 @@ perf.data*
 !.claude/skills/examples/*.*
 !.claude/skills/tests/fixtures/*.csv
 # Profile golden fixtures + init-context template
+# Exception: the vendored GSA DCAT-US v3 bundle. The schemas are compiled into the binary with
+# include_str! and the examples/ fixtures drive the `gsa_conformance` tests, so the blanket *.json
+# above would leave both working locally and broken for everyone else on a fresh checkout. The
+# schemas predate that rule and are already tracked; these negations keep future re-vendoring
+# (see resources/dcat-us-v3/README.md) from silently dropping files.
+!resources/dcat-us-v3/definitions/*.json
+!resources/dcat-us-v3/examples/**/*.json
+!resources/dcat-us-v3/*.json
+
 !tests/resources/profile/golden/*.expected.json
 !tests/resources/profile/golden/*.csv
 # auto-generated stats cache files must NOT be committed even though

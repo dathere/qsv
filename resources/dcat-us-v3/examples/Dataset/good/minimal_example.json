@@ -1,0 +1,9 @@
+{
+  "title": "Example Dataset",
+  "description": "A dataset for testing purposes.",
+  "contactPoint": {
+    "fn": "Data Support",
+    "hasEmail": "mailto:data@example.gov"
+  },
+  "identifier": "https://example.gov/datasets/example-001"
+}

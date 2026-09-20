@@ -1,0 +1,151 @@
+{
+  "@id": "https://example.gov/distributions/climate-data-csv-001",
+  "@type": "Distribution",
+  "title": "Climate Data CSV Distribution",
+  "description": "A CSV file containing historical climate data including daily temperature and precipitation readings.",
+  "accessURL": "https://example.gov/data/climate/access",
+  "downloadURL": "https://example.gov/data/climate/climate-data-2023.csv",
+  "mediaType": "text/csv",
+  "format": "CSV",
+  "byteSize": "15728640",
+  "compressFormat": "application/gzip",
+  "packageFormat": "application/zip",
+  "characterEncoding": ["UTF-8"],
+  "spatialResolutionInMeters": "1000",
+  "temporalResolution": "P1D",
+  "issued": "2023-06-01",
+  "modified": "2024-01-15",
+  "language": ["en"],
+  "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "accessRights": "Public access without restrictions",
+  "rights": [
+    "This data is in the public domain and may be used without restriction."
+  ],
+  "representationTechnique": {
+    "@id": "https://example.gov/concepts/tabular-data",
+    "@type": "Concept",
+    "prefLabel": "Tabular Data",
+    "definition": "Data organized in rows and columns.",
+    "inScheme": {
+      "@id": "https://example.gov/concept-schemes/data-formats",
+      "@type": "ConceptScheme",
+      "title": "Data Formats"
+    }
+  },
+  "status": {
+    "@id": "https://example.gov/concepts/status-completed",
+    "@type": "Concept",
+    "prefLabel": "Completed",
+    "definition": "The distribution is complete and final.",
+    "inScheme": {
+      "@id": "https://example.gov/concept-schemes/lifecycle-status",
+      "@type": "ConceptScheme",
+      "title": "Lifecycle Status"
+    }
+  },
+  "availability": {
+    "@id": "https://example.gov/concepts/available-stable",
+    "@type": "Concept",
+    "prefLabel": "Stable",
+    "definition": "The distribution is intended to be available for the long term.",
+    "inScheme": {
+      "@id": "https://example.gov/concept-schemes/availability",
+      "@type": "ConceptScheme",
+      "title": "Availability"
+    }
+  },
+  "conformsTo": [
+    {
+      "@id": "https://example.gov/standards/csv-format",
+      "@type": "Standard",
+      "title": "RFC 4180 - CSV Format",
+      "description": "Common Format and MIME Type for Comma-Separated Values (CSV) Files"
+    }
+  ],
+  "describedBy": {
+    "@id": "https://example.gov/distributions/climate-data-dict",
+    "@type": "Distribution",
+    "title": "Climate Data Dictionary",
+    "description": "Data dictionary describing the fields in the climate data CSV.",
+    "downloadURL": "https://example.gov/data/climate/data-dictionary.pdf",
+    "mediaType": "application/pdf"
+  },
+  "accessService": [
+    {
+      "@id": "https://example.gov/data-services/climate-api",
+      "@type": "DataService",
+      "title": "Climate Data API",
+      "endpointURL": ["https://api.example.gov/climate/v1"],
+      "contactPoint": [
+        {
+          "fn": "Climate Support",
+          "hasEmail": "mailto:climate@example.gov"
+        }
+      ],
+      "publisher": {
+        "name": "Climate Data Center"
+      }
+    }
+  ],
+  "accessRestriction": [
+    {
+      "@id": "https://example.gov/restrictions/none",
+      "@type": "AccessRestriction",
+      "restrictionNote": "No access restrictions apply to this distribution.",
+      "restrictionStatus": {
+        "@id": "https://example.gov/concepts/unrestricted",
+        "@type": "Concept",
+        "prefLabel": "Unrestricted",
+        "definition": "No restrictions on access.",
+        "inScheme": {
+          "@id": "https://example.gov/concept-schemes/restriction-status",
+          "@type": "ConceptScheme",
+          "title": "Restriction Status"
+        }
+      }
+    }
+  ],
+  "cuiRestriction": {
+    "@id": "https://example.gov/cui-restrictions/none",
+    "@type": "CUIRestriction",
+    "cuiBannerMarking": "",
+    "designationIndicator": "",
+    "requiredIndicatorPerAuthority": []
+  },
+  "useRestriction": [
+    {
+      "@id": "https://example.gov/restrictions/attribution",
+      "@type": "UseRestriction",
+      "restrictionNote": "Attribution to the Climate Data Center is requested but not required.",
+      "restrictionStatus": {
+        "@id": "https://example.gov/concepts/unrestricted",
+        "@type": "Concept",
+        "prefLabel": "Unrestricted",
+        "definition": "No restrictions on use.",
+        "inScheme": {
+          "@id": "https://example.gov/concept-schemes/restriction-status",
+          "@type": "ConceptScheme",
+          "title": "Restriction Status"
+        }
+      }
+    }
+  ],
+  "checksum": {
+    "@id": "https://example.gov/checksums/climate-csv-sha256",
+    "@type": "Checksum",
+    "algorithm": "SHA-256",
+    "checksumValue": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+  },
+  "identifier": {
+    "@type": "Identifier",
+    "schemaAgency": "example.gov",
+    "notation": "DIST-CLIMATE-CSV-001"
+  },
+  "otherIdentifier": [
+    {
+      "@type": "Identifier",
+      "schemaAgency": "DOI",
+      "notation": "10.12345/climate-csv-2023"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "@id": "https://example.gov/distributions/invalid",
+  "@type": "Distribution",
+  "accessURL": "https://example.gov/data/valid",
+  "byteSize": 12345
+}

@@ -2779,13 +2779,71 @@ fn dcat_us_v3_bundle_pin_manifest_matches_files() {
     let raw = std::fs::read_to_string(&manifest_path)
         .unwrap_or_else(|e| panic!("could not read {}: {e}", manifest_path.display()));
     let manifest: serde_json::Value = serde_json::from_str(&raw).expect("manifest is valid JSON");
-    let files = manifest
-        .get("files")
-        .and_then(|v| v.as_array())
-        .expect("MANIFEST.json must carry a `files` array");
-    assert!(!files.is_empty(), "MANIFEST.json `files` array is empty");
+    // Two vendored lists, both hashed here. `files` are the schemas the
+    // validator compiles; `examples` are upstream's own conformance fixtures
+    // driving the gsa_conformance tests. The fixtures need the same pin
+    // protection as the schemas — a fixture that drifted from the schema it
+    // was authored against would quietly stop testing what it claims to.
+    let mut entries: Vec<&serde_json::Value> = Vec::new();
+    for key in ["files", "examples"] {
+        let list = manifest
+            .get(key)
+            .and_then(|v| v.as_array())
+            .unwrap_or_else(|| panic!("MANIFEST.json must carry an `{key}` array"));
+        assert!(!list.is_empty(), "MANIFEST.json `{key}` array is empty");
+        entries.extend(list);
+    }
 
-    for entry in files {
+    // The hash loop below only proves that everything the manifest LISTS is
+    // unchanged. It says nothing about a file on disk that the manifest omits
+    // — and `load_fixtures` reads the examples DIRECTORY, not the manifest, so
+    // an unlisted fixture would be exercised by gsa_conformance while sitting
+    // entirely outside the pin protection this test claims to provide. Compare
+    // both directions before hashing.
+    {
+        fn collect_json(dir: &std::path::Path, prefix: &str, out: &mut Vec<String>) {
+            let Ok(rd) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for e in rd.filter_map(Result::ok) {
+                let path = e.path();
+                let name = e.file_name().to_string_lossy().to_string();
+                if path.is_dir() {
+                    collect_json(&path, &format!("{prefix}{name}/"), out);
+                } else if path.extension().is_some_and(|x| x == "json") {
+                    out.push(format!("{prefix}{name}"));
+                }
+            }
+        }
+        let mut on_disk: Vec<String> = Vec::new();
+        collect_json(
+            &bundle_root.join("definitions"),
+            "definitions/",
+            &mut on_disk,
+        );
+        collect_json(&bundle_root.join("examples"), "examples/", &mut on_disk);
+        on_disk.sort();
+
+        let mut listed: Vec<String> = entries
+            .iter()
+            .filter_map(|e| e.get("path").and_then(|v| v.as_str()).map(str::to_string))
+            .collect();
+        listed.sort();
+
+        let unlisted: Vec<&String> = on_disk.iter().filter(|p| !listed.contains(p)).collect();
+        assert!(
+            unlisted.is_empty(),
+            "vendored file(s) on disk but absent from MANIFEST.json, so unprotected by the pin \
+             (and, under examples/, silently exercised by gsa_conformance): {unlisted:?}",
+        );
+        let missing: Vec<&String> = listed.iter().filter(|p| !on_disk.contains(p)).collect();
+        assert!(
+            missing.is_empty(),
+            "MANIFEST.json lists file(s) that are not on disk: {missing:?}",
+        );
+    }
+
+    for entry in entries {
         let rel_path = entry
             .get("path")
             .and_then(|v| v.as_str())

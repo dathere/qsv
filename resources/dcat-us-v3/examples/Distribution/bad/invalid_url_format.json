@@ -1,0 +1,6 @@
+{
+  "@id": "https://example.gov/distributions/invalid",
+  "@type": "Distribution",
+  "accessURL": "not-a-valid-url",
+  "downloadURL": "also-not-valid"
+}

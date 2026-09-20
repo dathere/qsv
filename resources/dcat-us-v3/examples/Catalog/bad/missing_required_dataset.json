@@ -1,0 +1,5 @@
+{
+  "@type": "Catalog",
+  "title": "Catalog Without Datasets",
+  "description": "This catalog is missing the required dataset field."
+}

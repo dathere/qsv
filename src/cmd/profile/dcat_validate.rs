@@ -891,3 +891,141 @@ mod tests {
         }
     }
 }
+
+// -----------------------------------------------------------------------------
+// Upstream conformance corpus
+// -----------------------------------------------------------------------------
+
+/// Runs qsv's validator against GSA's own `good`/`bad` example fixtures,
+/// vendored under `resources/dcat-us-v3/examples/` at the same pin as the
+/// schemas.
+///
+/// These are the schema authors' conformance cases, so they answer a question
+/// nothing else here does: not "is the projection shaped right" (the golden
+/// tests cover that) but "does qsv's *validator* enforce the bundle the way the
+/// bundle's authors intend". Those diverged once already — `format` is an
+/// annotation by default in JSON Schema 2020-12, so qsv reported a clean bill
+/// of health on output data.gov rejected. `Catalog/bad/invalid_issued_format`
+/// and `CatalogRecord/bad/invalid_modified_format` are exactly that failure,
+/// and would have caught it offline.
+///
+/// Scope is deliberately the three classes qsv actually constructs. Fixtures
+/// are routed through the real entry points rather than a per-class validator
+/// built for the test: a Dataset or Catalog fixture is validated as-is, and a
+/// Distribution fixture is wrapped in a known-good Dataset so it is reached the
+/// way a real projection reaches it. Testing a code path production never takes
+/// would prove less.
+#[cfg(test)]
+mod gsa_conformance {
+    use std::path::{Path, PathBuf};
+
+    use serde_json::json;
+
+    use super::*;
+
+    fn examples_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/dcat-us-v3/examples")
+    }
+
+    fn load_fixtures(class: &str, kind: &str) -> Vec<(String, Value)> {
+        let dir = examples_dir().join(class).join(kind);
+        let mut out: Vec<(String, Value)> = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("could not read {}: {e}", dir.display()))
+            .filter_map(Result::ok)
+            .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+            .map(|e| {
+                let p = e.path();
+                let raw = std::fs::read_to_string(&p)
+                    .unwrap_or_else(|err| panic!("read {}: {err}", p.display()));
+                let v: Value = serde_json::from_str(&raw)
+                    .unwrap_or_else(|err| panic!("parse {}: {err}", p.display()));
+                (
+                    format!(
+                        "{class}/{kind}/{}",
+                        p.file_name().unwrap().to_string_lossy()
+                    ),
+                    v,
+                )
+            })
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        assert!(
+            !out.is_empty(),
+            "no fixtures found in {} — the corpus is missing, so any test over it would pass \
+             vacuously",
+            dir.display()
+        );
+        out
+    }
+
+    /// Wrap a Distribution fixture in a known-good Dataset so it is validated
+    /// through the same path a real projection takes.
+    fn wrap_distribution(dist: &Value) -> Value {
+        json!({
+            "@type":       "Dataset",
+            "title":       "Wrapper",
+            "description": "Known-good Dataset carrying the fixture under test.",
+            "identifier":  "wrapper-001",
+            "contactPoint": {
+                "@type":    "Kind",
+                "fn":       "Support",
+                "hasEmail": "mailto:support@example.gov",
+            },
+            "distribution": [dist.clone()],
+        })
+    }
+
+    fn profile() -> ProfileSpec {
+        super::super::profile_spec::load("dcat-us-v3").expect("embedded dcat-us-v3")
+    }
+
+    #[test]
+    fn upstream_good_examples_validate_clean() {
+        let profile = profile();
+        let mut failures = Vec::new();
+        for class in ["Dataset", "Catalog"] {
+            for (name, fixture) in load_fixtures(class, "good") {
+                let findings = validate(&profile, &fixture);
+                if !findings.is_empty() {
+                    failures.push(format!("{name}: {findings:#?}"));
+                }
+            }
+        }
+        for (name, fixture) in load_fixtures("Distribution", "good") {
+            let findings = validate(&profile, &wrap_distribution(&fixture));
+            if !findings.is_empty() {
+                failures.push(format!("{name}: {findings:#?}"));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "upstream `good` fixtures must validate clean — qsv is STRICTER than the schema \
+             authors intend:\n{}",
+            failures.join("\n\n")
+        );
+    }
+
+    #[test]
+    fn upstream_bad_examples_are_rejected() {
+        let profile = profile();
+        let mut missed = Vec::new();
+        for class in ["Dataset", "Catalog"] {
+            for (name, fixture) in load_fixtures(class, "bad") {
+                if validate(&profile, &fixture).is_empty() {
+                    missed.push(name);
+                }
+            }
+        }
+        for (name, fixture) in load_fixtures("Distribution", "bad") {
+            if validate(&profile, &wrap_distribution(&fixture)).is_empty() {
+                missed.push(name);
+            }
+        }
+        assert!(
+            missed.is_empty(),
+            "upstream `bad` fixtures must be rejected — qsv is WEAKER than the schema authors \
+             intend, which is how the `format`-assertion gap shipped:\n  {}",
+            missed.join("\n  ")
+        );
+    }
+}

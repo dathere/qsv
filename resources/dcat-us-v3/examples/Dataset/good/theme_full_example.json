@@ -1,0 +1,35 @@
+{
+  "@type": "Dataset",
+  "title": "National Water Quality Data",
+  "description": "Water quality measurements from rivers and lakes across the United States.",
+  "contactPoint": {
+    "fn": "Water Resources Support",
+    "hasEmail": "mailto:water@example.gov"
+  },
+  "theme": [
+    {
+      "@type": "Concept",
+      "prefLabel": "Water",
+      "definition": "Topics related to water resources, water quality, and aquatic ecosystems",
+      "notation": ["006"],
+      "inScheme": {
+        "@id": "https://example.gov/themes",
+        "@type": "ConceptScheme",
+        "title": "Themes"
+      }
+    },
+    {
+      "@type": "Concept",
+      "prefLabel": "Environment",
+      "altLabel": "Environmental Protection",
+      "definition": "Topics related to environmental monitoring, protection, and conservation",
+      "notation": ["012"],
+      "inScheme": {
+        "@id": "https://example.gov/themes",
+        "@type": "ConceptScheme",
+        "title": "Themes"
+      }
+    }
+  ],
+  "identifier": "https://example.gov/datasets/national-water-quality"
+}

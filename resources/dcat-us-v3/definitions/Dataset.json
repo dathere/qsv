@@ -163,19 +163,6 @@
         "uri": "dcat:hasVersion"
       }
     },
-    "inSeries": {
-      "title": "in series",
-      "description": "Dataset series this dataset belongs to",
-      "type": ["null", "array"],
-      "items": {
-        "$ref": "/dcat-us/3.0.0/definitions/datasetseries"
-      },
-      "_oldDocs": {
-        "uri": "dcat:inSeries",
-        "range": "dcat:DatasetSeries"
-      },
-      "requirementLevel": "Optional"
-    },
     "keyword": {
       "title": "keyword/tag",
       "description": "List of keywords or tags describing the dataset",
@@ -626,6 +613,41 @@
       "examples": ["2024-01-15", "2024-01-15T10:30:00Z", "2024", "2024-01"],
       "requirementLevel": "Optional"
     },
+    "inventoried": {
+      "title": "inventoried date",
+      "description": "Date on which the dataset was added to the catalog. This may differ from the publication/release date.",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "title": "Date string",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "examples": ["2024-01-15", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Recommended"
+    },
     "language": {
       "title": "language",
       "description": "ISO 639-1 language code values used in the dataset text or metadata, such as en or es, full list can be seen at https://id.loc.gov/vocabulary/iso639-1.html",
@@ -718,12 +740,21 @@
     "publisher": {
       "title": "publisher",
       "description": "Organization responsible for publishing and making the dataset available",
-      "$ref": "/dcat-us/3.0.0/definitions/organization",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/organization",
+          "description": "inline description of Organization"
+        }
+      ],
       "_oldDocs": {
         "uri": "dcterms:publisher",
         "range": "foaf:Agent"
       },
-      "requirementLevel": "Mandatory"
+      "requirementLevel": "Recommended"
     },
     "relation": {
       "title": "related resource",
@@ -752,6 +783,71 @@
         "$ref": "/dcat-us/3.0.0/definitions/dataset"
       },
       "requirementLevel": "Optional"
+    },
+    "license": {
+      "title": "license",
+      "description": "License that governs how the dataset can be used or reused",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "type": "string",
+          "description": "Full text of the license"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:license",
+        "range": "dcterms:LicenseDocument"
+      },
+      "examples": ["https://creativecommons.org/publicdomain/zero/1.0/"],
+      "requirementLevel": "Recommended"
+    },
+    "accessRestriction": {
+      "title": "access restriction",
+      "description": "List of access restrictions related to the dataset",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/accessrestriction"
+      },
+      "_oldDocs": {
+        "uri": "dcat-us:accessRestriction",
+        "range": "dcat-us:AccessRestriction"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "cuiRestriction": {
+      "title": "CUI restriction",
+      "description": "Controlled Unclassified Information restriction related to the dataset",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/cuirestriction",
+          "description": "inline description of CUIRestriction"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcat-us:cuiRestriction",
+        "range": "dcat-us:CuiRestriction"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "useRestriction": {
+      "title": "use restriction",
+      "description": "List of use restrictions related to the dataset",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/userestriction"
+      },
+      "_oldDocs": {
+        "uri": "dcat-us:useRestriction",
+        "range": "dcat-us:UseRestriction"
+      },
+      "requirementLevel": "Recommended"
     },
     "rights": {
       "title": "rights",
@@ -980,13 +1076,7 @@
       "requirementLevel": "Optional"
     }
   },
-  "required": [
-    "description",
-    "publisher",
-    "title",
-    "contactPoint",
-    "identifier"
-  ],
+  "required": ["description", "title", "contactPoint", "identifier"],
   "_oldDocs": {
     "rdfClass": "dcat:Dataset",
     "rationale": "The update of dcat:Dataset is crucial as it aligns the DCAT profile with international standards, offering a standardized and widely recognized way to describe datasets. This alignment enhances data interoperability and discoverability, enabling data publishers to provide structured metadata, improving data sharing, and facilitating seamless integration for users and applications.",

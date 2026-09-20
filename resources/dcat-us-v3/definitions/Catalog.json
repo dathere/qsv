@@ -53,6 +53,15 @@
       },
       "requirementLevel": "Mandatory"
     },
+    "datasetSeries": {
+      "title": "dataset series",
+      "description": "List of dataset series included in the catalog.",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/datasetseries"
+      },
+      "requirementLevel": "Optional"
+    },
     "keyword": {
       "title": "keyword/tag",
       "description": "List of keywords or tags describing the catalog",
@@ -532,6 +541,32 @@
             "name": "National Climate Data Center"
           },
           "identifier": "https://example.gov/datasets/climate-observations-1"
+        }
+      ],
+      "datasetSeries": [
+        {
+          "@id": "https://example.gov/series/annual-climate-observations",
+          "@type": "DatasetSeries",
+          "title": "Annual Climate Observations",
+          "description": "A series of annual climate observation datasets from monitoring stations.",
+          "publisher": {
+            "name": "National Climate Data Center"
+          },
+          "seriesMember": [
+            {
+              "@type": "Dataset",
+              "title": "Daily Climate Observations 2024",
+              "description": "Daily temperature, precipitation, and wind measurements.",
+              "contactPoint": {
+                "fn": "Climate Data Support",
+                "hasEmail": "mailto:climate@example.gov"
+              },
+              "publisher": {
+                "name": "National Climate Data Center"
+              },
+              "identifier": "https://example.gov/datasets/climate-observations-1"
+            }
+          ]
         }
       ],
       "homepage": {

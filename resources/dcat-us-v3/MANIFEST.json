@@ -1,8 +1,8 @@
 {
   "upstream": "https://github.com/GSA/dcat-us",
-  "commit": "cf8789002b1f60c2c7247de475dd565427e5b8b7",
-  "commit_url": "https://github.com/GSA/dcat-us/tree/cf8789002b1f60c2c7247de475dd565427e5b8b7/jsonschema/definitions",
-  "fetched_at": "2026-05-26",
+  "commit": "1ca074b67dd1ad3cea8f0dd4ae951864491fd104",
+  "commit_url": "https://github.com/GSA/dcat-us/tree/1ca074b67dd1ad3cea8f0dd4ae951864491fd104/jsonschema/definitions",
+  "fetched_at": "2026-09-20",
   "schema_draft": "https://json-schema.org/draft/2020-12/schema",
   "entry_points": {
     "dataset": "definitions/Dataset.json",
@@ -35,7 +35,7 @@
     },
     {
       "path": "definitions/Catalog.json",
-      "sha256": "0eca73c0c21f13413a92d7a8d1c24896c2ecbbee39200cafb85c3a837e000380"
+      "sha256": "4788b835f8d122ec52e0ca6e5343bb9e39d7361ce6ba0c6e4bfcdec87473161a"
     },
     {
       "path": "definitions/CatalogRecord.json",
@@ -55,19 +55,19 @@
     },
     {
       "path": "definitions/DataService.json",
-      "sha256": "b843173283f0e8f22641fcad27c50224c8c76896b9500bcb6abf1ca0bfccef93"
+      "sha256": "0aef863056fce337af53209cdf89efdd68061c09a9d79d8de480514745a9a428"
     },
     {
       "path": "definitions/Dataset.json",
-      "sha256": "1a0e25bae00581e2c4d990ea7de91fe07e207fa82f9d8623939342cc7054fedc"
+      "sha256": "936dfb3a882782e0f3a67aae61bf15466db302f8227f5a4f2ac99d4f44025c4f"
     },
     {
       "path": "definitions/DatasetSeries.json",
-      "sha256": "2cd36c8e4b0a67be33f6bdfdccc91043079f778c3b0bd430f7052ea60f817078"
+      "sha256": "116be6d3354937e3729b5cf24fc17827498d5c71274ddb43bbd657a61461479f"
     },
     {
       "path": "definitions/Distribution.json",
-      "sha256": "bc68f31d53afc662d02e225458e6b4537b913ba2ea918fcd923b950a53f46ae5"
+      "sha256": "c039f69f8e93e1f13b093a42a0310216bc95ae1a7bfefc8975e3a8fcbf9de2a8"
     },
     {
       "path": "definitions/Document.json",

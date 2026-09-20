@@ -32,6 +32,26 @@ pub fn merge(
     if !profile.discovery_merge.enabled {
         return inferred;
     }
+    // Publishers overwhelmingly still serve CURIE-keyed JSON-LD
+    // (DCAT-US 1.1, DCAT-AP), but DCAT-US v3 is plain JSON with
+    // unprefixed keys. Normalize the discovered document first, or a
+    // publisher's `dct:title` merges in *alongside* our `title`
+    // instead of filling it, leaving a doubled, half-prefixed
+    // document that the unknown-key lint then flags. Profiles that
+    // still emit CURIEs declare no prefixes and merge verbatim.
+    let normalized;
+    let discovered = if profile.discovery_merge.normalize_curies.is_empty() {
+        discovered
+    } else {
+        let prefixes: Vec<&str> = profile
+            .discovery_merge
+            .normalize_curies
+            .iter()
+            .map(String::as_str)
+            .collect();
+        normalized = strip_curies(discovered, &prefixes);
+        &normalized
+    };
     let Value::Object(mut inferred_obj) = inferred else {
         return inferred;
     };
@@ -877,4 +897,36 @@ discovery_merge:
             "forced path on a different index must not over-match"
         );
     }
+}
+
+/// Deep clone `v` with every object key whose CURIE prefix matches one
+/// in `prefixes` replaced by the unprefixed local name.
+///
+/// Used to normalize *discovered* publisher metadata into the
+/// unprefixed shape DCAT-US v3 uses before merging. Keys only —
+/// values are never rewritten, so a `@type` of `"dcat:Dataset"` is
+/// left intact for the caller to interpret.
+fn strip_curies(v: &Value, prefixes: &[&str]) -> Value {
+    match v {
+        Value::Object(map) => {
+            let mut out = serde_json::Map::with_capacity(map.len());
+            for (k, child) in map {
+                out.insert(strip_curie_key(k, prefixes), strip_curies(child, prefixes));
+            }
+            Value::Object(out)
+        },
+        Value::Array(items) => {
+            Value::Array(items.iter().map(|c| strip_curies(c, prefixes)).collect())
+        },
+        _ => v.clone(),
+    }
+}
+
+fn strip_curie_key(key: &str, prefixes: &[&str]) -> String {
+    for p in prefixes {
+        if let Some(local) = key.strip_prefix(p) {
+            return local.to_string();
+        }
+    }
+    key.to_string()
 }

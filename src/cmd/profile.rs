@@ -597,15 +597,31 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             && let Some(final_projection) = out_map.get("projection")
         {
             let validation = dcat_validate::validate(&profile, final_projection);
-            if !validation.is_empty() && args.flag_strict {
-                let summary = validation
+            // --strict aborts on Required-severity findings only.
+            //
+            // It used to abort on ANY non-empty finding vector, which
+            // made severity decorative: a Recommended-level advisory
+            // was as fatal as a missing mandatory property. Now that
+            // severity is derived from the schema bundle's own
+            // `requirementLevel` annotations (see
+            // `dcat_validate::classify_severity`), gate on it — and
+            // match how --strict already treats external-validator
+            // findings, which filter out Info before escalating.
+            // Sub-Required findings still surface in
+            // projection_warnings.
+            let blocking: Vec<_> = validation
+                .iter()
+                .filter(|w| matches!(w.severity, projection::Severity::Required))
+                .collect();
+            if !blocking.is_empty() && args.flag_strict {
+                let summary = blocking
                     .iter()
                     .map(|w| format!("  - {}: {}", w.field, w.message))
                     .collect::<Vec<_>>()
                     .join("\n");
                 return Err(CliError::Other(format!(
                     "qsv profile --strict: {} schema violation(s):\n{summary}",
-                    validation.len()
+                    blocking.len()
                 )));
             }
             projection_warnings.extend(validation);

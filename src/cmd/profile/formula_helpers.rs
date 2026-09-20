@@ -932,7 +932,7 @@ fn format_thousands(n: f64, decimals: usize) -> String {
 /// `only_if_absolute_iri` filter — passes the value through if it parses
 /// as an absolute IRI with http/https/ftp/ftps/file scheme; otherwise
 /// returns minijinja's undefined sentinel so `| default(...)` chains
-/// can route to a fallback. Used by `dcat:landingPage`, `dcat:accessURL`,
+/// can route to a fallback. Used by `landingPage`, `accessURL`,
 /// and similar IRI-typed slots to reject bare strings.
 fn only_if_absolute_iri(value: &str) -> minijinja::Value {
     let trimmed = value.trim();
@@ -949,7 +949,7 @@ fn only_if_absolute_iri(value: &str) -> minijinja::Value {
 }
 
 /// `basename` filter — returns the final path segment of `value`. Used
-/// to derive a `dct:title` fallback from the URL's last segment.
+/// to derive a `title` fallback from the URL's last segment.
 fn basename(value: &str) -> String {
     std::path::Path::new(value)
         .file_name()
@@ -958,7 +958,7 @@ fn basename(value: &str) -> String {
 }
 
 /// `file_stem` filter — returns the basename minus its extension. Used
-/// to derive a tempfile-stem-aware `dcat:Distribution.dct:title`.
+/// to derive a tempfile-stem-aware `Distribution.title`.
 fn file_stem(value: &str) -> String {
     std::path::Path::new(value)
         .file_stem()
@@ -968,7 +968,7 @@ fn file_stem(value: &str) -> String {
 
 /// `sanitize_iso_8601_interval` filter — rejects interval / repeating
 /// ISO 8601 syntax (`R/P1Y`, `2024-01-01/2024-06-30`). Useful for
-/// `dct:modified` / `dct:issued` slots where a pure instant is expected;
+/// `modified` / `issued` slots where a pure instant is expected;
 /// instead of forwarding a malformed interval, returns Jinja undefined
 /// so the field is suppressed.
 fn sanitize_iso_8601_interval(value: &str) -> minijinja::Value {
@@ -1044,7 +1044,7 @@ fn blake3_of(path: &str) -> minijinja::Value {
 }
 
 /// `file_size_of` global — byte length of a local file as a string.
-/// Matches the GSA `dcat:byteSize` convention (number serialized as
+/// Matches the GSA `byteSize` convention (number serialized as
 /// string). Returns minijinja undefined on stat failure.
 fn file_size_of(path: &str) -> minijinja::Value {
     match std::fs::metadata(path) {
@@ -1153,12 +1153,16 @@ fn csvw_datatype_legacy(t: Option<&serde_json::Value>) -> &'static str {
     }
 }
 
-/// `bbox_from_dpps` global — derives a `dct:Location` array from the
+/// `bbox_from_dpps` global — derives a `Location` array from the
 /// inferred LAT/LON column metadata in `dpp` and the per-column
-/// min/max in `stats`. Returns an array suitable for the
-/// `dct:spatial` slot (v3 cardinality 0..*), or undefined when no
-/// lat/lon columns were detected. Mirrors the legacy
-/// `dcat::bbox_from_dpps` so wire-shape parity is preserved.
+/// min/max in `stats`. Returns an array suitable for the `spatial`
+/// slot (v3 cardinality 0..*), or undefined when no lat/lon columns
+/// were detected.
+///
+/// The WKT polygon lands in `bbox` rather than `geometry` because it
+/// is derived solely from the lat/lon column ranges — a bounding
+/// rectangle, not the dataset's true geometry. GSA `Location.json`
+/// accepts a bare WKT string for both slots.
 fn bbox_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::Value {
     let dpp_json: serde_json::Value = match serde_json::to_value(&dpp) {
         Ok(v) => v,
@@ -1199,15 +1203,14 @@ fn bbox_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::
          {min_lat}, {min_lon} {min_lat}))"
     );
     minijinja::Value::from_serialize(serde_json::json!([{
-        "@type": "dct:Location",
-        "dcat:bbox": polygon,
+        "@type": "Location",
+        "bbox": polygon,
     }]))
 }
 
-/// `temporal_from_dpps` global — derives a `dct:PeriodOfTime` array,
-/// one entry per inferred date column. Returns undefined when no
-/// date columns were detected. Mirrors the legacy
-/// `dcat::temporal_from_dpps` (v3 cardinality 0..*).
+/// `temporal_from_dpps` global — derives a `PeriodOfTime` array, one
+/// entry per inferred date column. Returns undefined when no date
+/// columns were detected (v3 cardinality 0..*).
 fn temporal_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::Value {
     let dpp_json: serde_json::Value = match serde_json::to_value(&dpp) {
         Ok(v) => v,
@@ -1238,9 +1241,9 @@ fn temporal_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijin
             continue;
         };
         out.push(serde_json::json!({
-            "@type":          "dct:PeriodOfTime",
-            "dcat:startDate": start,
-            "dcat:endDate":   end,
+            "@type":     "PeriodOfTime",
+            "startDate": start,
+            "endDate":   end,
         }));
     }
     if out.is_empty() {

@@ -197,18 +197,21 @@ pub struct FieldMapping {
 #[allow(dead_code)] // surface fields not yet consumed reserved for future expansion
 pub struct Validation {
     #[serde(default)]
-    pub enabled:                   bool,
+    pub enabled:       bool,
     #[serde(default)]
-    pub schema_dir:                Option<String>,
+    pub schema_dir:    Option<String>,
+    /// Entry-point schema filenames.
+    ///
+    /// NOTE: currently advisory only. `dcat_validate` compiles the two
+    /// overlays from `include_str!` constants, so changing these keys
+    /// has no effect; they document intent and are read by the
+    /// profile-conformance test. Honoring them requires loading
+    /// schema bundles from disk, which is gated behind the same
+    /// `schema_dir` follow-up.
     #[serde(default)]
-    pub entry_dataset:             Option<String>,
+    pub entry_dataset: Option<String>,
     #[serde(default)]
-    pub entry_catalog:             Option<String>,
-    /// CURIE prefixes whose `<prefix>:<localname>` keys collapse to
-    /// `<localname>` before schema validation. Mirrors the legacy
-    /// `STRIPPABLE_PREFIXES` const.
-    #[serde(default)]
-    pub strippable_curie_prefixes: Vec<String>,
+    pub entry_catalog: Option<String>,
     /// Optional out-of-process validator (e.g. `mlcroissant`,
     /// `pyshacl`). Runs orthogonal to the built-in JSON-Schema
     /// validator gated by `enabled`: a profile may set
@@ -218,7 +221,7 @@ pub struct Validation {
     /// gracefully to a single `Severity::Info` warning rather than
     /// failing the projection.
     #[serde(default)]
-    pub external:                  Option<ExternalValidator>,
+    pub external:      Option<ExternalValidator>,
 }
 
 /// Out-of-process validator config. The command is spawned with the
@@ -339,7 +342,7 @@ pub struct CatalogBlock {
     #[serde(default, rename = "type")]
     pub type_:                Option<String>,
     /// minijinja template producing the catalog's title. The inner
-    /// Dataset is exposed as `inner["..."]` (e.g.  `inner["dct:title"]`
+    /// Dataset is exposed as `inner["..."]` (e.g.  `inner["title"]`
     /// for DCAT, `inner["schema:name"]` for schema.org-rooted profiles),
     /// and the analysis ctx (`pkg`/`res`/`stats`/`dpp`/...) is available
     /// too. When unset, the title falls back to the legacy "Catalog of
@@ -368,9 +371,25 @@ pub struct CatalogBlock {
     /// analysis ctx.
     #[serde(default)]
     pub inherit_from_dataset: Vec<String>,
-    /// The `dct:conformsTo` target IRI.
+    /// JSON-LD key under which `conforms_to` is emitted. Defaults to
+    /// `dct:conformsTo` for the prefixed profiles; DCAT-US v3 sets it
+    /// to the canonical unprefixed `conformsTo`.
+    #[serde(default)]
+    pub conforms_to_key:      Option<String>,
+    /// The conformsTo target IRI.
+    ///
+    /// Emitted as a Standard object. When `conforms_to_title` is set,
+    /// the canonical DCAT-US v3 shape is used — `{"@type": "Standard",
+    /// "title": <title>, "identifier": <iri>}` per migration Step 13.
+    /// Otherwise the legacy prefixed shape `{"@type": "dct:Standard",
+    /// "@id": <iri>}` is kept for the profiles that still emit
+    /// CURIE-keyed JSON-LD (DCAT-AP, Croissant, Geoconnex).
     #[serde(default)]
     pub conforms_to:          Option<String>,
+    /// Human-readable title for the `conforms_to` Standard. Its
+    /// presence selects the canonical v3 shape (see `conforms_to`).
+    #[serde(default)]
+    pub conforms_to_title:    Option<String>,
     /// Catalog-only / template-driven fields. Each entry is a
     /// regular `FieldDecl`; templates render with `inner` (the
     /// rendered Dataset block) injected on top of the analysis ctx,
@@ -482,6 +501,18 @@ pub struct DiscoveryMerge {
     /// See `DistributionMerge` for details.
     #[serde(default)]
     pub distribution_merge: Option<DistributionMerge>,
+    /// CURIE prefixes stripped from *discovered* publisher metadata
+    /// before it is merged.
+    ///
+    /// Publishers overwhelmingly still serve CURIE-keyed JSON-LD
+    /// (DCAT-US 1.1, DCAT-AP), but DCAT-US v3 is plain JSON with
+    /// unprefixed keys. Without normalization a discovered
+    /// `dct:title` would merge in *alongside* the inferred `title`
+    /// rather than filling it, leaving a doubled, half-prefixed
+    /// document. Profiles that emit CURIE keys leave this empty and
+    /// merge verbatim.
+    #[serde(default)]
+    pub normalize_curies:   Vec<String>,
 }
 
 // Hand-rolled Default so callers that build a ProfileSpec without
@@ -500,6 +531,7 @@ impl Default for DiscoveryMerge {
                 "dcat:distribution".to_string(),
             ],
             default_strategy:   Some("fill-if-absent".to_string()),
+            normalize_curies:   Vec::new(),
             distribution_merge: None,
         }
     }

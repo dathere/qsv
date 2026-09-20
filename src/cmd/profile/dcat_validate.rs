@@ -23,22 +23,37 @@
 //! (`dcat-us:bureauCode`, `dcat-us:programCode`) that the GSA
 //! bundle itself does not define.
 //!
-//! ## CURIE/IRI bridge
+//! ## No CURIE bridge
 //!
-//! The GSA bundle validates against **unprefixed** keys
-//! (`title`, `contactPoint`, `fn`) — JSON-LD-expanded local
-//! names. `dcat::build` emits the JSON-LD-**compact** form with
-//! CURIE prefixes (`dct:title`, `dcat:contactPoint`, `vcard:fn`)
-//! for interop with CKAN, data.gov, and other downstream
-//! consumers. The two forms are bridged transparently at
-//! validation time by [`curie::strip_curies`], which returns a
-//! deep copy of the dcat block with known prefixes stripped from
-//! object keys. The emitted JSON on disk is unchanged.
+//! Earlier revisions emitted JSON-LD-compact, CURIE-prefixed keys
+//! (`dct:title`, `dcat:contactPoint`) and stripped the prefixes in
+//! memory before validating, because the GSA bundle keys everything
+//! unprefixed. That bridge is gone: DCAT-US v3 is plain JSON
+//! validated by JSON Schema — GSA removed the JSON-LD context and
+//! the SHACL shapes upstream — so the projection now emits the same
+//! unprefixed keys the schemas declare and is validated verbatim.
+//!
+//! The only prefixed keys left are deliberate qsv extensions, listed
+//! in [`EXTENSION_KEYS`].
+//!
+//! ## Why the unknown-key lint exists
+//!
+//! No schema in the GSA bundle sets `additionalProperties`, so an
+//! unknown key — a typo, a stale property upstream has since removed,
+//! or a key under the wrong namespace — validates silently. The lint
+//! in [`lint_unknown_keys`] closes that hole; it is the only thing
+//! that catches a misnamed key, and it is how the pre-conformance
+//! `dcat:describedBy` / `dcat:versionNotes` / dead `@context` bugs
+//! would have been caught. Upstream ships the same idea as
+//! `jsonschema/check_undefined_fields.py`.
 
-use std::sync::OnceLock;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::OnceLock,
+};
 
 use jsonschema::Validator;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::{
     profile_spec::ProfileSpec,
@@ -231,6 +246,16 @@ fn build_validator(entry_json: &str) -> Result<Validator, String> {
 
     jsonschema::options()
         .with_registry(&registry)
+        // JSON Schema 2020-12 treats `format` as an ANNOTATION by
+        // default, so `"format": "date-time"` is collected and not
+        // enforced unless assertion is switched on. Leaving it off
+        // meant qsv reported a clean bill of health for values the
+        // official validator at harvest.data.gov/validate rejects —
+        // a naive `2024-12-15T08:30:00` with no UTC offset passed
+        // here and failed there. data.gov asserts formats, so qsv
+        // must too, or `--validate` gives false assurance about the
+        // one thing users run it for.
+        .should_validate_formats(true)
         .build(&entry_schema)
         .map_err(|e| format!("could not compile DCAT-US v3 schema bundle: {e}"))
 }
@@ -284,13 +309,8 @@ pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> 
         }];
     }
 
-    let prefixes: Vec<&str> = profile
-        .validation
-        .strippable_curie_prefixes
-        .iter()
-        .map(String::as_str)
-        .collect();
-    let stripped = strip_curies(block, &prefixes);
+    // The emitted block is already keyed the way the schemas are, so
+    // it is validated verbatim — no CURIE stripping (see module docs).
     let is_catalog = block.get("@type").and_then(Value::as_str).is_some_and(|t| {
         t.eq_ignore_ascii_case("dcat:Catalog") || t.eq_ignore_ascii_case("Catalog")
     });
@@ -300,17 +320,18 @@ pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> 
     } else {
         dataset_validator()
     };
+    let root_def = if is_catalog { "catalog" } else { "dataset" };
 
-    match validator {
+    let mut findings = match validator {
         Ok(v) => v
-            .iter_errors(&stripped)
+            .iter_errors(block)
             .map(|err| {
                 let path = err.instance_path().to_string();
                 let field = path.trim_start_matches('/').to_string();
                 let kind = format!("{:?}", err.kind());
                 ProjectionWarning {
                     field,
-                    severity: classify_severity(&kind),
+                    severity: classify_severity(&kind, &path, root_def),
                     message: format!("{err}"),
                 }
             })
@@ -320,111 +341,331 @@ pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> 
             severity: Severity::Required,
             message:  e.to_string(),
         }],
-    }
+    };
+
+    findings.extend(lint_unknown_keys(block, is_catalog));
+    findings
 }
 
-/// Deep clone `v` with every object key whose CURIE prefix matches
-/// one in `prefixes` replaced by the unprefixed local name. The
-/// validator needs ownership and the emitted block (the one written
-/// to disk) must keep the compact form. Inlined here so the legacy
-/// `curie.rs` module can be deleted.
-fn strip_curies(v: &Value, prefixes: &[&str]) -> Value {
-    use serde_json::Map;
-    match v {
-        Value::Object(map) => {
-            let mut out = Map::with_capacity(map.len());
-            for (k, child) in map {
-                let new_key = strip_curie_key(k, prefixes);
-                out.insert(new_key, strip_curies(child, prefixes));
+/// Report emitted keys the target schema does not declare.
+///
+/// The bundle never sets `additionalProperties`, so unknown keys pass
+/// validation silently — this is the only check that catches a typo,
+/// a property upstream has removed, or a key under the wrong
+/// namespace.
+///
+/// ## Scope
+///
+/// Deliberately bounded to the node types qsv actually constructs:
+/// the root (Catalog or Dataset), each Dataset inside a Catalog's
+/// `dataset` array, and each Distribution inside a Dataset's
+/// `distribution` array. It does NOT descend into nested value
+/// objects (`publisher`, `contactPoint`, `landingPage`, the
+/// restriction objects) — those are `$ref`-typed and already shape-
+/// checked by the schema's own `anyOf`/`$ref` machinery, which does
+/// report violations. The gap this closes is specifically *unknown
+/// top-level property names*, which nothing else reports.
+fn lint_unknown_keys(block: &Value, is_catalog: bool) -> Vec<ProjectionWarning> {
+    let mut out = Vec::new();
+    if is_catalog {
+        check_node(block, "catalog", "", &mut out);
+        if let Some(datasets) = block.get("dataset").and_then(Value::as_array) {
+            for (i, ds) in datasets.iter().enumerate() {
+                check_node(ds, "dataset", &format!("dataset/{i}/"), &mut out);
+                lint_distributions(ds, &format!("dataset/{i}/"), &mut out);
             }
-            Value::Object(out)
-        },
-        Value::Array(items) => {
-            Value::Array(items.iter().map(|c| strip_curies(c, prefixes)).collect())
-        },
-        _ => v.clone(),
+        }
+    } else {
+        check_node(block, "dataset", "", &mut out);
+        lint_distributions(block, "", &mut out);
     }
+    out
 }
 
-fn strip_curie_key(key: &str, prefixes: &[&str]) -> String {
-    for p in prefixes {
-        if let Some(local) = key.strip_prefix(p) {
-            return local.to_string();
+fn lint_distributions(dataset: &Value, prefix: &str, out: &mut Vec<ProjectionWarning>) {
+    if let Some(dists) = dataset.get("distribution").and_then(Value::as_array) {
+        for (i, d) in dists.iter().enumerate() {
+            check_node(
+                d,
+                "distribution",
+                &format!("{prefix}distribution/{i}/"),
+                out,
+            );
         }
     }
-    key.to_string()
 }
 
-/// Classify a `jsonschema::ValidationError` kind as Required or
-/// Recommended. Errors keyed off `Required` (missing mandatory
-/// property in a vendored schema's `required` array) get
-/// `Severity::Required`; everything else (pattern mismatches,
-/// type mismatches, enum violations on Recommended fields) gets
-/// `Severity::Recommended`.
-fn classify_severity(kind_str: &str) -> Severity {
-    if kind_str.contains("Required") {
-        Severity::Required
-    } else {
-        Severity::Recommended
+/// Compare one node's keys against `definitions/<def_name>.json`.
+fn check_node(node: &Value, def_name: &str, path_prefix: &str, out: &mut Vec<ProjectionWarning>) {
+    let Some(obj) = node.as_object() else {
+        return;
+    };
+    let Some(known) = declared_properties(def_name) else {
+        return;
+    };
+    for key in obj.keys() {
+        if known.contains(key.as_str()) || EXTENSION_KEYS.contains(&key.as_str()) {
+            continue;
+        }
+        out.push(ProjectionWarning {
+            field:    format!("{path_prefix}{key}"),
+            severity: Severity::Recommended,
+            message:  format!(
+                "`{key}` is not a DCAT-US v3 {def_name} property and is not a known qsv \
+                 extension. It will be ignored by data.gov harvesters. Check the spelling, or \
+                 whether the property was removed upstream."
+            ),
+        });
     }
 }
 
-// -----------------------------------------------------------------------------
-// Minimal-schema fallback (kept for offline / future use)
-// -----------------------------------------------------------------------------
+/// Property names declared by a vendored definition, plus the JSON-LD
+/// node keywords every class permits.
+fn declared_properties(def_name: &str) -> Option<&'static HashSet<String>> {
+    static INDEX: OnceLock<HashMap<String, HashSet<String>>> = OnceLock::new();
+    INDEX
+        .get_or_init(|| {
+            let mut idx = HashMap::new();
+            for e in BUNDLE {
+                let Ok(schema) = serde_json::from_str::<Value>(e.json) else {
+                    continue;
+                };
+                let mut names: HashSet<String> = schema
+                    .get("properties")
+                    .and_then(Value::as_object)
+                    .map(|p| p.keys().cloned().collect())
+                    .unwrap_or_default();
+                names.insert("@id".to_string());
+                names.insert("@type".to_string());
+                idx.insert(e.name.to_string(), names);
+            }
+            idx
+        })
+        .get(def_name)
+}
 
-/// Hand-written minimal v3 schema covering only the mandatory keys
-/// from the spec landing page. Used by older call sites and as a
-/// safety net for diagnostics — `validate_dataset_or_catalog`
-/// defaults to the vendored GSA bundle.
+/// Prefixed keys qsv emits on purpose.
 ///
-/// Validates against the JSON-LD-compact (CURIE-prefixed) keys
-/// `dcat::build` emits — does NOT need `curie::strip_curies`.
-#[allow(dead_code)]
-pub(super) fn embedded_minimal_schema() -> Value {
-    json!({
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type":    "object",
-        "required": [
-            "@type",
-            "dct:title",
-            "dct:description",
-            "dct:identifier",
-            "dct:publisher",
-            "dcat:contactPoint",
-            "dct:conformsTo",
-            "dcat:distribution",
-        ],
-        "properties": {
-            "@type":           {"type": "string", "const": "dcat:Dataset"},
-            "dct:title":       {"type": "string", "minLength": 1},
-            "dct:description": {"type": "string", "minLength": 1},
-            "dct:identifier":  {"type": "string", "minLength": 1},
-            "dct:publisher": {
-                "type":     "object",
-                "required": ["@type", "foaf:name"],
+/// `dcat-us:bureauCode` / `dcat-us:programCode` / `dcat-us:accessLevel`
+/// are NOT DCAT-US v3 properties — they are confirmed absent from all
+/// 26 definitions. They are kept because agencies still need them for
+/// OMB M-13-13 / Project Open Data, and because the v1.1 -> v3
+/// migration guide (Step 5) explicitly says to keep `accessLevel`
+/// during the transition: "the v3.0 schema will not reject it".
+///
+/// `qsv:sourcePath` and `csvw:tableSchema` are qsv's own additions.
+/// `csvw:tableSchema`'s interior is arbitrary qsv-shaped JSON, which
+/// is why the lint never descends into nested value objects.
+const EXTENSION_KEYS: &[&str] = &[
+    "dcat-us:bureauCode",
+    "dcat-us:programCode",
+    "dcat-us:accessLevel",
+    "qsv:sourcePath",
+    "csvw:tableSchema",
+];
+
+/// Map a validation error onto a severity using the GSA bundle's own
+/// `requirementLevel` annotations rather than the shape of the
+/// jsonschema error.
+///
+/// The old classifier substring-matched the Debug-formatted error
+/// kind for "Required", which collapsed every `type`, `enum`,
+/// `pattern` and `anyOf` failure to `Recommended` regardless of how
+/// important the property was. The bundle already states the answer
+/// per property, so use it.
+///
+/// Lookups are CLASS-QUALIFIED wherever the class is knowable, which
+/// matters because DCAT-US reuses property names at different levels:
+/// `modified` is Recommended on Dataset but Mandatory on
+/// `CatalogRecord`, so a flat name index would escalate an ordinary
+/// Dataset date-format problem to Required and abort `--strict`.
+/// [`definition_for_path`] resolves the owning class by walking the
+/// node types qsv actually constructs.
+///
+/// The instance-path-to-property mapping is still not total, so the
+/// chain is explicit:
+///
+/// 1. A `required` violation reports the *parent* object as its instance path, not the missing key,
+///    so the property name is parsed out of the error kind and looked up against the class that
+///    owns the parent path.
+/// 2. Otherwise the leaf segment is looked up against the class that owns its parent path.
+/// 3. If the class is unknown (a nested value object this function does not model), fall back to
+///    the flat any-class index, taking the strongest level found — conservative, so `--strict`
+///    over-reports rather than under-reports.
+/// 4. No match at all falls back to `Recommended`, never `Optional`/`Info`, which would hide a real
+///    finding.
+fn classify_severity(kind_str: &str, instance_path: &str, root_def: &str) -> Severity {
+    // (1) `required` violations name the missing property in the kind
+    //     and point their path at the owning object.
+    if kind_str.contains("Required") {
+        if let Some(prop) = required_property_from_kind(kind_str) {
+            if let Some(def) = definition_for_path(instance_path, root_def)
+                && let Some(level) = level_in(def, &prop)
+            {
+                return level;
+            }
+            if let Some(level) = requirement_level_any_class(&prop) {
+                return level;
+            }
+        }
+        // A mandatory key is missing but the bundle gave us no level:
+        // a missing `required` entry is Required by definition.
+        return Severity::Required;
+    }
+
+    // (2)/(3) walk leaf -> root for the nearest named segment.
+    let segments: Vec<&str> = instance_path.split('/').filter(|s| !s.is_empty()).collect();
+    for (i, seg) in segments.iter().enumerate().rev() {
+        if seg.parse::<usize>().is_ok() {
+            continue;
+        }
+        let parent = format!("/{}", segments[..i].join("/"));
+        if let Some(def) = definition_for_path(&parent, root_def)
+            && let Some(level) = level_in(def, seg)
+        {
+            return level;
+        }
+        if let Some(level) = requirement_level_any_class(seg) {
+            return level;
+        }
+    }
+
+    // (4) fallback.
+    Severity::Recommended
+}
+
+/// Resolve which vendored definition owns the object at
+/// `instance_path`, for the node types qsv constructs.
+///
+/// Mirrors [`lint_unknown_keys`]'s scope: the root, each Dataset in a
+/// Catalog's `dataset` array, and each Distribution in a Dataset's
+/// `distribution` array. Anything deeper returns `None`, and the
+/// caller falls back to the any-class index.
+fn definition_for_path(instance_path: &str, root_def: &str) -> Option<&'static str> {
+    let segments: Vec<&str> = instance_path.split('/').filter(|s| !s.is_empty()).collect();
+    let mut current = root_def;
+    let mut i = 0;
+    while i < segments.len() {
+        let seg = segments[i];
+        // Array-typed steps consume the index that follows them.
+        let next_is_index = segments
+            .get(i + 1)
+            .is_some_and(|s| s.parse::<usize>().is_ok());
+        match (current, seg) {
+            ("catalog", "dataset") if next_is_index => {
+                current = "dataset";
+                i += 2;
             },
-            "dcat:contactPoint": {
-                "type":     "object",
-                "required": ["@type", "vcard:fn", "vcard:hasEmail"],
-                "properties": {
-                    "vcard:hasEmail": {"type": "string", "pattern": "^mailto:"},
-                },
+            ("dataset", "distribution") if next_is_index => {
+                current = "distribution";
+                i += 2;
             },
-            "dct:conformsTo": {
-                "type":     "array",
-                "minItems": 1,
-                "items": {
-                    "type":     "object",
-                    "required": ["@type", "@id"],
-                    "properties": {
-                        "@type": {"type": "string", "const": "dct:Standard"},
-                    },
-                },
-            },
-            "dcat:distribution": {"type": "array", "minItems": 1},
-        },
+            _ => return None,
+        }
+    }
+    Some(match current {
+        "catalog" => "catalog",
+        "dataset" => "dataset",
+        _ => "distribution",
     })
+}
+
+/// `requirementLevel` of `property` as declared by one specific
+/// definition.
+fn level_in(def_name: &str, property: &str) -> Option<Severity> {
+    static INDEX: OnceLock<HashMap<String, HashMap<String, Severity>>> = OnceLock::new();
+    INDEX
+        .get_or_init(|| {
+            let mut idx: HashMap<String, HashMap<String, Severity>> = HashMap::new();
+            for e in BUNDLE {
+                let Ok(schema) = serde_json::from_str::<Value>(e.json) else {
+                    continue;
+                };
+                let Some(props) = schema.get("properties").and_then(Value::as_object) else {
+                    continue;
+                };
+                let mut per_class = HashMap::new();
+                for (name, decl) in props {
+                    if let Some(level) = decl.get("requirementLevel").and_then(Value::as_str) {
+                        per_class.insert(name.clone(), severity_of(level));
+                    }
+                }
+                idx.insert(e.name.to_string(), per_class);
+            }
+            idx
+        })
+        .get(def_name)?
+        .get(property)
+        .copied()
+}
+
+/// `requirementLevel` for a property name as declared ANYWHERE in the
+/// bundle, taking the strongest level when classes disagree.
+///
+/// Only consulted when the owning class could not be determined.
+/// Erring strong keeps `--strict` conservative: it may over-report,
+/// never under-report.
+fn requirement_level_any_class(property: &str) -> Option<Severity> {
+    static INDEX: OnceLock<HashMap<String, Severity>> = OnceLock::new();
+    INDEX
+        .get_or_init(|| {
+            let mut idx: HashMap<String, Severity> = HashMap::new();
+            for e in BUNDLE {
+                let Ok(schema) = serde_json::from_str::<Value>(e.json) else {
+                    continue;
+                };
+                let Some(props) = schema.get("properties").and_then(Value::as_object) else {
+                    continue;
+                };
+                for (name, decl) in props {
+                    let Some(level) = decl.get("requirementLevel").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    let sev = severity_of(level);
+                    idx.entry(name.clone())
+                        .and_modify(|cur| {
+                            if stronger(sev, *cur) {
+                                *cur = sev;
+                            }
+                        })
+                        .or_insert(sev);
+                }
+            }
+            idx
+        })
+        .get(property)
+        .copied()
+}
+
+fn severity_of(level: &str) -> Severity {
+    match level {
+        "Mandatory" => Severity::Required,
+        "Recommended" => Severity::Recommended,
+        _ => Severity::Optional,
+    }
+}
+
+/// Ordering helper for the "conflicts resolve to the stronger level"
+/// rule in [`requirement_level_any_class`].
+fn stronger(a: Severity, b: Severity) -> bool {
+    fn rank(s: Severity) -> u8 {
+        match s {
+            Severity::Required => 3,
+            Severity::Recommended => 2,
+            Severity::Optional => 1,
+            Severity::Info => 0,
+        }
+    }
+    rank(a) > rank(b)
+}
+
+/// Pull the missing property name out of a Debug-formatted
+/// `ValidationErrorKind::Required { property: String("title") }`.
+fn required_property_from_kind(kind_str: &str) -> Option<String> {
+    let start = kind_str.find("String(\"")? + "String(\"".len();
+    let rest = &kind_str[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
 }
 
 // -----------------------------------------------------------------------------
@@ -438,31 +679,32 @@ mod tests {
     use super::*;
 
     fn minimal_valid_dataset() -> Value {
-        // Every mandatory v3 field populated, in JSON-LD-compact form
-        // (what dcat::build emits). Used as the golden seed for tests
-        // that mutate one field at a time.
+        // Every mandatory v3 field populated, in the canonical
+        // unprefixed form the projection now emits. Used as the golden
+        // seed for tests that mutate one field at a time.
         json!({
-            "@type":          "dcat:Dataset",
-            "dct:title":      "Test Dataset",
-            "dct:description": "A test dataset.",
-            "dct:identifier": "test-id-001",
-            "dct:publisher": {
-                "@type":     "foaf:Organization",
-                "foaf:name": "Test Agency",
+            "@type":       "Dataset",
+            "title":       "Test Dataset",
+            "description": "A test dataset.",
+            "identifier":  "test-id-001",
+            "publisher": {
+                "@type": "Organization",
+                "name":  "Test Agency",
             },
-            "dcat:contactPoint": {
-                "@type":          "vcard:Individual",
-                "vcard:fn":       "Test Contact",
-                "vcard:hasEmail": "mailto:test@example.gov",
+            "contactPoint": {
+                "@type":    "Kind",
+                "fn":       "Test Contact",
+                "hasEmail": "mailto:test@example.gov",
             },
-            "dct:conformsTo": [{
-                "@type": "dct:Standard",
-                "@id":   "https://resources.data.gov/resources/dcat-us3/",
+            "conformsTo": [{
+                "@type":      "Standard",
+                "title":      "DCAT-US 3.0",
+                "identifier": "https://resources.data.gov/dcat-us/3.0.0",
             }],
-            "dcat:distribution": [{
-                "@type":            "dcat:Distribution",
-                "dct:title":        "CSV",
-                "dcat:downloadURL": "https://example.gov/d.csv",
+            "distribution": [{
+                "@type":       "Distribution",
+                "title":       "CSV",
+                "downloadURL": "https://example.gov/d.csv",
             }],
         })
     }
@@ -487,11 +729,10 @@ mod tests {
 
     #[test]
     fn minimal_dataset_passes_full_bundle() {
-        // Regression guard for the CURIE-strip bridge: a fully-populated
-        // minimal dataset in compact form must validate clean after
-        // curie::strip_curies. If this starts failing, either the bundle
-        // was refreshed with new mandatory fields or the curie module
-        // is mis-mapping a prefix.
+        // A fully-populated minimal dataset must validate clean. If
+        // this starts failing, the bundle was refreshed with new
+        // mandatory fields — check Dataset.json's `required` array
+        // against what the fixture supplies.
         let profile = super::super::profile_spec::load("dcat-us-v3").unwrap();
         let warnings = validate(&profile, &minimal_valid_dataset());
         assert!(
@@ -501,17 +742,38 @@ mod tests {
     }
 
     #[test]
-    fn dropping_publisher_yields_required_severity() {
-        // Sanity: removing one of the five GSA-mandatory fields must
+    fn dropping_a_mandatory_field_yields_required_severity() {
+        // Removing one of the GSA-mandatory Dataset fields must
         // surface as Severity::Required (not Recommended).
+        //
+        // This used to drop `publisher`. Upstream demoted it to
+        // Recommended and removed it from Dataset.json's `required`
+        // array (bundle commit 1ca074b6), so it no longer proves
+        // anything — `contactPoint` is still Mandatory.
         let mut ds = minimal_valid_dataset();
-        ds.as_object_mut().unwrap().remove("dct:publisher");
+        ds.as_object_mut().unwrap().remove("contactPoint");
         let profile = super::super::profile_spec::load("dcat-us-v3").unwrap();
         let warnings = validate(&profile, &ds);
         assert!(!warnings.is_empty());
         assert!(
             warnings.iter().any(|w| w.severity == Severity::Required),
-            "missing publisher must produce a Required-severity warning, got: {warnings:#?}",
+            "missing contactPoint must produce a Required-severity warning, got: {warnings:#?}",
+        );
+    }
+
+    #[test]
+    fn dropping_publisher_is_only_recommended_now() {
+        // Counterpart to the test above, and a guard on the pin:
+        // `publisher` was Mandatory in the previous bundle. If a
+        // future refresh promotes it back, this test fails and the
+        // profile's `required_level` should be revisited.
+        let mut ds = minimal_valid_dataset();
+        ds.as_object_mut().unwrap().remove("publisher");
+        let profile = super::super::profile_spec::load("dcat-us-v3").unwrap();
+        let warnings = validate(&profile, &ds);
+        assert!(
+            !warnings.iter().any(|w| w.severity == Severity::Required),
+            "publisher is Recommended in DCAT-US v3, not Mandatory; got: {warnings:#?}",
         );
     }
 
@@ -535,12 +797,11 @@ mod tests {
     #[test]
     fn dispatches_to_catalog_validator_when_type_is_catalog() {
         // Constructing a Catalog envelope and validating it. The only
-        // mandatory key per GSA Catalog.json is `dataset` — which is
-        // `dcat:dataset` in compact form. Should pass.
+        // mandatory key per GSA Catalog.json is `dataset`. Should pass.
         let cat = json!({
-            "@type":     "dcat:Catalog",
-            "dct:title": "Test Catalog",
-            "dcat:dataset": [minimal_valid_dataset()],
+            "@type":   "Catalog",
+            "title":   "Test Catalog",
+            "dataset": [minimal_valid_dataset()],
         });
         let profile = super::super::profile_spec::load("dcat-us-v3").unwrap();
         let warnings = validate(&profile, &cat);
@@ -551,13 +812,57 @@ mod tests {
     }
 
     #[test]
-    fn classify_severity_flags_required_kind() {
+    fn classify_severity_uses_the_owning_class() {
+        // Mandatory on Dataset -> Required.
         assert_eq!(
-            classify_severity("Required(\"contactPoint\")"),
+            classify_severity("Required(String(\"contactPoint\"))", "", "dataset"),
             Severity::Required
         );
-        assert_eq!(classify_severity("Pattern(...)"), Severity::Recommended);
-        assert_eq!(classify_severity("Enum(...)"), Severity::Recommended);
+        // Recommended on Dataset -> Recommended, even though
+        // CatalogRecord marks `modified` Mandatory. A flat
+        // property-name index would return Required here.
+        assert_eq!(
+            classify_severity("AnyOf(...)", "/modified", "dataset"),
+            Severity::Recommended
+        );
+        // Optional on Dataset -> Optional.
+        assert_eq!(
+            classify_severity("AnyOf(...)", "/accrualPeriodicity", "dataset"),
+            Severity::Optional
+        );
+        // Array indices are skipped when walking toward the root, and
+        // the Distribution class is resolved through `distribution/N`.
+        assert_eq!(
+            classify_severity("Type(...)", "/distribution/0/accessURL", "dataset"),
+            Severity::Recommended
+        );
+        // Unknown property -> the documented Recommended fallback,
+        // never Optional/Info (which would hide a finding).
+        assert_eq!(
+            classify_severity("Type(...)", "/noSuchProperty", "dataset"),
+            Severity::Recommended
+        );
+    }
+
+    #[test]
+    fn definition_for_path_resolves_only_modeled_nesting() {
+        assert_eq!(definition_for_path("", "dataset"), Some("dataset"));
+        assert_eq!(
+            definition_for_path("/distribution/0", "dataset"),
+            Some("distribution")
+        );
+        assert_eq!(
+            definition_for_path("/dataset/0", "catalog"),
+            Some("dataset")
+        );
+        assert_eq!(
+            definition_for_path("/dataset/0/distribution/1", "catalog"),
+            Some("distribution")
+        );
+        // Nested value objects are deliberately NOT modeled — the
+        // caller falls back to the any-class index for these.
+        assert_eq!(definition_for_path("/publisher", "dataset"), None);
+        assert_eq!(definition_for_path("/contactPoint", "dataset"), None);
     }
 
     #[test]

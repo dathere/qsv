@@ -51,14 +51,14 @@ fn normalize_dcat_for_parity(mut dcat: Value) -> Value {
         }
     }
     if let Some(obj) = dcat.as_object_mut() {
-        if let Some(d) = obj.get_mut("dcat:distribution") {
+        if let Some(d) = obj.get_mut("distribution") {
             strip_dist(d);
         }
-        // Catalog mode nests the Dataset under dcat:dataset[0].
-        if let Some(Value::Array(arr)) = obj.get_mut("dcat:dataset") {
+        // Catalog mode nests the Dataset under dataset[0].
+        if let Some(Value::Array(arr)) = obj.get_mut("dataset") {
             for ds in arr {
                 if let Some(ds_obj) = ds.as_object_mut()
-                    && let Some(d) = ds_obj.get_mut("dcat:distribution")
+                    && let Some(d) = ds_obj.get_mut("distribution")
                 {
                     strip_dist(d);
                 }
@@ -315,7 +315,7 @@ fn dcat_ap_v3_validation_is_disabled_noop() {
 #[cfg(feature = "geoconnex")]
 #[test]
 fn geoconnex_emits_schema_dataset_type() {
-    // Phase 1 emits a schema.org-rooted Dataset, NOT a dcat:Dataset.
+    // Phase 1 emits a schema.org-rooted Dataset, NOT a Dataset.
     // The SHACL DatasetShape targets schema:Dataset by class, so the
     // top-level @type is what triggers SHACL evaluation downstream.
     let wrk = Workdir::new("geoconnex_dataset_type");
@@ -465,7 +465,7 @@ fn geoconnex_validation_is_disabled_noop() {
 #[test]
 fn geoconnex_catalog_uses_schema_org_keys_not_dcat() {
     // Roborev #2531 (Medium): the catalog wrapper used to hard-code
-    // `dct:title` and `dcat:dataset`, which break the JSON-LD envelope
+    // `title` and `dataset`, which break the JSON-LD envelope
     // for profiles whose @context doesn't declare those prefixes. The
     // geoconnex profile pins `title_key: schema:name` and
     // `dataset_key: schema:dataset` so the envelope's keys land in the
@@ -510,12 +510,12 @@ fn geoconnex_catalog_uses_schema_org_keys_not_dcat() {
     );
     // DCAT/DCT keys must NOT leak onto a schema.org-rooted envelope.
     assert!(
-        !catalog.contains_key("dct:title"),
-        "envelope must not carry dct:title when @context has no dct: prefix",
+        !catalog.contains_key("title"),
+        "envelope must not carry title when @context has no dct: prefix",
     );
     assert!(
-        !catalog.contains_key("dcat:dataset"),
-        "envelope must not carry dcat:dataset when @context has no dcat: prefix",
+        !catalog.contains_key("dataset"),
+        "envelope must not carry dataset when @context has no dcat: prefix",
     );
 
     // Inner Dataset still has its own schema:Dataset typing intact.
@@ -965,7 +965,7 @@ fn croissant_all_unique_dataset_reuses_profileschema_cache() {
 #[test]
 fn croissant_uses_bare_distribution_key_not_dcat_namespaced() {
     // Croissant's @vocab=schema.org resolves bare `distribution` →
-    // schema.org/distribution. DCAT-namespaced `dcat:distribution`
+    // schema.org/distribution. DCAT-namespaced `distribution`
     // would break the JSON-LD interpretation.
     let wrk = Workdir::new("croissant_distribution_key");
     let src = std::env::current_dir()
@@ -1123,43 +1123,75 @@ fn croissant_recordset_fields_wire_source_to_file_object() {
 // =========================================================================
 
 #[test]
-fn catalog_envelope_carries_top_level_context() {
-    // Finding #2: the Catalog envelope contains CURIE keys
-    // (`dct:title`, `dct:conformsTo`, `dcat:dataset`) so it needs its
-    // own @context to be valid JSON-LD. Without one downstream
-    // JSON-LD consumers can't resolve the outer keys.
+fn catalog_envelope_omits_context_for_dcat_us_v3() {
+    // Inverted from the original Roborev #2490 finding #2 guard, which
+    // required the envelope to carry an @context because it was keyed
+    // with CURIEs. DCAT-US v3 is plain JSON validated by JSON Schema:
+    // GSA removed the JSON-LD context upstream, Catalog.json declares
+    // no `@context` property, and migration Step 14 says to delete the
+    // key from the catalog object outright. The context URI the old
+    // assertion accepted (doi-do.github.io) is a dead 404 besides.
+    //
+    // Nested Datasets must not re-declare one either.
     let wrk = Workdir::new("catalog_context_guard");
     seed_geo_csv(&wrk);
     let mut cmd = wrk.command("profile");
     cmd.args(["in.csv", "--catalog", "-o", "out.json"]);
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
-    let context = out
-        .pointer("/projection/@context")
-        .and_then(|v| v.as_str())
-        .expect("Catalog envelope must carry @context");
     assert!(
-        context.contains("doi-do") || context.contains("dcat-us"),
-        "Catalog @context must be the DCAT-US context URI, got `{context}`",
+        out.pointer("/projection/@context").is_none(),
+        "DCAT-US v3 Catalog must not carry @context, got: {:?}",
+        out.pointer("/projection/@context"),
+    );
+    assert!(
+        out.pointer("/projection/dataset/0/@context").is_none(),
+        "nested Dataset must not re-declare @context",
+    );
+}
+
+#[test]
+fn catalog_envelope_still_carries_context_for_curie_profiles() {
+    // Counterpart to the guard above: the profiles that DO declare a
+    // `context:` still emit it on the envelope, so dropping @context
+    // for DCAT-US v3 must not have removed it for everyone. Croissant
+    // is the check because it ships an inline @context map (dcat-ap-v3
+    // declares no `context:` at all, so it would pass vacuously).
+    let wrk = Workdir::new("catalog_context_curie");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "croissant",
+        "--catalog",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert!(
+        out.pointer("/projection/@context").is_some(),
+        "profiles declaring `context:` must still carry @context on the Catalog envelope",
     );
 }
 
 #[test]
 fn catalog_mode_merges_discovered_into_inner_dataset_not_envelope() {
     // Finding #1: in Catalog mode, discovered metadata must land on
-    // the inner Dataset (dcat:dataset[0]), not on the outer Catalog
+    // the inner Dataset (dataset[0]), not on the outer Catalog
     // envelope. The test runs through the orchestrator end-to-end;
     // since seed_geo_csv has no URL-discovered DCAT it's a structural
     // assertion that envelope keys don't accidentally pick up
-    // Dataset-only fields (`dct:contactPoint`, `dcat:keyword`, etc).
+    // Dataset-only fields (`contactPoint`, `keyword`, etc).
     let wrk = Workdir::new("catalog_merge_target");
     seed_geo_csv(&wrk);
     let mut cmd = wrk.command("profile");
     cmd.args(["in.csv", "--catalog", "-o", "out.json"]);
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
-    // Outer envelope keys: @context, @type, dct:title, dct:conformsTo,
-    // dcat:dataset, plus optionally dct:publisher.
+    // Outer envelope keys: @context, @type, title, conformsTo,
+    // dataset, plus optionally publisher.
     let envelope_keys: Vec<String> = out
         .pointer("/projection")
         .and_then(|v| v.as_object())
@@ -1168,21 +1200,21 @@ fn catalog_mode_merges_discovered_into_inner_dataset_not_envelope() {
     let leaked = envelope_keys.iter().find(|k| {
         matches!(
             k.as_str(),
-            "dcat:contactPoint" | "dcat:keyword" | "dcat:theme" | "dct:spatial" | "dct:temporal"
+            "contactPoint" | "keyword" | "theme" | "spatial" | "temporal"
         )
     });
     assert!(
         leaked.is_none(),
         "Catalog envelope must not carry Dataset-only keys (found `{leaked:?}`)",
     );
-    // The Dataset keys must live in dcat:dataset[0].
+    // The Dataset keys must live in dataset[0].
     let inner_ds = out
-        .pointer("/projection/dcat:dataset/0")
+        .pointer("/projection/dataset/0")
         .and_then(|v| v.as_object())
-        .expect("dcat:dataset[0] missing");
+        .expect("dataset[0] missing");
     assert!(
-        inner_ds.contains_key("dct:title"),
-        "inner Dataset must carry dct:title",
+        inner_ds.contains_key("title"),
+        "inner Dataset must carry title",
     );
 }
 
@@ -1203,9 +1235,9 @@ fn spatial_field_suppressed_when_no_lat_lon_columns() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     assert!(
-        out.pointer("/projection/dct:spatial").is_none(),
-        "dct:spatial must be absent when no bbox is available; got `{:?}`",
-        out.pointer("/projection/dct:spatial"),
+        out.pointer("/projection/spatial").is_none(),
+        "spatial must be absent when no bbox is available; got `{:?}`",
+        out.pointer("/projection/spatial"),
     );
 }
 
@@ -1213,7 +1245,7 @@ fn spatial_field_suppressed_when_no_lat_lon_columns() {
 fn dcat_legacy_license_emits_dataset_level_license() {
     // Finding #4: --dcat-legacy-license previously parsed but didn't
     // thread into the projection context. With the flag set, the
-    // YAML's gated dct:license template must emit on the Dataset
+    // YAML's gated license template must emit on the Dataset
     // alongside the Distribution-level copy.
     let wrk = Workdir::new("dcat_legacy_license");
     seed_geo_csv(&wrk);
@@ -1231,25 +1263,24 @@ fn dcat_legacy_license_emits_dataset_level_license() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     let dataset_license = out
-        .pointer("/projection/dct:license")
+        .pointer("/projection/license")
         .and_then(|v| v.as_str())
-        .expect("--dcat-legacy-license must emit dct:license on Dataset");
+        .expect("--dcat-legacy-license must emit license on Dataset");
     assert!(
         dataset_license.contains("creativecommons.org"),
         "Dataset-level license must be the resolved IRI, got `{dataset_license}`",
     );
     // Distribution-level license must STILL be there (v3 mandate).
     assert!(
-        out.pointer("/projection/dcat:distribution/0/dct:license")
-            .is_some(),
-        "Distribution-level dct:license must also be present (strict v3)",
+        out.pointer("/projection/distribution/0/license").is_some(),
+        "Distribution-level license must also be present (strict v3)",
     );
 }
 
 #[test]
 fn dcat_legacy_license_off_keeps_license_distribution_only() {
     // Companion to the above: without --dcat-legacy-license, the
-    // Dataset must NOT carry dct:license (strict v3 default).
+    // Dataset must NOT carry license (strict v3 default).
     let wrk = Workdir::new("dcat_legacy_license_off");
     seed_geo_csv(&wrk);
     let ctx_path = wrk.path("init.json");
@@ -1265,15 +1296,15 @@ fn dcat_legacy_license_off_keeps_license_distribution_only() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     assert!(
-        out.pointer("/projection/dct:license").is_none(),
-        "strict v3 must NOT emit dct:license on Dataset by default",
+        out.pointer("/projection/license").is_none(),
+        "strict v3 must NOT emit license on Dataset by default",
     );
 }
 
 #[test]
 fn forced_package_publisher_flows_through_profile_template() {
     // Finding #5: forcing package.publisher previously wrote a raw
-    // string to dct:publisher (bypassing the foaf:Agent wrapper). The
+    // string to publisher (bypassing the Organization wrapper). The
     // fix routes CKAN-side forces through normal projection so the
     // template still wraps the value as an Agent object.
     let wrk = Workdir::new("force_publisher_shape");
@@ -1295,19 +1326,19 @@ fn forced_package_publisher_flows_through_profile_template() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     let publisher = out
-        .pointer("/projection/dct:publisher")
-        .expect("dct:publisher must be emitted");
+        .pointer("/projection/publisher")
+        .expect("publisher must be emitted");
     assert!(
         publisher.is_object(),
-        "forced publisher must be a foaf:Agent object, got: {publisher:?}",
+        "forced publisher must be a Organization object, got: {publisher:?}",
     );
     assert_eq!(
-        publisher.pointer("/foaf:name").and_then(|v| v.as_str()),
+        publisher.pointer("/name").and_then(|v| v.as_str()),
         Some("Forced Publisher"),
     );
     assert_eq!(
         publisher.pointer("/@type").and_then(|v| v.as_str()),
-        Some("foaf:Agent"),
+        Some("Organization"),
     );
 }
 
@@ -1357,9 +1388,9 @@ dataset_fields:
 
     let out = read_output(&wrk, "out.json");
     let title = out
-        .pointer("/projection/dct:title")
+        .pointer("/projection/title")
         .and_then(|v| v.as_str())
-        .expect("dct:title");
+        .expect("title");
     assert_eq!(
         title, "Forced Title",
         "force:true must beat a spec formula targeting the same field",
@@ -1369,7 +1400,7 @@ dataset_fields:
 #[test]
 fn forced_author_locks_publisher_alias() {
     // Roborev #2493: package.author and package.publisher both map to
-    // /dcat/dct:publisher. Forcing one must lock the other — a
+    // /dcat/publisher. Forcing one must lock the other — a
     // formula writing `publisher` mustn't be able to overwrite a
     // forced `author` value before projection.
     let wrk = Workdir::new("force_alias_publisher");
@@ -1409,9 +1440,9 @@ dataset_fields:
 
     let out = read_output(&wrk, "out.json");
     let publisher_name = out
-        .pointer("/projection/dct:publisher/foaf:name")
+        .pointer("/projection/publisher/name")
         .and_then(|v| v.as_str())
-        .expect("dct:publisher.foaf:name");
+        .expect("publisher.name");
     assert_eq!(
         publisher_name, "Forced Author",
         "forced package.author must lock the publisher alias against formula overwrite",
@@ -1421,7 +1452,7 @@ dataset_fields:
 #[test]
 fn forced_license_id_locks_license_alias() {
     // Roborev #2493: resource.license and resource.license_id both
-    // map to /dcat/dcat:distribution/0/dct:license. Forcing one
+    // map to /dcat/distribution/0/license. Forcing one
     // must lock the other against formula overwrite.
     let wrk = Workdir::new("force_alias_license");
     seed_geo_csv(&wrk);
@@ -1460,9 +1491,9 @@ resource_fields:
 
     let out = read_output(&wrk, "out.json");
     let license = out
-        .pointer("/projection/dcat:distribution/0/dct:license")
+        .pointer("/projection/distribution/0/license")
         .and_then(|v| v.as_str())
-        .expect("Distribution.dct:license");
+        .expect("Distribution.license");
     // cc-by resolves to the CC-BY 4.0 IRI; cc-by-sa would resolve to
     // a different IRI. The forced cc-by must win.
     assert!(
@@ -1513,15 +1544,15 @@ fn profile_spec_less_emits_dpp_block() {
         "expected empty formula_results, got {results:?}"
     );
 
-    // DCAT block is emitted by default. dct:spatial is an array of
-    // dct:Location per DCAT-US v3; the bbox-derived POLYGON lives at
+    // DCAT block is emitted by default. spatial is an array of
+    // Location per DCAT-US v3; the bbox-derived POLYGON lives at
     // index 0 when no formula has run.
-    let spatial = out.pointer("/projection/dct:spatial").expect("dct:spatial");
-    assert!(spatial.is_array(), "dct:spatial must be an array");
+    let spatial = out.pointer("/projection/spatial").expect("spatial");
+    assert!(spatial.is_array(), "spatial must be an array");
     let bbox = spatial
-        .pointer("/0/dcat:bbox")
+        .pointer("/0/bbox")
         .and_then(|v| v.as_str())
-        .expect("dct:spatial[0].dcat:bbox str");
+        .expect("spatial[0].bbox str");
     assert!(
         bbox.contains("POLYGON"),
         "expected POLYGON bbox, got {bbox:?}"
@@ -1529,7 +1560,7 @@ fn profile_spec_less_emits_dpp_block() {
 
     // tableSchema includes one column per CSV header.
     let cols = out
-        .pointer("/projection/dcat:distribution/0/csvw:tableSchema/columns")
+        .pointer("/projection/distribution/0/csvw:tableSchema/columns")
         .and_then(|v| v.as_array())
         .expect("csvw:tableSchema.columns");
     assert_eq!(cols.len(), 6);
@@ -1585,13 +1616,13 @@ fn profile_with_druf_spec_evaluates_spatial_extent_wkt() {
         .expect("dpp_suggestions.spatial_extent.value");
     assert_eq!(merged, value);
 
-    // DCAT spatial picks up the WKT via the GeoSPARQL wktLiteral path now
-    // that the suggestion populated it. dct:spatial is an array per v3 —
-    // the WKT Location lives at index 0.
+    // spatial picks up the WKT now that the suggestion populated it.
+    // spatial is an array per v3 and the WKT Location lives at index 0;
+    // GSA Location.json takes a bare WKT string in `geometry`.
     let wkt = out
-        .pointer("/projection/dct:spatial/0/locn:geometry/@value")
+        .pointer("/projection/spatial/0/geometry")
         .and_then(|v| v.as_str())
-        .expect("dcat spatial wkt");
+        .expect("spatial wkt");
     assert_eq!(wkt, value);
 }
 
@@ -1644,7 +1675,7 @@ fn profile_stdin_input_is_accepted() {
     // `qsv:sourcePath` reads "stdin" — that field previously kept the
     // tempfile path even after the top-level `input` label was fixed.
     //
-    // Regression for roborev #2454: also assert `dcat:byteSize` is
+    // Regression for roborev #2454: also assert `byteSize` is
     // populated for stdin. An earlier attempt at the #2453 fix passed
     // the display label to `dcat::build` for the metadata read too,
     // which silently dropped byte-size info; the proper fix splits
@@ -1689,27 +1720,27 @@ fn profile_stdin_input_is_accepted() {
     // DCAT distribution's qsv:sourcePath must also read "stdin", not the
     // tempfile path. This is the specific roborev #2453 regression check.
     let source_path = parsed
-        .pointer("/projection/dcat:distribution/0/qsv:sourcePath")
+        .pointer("/projection/distribution/0/qsv:sourcePath")
         .and_then(|v| v.as_str());
     assert_eq!(
         source_path,
         Some("stdin"),
-        "expected dcat:distribution[0].qsv:sourcePath to be \"stdin\" (no tempfile leak), got: \
+        "expected distribution[0].qsv:sourcePath to be \"stdin\" (no tempfile leak), got: \
          {source_path:?}\nfull body: {body}",
     );
 
-    // roborev #2454 regression: dcat:byteSize must still reflect the
+    // roborev #2454 regression: byteSize must still reflect the
     // materialized tempfile, even though the display label is "stdin".
     // Emitted as a string per GSA Distribution.json's
     // type=["null","string"] (xsd:nonNegativeInteger stored as string).
     let byte_size = parsed
-        .pointer("/projection/dcat:distribution/0/dcat:byteSize")
+        .pointer("/projection/distribution/0/byteSize")
         .and_then(serde_json::Value::as_str)
         .and_then(|s| s.parse::<u64>().ok());
     assert_eq!(
         byte_size,
         Some(payload.len() as u64),
-        "expected dcat:byteSize == {} (piped payload size), got: {byte_size:?}\nfull body: {body}",
+        "expected byteSize == {} (piped payload size), got: {byte_size:?}\nfull body: {body}",
         payload.len(),
     );
 }
@@ -1733,7 +1764,7 @@ fn profile_initial_context_seeds_package_and_overrides_via_dataset_info() {
                 "metadata_modified": "R/P1Y"
             },
             "dataset_info": {
-                "/projection/dct:title": "Final Override Wins"
+                "/projection/title": "Final Override Wins"
             }
         }"#,
     )
@@ -1752,44 +1783,42 @@ fn profile_initial_context_seeds_package_and_overrides_via_dataset_info() {
 
     // dataset_info override is last-write-wins.
     assert_eq!(
-        out.pointer("/projection/dct:title")
-            .and_then(|v| v.as_str()),
+        out.pointer("/projection/title").and_then(|v| v.as_str()),
         Some("Final Override Wins"),
         "dataset_info JSON-Pointer override must win over the package seed"
     );
 
-    // package.notes flows into the projection as dct:description.
+    // package.notes flows into the projection as description.
     assert_eq!(
-        out.pointer("/projection/dct:description")
+        out.pointer("/projection/description")
             .and_then(|v| v.as_str()),
         Some("loaded via --initial-context")
     );
 
     // language is normalized en-US → en (Phase 2d behaviour).
     assert_eq!(
-        out.pointer("/projection/dct:language")
-            .and_then(|v| v.as_str()),
+        out.pointer("/projection/language").and_then(|v| v.as_str()),
         Some("en"),
     );
 
     // metadata_modified was a repeating-interval ("R/P1Y"); Phase 2e
-    // sanitizer drops it so dct:modified is absent (frequency goes to
+    // sanitizer drops it so modified is absent (frequency goes to
     // accrualPeriodicity, queued for Phase 5).
     assert!(
-        out.pointer("/projection/dct:modified").is_none(),
-        "ISO 8601 interval must be rejected from dct:modified"
+        out.pointer("/projection/modified").is_none(),
+        "ISO 8601 interval must be rejected from modified"
     );
 
     // license moved to Distribution in Phase 2c — must not appear on
     // the Dataset by default.
     assert!(
-        out.pointer("/projection/dct:license").is_none(),
-        "dct:license must live on Distribution in strict v3"
+        out.pointer("/projection/license").is_none(),
+        "license must live on Distribution in strict v3"
     );
     let dist_license = out
-        .pointer("/projection/dcat:distribution/0/dct:license")
+        .pointer("/projection/distribution/0/license")
         .and_then(|v| v.as_str())
-        .expect("dct:license on Distribution");
+        .expect("license on Distribution");
     assert!(dist_license.contains("creativecommons.org"));
 }
 
@@ -1846,11 +1875,11 @@ fn profile_with_full_initial_context_emits_all_recommended_v3_fields() {
 
     // Mandatory v3 fields.
     for path in [
-        "/projection/dct:title",
-        "/projection/dct:description",
-        "/projection/dct:identifier",
-        "/projection/dct:publisher",
-        "/projection/dcat:contactPoint",
+        "/projection/title",
+        "/projection/description",
+        "/projection/identifier",
+        "/projection/publisher",
+        "/projection/contactPoint",
     ] {
         assert!(
             out.pointer(path).is_some(),
@@ -1859,19 +1888,21 @@ fn profile_with_full_initial_context_emits_all_recommended_v3_fields() {
     }
     // Recommended v3 fields added in Phase 5.
     for path in [
-        "/projection/dcat:landingPage",
-        "/projection/dcat:describedBy",
-        "/projection/dct:rights",
-        "/projection/dct:accessRights",
+        "/projection/landingPage",
+        "/projection/describedBy",
+        "/projection/rights",
+        "/projection/accessRights",
         "/projection/dcat-us:bureauCode",
         "/projection/dcat-us:programCode",
-        "/projection/dct:accrualPeriodicity",
-        "/projection/dcat-us:purpose",
-        "/projection/skos:scopeNote",
-        "/projection/dcat-us:liabilityStatement",
-        "/projection/dcat:inSeries",
-        "/projection/dct:language",
-        "/projection/dct:conformsTo",
+        "/projection/accrualPeriodicity",
+        "/projection/purpose",
+        "/projection/scopeNote",
+        "/projection/liabilityStatement",
+        // NOTE: `inSeries` is deliberately absent. GSA removed it from
+        // Dataset.json upstream (bundle commit 1ca074b6), so qsv no
+        // longer emits it — see the negative assertion below.
+        "/projection/language",
+        "/projection/conformsTo",
     ] {
         assert!(
             out.pointer(path).is_some(),
@@ -1880,17 +1911,24 @@ fn profile_with_full_initial_context_emits_all_recommended_v3_fields() {
     }
     // Distribution-level v3 additions.
     for path in [
-        "/projection/dcat:distribution/0/dct:license",
-        "/projection/dcat:distribution/0/dcat:accessURL",
-        "/projection/dcat:distribution/0/dct:modified",
-        "/projection/dcat:distribution/0/dct:rights",
-        "/projection/dcat:distribution/0/dcat-us:accessRestriction",
+        "/projection/distribution/0/license",
+        "/projection/distribution/0/accessURL",
+        "/projection/distribution/0/modified",
+        "/projection/distribution/0/rights",
+        "/projection/distribution/0/accessRestriction",
     ] {
         assert!(
             out.pointer(path).is_some(),
             "distribution v3 addition missing at {path}: {out:#}"
         );
     }
+    // Properties upstream has REMOVED must not reappear. Without this,
+    // re-adding `inSeries` would silently pass: nothing in the bundle
+    // sets `additionalProperties`, so an undeclared key validates.
+    assert!(
+        out.pointer("/projection/inSeries").is_none(),
+        "`inSeries` was removed from DCAT-US v3 and must not be emitted",
+    );
     // No dcat_warnings expected — every mandatory/recommended slot was seeded.
     assert!(
         out.get("projection_warnings").is_none(),
@@ -1913,8 +1951,8 @@ fn profile_warns_when_contactpoint_missing() {
         .expect("dcat_warnings array");
     let cp = warnings
         .iter()
-        .find(|w| w.get("field").and_then(|v| v.as_str()) == Some("dcat:contactPoint"))
-        .expect("dcat:contactPoint warning");
+        .find(|w| w.get("field").and_then(|v| v.as_str()) == Some("contactPoint"))
+        .expect("contactPoint warning");
     assert_eq!(
         cp.get("severity").and_then(|v| v.as_str()),
         Some("required")
@@ -2045,9 +2083,9 @@ fn dataset_info_force_blocks_discovered_overlay_at_forced_path() {
     // merging is forbidden from overlaying it — even when inferred is absent.
     //
     // This test stages a custom initial-context with two interesting wrappers:
-    //   * /dcat/dct:license set to {"value": "MIT", "force": true} — the value lands via the
+    //   * /dcat/license set to {"value": "MIT", "force": true} — the value lands via the
     //     pointer-override pass.
-    //   * /dcat/dct:rights set to {"value": null, "force": true} — the null wrapper unwraps to a
+    //   * /dcat/rights set to {"value": null, "force": true} — the null wrapper unwraps to a
     //     `null`, and the FORCE half means "don't let any future merge fill this in either".
     // Discovered DCAT isn't simulated here (no URL input) so we only
     // assert the static wiring: forced paths are collected, the
@@ -2065,8 +2103,8 @@ fn dataset_info_force_blocks_discovered_overlay_at_forced_path() {
         },
         "resource": {"name": "data"},
         "dataset_info": {
-            "/projection/dct:license": {"value": "https://creativecommons.org/licenses/by/4.0/", "force": true},
-            "/projection/dct:rights":  {"value": null, "force": true}
+            "/projection/license": {"value": "https://creativecommons.org/licenses/by/4.0/", "force": true},
+            "/projection/rights":  {"value": null, "force": true}
         }
     });
     wrk.create_from_string("ic.json", &serde_json::to_string_pretty(&ic).unwrap());
@@ -2078,21 +2116,20 @@ fn dataset_info_force_blocks_discovered_overlay_at_forced_path() {
     let out = read_output(&wrk, "out.json");
     // 1. Pointer-override-wrapped license lands as the inner string.
     assert_eq!(
-        out.pointer("/projection/dct:license")
-            .and_then(|v| v.as_str()),
+        out.pointer("/projection/license").and_then(|v| v.as_str()),
         Some("https://creativecommons.org/licenses/by/4.0/"),
         "forced-with-value license must land as the inner value (no wrapper leak), got: {}",
-        out.pointer("/projection/dct:license")
+        out.pointer("/projection/license")
             .map(ToString::to_string)
             .unwrap_or_default(),
     );
     // 2. The {value: null, force: true} wrapper unwraps to literal null; pointer-override writes
     //    that null at the path. Round-trip check.
     assert_eq!(
-        out.pointer("/projection/dct:rights"),
+        out.pointer("/projection/rights"),
         Some(&serde_json::Value::Null),
         "forced-null rights must round-trip to literal null, got: {:?}",
-        out.pointer("/projection/dct:rights"),
+        out.pointer("/projection/rights"),
     );
 }
 
@@ -2236,10 +2273,10 @@ fn dataset_info_override_supplies_field_before_strict_validation() {
         r#"{
             "package": {"title": "X", "notes": "Y", "name": "x", "publisher": "P"},
             "dataset_info": {
-                "/projection/dcat:contactPoint": {
-                    "@type":          "vcard:Individual",
-                    "vcard:fn":       "Override",
-                    "vcard:hasEmail": "mailto:override@example.gov"
+                "/projection/contactPoint": {
+                    "@type":          "Kind",
+                    "fn":       "Override",
+                    "hasEmail": "mailto:override@example.gov"
                 }
             }
         }"#,
@@ -2258,7 +2295,7 @@ fn dataset_info_override_supplies_field_before_strict_validation() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     assert_eq!(
-        out.pointer("/projection/dcat:contactPoint/vcard:fn")
+        out.pointer("/projection/contactPoint/fn")
             .and_then(|v| v.as_str()),
         Some("Override"),
         "dataset_info override must apply before validation"
@@ -2277,10 +2314,10 @@ fn dataset_info_override_clears_stale_warnings() {
         &ctx_path,
         r#"{
             "dataset_info": {
-                "/projection/dcat:contactPoint": {
-                    "@type":          "vcard:Individual",
-                    "vcard:fn":       "Override",
-                    "vcard:hasEmail": "mailto:o@x.gov"
+                "/projection/contactPoint": {
+                    "@type":          "Kind",
+                    "fn":       "Override",
+                    "hasEmail": "mailto:o@x.gov"
                 }
             }
         }"#,
@@ -2304,7 +2341,7 @@ fn dataset_info_override_clears_stale_warnings() {
     assert!(
         !warnings
             .iter()
-            .any(|w| w.get("field").and_then(|v| v.as_str()) == Some("dcat:contactPoint")),
+            .any(|w| w.get("field").and_then(|v| v.as_str()) == Some("contactPoint")),
         "stale contactPoint warning must be filtered out, got: {warnings:#?}",
     );
 }
@@ -2323,11 +2360,11 @@ fn wrapped_dataset_info_override_rescues_strict_validation() {
         r#"{
             "package": {"title": "X", "notes": "Y", "name": "x", "publisher": "P"},
             "dataset_info": {
-                "/projection/dcat:contactPoint": {
+                "/projection/contactPoint": {
                     "value": {
-                        "@type":          "vcard:Individual",
-                        "vcard:fn":       "Wrapped",
-                        "vcard:hasEmail": "mailto:wrapped@example.gov"
+                        "@type":          "Kind",
+                        "fn":       "Wrapped",
+                        "hasEmail": "mailto:wrapped@example.gov"
                     },
                     "force": true
                 }
@@ -2347,15 +2384,15 @@ fn wrapped_dataset_info_override_rescues_strict_validation() {
     ]);
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
-    // Wrapper unwrapped → inner vcard:Individual landed at the
+    // Wrapper unwrapped → inner Kind landed at the
     // contactPoint slot, validation passed (otherwise --strict
     // would have aborted).
     assert_eq!(
-        out.pointer("/projection/dcat:contactPoint/vcard:fn")
+        out.pointer("/projection/contactPoint/fn")
             .and_then(|v| v.as_str()),
         Some("Wrapped"),
-        "wrapper must unwrap; the {{value, force}} object itself must NOT become the \
-         dcat:contactPoint value"
+        "wrapper must unwrap; the {{value, force}} object itself must NOT become the contactPoint \
+         value"
     );
 }
 
@@ -2376,26 +2413,26 @@ fn profile_catalog_flag_wraps_dataset() {
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
         out.pointer("/projection/@type").and_then(|v| v.as_str()),
-        Some("dcat:Catalog"),
+        Some("Catalog"),
         "expected Catalog envelope when --catalog is set: {out:#}"
     );
     assert!(
-        out.pointer("/projection/dcat:dataset")
+        out.pointer("/projection/dataset")
             .and_then(|v| v.as_array())
             .is_some_and(|a| a.len() == 1),
         "Catalog must carry exactly one Dataset"
     );
     assert_eq!(
-        out.pointer("/projection/dcat:dataset/0/@type")
+        out.pointer("/projection/dataset/0/@type")
             .and_then(|v| v.as_str()),
-        Some("dcat:Dataset"),
-        "inner element of dcat:dataset must keep its Dataset shape"
+        Some("Dataset"),
+        "inner element of dataset must keep its Dataset shape"
     );
-    // dct:modified must NOT be auto-emitted on the Catalog envelope
+    // modified must NOT be auto-emitted on the Catalog envelope
     // (single-CSV inputs have no independent catalog-level mtime).
     assert!(
-        out.pointer("/projection/dct:modified").is_none(),
-        "Catalog envelope must omit dct:modified for single-CSV runs"
+        out.pointer("/projection/modified").is_none(),
+        "Catalog envelope must omit modified for single-CSV runs"
     );
 }
 
@@ -2410,7 +2447,7 @@ fn profile_omits_catalog_wrapper_by_default() {
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
         out.pointer("/projection/@type").and_then(|v| v.as_str()),
-        Some("dcat:Dataset"),
+        Some("Dataset"),
         "default mode must keep Dataset shape: {out:#}"
     );
 }
@@ -2428,11 +2465,11 @@ fn profile_emits_checksum_for_local_file() {
 
     let out = read_output(&wrk, "in.csv.metadata.json");
     let alg = out
-        .pointer("/projection/dcat:distribution/0/dcat:checksum/spdx:algorithm")
+        .pointer("/projection/distribution/0/checksum/algorithm")
         .and_then(|v| v.as_str());
     assert_eq!(alg, Some("SHA-256"));
     let emitted = out
-        .pointer("/projection/dcat:distribution/0/dcat:checksum/spdx:checksumValue")
+        .pointer("/projection/distribution/0/checksum/checksumValue")
         .and_then(|v| v.as_str())
         .expect("checksumValue present");
     assert_eq!(emitted.len(), 64, "SHA-256 hex is 64 chars: got {emitted}");
@@ -2476,13 +2513,13 @@ fn profile_emits_compress_format_for_csv_gz_input() {
 
     let out = read_output(&wrk, "in.csv.gz.metadata.json");
     assert_eq!(
-        out.pointer("/projection/dcat:distribution/0/dcat:compressFormat")
+        out.pointer("/projection/distribution/0/compressFormat")
             .and_then(|v| v.as_str()),
         Some("application/gzip"),
-        "expected dcat:compressFormat=application/gzip for .csv.gz input: {out:#}"
+        "expected compressFormat=application/gzip for .csv.gz input: {out:#}"
     );
     assert!(
-        out.pointer("/projection/dcat:distribution/0/dcat:packageFormat")
+        out.pointer("/projection/distribution/0/packageFormat")
             .is_none(),
         "single-file compression must NOT also emit packageFormat"
     );
@@ -2515,17 +2552,15 @@ fn profile_emits_dataset_level_created_version_versionnotes() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/projection/dct:created")
-            .and_then(|v| v.as_str()),
+        out.pointer("/projection/created").and_then(|v| v.as_str()),
         Some("2023-06-15")
     );
     assert_eq!(
-        out.pointer("/projection/dcat:version")
-            .and_then(|v| v.as_str()),
+        out.pointer("/projection/version").and_then(|v| v.as_str()),
         Some("1.2.0")
     );
     assert_eq!(
-        out.pointer("/projection/dcat:versionNotes")
+        out.pointer("/projection/versionNotes")
             .and_then(|v| v.as_str()),
         Some("Q3 refresh")
     );
@@ -2554,18 +2589,18 @@ fn profile_emits_distribution_language_and_conformsto() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/projection/dcat:distribution/0/dct:language")
+        out.pointer("/projection/distribution/0/language")
             .and_then(|v| v.as_str()),
         Some("en")
     );
-    // conformsTo is an array of dct:Standard objects per v3 cardinality.
+    // conformsTo is an array of Standard objects per v3 cardinality.
     assert_eq!(
-        out.pointer("/projection/dcat:distribution/0/dct:conformsTo/0/@type")
+        out.pointer("/projection/distribution/0/conformsTo/0/@type")
             .and_then(|v| v.as_str()),
-        Some("dct:Standard")
+        Some("Standard")
     );
     assert_eq!(
-        out.pointer("/projection/dcat:distribution/0/dct:conformsTo/0/@id")
+        out.pointer("/projection/distribution/0/conformsTo/0/identifier")
             .and_then(|v| v.as_str()),
         Some("https://www.w3.org/TR/tabular-data-model/")
     );
@@ -2577,7 +2612,7 @@ fn profile_force_on_package_title_flows_via_ckan_to_dcat() {
     seed_geo_csv(&wrk);
     let ctx_path = wrk.path("init.json");
     // Note: `title` carries a wrapper; the inner value lands at
-    // /dcat/dct:title (translated by ckan_to_dcat) and must beat any
+    // /dcat/title (translated by ckan_to_dcat) and must beat any
     // inferred value.
     std::fs::write(
         &ctx_path,
@@ -2598,10 +2633,9 @@ fn profile_force_on_package_title_flows_via_ckan_to_dcat() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/projection/dct:title")
-            .and_then(|v| v.as_str()),
+        out.pointer("/projection/title").and_then(|v| v.as_str()),
         Some("FORCED VIA PACKAGE"),
-        "package.title force=true must land at /dcat/dct:title: {out:#}"
+        "package.title force=true must land at /dcat/title: {out:#}"
     );
 }
 
@@ -2627,10 +2661,10 @@ fn profile_force_on_resource_url_translates_to_download_url() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/projection/dcat:distribution/0/dcat:downloadURL")
+        out.pointer("/projection/distribution/0/downloadURL")
             .and_then(|v| v.as_str()),
         Some("https://forced.example.gov/data.csv"),
-        "resource.url force=true must land at /dcat/dcat:distribution/0/dcat:downloadURL: {out:#}"
+        "resource.url force=true must land at /dcat/distribution/0/downloadURL: {out:#}"
     );
 }
 
@@ -2647,7 +2681,7 @@ fn profile_force_on_dataset_info_beats_plain_dataset_info() {
           "package":      {"title":"Plain","notes":"Bar","publisher":"Agency"},
           "resource":     {},
           "dataset_info": {
-            "/projection/dct:title": {"value": "Forced via dataset_info", "force": true}
+            "/projection/title": {"value": "Forced via dataset_info", "force": true}
           }
         }"#,
     )
@@ -2659,8 +2693,7 @@ fn profile_force_on_dataset_info_beats_plain_dataset_info() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/projection/dct:title")
-            .and_then(|v| v.as_str()),
+        out.pointer("/projection/title").and_then(|v| v.as_str()),
         Some("Forced via dataset_info"),
         "dataset_info force=true must beat inferred: {out:#}"
     );
@@ -2703,7 +2736,7 @@ fn profile_validate_catalog_runs_catalog_overlay() {
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
         out.pointer("/projection/@type").and_then(|v| v.as_str()),
-        Some("dcat:Catalog"),
+        Some("Catalog"),
         "--catalog must produce a Catalog envelope"
     );
     // No Required-severity warnings — Catalog overlay required keys are
@@ -2809,9 +2842,9 @@ fn write_external_validator_profile(wrk: &Workdir, label: &str) -> std::path::Pa
     let yaml = format!(
         r#"name: ext-gate-test
 dataset:
-  type: dcat:Dataset
+  type: Dataset
   fields:
-    - path: dct:title
+    - path: title
       template: "{{{{ pkg.title | default('Untitled') }}}}"
 validation:
   enabled: false
@@ -3004,5 +3037,575 @@ fn external_validator_embedded_profile_skips_gate_warning() {
     assert!(
         !gate_warning_present,
         "embedded profile must not trip the file-loaded gate; got warnings: {warnings:#?}"
+    );
+}
+
+// ---------------------------------------------------------------------
+// DCAT-US v3 conformance guards
+// ---------------------------------------------------------------------
+
+#[test]
+fn strict_does_not_abort_on_recommended_only_findings() {
+    // Companion to `strict_fails_command_on_violation`. --strict now
+    // gates on Required severity, so without this the other test could
+    // pass for the wrong reason: any regression that made EVERY
+    // finding Required (or that reverted the gate to "non-empty")
+    // would still look green over there.
+    //
+    // A bogus top-level key trips the unknown-key lint, which is
+    // Recommended by construction. The command must still succeed and
+    // still report it.
+    let wrk = Workdir::new("strict_recommended_only");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "Valid Dataset",
+                "notes":         "Mandatory slots all populated.",
+                "name":          "valid-dataset",
+                "publisher":     "Demo Agency",
+                "contact_point": {"fn": "Jane Doe", "hasEmail": "jane@example.gov"}
+            },
+            "dataset_info": {
+                "/projection/totallyNotAV3Property": "tripwire"
+            }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "--strict",
+        "-o",
+        "out.json",
+    ]);
+    // Must NOT abort: the only finding is Recommended.
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("projection_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings.iter().any(|w| {
+            w.get("field").and_then(|v| v.as_str()) == Some("totallyNotAV3Property")
+                && w.get("severity").and_then(|v| v.as_str()) == Some("recommended")
+        }),
+        "unknown key must surface as a Recommended finding, got: {warnings:#?}",
+    );
+}
+
+#[test]
+fn unknown_key_lint_flags_undeclared_properties() {
+    // The GSA bundle sets `additionalProperties` nowhere, so an
+    // undeclared key validates silently. This lint is the only thing
+    // that reports it — the pre-conformance `dcat:describedBy` /
+    // `dcat:versionNotes` / dead-`@context` bugs all lived in exactly
+    // this blind spot.
+    let wrk = Workdir::new("unknown_key_lint");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "Lint Subject",
+                "notes":         "n",
+                "name":          "lint-subject",
+                "contact_point": {"fn": "J", "hasEmail": "j@example.gov"}
+            },
+            "dataset_info": {
+                "/projection/dct:title":   "wrong namespace",
+                "/projection/describedByType": "removed upstream"
+            }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let fields: Vec<String> = out
+        .get("projection_warnings")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|w| w.get("field").and_then(|v| v.as_str()).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    for expected in ["dct:title", "describedByType"] {
+        assert!(
+            fields.iter().any(|f| f == expected),
+            "lint must flag `{expected}`, got fields: {fields:?}",
+        );
+    }
+}
+
+#[test]
+fn unknown_key_lint_allows_deliberate_qsv_extensions() {
+    // Mutation guard for the test above: the lint must not fire on the
+    // five keys qsv emits on purpose. Without this, tightening the
+    // allowlist to nothing would still leave the lint test green.
+    let wrk = Workdir::new("unknown_key_allowlist");
+    seed_geo_csv(&wrk);
+    let ic_src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/dcat-init-context.json");
+    std::fs::copy(&ic_src, wrk.path("ic.json")).expect("copy ic");
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        "ic.json",
+        "--validate",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let projection = out.get("projection").expect("projection");
+    // The fixture really does exercise the extensions we're asserting
+    // are tolerated — otherwise this passes vacuously.
+    for ext in [
+        "dcat-us:bureauCode",
+        "dcat-us:programCode",
+        "dcat-us:accessLevel",
+    ] {
+        assert!(
+            projection.get(ext).is_some(),
+            "fixture must emit `{ext}` for this test to mean anything",
+        );
+    }
+    assert!(
+        out.get("projection_warnings").is_none(),
+        "deliberate qsv extensions must not trip the lint, got: {:?}",
+        out.get("projection_warnings"),
+    );
+}
+
+#[test]
+fn dcat_us_v3_profile_paths_match_the_vendored_schema() {
+    // Static counterpart to the runtime unknown-key lint.
+    //
+    // The lint only sees keys that a given run actually emits, so a
+    // misnamed field sitting behind an `emit_when` no fixture triggers
+    // would never be reported. This walks every `path:` the profile
+    // declares and checks it against the vendored definitions, so an
+    // upstream rename or removal (as happened to `inSeries`) fails
+    // here the moment the bundle is refreshed, not whenever some
+    // fixture happens to populate the slot.
+    fn declared(def: &str) -> std::collections::HashSet<String> {
+        let raw = std::fs::read_to_string(
+            std::env::current_dir()
+                .unwrap()
+                .join(format!("resources/dcat-us-v3/definitions/{def}.json")),
+        )
+        .expect("read definition");
+        let schema: Value = serde_json::from_str(&raw).expect("parse definition");
+        schema
+            .get("properties")
+            .and_then(|p| p.as_object())
+            .map(|p| p.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    // Mirrors dcat_validate::EXTENSION_KEYS.
+    const EXTENSIONS: &[&str] = &[
+        "dcat-us:bureauCode",
+        "dcat-us:programCode",
+        "dcat-us:accessLevel",
+        "qsv:sourcePath",
+        "csvw:tableSchema",
+    ];
+
+    let yaml = std::fs::read_to_string(
+        std::env::current_dir()
+            .unwrap()
+            .join("resources/profiles/dcat-us-v3.yaml"),
+    )
+    .expect("read profile");
+
+    let dataset_props = declared("Dataset");
+    let dist_props = declared("Distribution");
+
+    // The `distribution:` block starts the Distribution field list;
+    // everything before it belongs to `dataset:`.
+    let split = yaml
+        .find("\ndistribution:")
+        .expect("profile must declare a distribution block");
+    let mut checked = 0_usize;
+    for (section, props, label) in [
+        (&yaml[..split], &dataset_props, "Dataset"),
+        (&yaml[split..], &dist_props, "Distribution"),
+    ] {
+        for line in section.lines() {
+            let trimmed = line.trim();
+            let Some(rest) = trimmed.strip_prefix("- path: \"") else {
+                continue;
+            };
+            let Some(path) = rest.strip_suffix('"') else {
+                continue;
+            };
+            if EXTENSIONS.contains(&path) {
+                checked += 1;
+                continue;
+            }
+            assert!(
+                props.contains(path),
+                "profile declares `{path}` but DCAT-US v3 {label} has no such property. Either \
+                 the property was renamed/removed upstream, or it belongs in the extension \
+                 allowlist.",
+            );
+            checked += 1;
+        }
+    }
+    // Guard against the loop silently matching nothing (e.g. if the
+    // YAML indentation style changes) and passing vacuously.
+    assert!(
+        checked > 30,
+        "expected to check 30+ declared paths, only saw {checked} — the parser is probably not \
+         matching the YAML any more",
+    );
+}
+
+#[test]
+fn overlay_rejects_malformed_bureau_code() {
+    // `dcat-us:bureauCode` is not a GSA property; it only validates
+    // because qsv-overlay-dataset.json declares it with an
+    // `^[0-9]{3}:[0-9]{2}$` pattern. Since it is also on the lint's
+    // extension allowlist, a broken overlay would leave it completely
+    // unchecked and nothing else would notice.
+    let wrk = Workdir::new("overlay_bureau_code");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "Bad Codes",
+                "notes":         "n",
+                "name":          "bad-codes",
+                "contact_point": {"fn": "J", "hasEmail": "j@example.gov"},
+                "bureauCode":    ["not-a-bureau-code"]
+            }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("projection_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings.iter().any(|w| {
+            w.get("field")
+                .and_then(|v| v.as_str())
+                .is_some_and(|f| f.starts_with("dcat-us:bureauCode"))
+        }),
+        "overlay pattern must reject a malformed bureauCode, got: {warnings:#?}",
+    );
+}
+
+#[test]
+fn severity_is_class_qualified_not_name_qualified() {
+    // `modified` is Recommended on Dataset but Mandatory on
+    // CatalogRecord. A flat property-name index would take the
+    // strongest level found anywhere in the bundle and escalate an
+    // ordinary Dataset date problem to Required — which under
+    // --strict aborts the run. Severity must be resolved against the
+    // class that actually owns the path.
+    let wrk = Workdir::new("severity_class_qualified");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "T",
+                "notes":         "n",
+                "name":          "id",
+                "contact_point": {"fn": "J", "hasEmail": "j@example.gov"}
+            },
+            "dataset_info": { "/projection/modified": "not-a-real-timestamp" }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("projection_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let modified = warnings
+        .iter()
+        .find(|w| w.get("field").and_then(|v| v.as_str()) == Some("modified"))
+        .expect("bad `modified` format must be reported at all");
+    assert_eq!(
+        modified.get("severity").and_then(|v| v.as_str()),
+        Some("recommended"),
+        "Dataset.modified is Recommended; CatalogRecord's Mandatory `modified` must not leak \
+         across classes. Got: {modified:#?}",
+    );
+}
+
+#[test]
+fn validate_asserts_string_formats() {
+    // JSON Schema 2020-12 treats `format` as an annotation by
+    // default, so without `should_validate_formats(true)` a malformed
+    // date-time passes here while data.gov's own validator rejects
+    // it — which is exactly what happened to a naive
+    // `2024-12-15T08:30:00` before this was switched on.
+    let wrk = Workdir::new("validate_formats");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "T",
+                "notes":         "n",
+                "name":          "id",
+                "contact_point": {"fn": "J", "hasEmail": "j@example.gov"}
+            },
+            "dataset_info": { "/projection/issued": "15-12-2024" }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("projection_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.get("field").and_then(|v| v.as_str()) == Some("issued")),
+        "a malformed `issued` must be reported — format assertion is off if it is not. Got: \
+         {warnings:#?}",
+    );
+}
+
+#[test]
+fn distribution_modified_is_normalized_to_utc_zulu() {
+    // Migration Steps 12/15. CKAN's `last_modified` is an offset-less
+    // datetime, which matches none of the forms the v3 schema accepts
+    // (date-time, date, YYYY, YYYY-MM). data.gov's validator rejected
+    // exactly this value; qsv now stamps the Z.
+    let wrk = Workdir::new("dist_modified_zulu");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "T",
+                "notes":         "n",
+                "name":          "id",
+                "contact_point": {"fn": "J", "hasEmail": "j@example.gov"}
+            },
+            "resource": { "last_modified": "2024-12-15T08:30:00" }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(
+        out.pointer("/projection/distribution/0/modified")
+            .and_then(|v| v.as_str()),
+        Some("2024-12-15T08:30:00Z"),
+    );
+    assert!(
+        out.get("projection_warnings").is_none(),
+        "normalized timestamp must validate cleanly, got: {:?}",
+        out.get("projection_warnings"),
+    );
+}
+
+#[test]
+fn iso_8601_interval_in_modified_does_not_abort_strict() {
+    // `metadata_modified: "R/P1Y"` is exactly the shape migration
+    // Step 1 says agencies are moving away from, so it is common real
+    // input from legacy CKAN instances.
+    //
+    // `sanitize_iso_8601_interval` returns minijinja UNDEFINED for it.
+    // When `dcat_us_date` took a `&str`, minijinja could not coerce
+    // that and raised "invalid operation: value is not a string",
+    // which `emit_field` reports at Required severity — and once
+    // --strict began gating on Required, that aborted the whole
+    // command over one optional date. The field must simply be
+    // omitted.
+    let wrk = Workdir::new("interval_modified_strict");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":             "T",
+                "notes":             "n",
+                "name":              "id",
+                "contact_point":     {"fn": "J", "hasEmail": "j@example.gov"},
+                "metadata_modified": "R/P1Y"
+            }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "--strict",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert!(
+        out.pointer("/projection/modified").is_none(),
+        "an interval must be suppressed, not emitted: {out:#}",
+    );
+    assert!(
+        out.get("projection_warnings").is_none(),
+        "suppressing an interval must not warn, got: {:?}",
+        out.get("projection_warnings"),
+    );
+}
+
+#[test]
+fn date_normalization_preserves_fractional_seconds() {
+    // Stamping the UTC Z must not cost precision: a fixed
+    // "%Y-%m-%dT%H:%M:%SZ" format silently truncated
+    // `...T08:30:00.123456` to `...T08:30:00Z`.
+    let wrk = Workdir::new("frac_seconds");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "T",
+                "notes":         "n",
+                "name":          "id",
+                "contact_point": {"fn": "J", "hasEmail": "j@example.gov"}
+            },
+            "resource": { "last_modified": "2024-12-15T08:30:00.123456" }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "--strict",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(
+        out.pointer("/projection/distribution/0/modified")
+            .and_then(|v| v.as_str()),
+        Some("2024-12-15T08:30:00.123456Z"),
+    );
+}
+
+#[test]
+fn third_party_notices_pin_matches_the_manifest() {
+    // The pin lives in three places: MANIFEST.json (source of truth)
+    // and two spellings in THIRD_PARTY_NOTICES.md — a short 7-char
+    // form in the summary table and the full SHA in the detail
+    // section. The existing pin test re-hashes the vendored files but
+    // says nothing about the notices, so a refresh that updates the
+    // manifest leaves SHIPPED PROVENANCE pointing at the previous
+    // commit, which is a licensing/attribution claim rather than a
+    // cosmetic one. This closes that gap.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("resources/dcat-us-v3/MANIFEST.json"))
+            .expect("read MANIFEST.json"),
+    )
+    .expect("MANIFEST.json is valid JSON");
+    let commit = manifest
+        .get("commit")
+        .and_then(|v| v.as_str())
+        .expect("MANIFEST.json must carry a `commit`");
+    let short = &commit[..7];
+
+    let notices = std::fs::read_to_string(root.join("THIRD_PARTY_NOTICES.md"))
+        .expect("read THIRD_PARTY_NOTICES.md");
+    assert!(
+        notices.contains(commit),
+        "THIRD_PARTY_NOTICES.md must cite the full pinned commit `{commit}`",
+    );
+    // The short form needs its OWN anchored assertion. A bare
+    // `contains(short)` is vacuous: the short SHA is a prefix of the
+    // full one, so the detail section alone satisfies it and a stale
+    // summary table sails through — which is the exact drift this
+    // test exists to catch. Match the table cell instead.
+    let table_cell = format!("commit `{short}`");
+    assert!(
+        notices.contains(&table_cell),
+        "THIRD_PARTY_NOTICES.md's summary table must cite the short pinned commit as \
+         `{table_cell}`",
     );
 }

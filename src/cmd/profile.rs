@@ -10,7 +10,10 @@ five top-level blocks:
   `ckan`       — a CKAN-shaped block (package + resources) that
                  datapusher-plus consumes to prepopulate CKAN packages.
   `projection` — the dataset re-expressed in the active profile's metadata
-                 vocabulary. Default is DCAT-US v3; bundled alternates are
+                 vocabulary. Default is DCAT-US v3, emitted in its canonical
+                 form: plain JSON with unprefixed keys and no `@context`,
+                 validating against the schemas data.gov's own validator at
+                 https://harvest.data.gov/validate/ runs. Bundled alternates are
                  dcat-ap-v3 (EU portals), croissant (ML/AI registries) and
                  geoconnex (water-data federations). Consumable directly by
                  data.gov harvesters, EU DCAT-AP catalogs, mlcommons /
@@ -48,7 +51,7 @@ Examples:
   $ qsv profile data.csv --initial-context publisher.json -o data.metadata.json
 
   # data.gov-style harvest: validate against DCAT-US v3 JSON Schema, abort on
-  # violations, wrap in a Catalog envelope.
+  # mandatory-field violations, wrap in a Catalog envelope.
   $ qsv profile data.csv --validate --strict --catalog -o data.metadata.json
 
   # DCAT-AP v3 for EU data portals; `pyshacl` validates the bundled SHACL shapes.
@@ -101,7 +104,7 @@ profile options:
                               package / resource entries route through the
                               active profile's `field_mappings:` table (e.g.
                               `package.title force=true` lands at
-                              `/projection/dct:title`, beating inference and
+                              `/projection/title`, beating inference and
                               discovery). Forced values for slots the profile
                               does not surface are silently dropped (no-op).
                               See tests/resources/profile/dcat-init-context.README.md
@@ -119,10 +122,13 @@ profile options:
                               projection compact); the raw counts always remain
                               in the top-level `frequency` block regardless.
                               Other bundled profiles ignore this flag.
-    --dcat-legacy-license     Transitional: re-emit dct:license on the
-                              Dataset alongside the v3-required
-                              Distribution-level copy. Default: off
-                              (strict v3, license on Distribution only).
+    --dcat-legacy-license     Also emit `license` on the Dataset, alongside
+                              the Distribution-level copy. Both are valid
+                              DCAT-US v3 (the Dataset-level property was
+                              added upstream), but the migration guide
+                              directs publishers to put license on each
+                              Distribution, so that is what qsv emits by
+                              default. Default: off.
     --no-dcat-discovery       Skip DCAT-markup discovery on URL inputs.
                               Discovery sniffs HTTP Link: rel=describedBy
                               (and, in future, sibling .metadata.json /
@@ -140,10 +146,15 @@ profile options:
                               cardinality issues, and shape violations.
                               Violations append to projection_warnings by
                               default.
-    --strict                  With --validate, fail the command on JSON
-                              Schema violations or non-Info external-
-                              validator findings (Required/Recommended
-                              severities) instead of just warning. Note:
+    --strict                  With --validate, fail the command on
+                              Required-severity schema violations, or on
+                              non-Info external-validator findings,
+                              instead of just warning. Severity comes
+                              from the DCAT-US v3 schema's own
+                              requirementLevel annotations, so a missing
+                              mandatory property aborts while a
+                              recommended-field advisory does not.
+                              Note:
                               RFC4180 structural failures from
                               `qsv validate` (emitted when a spec
                               declares `validators`) are always
@@ -163,7 +174,7 @@ profile options:
                               an untrusted YAML can't silently execute
                               arbitrary commands. Default: off.
     --catalog                 Wrap the emitted DCAT-US v3 Dataset inside a
-                              dcat:Catalog envelope (Catalog{dataset:[...]}).
+                              Catalog envelope (Catalog{dataset:[...]}).
                               Useful for federation harvesters (data.gov,
                               CKAN ingest) that expect Catalog-shaped
                               top-level metadata. Default: off
@@ -597,15 +608,31 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             && let Some(final_projection) = out_map.get("projection")
         {
             let validation = dcat_validate::validate(&profile, final_projection);
-            if !validation.is_empty() && args.flag_strict {
-                let summary = validation
+            // --strict aborts on Required-severity findings only.
+            //
+            // It used to abort on ANY non-empty finding vector, which
+            // made severity decorative: a Recommended-level advisory
+            // was as fatal as a missing mandatory property. Now that
+            // severity is derived from the schema bundle's own
+            // `requirementLevel` annotations (see
+            // `dcat_validate::classify_severity`), gate on it — and
+            // match how --strict already treats external-validator
+            // findings, which filter out Info before escalating.
+            // Sub-Required findings still surface in
+            // projection_warnings.
+            let blocking: Vec<_> = validation
+                .iter()
+                .filter(|w| matches!(w.severity, projection::Severity::Required))
+                .collect();
+            if !blocking.is_empty() && args.flag_strict {
+                let summary = blocking
                     .iter()
                     .map(|w| format!("  - {}: {}", w.field, w.message))
                     .collect::<Vec<_>>()
                     .join("\n");
                 return Err(CliError::Other(format!(
                     "qsv profile --strict: {} schema violation(s):\n{summary}",
-                    validation.len()
+                    blocking.len()
                 )));
             }
             projection_warnings.extend(validation);

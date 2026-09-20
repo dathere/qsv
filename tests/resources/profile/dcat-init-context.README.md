@@ -20,44 +20,43 @@ and are all live in the current build.
 
 | Field                          | DCAT-US v3 slot                              | Status     |
 |--------------------------------|----------------------------------------------|------------|
-| `title`                        | `dct:title` (mandatory)                      | ✅ today   |
-| `notes`                        | `dct:description` (mandatory)                | ✅ today   |
-| `name`                         | `dct:identifier` (mandatory)                 | ✅ today   |
-| `publisher` (or `author`)      | `dct:publisher`                              | ✅ today   |
-| `license_id` (or `license`)    | Distribution-level `dct:license`             | ✅ today   |
-| `metadata_modified`            | `dct:modified` (discrete date only)          | ✅ today   |
-| `metadata_created`             | `dct:issued`                                 | ✅ today   |
-| `created`                      | `dct:created` (distinct from issued / modified) | ✅ today   |
-| `version`                      | `dcat:version`                               | ✅ today   |
-| `versionNotes`                 | `dcat:versionNotes`                          | ✅ today   |
-| `tags[]`                       | `dcat:keyword`                               | ✅ today   |
-| `groups[]`                     | `dcat:theme`                                 | ✅ today   |
-| `language`                     | `dct:language` (normalized to ISO 639-1)     | ✅ today   |
-| `contact_point` `{fn, hasEmail}` | `dcat:contactPoint` (**mandatory**)        | ✅ today   |
-| `bureauCode`, `programCode`    | `dcat-us:bureauCode` / `dcat-us:programCode` | ✅ today   |
-| `accrualPeriodicity`           | `dct:accrualPeriodicity`                     | ✅ today   |
-| `accessRights`                 | `dct:accessRights`                           | ✅ today   |
-| `rights`                       | `dct:rights`                                 | ✅ today   |
-| `landing_page`                 | `dcat:landingPage`                           | ✅ today   |
-| `describedBy`                  | `dcat:describedBy`                           | ✅ today   |
-| `purpose`, `scopeNote`, `liabilityStatement` | `dcat-us:*`                    | ✅ today   |
-| `inSeries`                     | `dcat:inSeries`                              | ✅ today   |
+| `title`                        | `title` (mandatory)                      | ✅ today   |
+| `notes`                        | `description` (mandatory)                | ✅ today   |
+| `name`                         | `identifier` (mandatory)                 | ✅ today   |
+| `publisher` (or `author`)      | `publisher`                              | ✅ today   |
+| `license_id` (or `license`)    | Distribution-level `license`             | ✅ today   |
+| `metadata_modified`            | `modified` (discrete date only)          | ✅ today   |
+| `metadata_created`             | `issued`                                 | ✅ today   |
+| `created`                      | `created` (distinct from issued / modified) | ✅ today   |
+| `version`                      | `version`                               | ✅ today   |
+| `versionNotes`                 | `versionNotes`                          | ✅ today   |
+| `tags[]`                       | `keyword`                               | ✅ today   |
+| `groups[]`                     | `theme`                                 | ✅ today   |
+| `language`                     | `language` (normalized to ISO 639-1)     | ✅ today   |
+| `contact_point` `{fn, hasEmail}` | `contactPoint` (**mandatory**)        | ✅ today   |
+| `bureauCode`, `programCode`    | `dcat-us:bureauCode` / `dcat-us:programCode` (qsv extension — see note) | ✅ today   |
+| `accrualPeriodicity`           | `accrualPeriodicity`                     | ✅ today   |
+| `accessRights`                 | `accessRights`                           | ✅ today   |
+| `rights`                       | `rights`                                 | ✅ today   |
+| `landing_page`                 | `landingPage`                           | ✅ today   |
+| `describedBy`                  | `describedBy`                           | ✅ today   |
+| `purpose`, `scopeNote`, `liabilityStatement` | `purpose` / `scopeNote` / `liabilityStatement` | ✅ today   |
 
 ## `resource` fields the projection reads
 
 | Field                 | DCAT-US v3 slot                             | Status     |
 |-----------------------|---------------------------------------------|------------|
-| `name`                | Distribution `dct:title`                    | ✅ today   |
-| `description`         | Distribution `dct:description`              | ✅ today   |
-| `format`              | Distribution `dct:format`                   | ✅ today   |
-| `url`                 | Distribution `dcat:downloadURL` (IRI only)  | ✅ today   |
-| `license_id` / `license` | Distribution `dct:license`               | ✅ today   |
-| `last_modified`       | Distribution `dct:modified`                 | ✅ today   |
-| `accessURL`           | Distribution `dcat:accessURL`               | ✅ today   |
-| `rights`              | Distribution `dct:rights`                   | ✅ today   |
-| `language`            | Distribution `dct:language` (Distribution-level; falls back to `package.language`) | ✅ today   |
-| `conformsTo`          | Distribution `dct:conformsTo` (array of `dct:Standard` — string IRI or `{@id, ...}` object) | ✅ today   |
-| `access_restriction`, `use_restriction`, `cui_restriction` | `dcat-us:*Restriction` | ✅ today   |
+| `name`                | Distribution `title`                    | ✅ today   |
+| `description`         | Distribution `description`              | ✅ today   |
+| `format`              | Distribution `format`                   | ✅ today   |
+| `url`                 | Distribution `downloadURL` (IRI only)  | ✅ today   |
+| `license_id` / `license` | Distribution `license`               | ✅ today   |
+| `last_modified`       | Distribution `modified`                 | ✅ today   |
+| `accessURL`           | Distribution `accessURL`               | ✅ today   |
+| `rights`              | Distribution `rights`                   | ✅ today   |
+| `language`            | Distribution `language` (Distribution-level; falls back to `package.language`) | ✅ today   |
+| `conformsTo`          | Distribution `conformsTo` (array of `Standard` — string IRI or `{@id, ...}` object) | ✅ today   |
+| `access_restriction`, `use_restriction`, `cui_restriction` | `accessRestriction` / `useRestriction` / `cuiRestriction` (the first two are arrays) | ✅ today   |
 
 ### Distribution fields qsv computes automatically
 
@@ -66,12 +65,12 @@ the input bytes during the projection:
 
 | Field                            | Source                                       |
 |----------------------------------|----------------------------------------------|
-| `dcat:byteSize`                  | `fs::metadata(input).len()` (emitted as string per GSA schema) |
-| `dcat:checksum`                  | SHA-256 over the materialized file payload (`spdx:Checksum`)   |
-| `dcat:compressFormat`            | derived from extension (`.gz` → `application/gzip`, etc.)      |
-| `dcat:packageFormat`             | derived from extension (`.zip`, `.tar*` → `application/zip` / `x-tar`) |
-| `dcat:mediaType`                 | always `text/csv`                            |
-| `dcat:spatialResolutionInMeters` | from the spec's `spatial_resolution_in_meters` suggestion (via `dpp_suggestions`) |
+| `byteSize`                  | `fs::metadata(input).len()` (emitted as string per GSA schema) |
+| `checksum`                  | SHA-256 over the materialized file payload (`Checksum`)   |
+| `compressFormat`            | derived from extension (`.gz` → `application/gzip`, etc.)      |
+| `packageFormat`             | derived from extension (`.zip`, `.tar*` → `application/zip` / `x-tar`) |
+| `mediaType`                 | always `text/csv`                            |
+| `spatialResolutionInMeters` | from the spec's `spatial_resolution_in_meters` suggestion (via `dpp_suggestions`) |
 | `csvw:tableSchema`               | per-column stats from `qsv stats` (cardinality, nullcount, datatype, min, max) |
 
 ## `force` semantics — three sources, one precedence
@@ -104,13 +103,13 @@ via the active profile's `field_mappings:` table (see
 
 | CKAN pointer           | Projection pointer                                 |
 |------------------------|----------------------------------------------------|
-| `/package/title`       | `/projection/dct:title`                            |
-| `/package/notes`       | `/projection/dct:description`                      |
-| `/package/version`     | `/projection/dcat:version`                         |
+| `/package/title`       | `/projection/title`                            |
+| `/package/notes`       | `/projection/description`                      |
+| `/package/version`     | `/projection/version`                         |
 | `/package/bureauCode`  | `/projection/dcat-us:bureauCode`                   |
-| `/resource/url`        | `/projection/dcat:distribution/0/dcat:downloadURL` |
-| `/resource/format`     | `/projection/dcat:distribution/0/dct:format`       |
-| `/resource/conformsTo` | `/projection/dcat:distribution/0/dct:conformsTo`   |
+| `/resource/url`        | `/projection/distribution/0/downloadURL` |
+| `/resource/format`     | `/projection/distribution/0/format`       |
+| `/resource/conformsTo` | `/projection/distribution/0/conformsTo`   |
 
 CKAN slots without a projection counterpart (e.g. `package.scheming_version`)
 silently drop their `force` flag — a documented no-op rather than a
@@ -133,9 +132,9 @@ Each key is an RFC 6901 JSON Pointer relative to the **whole output**:
 
 ```json
 "dataset_info": {
-  "/projection/dct:title":                 "Force override",
-  "/projection/dcat:distribution/0/dct:license": "https://opendatacommons.org/licenses/by/1-0/",
-  "/projection/dct:modified": {"value": "2024-12-31T23:59:59Z", "force": true}
+  "/projection/title":                 "Force override",
+  "/projection/distribution/0/license": "https://opendatacommons.org/licenses/by/1-0/",
+  "/projection/modified": {"value": "2024-12-31T23:59:59Z", "force": true}
 }
 ```
 
@@ -158,20 +157,20 @@ are silently skipped — this is best-effort, not enforcement.
 ## `--catalog` mode
 
 With `--catalog`, the emitted projection block is wrapped inside a
-`dcat:Catalog` envelope (`Catalog{dataset:[...]}`) suitable for
+`Catalog` envelope (`Catalog{dataset:[...]}`) suitable for
 federation harvesters (data.gov, CKAN ingest). The Catalog inherits
 the enclosed Dataset's title (prefixed with `Catalog of `) and
 publisher.
 
 In `--catalog` mode the inner Dataset is nested at
-`/projection/dcat:dataset/0/...` (or `/projection/schema:dataset/0/...`
+`/projection/dataset/0/...` (or `/projection/schema:dataset/0/...`
 for schema.org-rooted profiles like Geoconnex). `dataset_info` and
 force-value overrides apply to the *full output* after the Catalog
-wrap, so a bare `/projection/dct:title` writes to the Catalog
+wrap, so a bare `/projection/title` writes to the Catalog
 envelope itself; to override an inner-Dataset slot use the nested
-path, e.g. `/projection/dcat:dataset/0/dct:title`. Discovery-merge
+path, e.g. `/projection/dataset/0/title`. Discovery-merge
 force-protection still operates on the pre-wrap Dataset, so a
-forced `/projection/dct:title` does correctly shield the Dataset's
+forced `/projection/title` does correctly shield the Dataset's
 title from being overwritten by discovered publisher metadata even
 under `--catalog`.
 
@@ -187,3 +186,28 @@ Catalog-level required keys on the envelope.
 * Authoritative JSON Schema 2020-12 definitions + examples
   (vendored under `resources/dcat-us-v3/` for `--validate`):
   <https://github.com/GSA/dcat-us/tree/main/jsonschema>
+
+## A note on serialization and the `dcat-us:` keys
+
+DCAT-US v3 is plain JSON with **unprefixed** keys and no `@context` —
+GSA removed the JSON-LD context upstream in April 2026. The slots in
+the tables above are therefore bare names (`title`, not `dct:title`),
+and JSON-Pointer overrides in `dataset_info` must use those bare names
+too: `/projection/title`, not `/projection/dct:title`.
+
+Three keys are still emitted prefixed, and they are the exception
+rather than the rule:
+
+* `dcat-us:bureauCode`
+* `dcat-us:programCode`
+* `dcat-us:accessLevel`
+
+**None of these is a DCAT-US v3 property** — they appear in none of
+the 26 vendored definitions. qsv keeps emitting them because agencies
+still need them for OMB M-13-13 / Project Open Data, and because the
+v1.1 → v3 migration guide explicitly says to retain `accessLevel`
+during the transition: "the v3.0 schema will not reject it". Treat
+them as qsv extensions, not as conformance surface.
+
+`inSeries` used to be accepted here. GSA removed it from `Dataset.json`,
+so it is no longer emitted; supplying it now has no effect.

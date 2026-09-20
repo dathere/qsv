@@ -270,7 +270,7 @@
     },
     "useRestriction": {
       "title": "use restriction",
-      "description": "Use restriction related to the distribution",
+      "description": "List of use restrictions related to the distribution",
       "type": ["null", "array"],
       "items": {
         "$ref": "/dcat-us/3.0.0/definitions/userestriction"
@@ -404,6 +404,41 @@
         "range": "rdfs:Literal (typed as xsd:date, xsd:dateTime, xsd:gYear or xsd:gYearMonth)"
       },
       "examples": ["2023-06-01", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Optional"
+    },
+    "inventoried": {
+      "title": "inventoried date",
+      "description": "Date on which the distribution was added to the catalog. This may differ from the publication/release date.",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "title": "Date string",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "examples": ["2024-01-15", "2024-01-15T10:30:00Z", "2024", "2024-01"],
       "requirementLevel": "Optional"
     },
     "language": {
@@ -619,7 +654,7 @@
       "modified": "2024-06-01",
       "rights": ["No rights reserved. This data is in the public domain."],
       "describedBy": {
-        "@type": "Standard",
+        "@type": "Distribution",
         "title": "CSV Data Dictionary",
         "accessURL": "https://example.gov/data/climate/dictionary"
       },

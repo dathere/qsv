@@ -24,7 +24,7 @@ run `cargo tree` or a tool such as `cargo-about` for that inventory.
 | [DataTables](https://datatables.net/) + Buttons, ColumnControl, DateTime, SearchBuilder | `dt-3.0.4/b-4.0.3/cc-2.0.2/date-2.0.0/sb-2.0.1` | MIT | vendored in `src/cmd/assets/`, compiled in and embedded in `viz smart` HTML |
 | [driver.js](https://driverjs.com/) | 1.8.0 | MIT | vendored in `src/cmd/assets/`, compiled in and embedded in `viz smart` HTML (the guided tour) |
 | [LuaDate](https://github.com/Tieske/date) | 2.2.1 | MIT | vendored in `resources/luau/vendor/luadate/`, compiled into the binary |
-| [DCAT-US v3 schemas](https://github.com/GSA/dcat-us) | commit `cf87890` | CC0-1.0 | vendored in `resources/dcat-us-v3/`, compiled into the binary |
+| [DCAT-US v3 schemas](https://github.com/GSA/dcat-us) | commit `1ca074b` | CC0-1.0 | vendored in `resources/dcat-us-v3/`, compiled into the binary |
 | [DCAT-AP v3 SHACL](https://github.com/SEMICeu/DCAT-AP) | release 3.0.0 | CC-BY-4.0 | vendored in `resources/dcat-ap-v3/`, compiled into the binary |
 | [geoconnex SHACL](https://github.com/internetofwater/nabu) | commit `e5d6ad3` | Apache-2.0 | vendored in `resources/geoconnex/`, compiled into the binary |
 | [GeoNames](https://www.geonames.org/) | `cities15000` + `countryInfo` | CC-BY-4.0 | powers the `geocode` command and source for the `examples/viz/world_cities.csv` sample |
@@ -420,7 +420,7 @@ THE SOFTWARE.
 ## DCAT-US v3 schemas
 
 Upstream: <https://github.com/GSA/dcat-us>, `jsonschema/definitions`, pinned to
-commit `cf8789002b1f60c2c7247de475dd565427e5b8b7`.
+commit `1ca074b67dd1ad3cea8f0dd4ae951864491fd104`.
 
 26 JSON Schema files vendored at [`resources/dcat-us-v3/`](resources/dcat-us-v3/)
 and compiled into the binary for the `profile` command's DCAT-US validation.

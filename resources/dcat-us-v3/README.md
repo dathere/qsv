@@ -76,23 +76,54 @@ match the file on disk. Silent edits are blocked.
    follow-up — extending coverage is a separate change from
    refreshing the pin.
 
-## Why the schemas use unprefixed keys
+## Unprefixed keys
 
 The GSA bundle declares property names without CURIE prefixes
-(`title`, not `dct:title`). qsv emits the JSON-LD-compact form with
-prefixes for interop with CKAN, data.gov, and other downstream
-consumers. The mismatch is bridged transparently at validation
-time by `src/cmd/profile/curie.rs`, which strips known prefixes
-from the keys of the in-memory copy before handing it to
-`jsonschema`. The emitted JSON on disk is unchanged.
+(`title`, not `dct:title`), and so does qsv. DCAT-US v3 is plain
+JSON validated by JSON Schema — GSA removed the JSON-LD context
+and the SHACL shapes upstream in April 2026 ("Move aside outdated
+files and emphasize the JSON Schema"), and the canonical examples
+under `jsonschema/examples/` carry no `@context`.
+
+Earlier versions of qsv emitted the JSON-LD-compact, CURIE-prefixed
+form and stripped the prefixes in memory before validating. That
+bridge is gone: the projection is now validated verbatim, exactly
+as written to disk, against the same schemas data.gov's own
+validator at <https://harvest.data.gov/validate/> runs.
+
+The only prefixed keys qsv still emits are deliberate extensions:
+`dcat-us:bureauCode`, `dcat-us:programCode`, `dcat-us:accessLevel`,
+`qsv:sourcePath` and `csvw:tableSchema`. The first three are **not**
+DCAT-US v3 properties — they appear in none of the 26 definitions —
+but agencies still need them for OMB M-13-13 / Project Open Data,
+and the v1.1 → v3 migration guide explicitly says to keep
+`accessLevel` during the transition ("the v3.0 schema will not
+reject it"). They are listed in `dcat_validate::EXTENSION_KEYS` so
+the unknown-key lint tolerates them.
+
+## Validation is stricter than the bundle alone
+
+No schema in the bundle sets `additionalProperties`, so an unknown
+key — a typo, or a property upstream has since removed — validates
+silently. Two qsv-side additions close that:
+
+* an **unknown-key lint** reports emitted keys the target definition does not declare, scoped to
+  the node types qsv constructs (root, each Dataset in a Catalog, each Distribution);
+* **format assertion** is switched on. JSON Schema 2020-12 treats `format` as an annotation by
+  default, so without this a malformed `date-time` passes here while data.gov rejects it.
+
+Warning severity is derived from the bundle's own
+`requirementLevel` annotations, resolved against the class that owns
+the path (`modified` is Recommended on Dataset but Mandatory on
+CatalogRecord — a flat name index would conflate them).
 
 ## Why the bundle has no top-level entry-point
 
 The upstream README directs consumers to validate against
 `definitions/Dataset.json` for individual datasets or
 `definitions/Catalog.json` for federated catalogs. We do the
-same — `dcat_validate.rs::validate_dataset_or_catalog` picks the
-right entry-point by inspecting `@type` on the emitted block.
+same — `dcat_validate.rs::validate` picks the right entry-point by
+inspecting `@type` on the emitted block.
 
 Two overlay schemas in this directory layer qsv-specific
 extensions on top of the vendored GSA bundle:
@@ -101,14 +132,15 @@ extensions on top of the vendored GSA bundle:
   and adds property definitions for `dcat-us:bureauCode` and
   `dcat-us:programCode` (the M-13-13 OMB codes that the GSA v3
   bundle itself does not define). Used as the validator entry-point
-  when the emitted `@type` is `dcat:Dataset`.
+  when the emitted `@type` is `Dataset`.
 * `qsv-overlay-catalog.json` — `allOf`-wraps `definitions/Catalog.json`
   with no current additions. Used as the validator entry-point when
   `--catalog` is set. Reserved for future Catalog-level extensions.
 
 Both overlays inherit the GSA bundle's permissive
-`additionalProperties` behavior, so emitting any other `dcat-us:*`
-namespace key remains valid by default.
+`additionalProperties` behavior, so any other `dcat-us:*` key is
+still accepted by the schema — but it will be reported by the
+unknown-key lint unless it is on the extension allowlist.
 
 ## Licensing
 

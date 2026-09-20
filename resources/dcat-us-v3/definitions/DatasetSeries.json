@@ -2,13 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/datasetseries",
   "title": "DatasetSeries",
-  "description": "A group of related datasets that are published separately",
+  "description": "A group of related datasets that are published separately and identified by @id as the series identifier",
   "type": "object",
   "properties": {
     "@id": {
       "type": "string",
       "format": "iri",
-      "examples": ["https://example.gov/series/annual-climate-observations"]
+      "description": "IRI that uniquely identifies the dataset series. Use @id as the identifier field for DatasetSeries.",
+      "examples": ["https://example.gov/series/annual-climate-observations"],
+      "requirementLevel": "Recommended"
     },
     "@type": {
       "type": "string",
@@ -44,7 +46,7 @@
         "uri": "dcat:first",
         "range": "dcat:Dataset"
       },
-      "requirementLevel": "Recommended"
+      "requirementLevel": "Optional"
     },
     "last": {
       "title": "last",
@@ -63,7 +65,7 @@
         "uri": "dcat:last",
         "range": "dcat:Dataset"
       },
-      "requirementLevel": "Recommended"
+      "requirementLevel": "Optional"
     },
     "seriesMember": {
       "title": "series member",
@@ -305,6 +307,7 @@
   },
   "examples": [
     {
+      "@id": "https://example.gov/series/annual-climate-observations",
       "@type": "DatasetSeries",
       "title": "Annual Climate Observations",
       "description": "A series of annual climate observation datasets from monitoring stations.",
@@ -320,35 +323,28 @@
       "accrualPeriodicity": "annually",
       "issued": "2000-01-15",
       "modified": "2024-12-01",
-      "first": {
-        "@id": "https://example.gov/datasets/climate-observations-2000",
-        "@type": "Dataset",
-        "title": "Climate Observations 2000",
-        "description": "First year of climate observations.",
-        "contactPoint": {
-          "fn": "Climate Support",
-          "hasEmail": "mailto:climate@example.gov"
-        },
-        "publisher": {
-          "name": "National Climate Data Center"
-        },
-        "identifier": "https://example.gov/datasets/series-first"
-      },
-      "last": {
-        "@id": "https://example.gov/datasets/climate-observations-2024",
-        "@type": "Dataset",
-        "title": "Climate Observations 2024",
-        "description": "Latest year of climate observations.",
-        "contactPoint": {
-          "fn": "Climate Support",
-          "hasEmail": "mailto:climate@example.gov"
-        },
-        "publisher": {
-          "name": "National Climate Data Center"
-        },
-        "identifier": "https://example.gov/datasets/series-last"
-      },
       "seriesMember": [
+        {
+          "@id": "https://example.gov/datasets/climate-observations-2000",
+          "@type": "Dataset",
+          "title": "Climate Observations 2000",
+          "description": "First year of climate observations.",
+          "contactPoint": {
+            "fn": "Climate Support",
+            "hasEmail": "mailto:climate@example.gov"
+          },
+          "publisher": {
+            "name": "National Climate Data Center"
+          },
+          "identifier": "https://example.gov/datasets/series-first",
+          "distribution": [
+            {
+              "title": "Climate Observations 2000 CSV",
+              "downloadURL": "https://example.gov/downloads/climate-observations-2000.csv",
+              "mediaType": "text/csv"
+            }
+          ]
+        },
         {
           "@id": "https://example.gov/datasets/climate-observations-2022",
           "@type": "Dataset",
@@ -361,7 +357,14 @@
           "publisher": {
             "name": "National Climate Data Center"
           },
-          "identifier": "https://example.gov/datasets/series-member-001"
+          "identifier": "https://example.gov/datasets/series-member-001",
+          "distribution": [
+            {
+              "title": "Climate Observations 2022 CSV",
+              "downloadURL": "https://example.gov/downloads/climate-observations-2022.csv",
+              "mediaType": "text/csv"
+            }
+          ]
         },
         {
           "@id": "https://example.gov/datasets/climate-observations-2023",
@@ -375,7 +378,14 @@
           "publisher": {
             "name": "National Climate Data Center"
           },
-          "identifier": "https://example.gov/datasets/series-member-002"
+          "identifier": "https://example.gov/datasets/series-member-002",
+          "distribution": [
+            {
+              "title": "Climate Observations 2023 CSV",
+              "downloadURL": "https://example.gov/downloads/climate-observations-2023.csv",
+              "mediaType": "text/csv"
+            }
+          ]
         },
         {
           "@id": "https://example.gov/datasets/climate-observations-2024",
@@ -389,7 +399,35 @@
           "publisher": {
             "name": "National Climate Data Center"
           },
-          "identifier": "https://example.gov/datasets/series-member-003"
+          "identifier": "https://example.gov/datasets/series-member-003",
+          "distribution": [
+            {
+              "title": "Climate Observations 2024 CSV",
+              "downloadURL": "https://example.gov/downloads/climate-observations-2024.csv",
+              "mediaType": "text/csv"
+            }
+          ]
+        },
+        {
+          "@id": "https://example.gov/datasets/climate-observations-2024",
+          "@type": "Dataset",
+          "title": "Climate Observations 2024",
+          "description": "Latest year of climate observations.",
+          "contactPoint": {
+            "fn": "Climate Support",
+            "hasEmail": "mailto:climate@example.gov"
+          },
+          "publisher": {
+            "name": "National Climate Data Center"
+          },
+          "identifier": "https://example.gov/datasets/series-last",
+          "distribution": [
+            {
+              "title": "Climate Observations 2024 CSV",
+              "downloadURL": "https://example.gov/downloads/climate-observations-2024.csv",
+              "mediaType": "text/csv"
+            }
+          ]
         }
       ],
       "spatial": [

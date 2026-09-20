@@ -41,7 +41,7 @@ Every entry under `dataset.fields[]`, `distribution.fields[]`, and
 
 | Key | Meaning |
 |---|---|
-| `path` | JSON-LD key emitted into the projection (e.g. `dct:title`). |
+| `path` | Key emitted into the projection. Use the vocabulary the profile targets: bare names for DCAT-US v3 (`title`), CURIEs for the JSON-LD profiles (`dct:title`). |
 | `template` | Minijinja expression rendered against the analysis context. Strings starting with `{` are JSON-parsed; otherwise treated as literal strings. |
 | `required_level` | `required` / `recommended` / `optional` — drives `ProjectionWarning` severity when empty. |
 | `on_dataset` | Emit on the Dataset block? Default `true`. |
@@ -81,6 +81,21 @@ The catalog `title_template` also receives both bindings, so titles
 can mix analysis vars and Dataset values:
 `'{{ pkg.publisher }} — Catalog of {{ inner["dct:title"] }}'`.
 
+Other `catalog:` keys:
+
+| Key | Meaning |
+|---|---|
+| `type` | The envelope's `@type`. Default `dcat:Catalog`. |
+| `title_key` / `dataset_key` | Keys for the title and the wrapped Dataset array. Default `dct:title` / `dcat:dataset`; DCAT-US v3 sets the bare `title` / `dataset`. |
+| `conforms_to` | The conformsTo target IRI. |
+| `conforms_to_key` | Key it is emitted under. Default `dct:conformsTo`. |
+| `conforms_to_title` | Human-readable title for the Standard. **Its presence selects the shape**: with it, the canonical DCAT-US v3 form `{"@type": "Standard", "title": …, "identifier": …}` (migration Step 13); without it, the legacy `{"@type": "dct:Standard", "@id": …}` the CURIE profiles use. |
+
+A profile that declares no `context:` emits no `@context`, on the
+Dataset or the envelope. That is correct for DCAT-US v3, which is plain
+JSON validated by JSON Schema — the migration guide directs publishers
+to delete `@context` from the catalog object.
+
 ## Discovery merge
 
 When the caller provides publisher-side DCAT (via `--initial-context` or
@@ -90,7 +105,8 @@ folds into the qsv-inferred projection.
 | Key | Meaning |
 |---|---|
 | `enabled` | Master switch. `false` skips merging entirely. |
-| `never_overwrite` | Top-level keys protected from any overlay (typical: `@context`, `@type`, `dcat:distribution`). |
+| `never_overwrite` | Top-level keys protected from any overlay (typical: `@type` and the distribution array; `@context` too, for the profiles that emit one). |
+| `normalize_curies` | CURIE prefixes stripped from *discovered* publisher metadata before merging. Publisher DCAT is still overwhelmingly CURIE-keyed JSON-LD, so a profile that emits bare names (DCAT-US v3) must list the prefixes here — otherwise a discovered `dct:title` merges in *alongside* the inferred `title` instead of filling it. Profiles that emit CURIEs leave it empty. |
 | `default_strategy` | `fill-if-absent` (default — inferred wins on conflict), `overlay-array` (append publisher elements to inferred arrays), or `never`. |
 | `distribution_merge` | Optional per-element merge for the distribution array. See below. |
 
@@ -106,13 +122,14 @@ fields flow into the inferred record via `field_strategy`.
 | Key | Meaning |
 |---|---|
 | `enabled` | Master switch for per-element merging. `false` (default) preserves the legacy "publisher distributions dropped" behavior. |
-| `array_key` | The top-level key holding the distribution array. Default `dcat:distribution`. |
+| `array_key` | The top-level key holding the distribution array. Default `dcat:distribution` (DCAT-US v3 sets it to the bare `distribution`). |
 | `identity_keys` | Ordered list of fields used to match a publisher Distribution against an inferred one. Empty list disables matching. |
 | `field_strategy` | How to merge fields within a matched pair: `fill-if-absent` (default) / `overlay-array` / `never`. |
 | `append_unmatched` | When `true`, publisher distributions that match no inferred entry are appended. Default `false` (silently dropped). |
 
-DCAT-US v3 and DCAT-AP v3 enable this with `dcat:downloadURL` →
-`dcat:accessURL` → `@id` as the identity-key priority. Croissant
+DCAT-AP v3 enables this with `dcat:downloadURL` → `dcat:accessURL` →
+`@id` as the identity-key priority; DCAT-US v3 uses the same order with
+the bare names (`downloadURL` → `accessURL` → `@id`). Croissant
 disables `discovery_merge` entirely.
 
 ## Validation

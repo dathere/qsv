@@ -360,13 +360,13 @@ pub fn wrap_as_catalog(
 
     let mut catalog = serde_json::Map::new();
 
-    // Roborev #2490: the Catalog envelope carries CURIE keys (title,
-    // conformsTo, dataset, plus any inherited Dataset keys) so it
-    // needs its own `@context`. Without one, the envelope itself
-    // isn't valid JSON-LD. Source the context from the profile's
-    // dataset block — the inner Dataset still keeps its own
-    // `@context` for self-containment, so the redundancy is
-    // intentional (JSON-LD allows nested re-declaration).
+    // A CURIE-keyed envelope (DCAT-AP, Croissant, Geoconnex) needs its
+    // own `@context` to be valid JSON-LD, sourced from the profile's
+    // dataset block. DCAT-US v3 declares no `context:` at all — v3 is
+    // plain JSON validated by JSON Schema, and migration Step 14 says
+    // to delete `@context` from the Catalog outright — so this inserts
+    // nothing for that profile (Roborev #2490 for the original
+    // CURIE-profile rationale).
     if let Some(context) = &profile.dataset.context {
         catalog.insert("@context".to_string(), context.clone());
     }
@@ -376,10 +376,20 @@ pub fn wrap_as_catalog(
     if let Some(envelope) = envelope
         && let Some(conforms_to) = &envelope.conforms_to
     {
-        catalog.insert(
-            "dct:conformsTo".to_string(),
-            json!({ "@type": "dct:Standard", "@id": conforms_to }),
-        );
+        // Two shapes. DCAT-US v3 (migration Step 13) keys the IRI as
+        // `identifier` on an unprefixed `Standard` and carries a
+        // title; the CURIE-keyed profiles keep the legacy `@id` form.
+        // `conforms_to_title`'s presence is the switch.
+        let value = if let Some(title) = &envelope.conforms_to_title {
+            json!({ "@type": "Standard", "title": title, "identifier": conforms_to })
+        } else {
+            json!({ "@type": "dct:Standard", "@id": conforms_to })
+        };
+        let key = envelope
+            .conforms_to_key
+            .clone()
+            .unwrap_or_else(|| "dct:conformsTo".to_string());
+        catalog.insert(key, value);
     }
 
     // Inherit declared keys from the Dataset (verbatim copy by key).

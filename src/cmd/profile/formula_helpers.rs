@@ -28,7 +28,7 @@
 
 use std::cell::RefCell;
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, SecondsFormat};
 use minijinja::{Environment, Error, ErrorKind, Value, value::Kwargs};
 
 use super::sql_backend::SqlBackend;
@@ -87,6 +87,7 @@ pub fn register(env: &mut Environment) {
     env.add_filter("basename", basename);
     env.add_filter("file_stem", file_stem);
     env.add_filter("sanitize_iso_8601_interval", sanitize_iso_8601_interval);
+    env.add_filter("dcat_us_date", dcat_us_date);
     env.add_filter("format_mailto", format_mailto);
 
     // --- globals (pure / non-SQL) -------------------------------------
@@ -932,7 +933,7 @@ fn format_thousands(n: f64, decimals: usize) -> String {
 /// `only_if_absolute_iri` filter — passes the value through if it parses
 /// as an absolute IRI with http/https/ftp/ftps/file scheme; otherwise
 /// returns minijinja's undefined sentinel so `| default(...)` chains
-/// can route to a fallback. Used by `dcat:landingPage`, `dcat:accessURL`,
+/// can route to a fallback. Used by `landingPage`, `accessURL`,
 /// and similar IRI-typed slots to reject bare strings.
 fn only_if_absolute_iri(value: &str) -> minijinja::Value {
     let trimmed = value.trim();
@@ -949,7 +950,7 @@ fn only_if_absolute_iri(value: &str) -> minijinja::Value {
 }
 
 /// `basename` filter — returns the final path segment of `value`. Used
-/// to derive a `dct:title` fallback from the URL's last segment.
+/// to derive a `title` fallback from the URL's last segment.
 fn basename(value: &str) -> String {
     std::path::Path::new(value)
         .file_name()
@@ -958,7 +959,7 @@ fn basename(value: &str) -> String {
 }
 
 /// `file_stem` filter — returns the basename minus its extension. Used
-/// to derive a tempfile-stem-aware `dcat:Distribution.dct:title`.
+/// to derive a tempfile-stem-aware `Distribution.title`.
 fn file_stem(value: &str) -> String {
     std::path::Path::new(value)
         .file_stem()
@@ -968,7 +969,7 @@ fn file_stem(value: &str) -> String {
 
 /// `sanitize_iso_8601_interval` filter — rejects interval / repeating
 /// ISO 8601 syntax (`R/P1Y`, `2024-01-01/2024-06-30`). Useful for
-/// `dct:modified` / `dct:issued` slots where a pure instant is expected;
+/// `modified` / `issued` slots where a pure instant is expected;
 /// instead of forwarding a malformed interval, returns Jinja undefined
 /// so the field is suppressed.
 fn sanitize_iso_8601_interval(value: &str) -> minijinja::Value {
@@ -984,6 +985,85 @@ fn sanitize_iso_8601_interval(value: &str) -> minijinja::Value {
         return minijinja::Value::UNDEFINED;
     }
     minijinja::Value::from(trimmed.to_string())
+}
+
+/// `dcat_us_date` filter — coerce a date/datetime into one of the
+/// forms DCAT-US v3 accepts for `issued` / `modified` / `created`.
+///
+/// The schema's `anyOf` permits `date-time`, `date`, `^[0-9]{4}$` and
+/// `^[0-9]{4}-[0-9]{2}$`. A naive datetime with no UTC offset
+/// (`2024-12-15T08:30:00`, which is exactly what CKAN's
+/// `last_modified` looks like) matches NONE of them — migration Steps
+/// 12 and 15 both say to normalize to UTC Zulu. Such a value is
+/// assumed to be UTC and rendered with a `Z`.
+///
+/// This slipped through for a while because JSON Schema treats
+/// `format` as an annotation by default: qsv reported no findings for
+/// a value the official data.gov validator rejects. The validator now
+/// asserts formats (see `dcat_validate::build_validator`), so this
+/// filter and that switch are a pair — removing either re-opens the
+/// hole.
+///
+/// Anything that parses as none of the accepted forms yields Jinja
+/// undefined so the field is suppressed rather than emitted invalid.
+fn dcat_us_date(value: &minijinja::Value) -> minijinja::Value {
+    // Takes a `Value`, not a `&str`, so an UNDEFINED coming down the
+    // filter chain passes straight through.
+    //
+    // `modified` chains this after `sanitize_iso_8601_interval`, which
+    // returns UNDEFINED for an ISO-8601 interval like `R/P1Y` — and
+    // `R/P1Y` is exactly what migration Step 1 says agencies are
+    // moving away from, so it is common real input. With a `&str`
+    // parameter minijinja could not coerce the undefined and raised
+    // "invalid operation: value is not a string", which `emit_field`
+    // reports at Required severity and `--strict` then treats as
+    // fatal. A legacy CKAN dataset would hard-fail the command
+    // instead of quietly omitting one optional date.
+    let Some(raw) = value.as_str() else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return minijinja::Value::UNDEFINED;
+    }
+
+    // Already-acceptable bare forms: YYYY, YYYY-MM, YYYY-MM-DD.
+    let is_year = trimmed.len() == 4 && trimmed.bytes().all(|b| b.is_ascii_digit());
+    let is_year_month = trimmed.len() == 7
+        && trimmed.as_bytes()[4] == b'-'
+        && trimmed
+            .bytes()
+            .enumerate()
+            .all(|(i, b)| i == 4 || b.is_ascii_digit());
+    if is_year || is_year_month || NaiveDate::parse_from_str(trimmed, "%Y-%m-%d").is_ok() {
+        return minijinja::Value::from(trimmed.to_string());
+    }
+
+    // A full RFC 3339 timestamp (offset present) is already valid.
+    if DateTime::parse_from_rfc3339(trimmed).is_ok() {
+        return minijinja::Value::from(trimmed.to_string());
+    }
+
+    // Offset-less datetime: assume UTC and stamp the Z.
+    //
+    // `AutoSi` keeps whatever sub-second precision the input carried
+    // rather than truncating it — a fixed "%H:%M:%S" format would
+    // silently turn 2024-12-15T08:30:00.123456 into
+    // 2024-12-15T08:30:00Z.
+    for fmt in [
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%d %H:%M",
+    ] {
+        if let Ok(naive) = NaiveDateTime::parse_from_str(trimmed, fmt) {
+            return minijinja::Value::from(
+                naive.and_utc().to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            );
+        }
+    }
+
+    minijinja::Value::UNDEFINED
 }
 
 /// `format_mailto` filter — trims whitespace and prepends `mailto:` if
@@ -1044,7 +1124,7 @@ fn blake3_of(path: &str) -> minijinja::Value {
 }
 
 /// `file_size_of` global — byte length of a local file as a string.
-/// Matches the GSA `dcat:byteSize` convention (number serialized as
+/// Matches the GSA `byteSize` convention (number serialized as
 /// string). Returns minijinja undefined on stat failure.
 fn file_size_of(path: &str) -> minijinja::Value {
     match std::fs::metadata(path) {
@@ -1153,12 +1233,16 @@ fn csvw_datatype_legacy(t: Option<&serde_json::Value>) -> &'static str {
     }
 }
 
-/// `bbox_from_dpps` global — derives a `dct:Location` array from the
+/// `bbox_from_dpps` global — derives a `Location` array from the
 /// inferred LAT/LON column metadata in `dpp` and the per-column
-/// min/max in `stats`. Returns an array suitable for the
-/// `dct:spatial` slot (v3 cardinality 0..*), or undefined when no
-/// lat/lon columns were detected. Mirrors the legacy
-/// `dcat::bbox_from_dpps` so wire-shape parity is preserved.
+/// min/max in `stats`. Returns an array suitable for the `spatial`
+/// slot (v3 cardinality 0..*), or undefined when no lat/lon columns
+/// were detected.
+///
+/// The WKT polygon lands in `bbox` rather than `geometry` because it
+/// is derived solely from the lat/lon column ranges — a bounding
+/// rectangle, not the dataset's true geometry. GSA `Location.json`
+/// accepts a bare WKT string for both slots.
 fn bbox_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::Value {
     let dpp_json: serde_json::Value = match serde_json::to_value(&dpp) {
         Ok(v) => v,
@@ -1199,15 +1283,14 @@ fn bbox_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::
          {min_lat}, {min_lon} {min_lat}))"
     );
     minijinja::Value::from_serialize(serde_json::json!([{
-        "@type": "dct:Location",
-        "dcat:bbox": polygon,
+        "@type": "Location",
+        "bbox": polygon,
     }]))
 }
 
-/// `temporal_from_dpps` global — derives a `dct:PeriodOfTime` array,
-/// one entry per inferred date column. Returns undefined when no
-/// date columns were detected. Mirrors the legacy
-/// `dcat::temporal_from_dpps` (v3 cardinality 0..*).
+/// `temporal_from_dpps` global — derives a `PeriodOfTime` array, one
+/// entry per inferred date column. Returns undefined when no date
+/// columns were detected (v3 cardinality 0..*).
 fn temporal_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::Value {
     let dpp_json: serde_json::Value = match serde_json::to_value(&dpp) {
         Ok(v) => v,
@@ -1238,9 +1321,9 @@ fn temporal_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijin
             continue;
         };
         out.push(serde_json::json!({
-            "@type":          "dct:PeriodOfTime",
-            "dcat:startDate": start,
-            "dcat:endDate":   end,
+            "@type":     "PeriodOfTime",
+            "startDate": start,
+            "endDate":   end,
         }));
     }
     if out.is_empty() {

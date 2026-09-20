@@ -28,7 +28,7 @@
 
 use std::cell::RefCell;
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, SecondsFormat};
 use minijinja::{Environment, Error, ErrorKind, Value, value::Kwargs};
 
 use super::sql_backend::SqlBackend;
@@ -1006,8 +1006,23 @@ fn sanitize_iso_8601_interval(value: &str) -> minijinja::Value {
 ///
 /// Anything that parses as none of the accepted forms yields Jinja
 /// undefined so the field is suppressed rather than emitted invalid.
-fn dcat_us_date(value: &str) -> minijinja::Value {
-    let trimmed = value.trim();
+fn dcat_us_date(value: &minijinja::Value) -> minijinja::Value {
+    // Takes a `Value`, not a `&str`, so an UNDEFINED coming down the
+    // filter chain passes straight through.
+    //
+    // `modified` chains this after `sanitize_iso_8601_interval`, which
+    // returns UNDEFINED for an ISO-8601 interval like `R/P1Y` — and
+    // `R/P1Y` is exactly what migration Step 1 says agencies are
+    // moving away from, so it is common real input. With a `&str`
+    // parameter minijinja could not coerce the undefined and raised
+    // "invalid operation: value is not a string", which `emit_field`
+    // reports at Required severity and `--strict` then treats as
+    // fatal. A legacy CKAN dataset would hard-fail the command
+    // instead of quietly omitting one optional date.
+    let Some(raw) = value.as_str() else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let trimmed = raw.trim();
     if trimmed.is_empty() {
         return minijinja::Value::UNDEFINED;
     }
@@ -1030,6 +1045,11 @@ fn dcat_us_date(value: &str) -> minijinja::Value {
     }
 
     // Offset-less datetime: assume UTC and stamp the Z.
+    //
+    // `AutoSi` keeps whatever sub-second precision the input carried
+    // rather than truncating it — a fixed "%H:%M:%S" format would
+    // silently turn 2024-12-15T08:30:00.123456 into
+    // 2024-12-15T08:30:00Z.
     for fmt in [
         "%Y-%m-%dT%H:%M:%S%.f",
         "%Y-%m-%dT%H:%M",
@@ -1037,7 +1057,9 @@ fn dcat_us_date(value: &str) -> minijinja::Value {
         "%Y-%m-%d %H:%M",
     ] {
         if let Ok(naive) = NaiveDateTime::parse_from_str(trimmed, fmt) {
-            return minijinja::Value::from(naive.format("%Y-%m-%dT%H:%M:%SZ").to_string());
+            return minijinja::Value::from(
+                naive.and_utc().to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            );
         }
     }
 

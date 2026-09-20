@@ -56,7 +56,7 @@ and are all live in the current build.
 | `rights`              | Distribution `rights`                   | ✅ today   |
 | `language`            | Distribution `language` (Distribution-level; falls back to `package.language`) | ✅ today   |
 | `conformsTo`          | Distribution `conformsTo` (array of `Standard` — string IRI or `{@id, ...}` object) | ✅ today   |
-| `access_restriction`, `use_restriction`, `cui_restriction` | `dcat-us:*Restriction` | ✅ today   |
+| `access_restriction`, `use_restriction`, `cui_restriction` | `accessRestriction` / `useRestriction` / `cuiRestriction` (the first two are arrays) | ✅ today   |
 
 ### Distribution fields qsv computes automatically
 

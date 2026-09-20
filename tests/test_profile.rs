@@ -3476,3 +3476,129 @@ fn distribution_modified_is_normalized_to_utc_zulu() {
         out.get("projection_warnings"),
     );
 }
+
+#[test]
+fn iso_8601_interval_in_modified_does_not_abort_strict() {
+    // `metadata_modified: "R/P1Y"` is exactly the shape migration
+    // Step 1 says agencies are moving away from, so it is common real
+    // input from legacy CKAN instances.
+    //
+    // `sanitize_iso_8601_interval` returns minijinja UNDEFINED for it.
+    // When `dcat_us_date` took a `&str`, minijinja could not coerce
+    // that and raised "invalid operation: value is not a string",
+    // which `emit_field` reports at Required severity — and once
+    // --strict began gating on Required, that aborted the whole
+    // command over one optional date. The field must simply be
+    // omitted.
+    let wrk = Workdir::new("interval_modified_strict");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":             "T",
+                "notes":             "n",
+                "name":              "id",
+                "contact_point":     {"fn": "J", "hasEmail": "j@example.gov"},
+                "metadata_modified": "R/P1Y"
+            }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "--strict",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert!(
+        out.pointer("/projection/modified").is_none(),
+        "an interval must be suppressed, not emitted: {out:#}",
+    );
+    assert!(
+        out.get("projection_warnings").is_none(),
+        "suppressing an interval must not warn, got: {:?}",
+        out.get("projection_warnings"),
+    );
+}
+
+#[test]
+fn date_normalization_preserves_fractional_seconds() {
+    // Stamping the UTC Z must not cost precision: a fixed
+    // "%Y-%m-%dT%H:%M:%SZ" format silently truncated
+    // `...T08:30:00.123456` to `...T08:30:00Z`.
+    let wrk = Workdir::new("frac_seconds");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "T",
+                "notes":         "n",
+                "name":          "id",
+                "contact_point": {"fn": "J", "hasEmail": "j@example.gov"}
+            },
+            "resource": { "last_modified": "2024-12-15T08:30:00.123456" }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate",
+        "--strict",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(
+        out.pointer("/projection/distribution/0/modified")
+            .and_then(|v| v.as_str()),
+        Some("2024-12-15T08:30:00.123456Z"),
+    );
+}
+
+#[test]
+fn third_party_notices_pin_matches_the_manifest() {
+    // The pin lives in three places: MANIFEST.json (source of truth)
+    // and two spellings in THIRD_PARTY_NOTICES.md — a short 7-char
+    // form in the summary table and the full SHA in the detail
+    // section. The existing pin test re-hashes the vendored files but
+    // says nothing about the notices, so a refresh that updates the
+    // manifest leaves SHIPPED PROVENANCE pointing at the previous
+    // commit, which is a licensing/attribution claim rather than a
+    // cosmetic one. This closes that gap.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("resources/dcat-us-v3/MANIFEST.json"))
+            .expect("read MANIFEST.json"),
+    )
+    .expect("MANIFEST.json is valid JSON");
+    let commit = manifest
+        .get("commit")
+        .and_then(|v| v.as_str())
+        .expect("MANIFEST.json must carry a `commit`");
+    let short = &commit[..7];
+
+    let notices = std::fs::read_to_string(root.join("THIRD_PARTY_NOTICES.md"))
+        .expect("read THIRD_PARTY_NOTICES.md");
+    assert!(
+        notices.contains(commit),
+        "THIRD_PARTY_NOTICES.md must cite the full pinned commit `{commit}`",
+    );
+    assert!(
+        notices.contains(short),
+        "THIRD_PARTY_NOTICES.md must cite the short pinned commit `{short}`",
+    );
+}

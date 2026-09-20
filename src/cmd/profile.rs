@@ -174,7 +174,7 @@ profile options:
                               an untrusted YAML can't silently execute
                               arbitrary commands. Default: off.
     --catalog                 Wrap the emitted DCAT-US v3 Dataset inside a
-                              dcat:Catalog envelope (Catalog{dataset:[...]}).
+                              Catalog envelope (Catalog{dataset:[...]}).
                               Useful for federation harvesters (data.gov,
                               CKAN ingest) that expect Catalog-shaped
                               top-level metadata. Default: off
